@@ -26,7 +26,7 @@ import type { ConfirmTransactionTransactionSingleVisualization } from '../types/
 import type { RpcNetwork } from '../types/rpc.js'
 import { serialize } from '../types/wire-types.js'
 import { last } from '../utils/array.js'
-import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
+import { connectedToSigner, ethAccountsReply, hasCompatibleInpageProtocol, notifyIncompatibleInpageProtocol, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
@@ -556,6 +556,18 @@ function replyWithSignerAccountError(websiteTabConnections: WebsiteTabConnection
 }
 
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<unknown> => {
+	if (port !== undefined && request.method !== 'connected_to_signer' && !await hasCompatibleInpageProtocol(port)) {
+		notifyIncompatibleInpageProtocol(port)
+		if (request.interceptorInternalRequest === true) return
+		return replyToInterceptedRequest(websiteTabConnections, {
+			type: 'result',
+			...getRequestWithDefinedParams(request),
+			error: {
+				code: METAMASK_ERROR_PROVIDER_DISCONNECTED,
+				message: 'Interceptor was updated while this page was open. Reload the page to reconnect.',
+			},
+		})
+	}
 	const initialSettings = await getSettings()
 	if (request.method === 'wallet_revokePermissions') {
 		const parsedRequest = parseWalletRevokePermissionsRequest(websiteTabConnections, request)

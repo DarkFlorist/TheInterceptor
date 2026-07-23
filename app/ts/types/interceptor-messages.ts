@@ -19,19 +19,18 @@ import { SimulateGnosisSafeTransaction as SharedSimulateGnosisSafeTransaction, S
 import { EthSimulateV1Result } from './ethSimulate-types.js'
 
 type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
-const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Intersect(
-	funtypes.ReadonlyPartial({ signerProviderGeneration: funtypes.Number }),
-	funtypes.Union(
-		funtypes.ReadonlyObject({
-			accept: funtypes.Literal(true),
-			chainId: EthereumQuantity,
-		}),
-		funtypes.ReadonlyObject({
-			accept: funtypes.Literal(false),
-			chainId: EthereumQuantity,
-			error: ErrorWithCodeAndOptionalData,
-		})
-	),
+const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
+	funtypes.ReadonlyObject({
+		accept: funtypes.Literal(true),
+		chainId: EthereumQuantity,
+		signerProviderGeneration: funtypes.Number,
+	}),
+	funtypes.ReadonlyObject({
+		accept: funtypes.Literal(false),
+		chainId: EthereumQuantity,
+		error: ErrorWithCodeAndOptionalData,
+		signerProviderGeneration: funtypes.Number,
+	})
 ))
 
 export type WalletSwitchEthereumChainReply = funtypes.Static<typeof WalletSwitchEthereumChainReply>
@@ -51,7 +50,7 @@ const InpageScriptRequestWithoutIdentifier = funtypes.Union(
 		method: funtypes.Literal('connected_to_signer'),
 		result: funtypes.ReadonlyObject({
 			metamaskCompatibilityMode: funtypes.Boolean,
-			signerProviderGenerationSupported: funtypes.Boolean,
+			signerProtocolVersion: funtypes.Literal(1),
 		}),
 	}),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_switchEthereumChain_reply'), result: funtypes.Literal('0x') }),
@@ -424,7 +423,7 @@ export type SignerReply = funtypes.Static<typeof SignerReply>
 export const SignerReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('signer_reply'),
 	params: funtypes.Tuple(funtypes.Intersect(
-		funtypes.ReadonlyPartial({ signerProviderGeneration: funtypes.Number }),
+		funtypes.ReadonlyObject({ signerProviderGeneration: funtypes.Number }),
 		funtypes.Union(
 			funtypes.ReadonlyObject({
 				success: funtypes.Literal(true),

@@ -55,3 +55,19 @@ BENCH_SCENARIO=stacked bun run benchmark:popup-lifecycle
 
 The real browser benchmark does not seed `browser.storage.local` and it does not use a local JSON-RPC fixture server.
 For the `stacked` scenario, it prints the send-transaction setup phases, the end-to-end send-transaction-to-main-popup path, the RPCs from the transaction/balance setup, and the RPCs observed while the main popup itself is opening.
+
+## Signer connection benchmark
+
+The signer connection benchmark measures document-start injection through the first
+`eth_chainId` request sent to an injected signer. It runs five warmups followed by
+30 measured page connections:
+
+```bash
+bun run benchmark:signer-connection
+```
+
+To benchmark a separately built extension directory:
+
+```bash
+INTERCEPTOR_BENCH_EXTENSION_DIR=/path/to/extension bun run benchmark:signer-connection
+```

@@ -34,6 +34,7 @@ import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
+import { initializeInpageProtocolNegotiation } from './providerMessageHandlers.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 let simulationServices: SimulationServices | undefined
@@ -129,6 +130,8 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 		printError(`Could not connect to a port: ${ port.name}`)
 		return
 	}
+	// The port must be protocol-confirmed before listeners can release queued page traffic.
+	initializeInpageProtocolNegotiation(port)
 	const websiteOrigin = getHostWithPort(port.sender.url)
 	const identifier = websiteSocketToString(socket)
 	const websitePromise = (async () => {

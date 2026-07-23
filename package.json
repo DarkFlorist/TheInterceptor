@@ -14,6 +14,7 @@
 		"build-firefox": "bun run compile-app && bun run bundle && bun run firefox",
 		"build-chrome": "bun run compile-app && bun run bundle && bun run chrome",
 		"benchmark:popup-lifecycle": "bun ./test/benchmarks/popupLifecycleChrome.ts",
+		"benchmark:signer-connection": "bun ./test/benchmarks/signerConnectionChrome.ts",
 		"test:chrome-communication": "bun ./test/benchmarks/chromeCommunication.ts",
 		"test:chrome-signing-communication": "bun ./test/benchmarks/chromeSigningCommunication.ts",
 		"vendor": "cd build && bun install --frozen-lockfile && bun run vendor",

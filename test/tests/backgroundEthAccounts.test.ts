@@ -105,6 +105,7 @@ async function loadModules() {
 		...await import('../../app/ts/background/background.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
+		...await import('../../app/ts/background/providerMessageHandlers.js'),
 		...await import('../../app/ts/background/settings.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 		...await import('../../app/ts/background/websiteTabConnections.js'),
@@ -1959,10 +1960,10 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const connectedReplies = messages.filter((message) => message.method === 'connected_to_signer' && message.requestId === 12)
-		assert.deepEqual(connectedReplies.at(-1)?.result, { metamaskCompatibilityMode: false, signerProviderGenerationSupported: true })
+		assert.deepEqual(connectedReplies.at(-1)?.result, { metamaskCompatibilityMode: false, signerProtocolVersion: 1 })
 	})
 
-	test('accepts the legacy connected_to_signer shape during an extension update', async () => {
+	test('invalidates a legacy signer protocol without accepting its callbacks', async () => {
 		installBrowserMock()
 		const { getTabState, handleInterceptedRequest, websiteSocketToString } = await loadModules()
 		const websiteOrigin = 'https://example.test'
@@ -1986,7 +1987,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const connectedReply = messages.find((message) => message.method === 'connected_to_signer' && message.requestId === 12)
-		assert.deepEqual(connectedReply?.result, { metamaskCompatibilityMode: false, signerProviderGenerationSupported: true })
+		assert.deepEqual(connectedReply?.result, { metamaskCompatibilityMode: false, signerProtocolVersion: 1 })
 
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
 			...request,
@@ -1995,15 +1996,183 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			params: [{ type: 'success', accounts: ['0x1111111111111111111111111111111111111111'], requestAccounts: false }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
-			...request,
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 14, requestSocket: socket },
-			method: 'signer_chainChanged',
-			params: ['0x1'],
+			method: 'eth_chainId',
+			params: [],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const tabState = await getTabState(socket.tabId)
-		assert.deepEqual(tabState.signerAccounts, [0x1111111111111111111111111111111111111111n])
-		assert.equal(tabState.signerChain, 1n)
+		assert.deepEqual(tabState.signerAccounts, [])
+		assert.equal(tabState.signerChain, undefined)
+		assert.equal(messages.filter((message) => message.method === 'disconnect').length, 1)
+		const publicReply = messages.find((message) => message.method === 'eth_chainId' && message.requestId === 14)
+		assert.equal(publicReply?.error?.code, 4900)
+		assert.equal(publicReply?.error?.message, 'Interceptor was updated while this page was open. Reload the page to reconnect.')
+	})
+
+	test('waits for a raced current signer status instead of invalidating the page', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const baseRequest = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 12, requestSocket: socket },
+		}
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			...baseRequest,
+			interceptorInternalRequest: true,
+			method: 'connected_to_signer',
+			params: [false, 'NoSigner'],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const racedPublicRequest = handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			...baseRequest,
+			uniqueRequestIdentifier: { requestId: 13, requestSocket: socket },
+			method: 'eth_chainId',
+			params: [],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			...baseRequest,
+			interceptorInternalRequest: true,
+			uniqueRequestIdentifier: { requestId: 14, requestSocket: socket },
+			method: 'connected_to_signer',
+			params: [true, 'MetaMask', 2],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await racedPublicRequest
+
+		assert.equal(messages.filter((message) => message.method === 'disconnect').length, 0)
+		const publicReply = messages.find((message) => message.method === 'eth_chainId' && message.requestId === 13)
+		assert.equal(publicReply?.error, undefined)
+		assert.equal(publicReply?.result, '0x1')
+	})
+
+	test('waits for current signer status before releasing traffic from a newly registered port', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, initializeInpageProtocolNegotiation, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		initializeInpageProtocolNegotiation(port)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const baseRequest = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 20, requestSocket: socket },
+		}
+
+		const racedPublicRequest = handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			...baseRequest,
+			method: 'eth_chainId',
+			params: [],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			...baseRequest,
+			interceptorInternalRequest: true,
+			uniqueRequestIdentifier: { requestId: 21, requestSocket: socket },
+			method: 'connected_to_signer',
+			params: [true, 'MetaMask', 2],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await racedPublicRequest
+
+		assert.equal(messages.filter((message) => message.method === 'disconnect').length, 0)
+		const publicReply = messages.find((message) => message.method === 'eth_chainId' && message.requestId === 20)
+		assert.equal(publicReply?.error, undefined)
+		assert.equal(publicReply?.result, '0x1')
+	})
+
+	test('invalidates traffic when a newly registered port never confirms its signer protocol', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, initializeInpageProtocolNegotiation, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		initializeInpageProtocolNegotiation(port)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 22, requestSocket: socket },
+			method: 'eth_chainId',
+			params: [],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.equal(messages.filter((message) => message.method === 'disconnect').length, 1)
+		const publicReply = messages.find((message) => message.method === 'eth_chainId' && message.requestId === 22)
+		assert.equal(publicReply?.error?.code, 4900)
+		assert.equal(publicReply?.error?.message, 'Interceptor was updated while this page was open. Reload the page to reconnect.')
+	})
+
+	test('keeps a confirmed port compatible while a later signer status update is pending', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, initializeInpageProtocolNegotiation, runSignerStateOperation, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		initializeInpageProtocolNegotiation(port)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const statusRequest = {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 23, requestSocket: socket },
+			method: 'connected_to_signer',
+			params: [true, 'MetaMask', 2],
+		}
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, statusRequest, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		const blockerStarted = createDeferredSignal()
+		const releaseBlocker = createDeferredSignal()
+		const blocker = runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
+			blockerStarted.resolve()
+			await releaseBlocker.promise
+		})
+		await blockerStarted.promise
+		const laterStatus = handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			...statusRequest,
+			uniqueRequestIdentifier: { requestId: 24, requestSocket: socket },
+			params: [true, 'MetaMask', 3],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const racedPublicRequest = handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 25, requestSocket: socket },
+			method: 'eth_chainId',
+			params: [],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		releaseBlocker.resolve()
+		await Promise.all([blocker, laterStatus, racedPublicRequest])
+
+		assert.equal(messages.filter((message) => message.method === 'disconnect').length, 0)
+		const publicReply = messages.find((message) => message.method === 'eth_chainId' && message.requestId === 25)
+		assert.equal(publicReply?.error, undefined)
+		assert.equal(publicReply?.result, '0x1')
 	})
 
 	test('opens address access dialog after signer account discovery for site-approved eth_requestAccounts', async () => {

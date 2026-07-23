@@ -130,7 +130,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, signerProviderGenerationSupported: true },
+						result: { metamaskCompatibilityMode: true, signerProtocolVersion: 1 },
 					})
 					return
 				case 'InterceptorError':
@@ -338,7 +338,7 @@ describe('inpage signer bridge', () => {
 		let pendingAccountRequest: InpageRequest | undefined
 		const { fakeWindow, signerAccounts, sendBackgroundMessage } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageForRequest) => {
-				if (request.method === 'connected_to_signer') {
+				if (request.method === 'connected_to_signer' && request.params?.length === 3) {
 					connectedSignerNames.push(request.params?.[1])
 					return false
 				}
@@ -459,7 +459,7 @@ describe('inpage signer bridge', () => {
 		let resolveBraveAccounts: ((accounts: string[]) => void) | undefined
 		const { fakeWindow, signerAccounts, backgroundEthAccountsReplies, sendBackgroundMessage } = createFakeWindow({
 			handleRequest: (request) => {
-				if (request.method === 'connected_to_signer') connectedSignerNames.push(request.params?.[1])
+				if (request.method === 'connected_to_signer' && request.params?.length === 3) connectedSignerNames.push(request.params[1])
 				return false
 			},
 		})
@@ -524,7 +524,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, signerProviderGenerationSupported: true },
+						result: { metamaskCompatibilityMode: true, signerProtocolVersion: 1 },
 					})
 				return true
 			},
@@ -548,7 +548,7 @@ describe('inpage signer bridge', () => {
 			signerUnavailable: true,
 			error: { code: 4900, message: 'No signer wallet is available to this page. Enable your wallet extension for this site, then try again.' },
 		}])
-		assert.deepEqual(connectedToSignerParams, [[false, 'NoSigner']])
+		assert.deepEqual(connectedToSignerParams, [[false, 'NoSigner'], [false, 'NoSigner', 1]])
 	})
 
 	test('reports a fresh signer epoch when the background requests reconnect status', async () => {
@@ -562,34 +562,37 @@ describe('inpage signer bridge', () => {
 					requestId: request.requestId,
 					type: 'result',
 					method: 'connected_to_signer',
-					result: { metamaskCompatibilityMode: true, signerProviderGenerationSupported: true },
+					result: { metamaskCompatibilityMode: true, signerProtocolVersion: 1 },
 				})
 				return true
 			},
 		})
 
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?explicit-signer-status-handshake', async () => {
-			await waitFor(() => connectedToSignerParams.length === 1)
+			await waitFor(() => connectedToSignerParams.length === 2)
 			sendBackgroundMessage({
 				interceptorApproved: true,
 				type: 'result',
 				method: 'request_signer_connection_status',
 				result: [],
 			})
-			await waitFor(() => connectedToSignerParams.length === 2)
+			await waitFor(() => connectedToSignerParams.length === 3)
 		})
 
-		const secondGeneration = connectedToSignerParams[1]?.[2]
+		const firstGeneration = connectedToSignerParams[1]?.[2]
+		const secondGeneration = connectedToSignerParams[2]?.[2]
 		assert.equal(connectedToSignerParams[0]?.length, 2)
 		assert.equal(connectedToSignerParams[1]?.[1], 'MetaMask')
+		assert.equal(connectedToSignerParams[2]?.[1], 'MetaMask')
+		assert.equal(typeof firstGeneration, 'number')
 		assert.equal(typeof secondGeneration, 'number')
-		if (typeof secondGeneration !== 'number') throw new Error('Missing signer provider generation')
-		assert.equal(secondGeneration > 0, true)
+		if (typeof firstGeneration !== 'number' || typeof secondGeneration !== 'number') throw new Error('Missing signer provider generation')
+		assert.equal(secondGeneration > firstGeneration, true)
 	})
 
-	test('uses legacy signer callback payloads when an older background does not advertise generation support', async () => {
+	test('invalidates the page connection when an older background does not advertise the signer protocol', async () => {
 		const connectedToSignerParams: unknown[][] = []
-		const { backgroundEthAccountsReplies, fakeWindow, sendBackgroundMessage } = createFakeWindow({
+		const { backgroundEthAccountsReplies, fakeWindow, interceptorErrorPayloads } = createFakeWindow({
 			handleRequest: (request, sendBackgroundReply) => {
 				if (request.method !== 'connected_to_signer') return false
 				connectedToSignerParams.push(request.params ?? [])
@@ -606,31 +609,24 @@ describe('inpage signer bridge', () => {
 
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?legacy-background-signer-protocol', async () => {
 			await waitFor(() => connectedToSignerParams.length === 1)
-			sendBackgroundMessage({
-				interceptorApproved: true,
-				type: 'result',
-				method: 'request_signer_connection_status',
-				result: [],
+			const provider = fakeWindow.ethereum as { isConnected: () => boolean, request: (payload: { method: string }) => Promise<unknown> }
+			await assert.rejects(provider.request({ method: 'eth_chainId' }), (error: unknown) => {
+				return error instanceof Error
+					&& 'code' in error
+					&& error.code === 4900
+					&& error.message === 'Interceptor was updated while this page was open. Reload the page to reconnect.'
 			})
-			await waitFor(() => connectedToSignerParams.length === 2)
-			sendBackgroundMessage({
-				interceptorApproved: true,
-				type: 'result',
-				method: 'request_signer_to_eth_accounts',
-				result: [],
-			})
-			await waitFor(() => backgroundEthAccountsReplies.length === 1)
+			assert.equal(provider.isConnected(), false)
 		})
 
-		assert.deepEqual(connectedToSignerParams.map((params) => params.length), [2, 2])
-		const accountsReply = backgroundEthAccountsReplies.at(0)
-		if (accountsReply === undefined) throw new Error('Missing signer accounts reply')
-		assert.equal('signerProviderGeneration' in accountsReply, false)
+		assert.deepEqual(connectedToSignerParams, [[false, 'NoSigner']])
+		assert.equal(backgroundEthAccountsReplies.length, 0)
+		assert.equal(interceptorErrorPayloads.length, 0)
 	})
 
-	test('reports reconnect status without waiting for a lost previous status reply', async () => {
+	test('does not report an expected incompatibility when concurrent probes are rejected', async () => {
 		const connectedToSignerParams: unknown[][] = []
-		const { backgroundEthAccountsReplies, fakeWindow, sendBackgroundMessage, signerRequests } = createFakeWindow({
+		const { fakeWindow, interceptorErrorPayloads } = createFakeWindow({
 			handleRequest: (request, sendBackgroundReply) => {
 				if (request.method !== 'connected_to_signer') return false
 				connectedToSignerParams.push(request.params ?? [])
@@ -640,7 +636,41 @@ describe('inpage signer bridge', () => {
 					requestId: request.requestId,
 					type: 'result',
 					method: 'connected_to_signer',
-					result: { metamaskCompatibilityMode: true, signerProviderGenerationSupported: true },
+					result: { metamaskCompatibilityMode: true },
+				})
+				return true
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?concurrent-legacy-background-probes', async () => {
+			await waitFor(() => connectedToSignerParams.length === 1)
+			const provider = fakeWindow.ethereum as { isConnected: () => boolean, request: (payload: { method: string }) => Promise<unknown> }
+			await assert.rejects(provider.request({ method: 'eth_chainId' }), (error: unknown) => {
+				return error instanceof Error
+					&& 'code' in error
+					&& error.code === 4900
+					&& error.message === 'Interceptor was updated while this page was open. Reload the page to reconnect.'
+			})
+			assert.equal(provider.isConnected(), false)
+		})
+
+		assert.deepEqual(connectedToSignerParams, [[false, 'NoSigner'], [false, 'NoSigner']])
+		assert.equal(interceptorErrorPayloads.length, 0)
+	})
+
+	test('retries protocol negotiation when the previous probe reply was lost', async () => {
+		const connectedToSignerParams: unknown[][] = []
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundReply) => {
+				if (request.method !== 'connected_to_signer') return false
+				connectedToSignerParams.push(request.params ?? [])
+				if (connectedToSignerParams.length === 1) return true
+				sendBackgroundReply({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'connected_to_signer',
+					result: { metamaskCompatibilityMode: true, signerProtocolVersion: 1 },
 				})
 				return true
 			},
@@ -648,26 +678,13 @@ describe('inpage signer bridge', () => {
 
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?lost-signer-status-reply', async () => {
 			await waitFor(() => connectedToSignerParams.length === 1)
-			sendBackgroundMessage({
-				interceptorApproved: true,
-				type: 'result',
-				method: 'request_signer_to_eth_accounts',
-				result: [],
-			})
-			await new Promise((resolve) => setTimeout(resolve, 0))
-			assert.equal(backgroundEthAccountsReplies.length, 0)
-			sendBackgroundMessage({
-				interceptorApproved: true,
-				type: 'result',
-				method: 'request_signer_connection_status',
-				result: [],
-			})
-			await waitFor(() => connectedToSignerParams.length === 2)
-			await waitFor(() => signerRequests.includes('eth_chainId'))
-			await waitFor(() => backgroundEthAccountsReplies.length === 1)
+			const provider = fakeWindow.ethereum as { request: (payload: { method: string }) => Promise<unknown> }
+			const chainId = provider.request({ method: 'eth_chainId' })
+			await waitFor(() => connectedToSignerParams.length === 3)
+			assert.equal(await chainId, '0x')
 		})
 
-		assert.deepEqual(connectedToSignerParams.map((params) => params.length), [2, 2])
+		assert.deepEqual(connectedToSignerParams.map((params) => params.length), [2, 2, 3])
 	})
 
 	test('settles a pending chain switch when the signer provider changes', async () => {
@@ -1325,7 +1342,7 @@ describe('inpage signer bridge', () => {
 			const announcedSignerRequests: string[] = []
 			const { fakeWindow } = createFakeWindow({
 				handleRequest: (request) => {
-					if (request.method === 'connected_to_signer' && (request.params?.length === 3 || request.params?.[1] !== 'NotRecognizedSigner')) connectedSignerNames.push(request.params?.[1])
+					if (request.method === 'connected_to_signer' && request.params?.length === 3) connectedSignerNames.push(request.params[1])
 					return false
 				},
 			})
@@ -1364,9 +1381,9 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
-	test('re-reports the selected MetaMask after a delayed legacy Ambire compatibility probe', async () => {
+	test('reports only the latest selected signer after a delayed protocol handshake', async () => {
 		const connectedToSignerParams: unknown[][] = []
-		let replyToLegacyAmbireProbe: (() => void) | undefined
+		let replyToProtocolProbe: (() => void) | undefined
 		const { fakeWindow } = createFakeWindow({
 			handleRequest: (request, sendBackgroundReply) => {
 				if (request.method !== 'connected_to_signer') return false
@@ -1376,10 +1393,10 @@ describe('inpage signer bridge', () => {
 					requestId: request.requestId,
 					type: 'result',
 					method: 'connected_to_signer',
-					result: { metamaskCompatibilityMode: true, signerProviderGenerationSupported: true },
+					result: { metamaskCompatibilityMode: true, signerProtocolVersion: 1 },
 				})
-				if (request.params?.length === 2 && request.params[1] === 'NotRecognizedSigner' && replyToLegacyAmbireProbe === undefined) {
-					replyToLegacyAmbireProbe = reply
+				if (request.params?.length === 2 && replyToProtocolProbe === undefined) {
+					replyToProtocolProbe = reply
 					return true
 				}
 				reply()
@@ -1410,10 +1427,9 @@ describe('inpage signer bridge', () => {
 			},
 		}))
 
-		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?delayed-ambire-compatibility-probe', async () => {
-			await waitFor(() => replyToLegacyAmbireProbe !== undefined)
-			await waitFor(() => connectedToSignerParams.some((params) => params.length === 2 && params[1] === 'MetaMask'))
-			replyToLegacyAmbireProbe?.()
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?delayed-signer-protocol-handshake', async () => {
+			await waitFor(() => replyToProtocolProbe !== undefined)
+			replyToProtocolProbe?.()
 			await waitFor(() => connectedToSignerParams.some((params) => params.length === 3 && params[1] === 'MetaMask'))
 		})
 
@@ -1473,19 +1489,19 @@ describe('inpage signer bridge', () => {
 		assert.doesNotThrow(() => SignerReply.parse({ method: 'signer_reply', params: [signerReply] }))
 	})
 
-	test('reports unusable-root NoSigner before EIP-6963 MetaMask recovery', async () => {
+	test('does not report stale NoSigner after EIP-6963 MetaMask recovery', async () => {
 		const connectedSignerNames: unknown[] = []
 		const { fakeWindow, signerRequests } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
 				if (request.method !== 'connected_to_signer') return false
-				connectedSignerNames.push(request.params?.[1])
-				const delay = request.params?.[1] === 'NoSigner' ? 10 : 0
+				if (request.params?.length === 3) connectedSignerNames.push(request.params[1])
+				const delay = request.params?.length === 3 && request.params[1] === 'NoSigner' ? 10 : 0
 				setTimeout(() => sendBackgroundMessage({
 					interceptorApproved: true,
 					requestId: request.requestId,
 					type: 'result',
 					method: 'connected_to_signer',
-					result: { metamaskCompatibilityMode: true },
+					result: { metamaskCompatibilityMode: true, signerProtocolVersion: 1 },
 				}), delay)
 				return true
 			},
@@ -1506,11 +1522,11 @@ describe('inpage signer bridge', () => {
 		}))
 
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?serialized-no-signer-eip-recovery', async () => {
-			await waitFor(() => connectedSignerNames.length === 2)
+			await waitFor(() => connectedSignerNames.length === 1)
 			await waitFor(() => signerRequests.includes('eth_chainId'))
 		})
 
-		assert.deepEqual(connectedSignerNames, ['NoSigner', 'MetaMask'])
+		assert.deepEqual(connectedSignerNames, ['MetaMask'])
 	})
 
 	test('recognizes supported MetaMask-compatible wallets and does not replace selected non-MetaMask signers from announcements', async () => {
@@ -1526,9 +1542,7 @@ describe('inpage signer bridge', () => {
 			let announcedProviderSubscriptionCount = 0
 			const { fakeWindow } = createFakeWindow({
 				handleRequest: (request) => {
-					const legacyCompatibilityProbe = (signerCase.name === 'Ambire' || signerCase.name === 'Rabby')
-						&& request.params?.length === 2 && request.params[1] === 'NotRecognizedSigner'
-					if (request.method === 'connected_to_signer' && !legacyCompatibilityProbe) connectedSignerNames.push(request.params?.[1])
+					if (request.method === 'connected_to_signer' && request.params?.length === 3) connectedSignerNames.push(request.params[1])
 					return false
 				},
 			})
@@ -1567,7 +1581,7 @@ describe('inpage signer bridge', () => {
 		let announcedProviderSubscriptionCount = 0
 		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
 			handleRequest: (request) => {
-				if (request.method === 'connected_to_signer') connectedSignerNames.push(request.params?.[1])
+				if (request.method === 'connected_to_signer' && request.params?.length === 3) connectedSignerNames.push(request.params[1])
 				return false
 			},
 		})
@@ -2147,14 +2161,14 @@ describe('inpage signer bridge', () => {
 		}
 		const { fakeWindow } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
-				if (request.method === 'connected_to_signer') {
+				if (request.method === 'connected_to_signer' && request.params?.length === 3) {
 					signerName = request.params?.[1] as string
 					sendBackgroundMessage({
 						interceptorApproved: true,
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, signerProtocolVersion: 1 },
 					})
 					return true
 				}
@@ -2207,14 +2221,14 @@ describe('inpage signer bridge', () => {
 		}
 		const { fakeWindow } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
-				if (request.method === 'connected_to_signer') {
+				if (request.method === 'connected_to_signer' && request.params?.length === 3) {
 					signerName = request.params?.[1] as string
 					sendBackgroundMessage({
 						interceptorApproved: true,
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, signerProtocolVersion: 1 },
 					})
 					return true
 				}
@@ -2265,14 +2279,14 @@ describe('inpage signer bridge', () => {
 		}
 		const { fakeWindow } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
-				if (request.method === 'connected_to_signer') {
+				if (request.method === 'connected_to_signer' && request.params?.length === 3) {
 					signerName = request.params?.[1] as string
 					sendBackgroundMessage({
 						interceptorApproved: true,
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, signerProtocolVersion: 1 },
 					})
 					return true
 				}
@@ -2311,14 +2325,14 @@ describe('inpage signer bridge', () => {
 			interceptorErrorPayloads,
 		} = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
-				if (request.method === 'connected_to_signer') {
+				if (request.method === 'connected_to_signer' && request.params?.length === 3) {
 					signerName = request.params?.[1] as string
 					sendBackgroundMessage({
 						interceptorApproved: true,
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, signerProtocolVersion: 1 },
 					})
 					return true
 				}
@@ -2379,14 +2393,14 @@ describe('inpage signer bridge', () => {
 			sendBackgroundMessage,
 		} = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageInternal) => {
-				if (request.method === 'connected_to_signer') {
+				if (request.method === 'connected_to_signer' && request.params?.length === 3) {
 					signerName = request.params?.[1] as string
 					sendBackgroundMessageInternal({
 						interceptorApproved: true,
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, signerProtocolVersion: 1 },
 					})
 					return true
 				}
@@ -2450,14 +2464,14 @@ describe('inpage signer bridge', () => {
 			sendBackgroundMessage,
 		} = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageInternal) => {
-				if (request.method === 'connected_to_signer') {
+				if (request.method === 'connected_to_signer' && request.params?.length === 3) {
 					signerName = request.params?.[1] as string
 					sendBackgroundMessageInternal({
 						interceptorApproved: true,
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, signerProtocolVersion: 1 },
 					})
 					return true
 				}
@@ -2524,14 +2538,14 @@ describe('inpage signer bridge', () => {
 			sendBackgroundMessage,
 		} = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageInternal) => {
-				if (request.method === 'connected_to_signer') {
+				if (request.method === 'connected_to_signer' && request.params?.length === 3) {
 					signerName = request.params?.[1] as string
 					sendBackgroundMessageInternal({
 						interceptorApproved: true,
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, signerProtocolVersion: 1 },
 					})
 					return true
 				}
@@ -2596,14 +2610,14 @@ describe('inpage signer bridge', () => {
 			sendBackgroundMessage,
 		} = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageInternal) => {
-				if (request.method === 'connected_to_signer') {
+				if (request.method === 'connected_to_signer' && request.params?.length === 3) {
 					signerName = request.params?.[1] as string
 					sendBackgroundMessageInternal({
 						interceptorApproved: true,
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, signerProtocolVersion: 1 },
 					})
 					return true
 				}
@@ -2668,14 +2682,14 @@ describe('inpage signer bridge', () => {
 			sendBackgroundMessage,
 		} = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageInternal) => {
-				if (request.method === 'connected_to_signer') {
+				if (request.method === 'connected_to_signer' && request.params?.length === 3) {
 					signerName = request.params?.[1] as string
 					sendBackgroundMessageInternal({
 						interceptorApproved: true,
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, signerProtocolVersion: 1 },
 					})
 					return true
 				}
@@ -2737,14 +2751,14 @@ describe('inpage signer bridge', () => {
 		let signerName: string | undefined
 		const { fakeWindow } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
-				if (request.method === 'connected_to_signer') {
+				if (request.method === 'connected_to_signer' && request.params?.length === 3) {
 					signerName = request.params?.[1] as string
 					sendBackgroundMessage({
 						interceptorApproved: true,
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, signerProtocolVersion: 1 },
 					})
 					return true
 				}
@@ -2791,7 +2805,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, signerProtocolVersion: 1 },
 					})
 					return true
 				}
