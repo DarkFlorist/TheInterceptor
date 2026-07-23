@@ -4,7 +4,7 @@ import { getTabState, promoteRpcAsPrimary, setLatestUnexpectedError, updateInter
 import { changeSimulationMode, getSettings, trackPreviousActiveAddressForMakeMeRichList, updateWebsiteAccess } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleIterceptorError, installNewFilter, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHanders.js'
 import { changeActiveAddress, changePage, confirmDialog, removeTransactionOrSignedMessage, requestAccountsFromSigner, refreshPopupConfirmTransactionSimulation, confirmRequestAccess, changeInterceptorAccess, changeChainDialog, popupChangeActiveRpc, enableSimulationMode, addOrModifyAddressBookEntry, getAddressBookData, removeAddressBookEntry, refreshHomeData, interceptorAccessChangeAddressOrRefresh, refreshPopupConfirmTransactionMetadata, changeSettings, importSettings, exportSettings, setNewRpcList, simulateGovernanceContractExecutionOnPass, openNewTab, settingsOpened, changeAddOrModifyAddressWindowState, requestAbiAndNameFromBlockExplorer, openWebPage, disableInterceptor, requestNewHomeData, requestHomePageBootstrap, setEnsNameForHash, simulateGnosisSafeTransactionOnPass, retrieveWebsiteAccess, blockOrAllowExternalRequests, removeWebsiteAccess, allowOrPreventAddressAccessForWebsite, removeWebsiteAddressAccess, forceSetGasLimitForTransaction, changePreSimulationBlockTimeManipulation, setTransactionOrMessageBlockTimeManipulator, modifyMakeMeRich, requestMakeMeRichList, requestActiveAddresses, requestSimulationMode, requestLatestUnexpectedError, fetchSimulationStackRequestConfirmation, reportUnexpectedErrorInWindow, requestInterceptorSimulationInput, importSimulationStack, requestCompleteVisualizedSimulation, requestSimulationMetadata, requestIdentifyAddress, popupReadyAndListening } from './popupMessageHandlers.js'
-import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, type ResolvedSimulationState, type WebsiteCreatedEthereumUnsignedTransactionOrFailed, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, type SimulationStateInput, type WebsiteCreatedEthereumUnsignedTransactionOrFailed, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, interceptorAccessMetadataRefresh, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
@@ -30,7 +30,7 @@ import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, w
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { decodeEthereumError } from '../utils/errorDecoding.js'
-import { buildExecutionSimulationStateFromPreparedInput, buildSimulationStateFromPreparedInput, createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, prepareSimulationInputForRpc, visualizeSimulatorState } from './simulationUpdating.js'
+import { buildExecutionSimulationStateFromPreparedInput, createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, prepareSimulationInputForRpc, visualizeSimulatorState } from './simulationUpdating.js'
 import { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -53,14 +53,23 @@ const INTERNAL_PROVIDER_METHODS = [
 
 const isInternalProviderMethod = (method: string) => INTERNAL_PROVIDER_METHODS.some((internalMethod) => internalMethod === method)
 
-export async function getUpdatedSimulationState(ethereum: EthereumClientService) {
+export async function getUpdatedSimulationState(ethereum: EthereumClientService, simulationInput?: SimulationStateInput) {
 	try {
-		return toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(await getCurrentSimulationInput(), ethereum))
+		return toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(simulationInput ?? await getCurrentSimulationInput(), ethereum))
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return PASSTHROUGH_STATE
 		await reportUnexpectedError(error, { code: 'simulation_state_refresh_failed' })
 	}
 	return PASSTHROUGH_STATE
+}
+
+export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClientService, simulationMode: boolean) {
+	if (!simulationMode) return { simulationInput: PASSTHROUGH_STATE, simulationState: PASSTHROUGH_STATE }
+	const simulationInput = await getCurrentSimulationInput()
+	return {
+		simulationInput: toResolvedSimulationInput(simulationInput),
+		simulationState: await getUpdatedSimulationState(ethereum, simulationInput),
+	}
 }
 
 let confirmTransactionAbortController = new AbortController()
@@ -169,7 +178,6 @@ async function handleRPCRequest(
 	resetSimulationServices: ResetSimulationServices,
 	getSimulationInput: () => Promise<ResolvedSimulationInput>,
 	getExecutionSimulationState: () => Promise<ResolvedExecutionSimulationState>,
-	getSimulationState: () => Promise<ResolvedSimulationState>,
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	website: Website,
@@ -208,7 +216,6 @@ async function handleRPCRequest(
 	}
 	const withSimulationInput = async (handler: (simulationInput: ResolvedSimulationInput) => Promise<RPCReply>) => await handler(await getSimulationInput())
 	const withExecutionSimulationState = async (handler: (simulationState: ResolvedExecutionSimulationState) => Promise<RPCReply>) => await handler(await getExecutionSimulationState())
-	const withSimulationState = async (handler: (simulationState: ResolvedSimulationState) => Promise<RPCReply>) => await handler(await getSimulationState())
 	if (!accountOnlyMethod) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
 	switch (parsedRequest.method) {
 		case 'eth_getBlockByHash': return await withSimulationInput((simulationInput) => getBlockByHash(ethereum, simulationInput, parsedRequest))
@@ -237,7 +244,7 @@ async function handleRPCRequest(
 		case 'eth_requestAccounts': return await getAccounts(activeAddress)
 		case 'eth_gasPrice': return await gasPrice(ethereum)
 		case 'eth_getTransactionCount': return await withSimulationInput((simulationInput) => getTransactionCount(ethereum, simulationInput, parsedRequest))
-		case 'interceptor_getSimulationStack': return await withSimulationState((simulationState) => requestInterceptorSimulatorStack(simulationState, websiteTabConnections, parsedRequest, website, request, socket))
+		case 'interceptor_getSimulationStack': return await requestInterceptorSimulatorStack(await getUpdatedSimulationStackSnapshot(ethereum, settings.simulationMode), websiteTabConnections, parsedRequest, website, request, socket)
 		case 'eth_simulateV1': return await withSimulationInput((simulationInput) => ethSimulateV1(ethereum, simulationInput, parsedRequest))
 		case 'wallet_addEthereumChain': {
 			if (forwardToSigner) return getForwardingMessage(parsedRequest)
@@ -651,7 +658,6 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 		const settings = await getSettings()
 		let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
 		let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
-		let simulationStatePromise: Promise<ResolvedSimulationState> | undefined
 		const getSimulationInput = async () => {
 			if (!settings.simulationMode) return PASSTHROUGH_STATE
 			if (simulationInputPromise === undefined) simulationInputPromise = (async () => toResolvedSimulationInput(await prepareSimulationInputForRpc(await getCurrentSimulationInput(), ethereum)))()
@@ -666,16 +672,7 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 			})()
 			return await executionSimulationStatePromise
 		}
-		const getSimulationState = async () => {
-			if (!settings.simulationMode) return PASSTHROUGH_STATE
-			if (simulationStatePromise === undefined) simulationStatePromise = (async () => {
-				const simulationInput = await getSimulationInput()
-				if (simulationInput.kind === 'passthrough') return PASSTHROUGH_STATE
-				return toResolvedSimulationState(await buildSimulationStateFromPreparedInput(simulationInput.value, ethereum))
-			})()
-			return await simulationStatePromise
-		}
-		const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, getSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress, publishRpcConnectionStatus)
+		const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress, publishRpcConnectionStatus)
 		const refreshedSettings = await persistApprovedAccountsForAccountRequest(
 			ethereum,
 			tokenPriceService,

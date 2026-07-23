@@ -1,4 +1,4 @@
-import { changeActiveAddressAndChain, changeActiveRpc, getUpdatedSimulationState, refreshConfirmTransactionSimulation } from './background.js'
+import { changeActiveAddressAndChain, changeActiveRpc, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, refreshConfirmTransactionSimulation } from './background.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeCurrentAddressRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
@@ -1071,8 +1071,8 @@ async function buildHomePageUpdate(
 }
 
 export async function fetchSimulationStackRequestConfirmation(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
-	const simulationState = await getUpdatedSimulationState(ethereumClientService)
-	await resolveFetchSimulationStackRequest(simulationState, websiteTabConnections, confirmation)
+	const snapshot = await getUpdatedSimulationStackSnapshot(ethereumClientService, (await getSettings()).simulationMode)
+	await resolveFetchSimulationStackRequest(snapshot, websiteTabConnections, confirmation)
 }
 
 export async function reportUnexpectedErrorInWindow(parsedRequest: UnexpectedErrorOccured) {
