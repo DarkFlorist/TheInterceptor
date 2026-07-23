@@ -1,7 +1,7 @@
 import { METAMASK_ERROR_ALREADY_PENDING } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
-import { Semaphore } from '../../utils/semaphore.js'
+import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAssociatedAddresses, persistWebsiteAccessChange, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
 import { changeActiveAddressAndChain, handleInterceptedRequest, refuseAccess } from '../background.js'
@@ -10,7 +10,7 @@ import { getActiveAddressEntry, getActiveAddresses } from '../metadataUtils.js'
 import { getSettings } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
-import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect } from '../messageSending.js'
+import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
 import type { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import type { PendingAccessRequest } from '../../types/accessRequest.js'
 import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -20,6 +20,8 @@ import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.
 import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { isAccountConnectionMethod } from '../accountRequestMethods.js'
+import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
+import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, signerConnectionReplacedError, signerUnavailableError, tabHasApprovedWebsiteConnection, waitForConfirmedSignerStateToken } from '../signerStateOwnership.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab
@@ -30,6 +32,15 @@ type OpenedDialogWithListeners = {
 let openedDialog: OpenedDialogWithListeners 
 
 const pendingInterceptorAccessSemaphore = new Semaphore(1)
+// Signer account replies identify the tab-wide signer owner but not the originating request. Keep one round trip
+// active per tab so requests from sibling frames cannot settle each other.
+const serializeSignerAccountRequest = createScopedKeyedSerialExecutor<WebsiteTabConnections, number>()
+
+
+type SignerAccountsRequestResult = {
+	readonly accounts: readonly bigint[]
+	readonly error: ErrorWithCodeAndOptionalData | undefined
+}
 
 const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => await pendingInterceptorAccessSemaphore.execute(async () => { // check if user has closed the window on their own, if so, reject signature
 	if (openedDialog === undefined || openedDialog.popupOrTab.id !== popupOrTabs.id || openedDialog.popupOrTab.type !== popupOrTabs.type) return
@@ -130,27 +141,62 @@ export async function updateInterceptorAccessViewWithPendingRequests() {
 	} })
 }
 
-export async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, requestAccounts = true) {
-	const tabState = await getTabState(socket.tabId)
-	if (tabState.signerAccounts.length !== 0) return tabState.signerAccounts
+async function requestSignerAccountsFromSigner(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, requestAccounts: boolean, onlyIfUnavailable: boolean) {
+	return await serializeSignerAccountRequest(websiteTabConnections, socket.tabId, async () => {
+		const signerStateToken = await waitForConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+		if (signerStateToken === undefined) return { accounts: [], error: signerUnavailableError }
+		const tabState = await getTabState(socket.tabId)
+		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return { accounts: [], error: signerConnectionReplacedError }
+		if (onlyIfUnavailable && tabState.signerAccounts.length !== 0) return { accounts: tabState.signerAccounts, error: undefined }
 
-	const future = new Future<void>
-	const listener = createInternalMessageListener( (message: WindowMessage) => {
-		if (message.method === 'window_signer_accounts_changed' && websiteSocketToString(message.data.socket) === websiteSocketToString(socket)) return future.resolve()
+		const future = new Future<ErrorWithCodeAndOptionalData | undefined>
+		const listener = createInternalMessageListener( (message: WindowMessage) => {
+			if (message.method !== 'window_signer_accounts_changed') return
+			if (websiteSocketToString(message.data.socket) !== websiteSocketToString(signerStateToken.socket)) return
+			const currentSignerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+			const messageMatchesCurrentSignerState = currentSignerStateToken !== undefined
+				&& currentSignerStateToken.port === signerStateToken.port
+				&& message.data.signerStateOwnerGeneration === currentSignerStateToken.ownerGeneration
+				&& message.data.signerProviderGeneration === currentSignerStateToken.signerProviderGeneration
+			const messageSettlesInitialSignerState = message.data.signerStateOwnerGeneration === signerStateToken.ownerGeneration
+				&& message.data.signerProviderGeneration === signerStateToken.signerProviderGeneration
+				&& currentSignerStateToken?.port !== signerStateToken.port
+			if (messageMatchesCurrentSignerState) return future.resolve(message.data.error)
+			if (messageSettlesInitialSignerState) return future.resolve(message.data.error ?? signerConnectionReplacedError)
+		})
+		const channel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
+		let error: ErrorWithCodeAndOptionalData | undefined
+		try {
+			channel.addEventListener('message', listener)
+			const requestSignerAccountsMessage = requestAccounts
+				? { type: 'result' as const, method: 'request_signer_to_eth_requestAccounts' as const, result: [] as const }
+				: { type: 'result' as const, method: 'request_signer_to_eth_accounts' as const, result: [] as const }
+			const messageSent = isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)
+				&& sendSubscriptionReplyOrCallBackToPort(signerStateToken.port, requestSignerAccountsMessage)
+			if (messageSent) error = await future
+			else error = signerConnectionReplacedError
+		} finally {
+			channel.removeEventListener('message', listener)
+			channel.close()
+		}
+		const completedSignerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+		if (completedSignerStateToken?.port !== signerStateToken.port) return { accounts: [], error: error ?? signerConnectionReplacedError }
+		return { accounts: (await getTabState(socket.tabId)).signerAccounts, error }
 	})
-	const channel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
-	try {
-		channel.addEventListener('message', listener)
-		const requestSignerAccountsMessage = requestAccounts
-			? { type: 'result' as const, method: 'request_signer_to_eth_requestAccounts' as const, result: [] as const }
-			: { type: 'result' as const, method: 'request_signer_to_eth_accounts' as const, result: [] as const }
-		const messageSent = await sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect(websiteTabConnections, socket, requestSignerAccountsMessage)
-		if (messageSent) await future
-	} finally {
-		channel.removeEventListener('message', listener)
-		channel.close()
+}
+
+export async function askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, requestAccounts = true): Promise<SignerAccountsRequestResult> {
+	return await requestSignerAccountsFromSigner(websiteTabConnections, socket, requestAccounts, true)
+}
+
+export async function refreshSignerAccountsFromApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections, requestAccounts: boolean) {
+	const accountRequests: Promise<SignerAccountsRequestResult>[] = []
+	for (const tabId of websiteTabConnections.keys()) {
+		const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, tabId)
+		if (signerStateToken === undefined || !tabHasApprovedWebsiteConnection(websiteTabConnections, tabId)) continue
+		accountRequests.push(requestSignerAccountsFromSigner(websiteTabConnections, signerStateToken.socket, requestAccounts, false))
 	}
-	return (await getTabState(socket.tabId)).signerAccounts
+	await Promise.all(accountRequests)
 }
 
 export async function requestAccessFromUser(
@@ -401,8 +447,8 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 				return tabState.signerAccounts[0]
 			}
 			if (message.data.newActiveAddress === 'signer') {
-				const signerAccounts = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, message.data.socket)
-				return signerAccounts[0]
+				const signerAccountsResult = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, message.data.socket)
+				return signerAccountsResult.accounts[0]
 			}
 			return message.data.newActiveAddress
 		}

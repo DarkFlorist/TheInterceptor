@@ -131,18 +131,20 @@ export const SimulatedTransaction = funtypes.ReadonlyObject({
 	tokenBalancesAfter: TokenBalancesAfter,
 })
 
-export type WebsiteCreatedEthereumUnsignedTransaction = funtypes.Static<typeof WebsiteCreatedEthereumUnsignedTransaction>
-export const WebsiteCreatedEthereumUnsignedTransaction = funtypes.ReadonlyObject({
+export type WebsiteCreatedEthereumTransaction = funtypes.Static<typeof WebsiteCreatedEthereumTransaction>
+export const WebsiteCreatedEthereumTransaction = funtypes.ReadonlyObject({
 	website: Website,
 	created: EthereumTimestamp,
 	originalRequestParameters: OriginalSendRequestParameters,
 	transactionIdentifier: EthereumQuantity,
 	success: funtypes.Literal(true),
 	transaction: EthereumUnsignedTransaction,
-})
+}).And(funtypes.ReadonlyPartial({
+	signedTransaction: EthereumSendableSignedTransaction,
+}))
 
-export type FailedToCreateWebsiteCreatedEthereumUnsignedTransaction = funtypes.Static<typeof FailedToCreateWebsiteCreatedEthereumUnsignedTransaction>
-export const FailedToCreateWebsiteCreatedEthereumUnsignedTransaction = funtypes.ReadonlyObject({
+export type FailedToCreateWebsiteCreatedEthereumTransaction = funtypes.Static<typeof FailedToCreateWebsiteCreatedEthereumTransaction>
+export const FailedToCreateWebsiteCreatedEthereumTransaction = funtypes.ReadonlyObject({
 	website: Website,
 	created: EthereumTimestamp,
 	originalRequestParameters: OriginalSendRequestParameters,
@@ -151,8 +153,8 @@ export const FailedToCreateWebsiteCreatedEthereumUnsignedTransaction = funtypes.
 	error: ErrorWithCodeAndOptionalData
 })
 
-export type WebsiteCreatedEthereumUnsignedTransactionOrFailed = funtypes.Static<typeof WebsiteCreatedEthereumUnsignedTransactionOrFailed>
-export const WebsiteCreatedEthereumUnsignedTransactionOrFailed = funtypes.Union(WebsiteCreatedEthereumUnsignedTransaction, FailedToCreateWebsiteCreatedEthereumUnsignedTransaction)
+export type WebsiteCreatedEthereumTransactionOrFailed = funtypes.Static<typeof WebsiteCreatedEthereumTransactionOrFailed>
+export const WebsiteCreatedEthereumTransactionOrFailed = funtypes.Union(WebsiteCreatedEthereumTransaction, FailedToCreateWebsiteCreatedEthereumTransaction)
 
 export type SignedMessageTransaction = funtypes.Static<typeof SignedMessageTransaction>
 export const SignedMessageTransaction = funtypes.ReadonlyObject({
@@ -306,7 +308,9 @@ export const TransactionWithAddressBookEntries = funtypes.Intersect(
 				r: EthereumQuantity,
 				s: EthereumQuantity,
 				yParity: funtypes.Union(funtypes.Literal('even'), funtypes.Literal('odd')),
-			})),
+			}).And(funtypes.ReadonlyPartial({
+				authority: EthereumAddress,
+			}))),
 		}),
 		funtypes.ReadonlyObject({
 			type: funtypes.Literal('4844'),

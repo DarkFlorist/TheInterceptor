@@ -12,7 +12,7 @@ import type {
 	DecodeEventLogReturnType,
 	DecodeFunctionDataReturnType,
 	Hex,
-} from 'viem'
+} from './ethereumPrimitives.js'
 import {
 	parseAbiItem,
 	parseAbiParameters,
@@ -23,9 +23,10 @@ import {
 	formatAbiItem,
 	concat,
 	bytesToHex,
+	isAbiDataDecodeError,
 	toEventSelector,
 	toFunctionSelector,
-} from './viem.js'
+} from './ethereumPrimitives.js'
 
 export type AbiLike = string | readonly (string | AbiItem)[]
 
@@ -252,16 +253,6 @@ export function decodeFunctionOutput(abi: Abi, functionName: string, data: Hex |
 	return decodeFunctionOutputUnchecked(abi, functionName, data)
 }
 
-const viemAbiDataDecodeErrorNames = new Set([
-	'AbiDecodingDataSizeInvalidError',
-	'AbiDecodingDataSizeTooSmallError',
-	'AbiDecodingZeroDataError',
-	'InvalidBytesBooleanError',
-	'PositionOutOfBoundsError',
-])
-
-const isViemAbiDataDecodeError = (error: unknown) => error instanceof Error && viemAbiDataDecodeErrorNames.has(error.name)
-
 export const decodeFunctionOutputSafely = <T>(
 	abi: Abi,
 	functionName: string,
@@ -272,7 +263,7 @@ export const decodeFunctionOutputSafely = <T>(
 	try {
 		decoded = decodeFunctionOutput(abi, functionName, data)
 	} catch (error) {
-		if (!isViemAbiDataDecodeError(error)) throw error
+		if (!isAbiDataDecodeError(error)) throw error
 		return undefined
 	}
 	return isExpectedType(decoded) ? decoded : undefined
