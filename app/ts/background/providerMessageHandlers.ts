@@ -19,18 +19,25 @@ import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 
-function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
+function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number | undefined) {
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return undefined
 	const token = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 	if (token === undefined) return undefined
 	if (token.socket.connectionName !== socket.connectionName || token.port !== port) return undefined
-	if (token.signerProviderGeneration !== signerProviderGeneration) return undefined
+	if (signerProviderGeneration !== undefined && token.signerProviderGeneration !== signerProviderGeneration) return undefined
 	return token
 }
 
 async function getConnectedToSignerResult() {
-	return { type: 'result' as const, method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode() } }
+	return {
+		type: 'result' as const,
+		method: 'connected_to_signer' as const,
+		result: {
+			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
+			signerProviderGenerationSupported: true,
+		},
+	}
 }
 
 function hasSignerCallbackAccess(websiteTabConnections: WebsiteTabConnections, tabId: number, approval: ApprovalState) {
@@ -154,32 +161,33 @@ export async function walletSwitchEthereumChainReply(ethereum: EthereumClientSer
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
 		const currentSignerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 		if (currentSignerStateToken?.socket.connectionName !== socket.connectionName || currentSignerStateToken.port !== port) return returnValue
-		const pendingSignerStateToken = getPendingSignerChainChangeTokenForCallback(port, params.signerProviderGeneration, params.chainId)
+		const signerProviderGeneration = params.signerProviderGeneration ?? currentSignerStateToken.signerProviderGeneration
+		const pendingSignerStateToken = getPendingSignerChainChangeTokenForCallback(port, signerProviderGeneration, params.chainId)
 		const callbackSignerStateToken = pendingSignerStateToken
-			?? (currentSignerStateToken.signerProviderGeneration === params.signerProviderGeneration ? currentSignerStateToken : undefined)
+			?? (currentSignerStateToken.signerProviderGeneration === signerProviderGeneration ? currentSignerStateToken : undefined)
 		if (callbackSignerStateToken === undefined) return returnValue
 		const solicitedReply = isPendingSignerChainChangeReply(callbackSignerStateToken, params.chainId)
 		// A solicited wallet reply retains the tab authorization captured when its command was dispatched.
 		// Unsolicited chainChanged-style updates still require a currently approved frame.
 		if (!solicitedReply && !hasSignerCallbackAccess(websiteTabConnections, socket.tabId, approval)) return returnValue
-		if (currentSignerStateToken.signerProviderGeneration !== params.signerProviderGeneration) {
+		if (currentSignerStateToken.signerProviderGeneration !== signerProviderGeneration) {
 			resolveSignerChainChange(callbackSignerStateToken, {
 				method: 'popup_signerChangeChainDialog',
-				data: [{ accept: false, chainId: params.chainId, error: signerConnectionReplacedError, signerProviderGeneration: params.signerProviderGeneration }],
+				data: [{ accept: false, chainId: params.chainId, error: signerConnectionReplacedError, signerProviderGeneration }],
 			})
 			return returnValue
 		}
 		if (params.accept) await changeSignerChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, currentSignerStateToken, params.chainId, 'hasAccess', activeAddress)
 		resolveSignerChainChange(callbackSignerStateToken, {
 			method: 'popup_signerChangeChainDialog',
-			data: [params],
+			data: [{ ...params, signerProviderGeneration }],
 		})
 		return returnValue
 	})
 }
 
 export async function connectedToSigner(_ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
-	const [signerConnected, signerName, signerProviderGeneration] = ConnectedToSigner.parse(request).params
+	const [signerConnected, signerName, reportedSignerProviderGeneration] = ConnectedToSigner.parse(request).params
 	// MV2 and test ports may omit frameId. Treat those as the top frame, while preventing an
 	// unapproved MV3 child frame from taking ownership of tab-wide signer state.
 	const isTopFrame = port.sender?.frameId === undefined || port.sender.frameId === 0
@@ -195,6 +203,9 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 			return await getConnectedToSignerResult()
 		}
 		const previousSignerProviderGeneration = tabConnection.signerStateOwner.providerGeneration
+		// A two-element report is the compatibility handshake used by both pre-generation inpage
+		// scripts and a newly updated inpage script that may still be talking to an older worker.
+		const signerProviderGeneration = reportedSignerProviderGeneration ?? (previousSignerProviderGeneration ?? 0) + 1
 		if (tabConnection.signerStateOwner.confirmed
 			&& previousSignerProviderGeneration !== undefined
 			&& signerProviderGeneration < previousSignerProviderGeneration) {
@@ -219,7 +230,9 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 		confirmSignerState(tabConnection, signerProviderGeneration)
 		await setDefaultSignerName(signerName)
 		await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
-		if (hasSignerCallbackAccess(websiteTabConnections, socket.tabId, approval)) {
+		// A legacy report may be the capability probe from a current inpage script. Wait for its
+		// generation-aware follow-up before requesting callbacks that the current worker validates.
+		if (reportedSignerProviderGeneration !== undefined && hasSignerCallbackAccess(websiteTabConnections, socket.tabId, approval)) {
 			const settings = await getSettings()
 			if (!signerMissing && (!settings.simulationMode || settings.useSignersAddressAsActiveAddress)) {
 				sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_chainId', result: [] })
@@ -239,12 +252,16 @@ export async function signerReply(ethereum: EthereumClientService, tokenPriceSer
 		const requestSocket = request.uniqueRequestIdentifier.requestSocket
 		const uniqueRequestIdentifier = { requestId: params.forwardRequest.requestId, requestSocket }
 		const tabConnection = websiteTabConnections.get(socket.tabId)
+		const currentSignerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+		const signerProviderGenerationChanged = params.signerProviderGeneration !== undefined
+			&& currentSignerStateToken?.signerProviderGeneration !== params.signerProviderGeneration
 		// Signing is routed back through the frame that originated the request, which may be a child frame.
-		// Unlike tab-wide account and chain cache updates, this reply is scoped by its request id and exact port;
-		// the inpage bridge converts a provider-generation change into a terminal disconnected error.
+		// The request remains scoped by its request id and exact child-frame port, while the provider generation
+		// belongs to the tab-wide signer owner. Legacy replies omit that generation and retain the socket checks.
 		if (!isCurrentWebsiteConnection(tabConnection, socket, port)
 			|| requestSocket.tabId !== socket.tabId
-			|| requestSocket.connectionName !== socket.connectionName) {
+			|| requestSocket.connectionName !== socket.connectionName
+			|| signerProviderGenerationChanged) {
 			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...signerConnectionReplacedError } }))
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 			return doNotReply

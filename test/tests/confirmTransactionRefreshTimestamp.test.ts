@@ -481,7 +481,7 @@ test('accepts a signer reply from the current approved child-frame port', async 
 		method: 'signer_reply',
 		params: [{
 			success: true,
-			signerProviderGeneration: 12,
+			signerProviderGeneration: 8,
 			forwardRequest: {
 				type: 'forwardToSigner',
 				replyWithSignersReply: true,
@@ -502,6 +502,65 @@ test('accepts a signer reply from the current approved child-frame port', async 
 	const childReply = childMessages.find((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === childRequestIdentifier.requestId)
 	if (!isRecord(childReply)) throw new Error('Missing child-frame signer reply')
 	assert.equal(childReply.result, modules.EthereumBytes32.serialize(signedTransaction.hash))
+})
+
+test('rejects a signer reply from a replaced provider on the current child-frame port', async () => {
+	const topSocket = { tabId: 1, connectionName: 40n }
+	const childSocket = { tabId: 1, connectionName: 41n }
+	const childRequestIdentifier = { requestId: 77, requestSocket: childSocket }
+	const topMessages: unknown[] = []
+	const childMessages: unknown[] = []
+	const topPort = createWebsitePort(topSocket, 0, topMessages)
+	const childPort = createWebsitePort(childSocket, 2, childMessages)
+	const websiteOrigin = 'https://example.com'
+	const websiteTabConnections = new Map([[topSocket.tabId, {
+		signerStateOwner: {
+			connectionName: topSocket.connectionName,
+			confirmed: true,
+			generation: 3,
+			providerGeneration: 8,
+		},
+		connections: {
+			[modules.websiteSocketToString(topSocket)]: { port: topPort, socket: topSocket, websiteOrigin, approved: true, wantsToConnect: true },
+			[modules.websiteSocketToString(childSocket)]: { port: childPort, socket: childSocket, websiteOrigin, approved: true, wantsToConnect: true },
+		},
+	}]])
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			uniqueRequestIdentifier: childRequestIdentifier,
+			simulationMode: false,
+			approvalStatus: { status: 'WaitingForSigner' },
+		}],
+	})
+
+	await modules.signerReply(simulator.ethereum, simulator.tokenPriceService, () => undefined, websiteTabConnections, childPort, {
+		method: 'signer_reply',
+		params: [{
+			success: true,
+			signerProviderGeneration: 7,
+			forwardRequest: {
+				type: 'forwardToSigner',
+				replyWithSignersReply: true,
+				method: pendingTransaction.originalRequestParameters.method,
+				params: pendingTransaction.originalRequestParameters.params,
+				requestId: childRequestIdentifier.requestId,
+			},
+			reply: modules.EthereumBytes32.serialize(signedTransaction.hash),
+		}],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: 78, requestSocket: childSocket },
+	}, 'hasAccess', activeAddress)
+
+	const retainedRequest = (await modules.getPendingTransactionsAndMessages()).at(0)
+	assert.equal(retainedRequest?.approvalStatus.status, 'SignerError')
+	if (retainedRequest?.approvalStatus.status !== 'SignerError') throw new Error('Missing replaced-signer error')
+	assert.equal(retainedRequest.approvalStatus.code, 4900)
+	assert.equal(retainedRequest.approvalStatus.message, 'Signer connection changed before the previous wallet replied.')
+	assert.equal(topMessages.length, 0)
+	assert.equal(childMessages.some((message) => isRecord(message) && message.method === 'eth_sendTransaction'), false)
 })
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {

@@ -19,18 +19,19 @@ import { SimulateGnosisSafeTransaction as SharedSimulateGnosisSafeTransaction, S
 import { EthSimulateV1Result } from './ethSimulate-types.js'
 
 type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
-const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
-	funtypes.ReadonlyObject({
-		accept: funtypes.Literal(true),
-		chainId: EthereumQuantity,
-		signerProviderGeneration: funtypes.Number,
-	}),
-	funtypes.ReadonlyObject({
-		accept: funtypes.Literal(false),
-		chainId: EthereumQuantity,
-		error: ErrorWithCodeAndOptionalData,
-		signerProviderGeneration: funtypes.Number,
-	})
+const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Intersect(
+	funtypes.ReadonlyPartial({ signerProviderGeneration: funtypes.Number }),
+	funtypes.Union(
+		funtypes.ReadonlyObject({
+			accept: funtypes.Literal(true),
+			chainId: EthereumQuantity,
+		}),
+		funtypes.ReadonlyObject({
+			accept: funtypes.Literal(false),
+			chainId: EthereumQuantity,
+			error: ErrorWithCodeAndOptionalData,
+		})
+	),
 ))
 
 export type WalletSwitchEthereumChainReply = funtypes.Static<typeof WalletSwitchEthereumChainReply>
@@ -46,7 +47,13 @@ const InpageScriptRequestWithoutIdentifier = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_reply'), result: funtypes.Unknown }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts_reply'), result: funtypes.Literal('0x') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_chainChanged'), result: funtypes.Literal('0x') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('connected_to_signer'), result: funtypes.ReadonlyObject({ metamaskCompatibilityMode: funtypes.Boolean }) }),
+	funtypes.ReadonlyObject({
+		method: funtypes.Literal('connected_to_signer'),
+		result: funtypes.ReadonlyObject({
+			metamaskCompatibilityMode: funtypes.Boolean,
+			signerProviderGenerationSupported: funtypes.Boolean,
+		}),
+	}),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_switchEthereumChain_reply'), result: funtypes.Literal('0x') }),
 )
 
@@ -400,7 +407,10 @@ export const SignerChainChangeConfirmation = funtypes.ReadonlyObject({
 export type ConnectedToSigner = funtypes.Static<typeof ConnectedToSigner>
 export const ConnectedToSigner = funtypes.ReadonlyObject({
 	method: funtypes.Literal('connected_to_signer'),
-	params: funtypes.Tuple(funtypes.Boolean, SignerName, funtypes.Number),
+	params: funtypes.Union(
+		funtypes.Tuple(funtypes.Boolean, SignerName),
+		funtypes.Tuple(funtypes.Boolean, SignerName, funtypes.Number),
+	),
 }).asReadonly()
 
 
@@ -414,7 +424,7 @@ export type SignerReply = funtypes.Static<typeof SignerReply>
 export const SignerReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('signer_reply'),
 	params: funtypes.Tuple(funtypes.Intersect(
-		funtypes.ReadonlyObject({ signerProviderGeneration: funtypes.Number }),
+		funtypes.ReadonlyPartial({ signerProviderGeneration: funtypes.Number }),
 		funtypes.Union(
 			funtypes.ReadonlyObject({
 				success: funtypes.Literal(true),

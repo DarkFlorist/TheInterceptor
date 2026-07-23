@@ -130,7 +130,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, signerProviderGenerationSupported: true },
 					})
 					return
 				case 'InterceptorError':
@@ -516,16 +516,16 @@ describe('inpage signer bridge', () => {
 	test('settles signer account discovery when no signer initializes', async () => {
 		const connectedToSignerParams: unknown[][] = []
 		const { fakeWindow, backgroundEthAccountsReplies, sendBackgroundMessage } = createFakeWindow({
-			handleRequest: (request, sendBackgroundReply) => {
-				if (request.method !== 'connected_to_signer') return false
-				connectedToSignerParams.push(request.params ?? [])
-				sendBackgroundReply({
-					interceptorApproved: true,
-					requestId: request.requestId,
-					type: 'result',
-					method: 'connected_to_signer',
-					result: { metamaskCompatibilityMode: true },
-				})
+				handleRequest: (request, sendBackgroundReply) => {
+					if (request.method !== 'connected_to_signer') return false
+					connectedToSignerParams.push(request.params ?? [])
+					sendBackgroundReply({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: 'connected_to_signer',
+						result: { metamaskCompatibilityMode: true, signerProviderGenerationSupported: true },
+					})
 				return true
 			},
 		})
@@ -548,7 +548,7 @@ describe('inpage signer bridge', () => {
 			signerUnavailable: true,
 			error: { code: 4900, message: 'No signer wallet is available to this page. Enable your wallet extension for this site, then try again.' },
 		}])
-		assert.deepEqual(connectedToSignerParams, [[false, 'NoSigner', 1]])
+		assert.deepEqual(connectedToSignerParams, [[false, 'NoSigner']])
 	})
 
 	test('reports a fresh signer epoch when the background requests reconnect status', async () => {
@@ -562,7 +562,7 @@ describe('inpage signer bridge', () => {
 					requestId: request.requestId,
 					type: 'result',
 					method: 'connected_to_signer',
-					result: { metamaskCompatibilityMode: true },
+					result: { metamaskCompatibilityMode: true, signerProviderGenerationSupported: true },
 				})
 				return true
 			},
@@ -579,13 +579,53 @@ describe('inpage signer bridge', () => {
 			await waitFor(() => connectedToSignerParams.length === 2)
 		})
 
-		const firstGeneration = connectedToSignerParams[0]?.[2]
 		const secondGeneration = connectedToSignerParams[1]?.[2]
+		assert.equal(connectedToSignerParams[0]?.length, 2)
 		assert.equal(connectedToSignerParams[1]?.[1], 'MetaMask')
-		assert.equal(typeof firstGeneration, 'number')
 		assert.equal(typeof secondGeneration, 'number')
-		if (typeof firstGeneration !== 'number' || typeof secondGeneration !== 'number') throw new Error('Missing signer provider generation')
-		assert.equal(secondGeneration > firstGeneration, true)
+		if (typeof secondGeneration !== 'number') throw new Error('Missing signer provider generation')
+		assert.equal(secondGeneration > 0, true)
+	})
+
+	test('uses legacy signer callback payloads when an older background does not advertise generation support', async () => {
+		const connectedToSignerParams: unknown[][] = []
+		const { backgroundEthAccountsReplies, fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request, sendBackgroundReply) => {
+				if (request.method !== 'connected_to_signer') return false
+				connectedToSignerParams.push(request.params ?? [])
+				sendBackgroundReply({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'connected_to_signer',
+					result: { metamaskCompatibilityMode: true },
+				})
+				return true
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?legacy-background-signer-protocol', async () => {
+			await waitFor(() => connectedToSignerParams.length === 1)
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'request_signer_connection_status',
+				result: [],
+			})
+			await waitFor(() => connectedToSignerParams.length === 2)
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'request_signer_to_eth_accounts',
+				result: [],
+			})
+			await waitFor(() => backgroundEthAccountsReplies.length === 1)
+		})
+
+		assert.deepEqual(connectedToSignerParams.map((params) => params.length), [2, 2])
+		const accountsReply = backgroundEthAccountsReplies.at(0)
+		if (accountsReply === undefined) throw new Error('Missing signer accounts reply')
+		assert.equal('signerProviderGeneration' in accountsReply, false)
 	})
 
 	test('reports reconnect status without waiting for a lost previous status reply', async () => {
@@ -600,7 +640,7 @@ describe('inpage signer bridge', () => {
 					requestId: request.requestId,
 					type: 'result',
 					method: 'connected_to_signer',
-					result: { metamaskCompatibilityMode: true },
+					result: { metamaskCompatibilityMode: true, signerProviderGenerationSupported: true },
 				})
 				return true
 			},
@@ -627,12 +667,7 @@ describe('inpage signer bridge', () => {
 			await waitFor(() => backgroundEthAccountsReplies.length === 1)
 		})
 
-		const firstGeneration = connectedToSignerParams[0]?.[2]
-		const secondGeneration = connectedToSignerParams[1]?.[2]
-		assert.equal(typeof firstGeneration, 'number')
-		assert.equal(typeof secondGeneration, 'number')
-		if (typeof firstGeneration !== 'number' || typeof secondGeneration !== 'number') throw new Error('Missing signer provider generation')
-		assert.equal(secondGeneration > firstGeneration, true)
+		assert.deepEqual(connectedToSignerParams.map((params) => params.length), [2, 2])
 	})
 
 	test('settles a pending chain switch when the signer provider changes', async () => {
@@ -1290,7 +1325,7 @@ describe('inpage signer bridge', () => {
 			const announcedSignerRequests: string[] = []
 			const { fakeWindow } = createFakeWindow({
 				handleRequest: (request) => {
-					if (request.method === 'connected_to_signer') connectedSignerNames.push(request.params?.[1])
+					if (request.method === 'connected_to_signer' && (request.params?.length === 3 || request.params?.[1] !== 'NotRecognizedSigner')) connectedSignerNames.push(request.params?.[1])
 					return false
 				},
 			})
@@ -1325,8 +1360,65 @@ describe('inpage signer bridge', () => {
 				await waitFor(() => announcedSignerRequests.includes('eth_chainId'))
 			})
 
-			assert.deepEqual(connectedSignerNames, [walletCase.name, 'MetaMask'])
+			assert.deepEqual([...new Set(connectedSignerNames)], ['MetaMask'])
 		}
+	})
+
+	test('re-reports the selected MetaMask after a delayed legacy Ambire compatibility probe', async () => {
+		const connectedToSignerParams: unknown[][] = []
+		let replyToLegacyAmbireProbe: (() => void) | undefined
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundReply) => {
+				if (request.method !== 'connected_to_signer') return false
+				connectedToSignerParams.push(request.params ?? [])
+				const reply = () => sendBackgroundReply({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'connected_to_signer',
+					result: { metamaskCompatibilityMode: true, signerProviderGenerationSupported: true },
+				})
+				if (request.params?.length === 2 && request.params[1] === 'NotRecognizedSigner' && replyToLegacyAmbireProbe === undefined) {
+					replyToLegacyAmbireProbe = reply
+					return true
+				}
+				reply()
+				return true
+			},
+		})
+		const ambireProvider = {
+			isAmbire: true,
+			isMetaMask: true,
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => method === 'eth_chainId' ? '0x1' : [],
+			on: () => ambireProvider,
+			removeListener: () => ambireProvider,
+		}
+		const announcedMetaMaskProvider = {
+			isMetaMask: true,
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => method === 'eth_chainId' ? '0x1' : [],
+			on: () => announcedMetaMaskProvider,
+			removeListener: () => announcedMetaMaskProvider,
+		}
+		Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: ambireProvider })
+		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+			type: 'eip6963:announceProvider',
+			detail: {
+				info: { uuid: '55555555-5555-4555-8555-555555555555', name: 'MetaMask', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.metamask' },
+				provider: announcedMetaMaskProvider,
+			},
+		}))
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?delayed-ambire-compatibility-probe', async () => {
+			await waitFor(() => replyToLegacyAmbireProbe !== undefined)
+			await waitFor(() => connectedToSignerParams.some((params) => params.length === 2 && params[1] === 'MetaMask'))
+			replyToLegacyAmbireProbe?.()
+			await waitFor(() => connectedToSignerParams.some((params) => params.length === 3 && params[1] === 'MetaMask'))
+		})
+
+		assert.equal(connectedToSignerParams.at(-1)?.[1], 'MetaMask')
+		assert.equal(connectedToSignerParams.at(-1)?.length, 3)
 	})
 
 	test('normalizes object-valued MetaMask rejection data before sending signer_reply', async () => {
@@ -1434,7 +1526,9 @@ describe('inpage signer bridge', () => {
 			let announcedProviderSubscriptionCount = 0
 			const { fakeWindow } = createFakeWindow({
 				handleRequest: (request) => {
-					if (request.method === 'connected_to_signer') connectedSignerNames.push(request.params?.[1])
+					const legacyCompatibilityProbe = (signerCase.name === 'Ambire' || signerCase.name === 'Rabby')
+						&& request.params?.length === 2 && request.params[1] === 'NotRecognizedSigner'
+					if (request.method === 'connected_to_signer' && !legacyCompatibilityProbe) connectedSignerNames.push(request.params?.[1])
 					return false
 				},
 			})

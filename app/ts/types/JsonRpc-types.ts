@@ -188,7 +188,7 @@ export const SendRawTransactionParams = funtypes.ReadonlyObject({
 export type EthereumAccountsReply = funtypes.Static<typeof EthereumAccountsReply>
 export const EthereumAccountsReply = funtypes.ReadonlyTuple(
 	funtypes.Intersect(
-		funtypes.ReadonlyObject({
+		funtypes.ReadonlyPartial({
 			signerProviderGeneration: funtypes.Number,
 		}),
 		funtypes.Union(
@@ -220,7 +220,10 @@ export const EthereumAccountsReply = funtypes.ReadonlyTuple(
 )
 
 export type EthereumChainReply = funtypes.Static<typeof EthereumChainReply>
-export const EthereumChainReply = funtypes.ReadonlyTuple(EthereumQuantity, funtypes.Number)
+export const EthereumChainReply = funtypes.Union(
+	funtypes.ReadonlyTuple(EthereumQuantity),
+	funtypes.ReadonlyTuple(EthereumQuantity, funtypes.Number),
+)
 
 export type TransactionReceiptParams = funtypes.Static<typeof TransactionReceiptParams>
 export const TransactionReceiptParams = funtypes.ReadonlyObject({

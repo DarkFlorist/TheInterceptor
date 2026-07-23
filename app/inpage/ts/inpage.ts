@@ -335,6 +335,11 @@ type OutstandingRequest = {
 type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconnect' | 'chainChanged'
 type Signer = 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Ambire' | 'Brave' | 'CoinbaseWallet' | 'Rabby'
 
+function getLegacyCompatibleSignerName(signerName: Signer): Exclude<Signer, 'Ambire' | 'Rabby'> {
+	if (signerName === 'Ambire' || signerName === 'Rabby') return 'NotRecognizedSigner'
+	return signerName
+}
+
 function getSignerNameFromWalletMarkers(markers: { readonly isAmbire: boolean, readonly isBrave: boolean, readonly isCoinbase: boolean, readonly isMetaMask: boolean, readonly isRabby: boolean }): Signer {
 	if (markers.isCoinbase) return 'CoinbaseWallet'
 	if (markers.isAmbire) return 'Ambire'
@@ -494,6 +499,7 @@ class InterceptorMessageListener {
 	private connected = false
 	private requestId = 0
 	private metamaskCompatibilityMode = false
+	private signerProviderGenerationSupported = false
 	private signerName: Signer = 'NoSigner'
 	private signerWindowEthereumProvider: WindowEthereum | undefined = undefined
 	private signerWindowEthereumRequest: EthereumRequest | undefined = undefined
@@ -746,7 +752,15 @@ class InterceptorMessageListener {
 				if (!InterceptorMessageListener.isStringArray([...accounts])) return
 				this.signerAccounts = [...accounts]
 				if (this.pendingSignerAddressRequest !== undefined) return
-				this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: false, signerProviderGeneration: this.signerProviderGeneration }] })
+				this.sendInternalMessageToBackgroundPage({
+					method: 'eth_accounts_reply',
+					params: [{
+						type: 'success',
+						accounts: this.signerAccounts,
+						requestAccounts: false,
+						...(this.signerProviderGenerationSupported ? { signerProviderGeneration: this.signerProviderGeneration } : {}),
+					}],
+				})
 			})
 			register('connect', (_connectInfo: ProviderConnectInfo) => {
 				if (this.signerWindowEthereumProvider !== provider) return
@@ -755,12 +769,17 @@ class InterceptorMessageListener {
 			register('disconnect', (_error: ProviderRpcError) => {
 				if (this.signerWindowEthereumProvider !== provider) return
 				const signerProviderGeneration = this.advanceSignerProviderGeneration()
-				this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [false, signerName, signerProviderGeneration] })
+				const reportedSignerName = this.signerProviderGenerationSupported ? signerName : getLegacyCompatibleSignerName(signerName)
+				const params: readonly unknown[] = this.signerProviderGenerationSupported
+					? [false, reportedSignerName, signerProviderGeneration]
+					: [false, reportedSignerName]
+				this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params })
 			})
 			register('chainChanged', (chainId: string) => {
 				if (this.signerWindowEthereumProvider !== provider) return
 				// TODO: this is a hack to get coinbase working that calls this numbers in base 10 instead of in base 16
-				const params = /\d/.test(chainId) ? [`0x${parseInt(chainId).toString(16)}`, this.signerProviderGeneration] : [chainId, this.signerProviderGeneration]
+				const normalizedChainId = /\d/.test(chainId) ? `0x${parseInt(chainId).toString(16)}` : chainId
+				const params = this.signerProviderGenerationSupported ? [normalizedChainId, this.signerProviderGeneration] : [normalizedChainId]
 				this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params })
 			})
 			this.subscribedSignerProviders.add(provider)
@@ -1104,7 +1123,13 @@ class InterceptorMessageListener {
 	private readonly sendSignerAccountsResolution = async (resolution: SignerAccountsResolution) => {
 		await this.waitForLatestSignerConnectionTransition()
 		if (resolution.signerProviderGeneration !== this.signerProviderGeneration) return false
-		await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ ...resolution.reply, signerProviderGeneration: resolution.signerProviderGeneration }] })
+		await this.sendInternalMessageToBackgroundPage({
+			method: 'eth_accounts_reply',
+			params: [{
+				...resolution.reply,
+				...(this.signerProviderGenerationSupported ? { signerProviderGeneration: resolution.signerProviderGeneration } : {}),
+			}],
+		})
 		return true
 	}
 
@@ -1146,7 +1171,8 @@ class InterceptorMessageListener {
 				this.reportInterceptorError(serializeForwardedDiagnostics('inpage', 'request signer chain id', new Error('Signer eth_chainId returned a non-string reply.'), { requestMethod: 'eth_chainId' }))
 				return
 			}
-			return await this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params: [reply, outcome.signerProviderGeneration] })
+			const params = this.signerProviderGenerationSupported ? [reply, outcome.signerProviderGeneration] : [reply]
+			return await this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params })
 		}
 		console.error('failed to get chain Id from signer')
 		console.error(outcome.error)
@@ -1189,8 +1215,8 @@ class InterceptorMessageListener {
 				params: [{
 					accept: false,
 					chainId,
-					signerProviderGeneration: this.signerProviderGeneration,
 					error: { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'No signer wallet is available to this page. Enable your wallet extension for this site, then try again.' },
+					...(this.signerProviderGenerationSupported ? { signerProviderGeneration: this.signerProviderGeneration } : {}),
 				}],
 			})
 			return
@@ -1199,12 +1225,16 @@ class InterceptorMessageListener {
 		const outcome = await this.requestFromCurrentSigner({ method: 'wallet_switchEthereumChain', params: [{ chainId }] })
 		if (outcome.type === 'success') {
 			const params = outcome.reply === null
-				? { accept: true as const, chainId, signerProviderGeneration: outcome.signerProviderGeneration }
+				? {
+					accept: true as const,
+					chainId,
+					...(this.signerProviderGenerationSupported ? { signerProviderGeneration: outcome.signerProviderGeneration } : {}),
+				}
 				: {
 					accept: false as const,
 					chainId,
-					signerProviderGeneration: outcome.signerProviderGeneration,
 					error: { code: METAMASK_ERROR_BLANKET_ERROR, message: 'Signer returned an invalid wallet_switchEthereumChain reply.' },
+					...(this.signerProviderGenerationSupported ? { signerProviderGeneration: outcome.signerProviderGeneration } : {}),
 				}
 			await this.sendInternalMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [params] })
 			return
@@ -1214,7 +1244,12 @@ class InterceptorMessageListener {
 			: this.normalizeSignerErrorForBackground(outcome.error)
 		await this.sendInternalMessageToBackgroundPage({
 			method: 'wallet_switchEthereumChain_reply',
-			params: [{ accept: false, chainId, error, signerProviderGeneration: outcome.signerProviderGeneration }],
+			params: [{
+				accept: false,
+				chainId,
+				error,
+				...(this.signerProviderGenerationSupported ? { signerProviderGeneration: outcome.signerProviderGeneration } : {}),
+			}],
 		})
 	}
 
@@ -1410,13 +1445,23 @@ class InterceptorMessageListener {
 
 			const sendToSignerWithCatchError = async () => {
 				const outcome = await this.requestFromCurrentSigner({ method: forwardRequest.method, params: 'params' in forwardRequest ? forwardRequest.params : [] })
-				if (outcome.type === 'success') return { success: true as const, forwardRequest, reply: outcome.reply, signerProviderGeneration: outcome.signerProviderGeneration }
-				if (outcome.type === 'error') return { success: false as const, forwardRequest, error: this.normalizeSignerErrorForBackground(outcome.error), signerProviderGeneration: outcome.signerProviderGeneration }
+				if (outcome.type === 'success') return {
+					success: true as const,
+					forwardRequest,
+					reply: outcome.reply,
+					...(this.signerProviderGenerationSupported ? { signerProviderGeneration: outcome.signerProviderGeneration } : {}),
+				}
+				if (outcome.type === 'error') return {
+					success: false as const,
+					forwardRequest,
+					error: this.normalizeSignerErrorForBackground(outcome.error),
+					...(this.signerProviderGenerationSupported ? { signerProviderGeneration: outcome.signerProviderGeneration } : {}),
+				}
 				return {
 					success: false as const,
 					forwardRequest,
 					error: { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'Signer connection changed before the previous wallet replied.' },
-					signerProviderGeneration: outcome.signerProviderGeneration,
+					...(this.signerProviderGenerationSupported ? { signerProviderGeneration: outcome.signerProviderGeneration } : {}),
 				}
 			}
 			const signerReply = await sendToSignerWithCatchError()
@@ -1480,10 +1525,27 @@ class InterceptorMessageListener {
 		}
 		const selectionGeneration = ++this.signerSelectionGeneration
 		const connectToSigner = async (): Promise<{ metamaskCompatibilityMode: boolean }> => {
-			const connectSignerReply = await this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName !== 'NoSigner', signerName, signerProviderGeneration] })
+			const usedSignerProviderGeneration = this.signerProviderGenerationSupported
+			const reportedSignerName = usedSignerProviderGeneration ? signerName : getLegacyCompatibleSignerName(signerName)
+			const params: readonly unknown[] = usedSignerProviderGeneration
+				? [signerName !== 'NoSigner', reportedSignerName, signerProviderGeneration]
+				: [signerName !== 'NoSigner', reportedSignerName]
+			const connectSignerReply = await this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params })
 			if (typeof connectSignerReply === 'object' && connectSignerReply !== null
 				&& 'metamaskCompatibilityMode' in connectSignerReply && connectSignerReply.metamaskCompatibilityMode !== null
 				&& connectSignerReply.metamaskCompatibilityMode !== undefined && typeof connectSignerReply.metamaskCompatibilityMode === 'boolean') {
+				if (!usedSignerProviderGeneration
+					&& 'signerProviderGenerationSupported' in connectSignerReply
+					&& connectSignerReply.signerProviderGenerationSupported === true) {
+					this.signerProviderGenerationSupported = true
+					if (reportedSignerName !== signerName) {
+						if (selectionGeneration !== this.signerSelectionGeneration) {
+							await this.connectToSigner(this.signerName)
+							return { metamaskCompatibilityMode: connectSignerReply.metamaskCompatibilityMode }
+						}
+						return await connectToSigner()
+					}
+				}
 				return { metamaskCompatibilityMode: connectSignerReply.metamaskCompatibilityMode }
 			}
 			throw new Error('Failed to parse connected_to_signer reply')

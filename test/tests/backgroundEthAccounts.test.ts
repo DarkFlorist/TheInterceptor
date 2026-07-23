@@ -1959,7 +1959,51 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const connectedReplies = messages.filter((message) => message.method === 'connected_to_signer' && message.requestId === 12)
-		assert.deepEqual(connectedReplies.at(-1)?.result, { metamaskCompatibilityMode: false })
+		assert.deepEqual(connectedReplies.at(-1)?.result, { metamaskCompatibilityMode: false, signerProviderGenerationSupported: true })
+	})
+
+	test('accepts the legacy connected_to_signer shape during an extension update', async () => {
+		installBrowserMock()
+		const { getTabState, handleInterceptedRequest, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request = {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 12, requestSocket: socket },
+			method: 'connected_to_signer',
+			params: [true, 'MetaMask'],
+		}
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		const connectedReply = messages.find((message) => message.method === 'connected_to_signer' && message.requestId === 12)
+		assert.deepEqual(connectedReply?.result, { metamaskCompatibilityMode: false, signerProviderGenerationSupported: true })
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			...request,
+			uniqueRequestIdentifier: { requestId: 13, requestSocket: socket },
+			method: 'eth_accounts_reply',
+			params: [{ type: 'success', accounts: ['0x1111111111111111111111111111111111111111'], requestAccounts: false }],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			...request,
+			uniqueRequestIdentifier: { requestId: 14, requestSocket: socket },
+			method: 'signer_chainChanged',
+			params: ['0x1'],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		const tabState = await getTabState(socket.tabId)
+		assert.deepEqual(tabState.signerAccounts, [0x1111111111111111111111111111111111111111n])
+		assert.equal(tabState.signerChain, 1n)
 	})
 
 	test('opens address access dialog after signer account discovery for site-approved eth_requestAccounts', async () => {
