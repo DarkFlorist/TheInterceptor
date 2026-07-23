@@ -80,14 +80,40 @@ const userDeniedChange = {
 	}
 } as const
 
+type FetchSimulationStackDialogResult =
+	| {
+		outcome: 'accepted'
+		result: Awaited<ReturnType<typeof getSimulationStack>>
+		simulationStackHash: string
+	}
+	| {
+		outcome: 'rejected'
+		error: typeof userDeniedChange.error
+		simulationStackHash: string
+	}
+
+type FetchSimulationStackRequestResult = {
+	type: 'result'
+	method: GetSimulationStack['method']
+} & (
+	| { result: Awaited<ReturnType<typeof getSimulationStack>> }
+	| { error: typeof userDeniedChange.error }
+)
+
+const getRejectedDialogResult = (snapshot: SimulationStackSnapshot): FetchSimulationStackDialogResult => ({
+	outcome: 'rejected',
+	error: userDeniedChange.error,
+	simulationStackHash: getSimulationStackHash(snapshot.simulationInput),
+})
+
 export const openFetchSimulationStackDialog = async (
 	initialSnapshot: SimulationStackSnapshot,
 	websiteTabConnections: WebsiteTabConnections,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	params: GetSimulationStack,
 	website: Website,
-) => {
-	if (openedDialog !== undefined || pendForUserReply) return userDeniedChange
+): Promise<FetchSimulationStackDialogResult> => {
+	if (openedDialog !== undefined || pendForUserReply) return getRejectedDialogResult(initialSnapshot)
 
 	const replyFuture = new Future<FetchSimulationStackReply>()
 	pendForUserReply = replyFuture
@@ -104,7 +130,7 @@ export const openFetchSimulationStackDialog = async (
 	try {
 		const oldPromise = await getFetchSimulationStackRequestPromise()
 		if (oldPromise !== undefined) {
-			if (await getPopupOrTabById(oldPromise.popupOrTabId) !== undefined) return userDeniedChange
+			if (await getPopupOrTabById(oldPromise.popupOrTabId) !== undefined) return getRejectedDialogResult(initialSnapshot)
 			await setFetchSimulationStackRequestPromise(undefined)
 		}
 		openedDialog = await openPopupOrTab({
@@ -129,14 +155,12 @@ export const openFetchSimulationStackDialog = async (
 		await setFetchSimulationStackRequestPromise(undefined)
 		if (reply.confirmation.data.accept) {
 			return {
+				outcome: 'accepted',
 				result: await getSimulationStack(reply.snapshot.simulationState, params.params[0]),
 				simulationStackHash: getSimulationStackHash(reply.snapshot.simulationInput),
 			}
 		}
-		return {
-			...userDeniedChange,
-			simulationStackHash: getSimulationStackHash(reply.snapshot.simulationInput),
-		}
+		return getRejectedDialogResult(reply.snapshot)
 	} finally {
 		removeWindowTabListeners(onCloseWindow, onCloseTab)
 		pendForUserReply = undefined
@@ -150,18 +174,18 @@ export const getSimulationStackHash = (simulationState: ResolvedSimulationInput)
 	return getSimulationInputHash(simulationState.value)
 }
 
-export async function openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot: SimulationStackSnapshot, websiteTabConnections: WebsiteTabConnections, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket) {
+export async function openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot: SimulationStackSnapshot, websiteTabConnections: WebsiteTabConnections, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket): Promise<FetchSimulationStackRequestResult> {
 	const identifier = websiteSocketToString(socket)
 	const newHash = getSimulationStackHash(initialSnapshot.simulationInput)
 	const previousDecision = simulationStackDecisions.find((x) => x.identifier === identifier)
 	if (previousDecision !== undefined && previousDecision.hash === newHash) {
-		if (previousDecision.accept) return { result: await getSimulationStack(initialSnapshot.simulationState, params.params[0]) }
-		return { type: 'result' as const, method: params.method, error: userDeniedChange.error }
+		if (previousDecision.accept) return { type: 'result', method: params.method, result: await getSimulationStack(initialSnapshot.simulationState, params.params[0]) }
+		return { type: 'result', method: params.method, error: userDeniedChange.error }
 	}
 	const result = await openFetchSimulationStackDialog(initialSnapshot, websiteTabConnections, request.uniqueRequestIdentifier, params, website)
 	simulationStackDecisions = simulationStackDecisions.filter((x) => x.identifier !== identifier)
-	simulationStackDecisions.push({ identifier, hash: 'simulationStackHash' in result ? result.simulationStackHash : newHash, accept: !('error' in result) })
+	simulationStackDecisions.push({ identifier, hash: result.simulationStackHash, accept: result.outcome === 'accepted' })
 	if (simulationStackDecisions.length > MAX_DECISION_CACHE) simulationStackDecisions.shift()
-	if ('error' in result) return { type: 'result' as const, method: params.method, error: result.error }
-	return { type: 'result' as const, method: params.method, result: result.result }
+	if (result.outcome === 'rejected') return { type: 'result', method: params.method, error: result.error }
+	return { type: 'result', method: params.method, result: result.result }
 }

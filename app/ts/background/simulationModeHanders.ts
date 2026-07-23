@@ -215,7 +215,5 @@ export async function handleIterceptorError(request: InterceptorError) {
 }
 
 export async function requestInterceptorSimulatorStack(snapshot: SimulationStackSnapshot, websiteTabConnections: WebsiteTabConnections, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket) {
-	const result = await openFetchSimulationStackDialogOrGetCachedResult(snapshot, websiteTabConnections, params, website, request, socket)
-	if ('error' in result && result.error !== undefined) return { type: 'result' as const, method: params.method, error: result.error }
-	return { type: 'result' as const, method: params.method, ...result }
+	return await openFetchSimulationStackDialogOrGetCachedResult(snapshot, websiteTabConnections, params, website, request, socket)
 }

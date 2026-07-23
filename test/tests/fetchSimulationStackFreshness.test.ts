@@ -132,7 +132,7 @@ describe('fetch simulation stack freshness', () => {
 		await modules.resolveFetchSimulationStackRequest(confirmationSnapshot, new Map(), confirmation)
 		const result = await pendingResult
 
-		assert.ok('result' in result)
+		assert.equal(result.outcome, 'accepted')
 		assert.deepEqual(result.result.payload.stateOverrides, confirmationSnapshot.simulationInput.value[0]?.stateOverrides)
 		assert.equal(result.simulationStackHash, modules.getSimulationStackHash(confirmationSnapshot.simulationInput))
 		assert.notEqual(result.simulationStackHash, modules.getSimulationStackHash(initialSnapshot.simulationInput))
