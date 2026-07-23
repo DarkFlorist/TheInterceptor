@@ -25,7 +25,7 @@ import { Erc20ABI, Erc1155ABI } from '../../utils/abi.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 import { createEip1559Or7702Transaction, hasEip7702AuthorizationSignature, hasPartialEip7702AuthorizationSignature, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
-import { createStorageReaderAccountOverride, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
+import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
 
 type SuccessfulExecutionSimulationState = Extract<ExecutionSimulationState, { success: true }>
 
@@ -1462,7 +1462,7 @@ export const getSimulatedStorageAtFromInput = async (
 		maxPriorityFeePerGas: 0n,
 		to: address,
 		value: 0n,
-		input: bigintToUint8Array(slot, 32),
+		input: encodeStorageReaderCall(slot),
 		accessList: [],
 	} as const
 	const simulateStorageLookup = async (relocatePrecompile: boolean) => await simulateBlockCallWithPreparedInputContext(
@@ -1499,7 +1499,7 @@ export const getSimulatedStorageAtFromInput = async (
 			error: result.error,
 		})
 	}
-	return EthereumBytes32.parse(dataStringWith0xStart(result.returnData))
+	return decodeStorageReaderResult(result.returnData)
 }
 
 export const getSimulatedBalanceFromInput = async (

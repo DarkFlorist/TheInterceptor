@@ -15,7 +15,8 @@ import { Multicall3ABI } from '../../app/ts/utils/constants.js'
 import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall } from '../RPCResponses.js'
 import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
-import { STORAGE_READER_PRECOMPILE_RELOCATION_ADDRESS, STORAGE_READER_RUNTIME_BYTECODE } from '../../app/ts/simulation/storageReader.js'
+import { STORAGE_READER_ABI, STORAGE_READER_PRECOMPILE_RELOCATION_ADDRESS } from '../../app/ts/simulation/storageReader.js'
+import { getStorageReaderByteCode } from '../../app/ts/utils/ethereumByteCodes.js'
 import { areEqualUint8Arrays } from '../../app/ts/utils/typed-arrays.js'
 import { d2ArrayFixed } from './data/eip712Data.js'
 
@@ -175,17 +176,19 @@ class MockEthereumJSONRpcRequestHandler {
 					? undefined
 					: lastBlockStateCall?.stateOverrides?.[addressString(lastCall.to)]
 				const storageReaderOverride = storageReaderAccountOverride?.code
-				if (storageReaderOverride !== undefined && areEqualUint8Arrays(storageReaderOverride, STORAGE_READER_RUNTIME_BYTECODE)) {
+				if (storageReaderOverride !== undefined && areEqualUint8Arrays(storageReaderOverride, getStorageReaderByteCode())) {
 					const singleTransactionBlock = ethSimulateSingleBlockResult[0]
 					const singleCall = singleTransactionBlock?.calls[0]
 					if (singleTransactionBlock === undefined || singleCall === undefined) throw new Error('missing single transaction simulation fixture')
 					if (lastCall?.to === undefined || lastCall.to === null || lastCall.input === undefined) throw new Error('storage reader call is incomplete')
+					const decodedStorageCall = decodeFunctionDataStrict(STORAGE_READER_ABI, dataStringWith0xStart(lastCall.input))
+					if (decodedStorageCall.functionName !== 'readSlot') throw new Error('expected storage reader call')
 					const isActivePrecompile = activePrecompileAddresses.has(lastCall.to)
 					if (!isActivePrecompile && storageReaderAccountOverride.movePrecompileToAddress !== undefined) {
 						throw new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: `account ${ addressString(lastCall.to) } is not a precompile` } })
 					}
 					const requestedAddress = addressString(lastCall.to)
-					const requestedSlot = bytes32String(BigInt(dataStringWith0xStart(lastCall.input)))
+					const requestedSlot = decodedStorageCall.args[0]
 					let storageValue = 0n
 					for (const prefixBlock of rpcRequest.params[0].blockStateCalls.slice(0, -1)) {
 						const accountOverride = prefixBlock.stateOverrides?.[requestedAddress]
@@ -197,9 +200,9 @@ class MockEthereumJSONRpcRequestHandler {
 						calls: [{
 							...singleCall,
 							// Without relocation, precompile execution wins over injected account code.
-							returnData: isActivePrecompile && storageReaderAccountOverride.movePrecompileToAddress === undefined
-								? testBytes32('bad')
-								: testBytes32(storageValue.toString(16)),
+							returnData: encodeFunctionReturn(STORAGE_READER_ABI, 'readSlot', [
+								bytes32String(isActivePrecompile && storageReaderAccountOverride.movePrecompileToAddress === undefined ? 0xbadn : storageValue),
+							]),
 						}],
 					})
 				}
@@ -1408,10 +1411,13 @@ describe('SimulationModeEthereumClientService', () => {
 			const storageBlock = storageRequest?.params[0].blockStateCalls.at(-1)
 			const storageCall = storageBlock?.calls[0]
 			assert.equal(storageCall?.to, address)
-			assert.equal(storageCall?.input === undefined ? undefined : dataStringWith0xStart(storageCall.input), testBytes32(slot.toString(16)))
+			if (storageCall?.input === undefined) throw new Error('missing storage reader call input')
+			const decodedStorageCall = decodeFunctionDataStrict(STORAGE_READER_ABI, dataStringWith0xStart(storageCall.input))
+			assert.equal(decodedStorageCall.functionName, 'readSlot')
+			assert.deepEqual(decodedStorageCall.args, [bytes32String(slot)])
 			const overrideCode = storageBlock?.stateOverrides?.[addressString(address)]?.code
 			assert.equal(storageBlock?.stateOverrides?.[addressString(address)]?.movePrecompileToAddress, undefined)
-			assert.deepEqual(overrideCode, STORAGE_READER_RUNTIME_BYTECODE)
+			assert.deepEqual(overrideCode, getStorageReaderByteCode())
 		})
 
 		test('getSimulatedStorageAtFromInput relocates a precompile before reading its simulated storage', async () => {
@@ -1441,7 +1447,7 @@ describe('SimulationModeEthereumClientService', () => {
 			const readerOverride = storageRequest?.params[0].blockStateCalls.at(-1)?.stateOverrides?.[addressString(SHA256_PRECOMPILE_ADDRESS)]
 			assert.equal(readerOverride?.movePrecompileToAddress, STORAGE_READER_PRECOMPILE_RELOCATION_ADDRESS)
 			assert.notEqual(readerOverride?.movePrecompileToAddress, SHA256_PRECOMPILE_ADDRESS)
-			assert.deepEqual(readerOverride?.code, STORAGE_READER_RUNTIME_BYTECODE)
+			assert.deepEqual(readerOverride?.code, getStorageReaderByteCode())
 		})
 
 		test('getSimulatedStorageAtFromInput selects the requested simulated block prefix', async () => {
