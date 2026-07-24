@@ -4,15 +4,18 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { SignatureHeader } from '../../app/ts/components/pages/PersonalSign.js'
-import { CheckBoxes } from '../../app/ts/components/pages/ConfirmTransaction.js'
+import { CheckBoxes, ConfirmationActionButtons } from '../../app/ts/components/pages/ConfirmTransaction.js'
 import { TransactionHeader } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
 import { PendingStackHeader } from '../../app/ts/components/simulationExplaining/Transactions.js'
+import { identifyTransaction } from '../../app/ts/components/simulationExplaining/identifyTransaction.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { VisualizedPersonalSignRequest } from '../../app/ts/types/personal-message-definitions.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import type { Website } from '../../app/ts/types/websiteAccessTypes.js'
 import type { SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { PopupPendingSignableMessage } from '../../app/ts/types/accessRequest.js'
+import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
+import { bytesFromHex } from '../../app/ts/utils/ethereumBytes.js'
 import { installDomMock } from './domMock.js'
 
 type TestNode = {
@@ -82,6 +85,42 @@ const fallbackMethodTransaction: SimulatedAndVisualizedTransaction = {
 	events: [],
 }
 
+const abiFunctionName = 'issue734Function'
+const abi = [{
+	type: 'function',
+	name: abiFunctionName,
+	inputs: [],
+	outputs: [],
+	stateMutability: 'nonpayable',
+}] as const
+const abiFunctionInput = bytesFromHex(encodeFunctionCall(abi, abiFunctionName, []))
+const abiFunctionTransaction: SimulatedAndVisualizedTransaction = {
+	...fallbackMethodTransaction,
+	parsedInputData: {
+		type: 'Parsed',
+		input: abiFunctionInput,
+		name: abiFunctionName,
+		args: [],
+	},
+	originalRequestParameters: {
+		method: 'eth_sendTransaction',
+		params: [{
+			from: fromEntry.address,
+			to: toEntry.address,
+			value: 0n,
+			input: abiFunctionInput,
+		}],
+	},
+	transaction: {
+		...fallbackMethodTransaction.transaction,
+		to: {
+			...toEntry,
+			abi: JSON.stringify(abi),
+		},
+		input: abiFunctionInput,
+	},
+}
+
 const personalSignRequest: VisualizedPersonalSignRequest = {
 	method: 'personal_sign',
 	type: 'NotParsed',
@@ -137,6 +176,57 @@ describe('popup header markup', () => {
 		const titleText = findFirstByClass(dom.document.body, 'card-header-title-text')
 		assert.equal(titleText?.textContent, 'Contract Fallback Method')
 		assertClasses(findFirstByClass(dom.document.body, 'card-header-website'), ['card-header-website', 'card-header-website--flush'])
+
+		dom.restore()
+	})
+
+	test('TransactionHeader and confirmation actions use an ABI-decoded function name', async () => {
+		const identified = identifyTransaction(abiFunctionTransaction)
+		assert.equal(identified.title, abiFunctionName)
+
+		const dom = installDomMock()
+
+		await act(() => {
+			render(h(TransactionHeader, {
+				simTx: abiFunctionTransaction,
+				removeTransactionOrSignedMessage: () => undefined,
+			}), dom.document.body)
+		})
+
+		assert.equal(findFirstByClass(dom.document.body, 'card-header-title-text')?.textContent, abiFunctionName)
+
+		await act(() => {
+			render(h(ConfirmationActionButtons, {
+				identified,
+				signerName: 'NoSigner',
+				simulationMode: false,
+				waitingForSigner: false,
+				reject: () => undefined,
+				rejectButtonState: 'inactive',
+				approve: () => undefined,
+				approveButtonState: 'inactive',
+				confirmDisabled: false,
+			}), dom.document.body)
+		})
+
+		assert.equal(dom.document.body.textContent?.includes(`Reject ${ abiFunctionName }`), true)
+		assert.equal(dom.document.body.textContent?.includes(`Sign ${ abiFunctionName }`), true)
+
+		await act(() => {
+			render(h(ConfirmationActionButtons, {
+				identified,
+				signerName: 'NoSigner',
+				simulationMode: true,
+				waitingForSigner: false,
+				reject: () => undefined,
+				rejectButtonState: 'inactive',
+				approve: () => undefined,
+				approveButtonState: 'inactive',
+				confirmDisabled: false,
+			}), dom.document.body)
+		})
+
+		assert.equal(dom.document.body.textContent?.includes(`Simulate ${ abiFunctionName }!`), true)
 
 		dom.restore()
 	})
