@@ -13,6 +13,7 @@ const contracts = [
 	{ sourceFile: 'CompoundGovernanceTimeLockMulticall.sol', contractName: 'CompoundGovernanceTimeLockMulticall', exportName: 'compoundGovernanceTimeLockMulticallByteCode' },
 	{ sourceFile: 'GetCode.sol', contractName: 'GetCode', exportName: 'getCodeByteCode' },
 	{ sourceFile: 'GnosisSafeProxyProxy.sol', contractName: 'GnosisSafeProxyProxy', exportName: 'gnosisSafeProxyProxyByteCode' },
+	{ sourceFile: 'StorageReader.sol', contractName: 'StorageReader', exportName: 'storageReaderByteCode' },
 ] as const
 
 const sources = Object.fromEntries(await Promise.all(contracts.map(async ({ sourceFile }) => [
