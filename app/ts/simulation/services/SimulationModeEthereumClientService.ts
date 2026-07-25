@@ -7,7 +7,7 @@ import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimu
 import type { Abi } from '../../utils/ethereumPrimitives.js'
 import { privateKeyToAccount, stringToBytes, keccak256, hashMessage, hashTypedData } from '../../utils/ethereumPrimitives.js'
 import { EthereumUnsignedTransactionToUnsignedTransaction, type IUnsignedTransaction1559, type IUnsignedTransaction7702, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
-import type { EthGetLogsResponse, EthGetLogsRequest, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
+import type { EthGetLogsResponse, EthGetLogsRequest, EthGetStorageAtResponse, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
 import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
 import type { PersonalSignParams, SignMessageParams } from '../../types/jsonRpc-signing-types.js'
@@ -25,6 +25,7 @@ import { Erc20ABI, Erc1155ABI } from '../../utils/abi.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 import { createEip1559Or7702Transaction, hasEip7702AuthorizationSignature, hasPartialEip7702AuthorizationSignature, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
+import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
 
 type SuccessfulExecutionSimulationState = Extract<ExecutionSimulationState, { success: true }>
 
@@ -333,6 +334,15 @@ type Simulated1559BlockCall = Pick<IUnsignedTransaction1559, 'type' | 'from' | '
 type Simulated7702BlockCall = Pick<IUnsignedTransaction7702, 'type' | 'from' | 'chainId' | 'nonce' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'to' | 'value' | 'input' | 'authorizationList'> & Partial<Pick<IUnsignedTransaction7702, 'gasLimit' | 'accessList'>>
 type SimulatedBlockCall = Simulated1559BlockCall | Simulated7702BlockCall
 
+type SimulateBlockCallOptions = {
+	extraOverrides?: StateOverrides
+	simulateWithZeroBaseFee?: boolean
+	simulationPrefixBlockCount?: number
+}
+
+const isInactivePrecompileRelocationError = (error: unknown) => error instanceof JsonRpcResponseError
+	&& error.message.toLowerCase().includes('not a precompile')
+
 type IUnsigned7702Authorization = IUnsignedTransaction7702['authorizationList'][number]
 type ISigned7702Authorization = IUnsigned7702Authorization & {
 	readonly yParity: 'even' | 'odd'
@@ -380,16 +390,20 @@ const simulateBlockCallWithPreparedInputContext = async (
 	requestAbortController: AbortController | undefined,
 	context: PreparedSimulationExecutionContext | undefined,
 	transaction: SimulatedBlockCall,
-	extraOverrides: StateOverrides = {},
-	simulateWithZeroBaseFee = false,
+	options: SimulateBlockCallOptions = {},
 ) => {
+	const extraOverrides = options.extraOverrides ?? {}
+	const simulateWithZeroBaseFee = options.simulateWithZeroBaseFee ?? false
+	const simulationPrefixBlockCount = options.simulationPrefixBlockCount ?? context?.executionBlocks.length ?? 0
 	const parentBlock = context?.parentBlock ?? await ethereumClientService.getBlock(requestAbortController)
 	if (parentBlock === null) throw new Error('The latest block is null')
-	const previousBlockOverride = context?.prepared.blockOverrides[context.prepared.blockOverrides.length - 1]
+	if (simulationPrefixBlockCount < 0 || simulationPrefixBlockCount > (context?.executionBlocks.length ?? 0)) throw new Error('Simulation prefix block count is out of bounds')
+	const simulationPrefix = context?.prepared.request.params[0].blockStateCalls.slice(0, simulationPrefixBlockCount) ?? []
+	const previousBlockOverride = simulationPrefixBlockCount === 0 ? undefined : context?.prepared.blockOverrides[simulationPrefixBlockCount - 1]
 	const previousBlockTime = previousBlockOverride?.time ?? parentBlock.timestamp
 	const baseFeePerGas = parentBlock.baseFeePerGas === undefined ? 15_000_000n : parentBlock.baseFeePerGas
 	const blockStateCalls: readonly SimulateBlockCalls[] = [
-		...(context?.prepared.request.params[0].blockStateCalls ?? []),
+		...simulationPrefix,
 		{
 			calls: [createSimulatedBlockCall(transaction)],
 			blockOverrides: {
@@ -410,16 +424,14 @@ const simulateBlockCallOnTopOfSimulationInput = async (
 	requestAbortController: AbortController | undefined,
 	simulationStateInput: SimulationStateInputMinimalData | undefined,
 	transaction: SimulatedBlockCall,
-	extraOverrides: StateOverrides = {},
-	simulateWithZeroBaseFee = false,
+	options: SimulateBlockCallOptions = {},
 ) => {
 	return await simulateBlockCallWithPreparedInputContext(
 		ethereumClientService,
 		requestAbortController,
 		await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput),
 		transaction,
-		extraOverrides,
-		simulateWithZeroBaseFee,
+		options,
 	)
 }
 
@@ -456,10 +468,9 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 			requestAbortController,
 			context,
 			{ ...estimateGasTransaction, gasLimit },
-			{},
-			true,
+			{ simulateWithZeroBaseFee: true },
 		)
-		const lastResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, estimateGasTransaction, {}, true)
+		const lastResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, estimateGasTransaction, { simulateWithZeroBaseFee: true })
 		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
 		return await getGasEstimateFromSimulation(lastResult, maxGas, simulateWithGasLimit)
 	} catch (error: unknown) {
@@ -1361,7 +1372,7 @@ const simulatedCallWithPreparedInputContext = async (
 		...(params.gasLimit === undefined ? {} : { gasLimit: params.gasLimit }),
 	} as const
 	try {
-		const callResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, transaction, extraOverrides)
+		const callResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, transaction, { extraOverrides })
 		if (callResult === undefined) throw new Error('failed to get last call in eth simulate')
 		if (callResult.status === 'failure') return { error: callResult.error }
 		return { result: callResult.returnData }
@@ -1427,6 +1438,70 @@ export const getSimulatedCodeFromInput = async (
 	}
 }
 
+export const getSimulatedStorageAtFromInput = async (
+	ethereumClientService: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	simulationStateInput: ResolvedSimulationInput,
+	address: bigint,
+	slot: bigint,
+	blockTag: EthereumBlockTag = 'latest',
+): Promise<EthGetStorageAtResponse> => {
+	const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput)
+	if (context === undefined || canQueryNodeDirectlyFromInput(context.parentBlock.number, context.executionBlocks.length, blockTag)) {
+		return await ethereumClientService.getStorageAt(address, slot, blockTag, requestAbortController)
+	}
+	const simulationPrefixBlockCount = getExecutionBlocksUpToTag(context, blockTag).length
+	if (simulationPrefixBlockCount === 0) return await ethereumClientService.getStorageAt(address, slot, blockTag, requestAbortController)
+
+	const storageReaderTransaction = {
+		type: '1559',
+		from: MOCK_ADDRESS,
+		chainId: ethereumClientService.getChainId(),
+		nonce: await getSimulatedTransactionCountFromPreparedInputContext(ethereumClientService, requestAbortController, context, MOCK_ADDRESS, blockTag),
+		maxFeePerGas: 0n,
+		maxPriorityFeePerGas: 0n,
+		to: address,
+		value: 0n,
+		input: encodeStorageReaderCall(slot),
+		accessList: [],
+	} as const
+	const simulateStorageLookup = async (relocatePrecompile: boolean) => await simulateBlockCallWithPreparedInputContext(
+		ethereumClientService,
+		requestAbortController,
+		context,
+		storageReaderTransaction,
+		{
+			extraOverrides: { [addressString(address)]: createStorageReaderAccountOverride(relocatePrecompile) },
+			simulationPrefixBlockCount,
+		},
+	)
+
+	// Precompile availability varies by chain and fork. Relocation asks the node
+	// whether a reserved address is active and prevents precompile dispatch from
+	// taking precedence over the injected storage-reader code. Inactive reserved
+	// addresses are retried without relocation.
+	let result
+	if (address >= 0n && address <= PRECOMPILE_RESERVED_ADDRESS_MAX) {
+		try {
+			result = await simulateStorageLookup(true)
+		} catch (error) {
+			if (!isInactivePrecompileRelocationError(error)) throw error
+			result = await simulateStorageLookup(false)
+		}
+	} else {
+		result = await simulateStorageLookup(false)
+	}
+	if (result === undefined) throw new Error('Failed to execute simulated storage lookup')
+	if (result.status === 'failure') {
+		throw new JsonRpcResponseError({
+			jsonrpc: '2.0',
+			id: 1,
+			error: result.error,
+		})
+	}
+	return decodeStorageReaderResult(result.returnData)
+}
+
 export const getSimulatedBalanceFromInput = async (
 	ethereumClientService: EthereumClientService,
 	requestAbortController: AbortController | undefined,
@@ -1490,10 +1565,9 @@ export const simulateEstimateGasFromInput = async (
 			requestAbortController,
 			context,
 			{ ...estimateGasTransaction, gasLimit },
-			extraOverrides,
-			true,
+			{ extraOverrides, simulateWithZeroBaseFee: true },
 		)
-		const lastResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, estimateGasTransaction, extraOverrides, true)
+		const lastResult = await simulateBlockCallWithPreparedInputContext(ethereumClientService, requestAbortController, context, estimateGasTransaction, { extraOverrides, simulateWithZeroBaseFee: true })
 		if (lastResult === undefined) return { error: { code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, message: 'ETH Simulate Failed to estimate gas', data: '0x' } }
 		return await getGasEstimateFromSimulation(lastResult, maxGas, simulateWithGasLimit)
 	} catch (error: unknown) {
@@ -1722,7 +1796,7 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 
 	//todo, we can optimize this by leaving nonce out
 	try {
-		const callResult = await simulateBlockCallOnTopOfSimulationInput(ethereumClientService, requestAbortController, simulationState.kind === 'passthrough' ? undefined : simulationState.value.simulationStateInput, transaction, extraOverrides)
+		const callResult = await simulateBlockCallOnTopOfSimulationInput(ethereumClientService, requestAbortController, simulationState.kind === 'passthrough' ? undefined : simulationState.value.simulationStateInput, transaction, { extraOverrides })
 		if (callResult === undefined) throw new Error('failed to get last call in eth simulate')
 		if (callResult?.status === 'failure') return { error: callResult.error }
 		return { result: callResult.returnData }

@@ -3,7 +3,7 @@ import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackReque
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
 import { ModifyAddressWindowState, CompleteVisualizedSimulation, BlockTimeManipulation, BlockTimeManipulationWithNoDelay, InterceptorSimulationExport } from './visualizer-types.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
-import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, SimulationStackVersion, WalletAddEthereumChain } from './JsonRpc-types.js'
+import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthGetStorageAtResponse, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, SimulationStackVersion, WalletAddEthereumChain } from './JsonRpc-types.js'
 import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
 import { Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
@@ -109,7 +109,9 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions'), result: funtypes.ReadonlyArray(WalletPermission) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_revokePermissions'), result: funtypes.Null }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice'), result: EthereumQuantity }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_maxPriorityFeePerGas'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getTransactionCount'), result: EthereumQuantity }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getStorageAt'), result: EthGetStorageAtResponse }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('interceptor_getSimulationStack'), result: GetSimulationStackReply }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getLogs'), result: EthGetLogsResponse }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_sendRawTransaction'), result: EthereumBytes32 }),
