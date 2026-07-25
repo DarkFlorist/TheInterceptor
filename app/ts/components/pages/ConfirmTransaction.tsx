@@ -47,7 +47,7 @@ type UnderTransactionsParams = {
 }
 
 export const CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS = 150
-export const CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS = 10
+const CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS = 10
 const CONFIRM_TRANSACTION_DATA_PRIORITY = {
 	storage: 1,
 	bootstrap: 2,
@@ -63,7 +63,7 @@ type ConfirmTransactionBootstrapData = {
 	visualizedSimulatorState: CompleteVisualizedSimulation
 }
 
-export async function bootstrapConfirmTransactionDialog(
+async function bootstrapConfirmTransactionDialog(
 	hasLoadedPendingTransaction: () => boolean,
 	applyBootstrapData: (bootstrapData: ConfirmTransactionBootstrapData) => void,
 ) {
@@ -183,7 +183,7 @@ type TransactionNamesParams = {
 	currentPendingTransaction: Signal<PendingTransactionOrSignableMessage| undefined>
 }
 
-export const TransactionNames = (param: TransactionNamesParams) => {
+const TransactionNames = (param: TransactionNamesParams) => {
 	if (param.completeVisualizedSimulation.value.simulationResultState !== 'done' || param.completeVisualizedSimulation.value.simulationState.kind === 'passthrough') return <></>
 
 	const titleOfCurrentPendingTransaction = () => {
@@ -316,7 +316,7 @@ function FailedTransactionPreviewDetails({
 	</div>
 }
 
-export function TransactionCard(param: TransactionCardParams) {
+function TransactionCard(param: TransactionCardParams) {
 	const renderablePendingTransaction = useComputed(() => getRenderableTransaction(param.currentPendingTransaction.value))
 	if (renderablePendingTransaction.value === undefined) return <></>
 	return <TransactionCardContent

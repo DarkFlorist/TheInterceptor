@@ -506,7 +506,7 @@ export const encodeAbiParameters = (parameters: readonly AbiParameter[], values:
 	return bytesToHex(encoded)
 }
 
-export const ABI_DATA_DECODE_ERROR_CODE = 'abi_data_decode_failed'
+const ABI_DATA_DECODE_ERROR_CODE = 'abi_data_decode_failed'
 
 export const isAbiDataDecodeError = (error: unknown): boolean => {
 	return isRecord(error) && getRecordProperty(error, 'code') === ABI_DATA_DECODE_ERROR_CODE

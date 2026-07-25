@@ -68,6 +68,7 @@ export async function queueTerminalReplyAndAttemptDelivery(websiteTabConnections
 	return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, message)
 }
 
+/** @knipignore Exported for tests that dynamically import a fresh module instance. */
 export async function flushPendingTerminalRepliesForSocket(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	return await terminalReplySemaphore.execute(async () => {
 		const pendingReplies = await getPendingTerminalReplies()

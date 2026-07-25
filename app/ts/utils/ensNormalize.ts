@@ -290,16 +290,6 @@ function compare_arrays(a: any, b: any) {
 	return c;
 }
 
-function array_replace(v: any, a: any, b: any) {
-	let prev = 0;
-	while (true) {
-		let next = v.indexOf(a, prev);
-		if (next < 0) break;
-		v[next] = b;
-		prev = next + 1;
-	}
-}
-
 // created 2025-09-14T17:56:24.099Z
 // compressed base64-encoded blob for include-nf data
 // source: https://github.com/adraffy/ens-normalize.js/blob/main/src/make.js
@@ -768,57 +758,8 @@ function should_escape(cp: any) {
 	return ESCAPE.has(cp);
 }
 
-// return all supported emoji as fully-qualified emoji
-// ordered by length then lexicographic
-function ens_emoji() {
-	init();
-	return EMOJI_LIST.map((x: any) => x.slice()); // emoji are exposed so copy
-}
-
-function ens_normalize_fragment(frag: any, decompose: any) {
-	init();
-	let nf = decompose ? nfd : nfc;
-	return frag.split(STOP_CH).map((label: any) => str_from_cps(tokens_from_str(explode_cp(label), nf, filter_fe0f).flat())).join(STOP_CH);
-}
-
 function ens_normalize(name: any) {
 	return flatten(split(name, nfc, filter_fe0f));
-}
-
-function ens_beautify(name: any) {
-	let labels = split(name, nfc, (x: any) => x); // emoji not exposed
-	for (let {type, output, error} of labels) {
-		if (error) break; // flatten will throw
-
-		// replace leading/trailing hyphen
-		// 20230121: consider beautifing all or leading/trailing hyphen to unicode variant
-		// not exactly the same in every font, but very similar: "-" vs "‐"
-		/*
-		const UNICODE_HYPHEN = 0x2010;
-		// maybe this should replace all for visual consistancy?
-		// `node tools/reg-count.js regex ^-\{2,\}` => 592
-		//for (let i = 0; i < output.length; i++) if (output[i] == 0x2D) output[i] = 0x2010;
-		if (output[0] == HYPHEN) output[0] = UNICODE_HYPHEN;
-		let end = output.length-1;
-		if (output[end] == HYPHEN) output[end] = UNICODE_HYPHEN;
-		*/
-		// 20230123: WHATWG URL uses "CheckHyphens" false
-		// https://url.spec.whatwg.org/#idna
-
-		// update ethereum symbol
-		// ξ => Ξ if not greek
-		if (type !== 'Greek') array_replace(output, 0x3BE, 0x39E);
-
-		// 20221213: fixes bidi subdomain issue, but breaks invariant (200E is disallowed)
-		// could be fixed with special case for: 2D (.) + 200E (LTR)
-		// https://discuss.ens.domains/t/bidi-label-ordering-spoof/15824
-		//output.splice(0, 0, 0x200E);
-	}
-	return flatten(labels);
-}
-
-function ens_split(name: any, preserve_emoji: any) {
-	return split(name, nfc, preserve_emoji ? (x: any) => x.slice() : filter_fe0f); // emoji are exposed so copy
 }
 
 function split(name: any, nf: any, ef: any) {
@@ -1152,4 +1093,4 @@ function consume_emoji_reversed(cps: any, eaten?: any) {
 }
 
 // ************************************************************
-export { ens_beautify, ens_emoji, ens_normalize, ens_normalize_fragment, ens_split, is_combining_mark, nfc, nfd, safe_str_from_cps, should_escape }
+export { ens_normalize }

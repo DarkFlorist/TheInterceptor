@@ -213,10 +213,6 @@ export const isValidAbiString = (abi: string) => {
 	}
 }
 
-export const hasFunction = <const TAbi extends Abi>(abi: TAbi, functionName: ContractFunctionName<TAbi>) => {
-	return abi.some((item) => item.type === 'function' && item.name === functionName)
-}
-
 export function encodeFunctionCall<
 	const TAbi extends Abi,
 	const TName extends ContractFunctionName<TAbi>,
@@ -297,10 +293,6 @@ export const decodeEventStrict = <const TAbi extends Abi>(
 		topics: [signature, ...args],
 		strict: true,
 	})
-}
-
-export const getFunctionFragmentLoose = (abiLike: AbiLike, nameOrSelector: string): AbiItem | undefined => {
-	return getFunctionFragmentInternal(normalizeAbi(abiLike), nameOrSelector)
 }
 
 export const hasFunctionLoose = (abiLike: AbiLike, functionName: string) => getFunctionFragmentInternal(normalizeAbi(abiLike), functionName) !== undefined

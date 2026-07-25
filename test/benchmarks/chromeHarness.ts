@@ -47,11 +47,6 @@ function sleep(ms: number) {
 	})
 }
 
-function getTargetUrlExtensionId(url: string) {
-	const match = /^chrome-extension:\/\/([^/]+)/.exec(url)
-	return match?.[1]
-}
-
 function normalizeTargetInfo(target: Partial<TargetInfo> & { targetId?: string, id?: string }): TargetInfo | undefined {
 	const id = target.targetId ?? target.id
 	if (id === undefined) return undefined
@@ -224,7 +219,7 @@ async function waitForDevToolsActivePort(profileDir: string, timeoutMs: number) 
 	return browserDebugPort
 }
 
-export async function findChromeBinary() {
+async function findChromeBinary() {
 	const envCandidates = [
 		process.env.CHROME_BIN,
 		process.env.GOOGLE_CHROME_BIN,
@@ -337,31 +332,7 @@ export async function waitForPopupTarget(browserDebugPort: number, extensionId: 
 	return await waitForTarget(browserDebugPort, (target) => target.url.startsWith(`chrome-extension://${ extensionId }/html3/popupV3.html`), timeoutMs, `popup target for extension ${ extensionId }`)
 }
 
-export async function getExtensionIdFromTargets(browserDebugPort: number) {
-	const targets = await readTargets(browserDebugPort)
-	const workerTarget = targets.find((target) => target.type === 'service_worker' && target.url.startsWith('chrome-extension://'))
-	if (workerTarget !== undefined) {
-		const id = getTargetUrlExtensionId(workerTarget.url)
-		if (id !== undefined) return id
-	}
-	const popupTarget = targets.find((target) => target.url.startsWith('chrome-extension://'))
-	if (popupTarget !== undefined) {
-		const id = getTargetUrlExtensionId(popupTarget.url)
-		if (id !== undefined) return id
-	}
-	return undefined
-}
-
-export async function stopAllWorkers(browserConnection: CdpConnection, browserDebugPort: number) {
-	const targets = await readTargets(browserDebugPort)
-	for (const target of targets) {
-		if (target.type !== 'service_worker') continue
-		if (!target.url.startsWith('chrome-extension://')) continue
-		await closeTarget(browserConnection, target.id).catch(() => undefined)
-	}
-}
-
-export async function startWorker(browserConnection: CdpConnection, scopeURL: string) {
+async function startWorker(browserConnection: CdpConnection, scopeURL: string) {
 	await browserConnection.send('ServiceWorker.startWorker', { scopeURL })
 }
 
@@ -373,15 +344,11 @@ export async function createTargetPage(browserConnection: CdpConnection, url: st
 	return result.targetId
 }
 
-export async function createPopupPage(browserConnection: CdpConnection, popupUrl: string) {
-	return await createTargetPage(browserConnection, popupUrl)
-}
-
 export async function closeTarget(browserConnection: CdpConnection, targetId: string) {
 	await browserConnection.send('Target.closeTarget', { targetId })
 }
 
-export async function snapshotPerformance(connection: CdpConnection): Promise<PerformanceMarkSnapshot> {
+async function snapshotPerformance(connection: CdpConnection): Promise<PerformanceMarkSnapshot> {
 	const snapshot = await connection.evaluate<PerformanceMarkSnapshot>(`(() => {
 		const marks = performance.getEntriesByType('mark').map((entry) => ({
 			name: entry.name,
@@ -451,15 +418,9 @@ export async function getPerformanceSnapshot(connection: CdpConnection): Promise
 	return await snapshotPerformance(connection)
 }
 
-export function latestMark(snapshot: PerformanceMarkSnapshot, markName: string) {
+function latestMark(snapshot: PerformanceMarkSnapshot, markName: string) {
 	const filtered = snapshot.marks.filter((mark) => mark.name === markName)
 	return filtered.at(-1)
-}
-
-export function relativeTime(snapshot: PerformanceMarkSnapshot, markName: string) {
-	const mark = latestMark(snapshot, markName)
-	if (mark === undefined) return undefined
-	return mark.startTime
 }
 
 export function absoluteTime(snapshot: PerformanceMarkSnapshot, markName: string) {
@@ -472,21 +433,7 @@ export function roundToTwoDecimals(value: number) {
 	return Math.round(value * 100) / 100
 }
 
-export function makeLaunchDelta(launchEpochMs: number, snapshot: PerformanceMarkSnapshot, markName: string) {
-	const absolute = absoluteTime(snapshot, markName)
-	if (absolute === undefined) return undefined
-	return absolute - launchEpochMs
-}
-
-export function makePopupUrl(extensionId: string) {
-	return `chrome-extension://${ extensionId }/html3/popupV3.html`
-}
-
-export function makeBackgroundWorkerUrl(extensionId: string) {
-	return `chrome-extension://${ extensionId }/js/backgroundServiceWorker.js`
-}
-
-export async function ensureExtensionDirReady(extensionDir = EXTENSION_DIR) {
+async function ensureExtensionDirReady(extensionDir = EXTENSION_DIR) {
 	try {
 		await access(path.join(extensionDir, 'manifest.json'), fsConstants.constants.R_OK)
 	} catch {
@@ -496,24 +443,6 @@ export async function ensureExtensionDirReady(extensionDir = EXTENSION_DIR) {
 
 export async function waitForBrowserTargets(browserDebugPort: number) {
 	return await readTargets(browserDebugPort)
-}
-
-export async function closeChromeSession(session: ChromeSession) {
-	const browserClosePromise = session.browserConnection.send('Browser.close').catch(() => undefined)
-	await Promise.race([
-		browserClosePromise,
-		sleep(1_000),
-	]).catch(() => undefined)
-	session.browserConnection.close()
-	killChromeProcessGroup(session.process, 'SIGTERM')
-	await Promise.race([
-		new Promise<void>((resolve) => {
-			session.process.once('exit', () => resolve())
-		}),
-		sleep(2_000),
-	]).catch(() => undefined)
-	if (session.process.exitCode === null && session.process.signalCode === null) killChromeProcessGroup(session.process, 'SIGKILL')
-	if (session.cleanupProfile) await rm(session.profileDir, { recursive: true, force: true }).catch(() => undefined)
 }
 
 export async function launchChromeSession(extensionDir = EXTENSION_DIR, options: LaunchChromeOptions = {}): Promise<ChromeSession> {

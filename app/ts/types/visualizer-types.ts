@@ -413,13 +413,13 @@ export const VisualizedSimulationState = funtypes.Union(
 	})
 )
 
-export const hasVisualizedSimulationOperations = (visualizedSimulationState: VisualizedSimulationState) => (
+const hasVisualizedSimulationOperations = (visualizedSimulationState: VisualizedSimulationState) => (
 	visualizedSimulationState.visualizedBlocks.some((block) =>
 		block.simulatedAndVisualizedTransactions.length > 0 || block.visualizedPersonalSignRequests.length > 0
 	)
 )
 
-export const isEmptyVisualizedSimulationState = (visualizedSimulationState: VisualizedSimulationState) => (
+const isEmptyVisualizedSimulationState = (visualizedSimulationState: VisualizedSimulationState) => (
 	visualizedSimulationState.success === true && !hasVisualizedSimulationOperations(visualizedSimulationState)
 )
 
