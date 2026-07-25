@@ -374,8 +374,6 @@ export async function handleWatchAssetRequest(
 	dependencies: {
 		identifyAddress?: typeof itentifyAddressViaOnChainInformation,
 		getAddressBookEntries?: () => Promise<AddressBookEntries>,
-		updateAddressBook?: typeof updateUserAddressBookEntries,
-		publishAddressBookChanged?: () => Promise<void>,
 		scheduleDialog?: (showDialog: () => void) => void,
 		enqueueRequest?: (request: StoredWatchAssetRequest) => Promise<void>,
 		processQueue?: (websiteTabConnections: WebsiteTabConnections) => Promise<void>,
@@ -449,17 +447,9 @@ export async function handleWatchAssetRequest(
 		identifiedToken = { ...identified, entrySource: 'OnChain', chainId }
 		proposedImageUrl = loaded.metadata.imageUrl
 	}
-	let currentToken = existingEntry ?? identifiedToken
-	if (existingEntry === undefined) {
-		const updateAddressBook = dependencies.updateAddressBook ?? updateUserAddressBookEntries
-		await updateAddressBook((entries) => {
-			const updatedEntries = replaceAddressBookEntryWithAsset(entries, identifiedToken)
-			currentToken = updatedEntries.find((entry): entry is WatchAssetAddressBookEntry => (entry.type === 'ERC20' || entry.type === 'ERC721' || entry.type === 'ERC1155') && entry.type === identifiedToken.type && entry.address === identifiedToken.address && (entry.chainId ?? 1n) === chainId) ?? identifiedToken
-			return updatedEntries
-		})
-		const publishAddressBookChanged = dependencies.publishAddressBookChanged ?? (async () => await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' }))
-		await publishAddressBookChanged()
-	}
+	const currentToken = existingEntry
+		?? replaceAddressBookEntryWithAsset(addressBookEntries, identifiedToken).find((entry): entry is WatchAssetAddressBookEntry => (entry.type === 'ERC20' || entry.type === 'ERC721' || entry.type === 'ERC1155') && entry.type === identifiedToken.type && entry.address === identifiedToken.address && (entry.chainId ?? 1n) === chainId)
+		?? identifiedToken
 	const token: WatchAssetAddressBookEntry = (requestedAsset.type === 'ERC20' || requestedAsset.type === 'ERC1046') && currentToken.type === 'ERC20' && identifiedToken.type === 'ERC20'
 		? {
 			...currentToken,

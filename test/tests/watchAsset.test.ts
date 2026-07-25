@@ -155,11 +155,9 @@ describe('wallet_watchAsset', () => {
 			const requestWithInvalidDecimals = { ...interceptedRequest, params: [{ type: 'ERC20', options: { address: tokenAddress, chainId: 1, decimals } }] }
 			const parsed = WalletWatchAsset.parse(requestWithInvalidDecimals)
 			let identifyCount = 0
-			let updateCount = 0
 			const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, requestWithInvalidDecimals, website, parsed, {
 				identifyAddress: async (_ethereum, _abortController, address) => { identifyCount += 1; return { type: 'ERC20', address, name: 'Unexpected', symbol: 'NO', decimals: 18n } },
 				getAddressBookEntries: async () => [],
-				updateAddressBook: async () => { updateCount += 1 },
 				scheduleDialog: () => { throw new Error('Invalid request must not schedule a dialog') },
 			})
 
@@ -169,7 +167,6 @@ describe('wallet_watchAsset', () => {
 				error: { code: -32602, message: 'The asset decimals must be an integer from 0 to 36.' },
 			})
 			expect(identifyCount).toBe(0)
-			expect(updateCount).toBe(0)
 		}
 	})
 
@@ -187,6 +184,11 @@ describe('wallet_watchAsset', () => {
 			{ address: tokenAddress, image: 'not a url' },
 			{ address: tokenAddress, image: 'http://images.example/token.png' },
 			{ address: tokenAddress, image: 'https://127.0.0.1/token.png' },
+			{ address: tokenAddress, image: 'https://127.1/token.png' },
+			{ address: tokenAddress, image: 'https://2130706433/token.png' },
+			{ address: tokenAddress, image: 'https://0x7f000001/token.png' },
+			{ address: tokenAddress, image: 'https://10.1/token.png' },
+			{ address: tokenAddress, image: 'https://0/token.png' },
 			{ address: tokenAddress, image: 'https://images.example:8443/token.png' },
 			{ address: tokenAddress, image: 'data:image/png;base64,AA==' },
 		]) {
@@ -307,8 +309,6 @@ describe('wallet_watchAsset', () => {
 			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'contract', address }),
 			loadErc20: async () => ({ success: true, metadata: { name: undefined, symbol: undefined, decimals: undefined } }),
 			getAddressBookEntries: async () => [],
-			updateAddressBook: async () => undefined,
-			publishAddressBookChanged: async () => undefined,
 			enqueueRequest: async (request) => { queuedRequests.push(request) },
 			scheduleDialog: () => undefined,
 		})
@@ -317,24 +317,20 @@ describe('wallet_watchAsset', () => {
 		expect(queuedRequests[0]?.token).toMatchObject({ type: 'ERC20', name: 'Legacy Token', symbol: 'LEGACY', decimals: 8n })
 	})
 
-	test('identifies and stores missing token data before comparing the proposal', async () => {
+	test('identifies missing token data without persisting it before user approval', async () => {
 		const parsed = WalletWatchAsset.parse(interceptedRequest)
-		let addressBook: AddressBookEntries = [{ type: 'contract', address: BigInt(tokenAddress), name: 'Unidentified contract', entrySource: 'User', chainId: 1n, logoUri: 'data:image/png;base64,c2F2ZWQ=' }]
-		let addressBookPublicationCount = 0
+		const existingAddressBook: AddressBookEntries = [{ type: 'contract', address: BigInt(tokenAddress), name: 'Unidentified contract', entrySource: 'User', chainId: 1n, logoUri: 'data:image/png;base64,c2F2ZWQ=' }]
 		const queuedRequests: StoredWatchAssetRequest[] = []
 		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, {
 			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'ERC20', address, name: 'Identified', symbol: 'CHAIN', decimals: 18n }),
-			getAddressBookEntries: async () => addressBook,
-			updateAddressBook: async (update) => { addressBook = update(addressBook) },
-			publishAddressBookChanged: async () => { addressBookPublicationCount += 1 },
+			getAddressBookEntries: async () => existingAddressBook,
 			enqueueRequest: async (request) => { queuedRequests.push(request) },
 			scheduleDialog: () => undefined,
 		})
 
 		const identifiedToken = { type: 'ERC20' as const, address: BigInt(tokenAddress), name: 'Identified', symbol: 'CHAIN', decimals: 18n, entrySource: 'OnChain' as const, chainId: 1n, logoUri: 'data:image/png;base64,c2F2ZWQ=' }
 		expect(reply).toEqual({ type: 'result', method: 'wallet_watchAsset', result: true })
-		expect(addressBook).toEqual([identifiedToken])
-		expect(addressBookPublicationCount).toBe(1)
+		expect(existingAddressBook).toEqual([{ type: 'contract', address: BigInt(tokenAddress), name: 'Unidentified contract', entrySource: 'User', chainId: 1n, logoUri: 'data:image/png;base64,c2F2ZWQ=' }])
 		expect(queuedRequests[0]?.currentToken).toEqual(identifiedToken)
 		expect(queuedRequests[0]?.token).toEqual({ ...identifiedToken, entrySource: 'User' })
 	})
@@ -364,11 +360,10 @@ describe('wallet_watchAsset', () => {
 	test('identifies missing NFT collections and rejects a mismatched token standard', async () => {
 		const rawRequest = { ...interceptedRequest, params: [{ type: 'ERC721' as const, options: { address: tokenAddress, tokenId: '1' } }] }
 		const parsed = WalletWatchAsset.parse(rawRequest)
-		let addressBook: AddressBookEntries = []
+		const addressBook: AddressBookEntries = []
 		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, {
 			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'ERC1155', address, name: 'Wrong standard', symbol: 'WRONG', decimals: undefined, entrySource: 'OnChain' }),
 			getAddressBookEntries: async () => addressBook,
-			updateAddressBook: async (update) => { addressBook = update(addressBook) },
 			scheduleDialog: () => { throw new Error('Mismatched request must not schedule a dialog') },
 		})
 
@@ -419,8 +414,6 @@ describe('wallet_watchAsset', () => {
 			loadErc20: async () => ({ success: true, metadata: { name: undefined, symbol: undefined, decimals: undefined } }),
 			loadErc1046: async () => ({ success: true, metadata: { metadataUri: 'https://tokens.example/token.json', name: 'Metadata Token', symbol: 'META', decimals: 6, description: 'Token metadata', imageUrl: 'https://tokens.example/token.png' } }),
 			getAddressBookEntries: async () => [],
-			updateAddressBook: async () => undefined,
-			publishAddressBookChanged: async () => undefined,
 			enqueueRequest: async (request) => { queuedRequests.push(request) },
 			scheduleDialog: () => undefined,
 		})
@@ -586,6 +579,7 @@ describe('wallet_watchAsset', () => {
 		let nextPopupId = 100
 		const publishedRequestIds: number[] = []
 		const closedPopupIds: number[] = []
+		let addressBookUpdateCount = 0
 		const queueDependencies = {
 			getRequests: async () => requests,
 			updateRequests: async (update: (stored: readonly StoredWatchAssetRequest[]) => readonly StoredWatchAssetRequest[]) => { requests = update(requests); return requests },
@@ -604,7 +598,7 @@ describe('wallet_watchAsset', () => {
 		}, {
 			getRequests: async () => requests,
 			updateRequests: queueDependencies.updateRequests,
-			updateAddressBook: async () => undefined,
+			updateAddressBook: async () => { addressBookUpdateCount++ },
 			publishAddressBookChanged: async () => undefined,
 			publish: queueDependencies.publish,
 			closeDialog: async (popupOrTabId) => { closedPopupIds.push(popupOrTabId.id) },
@@ -617,6 +611,7 @@ describe('wallet_watchAsset', () => {
 		expect(requests).toHaveLength(1)
 		expect(requests[0]?.request.uniqueRequestIdentifier.requestId).toBe(22)
 		expect(requests[0]?.popupOrTabId).toEqual({ type: 'popup', id: 101 })
+		expect(addressBookUpdateCount).toBe(0)
 	})
 
 	test('downloads a proposed image before publishing the dialog', async () => {

@@ -67,8 +67,19 @@ function isNonPublicIpv4(hostname: string) {
 		|| first >= 224
 }
 
+function hasAmbiguousNumericHostname(uri: string) {
+	const authority = /^https:\/\/([^/?#]*)/i.exec(uri)?.[1]
+	if (authority === undefined) return false
+	const hostnameAndPort = authority.slice(authority.lastIndexOf('@') + 1)
+	if (hostnameAndPort.startsWith('[')) return false
+	const rawHostname = hostnameAndPort.split(':', 1)[0]?.toLowerCase()
+	if (rawHostname === undefined || !/^(?:0x[0-9a-f]+|[0-9]+)(?:\.(?:0x[0-9a-f]+|[0-9]+)){0,3}$/.test(rawHostname)) return false
+	return !/^(?:0|[1-9]\d{0,2})(?:\.(?:0|[1-9]\d{0,2})){3}$/.test(rawHostname)
+}
+
 function safeRemoteUrl(uri: string): URL | undefined {
 	const ipfsPath = uri.startsWith('ipfs://') ? uri.slice('ipfs://'.length).replace(/^ipfs\//, '') : undefined
+	if (ipfsPath === undefined && hasAmbiguousNumericHostname(uri)) return undefined
 	let url: URL
 	try {
 		url = new URL(ipfsPath === undefined ? uri : `${ IPFS_GATEWAY }${ ipfsPath }`)

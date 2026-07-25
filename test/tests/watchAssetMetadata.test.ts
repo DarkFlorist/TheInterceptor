@@ -56,10 +56,36 @@ describe('watch asset contract metadata', () => {
 	})
 
 	test('does not expose unsafe metadata image destinations for download', async () => {
-		for (const image of ['http://images.example/token.png', 'https://127.0.0.1/token.png', 'https://localhost/token.png', 'https://[::1]/token.png', 'https://images.example:8443/token.png']) {
+		for (const image of ['http://images.example/token.png', 'https://127.0.0.1/token.png', 'https://127.1/token.png', 'https://2130706433/token.png', 'https://0x7f000001/token.png', 'https://10.1/token.png', 'https://0/token.png', 'https://0177.0.0.1/token.png', 'https://localhost/token.png', 'https://[::1]/token.png', 'https://images.example:8443/token.png']) {
 			const metadataUri = metadataDataUri({ interop: { erc1046: true }, image })
 			const result = await loadErc1046Metadata(createEthereum([encodeFunctionReturn(Erc1046ABI, 'tokenURI', [metadataUri])]), 1n)
 			expect(result).toMatchObject({ success: true, metadata: { imageUrl: undefined } })
+		}
+	})
+
+	test('allows canonical public IPv4 and hex-letter DNS image destinations', async () => {
+		for (const image of ['https://8.8.8.8/token.png', 'https://cafe.ca/token.png', 'https://dead.beef/token.png']) {
+			const metadataUri = metadataDataUri({ interop: { erc1046: true }, image })
+			const result = await loadErc1046Metadata(createEthereum([encodeFunctionReturn(Erc1046ABI, 'tokenURI', [metadataUri])]), 1n)
+			expect(result).toMatchObject({ success: true, metadata: { imageUrl: image } })
+		}
+	})
+
+	test('rejects alternative numeric IP metadata hosts before fetching', async () => {
+		const originalFetch = globalThis.fetch
+		let fetchCount = 0
+		globalThis.fetch = async () => {
+			fetchCount++
+			throw new Error('Unsafe metadata URL must not be fetched')
+		}
+		try {
+			for (const metadataUri of ['https://127.1/token.json', 'https://2130706433/token.json', 'https://0x7f000001/token.json', 'https://10.1/token.json', 'https://0/token.json', 'https://0177.0.0.1/token.json']) {
+				const result = await loadErc1046Metadata(createEthereum([encodeFunctionReturn(Erc1046ABI, 'tokenURI', [metadataUri])]), 1n)
+				expect(result.success).toBeFalse()
+			}
+			expect(fetchCount).toBe(0)
+		} finally {
+			globalThis.fetch = originalFetch
 		}
 	})
 
