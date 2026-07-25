@@ -51,9 +51,6 @@
 
 	"treatConfigHintsAsErrors": true,
 
-	// Test modules load this hook dynamically to exercise a fresh module instance.
-	"tags": ["-knipignore"],
-
 	// toggle for all applied rules
 	"rules": {
 		"dependencies": "error",
