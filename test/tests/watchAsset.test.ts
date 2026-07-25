@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { type EthereumJsonRpcRequest as EthereumJsonRpcRequestType, EthereumJsonRpcRequest, WalletWatchAsset } from '../../app/ts/types/JsonRpc-types.js'
-import { enqueueStoredWatchAssetRequest, handleWatchAssetRequest, invalidWatchAssetRequest, MAX_PENDING_WATCH_ASSET_REQUESTS, MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN, processWatchAssetQueue, replaceAddressBookEntryWithAsset, resolveWatchAsset, updateWatchAssetViewWithPendingRequest, validateWatchAssetParameters } from '../../app/ts/background/windows/watchAsset.js'
+import { enqueueStoredWatchAssetRequest, handleWatchAssetRequest, MAX_PENDING_WATCH_ASSET_REQUESTS, MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN, processWatchAssetQueue, replaceAddressBookEntryWithAsset, resolveWatchAsset, updateWatchAssetViewWithPendingRequest, validateWatchAssetParameters } from '../../app/ts/background/windows/watchAsset.js'
 import { parseEthereumJsonRpcRequestForBackground } from '../../app/ts/background/rpcRequestParsing.js'
+import { getMethodSpecificRpcParseFailureReply } from '../../app/ts/background/rpcParseFailureReplies.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { StoredWatchAssetRequest, type WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
@@ -114,16 +115,17 @@ describe('wallet_watchAsset', () => {
 		expect(() => WalletWatchAsset.parse({ method: 'wallet_watchAsset', params: [{ type: 'ERC1046', options: { address: tokenAddress } }] })).not.toThrow()
 	})
 
-	test('keeps generic parse failures method-agnostic and creates the watch-asset invalid params reply locally', () => {
+	test('keeps generic parse failures method-agnostic and delegates method-specific replies', () => {
 		const parsed = parseEthereumJsonRpcRequestForBackground({ ...interceptedRequest, params: [{ type: 'ERC721', options: { address: tokenAddress } }] })
 		expect(parsed.success).toBeFalse()
 		if (parsed.success) throw new Error('Expected malformed wallet_watchAsset request')
 		expect(Object.keys(parsed).sort()).toEqual(['fullError', 'success'])
-		expect(invalidWatchAssetRequest('Invalid wallet_watchAsset parameters.')).toEqual({
+		expect(getMethodSpecificRpcParseFailureReply({ ...interceptedRequest, params: [{ type: 'ERC721', options: { address: tokenAddress } }] })).toEqual({
 			type: 'result',
 			method: 'wallet_watchAsset',
 			error: { code: -32602, message: 'Invalid wallet_watchAsset parameters.' },
 		})
+		expect(getMethodSpecificRpcParseFailureReply({ ...interceptedRequest, method: 'unsupported_method', params: [] })).toBeUndefined()
 	})
 
 	test('requires an EIP-55 checksummed address', () => {

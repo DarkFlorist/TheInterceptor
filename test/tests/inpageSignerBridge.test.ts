@@ -804,6 +804,20 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
+	test('rejects named parameters for methods that only accept positional parameters', async () => {
+		const { fakeWindow } = createFakeWindow()
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?unsupported-named-params', async () => {
+			const provider = fakeWindow.ethereum as { request: (payload: { method: string, params: Readonly<Record<string, unknown>> }) => Promise<unknown> }
+			await assert.rejects(
+				async () => await provider.request({ method: 'eth_chainId', params: {} }),
+				(error: unknown) => isRecord(error)
+					&& error.code === -32602
+					&& error.message === 'Named parameters are only supported for wallet_watchAsset.',
+			)
+		})
+	})
+
 	test('ignores replayed terminal replies after the original request settles', async () => {
 		let capturedRequest: InpageRequest | undefined
 		const { fakeWindow, interceptorErrorPayloads, sendBackgroundMessage } = createFakeWindow({

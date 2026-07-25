@@ -264,8 +264,9 @@ type AnyCallBack =  ((message: ProviderMessage) => void)
 	| ((error: ProviderRpcError) => void)
 	| ((chainId: string) => void)
 
-type EthereumRequestParameters = readonly unknown[] | Readonly<Record<string, unknown>>
+type EthereumRequestParameters = readonly unknown[]
 type EthereumRequest = (methodAndParams: { readonly method: string, readonly params?: EthereumRequestParameters }) => Promise<unknown>
+type InterceptorEthereumRequestParameters = EthereumRequestParameters | Readonly<Record<string, unknown>>
 
 type InjectFunctions = {
 	request: EthereumRequest
@@ -706,7 +707,7 @@ class InterceptorMessageListener {
 	}
 
 	// sends a message to interceptors background script
-	private readonly WindowEthereumRequest = async (methodAndParams: { readonly method: string, readonly params?: EthereumRequestParameters }) => {
+	private readonly WindowEthereumRequest = async (methodAndParams: { readonly method: string, readonly params?: InterceptorEthereumRequestParameters }) => {
 		try {
 			if (isInternalBackgroundMethod(methodAndParams.method)) throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, `Method not supported: ${ methodAndParams.method }`)
 			const params = methodAndParams.method === 'wallet_watchAsset' && methodAndParams.params !== undefined && !Array.isArray(methodAndParams.params)
