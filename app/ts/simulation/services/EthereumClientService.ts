@@ -268,6 +268,11 @@ export class EthereumClientService {
 		return EthereumQuantity.parse(response)
 	}
 
+	public readonly getMaxPriorityFeePerGas = async(requestAbortController: AbortController | undefined) => {
+		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_maxPriorityFeePerGas' }, requestAbortController)
+		return EthereumQuantity.parse(response)
+	}
+
 	public readonly getTransactionByHash = async (hash: bigint, requestAbortController: AbortController | undefined) => {
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_getTransactionByHash', params: [hash] }, requestAbortController)
 		if (response === null) return null

@@ -1,12 +1,12 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { createEthereumSubscription, createNewFilter, getEthFilterChanges, getEthFilterLogs, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
-import { getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, simulatedCallFromInput, simulateEstimateGasFromInput, getInputFieldFromDataOrInput, getSimulatedFeeHistory, getSimulatedTransactionCountFromInput, ethSimulateV1FromInput } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, simulatedCallFromInput, simulateEstimateGasFromInput, getInputFieldFromDataOrInput, getSimulatedFeeHistory, getSimulatedTransactionCountFromInput, ethSimulateV1FromInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GET_CODE_FAILED } from '../utils/constants.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { ResolvedExecutionSimulationState, ResolvedSimulationInput } from '../types/visualizer-types.js'
 import { openChangeChainDialog } from './windows/changeChain.js'
 import type { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
-import type { EstimateGasParams, EthBalanceParams, EthBlockByHashParams, EthBlockByNumberParams, EthCallParams, EthNewFilter, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, FeeHistory, GetCode, GetFilterChanges, GetSimulationStack, GetTransactionCount, SendRawTransactionParams, SendTransactionParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams, UninstallFilter, GetFilterLogs, InterceptorError } from '../types/JsonRpc-types.js'
+import type { EstimateGasParams, EthBalanceParams, EthBlockByHashParams, EthBlockByNumberParams, EthCallParams, EthGetStorageAtParams, EthNewFilter, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, FeeHistory, GetCode, GetFilterChanges, GetSimulationStack, GetTransactionCount, SendRawTransactionParams, SendTransactionParams, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams, UninstallFilter, GetFilterLogs, InterceptorError } from '../types/JsonRpc-types.js'
 import type { EthSimulateV1Params } from '../types/ethSimulate-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import type { SignMessageParams } from '../types/jsonRpc-signing-types.js'
@@ -132,6 +132,10 @@ export async function gasPrice(ethereumClientService: EthereumClientService) {
 	return { type: 'result' as const, method: 'eth_gasPrice' as const, result: await ethereumClientService.getGasPrice(undefined) }
 }
 
+export async function maxPriorityFeePerGas(ethereumClientService: EthereumClientService) {
+	return { type: 'result' as const, method: 'eth_maxPriorityFeePerGas' as const, result: await ethereumClientService.getMaxPriorityFeePerGas(undefined) }
+}
+
 export async function personalSign(
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
@@ -160,6 +164,15 @@ export async function getCode(ethereumClientService: EthereumClientService, simu
 	const code = await getSimulatedCodeFromInput(ethereumClientService, undefined, simulationInput, request.params[0], request.params[1])
 	if (code.statusCode === 'failure') return { type: 'result' as const, method: request.method, ...ERROR_INTERCEPTOR_GET_CODE_FAILED }
 	return { type: 'result' as const, method: request.method, result: code.getCodeReturn }
+}
+
+export async function getStorageAt(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EthGetStorageAtParams) {
+	const [address, slot, blockTag] = request.params
+	return {
+		type: 'result' as const,
+		method: request.method,
+		result: await getSimulatedStorageAtFromInput(ethereumClientService, undefined, simulationInput, address, slot, blockTag),
+	}
 }
 
 export async function getPermissions(activeAddress: bigint | undefined, website: Website) {
