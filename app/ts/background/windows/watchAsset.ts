@@ -23,6 +23,30 @@ export const MAX_PENDING_WATCH_ASSET_REQUESTS = 20
 export const MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN = 3
 export const MAX_WATCH_ASSET_IMAGE_SIZE_BYTES = 262_144
 
+const downloadWatchAssetImage = async (url: string) => await imageToUri(url, MAX_WATCH_ASSET_IMAGE_SIZE_BYTES, { redirect: 'error' })
+
+async function downloadProposedTokenImage(requestedImageUrl: string | undefined, downloadImage: (url: string) => Promise<ImageToUriResult>) {
+	if (requestedImageUrl === undefined) return { selectedImageUri: undefined, imageDownloadError: undefined }
+	const imageUrl = normalizeWatchAssetImageUrl(requestedImageUrl)
+	if (imageUrl === undefined) return { selectedImageUri: undefined, imageDownloadError: 'The proposed image URL is not safe to download.' }
+	const imageResult = await downloadImage(imageUrl)
+	if (imageResult.data === undefined) return { selectedImageUri: undefined, imageDownloadError: 'The proposed image could not be downloaded or decoded.' }
+	return { selectedImageUri: imageResult.data, imageDownloadError: undefined }
+}
+
+async function prepareProposedTokenImage(
+	request: StoredWatchAssetRequest,
+	updateRequests: typeof updatePendingWatchAssetRequests,
+	downloadImage: (url: string) => Promise<ImageToUriResult>,
+) {
+	const requestedImageUrl = request.proposedImageUrl ?? (request.requestedAsset.type === 'ERC20' ? request.requestedAsset.options.image : undefined)
+	if (requestedImageUrl === undefined || request.selectedImageUri !== undefined || request.imageDownloadError !== undefined) return request
+	const requestIdentifier = request.request.uniqueRequestIdentifier
+	const downloadedImage = await downloadProposedTokenImage(requestedImageUrl, downloadImage)
+	const updated = await updateRequests((requests) => requests.map((stored) => requestsMatch(stored, requestIdentifier) ? { ...stored, ...downloadedImage } : stored))
+	return updated.find((stored) => requestsMatch(stored, requestIdentifier))
+}
+
 function watchAssetQueueIdentity(request: StoredWatchAssetRequest) {
 	const tokenId = request.requestedAsset.type === 'ERC721' || request.requestedAsset.type === 'ERC1155' ? `|${ BigInt(request.requestedAsset.options.tokenId).toString() }` : ''
 	return `${ request.website.websiteOrigin }|${ request.token.chainId ?? 1n }|${ request.requestedAsset.type }|${ request.requestedAsset.options.address }${ tokenId }`
@@ -115,18 +139,6 @@ async function publishWatchAssetRequest(request: StoredWatchAssetRequest) {
 	if (pending !== undefined) await sendPopupMessageToOpenWindows({ method: 'popup_WatchAssetRequest', data: pending })
 }
 
-export async function updateWatchAssetViewWithPendingRequest(websiteTabConnections?: WebsiteTabConnections) {
-	const [first] = await getPendingWatchAssetRequests()
-	if (first === undefined || first.popupOrTabId === undefined) return undefined
-	const forwardToSigner = websiteTabConnections === undefined ? undefined : await getForwardSignerTarget(websiteTabConnections, first)
-	const request = doForwardSignerTargetsMatch(forwardToSigner, first.forwardToSigner)
-		? first
-		: (await updatePendingWatchAssetRequests((requests) => requests.map((stored) => requestsMatch(stored, first.request.uniqueRequestIdentifier) ? { ...stored, forwardToSigner } : stored)))[0]
-	if (request === undefined) return undefined
-	await publishWatchAssetRequest(request)
-	return toPendingRequest(request)
-}
-
 type QueueProcessingDependencies = {
 	getRequests: typeof getPendingWatchAssetRequests
 	updateRequests: typeof updatePendingWatchAssetRequests
@@ -134,6 +146,7 @@ type QueueProcessingDependencies = {
 	dialogExists: (popupOrTabId: PopupOrTabId) => Promise<boolean>
 	closeDialog: typeof closePopupOrTabById
 	publish: typeof publishWatchAssetRequest
+	downloadImage?: (url: string) => Promise<ImageToUriResult>
 }
 
 const defaultQueueProcessingDependencies: QueueProcessingDependencies = {
@@ -146,14 +159,52 @@ const defaultQueueProcessingDependencies: QueueProcessingDependencies = {
 	dialogExists: async (popupOrTabId) => await getPopupOrTabById(popupOrTabId) !== undefined,
 	closeDialog: closePopupOrTabById,
 	publish: publishWatchAssetRequest,
+	downloadImage: downloadWatchAssetImage,
 }
 
 const queueProcessingSemaphore = new Semaphore(1)
+
+type PendingWatchAssetViewDependencies = {
+	getRequests: typeof getPendingWatchAssetRequests
+	updateRequests: typeof updatePendingWatchAssetRequests
+	publish: typeof publishWatchAssetRequest
+	downloadImage: (url: string) => Promise<ImageToUriResult>
+}
+
+const defaultPendingWatchAssetViewDependencies: PendingWatchAssetViewDependencies = {
+	getRequests: getPendingWatchAssetRequests,
+	updateRequests: updatePendingWatchAssetRequests,
+	publish: publishWatchAssetRequest,
+	downloadImage: downloadWatchAssetImage,
+}
+
+export async function updateWatchAssetViewWithPendingRequest(
+	websiteTabConnections?: WebsiteTabConnections,
+	dependencies: PendingWatchAssetViewDependencies = defaultPendingWatchAssetViewDependencies,
+) {
+	return await queueProcessingSemaphore.execute(async () => {
+		const [first] = await dependencies.getRequests()
+		if (first === undefined || first.popupOrTabId === undefined) return undefined
+		const prepared = await prepareProposedTokenImage(first, dependencies.updateRequests, dependencies.downloadImage)
+		if (prepared === undefined) return undefined
+		const forwardToSigner = websiteTabConnections === undefined ? undefined : await getForwardSignerTarget(websiteTabConnections, prepared)
+		const request = doForwardSignerTargetsMatch(forwardToSigner, prepared.forwardToSigner)
+			? prepared
+			: (await dependencies.updateRequests((requests) => requests.map((stored) => requestsMatch(stored, prepared.request.uniqueRequestIdentifier) ? { ...stored, forwardToSigner } : stored)))[0]
+		if (request === undefined) return undefined
+		await dependencies.publish(request)
+		return toPendingRequest(request)
+	})
+}
+
 export async function processWatchAssetQueue(websiteTabConnections: WebsiteTabConnections | undefined, dependencies: QueueProcessingDependencies = defaultQueueProcessingDependencies) {
 	await queueProcessingSemaphore.execute(async () => {
 		while (true) {
-			const [first] = await dependencies.getRequests()
+			let [first] = await dependencies.getRequests()
 			if (first === undefined) return
+			const prepared = await prepareProposedTokenImage(first, dependencies.updateRequests, dependencies.downloadImage ?? downloadWatchAssetImage)
+			if (prepared === undefined) continue
+			first = prepared
 			if (first.popupOrTabId !== undefined) {
 				if (await dependencies.dialogExists(first.popupOrTabId)) {
 					const [current] = await dependencies.getRequests()
@@ -218,7 +269,7 @@ function defaultResolutionDependencies(websiteTabConnections: WebsiteTabConnecti
 				result: { ...request.requestedAsset, options: { ...request.requestedAsset.options, address: checksummedAddress(request.requestedAsset.options.address) } },
 			},
 		) !== false,
-		downloadImage: async (url) => await imageToUri(url, MAX_WATCH_ASSET_IMAGE_SIZE_BYTES, { redirect: 'error' }),
+		downloadImage: downloadWatchAssetImage,
 	}
 }
 
@@ -363,8 +414,6 @@ export async function handleWatchAssetRequest(
 	const identified = await identifyAddress(ethereumClientService, undefined, requestedAsset.options.address)
 	let identifiedToken: WatchAssetAddressBookEntry
 	let proposedImageUrl: string | undefined = requestedAsset.type === 'ERC20' ? normalizeWatchAssetImageUrl(requestedAsset.options.image) : undefined
-	let proposedAssetName: string | undefined
-	let proposedAssetDescription: string | undefined
 	if (requestedAsset.type === 'ERC20') {
 		if (identified.type === 'EOA' || identified.type === 'ERC721' || identified.type === 'ERC1155') return invalidWatchAssetRequest('The requested address is not an ERC20 token contract on the active chain.')
 		const legacyMetadata = identified.type === 'ERC20'
@@ -408,8 +457,6 @@ export async function handleWatchAssetRequest(
 			entrySource: 'OnChain',
 			chainId,
 		}
-		proposedAssetName = loaded.metadata.name
-		proposedAssetDescription = loaded.metadata.description
 		proposedImageUrl = loaded.metadata.imageUrl
 	} else {
 		if (identified.type !== requestedAsset.type) return invalidWatchAssetRequest(`The requested address is not an ${ requestedAsset.type } token contract on the active chain.`)
@@ -417,8 +464,6 @@ export async function handleWatchAssetRequest(
 		const loaded = await (dependencies.loadNft ?? loadNftMetadataAndVerifyOwnership)(ethereumClientService, requestedAsset.type, requestedAsset.options.address, tokenId, activeAddress)
 		if (!loaded.success) return watchAssetRequestError(loaded.message, loaded.code)
 		identifiedToken = { ...identified, entrySource: 'OnChain', chainId }
-		proposedAssetName = loaded.metadata.name
-		proposedAssetDescription = loaded.metadata.description
 		proposedImageUrl = loaded.metadata.imageUrl
 	}
 	let currentToken = existingEntry ?? identifiedToken
@@ -454,8 +499,6 @@ export async function handleWatchAssetRequest(
 		requestedAsset,
 		currentToken,
 		token,
-		proposedAssetName,
-		proposedAssetDescription,
 		proposedImageUrl,
 		selectedImageUri: undefined,
 		imageDownloadError: undefined,

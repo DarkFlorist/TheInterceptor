@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { type EthereumJsonRpcRequest as EthereumJsonRpcRequestType, EthereumJsonRpcRequest, WalletWatchAsset } from '../../app/ts/types/JsonRpc-types.js'
-import { enqueueStoredWatchAssetRequest, handleWatchAssetRequest, MAX_PENDING_WATCH_ASSET_REQUESTS, MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN, processWatchAssetQueue, replaceAddressBookEntryWithAsset, resolveWatchAsset, validateWatchAssetParameters } from '../../app/ts/background/windows/watchAsset.js'
+import { enqueueStoredWatchAssetRequest, handleWatchAssetRequest, MAX_PENDING_WATCH_ASSET_REQUESTS, MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN, processWatchAssetQueue, replaceAddressBookEntryWithAsset, resolveWatchAsset, updateWatchAssetViewWithPendingRequest, validateWatchAssetParameters } from '../../app/ts/background/windows/watchAsset.js'
 import { parseEthereumJsonRpcRequestForBackground } from '../../app/ts/background/rpcRequestParsing.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { StoredWatchAssetRequest, type WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
@@ -63,8 +63,6 @@ function createStoredRequest(requestId: number, websiteOrigin = website.websiteO
 			chainId: 1n,
 			entrySource: 'User',
 		},
-		proposedAssetName: undefined,
-		proposedAssetDescription: undefined,
 		proposedImageUrl: undefined,
 		selectedImageUri: undefined,
 		imageDownloadError: undefined,
@@ -672,6 +670,66 @@ describe('wallet_watchAsset', () => {
 		expect(requests).toHaveLength(1)
 		expect(requests[0]?.request.uniqueRequestIdentifier.requestId).toBe(22)
 		expect(requests[0]?.popupOrTabId).toEqual({ type: 'popup', id: 101 })
+	})
+
+	test('downloads a proposed image before publishing the dialog', async () => {
+		const proposedImageUrl = 'https://assets.example/token.png'
+		let requests: readonly StoredWatchAssetRequest[] = [{ ...createStoredRequest(23), proposedImageUrl }]
+		let published: StoredWatchAssetRequest | undefined
+		let downloadedUrl: string | undefined
+
+		await processWatchAssetQueue(undefined, {
+			getRequests: async () => requests,
+			updateRequests: async (update) => { requests = update(requests); return requests },
+			openDialog: async () => ({ type: 'popup', id: 123 }),
+			dialogExists: async () => false,
+			closeDialog: async () => undefined,
+			publish: async (request) => { published = request },
+			downloadImage: async (url) => {
+				downloadedUrl = url
+				return { data: 'data:image/png;base64,dG9rZW4=', failureReason: undefined }
+			},
+		})
+
+		expect(downloadedUrl).toBe(proposedImageUrl)
+		expect(requests[0]?.selectedImageUri).toBe('data:image/png;base64,dG9rZW4=')
+		expect(published?.selectedImageUri).toBe('data:image/png;base64,dG9rZW4=')
+		expect(published?.popupOrTabId).toEqual({ type: 'popup', id: 123 })
+	})
+
+	test('downloads a proposed image before republishing a recovered active dialog', async () => {
+		const proposedImageUrl = 'https://assets.example/recovered.png'
+		const active = { ...createStoredRequest(24), popupOrTabId: { type: 'popup' as const, id: 124 }, proposedImageUrl }
+		let requests: readonly StoredWatchAssetRequest[] = [active]
+		let published: StoredWatchAssetRequest | undefined
+		let addressBook: AddressBookEntries = []
+
+		const pending = await updateWatchAssetViewWithPendingRequest(undefined, {
+			getRequests: async () => requests,
+			updateRequests: async (update) => { requests = update(requests); return requests },
+			publish: async (request) => { published = request },
+			downloadImage: async () => ({ data: 'data:image/png;base64,cmVjb3ZlcmVk', failureReason: undefined }),
+		})
+
+		expect(pending?.selectedImageUri).toBe('data:image/png;base64,cmVjb3ZlcmVk')
+		expect(published?.selectedImageUri).toBe('data:image/png;base64,cmVjb3ZlcmVk')
+
+		await resolveWatchAsset(websiteTabConnections, {
+			method: 'popup_watchAssetDialog',
+			data: { action: 'add', uniqueRequestIdentifier: active.request.uniqueRequestIdentifier },
+		}, {
+			getRequests: async () => requests,
+			updateRequests: async (update) => { requests = update(requests); return requests },
+			updateAddressBook: async (update) => { addressBook = update(addressBook) },
+			publishAddressBookChanged: async () => undefined,
+			publish: async () => undefined,
+			closeDialog: async () => undefined,
+			processQueue: async () => undefined,
+			sendToSigner: () => false,
+			downloadImage: async () => ({ data: undefined, failureReason: 'unused' }),
+		})
+
+		expect(addressBook[0]?.logoUri).toBe('data:image/png;base64,cmVjb3ZlcmVk')
 	})
 
 	test('recovers an unassigned persisted request during worker startup', async () => {

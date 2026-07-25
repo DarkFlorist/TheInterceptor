@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
-import { WatchAssetActions, WatchAssetDetails } from '../../app/ts/components/pages/WatchAsset.js'
+import { WATCH_ASSET_TITLE, WatchAssetActions, WatchAssetDetails } from '../../app/ts/components/pages/WatchAsset.js'
 import type { PendingWatchAssetRequest } from '../../app/ts/types/user-interface-types.js'
 import { installDomMock } from './domMock.js'
 
@@ -83,10 +83,8 @@ const pendingRequest: PendingWatchAssetRequest = {
 		entrySource: 'User',
 		logoUri: 'data:image/png;base64,b2xk',
 	},
-	proposedAssetName: undefined,
-	proposedAssetDescription: undefined,
 	proposedImageUrl: 'https://dapp.example/token.png',
-	selectedImageUri: undefined,
+	selectedImageUri: 'data:image/png;base64,dG9rZW4=',
 	imageDownloadError: undefined,
 	forwardToSigner: { signerName: 'MetaMask', connectionName: 3n, ownerGeneration: 1, signerProviderGeneration: 1 },
 }
@@ -102,8 +100,6 @@ describe('watch asset proposal rendering', () => {
 				requestedAsset: { type, options: { address: pendingRequest.currentToken.address, tokenId: '42' } },
 				currentToken,
 				token: { ...currentToken, watchedTokenIds: [7n, 42n] },
-				proposedAssetName: 'Token #42',
-				proposedAssetDescription: 'Token-specific metadata',
 			}
 			const dom = installDomMock()
 			try {
@@ -111,8 +107,8 @@ describe('watch asset proposal rendering', () => {
 				const text = dom.document.body.textContent ?? ''
 				assert.match(text, new RegExp(`${ type }.*Token IDs.*7.*7, 42.*Will change`, 's'))
 				assert.match(text, new RegExp(`Name${ currentToken.name }${ currentToken.name }No change`, 's'))
-				assert.match(text, /Token metadataToken nameToken #42DescriptionToken-specific metadata/)
-				assert.match(text, /Informational metadata is shown for verification and is not stored as an address-book field/)
+				assert.equal(text.includes('Token metadata'), false)
+				assert.equal(text.includes('Description'), false)
 				assert.equal(text.includes('Decimals'), false)
 			} finally {
 				render(null, dom.document.body)
@@ -153,11 +149,12 @@ describe('watch asset proposal rendering', () => {
 				'6',
 				'8',
 				'Token image',
-				'Download image',
 			]) assert.match(requestSection?.textContent ?? '', new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
 			assert.equal(requestSection?.textContent?.includes('https://dapp.example/token.png'), false)
 			assert.notEqual(findNodeByAttribute(requestSection ?? {}, 'src', 'data:image/png;base64,b2xk'), undefined)
+			assert.notEqual(findNodeByAttribute(requestSection ?? {}, 'src', 'data:image/png;base64,dG9rZW4='), undefined)
 			assert.notEqual(findNodeByAttribute(requestSection ?? {}, 'value', '0x1111111111111111111111111111111111111111'), undefined)
+			assert.equal(requestSection?.textContent?.includes('Fields marked'), false)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
@@ -172,6 +169,7 @@ describe('watch asset proposal rendering', () => {
 				requestedAsset: { type: 'ERC20', options: { address: pendingRequest.requestedAsset.options.address } },
 				token: { ...pendingRequest.currentToken, entrySource: 'User' },
 				proposedImageUrl: undefined,
+				selectedImageUri: undefined,
 			}
 			await act(() => {
 				render(h(WatchAssetDetails, { pendingRequest: requestWithoutHints }), dom.document.body)
@@ -209,14 +207,14 @@ describe('watch asset proposal rendering', () => {
 	test('shows an image download failure without exposing the image URL', async () => {
 		const dom = installDomMock()
 		try {
-			const failedRequest = { ...pendingRequest, imageDownloadError: 'The proposed image could not be downloaded or decoded.' }
+			const failedRequest = { ...pendingRequest, selectedImageUri: undefined, imageDownloadError: 'The proposed image could not be downloaded or decoded.' }
 			await act(() => {
 				render(h(WatchAssetDetails, { pendingRequest: failedRequest }), dom.document.body)
 			})
 
 			assert.equal(dom.document.body.textContent?.includes('https://dapp.example/token.png'), false)
 			assert.notEqual(findNodeByExactText(dom.document.body, 'The proposed image could not be downloaded or decoded.'), undefined)
-			assert.notEqual(findNodeByExactText(dom.document.body, 'Download image'), undefined)
+			assert.equal(findNodeByExactText(dom.document.body, 'Download image'), undefined)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
@@ -257,5 +255,9 @@ describe('watch asset proposal rendering', () => {
 			render(null, dom.document.body)
 			dom.restore()
 		}
+	})
+
+	test('uses the requested dialog title', () => {
+		assert.equal(WATCH_ASSET_TITLE, 'Add to Address Book Edit Request')
 	})
 })

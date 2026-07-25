@@ -221,8 +221,6 @@ const WatchAssetRequestDetails = funtypes.ReadonlyObject({
 	requestedAsset: WalletWatchAssetParameters,
 	currentToken: WatchAssetToken,
 	token: WatchAssetToken,
-	proposedAssetName: funtypes.Union(funtypes.String, funtypes.Undefined),
-	proposedAssetDescription: funtypes.Union(funtypes.String, funtypes.Undefined),
 	proposedImageUrl: funtypes.Union(funtypes.String, funtypes.Undefined),
 	selectedImageUri: funtypes.Union(funtypes.String, funtypes.Undefined),
 	imageDownloadError: funtypes.Union(funtypes.String, funtypes.Undefined),
