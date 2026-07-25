@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { type EthereumJsonRpcRequest as EthereumJsonRpcRequestType, EthereumJsonRpcRequest, WalletWatchAsset } from '../../app/ts/types/JsonRpc-types.js'
 import { enqueueStoredWatchAssetRequest, handleWatchAssetRequest, MAX_PENDING_WATCH_ASSET_REQUESTS, MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN, processWatchAssetQueue, replaceAddressBookEntryWithAsset, resolveWatchAsset, updateWatchAssetViewWithPendingRequest, validateWatchAssetParameters } from '../../app/ts/background/windows/watchAsset.js'
-import { parseEthereumJsonRpcRequestForBackground } from '../../app/ts/background/rpcRequestParsing.js'
-import { getMethodSpecificRpcParseFailureReply } from '../../app/ts/background/rpcParseFailureReplies.js'
+import { getWatchAssetRpcParseFailureReply } from '../../app/ts/background/watchAssetRpc.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { StoredWatchAssetRequest, type WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
@@ -115,17 +114,15 @@ describe('wallet_watchAsset', () => {
 		expect(() => WalletWatchAsset.parse({ method: 'wallet_watchAsset', params: [{ type: 'ERC1046', options: { address: tokenAddress } }] })).not.toThrow()
 	})
 
-	test('keeps generic parse failures method-agnostic and delegates method-specific replies', () => {
-		const parsed = parseEthereumJsonRpcRequestForBackground({ ...interceptedRequest, params: [{ type: 'ERC721', options: { address: tokenAddress } }] })
-		expect(parsed.success).toBeFalse()
-		if (parsed.success) throw new Error('Expected malformed wallet_watchAsset request')
-		expect(Object.keys(parsed).sort()).toEqual(['fullError', 'success'])
-		expect(getMethodSpecificRpcParseFailureReply({ ...interceptedRequest, params: [{ type: 'ERC721', options: { address: tokenAddress } }] })).toEqual({
+	test('provides feature-owned replies for malformed watch-asset requests', () => {
+		const malformedRequest = { ...interceptedRequest, params: [{ type: 'ERC721', options: { address: tokenAddress } }] }
+		expect(EthereumJsonRpcRequest.safeParse(malformedRequest).success).toBeFalse()
+		expect(getWatchAssetRpcParseFailureReply(malformedRequest)).toEqual({
 			type: 'result',
 			method: 'wallet_watchAsset',
 			error: { code: -32602, message: 'Invalid wallet_watchAsset parameters.' },
 		})
-		expect(getMethodSpecificRpcParseFailureReply({ ...interceptedRequest, method: 'unsupported_method', params: [] })).toBeUndefined()
+		expect(getWatchAssetRpcParseFailureReply({ ...interceptedRequest, method: 'unsupported_method', params: [] })).toBeUndefined()
 	})
 
 	test('requires an EIP-55 checksummed address', () => {
@@ -467,7 +464,6 @@ describe('wallet_watchAsset', () => {
 			closeDialog: async (popupOrTabId) => { closedPopupId = popupOrTabId.id },
 			processQueue: async () => { processQueueCount += 1 },
 			sendToSigner: () => false,
-			downloadImage: async () => ({ data: undefined, failureReason: 'unused' }),
 		})
 
 		expect(requests).toEqual([])
@@ -491,7 +487,6 @@ describe('wallet_watchAsset', () => {
 			closeDialog: async () => undefined,
 			processQueue: async () => undefined,
 			sendToSigner: () => false,
-			downloadImage: async () => ({ data: undefined, failureReason: 'unused' }),
 		}
 
 		await resolveWatchAsset(websiteTabConnections, { method: 'popup_watchAssetDialog', data: { action: 'add', uniqueRequestIdentifier: first.request.uniqueRequestIdentifier } }, dependencies)
@@ -527,7 +522,6 @@ describe('wallet_watchAsset', () => {
 			closeDialog: async () => undefined,
 			processQueue: async () => undefined,
 			sendToSigner: () => false,
-			downloadImage: async () => ({ data: undefined, failureReason: 'unused' }),
 		})
 
 		expect(addressBook[0]?.logoUri).toBe(latestAddressBookLogo)
@@ -553,7 +547,6 @@ describe('wallet_watchAsset', () => {
 			closeDialog: async () => { throw new Error('Dialog must remain open') },
 			processQueue: async () => { throw new Error('Queue must not advance') },
 			sendToSigner: () => false,
-			downloadImage: async () => ({ data: undefined, failureReason: 'unused' }),
 		})
 
 		expect(requests).toHaveLength(1)
@@ -561,79 +554,31 @@ describe('wallet_watchAsset', () => {
 		expect(published?.forwardToSigner).toBeUndefined()
 	})
 
-	test('does not fetch an unsafe image URL from a legacy persisted request', async () => {
+	test('does not automatically fetch an unsafe image URL from a legacy persisted request', async () => {
 		const imageUrl = 'https://127.0.0.1/private-value.png'
 		const base = createStoredRequest(14)
 		const stored: StoredWatchAssetRequest = {
 			...base,
-			popupOrTabId: { type: 'popup', id: 94 },
 			requestedAsset: { ...base.requestedAsset, options: { ...base.requestedAsset.options, image: imageUrl } },
 		}
 		let requests: readonly StoredWatchAssetRequest[] = [stored]
 		let downloadCount = 0
+		let published: StoredWatchAssetRequest | undefined
 
-		await resolveWatchAsset(websiteTabConnections, {
-			method: 'popup_watchAssetDialog',
-			data: { action: 'downloadImage', uniqueRequestIdentifier: stored.request.uniqueRequestIdentifier },
-		}, {
+		await processWatchAssetQueue(undefined, {
 			getRequests: async () => requests,
 			updateRequests: async (update) => { requests = update(requests); return requests },
-			updateAddressBook: async () => undefined,
-			publishAddressBookChanged: async () => undefined,
-			publish: async () => undefined,
+			openDialog: async () => ({ type: 'popup', id: 94 }),
+			dialogExists: async () => false,
 			closeDialog: async () => undefined,
-			processQueue: async () => undefined,
-			sendToSigner: () => false,
+			publish: async (request) => { published = request },
 			downloadImage: async () => { downloadCount++; return { data: undefined, failureReason: 'must not be called' } },
 		})
 
 		expect(downloadCount).toBe(0)
 		expect(requests[0]?.imageDownloadError).toBe('The proposed image URL is not safe to download.')
 		expect(requests[0]?.imageDownloadError).not.toContain(imageUrl)
-	})
-
-	test('downloads an opted-in image, keeps the dialog open, and stores it when the token is added', async () => {
-		const base = createStoredRequest(13)
-		const stored: StoredWatchAssetRequest = {
-			...base,
-			popupOrTabId: { type: 'popup', id: 93 },
-			requestedAsset: { ...base.requestedAsset, options: { ...base.requestedAsset.options, image: 'https://assets.example/token.png' } },
-		}
-		let requests: readonly StoredWatchAssetRequest[] = [stored]
-		let addressBook: AddressBookEntries = [{ ...stored.token, logoUri: 'data:image/png;base64,bGF0ZXN0' }]
-		let publishCount = 0
-		let closeCount = 0
-		const dependencies = {
-			getRequests: async () => requests,
-			updateRequests: async (update: (storedRequests: readonly StoredWatchAssetRequest[]) => readonly StoredWatchAssetRequest[]) => { requests = update(requests); return requests },
-			updateAddressBook: async (update: (entries: AddressBookEntries) => AddressBookEntries) => { addressBook = update(addressBook) },
-			publishAddressBookChanged: async () => undefined,
-			publish: async () => { publishCount += 1 },
-			closeDialog: async () => { closeCount += 1 },
-			processQueue: async () => undefined,
-			sendToSigner: () => false,
-			downloadImage: async (url: string) => url === stored.requestedAsset.options.image
-				? { data: 'data:image/png;base64,dG9rZW4=', failureReason: undefined }
-				: { data: undefined, failureReason: 'unexpected URL' },
-		}
-
-		await resolveWatchAsset(websiteTabConnections, {
-			method: 'popup_watchAssetDialog',
-			data: { action: 'downloadImage', uniqueRequestIdentifier: stored.request.uniqueRequestIdentifier },
-		}, dependencies)
-
-		expect(requests[0]?.selectedImageUri).toBe('data:image/png;base64,dG9rZW4=')
-		expect(publishCount).toBe(1)
-		expect(closeCount).toBe(0)
-
-		await resolveWatchAsset(websiteTabConnections, {
-			method: 'popup_watchAssetDialog',
-			data: { action: 'add', uniqueRequestIdentifier: stored.request.uniqueRequestIdentifier },
-		}, dependencies)
-
-		expect(addressBook[0]?.logoUri).toBe('data:image/png;base64,dG9rZW4=')
-		expect(requests).toEqual([])
-		expect(closeCount).toBe(1)
+		expect(published?.imageDownloadError).toBe('The proposed image URL is not safe to download.')
 	})
 
 	test('queues concurrent requests and opens the second dialog after the first settles', async () => {
@@ -665,7 +610,6 @@ describe('wallet_watchAsset', () => {
 			closeDialog: async (popupOrTabId) => { closedPopupIds.push(popupOrTabId.id) },
 			processQueue: async () => await processWatchAssetQueue(websiteTabConnections, queueDependencies),
 			sendToSigner: () => false,
-			downloadImage: async () => ({ data: undefined, failureReason: 'unused' }),
 		})
 
 		expect(publishedRequestIds).toEqual([21, 22])
@@ -729,7 +673,6 @@ describe('wallet_watchAsset', () => {
 			closeDialog: async () => undefined,
 			processQueue: async () => undefined,
 			sendToSigner: () => false,
-			downloadImage: async () => ({ data: undefined, failureReason: 'unused' }),
 		})
 
 		expect(addressBook[0]?.logoUri).toBe('data:image/png;base64,cmVjb3ZlcmVk')

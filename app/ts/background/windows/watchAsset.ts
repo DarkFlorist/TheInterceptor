@@ -17,21 +17,15 @@ import { Semaphore } from '../../utils/semaphore.js'
 import { isSignerMissing } from '../../utils/signerMetadata.js'
 import { imageToUri, type ImageToUriResult } from '../../utils/imageToUri.js'
 import { loadErc1046Metadata, loadLegacyErc20Metadata, loadNftMetadataAndVerifyOwnership, normalizeWatchAssetImageUrl } from '../watchAssetMetadata.js'
+import { invalidWatchAssetRequest, watchAssetRequestError } from '../watchAssetRpc.js'
 
 export const MAX_PENDING_WATCH_ASSET_REQUESTS = 20
 export const MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN = 3
 export const MAX_WATCH_ASSET_IMAGE_SIZE_BYTES = 262_144
 
-export const watchAssetRequestError = (message: string, code = -32602) => ({
-	type: 'result' as const,
-	method: 'wallet_watchAsset' as const,
-	error: { code, message },
-})
-export const invalidWatchAssetRequest = (message: string) => watchAssetRequestError(message)
-
 const downloadWatchAssetImage = async (url: string) => await imageToUri(url, MAX_WATCH_ASSET_IMAGE_SIZE_BYTES, { redirect: 'error' })
 
-async function downloadProposedTokenImage(requestedImageUrl: string | undefined, downloadImage: (url: string) => Promise<ImageToUriResult>) {
+async function fetchProposedTokenImage(requestedImageUrl: string | undefined, downloadImage: (url: string) => Promise<ImageToUriResult>) {
 	if (requestedImageUrl === undefined) return { selectedImageUri: undefined, imageDownloadError: undefined }
 	const imageUrl = normalizeWatchAssetImageUrl(requestedImageUrl)
 	if (imageUrl === undefined) return { selectedImageUri: undefined, imageDownloadError: 'The proposed image URL is not safe to download.' }
@@ -40,7 +34,7 @@ async function downloadProposedTokenImage(requestedImageUrl: string | undefined,
 	return { selectedImageUri: imageResult.data, imageDownloadError: undefined }
 }
 
-async function prepareProposedTokenImage(
+async function downloadProposedTokenImageBeforeDialog(
 	request: StoredWatchAssetRequest,
 	updateRequests: typeof updatePendingWatchAssetRequests,
 	downloadImage: (url: string) => Promise<ImageToUriResult>,
@@ -48,7 +42,7 @@ async function prepareProposedTokenImage(
 	const requestedImageUrl = request.proposedImageUrl ?? (request.requestedAsset.type === 'ERC20' ? request.requestedAsset.options.image : undefined)
 	if (requestedImageUrl === undefined || request.selectedImageUri !== undefined || request.imageDownloadError !== undefined) return request
 	const requestIdentifier = request.request.uniqueRequestIdentifier
-	const downloadedImage = await downloadProposedTokenImage(requestedImageUrl, downloadImage)
+	const downloadedImage = await fetchProposedTokenImage(requestedImageUrl, downloadImage)
 	const updated = await updateRequests((requests) => requests.map((stored) => requestsMatch(stored, requestIdentifier) ? { ...stored, ...downloadedImage } : stored))
 	return updated.find((stored) => requestsMatch(stored, requestIdentifier))
 }
@@ -191,7 +185,7 @@ export async function updateWatchAssetViewWithPendingRequest(
 	return await queueProcessingSemaphore.execute(async () => {
 		const [first] = await dependencies.getRequests()
 		if (first === undefined || first.popupOrTabId === undefined) return undefined
-		const prepared = await prepareProposedTokenImage(first, dependencies.updateRequests, dependencies.downloadImage)
+		const prepared = await downloadProposedTokenImageBeforeDialog(first, dependencies.updateRequests, dependencies.downloadImage)
 		if (prepared === undefined) return undefined
 		const forwardToSigner = websiteTabConnections === undefined ? undefined : await getForwardSignerTarget(websiteTabConnections, prepared)
 		const request = doForwardSignerTargetsMatch(forwardToSigner, prepared.forwardToSigner)
@@ -208,7 +202,7 @@ export async function processWatchAssetQueue(websiteTabConnections: WebsiteTabCo
 		while (true) {
 			let [first] = await dependencies.getRequests()
 			if (first === undefined) return
-			const prepared = await prepareProposedTokenImage(first, dependencies.updateRequests, dependencies.downloadImage ?? downloadWatchAssetImage)
+			const prepared = await downloadProposedTokenImageBeforeDialog(first, dependencies.updateRequests, dependencies.downloadImage ?? downloadWatchAssetImage)
 			if (prepared === undefined) continue
 			first = prepared
 			if (first.popupOrTabId !== undefined) {
@@ -250,7 +244,6 @@ type ResolutionDependencies = {
 	closeDialog: typeof closePopupOrTabById
 	processQueue: (websiteTabConnections: WebsiteTabConnections) => Promise<void>
 	sendToSigner: (request: StoredWatchAssetRequest) => boolean
-	downloadImage: (url: string) => Promise<ImageToUriResult>
 }
 
 function defaultResolutionDependencies(websiteTabConnections: WebsiteTabConnections): ResolutionDependencies {
@@ -275,7 +268,6 @@ function defaultResolutionDependencies(websiteTabConnections: WebsiteTabConnecti
 				result: { ...request.requestedAsset, options: { ...request.requestedAsset.options, address: checksummedAddress(request.requestedAsset.options.address) } },
 			},
 		) !== false,
-		downloadImage: downloadWatchAssetImage,
 	}
 }
 
@@ -315,21 +307,6 @@ export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnect
 		const requests = await dependencies.getRequests()
 		const request = requests.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))
 		if (request === undefined || request.popupOrTabId === undefined) return
-		if (confirmation.data.action === 'downloadImage') {
-			const requestedImageUrl = request.proposedImageUrl ?? (request.requestedAsset.type === 'ERC20' ? request.requestedAsset.options.image : undefined)
-			const imageUrl = normalizeWatchAssetImageUrl(requestedImageUrl)
-			const imageResult = imageUrl === undefined ? undefined : await dependencies.downloadImage(imageUrl)
-			const updated = await dependencies.updateRequests((storedRequests) => storedRequests.map((stored) => {
-				if (!requestsMatch(stored, confirmation.data.uniqueRequestIdentifier)) return stored
-				if (requestedImageUrl === undefined) return { ...stored, imageDownloadError: 'The asset metadata did not provide an image.' }
-				if (imageUrl === undefined) return { ...stored, imageDownloadError: 'The proposed image URL is not safe to download.' }
-				if (imageResult?.data === undefined) return { ...stored, imageDownloadError: 'The proposed image could not be downloaded or decoded.' }
-				return { ...stored, selectedImageUri: imageResult.data, imageDownloadError: undefined }
-			}))
-			const stillPending = updated.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))
-			if (stillPending !== undefined) await dependencies.publish(stillPending)
-			return
-		}
 		if (confirmation.data.action === 'forward' && dependencies.sendToSigner(request) === false) {
 			const updated = await dependencies.updateRequests((storedRequests) => storedRequests.map((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier) ? { ...stored, forwardToSigner: undefined } : stored))
 			const stillPending = updated.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))

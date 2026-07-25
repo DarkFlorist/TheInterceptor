@@ -720,7 +720,6 @@ export const WatchAssetConfirmation = funtypes.ReadonlyObject({
 			funtypes.Literal('add'),
 			funtypes.Literal('reject'),
 			funtypes.Literal('forward'),
-			funtypes.Literal('downloadImage'),
 		),
 	}),
 }).asReadonly()

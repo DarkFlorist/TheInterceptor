@@ -813,7 +813,7 @@ describe('inpage signer bridge', () => {
 				async () => await provider.request({ method: 'eth_chainId', params: {} }),
 				(error: unknown) => isRecord(error)
 					&& error.code === -32602
-					&& error.message === 'Named parameters are only supported for wallet_watchAsset.',
+					&& error.message === 'Named parameters are not supported for eth_chainId.',
 			)
 		})
 	})

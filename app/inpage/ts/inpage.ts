@@ -267,6 +267,13 @@ type AnyCallBack =  ((message: ProviderMessage) => void)
 type EthereumRequestParameters = readonly unknown[]
 type EthereumRequest = (methodAndParams: { readonly method: string, readonly params?: EthereumRequestParameters }) => Promise<unknown>
 type InterceptorEthereumRequestParameters = EthereumRequestParameters | Readonly<Record<string, unknown>>
+const METHODS_ACCEPTING_NAMED_PARAMETERS: ReadonlySet<string> = new Set(['wallet_watchAsset'])
+
+function normalizeInterceptorEthereumRequestParameters(method: string, params: InterceptorEthereumRequestParameters | undefined): EthereumRequestParameters | undefined {
+	if (params === undefined || Array.isArray(params)) return params
+	if (!METHODS_ACCEPTING_NAMED_PARAMETERS.has(method)) throw new EthereumJsonRpcError(METAMASK_INVALID_METHOD_PARAMS, `Named parameters are not supported for ${ method }.`)
+	return [params]
+}
 
 type InjectFunctions = {
 	request: EthereumRequest
@@ -710,10 +717,7 @@ class InterceptorMessageListener {
 	private readonly WindowEthereumRequest = async (methodAndParams: { readonly method: string, readonly params?: InterceptorEthereumRequestParameters }) => {
 		try {
 			if (isInternalBackgroundMethod(methodAndParams.method)) throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, `Method not supported: ${ methodAndParams.method }`)
-			const params = methodAndParams.method === 'wallet_watchAsset' && methodAndParams.params !== undefined && !Array.isArray(methodAndParams.params)
-				? [methodAndParams.params]
-				: methodAndParams.params
-			if (params !== undefined && !Array.isArray(params)) throw new EthereumJsonRpcError(METAMASK_INVALID_METHOD_PARAMS, 'Named parameters are only supported for wallet_watchAsset.')
+			const params = normalizeInterceptorEthereumRequestParameters(methodAndParams.method, methodAndParams.params)
 			// make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
 			return await this.sendMessageToBackgroundPage({
 				method: methodAndParams.method,

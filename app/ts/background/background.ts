@@ -20,7 +20,7 @@ import { InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket } 
 import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { type EthGetStorageAtParams, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
+import { EthereumJsonRpcRequest, type EthGetStorageAtParams, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { RpcNetwork } from '../types/rpc.js'
@@ -39,9 +39,8 @@ import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequest
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { handleWatchAssetRequest, initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
-import { parseEthereumJsonRpcRequestForBackground } from './rpcRequestParsing.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
-import { getMethodSpecificRpcParseFailureReply } from './rpcParseFailureReplies.js'
+import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
 
 if (initializeWatchAssetWindowListeners()) {
 	void processWatchAssetQueue(undefined).catch(async (error: unknown) => {
@@ -50,6 +49,7 @@ if (initializeWatchAssetWindowListeners()) {
 }
 
 const simulationAbortController = new AbortController()
+const RPC_PARSE_FAILURE_HANDLERS = [getWatchAssetRpcParseFailureReply]
 const JSON_RPC_METHOD_NOT_FOUND = -32601
 const INTERNAL_PROVIDER_METHODS = [
 	'connected_to_signer',
@@ -195,7 +195,7 @@ async function handleRPCRequest(
 	activeAddress: bigint | undefined,
 	publishRpcConnectionStatus: PublishRpcConnectionStatus,
 ): Promise<RPCReply> {
-	const maybeParsedRequest = parseEthereumJsonRpcRequestForBackground(request)
+	const maybeParsedRequest = EthereumJsonRpcRequest.safeParse(request)
 	const forwardToSigner = !settings.simulationMode && !request.usingInterceptorWithoutSigner
 	const getForwardingMessage = (request: SendRawTransactionParams | SendTransactionParams | WalletAddEthereumChain | EthGetStorageAtParams) => {
 		if (!forwardToSigner) throw new Error('Should not forward to signer')
@@ -206,8 +206,10 @@ async function handleRPCRequest(
 		console.warn({ request })
 		console.warn(maybeParsedRequest.fullError)
 		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
-		const methodSpecificReply = getMethodSpecificRpcParseFailureReply(request)
-		if (methodSpecificReply !== undefined) return methodSpecificReply
+		for (const getMethodSpecificReply of RPC_PARSE_FAILURE_HANDLERS) {
+			const methodSpecificReply = getMethodSpecificReply(request)
+			if (methodSpecificReply !== undefined) return methodSpecificReply
+		}
 		// the method is some method that we are not supporting, forward it to the wallet if signer is available
 		if (maybePartiallyParsedRequest.success === false && forwardToSigner) return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
 		return {
