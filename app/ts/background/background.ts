@@ -38,7 +38,7 @@ import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
-import { handleWatchAssetRequest, initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
+import { handleWatchAssetRequest, initializeWatchAssetWindowListeners, invalidWatchAssetRequest, processWatchAssetQueue } from './windows/watchAsset.js'
 import { parseEthereumJsonRpcRequestForBackground } from './rpcRequestParsing.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 
@@ -205,7 +205,7 @@ async function handleRPCRequest(
 		console.warn({ request })
 		console.warn(maybeParsedRequest.fullError)
 		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
-		if (maybeParsedRequest.invalidRequestReply !== undefined) return maybeParsedRequest.invalidRequestReply
+		if (request.method === 'wallet_watchAsset') return invalidWatchAssetRequest('Invalid wallet_watchAsset parameters.')
 		// the method is some method that we are not supporting, forward it to the wallet if signer is available
 		if (maybePartiallyParsedRequest.success === false && forwardToSigner) return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
 		return {

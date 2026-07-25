@@ -1226,7 +1226,7 @@ class InterceptorMessageListener {
 	private readonly requestWatchAssetFromSigner = async (parameters: unknown) => {
 		if (this.signerWindowEthereumRequest === undefined) return
 		if (typeof parameters !== 'object' || parameters === null || Array.isArray(parameters)) return
-		await this.requestFromCurrentSigner({ method: 'wallet_watchAsset', params: Object.fromEntries(Object.entries(parameters)) })
+		await this.requestFromCurrentSigner({ method: 'wallet_watchAsset', params: [Object.fromEntries(Object.entries(parameters))] })
 	}
 
 	private readonly handleReplyRequest = async(replyRequest: InterceptedRequestForwardWithResult) => {

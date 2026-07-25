@@ -1,16 +1,9 @@
 import { EthereumJsonRpcRequest, type EthereumJsonRpcRequest as EthereumJsonRpcRequestType } from '../types/JsonRpc-types.js'
 import type { InterceptedRequest } from '../utils/requests.js'
 
-export const watchAssetRequestError = (message: string, code = -32602) => ({
-	type: 'result' as const,
-	method: 'wallet_watchAsset' as const,
-	error: { code, message },
-})
-export const invalidWatchAssetRequest = (message: string) => watchAssetRequestError(message)
-
 type BackgroundRpcParseResult =
 	| { success: true, value: EthereumJsonRpcRequestType }
-	| { success: false, fullError: unknown, invalidRequestReply: ReturnType<typeof invalidWatchAssetRequest> | undefined }
+	| { success: false, fullError: unknown }
 
 export function parseEthereumJsonRpcRequestForBackground(request: InterceptedRequest): BackgroundRpcParseResult {
 	const parsed = EthereumJsonRpcRequest.safeParse(request)
@@ -18,6 +11,5 @@ export function parseEthereumJsonRpcRequestForBackground(request: InterceptedReq
 	return {
 		success: false,
 		fullError: parsed.fullError,
-		invalidRequestReply: request.method === 'wallet_watchAsset' ? invalidWatchAssetRequest('Invalid wallet_watchAsset parameters.') : undefined,
 	}
 }

@@ -16,12 +16,18 @@ import { checksummedAddress } from '../../utils/bigint.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import { isSignerMissing } from '../../utils/signerMetadata.js'
 import { imageToUri, type ImageToUriResult } from '../../utils/imageToUri.js'
-import { invalidWatchAssetRequest, watchAssetRequestError } from '../rpcRequestParsing.js'
 import { loadErc1046Metadata, loadLegacyErc20Metadata, loadNftMetadataAndVerifyOwnership, normalizeWatchAssetImageUrl } from '../watchAssetMetadata.js'
 
 export const MAX_PENDING_WATCH_ASSET_REQUESTS = 20
 export const MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN = 3
 export const MAX_WATCH_ASSET_IMAGE_SIZE_BYTES = 262_144
+
+export const watchAssetRequestError = (message: string, code = -32602) => ({
+	type: 'result' as const,
+	method: 'wallet_watchAsset' as const,
+	error: { code, message },
+})
+export const invalidWatchAssetRequest = (message: string) => watchAssetRequestError(message)
 
 const downloadWatchAssetImage = async (url: string) => await imageToUri(url, MAX_WATCH_ASSET_IMAGE_SIZE_BYTES, { redirect: 'error' })
 

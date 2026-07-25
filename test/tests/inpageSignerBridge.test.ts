@@ -775,7 +775,7 @@ describe('inpage signer bridge', () => {
 
 		assert.deepEqual(signerRequests.find(({ method }) => method === 'wallet_watchAsset'), {
 			method: 'wallet_watchAsset',
-			params: parameters,
+			params: [parameters],
 		})
 	})
 
