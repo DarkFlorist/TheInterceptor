@@ -1,6 +1,6 @@
 {
 	// use jsonc to allow comments
-	"$schema": "https://unpkg.com/knip@5/schema-jsonc.json",
+	"$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
 
 	"workspaces": {
 		".": {
@@ -18,31 +18,32 @@
 				"app/inpage/ts/document_start.ts",
 				"app/inpage/ts/inpage.ts",
 				"app/inpage/ts/listenContentScript.ts",
+				"app/inpage/ts/listenContentScriptBootstrap.ts",
+				"app/ts/simulationStack.ts",
 				"test/tests/*.test.ts",
 				"test/tests/*.ts"
 			],
 			"project": [
 				"app/ts/**/*.{ts,tsx}",
 				"app/inpage/ts/*.ts",
+				"scripts/*.{ts,tsx,mts}",
 				"test/**/*.{ts,tsx}"
 			],
 			"ignoreDependencies": [
-				// cleanup and lint scripts should not be flagged unlisted dependencies
-				"knip",
-				"@biomejs/biome",
-
-				// transformed vendor imports could not be determined by depcheck
+				// browser globals and transformed vendor imports are not regular source imports
 				"@types/firefox-webext-browser",
 				"@noble/curves",
-				"@noble/hashes"
+
+				// compileSolidityContracts.mts belongs to the isolated build workspace but resolves this root dependency
+				"solc"
 			]
 		},
 
 		// isolate ./build as workspace with it's own package.json
 		"build": {
 			"entry": [
-				"vendor.mts",
-				"bundler.mts"
+				"cleanOutput.mts",
+				"compileSolidityContracts.mts"
 			],
 			"project": ["**/*.{ts,tsx,mts}"]
 		}
@@ -52,7 +53,6 @@
 
 	// toggle for all applied rules
 	"rules": {
-		"classMembers": "off",
 		"dependencies": "error",
 		"duplicates": "off",
 		"enumMembers": "off",

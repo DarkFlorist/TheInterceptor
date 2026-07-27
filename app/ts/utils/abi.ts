@@ -494,17 +494,3 @@ export const getAbi = (entry: AddressBookEntry): AbiLike | undefined => {
 	if (entry.type === 'ERC721') return Erc721ABI
 	return undefined
 }
-
-function getStringBetweenParentheses(inputString: string): string | undefined {
-	const regex = /\((.*?)\)/
-	const match = inputString.match(regex)
-	if (match === null) return undefined
-	return match[1]
-}
-
-export const extractFunctionArgumentTypes = (signature: string) => {
-	const args = getStringBetweenParentheses(signature)
-	return args === undefined || args.length === 0 ? [] : args.split(',')
-}
-
-export const removeTextBetweenBrackets = (inputString: string) => inputString.replace(/\[.*?\]/g, '')
