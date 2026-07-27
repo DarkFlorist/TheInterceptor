@@ -23,13 +23,13 @@ export type RpcConnectionStatusPublisherConfig = {
 
 export const slowRpcRequestKey = (request: SlowRpcRequest) => `${ request.rpcUrl }-${ request.requestId }-${ request.startedAt.toISOString() }`
 
-export function getCurrentSlowRpcRequest(slowRpcRequests: ReadonlyMap<string, SlowRpcRequest>, rpcUrl: string) {
+function getCurrentSlowRpcRequest(slowRpcRequests: ReadonlyMap<string, SlowRpcRequest>, rpcUrl: string) {
 	return Array.from(slowRpcRequests.values())
 		.filter((request) => request.rpcUrl === rpcUrl)
 		.sort((left, right) => left.startedAt.getTime() - right.startedAt.getTime())[0]
 }
 
-export function withCurrentSlowRpcRequest(status: DefinedRpcConnectionStatus, slowRequest: SlowRpcRequest | undefined): DefinedRpcConnectionStatus {
+function withCurrentSlowRpcRequest(status: DefinedRpcConnectionStatus, slowRequest: SlowRpcRequest | undefined): DefinedRpcConnectionStatus {
 	if (slowRequest === undefined) {
 		const { slowRequest: _slowRequest, ...statusWithoutSlowRequest } = status
 		return statusWithoutSlowRequest
@@ -43,7 +43,7 @@ export function withCurrentSlowRpcRequest(status: DefinedRpcConnectionStatus, sl
 	}
 }
 
-export function getCurrentRpcConnectionStatus(ethereumClientService: RpcStatusEthereumClient, previousStatus: RpcConnectionStatus): DefinedRpcConnectionStatus {
+function getCurrentRpcConnectionStatus(ethereumClientService: RpcStatusEthereumClient, previousStatus: RpcConnectionStatus): DefinedRpcConnectionStatus {
 	const rpcEntry = ethereumClientService.getRpcEntry()
 	if (previousStatus !== undefined && previousStatus.rpcNetwork.httpsRpc === rpcEntry.httpsRpc) return previousStatus
 	return {

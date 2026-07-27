@@ -63,7 +63,7 @@ export const hasPartialEip7702AuthorizationSignature = (authorization: Eip7702Au
 	return authorization.r !== undefined || authorization.s !== undefined || authorization.yParity !== undefined
 }
 
-export const recoverEip7702AuthorizationAuthority = async (authorization: SignedEip7702Authorization): Promise<bigint> => {
+const recoverEip7702AuthorizationAuthority = async (authorization: SignedEip7702Authorization): Promise<bigint> => {
 	return EthereumAddress.parse(eip7702Authorization.getAuthority({
 		chainId: authorization.chainId,
 		address: addressString(authorization.address),
@@ -74,7 +74,7 @@ export const recoverEip7702AuthorizationAuthority = async (authorization: Signed
 	}))
 }
 
-export const normalizeEip7702Authorization = async (authorization: Eip7702Authorization): Promise<NormalizedEip7702Authorization> => {
+const normalizeEip7702Authorization = async (authorization: Eip7702Authorization): Promise<NormalizedEip7702Authorization> => {
 	const base = {
 		chainId: authorization.chainId,
 		address: authorization.address,

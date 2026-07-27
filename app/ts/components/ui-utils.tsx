@@ -7,9 +7,7 @@ import { getFilledInContactEntry } from '../utils/addressBookEntries.js'
 import type { ChainEntry, RpcEntries } from '../types/rpc.js'
 import { CHAIN_NAMES } from '../utils/chainNames.js'
 export type { PopupOrTab } from '../utils/popupOrTab.js'
-export { getIssueWithAddressString } from '../utils/addressValidation.js'
-export { addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../utils/popupOrTab.js'
-export { getCurrentTimestampString } from '../utils/time.js'
+export { tryFocusingTabOrWindow } from '../utils/popupOrTab.js'
 
 function assertIsNode(e: EventTarget | null): asserts e is Node {
 	if (!e || !('nodeType' in e)) {
