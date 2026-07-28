@@ -15,7 +15,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { CatchAllVisualizer, tokenEventToTokenSymbolParams } from './customExplainers/CatchAllVisualizer.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SignatureCard, SignatureHeader } from '../pages/PersonalSign.js'
-import { bigintSecondsToDate, bytes32String, dataStringWith0xStart } from '../../utils/bigint.js'
+import { bigintSecondsToDate, bytes32String, checksummedAddress, dataStringWith0xStart, stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { GovernanceVoteVisualizer } from './customExplainers/GovernanceVoteVisualizer.js'
 import { EnrichedSolidityTypeComponentWithAddressBook, StringElement } from '../subcomponents/solidityType.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
@@ -34,13 +34,15 @@ import { useEffect } from 'preact/hooks'
 import type { ComponentChildren } from 'preact'
 import type { SignalOrValue } from '../../utils/signals.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
-import { checksummedAddress, stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { normalizeSimulationStackRows, type SimulationStackMessageRow, type SimulationStackTransactionRow } from './simulationStackRows.js'
 import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { Blockie } from '../subcomponents/SVGBlockie.js'
 import { getSimulationStackElementId } from '../../utils/simulationStackTargets.js'
+import { parseTransactionIfPossible } from '../../utils/calldata.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
+import { formatInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -176,12 +178,30 @@ function ConnectedDelegationStack({ delegationNotice, children }: { delegationNo
 	</div>
 }
 
+const getInsufficientBalanceError = (transaction: Extract<MaybeSimulatedTransaction, { transactionStatus: 'Transaction Failed' }>) => {
+	const sender = transaction.transaction.from.address
+	const nativeBalanceAfter = transaction.tokenBalancesAfter.find((balance) => balance.token === ETHEREUM_LOGS_LOGGER_ADDRESS && balance.owner === sender)?.balance
+	if (nativeBalanceAfter !== undefined) {
+		const nativeBalanceBefore = nativeBalanceAfter + transaction.gasSpent * transaction.realizedGasPrice
+		if (transaction.transaction.value > nativeBalanceBefore) {
+			return formatInsufficientBalanceMessage(transaction.transaction.rpcNetwork.currencyTicker, 18n, nativeBalanceBefore, transaction.transaction.value)
+		}
+	}
+	const token = transaction.transaction.to
+	if (token?.type !== 'ERC20') return undefined
+	const attemptedTransfer = parseTransactionIfPossible({ input: transaction.transaction.input, from: sender })
+	if (attemptedTransfer?.name !== 'transfer') return undefined
+	const tokenBalance = transaction.tokenBalancesAfter.find((balance) => balance.token === token.address && balance.owner === sender)?.balance
+	if (tokenBalance === undefined || attemptedTransfer.arguments.value <= tokenBalance) return undefined
+	return formatInsufficientBalanceMessage(token.symbol, token.decimals, tokenBalance, attemptedTransfer.arguments.value)
+}
+
 // showcases the most important things the transaction does
 export function TransactionImportanceBlock(param: TransactionImportanceBlockParams) {
 	const delegationNotice = getDelegationNotice(param.simTx.transaction, param.addressMetadata, param.renameAddressCallBack)
 	const content = (() => {
 		if (param.simTx.transactionStatus === 'Failed To Simulate') return <ErrorComponent text = { 'Failed to simulate this transaction.' } containerStyle = { { margin: '0px' } } />
-		if (param.simTx.transactionStatus === 'Transaction Failed') return <ErrorComponent text = { `The transaction fails with an error: '${ param.simTx.error.decodedErrorMessage }' ${ param.simTx.error.data !== undefined ? ` (data: '${ param.simTx.error.data }')` : '' }` } containerStyle = { { margin: '0px' } } />
+		if (param.simTx.transactionStatus === 'Transaction Failed') return <ErrorComponent text = { getInsufficientBalanceError(param.simTx) ?? `The transaction fails with an error: '${ param.simTx.error.decodedErrorMessage }' ${ param.simTx.error.data !== undefined ? ` (data: '${ param.simTx.error.data }')` : '' }` } containerStyle = { { margin: '0px' } } />
 		const transactionIdentification = identifyTransaction(param.simTx)
 		switch (transactionIdentification.type) {
 			case 'SimpleTokenTransfer': return <SimpleTokenTransferVisualisation simTx = { transactionIdentification.identifiedTransaction } renameAddressCallBack = { param.renameAddressCallBack }/>

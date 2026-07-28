@@ -11,6 +11,9 @@ import type { TokenEvent } from '../../app/ts/types/EnrichedEthereumData.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import type { MaybeSimulatedTransaction, TokenBalancesAfter } from '../../app/ts/types/visualizer-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
+import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
+import { Erc20ABI } from '../../app/ts/utils/abi.js'
+import { stringToUint8Array } from '../../app/ts/utils/bigint.js'
 
 const senderEntry: AddressBookEntry = {
 	type: 'contact',
@@ -340,6 +343,54 @@ function createNativeTransferEvent(): TokenEvent {
 	return createTransferEvent({ from: senderEntry, to: recipientEntry, amount: 1n })
 }
 
+function createFailedTransfer({
+	to,
+	value,
+	input = new Uint8Array(),
+	tokenBalancesAfter,
+}: {
+	to: AddressBookEntry
+	value: bigint
+	input?: Uint8Array
+	tokenBalancesAfter: TokenBalancesAfter
+}): MaybeSimulatedTransaction {
+	return {
+		website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+		created: new Date('2024-01-01T00:00:00.000Z'),
+		parsedInputData: { type: 'NonParsed', input },
+		transactionIdentifier: 4n,
+		originalRequestParameters: { method: 'eth_sendTransaction', params: [{}] },
+		transaction: {
+			from: senderEntry,
+			to,
+			value,
+			input,
+			rpcNetwork,
+			hash: 0x1237n,
+			gas: 21_000n,
+			nonce: 10n,
+			type: '1559',
+			maxFeePerGas: 1n,
+			maxPriorityFeePerGas: 1n,
+		},
+		transactionStatus: 'Transaction Failed',
+		tokenBalancesAfter,
+		tokenPriceEstimates: [],
+		tokenPriceQuoteToken: undefined,
+		gasSpent: 0n,
+		realizedGasPrice: 1n,
+		quarantine: false,
+		quarantineReasons: [],
+		events: [],
+		error: {
+			code: -32000,
+			message: 'execution reverted',
+			data: undefined,
+			decodedErrorMessage: 'execution reverted',
+		},
+	}
+}
+
 async function renderImportanceBlock(simTx: MaybeSimulatedTransaction, addressMetadata: readonly AddressBookEntry[]) {
 	const dom = installDomMock()
 
@@ -458,6 +509,74 @@ describe('TransactionImportanceBlock delegation notice', () => {
 		assert.equal(dom.document.body.textContent?.includes('Delegated Executor'), true)
 		assert.equal(dom.document.body.textContent?.includes('Actual recipient'), true)
 		assert.equal(dom.document.body.textContent?.includes('Send'), true)
+
+		dom.restore()
+	})
+})
+
+describe('TransactionImportanceBlock insufficient balance errors', () => {
+	test('shows the available and attempted native-token amounts', async () => {
+		const dom = await renderImportanceBlock(
+			{
+				...createFailedTransfer({
+					to: recipientEntry,
+					value: 2n * eth,
+					tokenBalancesAfter: [{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, tokenId: undefined, owner: senderEntry.address, balance: eth - 21_000n }],
+				}),
+				gasSpent: 21_000n,
+				realizedGasPrice: 1n,
+			},
+			[senderEntry, recipientEntry, nativeTokenEntry],
+		)
+
+		assert.equal(dom.document.body.textContent?.includes('Insufficient ETH balance.'), true)
+		assert.equal(dom.document.body.textContent?.includes('Available: 1 ETH.'), true)
+		assert.equal(dom.document.body.textContent?.includes('Attempting to send: 2 ETH.'), true)
+		assert.equal(dom.document.body.textContent?.includes('execution reverted'), false)
+
+		dom.restore()
+	})
+
+	test('shows the available and attempted ERC20 amounts', async () => {
+		const input = stringToUint8Array(encodeFunctionCall(Erc20ABI, 'transfer', [
+			`0x${ recipientEntry.address.toString(16) }`,
+			2n * eth,
+		]))
+		const dom = await renderImportanceBlock(
+			createFailedTransfer({
+				to: erc20TokenEntry,
+				value: 0n,
+				input,
+				tokenBalancesAfter: [{ token: erc20TokenEntry.address, tokenId: undefined, owner: senderEntry.address, balance: eth }],
+			}),
+			[senderEntry, erc20TokenEntry],
+		)
+
+		assert.equal(dom.document.body.textContent?.includes('Insufficient MOCK balance.'), true)
+		assert.equal(dom.document.body.textContent?.includes('Available: 1 MOCK.'), true)
+		assert.equal(dom.document.body.textContent?.includes('Attempting to send: 2 MOCK.'), true)
+		assert.equal(dom.document.body.textContent?.includes('execution reverted'), false)
+
+		dom.restore()
+	})
+
+	test('preserves the decoded error for malformed ERC20 transfer calldata', async () => {
+		const transferSelector = stringToUint8Array(encodeFunctionCall(Erc20ABI, 'transfer', [
+			`0x${ recipientEntry.address.toString(16) }`,
+			2n * eth,
+		]).slice(0, 10))
+		const dom = await renderImportanceBlock(
+			createFailedTransfer({
+				to: erc20TokenEntry,
+				value: 0n,
+				input: transferSelector,
+				tokenBalancesAfter: [],
+			}),
+			[senderEntry, erc20TokenEntry],
+		)
+
+		assert.equal(dom.document.body.textContent?.includes('execution reverted'), true)
+		assert.equal(dom.document.body.textContent?.includes('Insufficient MOCK balance.'), false)
 
 		dom.restore()
 	})
