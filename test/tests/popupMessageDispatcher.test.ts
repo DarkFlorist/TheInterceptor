@@ -1,17 +1,69 @@
 import * as assert from 'assert'
-import { describe, test } from 'bun:test'
+import { beforeEach, describe, test } from 'bun:test'
 import type { PopupMessageDispatcherContext } from '../../app/ts/background/popupMessageDispatcher.js'
 import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { Settings } from '../../app/ts/types/interceptor-messages.js'
+
+const storageState: Record<string, unknown> = {}
+const sentMessages: unknown[] = []
 
 Reflect.set(globalThis, 'chrome', { runtime: { id: 'test-extension' } })
 Reflect.set(globalThis, 'browser', {
 	runtime: {
 		lastError: undefined,
 		getManifest: () => ({ manifest_version: 3 }),
+		sendMessage: async (message: unknown) => {
+			sentMessages.push(message)
+			return undefined
+		},
 		onMessage: { addListener: () => undefined, removeListener: () => undefined },
 		onConnect: { addListener: () => undefined, removeListener: () => undefined },
+	},
+	storage: {
+		local: {
+			async get(keys?: string | string[] | Record<string, unknown> | null) {
+				if (keys === undefined || keys === null) return { ...storageState }
+				if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
+				if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
+				return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+			},
+			async set(items: Record<string, unknown>) {
+				Object.assign(storageState, items)
+			},
+			async remove(keys: string | string[]) {
+				for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
+			},
+		},
+	},
+	tabs: {
+		query: async () => [],
+		get: async () => undefined,
+		update: async () => undefined,
+		onUpdated: { addListener: () => undefined, removeListener: () => undefined },
+		onRemoved: { addListener: () => undefined, removeListener: () => undefined },
+	},
+	windows: {
+		get: async () => undefined,
+		update: async () => undefined,
+	},
+	action: {
+		setIcon: async () => undefined,
+		setTitle: async () => undefined,
+		setBadgeText: async () => undefined,
+		setBadgeBackgroundColor: async () => undefined,
+	},
+	browserAction: {
+		setIcon: async () => undefined,
+		setTitle: async () => undefined,
+		setBadgeText: async () => undefined,
+		setBadgeBackgroundColor: async () => undefined,
+	},
+	declarativeNetRequest: {
+		getDynamicRules: async () => [],
+		getSessionRules: async () => [],
+		updateDynamicRules: async () => undefined,
+		updateSessionRules: async () => undefined,
 	},
 })
 
@@ -19,10 +71,12 @@ const [
 	{ dispatchPopupMessage },
 	{ EthereumClientService: EthereumClientServiceConstructor },
 	{ TokenPriceService: TokenPriceServiceConstructor },
+	{ MessageToPopup },
 ] = await Promise.all([
 	import('../../app/ts/background/popupMessageDispatcher.js'),
 	import('../../app/ts/simulation/services/EthereumClientService.js'),
 	import('../../app/ts/simulation/services/priceEstimator.js'),
+	import('../../app/ts/types/interceptor-messages.js'),
 ])
 
 const settings: Settings = {
@@ -59,6 +113,11 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 	}
 }
 
+beforeEach(() => {
+	for (const key of Object.keys(storageState)) delete storageState[key]
+	sentMessages.splice(0, sentMessages.length)
+})
+
 describe('popup message dispatcher seams', () => {
 	test('delegates simulation reset through the injected lifecycle callback', async () => {
 		let resetCount = 0
@@ -75,5 +134,64 @@ describe('popup message dispatcher seams', () => {
 		})
 		assert.equal(await dispatchPopupMessage(context, { method: 'popup_isMainPopupWindowOpen' }), undefined)
 		assert.equal(await dispatchPopupMessage(context, { method: 'popup_isSimulationVisualizerOpen' }), undefined)
+	})
+
+	test('broadcasts an import failure without refreshing settings', async () => {
+		await dispatchPopupMessage(
+			createDispatcherContext(async () => undefined),
+			{ method: 'popup_import_settings', data: { fileContents: 'not json' } },
+		)
+
+		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
+		assert.equal(messages.length, 1)
+		const importFailure = messages[0]
+		assert.equal(importFailure?.method, 'popup_initiate_export_settings_reply')
+		if (importFailure?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected failed import broadcast.')
+		assert.equal(importFailure.data.success, false)
+		assert.equal(storageState.activeSimulationAddress, undefined)
+	})
+
+	test('reloads imported settings before refreshing access and broadcasting the update', async () => {
+		const importedSettings = JSON.stringify({
+			name: 'InterceptorSettingsAndAddressBook',
+			version: '1.4',
+			exportedDate: '2026-07-28',
+			settings: {
+				activeSimulationAddress: '0x0000000000000000000000000000000000000002',
+				rpcNetwork: {
+					name: 'Imported network',
+					chainId: '0x1',
+					httpsRpc: 'https://example.test/rpc',
+					currencyName: 'Ether',
+					currencyTicker: 'ETH',
+					primary: true,
+					minimized: true,
+				},
+				openedPage: { page: 'Home' },
+				useSignersAddressAsActiveAddress: false,
+				websiteAccess: [],
+				simulationMode: false,
+				addressBookEntries: [],
+				useTabsInsteadOfPopup: false,
+				metamaskCompatibilityMode: false,
+			},
+		})
+
+		await dispatchPopupMessage(
+			createDispatcherContext(async () => undefined),
+			{ method: 'popup_import_settings', data: { fileContents: importedSettings } },
+		)
+
+		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
+		assert.equal(messages.length, 2)
+		const importSuccess = messages[0]
+		assert.equal(importSuccess?.method, 'popup_initiate_export_settings_reply')
+		if (importSuccess?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected successful import broadcast.')
+		assert.equal(importSuccess.data.success, true)
+		assert.equal(messages[1]?.method, 'popup_settingsUpdated')
+		if (messages[1]?.method !== 'popup_settingsUpdated') throw new Error('Expected imported settings broadcast.')
+		assert.equal(messages[1].data.activeSimulationAddress, 2n)
+		assert.equal(messages[1].data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
+		assert.equal(messages[1].data.simulationMode, false)
 	})
 })

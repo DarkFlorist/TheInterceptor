@@ -65,15 +65,16 @@ describe('package scripts', () => {
 		])
 	})
 
-	test('firefox build compiles app scripts before writing the manifest', () => {
+	test('browser builds generate pages and compile app scripts before writing their manifests', () => {
 		const scripts = getPackageScripts()
-
-		assert.deepEqual(getScript(scripts, 'build-firefox').split(' && '), [
-			'bun run generate-extension-pages',
-			'bun run compile-app',
-			'bun run bundle',
-			'bun run firefox',
-		])
+		for (const browserName of ['firefox', 'chrome'] as const) {
+			assert.deepEqual(getScript(scripts, `build-${ browserName }`).split(' && '), [
+				'bun run generate-extension-pages',
+				'bun run compile-app',
+				'bun run bundle',
+				`bun run ${ browserName }`,
+			])
+		}
 	})
 
 	test('typescript is new enough for micro-eth-signer declarations', () => {
