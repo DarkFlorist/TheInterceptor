@@ -5,8 +5,8 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
-import { assertUnreachable } from '../utils/typescript.js'
 import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js'
+import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import { getSettings } from './settings.js'
 import { setLatestUnexpectedError } from './storageVariables.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
@@ -83,93 +83,85 @@ export type PopupMessageDispatcherContext = {
 	resetSimulationState: () => Promise<void>
 }
 
+type PopupMessageHandler = (context: PopupMessageDispatcherContext, request: PopupMessage) => Promise<PopupReplyOption | void>
+const popupMessageHandler = createMethodHandlerFor<PopupMessage, PopupMessageDispatcherContext, Promise<PopupReplyOption | void>>()
+
+const popupMessageHandlers = {
+	popup_confirmDialog: popupMessageHandler('popup_confirmDialog', async (context, request) => await confirmDialog(context.ethereum, context.tokenPriceService, context.websiteTabConnections, request)),
+	popup_changeActiveAddress: popupMessageHandler('popup_changeActiveAddress', async (context, request) => await changeActiveAddress(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
+	popup_modifyMakeMeRich: popupMessageHandler('popup_modifyMakeMeRich', async (_context, request) => await modifyMakeMeRich(request)),
+	popup_changePage: popupMessageHandler('popup_changePage', async (_context, request) => await changePage(request)),
+	popup_requestAccountsFromSigner: popupMessageHandler('popup_requestAccountsFromSigner', async (context, request) => await requestAccountsFromSigner(context.websiteTabConnections, request)),
+	popup_resetSimulation: popupMessageHandler('popup_resetSimulation', async (context) => await context.resetSimulationState()),
+	popup_removeTransactionOrSignedMessage: popupMessageHandler('popup_removeTransactionOrSignedMessage', async (context, request) => await removeTransactionOrSignedMessage(context.ethereum, context.tokenPriceService, request)),
+	popup_refreshSimulation: popupMessageHandler('popup_refreshSimulation', async (context) => {
+		await updatePopupVisualisationIfNeeded(context.ethereum, context.tokenPriceService, false, false, true)
+	}),
+	popup_refreshConfirmTransactionDialogSimulation: popupMessageHandler('popup_refreshConfirmTransactionDialogSimulation', async (context) => await refreshPopupConfirmTransactionSimulation(context.ethereum, context.tokenPriceService)),
+	popup_refreshConfirmTransactionMetadata: popupMessageHandler('popup_refreshConfirmTransactionMetadata', async (context) => await refreshPopupConfirmTransactionMetadata(context.ethereum, context.tokenPriceService, context.confirmTransactionAbortController)),
+	popup_interceptorAccess: popupMessageHandler('popup_interceptorAccess', async (context, request) => await confirmRequestAccess(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request, context.publishRpcConnectionStatus)),
+	popup_changeInterceptorAccess: popupMessageHandler('popup_changeInterceptorAccess', async (context, request) => await changeInterceptorAccess(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
+	popup_changeActiveRpc: popupMessageHandler('popup_changeActiveRpc', async (context, request) => await popupChangeActiveRpc(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request, context.settings)),
+	popup_changeChainDialog: popupMessageHandler('popup_changeChainDialog', async (context, request) => await changeChainDialog(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
+	popup_watchAssetDialog: popupMessageHandler('popup_watchAssetDialog', async (context, request) => await watchAssetDialog(context.websiteTabConnections, request)),
+	popup_enableSimulationMode: popupMessageHandler('popup_enableSimulationMode', async (context, request) => await enableSimulationMode(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
+	popup_addOrModifyAddressBookEntry: popupMessageHandler('popup_addOrModifyAddressBookEntry', async (context, request) => await addOrModifyAddressBookEntry(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
+	popup_getAddressBookData: popupMessageHandler('popup_getAddressBookData', async (_context, request) => await getAddressBookData(request)),
+	popup_removeAddressBookEntry: popupMessageHandler('popup_removeAddressBookEntry', async (context, request) => await removeAddressBookEntry(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
+	popup_openAddressBook: popupMessageHandler('popup_openAddressBook', async () => await openNewTab('addressBook')),
+	popup_requestNewHomeData: popupMessageHandler('popup_requestNewHomeData', async (context, request) => await requestNewHomeData(context.ethereum, context.websiteTabConnections, request.data.refreshSignerAccounts, request.data.includeWebsiteAccessAddressMetadata, context.simulationAbortController, bumpPopupRefreshGeneration())),
+	popup_requestHomePageBootstrap: popupMessageHandler('popup_requestHomePageBootstrap', async (context) => await requestHomePageBootstrap(context.websiteTabConnections, bumpPopupRefreshGeneration())),
+	popup_refreshHomeData: popupMessageHandler('popup_refreshHomeData', async (context) => await refreshHomeData(context.ethereum, context.tokenPriceService, context.websiteTabConnections, true, bumpPopupRefreshGeneration(), context.publishRpcConnectionStatus)),
+	popup_requestSettings: popupMessageHandler('popup_requestSettings', async () => await settingsOpened()),
+	popup_refreshInterceptorAccessMetadata: popupMessageHandler('popup_refreshInterceptorAccessMetadata', async () => await interceptorAccessMetadataRefresh()),
+	popup_interceptorAccessChangeAddress: popupMessageHandler('popup_interceptorAccessChangeAddress', async (context, request) => await interceptorAccessChangeAddressOrRefresh(context.websiteTabConnections, request)),
+	popup_interceptorAccessRefresh: popupMessageHandler('popup_interceptorAccessRefresh', async (context, request) => await interceptorAccessChangeAddressOrRefresh(context.websiteTabConnections, request)),
+	popup_ChangeSettings: popupMessageHandler('popup_ChangeSettings', async (context, request) => await changeSettings(context.ethereum, context.tokenPriceService, context.resetSimulationServices, request, context.simulationAbortController)),
+	popup_openSettings: popupMessageHandler('popup_openSettings', async () => await openNewTab('settingsView')),
+	popup_import_settings: popupMessageHandler('popup_import_settings', async (context, request) => {
+		const importSettingsReply = await importSettings(request)
+		await sendPopupMessageToOpenWindows(importSettingsReply)
+		if (!importSettingsReply.data.success) return
+		const importedSettings = await getSettings()
+		const popupRefreshGeneration = await updateWebsiteApprovalAccesses(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, importedSettings, true)
+		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: importedSettings, popupRefreshGeneration })
+	}),
+	popup_get_export_settings: popupMessageHandler('popup_get_export_settings', async () => await exportSettings()),
+	popup_set_rpc_list: popupMessageHandler('popup_set_rpc_list', async (context, request) => await setNewRpcList(context.resetSimulationServices, request, context.settings)),
+	popup_simulateGovernanceContractExecution: popupMessageHandler('popup_simulateGovernanceContractExecution', async (context, request) => await simulateGovernanceContractExecutionOnPass(context.ethereum, context.tokenPriceService, request)),
+	popup_simulateGnosisSafeTransaction: popupMessageHandler('popup_simulateGnosisSafeTransaction', async (context, request) => await simulateGnosisSafeTransactionOnPass(context.ethereum, context.tokenPriceService, request.data.gnosisSafeMessage)),
+	popup_changeAddOrModifyAddressWindowState: popupMessageHandler('popup_changeAddOrModifyAddressWindowState', async (context, request) => await changeAddOrModifyAddressWindowState(context.ethereum, request)),
+	popup_requestAbiAndNameFromBlockExplorer: popupMessageHandler('popup_requestAbiAndNameFromBlockExplorer', async (_context, request) => await requestAbiAndNameFromBlockExplorer(request)),
+	popup_openWebPage: popupMessageHandler('popup_openWebPage', async (_context, request) => await openWebPage(request)),
+	popup_setDisableInterceptor: popupMessageHandler('popup_setDisableInterceptor', async (context, request) => await disableInterceptor(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
+	popup_clearUnexpectedError: popupMessageHandler('popup_clearUnexpectedError', async () => await setLatestUnexpectedError(undefined)),
+	popup_setEnsNameForHash: popupMessageHandler('popup_setEnsNameForHash', async (_context, request) => await setEnsNameForHash(request)),
+	popup_openWebsiteAccess: popupMessageHandler('popup_openWebsiteAccess', async () => await openNewTab('websiteAccess')),
+	popup_openSimulationStack: popupMessageHandler('popup_openSimulationStack', async (_context, request) => await openNewTab('simulationStack', 'data' in request ? getSimulationStackTargetHash(request.data) : undefined)),
+	popup_retrieveWebsiteAccess: popupMessageHandler('popup_retrieveWebsiteAccess', async (_context, request) => await retrieveWebsiteAccess(request)),
+	popup_blockOrAllowExternalRequests: popupMessageHandler('popup_blockOrAllowExternalRequests', async (context, request) => await blockOrAllowExternalRequests(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
+	popup_allowOrPreventAddressAccessForWebsite: popupMessageHandler('popup_allowOrPreventAddressAccessForWebsite', async (context, request) => await allowOrPreventAddressAccessForWebsite(context.websiteTabConnections, request)),
+	popup_removeWebsiteAccess: popupMessageHandler('popup_removeWebsiteAccess', async (context, request) => await removeWebsiteAccess(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
+	popup_removeWebsiteAddressAccess: popupMessageHandler('popup_removeWebsiteAddressAccess', async (context, request) => await removeWebsiteAddressAccess(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
+	popup_forceSetGasLimitForTransaction: popupMessageHandler('popup_forceSetGasLimitForTransaction', async (context, request) => await forceSetGasLimitForTransaction(context.ethereum, context.tokenPriceService, request)),
+	popup_changePreSimulationBlockTimeManipulation: popupMessageHandler('popup_changePreSimulationBlockTimeManipulation', async (context, request) => await changePreSimulationBlockTimeManipulation(context.ethereum, context.tokenPriceService, request)),
+	popup_setTransactionOrMessageBlockTimeManipulator: popupMessageHandler('popup_setTransactionOrMessageBlockTimeManipulator', async (context, request) => await setTransactionOrMessageBlockTimeManipulator(context.ethereum, context.tokenPriceService, request)),
+	popup_requestMakeMeRichData: popupMessageHandler('popup_requestMakeMeRichData', async (context) => await requestMakeMeRichList(context.ethereum, context.simulationAbortController)),
+	popup_requestActiveAddresses: popupMessageHandler('popup_requestActiveAddresses', async () => await requestActiveAddresses()),
+	popup_requestSimulationMode: popupMessageHandler('popup_requestSimulationMode', async () => await requestSimulationMode()),
+	popup_requestLatestUnexpectedError: popupMessageHandler('popup_requestLatestUnexpectedError', async () => await requestLatestUnexpectedError()),
+	popup_fetchSimulationStackRequestConfirmation: popupMessageHandler('popup_fetchSimulationStackRequestConfirmation', async (context, request) => await fetchSimulationStackRequestConfirmation(context.ethereum, context.websiteTabConnections, request)),
+	popup_readyAndListening: popupMessageHandler('popup_readyAndListening', async (context, request) => await popupReadyAndListening(context.ethereum, context.websiteTabConnections, request.data.page)),
+	popup_UnexpectedErrorOccured: popupMessageHandler('popup_UnexpectedErrorOccured', async (_context, request) => await reportUnexpectedErrorInWindow(request)),
+	popup_requestInterceptorSimulationInput: popupMessageHandler('popup_requestInterceptorSimulationInput', async (context) => await requestInterceptorSimulationInput(context.ethereum)),
+	popup_importSimulationStack: popupMessageHandler('popup_importSimulationStack', async (context, request) => await importSimulationStack(context.ethereum, context.tokenPriceService, request)),
+	popup_requestCompleteVisualizedSimulation: popupMessageHandler('popup_requestCompleteVisualizedSimulation', async (context) => await requestCompleteVisualizedSimulation(context.ethereum, context.tokenPriceService)),
+	popup_requestSimulationMetadata: popupMessageHandler('popup_requestSimulationMetadata', async (context) => await requestSimulationMetadata(context.ethereum)),
+	popup_requestIdentifyAddress: popupMessageHandler('popup_requestIdentifyAddress', async (context, request) => await requestIdentifyAddress(context.ethereum, request)),
+	popup_isMainPopupWindowOpen: popupMessageHandler('popup_isMainPopupWindowOpen', async () => undefined),
+	popup_isSimulationVisualizerOpen: popupMessageHandler('popup_isSimulationVisualizerOpen', async () => undefined),
+} satisfies Record<PopupMessage['method'], PopupMessageHandler>
+
 export async function dispatchPopupMessage(context: PopupMessageDispatcherContext, request: PopupMessage): Promise<PopupReplyOption | void> {
-	const {
-		websiteTabConnections,
-		ethereum,
-		tokenPriceService,
-		resetSimulationServices,
-		settings,
-		publishRpcConnectionStatus,
-		simulationAbortController,
-		confirmTransactionAbortController,
-	} = context
-	switch (request.method) {
-		case 'popup_confirmDialog': return await confirmDialog(ethereum, tokenPriceService, websiteTabConnections, request)
-		case 'popup_changeActiveAddress': return await changeActiveAddress(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request)
-		case 'popup_modifyMakeMeRich': return await modifyMakeMeRich(request)
-		case 'popup_changePage': return await changePage(request)
-		case 'popup_requestAccountsFromSigner': return await requestAccountsFromSigner(websiteTabConnections, request)
-		case 'popup_resetSimulation': return await context.resetSimulationState()
-		case 'popup_removeTransactionOrSignedMessage': return await removeTransactionOrSignedMessage(ethereum, tokenPriceService, request)
-		case 'popup_refreshSimulation': {
-			await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false, true)
-			return
-		}
-		case 'popup_refreshConfirmTransactionDialogSimulation': return await refreshPopupConfirmTransactionSimulation(ethereum, tokenPriceService)
-		case 'popup_refreshConfirmTransactionMetadata': return refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, confirmTransactionAbortController)
-		case 'popup_interceptorAccess': return await confirmRequestAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request, publishRpcConnectionStatus)
-		case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request)
-		case 'popup_changeActiveRpc': return await popupChangeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request, settings)
-		case 'popup_changeChainDialog': return await changeChainDialog(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request)
-		case 'popup_watchAssetDialog': return await watchAssetDialog(websiteTabConnections, request)
-		case 'popup_enableSimulationMode': return await enableSimulationMode(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request)
-		case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressBookEntry(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request)
-		case 'popup_getAddressBookData': return await getAddressBookData(request)
-		case 'popup_removeAddressBookEntry': return await removeAddressBookEntry(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request)
-		case 'popup_openAddressBook': return await openNewTab('addressBook')
-		case 'popup_requestNewHomeData': return await requestNewHomeData(ethereum, websiteTabConnections, request.data.refreshSignerAccounts, request.data.includeWebsiteAccessAddressMetadata, simulationAbortController, bumpPopupRefreshGeneration())
-		case 'popup_requestHomePageBootstrap': return await requestHomePageBootstrap(websiteTabConnections, bumpPopupRefreshGeneration())
-		case 'popup_refreshHomeData': return await refreshHomeData(ethereum, tokenPriceService, websiteTabConnections, true, bumpPopupRefreshGeneration(), publishRpcConnectionStatus)
-		case 'popup_requestSettings': return await settingsOpened()
-		case 'popup_refreshInterceptorAccessMetadata': return await interceptorAccessMetadataRefresh()
-		case 'popup_interceptorAccessChangeAddress': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, request)
-		case 'popup_interceptorAccessRefresh': return await interceptorAccessChangeAddressOrRefresh(websiteTabConnections, request)
-		case 'popup_ChangeSettings': return await changeSettings(ethereum, tokenPriceService, resetSimulationServices, request, simulationAbortController)
-		case 'popup_openSettings': return await openNewTab('settingsView')
-		case 'popup_import_settings': {
-			const importSettingsReply = await importSettings(request)
-			await sendPopupMessageToOpenWindows(importSettingsReply)
-			if (!importSettingsReply.data.success) return
-			const importedSettings = await getSettings()
-			const popupRefreshGeneration = await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, importedSettings, true)
-			await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: importedSettings, popupRefreshGeneration })
-			return
-		}
-		case 'popup_get_export_settings': return await exportSettings()
-		case 'popup_set_rpc_list': return await setNewRpcList(resetSimulationServices, request, settings)
-		case 'popup_simulateGovernanceContractExecution': return await simulateGovernanceContractExecutionOnPass(ethereum, tokenPriceService, request)
-		case 'popup_simulateGnosisSafeTransaction': return await simulateGnosisSafeTransactionOnPass(ethereum, tokenPriceService, request.data.gnosisSafeMessage)
-		case 'popup_changeAddOrModifyAddressWindowState': return await changeAddOrModifyAddressWindowState(ethereum, request)
-		case 'popup_requestAbiAndNameFromBlockExplorer': return await requestAbiAndNameFromBlockExplorer(request)
-		case 'popup_openWebPage': return await openWebPage(request)
-		case 'popup_setDisableInterceptor': return await disableInterceptor(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request)
-		case 'popup_clearUnexpectedError': return await setLatestUnexpectedError(undefined)
-		case 'popup_setEnsNameForHash': return await setEnsNameForHash(request)
-		case 'popup_openWebsiteAccess': return await openNewTab('websiteAccess')
-		case 'popup_openSimulationStack': return await openNewTab('simulationStack', 'data' in request ? getSimulationStackTargetHash(request.data) : undefined)
-		case 'popup_retrieveWebsiteAccess': return await retrieveWebsiteAccess(request)
-		case 'popup_blockOrAllowExternalRequests': return await blockOrAllowExternalRequests(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request)
-		case 'popup_allowOrPreventAddressAccessForWebsite': return await allowOrPreventAddressAccessForWebsite(websiteTabConnections, request)
-		case 'popup_removeWebsiteAccess': return await removeWebsiteAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request)
-		case 'popup_removeWebsiteAddressAccess': return await removeWebsiteAddressAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request)
-		case 'popup_forceSetGasLimitForTransaction': return await forceSetGasLimitForTransaction(ethereum, tokenPriceService, request)
-		case 'popup_changePreSimulationBlockTimeManipulation': return await changePreSimulationBlockTimeManipulation(ethereum, tokenPriceService, request)
-		case 'popup_setTransactionOrMessageBlockTimeManipulator': return await setTransactionOrMessageBlockTimeManipulator(ethereum, tokenPriceService, request)
-		case 'popup_requestMakeMeRichData': return await requestMakeMeRichList(ethereum, simulationAbortController)
-		case 'popup_requestActiveAddresses': return await requestActiveAddresses()
-		case 'popup_requestSimulationMode': return await requestSimulationMode()
-		case 'popup_requestLatestUnexpectedError': return await requestLatestUnexpectedError()
-		case 'popup_fetchSimulationStackRequestConfirmation': return await fetchSimulationStackRequestConfirmation(ethereum, websiteTabConnections, request)
-		case 'popup_readyAndListening': return await popupReadyAndListening(ethereum, websiteTabConnections, request.data.page)
-		case 'popup_UnexpectedErrorOccured': return await reportUnexpectedErrorInWindow(request)
-		case 'popup_requestInterceptorSimulationInput': return await requestInterceptorSimulationInput(ethereum)
-		case 'popup_importSimulationStack': return await importSimulationStack(ethereum, tokenPriceService, request)
-		case 'popup_requestCompleteVisualizedSimulation': return await requestCompleteVisualizedSimulation(ethereum, tokenPriceService)
-		case 'popup_requestSimulationMetadata': return await requestSimulationMetadata(ethereum)
-		case 'popup_requestIdentifyAddress': return await requestIdentifyAddress(ethereum, request)
-		case 'popup_isMainPopupWindowOpen': return
-		case 'popup_isSimulationVisualizerOpen': return
-		default: assertUnreachable(request)
-	}
+	return await popupMessageHandlers[request.method](context, request)
 }
