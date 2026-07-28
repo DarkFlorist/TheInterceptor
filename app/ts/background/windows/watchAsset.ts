@@ -11,7 +11,7 @@ import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.j
 import { addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab } from '../../utils/popupOrTab.js'
 import type { AddressBookEntries, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
-import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToExpectedConfirmedSignerOwner } from '../signerStateOwnership.js'
+import { addSignerStateReplacementListener, getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToExpectedConfirmedSignerOwner, type SignerStateIdentity } from '../signerStateOwnership.js'
 import { checksummedAddress } from '../../utils/bigint.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import { isSignerMissing } from '../../utils/signerMetadata.js'
@@ -265,7 +265,16 @@ function defaultResolutionDependencies(websiteTabConnections: WebsiteTabConnecti
 			},
 			{
 				method: 'request_signer_to_wallet_watchAsset',
-				result: { ...request.requestedAsset, options: { ...request.requestedAsset.options, address: checksummedAddress(request.requestedAsset.options.address) } },
+				result: {
+					parameters: { ...request.requestedAsset, options: { ...request.requestedAsset.options, address: checksummedAddress(request.requestedAsset.options.address) } },
+					uniqueRequestIdentifier: request.request.uniqueRequestIdentifier,
+					signerIdentity: {
+						tabId: request.request.uniqueRequestIdentifier.requestSocket.tabId,
+						connectionName: request.forwardToSigner.connectionName,
+						ownerGeneration: request.forwardToSigner.ownerGeneration,
+						signerProviderGeneration: request.forwardToSigner.signerProviderGeneration,
+					},
+				},
 			},
 		) !== false,
 	}
@@ -307,10 +316,27 @@ export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnect
 		const requests = await dependencies.getRequests()
 		const request = requests.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))
 		if (request === undefined || request.popupOrTabId === undefined) return
-		if (confirmation.data.action === 'forward' && dependencies.sendToSigner(request) === false) {
-			const updated = await dependencies.updateRequests((storedRequests) => storedRequests.map((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier) ? { ...stored, forwardToSigner: undefined } : stored))
-			const stillPending = updated.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))
-			if (stillPending !== undefined) await dependencies.publish(stillPending)
+		if (confirmation.data.action === 'forward') {
+			const waitingRequests = await dependencies.updateRequests((storedRequests) => storedRequests.map((stored): StoredWatchAssetRequest => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier)
+				? { ...stored, forwardingStatus: { status: 'pending' } }
+				: stored))
+			const waiting = waitingRequests.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))
+			if (waiting === undefined) return
+			await dependencies.publish(waiting)
+			if (dependencies.sendToSigner(waiting)) return
+			const updated = await dependencies.updateRequests((storedRequests) => storedRequests.map((stored): StoredWatchAssetRequest => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier)
+				? {
+					...stored,
+					forwardToSigner: undefined,
+					forwardingStatus: {
+						status: 'error',
+						code: -32603,
+						message: 'The connected wallet changed before the watch-asset request could be forwarded.',
+					},
+				}
+				: stored))
+			const unavailable = updated.find((stored) => requestsMatch(stored, confirmation.data.uniqueRequestIdentifier))
+			if (unavailable !== undefined) await dependencies.publish(unavailable)
 			return
 		}
 		if (confirmation.data.action === 'add') {
@@ -341,6 +367,94 @@ export async function resolveWatchAsset(websiteTabConnections: WebsiteTabConnect
 	}
 }
 
+type WatchAssetSignerReplyOutcome =
+	| { success: true, reply: unknown }
+	| { success: false, error: { code: number, message: string } }
+
+type WatchAssetSignerReplyDependencies = {
+	updateRequests: typeof updatePendingWatchAssetRequests
+	publish: typeof publishWatchAssetRequest
+}
+
+const defaultWatchAssetSignerReplyDependencies: WatchAssetSignerReplyDependencies = {
+	updateRequests: updatePendingWatchAssetRequests,
+	publish: publishWatchAssetRequest,
+}
+
+export async function resolveWatchAssetSignerReply(
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
+	signerIdentity: SignerStateIdentity,
+	outcome: WatchAssetSignerReplyOutcome,
+	dependencies: WatchAssetSignerReplyDependencies = defaultWatchAssetSignerReplyDependencies,
+) {
+	let resolved = false
+	const requests = await dependencies.updateRequests((storedRequests) => storedRequests.map((request): StoredWatchAssetRequest => {
+		const target = request.forwardToSigner
+		if (!requestsMatch(request, uniqueRequestIdentifier)
+			|| request.forwardingStatus?.status !== 'pending'
+			|| target === undefined
+			|| request.request.uniqueRequestIdentifier.requestSocket.tabId !== signerIdentity.tabId
+			|| target.connectionName !== signerIdentity.connectionName
+			|| target.ownerGeneration !== signerIdentity.ownerGeneration
+			|| target.signerProviderGeneration !== signerIdentity.signerProviderGeneration
+		) return request
+		resolved = true
+		if (!outcome.success) return { ...request, forwardingStatus: { status: 'error', ...outcome.error } }
+		if (typeof outcome.reply !== 'boolean') {
+			return {
+				...request,
+				forwardingStatus: {
+					status: 'error',
+					code: -32603,
+					message: 'The connected wallet returned an invalid wallet_watchAsset result.',
+				},
+			}
+		}
+		return { ...request, forwardingStatus: { status: 'completed', accepted: outcome.reply } }
+	}))
+	const request = requests.find((stored) => requestsMatch(stored, uniqueRequestIdentifier))
+	if (resolved && request !== undefined) await dependencies.publish(request)
+}
+
+type WatchAssetSignerReplacementDependencies = {
+	updateRequests: typeof updatePendingWatchAssetRequests
+	publish: typeof publishWatchAssetRequest
+}
+
+const defaultWatchAssetSignerReplacementDependencies: WatchAssetSignerReplacementDependencies = {
+	updateRequests: updatePendingWatchAssetRequests,
+	publish: publishWatchAssetRequest,
+}
+
+function doesWatchAssetForwardTargetMatchSigner(request: StoredWatchAssetRequest, signerIdentity: SignerStateIdentity) {
+	const target = request.forwardToSigner
+	return target !== undefined
+		&& request.request.uniqueRequestIdentifier.requestSocket.tabId === signerIdentity.tabId
+		&& target.connectionName === signerIdentity.connectionName
+		&& target.ownerGeneration === signerIdentity.ownerGeneration
+		&& target.signerProviderGeneration === signerIdentity.signerProviderGeneration
+}
+
+export async function settlePendingWatchAssetForReplacedSigner(
+	signerIdentity: SignerStateIdentity,
+	error: { code: number, message: string },
+	dependencies: WatchAssetSignerReplacementDependencies = defaultWatchAssetSignerReplacementDependencies,
+) {
+	const settledRequestIdentifiers: UniqueRequestIdentifier[] = []
+	const requests = await dependencies.updateRequests((storedRequests) => storedRequests.map((request): StoredWatchAssetRequest => {
+		if (request.forwardingStatus?.status !== 'pending' || !doesWatchAssetForwardTargetMatchSigner(request, signerIdentity)) return request
+		settledRequestIdentifiers.push(request.request.uniqueRequestIdentifier)
+		return {
+			...request,
+			forwardToSigner: undefined,
+			forwardingStatus: { status: 'error', ...error },
+		}
+	}))
+	for (const request of requests) {
+		if (settledRequestIdentifiers.some((identifier) => requestsMatch(request, identifier))) await dependencies.publish(request)
+	}
+}
+
 async function dismissWatchAssetDialog(popupOrTabId: PopupOrTabId) {
 	let removed = false
 	await updatePendingWatchAssetRequests((requests) => requests.filter((request) => {
@@ -362,6 +476,16 @@ export function initializeWatchAssetWindowListeners() {
 		})
 	}
 	addWindowTabListeners((id) => dismiss({ type: 'popup', id }), (id) => dismiss({ type: 'tab', id }))
+	addSignerStateReplacementListener((signerStateToken, error) => {
+		void settlePendingWatchAssetForReplacedSigner({
+			tabId: signerStateToken.socket.tabId,
+			connectionName: signerStateToken.socket.connectionName,
+			ownerGeneration: signerStateToken.ownerGeneration,
+			signerProviderGeneration: signerStateToken.signerProviderGeneration,
+		}, error).catch(async (caught: unknown) => {
+			await reportUnexpectedError(caught, { code: 'watch_asset_signer_replacement_failed' })
+		})
+	})
 	return true
 }
 
@@ -476,6 +600,7 @@ export async function handleWatchAssetRequest(
 		selectedImageUri: undefined,
 		imageDownloadError: undefined,
 		forwardToSigner: undefined,
+		forwardingStatus: undefined,
 	}
 	const storedRequest = { ...requestBeforeSignerCheck, forwardToSigner: await getForwardSignerTarget(websiteTabConnections, requestBeforeSignerCheck) }
 	const enqueueRequest = dependencies.enqueueRequest ?? (async (pending) => { await updatePendingWatchAssetRequests((requests) => enqueueStoredWatchAssetRequest(requests, pending)) })

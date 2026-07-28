@@ -214,8 +214,32 @@ export const PendingChainChangeConfirmationPromise = funtypes.ReadonlyObject({
 	simulationMode: funtypes.Boolean,
 })
 
+type WatchAssetToken = funtypes.Static<typeof WatchAssetToken>
 const WatchAssetToken = funtypes.Union(Erc20TokenEntry, Erc721Entry, Erc1155Entry)
-const WatchAssetRequestDetails = funtypes.ReadonlyObject({
+type WatchAssetForwardingStatus = funtypes.Static<typeof WatchAssetForwardingStatus>
+const WatchAssetForwardingStatus = funtypes.Union(
+	funtypes.ReadonlyObject({ status: funtypes.Literal('pending') }),
+	funtypes.ReadonlyObject({ status: funtypes.Literal('completed'), accepted: funtypes.Boolean }),
+	funtypes.ReadonlyObject({ status: funtypes.Literal('error'), code: funtypes.Number, message: funtypes.String }),
+)
+type WatchAssetRequestDetails = {
+	readonly website: Website
+	readonly request: InterceptedRequest
+	readonly requestedAsset: WalletWatchAssetParameters
+	readonly currentToken: WatchAssetToken
+	readonly token: WatchAssetToken
+	readonly proposedImageUrl: string | undefined
+	readonly selectedImageUri: string | undefined
+	readonly imageDownloadError: string | undefined
+	readonly forwardToSigner: {
+		readonly signerName: funtypes.Static<typeof SignerName>
+		readonly connectionName: bigint
+		readonly ownerGeneration: number
+		readonly signerProviderGeneration: number
+	} | undefined
+	readonly forwardingStatus: WatchAssetForwardingStatus | undefined
+}
+const WatchAssetRequestDetails: funtypes.Codec<WatchAssetRequestDetails> = funtypes.ReadonlyObject({
 	website: Website,
 	request: InterceptedRequest,
 	requestedAsset: WalletWatchAssetParameters,
@@ -230,13 +254,14 @@ const WatchAssetRequestDetails = funtypes.ReadonlyObject({
 		ownerGeneration: funtypes.Number,
 		signerProviderGeneration: funtypes.Number,
 	}), funtypes.Undefined),
+	forwardingStatus: funtypes.Union(WatchAssetForwardingStatus, funtypes.Undefined),
 })
-export type StoredWatchAssetRequest = funtypes.Static<typeof StoredWatchAssetRequest>
-export const StoredWatchAssetRequest = WatchAssetRequestDetails.And(funtypes.ReadonlyObject({
+export type StoredWatchAssetRequest = WatchAssetRequestDetails & { readonly popupOrTabId: PopupOrTabId | undefined }
+export const StoredWatchAssetRequest: funtypes.Codec<StoredWatchAssetRequest> = WatchAssetRequestDetails.And(funtypes.ReadonlyObject({
 	popupOrTabId: funtypes.Union(PopupOrTabId, funtypes.Undefined),
 }))
-export type PendingWatchAssetRequest = funtypes.Static<typeof PendingWatchAssetRequest>
-export const PendingWatchAssetRequest = WatchAssetRequestDetails.And(funtypes.ReadonlyObject({
+export type PendingWatchAssetRequest = WatchAssetRequestDetails & { readonly popupOrTabId: PopupOrTabId }
+export const PendingWatchAssetRequest: funtypes.Codec<PendingWatchAssetRequest> = WatchAssetRequestDetails.And(funtypes.ReadonlyObject({
 	popupOrTabId: PopupOrTabId,
 }))
 

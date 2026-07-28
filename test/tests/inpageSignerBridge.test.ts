@@ -4,10 +4,11 @@ import { describe, test } from 'bun:test'
 type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[] }
 type Listener = (event: WindowEvent) => void
 type InpageRequest = { readonly method: string, readonly requestId: number, readonly params?: readonly unknown[], readonly internal?: true, readonly replayOnDisconnect?: true }
+type SignerRequest = { readonly method: string, readonly params?: readonly unknown[] | Readonly<Record<string, unknown>> }
 type FakeWindowOptions = {
 	readonly onConnectedToSignerRequest?: () => void
 	readonly handleRequest?: (request: InpageRequest, sendBackgroundMessage: (data: unknown) => void) => boolean
-	readonly handleSignerRequest?: (request: { readonly method: string, readonly params?: readonly unknown[] }) => unknown | Promise<unknown>
+	readonly handleSignerRequest?: (request: SignerRequest) => unknown | Promise<unknown>
 	readonly signerChainIdReply?: unknown
 	readonly signerInitialSelectedAddress?: string
 }
@@ -48,7 +49,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 		...(signerInitialSelectedAddress === undefined ? {} : { selectedAddress: signerInitialSelectedAddress }),
 		isMetaMask: true,
 		isConnected: () => true,
-		request: async ({ method, params }: { method: string, params?: readonly unknown[] }) => {
+		request: async ({ method, params }: SignerRequest) => {
 			const customReply = handleSignerRequest?.({ method, ...(params === undefined ? {} : { params }) })
 			if (customReply !== undefined) return await customReply
 			signerRequests.push(method)
@@ -751,8 +752,27 @@ describe('inpage signer bridge', () => {
 	})
 
 	test('forwards an approved watch-asset dialog action to the selected signer', async () => {
-		const signerRequests: Array<{ method: string, params?: readonly unknown[] }> = []
+		const signerRequests: SignerRequest[] = []
+		let signerReply: unknown
+		let signerProviderGeneration: number | undefined
 		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				if (request.method === 'connected_to_signer') {
+					const generation = request.params?.[2]
+					if (typeof generation === 'number') signerProviderGeneration = generation
+					return false
+				}
+				if (request.method !== 'signer_reply') return false
+				signerReply = request.params?.[0]
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'signer_reply',
+					result: '0x',
+				})
+				return true
+			},
 			handleSignerRequest: (request) => {
 				signerRequests.push(request)
 				return true
@@ -764,18 +784,43 @@ describe('inpage signer bridge', () => {
 		}
 
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?watch-asset-forward', async () => {
+			await waitFor(() => signerProviderGeneration !== undefined)
+			if (signerProviderGeneration === undefined) throw new Error('Missing signer provider generation')
 			sendBackgroundMessage({
 				interceptorApproved: true,
 				type: 'result',
 				method: 'request_signer_to_wallet_watchAsset',
-				result: parameters,
+				result: {
+					parameters,
+					uniqueRequestIdentifier: { requestId: 91, requestSocket: { tabId: 7, connectionName: '0x3' } },
+					signerIdentity: {
+						tabId: 7,
+						connectionName: '0x3',
+						ownerGeneration: 2,
+						signerProviderGeneration,
+					},
+				},
 			})
 			await waitFor(() => signerRequests.some(({ method }) => method === 'wallet_watchAsset'))
+			await waitFor(() => signerReply !== undefined)
 		})
 
 		assert.deepEqual(signerRequests.find(({ method }) => method === 'wallet_watchAsset'), {
 			method: 'wallet_watchAsset',
-			params: [parameters],
+			params: parameters,
+		})
+		if (!isRecord(signerReply) || !isRecord(signerReply.forwardRequest)) throw new Error('Malformed signer reply')
+		assert.equal(signerReply.success, true)
+		assert.equal(signerReply.forwardRequest.method, 'wallet_watchAsset')
+		assert.deepEqual(signerReply.forwardRequest.params, {
+			parameters,
+			uniqueRequestIdentifier: { requestId: 91, requestSocket: { tabId: 7, connectionName: '0x3' } },
+			signerIdentity: {
+				tabId: 7,
+				connectionName: '0x3',
+				ownerGeneration: 2,
+				signerProviderGeneration,
+			},
 		})
 	})
 

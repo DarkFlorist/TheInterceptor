@@ -8,6 +8,7 @@ import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/bro
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { SignerLogoText, getPrettySignerName } from '../subcomponents/signers.js'
 import { SmallAddress } from '../subcomponents/address.js'
+import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 
 export const WATCH_ASSET_TITLE = 'Add to Address Book Edit Request'
 
@@ -81,19 +82,38 @@ export function WatchAssetDetails({ pendingRequest }: { pendingRequest: PendingW
 	</>
 }
 
-export function WatchAssetActions({ forwardToSigner, submitting, choose }: {
+export function WalletForwardingResult({ pendingRequest }: { pendingRequest: PendingWatchAssetRequest }) {
+	const status = pendingRequest.forwardingStatus
+	if (status === undefined || status.status === 'pending') return <></>
+	const walletName = pendingRequest.forwardToSigner === undefined ? 'The wallet' : getPrettySignerName(pendingRequest.forwardToSigner.signerName)
+	if (status.status === 'error') return <div class = 'notification is-danger is-light' role = 'alert' style = 'padding: 8px; margin-bottom: 12px'>{ status.message }</div>
+	return <div class = { `notification ${ status.accepted ? 'is-success' : 'is-warning' } is-light` } role = 'status' style = 'padding: 8px; margin-bottom: 12px'>
+		{ status.accepted ? `${ walletName } added the asset.` : `${ walletName } did not add the asset.` }
+	</div>
+}
+
+export function WatchAssetActions({ forwardToSigner, forwardingStatus, submitting, choose }: {
 	forwardToSigner: PendingWatchAssetRequest['forwardToSigner'],
+	forwardingStatus: PendingWatchAssetRequest['forwardingStatus'],
 	submitting: boolean,
 	choose: (action: 'add' | 'reject' | 'forward') => void,
 }) {
+	const waitingForWallet = forwardingStatus?.status === 'pending'
+	const actionsDisabled = submitting || waitingForWallet
+	const signerName = forwardToSigner?.signerName
 	return <div style = 'display: flex; gap: 8px; justify-content: center; flex-wrap: wrap'>
-		<button class = 'button is-danger' disabled = { submitting } onClick = { () => choose('reject') }>Don't add</button>
-		<button class = 'button is-link' disabled = { submitting || forwardToSigner === undefined } onClick = { () => choose('forward') }>
-			{ forwardToSigner === undefined
+		<button class = 'button is-danger' disabled = { actionsDisabled } onClick = { () => choose('reject') }>Don't add</button>
+		<AsyncActionButton
+			class = 'button is-link'
+			state = { waitingForWallet ? 'pending' : 'inactive' }
+			disabled = { actionsDisabled || forwardToSigner === undefined }
+			onClick = { () => choose('forward') }
+			text = { forwardToSigner === undefined
 				? <SignerLogoText signerName = 'NoSignerDetected' text = 'Forward to wallet' reserveLogoSpace = { true }/>
 				: <SignerLogoText signerName = { forwardToSigner.signerName } text = { `Forward to ${ getPrettySignerName(forwardToSigner.signerName) }` } reserveLogoSpace = { true }/> }
-		</button>
-		<button class = 'button is-primary' disabled = { submitting } onClick = { () => choose('add') }>Add to address book</button>
+			pendingText = { signerName === undefined ? 'Waiting for wallet...' : `Waiting for ${ getPrettySignerName(signerName) }...` }
+		/>
+		<button class = 'button is-primary' disabled = { actionsDisabled } onClick = { () => choose('add') }>Add to address book</button>
 	</div>
 }
 
@@ -141,7 +161,8 @@ export function WatchAsset() {
 					<img src = { websiteIcon } width = '64' height = '64'/>
 				</figure> }
 				<WatchAssetDetails pendingRequest = { request.value }/>
-				<WatchAssetActions forwardToSigner = { forwardToSigner } submitting = { submitting.value } choose = { (action) => void choose(action) }/>
+				<WalletForwardingResult pendingRequest = { request.value }/>
+				<WatchAssetActions forwardToSigner = { forwardToSigner } forwardingStatus = { request.value.forwardingStatus } submitting = { submitting.value } choose = { (action) => void choose(action) }/>
 			</div>
 		</div>
 	</main>

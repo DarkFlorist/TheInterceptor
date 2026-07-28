@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { type EthereumJsonRpcRequest as EthereumJsonRpcRequestType, EthereumJsonRpcRequest, WalletWatchAsset } from '../../app/ts/types/JsonRpc-types.js'
-import { enqueueStoredWatchAssetRequest, handleWatchAssetRequest, MAX_PENDING_WATCH_ASSET_REQUESTS, MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN, processWatchAssetQueue, replaceAddressBookEntryWithAsset, resolveWatchAsset, updateWatchAssetViewWithPendingRequest, validateWatchAssetParameters } from '../../app/ts/background/windows/watchAsset.js'
+import { enqueueStoredWatchAssetRequest, handleWatchAssetRequest, MAX_PENDING_WATCH_ASSET_REQUESTS, MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN, processWatchAssetQueue, replaceAddressBookEntryWithAsset, resolveWatchAsset, resolveWatchAssetSignerReply, settlePendingWatchAssetForReplacedSigner, updateWatchAssetViewWithPendingRequest, validateWatchAssetParameters } from '../../app/ts/background/windows/watchAsset.js'
 import { getWatchAssetRpcParseFailureReply } from '../../app/ts/background/watchAssetRpc.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { StoredWatchAssetRequest, type WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
@@ -67,6 +67,7 @@ function createStoredRequest(requestId: number, websiteOrigin = website.websiteO
 		selectedImageUri: undefined,
 		imageDownloadError: undefined,
 		forwardToSigner: undefined,
+		forwardingStatus: undefined,
 	}
 }
 
@@ -545,6 +546,149 @@ describe('wallet_watchAsset', () => {
 		expect(requests).toHaveLength(1)
 		expect(requests[0]?.forwardToSigner).toBeUndefined()
 		expect(published?.forwardToSigner).toBeUndefined()
+		expect(published?.forwardingStatus).toEqual({
+			status: 'error',
+			code: -32603,
+			message: 'The connected wallet changed before the watch-asset request could be forwarded.',
+		})
+	})
+
+	test('waits for the wallet reply and keeps the request available for a later address-book add', async () => {
+		const stored = {
+			...createStoredRequest(13),
+			popupOrTabId: { type: 'popup' as const, id: 93 },
+			forwardToSigner: { signerName: 'MetaMask' as const, connectionName: 3n, ownerGeneration: 1, signerProviderGeneration: 4 },
+		}
+		let requests: readonly StoredWatchAssetRequest[] = [stored]
+		let addressBook: AddressBookEntries = []
+		let closeCount = 0
+		let processQueueCount = 0
+		const publishedStatuses: StoredWatchAssetRequest['forwardingStatus'][] = []
+		const dependencies = {
+			getRequests: async () => requests,
+			updateRequests: async (update: (storedRequests: readonly StoredWatchAssetRequest[]) => readonly StoredWatchAssetRequest[]) => { requests = update(requests); return requests },
+			updateAddressBook: async (update: (entries: AddressBookEntries) => AddressBookEntries) => { addressBook = update(addressBook) },
+			publishAddressBookChanged: async () => undefined,
+			publish: async (request: StoredWatchAssetRequest) => { publishedStatuses.push(request.forwardingStatus) },
+			closeDialog: async () => { closeCount += 1 },
+			processQueue: async () => { processQueueCount += 1 },
+			sendToSigner: () => true,
+		}
+
+		await resolveWatchAsset(websiteTabConnections, {
+			method: 'popup_watchAssetDialog',
+			data: { action: 'forward', uniqueRequestIdentifier: stored.request.uniqueRequestIdentifier },
+		}, dependencies)
+
+		expect(requests).toHaveLength(1)
+		expect(requests[0]?.forwardingStatus).toEqual({ status: 'pending' })
+		expect(closeCount).toBe(0)
+		expect(processQueueCount).toBe(0)
+
+		await resolveWatchAssetSignerReply(stored.request.uniqueRequestIdentifier, {
+			tabId: 2,
+			connectionName: 3n,
+			ownerGeneration: 1,
+			signerProviderGeneration: 4,
+		}, {
+			success: true,
+			reply: true,
+		}, {
+			updateRequests: dependencies.updateRequests,
+			publish: dependencies.publish,
+		})
+
+		expect(requests).toHaveLength(1)
+		expect(requests[0]?.forwardingStatus).toEqual({ status: 'completed', accepted: true })
+		expect(closeCount).toBe(0)
+		expect(processQueueCount).toBe(0)
+
+		await resolveWatchAsset(websiteTabConnections, {
+			method: 'popup_watchAssetDialog',
+			data: { action: 'add', uniqueRequestIdentifier: stored.request.uniqueRequestIdentifier },
+		}, dependencies)
+
+		expect(requests).toEqual([])
+		expect(addressBook).toEqual([stored.token])
+		expect(closeCount).toBe(1)
+		expect(processQueueCount).toBe(1)
+		expect(publishedStatuses).toEqual([{ status: 'pending' }, { status: 'completed', accepted: true }])
+	})
+
+	test('shows wallet errors without closing or removing the watch-asset request', async () => {
+		const stored = {
+			...createStoredRequest(14),
+			popupOrTabId: { type: 'popup' as const, id: 94 },
+			forwardToSigner: { signerName: 'MetaMask' as const, connectionName: 3n, ownerGeneration: 1, signerProviderGeneration: 5 },
+			forwardingStatus: { status: 'pending' as const },
+		}
+		let requests: readonly StoredWatchAssetRequest[] = [stored]
+		let published: StoredWatchAssetRequest | undefined
+		await resolveWatchAssetSignerReply(stored.request.uniqueRequestIdentifier, {
+			tabId: 2,
+			connectionName: 3n,
+			ownerGeneration: 1,
+			signerProviderGeneration: 5,
+		}, {
+			success: false,
+			error: { code: -32603, message: 'MetaMask failed to add the asset.' },
+		}, {
+			updateRequests: async (update) => { requests = update(requests); return requests },
+			publish: async (request) => { published = request },
+		})
+
+		expect(requests).toHaveLength(1)
+		expect(published?.forwardingStatus).toEqual({ status: 'error', code: -32603, message: 'MetaMask failed to add the asset.' })
+	})
+
+	test('settles a pending forward when its exact signer owner is replaced and ignores stale replies', async () => {
+		const stored = {
+			...createStoredRequest(15),
+			popupOrTabId: { type: 'popup' as const, id: 95 },
+			forwardToSigner: { signerName: 'MetaMask' as const, connectionName: 3n, ownerGeneration: 1, signerProviderGeneration: 5 },
+			forwardingStatus: { status: 'pending' as const },
+		}
+		let requests: readonly StoredWatchAssetRequest[] = [stored]
+		const published: StoredWatchAssetRequest[] = []
+		const dependencies = {
+			updateRequests: async (update: (storedRequests: readonly StoredWatchAssetRequest[]) => readonly StoredWatchAssetRequest[]) => { requests = update(requests); return requests },
+			publish: async (request: StoredWatchAssetRequest) => { published.push(request) },
+		}
+		const replacedSigner = {
+			tabId: 2,
+			connectionName: 3n,
+			ownerGeneration: 1,
+			signerProviderGeneration: 5,
+		}
+
+		await settlePendingWatchAssetForReplacedSigner(replacedSigner, {
+			code: 4900,
+			message: 'Signer connection changed before the previous wallet replied.',
+		}, dependencies)
+
+		expect(requests[0]?.forwardToSigner).toBeUndefined()
+		expect(requests[0]?.forwardingStatus).toEqual({
+			status: 'error',
+			code: 4900,
+			message: 'Signer connection changed before the previous wallet replied.',
+		})
+		expect(published).toHaveLength(1)
+
+		await resolveWatchAssetSignerReply(stored.request.uniqueRequestIdentifier, {
+			tabId: 2,
+			connectionName: 3n,
+			ownerGeneration: 1,
+			signerProviderGeneration: 5,
+		}, {
+			success: true,
+			reply: true,
+		}, dependencies)
+
+		expect(requests[0]?.forwardingStatus).toEqual({
+			status: 'error',
+			code: 4900,
+			message: 'Signer connection changed before the previous wallet replied.',
+		})
 	})
 
 	test('does not automatically fetch an unsafe image URL from a legacy persisted request', async () => {

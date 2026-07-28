@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
-import { WATCH_ASSET_TITLE, WatchAssetActions, WatchAssetDetails } from '../../app/ts/components/pages/WatchAsset.js'
+import { WalletForwardingResult, WATCH_ASSET_TITLE, WatchAssetActions, WatchAssetDetails } from '../../app/ts/components/pages/WatchAsset.js'
 import type { PendingWatchAssetRequest } from '../../app/ts/types/user-interface-types.js'
 import { installDomMock } from './domMock.js'
 
@@ -32,6 +32,13 @@ function findFirstByTag(node: TestNode, tagName: string): TestNode | undefined {
 		if (match !== undefined) return match
 	}
 	return undefined
+}
+
+function findAllByTag(node: TestNode, tagName: string): TestNode[] {
+	return [
+		...(node.tagName === tagName.toUpperCase() ? [node] : []),
+		...(node.childNodes ?? []).flatMap((child) => findAllByTag(child, tagName)),
+	]
 }
 
 function findNodeByAttribute(node: TestNode, name: string, value: string): TestNode | undefined {
@@ -87,6 +94,7 @@ const pendingRequest: PendingWatchAssetRequest = {
 	selectedImageUri: 'data:image/png;base64,dG9rZW4=',
 	imageDownloadError: undefined,
 	forwardToSigner: { signerName: 'MetaMask', connectionName: 3n, ownerGeneration: 1, signerProviderGeneration: 1 },
+	forwardingStatus: undefined,
 }
 
 describe('watch asset proposal rendering', () => {
@@ -225,7 +233,7 @@ describe('watch asset proposal rendering', () => {
 		const dom = installDomMock()
 		try {
 			await act(() => {
-				render(h(WatchAssetActions, { forwardToSigner: undefined, submitting: false, choose: () => undefined }), dom.document.body)
+				render(h(WatchAssetActions, { forwardToSigner: undefined, forwardingStatus: undefined, submitting: false, choose: () => undefined }), dom.document.body)
 			})
 			const forwardButton = findNodeByExactText(dom.document.body, 'Forward to wallet')
 			assert.notEqual(forwardButton, undefined)
@@ -243,6 +251,7 @@ describe('watch asset proposal rendering', () => {
 			await act(() => {
 				render(h(WatchAssetActions, {
 					forwardToSigner: { signerName: 'MetaMask', connectionName: 3n, ownerGeneration: 1, signerProviderGeneration: 1 },
+					forwardingStatus: undefined,
 					submitting: false,
 					choose: () => undefined,
 				}), dom.document.body)
@@ -251,6 +260,54 @@ describe('watch asset proposal rendering', () => {
 			assert.notEqual(forwardButton, undefined)
 			assert.equal(forwardButton?.disabled === true || forwardButton?.getAttribute?.('disabled') !== null, false)
 			assert.equal(findFirstByTag(forwardButton ?? {}, 'img')?.getAttribute?.('src'), '../img/signers/metamask.svg')
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('shows wallet loading and keeps every action disabled until the wallet replies', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(h(WatchAssetActions, {
+					forwardToSigner: pendingRequest.forwardToSigner,
+					forwardingStatus: { status: 'pending' },
+					submitting: false,
+					choose: () => undefined,
+				}), dom.document.body)
+			})
+			assert.notEqual(findNodeByExactText(dom.document.body, 'Waiting for MetaMask...'), undefined)
+			const buttons = findAllByTag(dom.document.body, 'button')
+			assert.equal(buttons.length, 3)
+			for (const button of buttons) {
+				assert.equal(button?.disabled === true || button?.getAttribute?.('disabled') !== null, true)
+			}
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('shows the wallet result while leaving the Interceptor actions available', async () => {
+		const dom = installDomMock()
+		try {
+			const completedRequest = { ...pendingRequest, forwardingStatus: { status: 'completed' as const, accepted: true } }
+			await act(() => {
+				render(<>
+					<WalletForwardingResult pendingRequest = { completedRequest }/>
+					<WatchAssetActions
+						forwardToSigner = { completedRequest.forwardToSigner }
+						forwardingStatus = { completedRequest.forwardingStatus }
+						submitting = { false }
+						choose = { () => undefined }
+					/>
+				</>, dom.document.body)
+			})
+			assert.notEqual(findNodeByExactText(dom.document.body, 'MetaMask added the asset.'), undefined)
+			const addButton = findNodeByExactText(dom.document.body, 'Add to address book')
+			assert.notEqual(addButton, undefined)
+			assert.equal(addButton?.disabled === true || addButton?.getAttribute?.('disabled') !== null, false)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
