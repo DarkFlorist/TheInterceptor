@@ -7,6 +7,8 @@ import type { Settings } from '../../app/ts/types/interceptor-messages.js'
 
 const storageState: Record<string, unknown> = {}
 const sentMessages: unknown[] = []
+const dynamicRuleUpdates: unknown[] = []
+const dispatcherEvents: ({ type: 'message', message: unknown } | { type: 'dynamicRuleUpdate' })[] = []
 
 Reflect.set(globalThis, 'chrome', { runtime: { id: 'test-extension' } })
 Reflect.set(globalThis, 'browser', {
@@ -15,6 +17,7 @@ Reflect.set(globalThis, 'browser', {
 		getManifest: () => ({ manifest_version: 3 }),
 		sendMessage: async (message: unknown) => {
 			sentMessages.push(message)
+			dispatcherEvents.push({ type: 'message', message })
 			return undefined
 		},
 		onMessage: { addListener: () => undefined, removeListener: () => undefined },
@@ -62,7 +65,11 @@ Reflect.set(globalThis, 'browser', {
 	declarativeNetRequest: {
 		getDynamicRules: async () => [],
 		getSessionRules: async () => [],
-		updateDynamicRules: async () => undefined,
+		updateDynamicRules: async (update: unknown) => {
+			dynamicRuleUpdates.push(update)
+			dispatcherEvents.push({ type: 'dynamicRuleUpdate' })
+			return undefined
+		},
 		updateSessionRules: async () => undefined,
 	},
 })
@@ -116,6 +123,8 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 beforeEach(() => {
 	for (const key of Object.keys(storageState)) delete storageState[key]
 	sentMessages.splice(0, sentMessages.length)
+	dynamicRuleUpdates.splice(0, dynamicRuleUpdates.length)
+	dispatcherEvents.splice(0, dispatcherEvents.length)
 })
 
 describe('popup message dispatcher seams', () => {
@@ -137,6 +146,12 @@ describe('popup message dispatcher seams', () => {
 	})
 
 	test('broadcasts an import failure without refreshing settings', async () => {
+		storageState.websiteAccess = [{
+			website: { websiteOrigin: 'failure-refresh.test', icon: undefined, title: 'Failure refresh sentinel' },
+			addressAccess: [],
+			access: true,
+			declarativeNetRequestBlockMode: 'block-all',
+		}]
 		await dispatchPopupMessage(
 			createDispatcherContext(async () => undefined),
 			{ method: 'popup_import_settings', data: { fileContents: 'not json' } },
@@ -149,6 +164,7 @@ describe('popup message dispatcher seams', () => {
 		if (importFailure?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected failed import broadcast.')
 		assert.equal(importFailure.data.success, false)
 		assert.equal(storageState.activeSimulationAddress, undefined)
+		assert.deepEqual(dynamicRuleUpdates, [])
 	})
 
 	test('reloads imported settings before refreshing access and broadcasting the update', async () => {
@@ -169,7 +185,12 @@ describe('popup message dispatcher seams', () => {
 				},
 				openedPage: { page: 'Home' },
 				useSignersAddressAsActiveAddress: false,
-				websiteAccess: [],
+				websiteAccess: [{
+					website: { websiteOrigin: 'success-refresh.test', title: 'Imported blocked website' },
+					addressAccess: [],
+					access: true,
+					declarativeNetRequestBlockMode: 'block-all',
+				}],
 				simulationMode: false,
 				addressBookEntries: [],
 				useTabsInsteadOfPopup: false,
@@ -193,5 +214,19 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(messages[1].data.activeSimulationAddress, 2n)
 		assert.equal(messages[1].data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
 		assert.equal(messages[1].data.simulationMode, false)
+		assert.deepEqual(dynamicRuleUpdates, [{
+			removeRuleIds: [],
+			addRules: [{
+				id: 1,
+				priority: 1,
+				action: { type: 'block' },
+				condition: { initiatorDomains: ['success-refresh.test'], domainType: 'thirdParty' },
+			}],
+		}])
+		const successReplyEventIndex = dispatcherEvents.findIndex((event) => event.type === 'message' && MessageToPopup.parse(event.message).method === 'popup_initiate_export_settings_reply')
+		const dynamicRuleEventIndex = dispatcherEvents.findIndex((event) => event.type === 'dynamicRuleUpdate')
+		const settingsUpdatedEventIndex = dispatcherEvents.findIndex((event) => event.type === 'message' && MessageToPopup.parse(event.message).method === 'popup_settingsUpdated')
+		assert.ok(successReplyEventIndex < dynamicRuleEventIndex)
+		assert.ok(dynamicRuleEventIndex < settingsUpdatedEventIndex)
 	})
 })
