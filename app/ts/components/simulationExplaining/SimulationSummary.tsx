@@ -26,6 +26,8 @@ import { createAsyncActionRunner, useAsyncState } from '../../utils/preact-utili
 import { useOptionalSignal } from '../../utils/OptionalSignal.js'
 import { type ReadonlySignal, type Signal, useComputed, useSignal } from '@preact/signals'
 import type { SignalOrValue } from '../../utils/signals.js'
+import type { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
+import { identifySignature } from './identifySignature.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -710,14 +712,75 @@ function isSuccessfulVisualizedSimulationState(visualizedSimulationState: Simula
 	return visualizedSimulationState.success
 }
 
-function getSuccessfulSimulatedAndVisualizedTransactions(visualizedSimulationState: Extract<SimulationAndVisualisationResults['visualizedSimulationState'], { success: true }>) {
-	const transactions: SimulatedAndVisualizedTransaction[] = []
+function getSuccessfulSimulationSummaryEntries(visualizedSimulationState: Extract<SimulationAndVisualisationResults['visualizedSimulationState'], { success: true }>) {
+	const simulatedTransactions: SimulatedAndVisualizedTransaction[] = []
+	const simulatedSignatures: VisualizedPersonalSignRequest[] = []
 	for (const block of visualizedSimulationState.visualizedBlocks) {
 		for (const transaction of block.simulatedAndVisualizedTransactions) {
-			transactions.push(transaction)
+			simulatedTransactions.push(transaction)
+		}
+		for (const signature of block.visualizedPersonalSignRequests) {
+			simulatedSignatures.push(signature)
 		}
 	}
-	return transactions
+	return { simulatedTransactions, simulatedSignatures }
+}
+
+function getSimulatedSignatureSummaryStatus(signature: VisualizedPersonalSignRequest) {
+	if (signature.isValidMessage === false) {
+		return {
+			icon: '../img/error-icon.svg',
+			label: 'Invalid message format',
+			modifier: 'invalid',
+		}
+	}
+	if (signature.quarantine) {
+		return {
+			icon: '../img/warning-sign.svg',
+			label: signature.quarantineReasons.length === 0 ? 'Flagged for review' : `Flagged: ${ signature.quarantineReasons.join('; ') }`,
+			modifier: 'warning',
+		}
+	}
+	return {
+		icon: '../img/head-simulating.png',
+		label: 'Included in this simulation',
+		modifier: 'simulated',
+	}
+}
+
+function SimulatedSignaturesSummary({ simulatedSignatures, renameAddressCallBack }: {
+	simulatedSignatures: readonly VisualizedPersonalSignRequest[]
+	renameAddressCallBack: RenameAddressCallBack
+}) {
+	if (simulatedSignatures.length === 0) return <></>
+	return <section class = 'simulation-summary-signatures'>
+		<h3 class = 'simulation-summary-section-title'>Simulated signatures ({ simulatedSignatures.length })</h3>
+		<ul class = 'simulation-summary-signature-list'>
+			{ simulatedSignatures.map((signature) => {
+				const status = getSimulatedSignatureSummaryStatus(signature)
+				return <li
+					key = { signature.messageIdentifier.toString() }
+					class = { `simulation-summary-signature simulation-summary-signature--${ status.modifier }` }
+				>
+					<div class = 'simulation-summary-signature-identity'>
+						<img aria-hidden = 'true' src = { status.icon } width = '24' height = '24' />
+						<div class = 'simulation-summary-signature-copy'>
+							<strong>{ identifySignature(signature).title }</strong>
+							<span>{ status.label }</span>
+						</div>
+					</div>
+					<WebsiteOriginText website = { signature.website } class = 'simulation-summary-signature-website' />
+					<div class = 'simulation-summary-signature-account'>
+						<span>Signing account</span>
+						<SmallAddress
+							addressBookEntry = { signature.activeAddress }
+							renameAddressCallBack = { renameAddressCallBack }
+						/>
+					</div>
+				</li>
+			}) }
+		</ul>
+	</section>
 }
 
 export function SimulationSummary(param: SimulationSummaryParams) {
@@ -726,17 +789,19 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	const visualizedSimulationState = currentResults.value.visualizedSimulationState
 	if (!isSuccessfulVisualizedSimulationState(visualizedSimulationState) || isEmptySimulationAndVisualisationResults(currentResults.value)) return <></>
 	const simulationAndVisualisationResults = currentResults.value
-	const simulatedAndVisualizedTransactions = getSuccessfulSimulatedAndVisualizedTransactions(visualizedSimulationState)
+	const { simulatedTransactions, simulatedSignatures } = getSuccessfulSimulationSummaryEntries(visualizedSimulationState)
 	const addressMetaData = new Map(simulationAndVisualisationResults.addressBookEntries.map((x) => [addressString(x.address), x]))
-	const originalSummary = summarizeLogs(simulatedAndVisualizedTransactions, addressMetaData, simulationAndVisualisationResults.tokenPriceEstimates, simulationAndVisualisationResults.namedTokenIds)
+	const originalSummary = summarizeLogs(simulatedTransactions, addressMetaData, simulationAndVisualisationResults.tokenPriceEstimates, simulationAndVisualisationResults.namedTokenIds)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, param.activeAddress.value)
 	const showOtherAccountChanges = useSignal<boolean>(false)
 
 	if (ownAddresses === undefined || notOwnAddresses === undefined) throw new Error('addresses were undefined')
 
-	const icon = simulatedAndVisualizedTransactions.some((transaction) => transaction.transactionStatus !== 'Transaction Succeeded')
+	const icon = simulatedTransactions.some((transaction) => transaction.transactionStatus !== 'Transaction Succeeded')
+		|| simulatedSignatures.some((signature) => signature.isValidMessage === false)
 		? '../img/error-icon.svg'
-		: simulatedAndVisualizedTransactions.some((transaction) => transaction.quarantine)
+		: simulatedTransactions.some((transaction) => transaction.quarantine)
+			|| simulatedSignatures.some((signature) => signature.quarantine)
 			? '../img/warning-sign.svg'
 			: '../img/success-icon.svg'
 
@@ -753,6 +818,10 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 				</div>
 			</header>
 			<div class = 'card-content'>
+				<SimulatedSignaturesSummary
+					simulatedSignatures = { simulatedSignatures }
+					renameAddressCallBack = { param.renameAddressCallBack }
+				/>
 				<div class = 'container' style = 'margin-bottom: 10px'>
 					{ ownAddresses.length === 0 ? <p class = 'paragraph'> No changes to your accounts </p>
 						: <div class = 'notification transaction-importance-box'>

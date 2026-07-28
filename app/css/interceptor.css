@@ -630,6 +630,91 @@ li {
 	margin: 10px;
 }
 
+.simulation-summary-signatures {
+	margin-bottom: 10px;
+}
+
+.simulation-summary-section-title {
+	color: var(--subtitle-text-color);
+	font-size: 0.85rem;
+	font-weight: 600;
+	margin: 0 0 6px;
+}
+
+.simulation-summary-signature-list {
+	display: grid;
+	gap: 8px;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.simulation-summary-signature {
+	background-color: var(--importance-box-color);
+	border-left: 3px solid var(--primary-color);
+	border-radius: 6px;
+	color: var(--text-color);
+	display: grid;
+	gap: 8px 12px;
+	grid-template-areas:
+		'identity website'
+		'account account';
+	grid-template-columns: minmax(0, 1fr) minmax(13rem, 20rem);
+	margin: 0;
+	min-width: 0;
+	padding: 10px;
+}
+
+.simulation-summary-signature--warning {
+	border-left-color: var(--warning-color);
+}
+
+.simulation-summary-signature--invalid {
+	border-left-color: var(--negative-color);
+}
+
+.simulation-summary-signature-identity {
+	align-items: center;
+	display: flex;
+	gap: 8px;
+	grid-area: identity;
+	min-width: 0;
+}
+
+.simulation-summary-signature-copy {
+	display: grid;
+	min-width: 0;
+}
+
+.simulation-summary-signature-copy strong,
+.simulation-summary-signature-copy span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.simulation-summary-signature-copy span,
+.simulation-summary-signature-account > span {
+	color: var(--subtitle-text-color);
+	font-size: 0.8rem;
+}
+
+.simulation-summary-signature-website {
+	align-self: center;
+	grid-area: website;
+	padding: 0;
+}
+
+.simulation-summary-signature-account {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px 10px;
+	grid-area: account;
+	justify-content: space-between;
+	min-width: 0;
+}
+
 .card-content {
 	padding: 10px;
 	background-color: var(--card-content-bg-color);
@@ -1552,6 +1637,14 @@ svg.spinner > circle {
 }
 
 @media screen and (max-width: 520px) {
+	.simulation-summary-signature {
+		grid-template-areas:
+			'identity'
+			'website'
+			'account';
+		grid-template-columns: minmax(0, 1fr);
+	}
+
 	.address-book-layout {
 		grid-template-columns: minmax(0, 1fr);
 		width: 100%;
