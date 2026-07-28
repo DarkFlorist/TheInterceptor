@@ -30,6 +30,11 @@ const protocolAddressBookEntryOptionalFields = {
 	...sharedAddressBookEntryOptionalFields,
 }
 
+const nftAddressBookEntryOptionalFields = {
+	watchedTokenIds: funtypes.ReadonlyArray(EthereumQuantity),
+	...protocolAddressBookEntryOptionalFields,
+}
+
 export type Erc20TokenEntry = funtypes.Static<typeof Erc20TokenEntry>
 export const Erc20TokenEntry = funtypes.ReadonlyObject({
 	type: funtypes.Literal('ERC20'),
@@ -50,7 +55,7 @@ export const Erc721Entry = funtypes.ReadonlyObject({
 	symbol: funtypes.String,
 	entrySource: EntrySource,
 }).And(funtypes.Partial({
-	...protocolAddressBookEntryOptionalFields,
+	...nftAddressBookEntryOptionalFields,
 }))
 
 export type Erc1155Entry = funtypes.Static<typeof Erc1155Entry>
@@ -62,7 +67,7 @@ export const Erc1155Entry = funtypes.ReadonlyObject({
 	decimals: funtypes.Undefined,
 	entrySource: EntrySource,
 }).And(funtypes.Partial({
-	...protocolAddressBookEntryOptionalFields,
+	...nftAddressBookEntryOptionalFields,
 }))
 
 export type ContactEntry = funtypes.Static<typeof ContactEntry>

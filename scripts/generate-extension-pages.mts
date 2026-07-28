@@ -11,6 +11,7 @@ export type PageDefinition = {
 	bodyStyle?: string
 	rootMarkup?: string
 	includeBadgeStyles?: boolean
+	includeDividerStyles?: boolean
 	manifestV3HtmlStyle?: string
 	manifestV3PolyfillPosition?: PolyfillPosition
 }
@@ -69,6 +70,12 @@ export const pageDefinitions: readonly PageDefinition[] = [
 		htmlStyle: 'background-color: var(--bg-color); overflow-y: inherit;',
 		manifestV3HtmlStyle: 'background-color: var(--bg-color); overflow-y: scroll;',
 	},
+	{
+		name: 'watchAsset',
+		title: 'Watch Asset - The Interceptor',
+		htmlStyle: 'background-color: var(--bg-color); overflow-y: inherit;',
+		includeDividerStyles: false,
+	},
 ]
 
 const polyfillScript = `<script src = '../vendor/webextension-polyfill/dist/browser-polyfill.js'></script>`
@@ -78,7 +85,7 @@ export function renderExtensionPage(definition: PageDefinition, manifestVersion:
 	const bodyStyle = definition.bodyStyle ?? 'background-color: var(--bg-color); margin: auto;'
 	const stylesheets = [
 		`<link rel = 'stylesheet' type = 'text/css' href = '../css/bulma.css' />`,
-		`<link rel = 'stylesheet' type = 'text/css' href = '../css/bulma-divider.css' />`,
+		...(definition.includeDividerStyles === false ? [] : [`<link rel = 'stylesheet' type = 'text/css' href = '../css/bulma-divider.css' />`]),
 		...(definition.includeBadgeStyles === true ? [`<link rel = 'stylesheet' type = 'text/css' href = '../css/bulma-badge.css' />`] : []),
 		`<link rel = 'stylesheet' type = 'text/css' href = '../css/interceptor.css' />`,
 	]

@@ -203,6 +203,41 @@ function createEthereumWithGetBlockCounter(getBlockCalls: { count: number }, ini
 }
 
 describe('background eth_accounts', () => {
+	test('returns invalid params to the webpage for malformed wallet_watchAsset requests', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
+			method: 'wallet_watchAsset',
+			params: [{ type: 'ERC721', options: { address: '0x1111111111111111111111111111111111111111' } }],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.deepEqual(messages.at(-1), {
+			interceptorApproved: true,
+			requestId: 1,
+			bridgeRequestSettled: true,
+			type: 'result',
+			method: 'wallet_watchAsset',
+			error: { code: -32602, message: 'Invalid wallet_watchAsset parameters.' },
+		})
+	})
+
 	test('reject public calls to internal provider callback methods', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, getTabState, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
@@ -1229,6 +1264,30 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			params: ['0x2', 1],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		assert.equal((await getTabState(socket.tabId)).signerChain, 2n)
+	})
+
+	test('does not send a callback when a recreated connection reuses the expected generations', async () => {
+		installBrowserMock()
+		const { sendCallbackToExpectedConfirmedSignerOwner, websiteSocketToString } = await loadModules()
+		const expectedSocket = { tabId: 1, connectionName: 0n }
+		const currentSocket = { tabId: 1, connectionName: 1n }
+		const { port: currentPort, messages: currentSignerMessages } = createPort(currentSocket.tabId, undefined, undefined, currentSocket.connectionName)
+		const websiteTabConnections = new Map([[currentSocket.tabId, {
+			signerStateOwner: { connectionName: currentSocket.connectionName, confirmed: true, generation: 1, providerGeneration: 1 },
+			connections: {
+				[websiteSocketToString(currentSocket)]: { port: currentPort, socket: currentSocket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+			},
+		}]])
+
+		const result = sendCallbackToExpectedConfirmedSignerOwner(websiteTabConnections, {
+			tabId: expectedSocket.tabId,
+			connectionName: expectedSocket.connectionName,
+			ownerGeneration: 1,
+			signerProviderGeneration: 1,
+		}, { method: 'request_signer_to_wallet_switchEthereumChain', result: 2n })
+
+		assert.equal(result, false)
+		assert.equal(currentSignerMessages.length, 0)
 	})
 
 	test('settles a pending chain switch when its exact signer owner disconnects', async () => {

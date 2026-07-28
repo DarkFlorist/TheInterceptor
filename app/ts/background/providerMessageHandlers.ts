@@ -1,4 +1,4 @@
-import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply } from '../types/interceptor-messages.js'
+import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply, WatchAssetSignerRequest } from '../types/interceptor-messages.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { changeActiveAddressAndChain } from './background.js'
@@ -11,13 +11,14 @@ import type { ProviderMessage } from '../utils/requests.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
+import { resolveWatchAssetSignerReply } from './windows/watchAsset.js'
 import { modifyObject } from '../utils/typescript.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
-import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
+import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
@@ -236,6 +237,20 @@ export async function signerReply(ethereum: EthereumClientService, tokenPriceSer
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return doNotReply
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
+		if (params.forwardRequest.method === 'wallet_watchAsset') {
+			const context = WatchAssetSignerRequest.parse(params.forwardRequest.params)
+			if (context.uniqueRequestIdentifier.requestSocket.tabId !== socket.tabId || context.signerIdentity.tabId !== socket.tabId) return doNotReply
+			const currentSigner = getSignerCallbackToken(websiteTabConnections, port, params.signerProviderGeneration)
+			if (currentSigner === undefined || !doesSignerStateTokenMatchIdentity(currentSigner, context.signerIdentity)) {
+				await resolveWatchAssetSignerReply(context.uniqueRequestIdentifier, context.signerIdentity, {
+					success: false,
+					error: signerConnectionReplacedError,
+				})
+				return doNotReply
+			}
+			await resolveWatchAssetSignerReply(context.uniqueRequestIdentifier, context.signerIdentity, params)
+			return doNotReply
+		}
 		const requestSocket = request.uniqueRequestIdentifier.requestSocket
 		const uniqueRequestIdentifier = { requestId: params.forwardRequest.requestId, requestSocket }
 		const tabConnection = websiteTabConnections.get(socket.tabId)

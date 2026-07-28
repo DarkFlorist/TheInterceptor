@@ -231,6 +231,7 @@ export const PopupMessageReplyRequests = funtypes.Union(
 		data: funtypes.ReadonlyObject({
 			page: funtypes.Union(
 				funtypes.Literal('changeChain'),
+				funtypes.Literal('watchAsset'),
 				funtypes.Literal('confirmTransaction'),
 				funtypes.Literal('interceptorAccess'),
 				funtypes.Literal('fetchSimulationStack'),

@@ -18,7 +18,7 @@ import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureEr
 import { InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { type EthGetStorageAtParams, EthereumJsonRpcRequest, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
+import { EthereumJsonRpcRequest, type EthGetStorageAtParams, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { RpcNetwork } from '../types/rpc.js'
@@ -36,10 +36,19 @@ import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
+import { handleWatchAssetRequest, initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { dispatchPopupMessage } from './popupMessageDispatcher.js'
+import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
+
+if (initializeWatchAssetWindowListeners()) {
+	void processWatchAssetQueue(undefined).catch(async (error: unknown) => {
+		await reportUnexpectedError(error, { code: 'watch_asset_startup_recovery_failed' })
+	})
+}
 
 const simulationAbortController = new AbortController()
+const RPC_PARSE_FAILURE_HANDLERS = [getWatchAssetRpcParseFailureReply]
 const JSON_RPC_METHOD_NOT_FOUND = -32601
 const INTERNAL_PROVIDER_METHODS = [
 	'connected_to_signer',
@@ -196,6 +205,10 @@ async function handleRPCRequest(
 		console.warn({ request })
 		console.warn(maybeParsedRequest.fullError)
 		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
+		for (const getMethodSpecificReply of RPC_PARSE_FAILURE_HANDLERS) {
+			const methodSpecificReply = getMethodSpecificReply(request)
+			if (methodSpecificReply !== undefined) return methodSpecificReply
+		}
 		// the method is some method that we are not supporting, forward it to the wallet if signer is available
 		if (maybePartiallyParsedRequest.success === false && forwardToSigner) return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
 		return {
@@ -237,6 +250,15 @@ async function handleRPCRequest(
 		case 'eth_signTypedData_v3':
 		case 'eth_signTypedData_v4': return await personalSign(ethereum, tokenPriceService, activeAddress, parsedRequest, request, website, websiteTabConnections, !forwardToSigner)
 		case 'wallet_switchEthereumChain': return await switchEthereumChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, parsedRequest, request, settings.simulationMode, website)
+		case 'wallet_watchAsset': return await handleWatchAssetRequest(
+			ethereum,
+			websiteTabConnections,
+			request,
+			website,
+			parsedRequest,
+			{},
+			activeAddress,
+		)
 		case 'wallet_requestPermissions': return await requestPermissions(activeAddress, website)
 		case 'wallet_getPermissions': return await getPermissions(activeAddress, website)
 		case 'eth_accounts': return await getAccounts(activeAddress)

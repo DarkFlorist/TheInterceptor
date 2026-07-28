@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
+import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, PendingWatchAssetRequest, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
 import { ModifyAddressWindowState, CompleteVisualizedSimulation, BlockTimeManipulation, BlockTimeManipulationWithNoDelay, InterceptorSimulationExport } from './visualizer-types.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
@@ -50,6 +50,18 @@ const InpageScriptRequestWithoutIdentifier = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_switchEthereumChain_reply'), result: funtypes.Literal('0x') }),
 )
 
+export type WatchAssetSignerRequest = funtypes.Static<typeof WatchAssetSignerRequest>
+export const WatchAssetSignerRequest = funtypes.ReadonlyObject({
+	parameters: funtypes.Unknown,
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
+	signerIdentity: funtypes.ReadonlyObject({
+		tabId: funtypes.Number,
+		connectionName: EthereumQuantity,
+		ownerGeneration: funtypes.Number,
+		signerProviderGeneration: funtypes.Number,
+	}),
+})
+
 export type InpageScriptRequest = funtypes.Static<typeof InpageScriptRequest>
 export const InpageScriptRequest = funtypes.Intersect(
 	funtypes.ReadonlyObject({ uniqueRequestIdentifier: UniqueRequestIdentifier, type: funtypes.Literal('result') }),
@@ -68,6 +80,7 @@ export const InpageScriptCallBack = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_connection_status'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_chainId'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_switchEthereumChain'), result: EthereumQuantity }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_watchAsset'), result: WatchAssetSignerRequest }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_eth_requestAccounts'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_eth_accounts'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('disconnect'), result: funtypes.ReadonlyTuple() }),
@@ -104,6 +117,7 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_blockNumber'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getCode'), result: EthereumData }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_switchEthereumChain'), result: funtypes.Null }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_watchAsset'), result: funtypes.Boolean }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts'), result: funtypes.ReadonlyArray(EthereumAddress) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_requestPermissions'), result: funtypes.ReadonlyArray(WalletPermission) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions'), result: funtypes.ReadonlyArray(WalletPermission) }),
@@ -709,15 +723,34 @@ export const ChainChangeConfirmation = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
+export type WatchAssetConfirmation = funtypes.Static<typeof WatchAssetConfirmation>
+export const WatchAssetConfirmation = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_watchAssetDialog'),
+	data: funtypes.ReadonlyObject({
+		uniqueRequestIdentifier: UniqueRequestIdentifier,
+		action: funtypes.Union(
+			funtypes.Literal('add'),
+			funtypes.Literal('reject'),
+			funtypes.Literal('forward'),
+		),
+	}),
+}).asReadonly()
+
 type ChangeChainRequest = funtypes.Static<typeof ChangeChainRequest>
 const ChangeChainRequest = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_ChangeChainRequest'),
 	data: PendingChainChangeConfirmationPromise,
 })
 
+const WatchAssetRequest = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_WatchAssetRequest'),
+	data: PendingWatchAssetRequest,
+})
+
 export type PopupReadyAndListeningPage = funtypes.Static<typeof PopupReadyAndListeningPage>
 const PopupReadyAndListeningPage = funtypes.Union(
 	funtypes.Literal('changeChain'),
+	funtypes.Literal('watchAsset'),
 	funtypes.Literal('confirmTransaction'),
 	funtypes.Literal('interceptorAccess'),
 	funtypes.Literal('fetchSimulationStack'),
@@ -914,6 +947,7 @@ const messageToPopupPayloadCodecs: [
 	typeof WebsiteIconChanged,
 	typeof GetAddressBookDataReply,
 	typeof ChangeChainRequest,
+	typeof WatchAssetRequest,
 	typeof InterceptorAccessDialog,
 	typeof RpcConnectionStatusUpdate,
 	typeof SettingsUpdated,
@@ -939,6 +973,7 @@ const messageToPopupPayloadCodecs: [
 	WebsiteIconChanged,
 	GetAddressBookDataReply,
 	ChangeChainRequest,
+	WatchAssetRequest,
 	InterceptorAccessDialog,
 	RpcConnectionStatusUpdate,
 	SettingsUpdated,
@@ -985,6 +1020,7 @@ const PopupMessageRuntype = funtypes.Union(
 	ChangeInterceptorAccess,
 	ChangeActiveChain,
 	ChainChangeConfirmation,
+	WatchAssetConfirmation,
 	EnableSimulationMode,
 	AddOrEditAddressBookEntry,
 	GetAddressBookData,

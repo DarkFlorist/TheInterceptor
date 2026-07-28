@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { afterAll, afterEach, describe, test } from 'bun:test'
 import { imageToUri } from '../../app/ts/utils/imageToUri.js'
 
-type FetchImplementation = (url: string) => Promise<Response>
+type FetchImplementation = (url: string, init: RequestInit | undefined) => Promise<Response>
 type MockFileReaderState = {
 	result: string | ArrayBuffer | undefined
 	onabort: (() => void) | undefined
@@ -13,6 +13,7 @@ type MockFileReaderState = {
 
 const originalFetch = globalThis.fetch
 const originalFileReader = globalThis.FileReader
+const originalCreateImageBitmap = globalThis.createImageBitmap
 
 let fetchImplementation: FetchImplementation = async () => new Response(new Blob(['default']), { status: 200, headers: { 'content-type': 'image/png' } })
 
@@ -38,11 +39,21 @@ function installSuccessfulFileReader(result: string) {
 Object.defineProperty(globalThis, 'fetch', {
 	configurable: true,
 	writable: true,
-	value: async (input: RequestInfo | URL) => {
+	value: async (input: RequestInfo | URL, init: RequestInit | undefined) => {
 		const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-		return await fetchImplementation(url)
+		return await fetchImplementation(url, init)
 	},
 })
+
+function installSuccessfulImageDecoder() {
+	Object.defineProperty(globalThis, 'createImageBitmap', {
+		configurable: true,
+		writable: true,
+		value: async () => ({ width: 16, height: 16, close: () => undefined }),
+	})
+}
+
+installSuccessfulImageDecoder()
 
 afterEach(() => {
 	fetchImplementation = async () => new Response(new Blob(['default']), { status: 200, headers: { 'content-type': 'image/png' } })
@@ -51,6 +62,7 @@ afterEach(() => {
 		writable: true,
 		value: originalFileReader,
 	})
+	installSuccessfulImageDecoder()
 })
 
 afterAll(() => {
@@ -64,6 +76,11 @@ afterAll(() => {
 		writable: true,
 		value: originalFileReader,
 	})
+	Object.defineProperty(globalThis, 'createImageBitmap', {
+		configurable: true,
+		writable: true,
+		value: originalCreateImageBitmap,
+	})
 })
 
 describe('imageToUri', () => {
@@ -75,6 +92,20 @@ describe('imageToUri', () => {
 
 		assert.equal(result.failureReason, undefined)
 		assert.equal(result.data?.startsWith('data:image/png;base64,'), true)
+	})
+
+	test('can prohibit redirects for privileged image downloads', async () => {
+		installSuccessfulFileReader('data:image/png;base64,b2s=')
+		let requestedRedirectMode: RequestRedirect | undefined
+		fetchImplementation = async (_url, init) => {
+			requestedRedirectMode = init?.redirect
+			return new Response(new Blob(['ok'], { type: 'image/png' }), { status: 200, headers: { 'content-type': 'image/png' } })
+		}
+
+		const result = await imageToUri('https://example.test/no-redirect.png', 262_144, { redirect: 'error' })
+
+		assert.equal(result.failureReason, undefined)
+		assert.equal(requestedRedirectMode, 'error')
 	})
 
 	test('classifies fetch rejections', async () => {
@@ -101,7 +132,30 @@ describe('imageToUri', () => {
 		const result = await imageToUri('https://example.test/not-image')
 
 		assert.equal(result.data, undefined)
-		assert.equal(result.failureReason, 'response was not an image (text/html)')
+		assert.equal(result.failureReason, 'response was not a supported image (text/html)')
+	})
+
+	test('rejects responses without a declared image content type', async () => {
+		fetchImplementation = async () => new Response(new Uint8Array([1, 2, 3]), { status: 200 })
+
+		const result = await imageToUri('https://example.test/missing-content-type')
+
+		assert.equal(result.data, undefined)
+		assert.equal(result.failureReason, 'response did not declare an image content type')
+	})
+
+	test('rejects bytes that cannot be decoded despite an image content type', async () => {
+		Object.defineProperty(globalThis, 'createImageBitmap', {
+			configurable: true,
+			writable: true,
+			value: async () => { throw new DOMException('Invalid image data') },
+		})
+		fetchImplementation = async () => new Response(new Blob(['not a png'], { type: 'image/png' }), { status: 200, headers: { 'content-type': 'image/png' } })
+
+		const result = await imageToUri('https://example.test/invalid.png')
+
+		assert.equal(result.data, undefined)
+		assert.equal(result.failureReason, 'image data could not be decoded')
 	})
 
 	test('classifies oversized data uris', async () => {

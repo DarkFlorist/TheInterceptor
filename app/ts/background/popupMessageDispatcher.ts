@@ -68,6 +68,7 @@ import {
 	settingsOpened,
 	simulateGnosisSafeTransactionOnPass,
 	simulateGovernanceContractExecutionOnPass,
+	watchAssetDialog,
 } from './popupMessageHandlers.js'
 
 export type PopupMessageDispatcherContext = {
@@ -111,6 +112,7 @@ export async function dispatchPopupMessage(context: PopupMessageDispatcherContex
 		case 'popup_changeInterceptorAccess': return await changeInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request)
 		case 'popup_changeActiveRpc': return await popupChangeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request, settings)
 		case 'popup_changeChainDialog': return await changeChainDialog(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request)
+		case 'popup_watchAssetDialog': return await watchAssetDialog(websiteTabConnections, request)
 		case 'popup_enableSimulationMode': return await enableSimulationMode(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request)
 		case 'popup_addOrModifyAddressBookEntry': return await addOrModifyAddressBookEntry(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request)
 		case 'popup_getAddressBookData': return await getAddressBookData(request)
@@ -159,7 +161,7 @@ export async function dispatchPopupMessage(context: PopupMessageDispatcherContex
 		case 'popup_requestSimulationMode': return await requestSimulationMode()
 		case 'popup_requestLatestUnexpectedError': return await requestLatestUnexpectedError()
 		case 'popup_fetchSimulationStackRequestConfirmation': return await fetchSimulationStackRequestConfirmation(ethereum, websiteTabConnections, request)
-		case 'popup_readyAndListening': return await popupReadyAndListening(ethereum, request.data.page)
+		case 'popup_readyAndListening': return await popupReadyAndListening(ethereum, websiteTabConnections, request.data.page)
 		case 'popup_UnexpectedErrorOccured': return await reportUnexpectedErrorInWindow(request)
 		case 'popup_requestInterceptorSimulationInput': return await requestInterceptorSimulationInput(ethereum)
 		case 'popup_importSimulationStack': return await importSimulationStack(ethereum, tokenPriceService, request)

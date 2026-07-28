@@ -35,6 +35,11 @@ describe('extension page rendering', () => {
 
 		const simulationStack = renderExtensionPage(getPageDefinition('simulationStack'), 3)
 		assert.match(simulationStack, /<div id = 'simulation-stack-root'>Loading\.\.\.<\/div>/)
+
+		const watchAsset = renderExtensionPage(getPageDefinition('watchAsset'), 3)
+		assert.match(watchAsset, /<title>Watch Asset - The Interceptor<\/title>/)
+		assert.match(watchAsset, /src = '\.\.\/js\/watchAsset\.js'/)
+		assert.doesNotMatch(watchAsset, /bulma-divider\.css/)
 	})
 
 	test('preserves the intentional manifest-specific differences', () => {
