@@ -829,6 +829,58 @@ a.dropdown-item.is-active, button.dropdown-item.is-active {
 	width: 18px;
 }
 
+.signer-provider-selector {
+	display: grid;
+	gap: 0.5rem;
+	margin-bottom: 1rem;
+	min-width: 0;
+}
+
+.signer-provider-selector-label {
+	align-items: center;
+	color: var(--text-color);
+	display: flex;
+	font-weight: 600;
+	gap: 0.5rem;
+	line-height: 1.25;
+	min-width: 0;
+}
+
+.signer-provider-selector-icon {
+	height: 24px;
+	object-fit: contain;
+	width: 24px;
+}
+
+.signer-provider-selector-control,
+.signer-provider-selector-control select {
+	min-width: 0;
+	width: 100%;
+}
+
+.signer-provider-selector-control select {
+	background-color: var(--surface-dark-color);
+	border-color: var(--layout-line-color);
+	color: var(--text-color);
+	font-family: "Inter";
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.signer-provider-selector-control select:hover {
+	border-color: var(--highlighted-primary-color);
+}
+
+.signer-provider-selector-control select:focus {
+	border-color: var(--primary-color);
+	box-shadow: 0 0 0 0.125em color-mix(in srgb, var(--primary-color) 35%, transparent);
+}
+
+.signer-provider-selector-warning {
+	color: var(--warning-color);
+	margin: 0;
+}
+
 svg.spinner {
 	animation: 2s linear infinite svg-animation;
 	max-width: 100px;

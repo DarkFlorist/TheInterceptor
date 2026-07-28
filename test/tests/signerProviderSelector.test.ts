@@ -19,3 +19,18 @@ test('signer provider choices visibly disambiguate identical wallet identities b
 	assert.equal(firstLabel.includes(firstProvider.uuid), true)
 	assert.equal(secondLabel.includes(secondProvider.uuid), true)
 })
+
+test('signer provider selector uses the themed full-width Bulma control structure', async () => {
+	const [homeSource, css] = await Promise.all([
+		Bun.file('app/ts/components/pages/Home.tsx').text(),
+		Bun.file('app/css/interceptor.css').text(),
+	])
+
+	assert.match(homeSource, /<label class = 'signer-provider-selector-label' for = 'signer-provider-selector'>/)
+	assert.match(homeSource, /<div class = 'select is-fullwidth signer-provider-selector-control'>\s*<select/)
+	assert.doesNotMatch(homeSource, /<select[\s\S]*?class = 'select'/)
+	assert.match(css, /\.signer-provider-selector-label\s*\{[\s\S]*?color:\s*var\(--text-color\)/)
+	assert.match(css, /\.signer-provider-selector-control,\s*\.signer-provider-selector-control select\s*\{[\s\S]*?min-width:\s*0[\s\S]*?width:\s*100%/)
+	assert.match(css, /\.signer-provider-selector-control select\s*\{[\s\S]*?background-color:\s*var\(--surface-dark-color\)[\s\S]*?color:\s*var\(--text-color\)/)
+	assert.match(css, /\.signer-provider-selector-control select\s*\{[\s\S]*?overflow:\s*hidden[\s\S]*?text-overflow:\s*ellipsis/)
+})

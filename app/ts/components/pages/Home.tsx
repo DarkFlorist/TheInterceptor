@@ -237,16 +237,16 @@ function SignerProviderSelector(param: { tabState: Signal<TabState | undefined>,
 			},
 		})
 	}
-	return <div style = 'display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap;' title = 'Wallet names and icons are self-reported by installed providers.'>
-		{ selectedProvider === undefined
-			? <span class = 'signer-logo-slot' aria-hidden = 'true'></span>
-			: <img src = { selectedProvider.icon } width = '24' height = '24' alt = '' style = 'object-fit: contain;'/> }
-		<label style = 'display: flex; align-items: center; gap: 0.5rem; flex: 1;'>
+	return <div class = 'signer-provider-selector' title = 'Wallet names and icons are self-reported by installed providers.'>
+		<label class = 'signer-provider-selector-label' for = 'signer-provider-selector'>
+			{ selectedProvider === undefined
+				? <span class = 'signer-logo-slot' aria-hidden = 'true'></span>
+				: <img src = { selectedProvider.icon } width = '24' height = '24' alt = '' class = 'signer-provider-selector-icon'/> }
 			<span>Signer for this site</span>
+		</label>
+		<div class = 'select is-fullwidth signer-provider-selector-control'>
 			<select
 				id = 'signer-provider-selector'
-				class = 'select'
-				style = 'flex: 1; min-width: 0;'
 				value = { selectedProvider?.uuid ?? '' }
 				disabled = { !param.isInitialHomeDataLoaded.value }
 				onInput = { selectProvider }
@@ -254,9 +254,9 @@ function SignerProviderSelector(param: { tabState: Signal<TabState | undefined>,
 				<option value = '' disabled = { true }>{ tabState?.preferredSignerUnavailable === true ? 'Preferred signer needs selection' : 'Choose a signer' }</option>
 				{ providers.map((provider) => <option key = { provider.uuid } value = { provider.uuid }>{ signerProviderOptionLabel(provider) }</option>) }
 			</select>
-		</label>
+		</div>
 		{ tabState?.signerProviderCatalogOverflowed === true
-			? <p class = 'is-size-7' style = 'width: 100%; color: var(--warning-color);'>Too many wallet announcements were received. Only the bounded list above is available; choose a wallet explicitly.</p>
+			? <p class = 'is-size-7 signer-provider-selector-warning'>Too many wallet announcements were received. Only the bounded list above is available; choose a wallet explicitly.</p>
 			: <></> }
 	</div>
 }
