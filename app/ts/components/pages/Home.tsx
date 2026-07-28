@@ -15,7 +15,7 @@ import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon, ChevronIcon, OpenInNewIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { type Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
-import { useEffect } from 'preact/hooks'
+import { useEffect, useRef } from 'preact/hooks'
 import { type DeltaUnit, TimePicker, type TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
 import { assertNever } from '../../utils/typescript.js'
 import { bigintSecondsToDate } from '../../utils/bigint.js'
@@ -27,6 +27,8 @@ import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import type { ComponentChildren, JSX } from 'preact'
 import { DropDownMenuButtonContent } from '../subcomponents/DropDownMenu.js'
+import type { EIP6963ProviderInfo } from '../../types/signerTypes.js'
+import { clickOutsideAlerter } from '../ui-utils.js'
 
 function scheduleAfterPaint(callback: () => void) {
 	if (typeof globalThis.requestAnimationFrame === 'function' && typeof globalThis.cancelAnimationFrame === 'function') {
@@ -220,40 +222,133 @@ export function signerProviderOptionLabel(provider: { readonly name: string, rea
 	return `${ provider.name } — ${ provider.rdns } — ${ provider.uuid }`
 }
 
+export function signerProviderUuidSuffix(uuid: string) {
+	return uuid.slice(-8)
+}
+
+function SignerProviderLogo({ provider }: { provider: EIP6963ProviderInfo }) {
+	return <span class = 'signer-provider-logo-frame' aria-hidden = 'true'>
+		<img src = { provider.icon } width = '32' height = '32' alt = ''/>
+	</span>
+}
+
+function SignerProviderIdentity({ provider }: { provider: EIP6963ProviderInfo }) {
+	return <span class = 'signer-provider-identity'>
+		<span class = 'signer-provider-name'>{ provider.name }</span>
+		<span class = 'signer-provider-metadata'>
+			<span class = 'signer-provider-rdns'>{ provider.rdns }</span>
+			<span class = 'signer-provider-uuid'>…{ signerProviderUuidSuffix(provider.uuid) }</span>
+		</span>
+	</span>
+}
+
 function SignerProviderSelector(param: { tabState: Signal<TabState | undefined>, isInitialHomeDataLoaded: Signal<boolean> }) {
 	const tabState = param.tabState.value
 	const providers = tabState?.availableSignerProviders ?? []
+	const isOpen = useSignal(false)
+	const dropdownRef = useRef<HTMLDivElement>(null)
+	const triggerRef = useRef<HTMLButtonElement>(null)
+	clickOutsideAlerter(dropdownRef, () => { isOpen.value = false })
 	if (providers.length === 0 && tabState?.preferredSignerUnavailable !== true && tabState?.signerProviderCatalogOverflowed !== true) return <></>
 	const selectedProvider = tabState?.selectedSignerProvider
-	const selectProvider = (event: Event) => {
-		if (!(event.target instanceof HTMLSelectElement)) return
-		if (event.target.value === '' || tabState?.website === undefined) return
+
+	const focusFirstOption = () => {
+		scheduleAfterPaint(() => dropdownRef.current?.querySelector<HTMLButtonElement>('.signer-provider-option')?.focus())
+	}
+	const toggle = () => {
+		if (!param.isInitialHomeDataLoaded.value) return
+		isOpen.value = !isOpen.value
+	}
+	const selectProvider = (provider: EIP6963ProviderInfo) => {
+		isOpen.value = false
+		if (provider.uuid === selectedProvider?.uuid || tabState?.website === undefined) return
 		void sendPopupMessageToBackgroundPage({
 			method: 'popup_selectSignerProvider',
 			data: {
 				tabId: tabState.tabId,
 				websiteOrigin: tabState.website.websiteOrigin,
-				uuid: event.target.value,
+				uuid: provider.uuid,
 			},
 		})
 	}
+	const onTriggerKeyDown = (event: JSX.TargetedKeyboardEvent<HTMLButtonElement>) => {
+		if (event.key !== 'ArrowDown') return
+		event.preventDefault()
+		if (!param.isInitialHomeDataLoaded.value) return
+		isOpen.value = true
+		focusFirstOption()
+	}
+	const onDropdownKeyDown = (event: JSX.TargetedKeyboardEvent<HTMLDivElement>) => {
+		if (event.key === 'Escape') {
+			event.preventDefault()
+			isOpen.value = false
+			triggerRef.current?.focus()
+			return
+		}
+		if ((event.key !== 'ArrowDown' && event.key !== 'ArrowUp')
+			|| !(event.target instanceof HTMLButtonElement)
+			|| !event.target.classList.contains('signer-provider-option')) return
+		event.preventDefault()
+		const options = Array.from(dropdownRef.current?.querySelectorAll<HTMLButtonElement>('.signer-provider-option') ?? [])
+		const currentIndex = options.indexOf(event.target)
+		const direction = event.key === 'ArrowDown' ? 1 : -1
+		const nextIndex = (currentIndex + direction + options.length) % options.length
+		options[nextIndex]?.focus()
+	}
+	const placeholderText = tabState?.preferredSignerUnavailable === true ? 'Preferred signer needs selection' : 'Choose a signer'
+
 	return <div class = 'signer-provider-selector' title = 'Wallet names and icons are self-reported by installed providers.'>
-		<label class = 'signer-provider-selector-label' for = 'signer-provider-selector'>
-			{ selectedProvider === undefined
-				? <span class = 'signer-logo-slot' aria-hidden = 'true'></span>
-				: <img src = { selectedProvider.icon } width = '24' height = '24' alt = '' class = 'signer-provider-selector-icon'/> }
-			<span>Signer for this site</span>
-		</label>
-		<div class = 'select is-fullwidth signer-provider-selector-control'>
-			<select
+		<span class = 'signer-provider-selector-label'>Signer for this site</span>
+		<div ref = { dropdownRef } class = 'signer-provider-dropdown' onKeyDown = { onDropdownKeyDown }>
+			<button
+				ref = { triggerRef }
 				id = 'signer-provider-selector'
-				value = { selectedProvider?.uuid ?? '' }
+				type = 'button'
+				class = 'btn signer-provider-trigger'
+				aria-label = { selectedProvider === undefined ? placeholderText : `Selected signer: ${ signerProviderOptionLabel(selectedProvider) }` }
+				aria-haspopup = 'listbox'
+				aria-expanded = { isOpen.value }
+				aria-controls = 'signer-provider-options'
 				disabled = { !param.isInitialHomeDataLoaded.value }
-				onInput = { selectProvider }
+				onClick = { toggle }
+				onKeyDown = { onTriggerKeyDown }
 			>
-				<option value = '' disabled = { true }>{ tabState?.preferredSignerUnavailable === true ? 'Preferred signer needs selection' : 'Choose a signer' }</option>
-				{ providers.map((provider) => <option key = { provider.uuid } value = { provider.uuid }>{ signerProviderOptionLabel(provider) }</option>) }
-			</select>
+				{ selectedProvider === undefined
+					? <>
+						<span class = 'signer-provider-logo-frame signer-provider-logo-placeholder' aria-hidden = 'true'>?</span>
+						<span class = 'signer-provider-identity'>
+							<span class = 'signer-provider-name'>{ placeholderText }</span>
+							<span class = 'signer-provider-metadata'>{ providers.length } { providers.length === 1 ? 'wallet' : 'wallets' } available</span>
+						</span>
+					</>
+					: <>
+						<SignerProviderLogo provider = { selectedProvider }/>
+						<SignerProviderIdentity provider = { selectedProvider }/>
+					</> }
+				<span class = 'signer-provider-chevron' aria-hidden = 'true'><ChevronIcon /></span>
+			</button>
+			{ isOpen.value
+				? <div id = 'signer-provider-options' class = 'signer-provider-options' role = 'listbox' aria-label = 'Available signers'>
+					{ providers.map((provider) => {
+						const isSelected = provider.uuid === selectedProvider?.uuid
+						return <button
+							key = { provider.uuid }
+							type = 'button'
+							class = { `btn signer-provider-option ${ isSelected ? 'is-selected' : '' }` }
+							role = 'option'
+							aria-selected = { isSelected }
+							aria-label = { signerProviderOptionLabel(provider) }
+							data-provider-uuid = { provider.uuid }
+							title = { signerProviderOptionLabel(provider) }
+							onClick = { () => selectProvider(provider) }
+						>
+							<SignerProviderLogo provider = { provider }/>
+							<SignerProviderIdentity provider = { provider }/>
+							<span class = 'signer-provider-selected-mark' aria-hidden = 'true'>{ isSelected ? '✓' : '' }</span>
+						</button>
+					})}
+				</div>
+				: <></> }
 		</div>
 		{ tabState?.signerProviderCatalogOverflowed === true
 			? <p class = 'is-size-7 signer-provider-selector-warning'>Too many wallet announcements were received. Only the bounded list above is available; choose a wallet explicitly.</p>

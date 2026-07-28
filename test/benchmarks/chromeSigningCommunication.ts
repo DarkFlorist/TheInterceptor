@@ -6,6 +6,15 @@ const ACCESS_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.is-primary:n
 const CONFIRM_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.dialog-action-button.is-primary:not(.is-danger)'
 const FAKE_SIGNER_ADDRESS = '0xd8da6bf26964af9d7eed9e03e53415d37aa96045'
 const FAKE_SIGNED_TRANSACTION_HASH = '0x1111111111111111111111111111111111111111111111111111111111111111'
+const CAPTURE_SIGNER_PROVIDER_SCREENSHOTS = process.env.CAPTURE_SIGNER_PROVIDER_SCREENSHOTS === '1'
+const FAKE_PROVIDER_INFOS = await Promise.all([
+	{ uuid: '44444444-4444-4444-8444-444444444444', name: 'MetaMask', rdns: 'io.metamask', iconFileName: 'metamask.svg' },
+	{ uuid: '55555555-5555-4555-8555-555555555555', name: 'Rabby Wallet', rdns: 'io.rabby', iconFileName: 'rabby.svg' },
+	{ uuid: '66666666-6666-4666-8666-666666666666', name: 'Brave Wallet', rdns: 'com.brave.wallet', iconFileName: 'brave.svg' },
+].map(async ({ iconFileName, ...provider }) => ({
+	...provider,
+	icon: `data:image/svg+xml,${ encodeURIComponent(await Bun.file(`app/img/signers/${ iconFileName }`).text()) }`,
+})))
 
 function sleep(ms: number) {
 	return new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -39,6 +48,17 @@ async function clickButton(connection: CdpConnection, selector: string) {
 		if (!(element instanceof HTMLButtonElement)) throw new Error('Could not find button ${ selector }')
 		element.click()
 	})()`)
+}
+
+async function capturePopupScreenshot(connection: CdpConnection, fileName: string, height: number) {
+	if (!CAPTURE_SIGNER_PROVIDER_SCREENSHOTS) return
+	const screenshot = await connection.send<{ data: string }>('Page.captureScreenshot', {
+		format: 'png',
+		fromSurface: true,
+		captureBeyondViewport: false,
+		clip: { x: 0, y: 0, width: 520, height, scale: 1 },
+	})
+	await Bun.write(`.github/pr-assets/${ fileName }`, Buffer.from(screenshot.data, 'base64'))
 }
 
 const fakeSignerPreload = `(() => {
@@ -83,12 +103,12 @@ const fakeSignerPreload = `(() => {
 		on: () => globalThis.ethereum,
 		removeListener: () => globalThis.ethereum,
 	}
-	globalThis.addEventListener('eip6963:requestProvider', () => globalThis.dispatchEvent(new CustomEvent('eip6963:announceProvider', {
-		detail: {
-			info: { uuid: '44444444-4444-4444-8444-444444444444', name: 'MetaMask', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.metamask' },
-			provider: signer,
-		},
-	})))
+	const providerInfos = ${ JSON.stringify(FAKE_PROVIDER_INFOS) }
+	globalThis.addEventListener('eip6963:requestProvider', () => {
+		for (const info of providerInfos) {
+			globalThis.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail: { info, provider: signer } }))
+		}
+	})
 })()`
 
 async function main() {
@@ -140,13 +160,14 @@ async function main() {
 			try {
 				await waitForCondition(async () => await selectionWorkerConnection.evaluate<boolean>(`(async () => {
 					const storage = await browser.storage.local.get()
-					return Object.values(storage).some((value) => Array.isArray(value?.availableSignerProviders) && value.availableSignerProviders.length === 1)
+					return Object.values(storage).some((value) => Array.isArray(value?.availableSignerProviders) && value.availableSignerProviders.length === ${ FAKE_PROVIDER_INFOS.length })
 				})()`).catch(() => false), 10_000, 'EIP-6963 provider catalog')
 				signerSelection = await selectionWorkerConnection.evaluate(`(async () => {
 					const storage = await browser.storage.local.get()
-					const tabState = Object.values(storage).find((value) => Array.isArray(value?.availableSignerProviders) && value.availableSignerProviders.length === 1)
+					const tabState = Object.values(storage).find((value) => Array.isArray(value?.availableSignerProviders) && value.availableSignerProviders.length === ${ FAKE_PROVIDER_INFOS.length })
 					if (tabState?.website === undefined) throw new Error('Missing website state for signer selection')
-					const provider = tabState.availableSignerProviders[0]
+					const provider = tabState.availableSignerProviders.find((candidate) => candidate.rdns === 'io.rabby')
+					if (provider === undefined) throw new Error('Missing Rabby provider for signer selection')
 					return { tabId: tabState.tabId, websiteOrigin: tabState.website.websiteOrigin, uuid: provider.uuid }
 				})()`)
 				await selectionWorkerConnection.evaluate(`(async () => {
@@ -163,15 +184,25 @@ async function main() {
 			try {
 				await waitForCondition(async () => await selectionConnection.evaluate<boolean>(`(() => {
 					const selector = document.querySelector('#signer-provider-selector')
-					return selector instanceof HTMLSelectElement && [...selector.options].some((option) => option.value === ${ JSON.stringify(signerSelection.uuid) })
+					return selector instanceof HTMLButtonElement && selector.disabled === false
 				})()`).catch(() => false), 30_000, 'rendered signer provider selector')
+				await clickButton(selectionConnection, '#signer-provider-selector')
+				await waitForCondition(async () => await selectionConnection.evaluate<boolean>(`(() => {
+					const options = document.querySelector('#signer-provider-options')
+					return options?.querySelectorAll('.signer-provider-option').length === ${ FAKE_PROVIDER_INFOS.length }
+				})()`).catch(() => false), 10_000, 'rendered signer provider options')
+				await capturePopupScreenshot(selectionConnection, 'eip6963-provider-chooser.png', 450)
 				await selectionConnection.evaluate(`(() => {
-					const selector = document.querySelector('#signer-provider-selector')
-					if (!(selector instanceof HTMLSelectElement)) throw new Error('Missing signer provider selector')
-					selector.value = ${ JSON.stringify(signerSelection.uuid) }
-					selector.dispatchEvent(new Event('input', { bubbles: true }))
+					const option = document.querySelector(${ JSON.stringify(`[data-provider-uuid="${ signerSelection.uuid }"]`) })
+					if (!(option instanceof HTMLButtonElement)) throw new Error('Missing signer provider option')
+					option.click()
 				})()`)
 				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__fakeSignerRequests?.includes('eth_chainId')`).catch(() => false), 10_000, 'selected signer connection')
+				await waitForCondition(async () => await selectionConnection.evaluate<boolean>(`(() => {
+					const selector = document.querySelector('#signer-provider-selector')
+					return selector instanceof HTMLButtonElement && selector.getAttribute('aria-label')?.includes('Rabby Wallet') === true
+				})()`).catch(() => false), 10_000, 'selected signer provider rendering')
+				await capturePopupScreenshot(selectionConnection, 'eip6963-provider-selected.png', 370)
 			} finally {
 				selectionConnection.close()
 				await closeTarget(chrome.browserConnection, selectionTargetId)
@@ -262,7 +293,7 @@ async function main() {
 			const signingResult = await pageConnection.evaluate<{ status?: string, result?: string }>('globalThis.__signingResult')
 			if (signingResult.result !== FAKE_SIGNED_TRANSACTION_HASH) throw new Error(`Unexpected signing result: ${ signingResult.result ?? 'missing' }`)
 			const aggregateReceivedSigningRequest = await pageConnection.evaluate<boolean>(`globalThis.__signingFrame?.contentWindow?.__aggregateSignerRequests?.includes('eth_sendTransaction')`)
-			if (aggregateReceivedSigningRequest) throw new Error('Signing request was sent to Brave instead of its EIP-6963 MetaMask provider')
+			if (aggregateReceivedSigningRequest) throw new Error('Signing request was sent to Brave instead of the selected EIP-6963 provider')
 
 			await waitForTargetGone(chrome.browserDebugPort, (target) => target.id === confirmTargetId, 10_000, 'completed confirmation popup')
 			confirmTargetId = undefined
