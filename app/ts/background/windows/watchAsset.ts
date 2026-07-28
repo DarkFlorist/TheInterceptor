@@ -18,6 +18,7 @@ import { isSignerMissing } from '../../utils/signerMetadata.js'
 import { imageToUri, type ImageToUriResult } from '../../utils/imageToUri.js'
 import { loadErc1046Metadata, loadLegacyErc20Metadata, loadNftMetadataAndVerifyOwnership, normalizeWatchAssetImageUrl } from '../watchAssetMetadata.js'
 import { invalidWatchAssetRequest, watchAssetRequestError } from '../watchAssetRpc.js'
+import { isValidAddressBookEntryName, MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH } from '../../utils/addressBookValidation.js'
 
 export const MAX_PENDING_WATCH_ASSET_REQUESTS = 20
 export const MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN = 3
@@ -71,7 +72,7 @@ export function validateWatchAssetParameters(params: WalletWatchAsset, currentCh
 		if (BigInt(options.chainId) !== currentChainId) return 'The asset chainId must match the active chain.'
 	}
 	if (type === 'ERC20') {
-		if (options.name !== undefined && options.name.length === 0) return 'The asset name must not be empty.'
+		if (options.name !== undefined && !isValidAddressBookEntryName(options.name)) return `The asset name must contain from 1 to ${ MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH } characters.`
 		if (options.symbol !== undefined && (options.symbol.length === 0 || options.symbol.length > 11)) return 'The asset symbol must contain from 1 to 11 characters.'
 		if (options.decimals !== undefined && (!Number.isSafeInteger(options.decimals) || options.decimals < 0 || options.decimals > 36)) return 'The asset decimals must be an integer from 0 to 36.'
 		if (options.image !== undefined) {
@@ -535,7 +536,7 @@ export async function handleWatchAssetRequest(
 		identifiedToken = {
 			type: 'ERC20',
 			address: requestedAsset.options.address,
-			name: legacyMetadata.metadata.name ?? requestedAsset.options.name ?? checksummedAddress(requestedAsset.options.address),
+			name: legacyMetadata.metadata.name || requestedAsset.options.name || checksummedAddress(requestedAsset.options.address),
 			symbol,
 			decimals,
 			entrySource: 'OnChain',
@@ -570,6 +571,9 @@ export async function handleWatchAssetRequest(
 		if (!loaded.success) return watchAssetRequestError(loaded.message, loaded.code)
 		identifiedToken = { ...identified, entrySource: 'OnChain', chainId }
 		proposedImageUrl = loaded.metadata.imageUrl
+	}
+	if (!isValidAddressBookEntryName(identifiedToken.name)) {
+		return invalidWatchAssetRequest(`The asset name from its verified metadata must contain from 1 to ${ MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH } characters.`)
 	}
 	const currentToken = existingEntry
 		?? replaceAddressBookEntryWithAsset(addressBookEntries, identifiedToken).find((entry): entry is WatchAssetAddressBookEntry => (entry.type === 'ERC20' || entry.type === 'ERC721' || entry.type === 'ERC1155') && entry.type === identifiedToken.type && entry.address === identifiedToken.address && (entry.chainId ?? 1n) === chainId)

@@ -38,6 +38,46 @@ function metadataDataUri(value: unknown) {
 }
 
 describe('watch asset contract metadata', () => {
+	test('decodes legacy bytes32 ERC20 metadata used by the original DAI contract', async () => {
+		const result = await loadLegacyErc20Metadata(createEthereum([
+			encodeFunctionReturn(Erc20ABI, 'totalSupply', [1n]),
+			'0x44616920537461626c65636f696e2076312e3000000000000000000000000000',
+			'0x4441490000000000000000000000000000000000000000000000000000000000',
+			encodeFunctionReturn(Erc20ABI, 'decimals', [18n]),
+		]), 1n)
+
+		expect(result).toEqual({
+			success: true,
+			metadata: {
+				name: 'Dai Stablecoin v1.0',
+				symbol: 'DAI',
+				decimals: 18n,
+			},
+		})
+	})
+
+	test('does not accept malformed bytes32 padding or invalid UTF-8 as ERC20 text metadata', async () => {
+		const totalSupply = encodeFunctionReturn(Erc20ABI, 'totalSupply', [1n])
+		const decimals = encodeFunctionReturn(Erc20ABI, 'decimals', [18n])
+		const malformedPadding = `0x410042${ '00'.repeat(29) }`
+		const invalidUtf8 = `0xff${ '00'.repeat(31) }`
+		const result = await loadLegacyErc20Metadata(createEthereum([
+			totalSupply,
+			malformedPadding,
+			invalidUtf8,
+			decimals,
+		]), 1n)
+
+		expect(result).toEqual({
+			success: true,
+			metadata: {
+				name: undefined,
+				symbol: undefined,
+				decimals: 18n,
+			},
+		})
+	})
+
 	test('loads an ERC1046 tokenURI and requires the interoperability marker', async () => {
 		const validUri = metadataDataUri({ interop: { erc1046: true }, name: 'Metadata Token', symbol: 'META', decimals: 6, image: 'https://tokens.example/token.png' })
 		const valid = await loadErc1046Metadata(createEthereum([encodeFunctionReturn(Erc1046ABI, 'tokenURI', [validUri])]), 1n)

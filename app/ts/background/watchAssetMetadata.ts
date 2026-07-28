@@ -186,6 +186,28 @@ async function getOptionalContractResult<T>(ethereum: EthereumClientService, add
 	}
 }
 
+function decodeLegacyBytes32Text(result: Uint8Array) {
+	if (result.length !== 32) return undefined
+	const firstPaddingByte = result.indexOf(0)
+	const textBytes = firstPaddingByte === -1 ? result : result.slice(0, firstPaddingByte)
+	if (firstPaddingByte !== -1 && result.slice(firstPaddingByte).some((byte) => byte !== 0)) return undefined
+	try {
+		return new TextDecoder('utf-8', { fatal: true }).decode(textBytes)
+	} catch {
+		return undefined
+	}
+}
+
+async function getOptionalErc20TextResult(ethereum: EthereumClientService, address: bigint, functionName: 'name' | 'symbol') {
+	try {
+		const result = await callContract(ethereum, address, Erc20ABI, functionName, [])
+		return decodeFunctionOutputSafely(Erc20ABI, functionName, result, isString) ?? decodeLegacyBytes32Text(result)
+	} catch(error: unknown) {
+		if (!(error instanceof JsonRpcResponseError)) throw error
+		return undefined
+	}
+}
+
 function normalizeErc1155Uri(uri: string, tokenId: bigint) {
 	return uri.replaceAll('{id}', tokenId.toString(16).padStart(64, '0'))
 }
@@ -221,8 +243,8 @@ export async function loadErc1046Metadata(ethereum: EthereumClientService, addre
 export async function loadLegacyErc20Metadata(ethereum: EthereumClientService, address: bigint): Promise<LegacyErc20MetadataResult> {
 	const [totalSupply, name, symbol, decimals] = await Promise.all([
 		getOptionalContractResult(ethereum, address, Erc20ABI, 'totalSupply', [], isBigint),
-		getOptionalContractResult(ethereum, address, Erc20ABI, 'name', [], isString),
-		getOptionalContractResult(ethereum, address, Erc20ABI, 'symbol', [], isString),
+		getOptionalErc20TextResult(ethereum, address, 'name'),
+		getOptionalErc20TextResult(ethereum, address, 'symbol'),
 		getOptionalContractResult(ethereum, address, Erc20ABI, 'decimals', [], isNumberOrBigint),
 	])
 	if (totalSupply === undefined) return { success: false, code: -32602, message: 'The requested address could not be verified as an ERC20 token contract.' }

@@ -180,6 +180,7 @@ describe('wallet_watchAsset', () => {
 
 	test('rejects malformed ERC20 hints before opening a dialog', () => {
 		for (const options of [
+			{ address: tokenAddress, name: 'N'.repeat(43) },
 			{ address: tokenAddress, symbol: '' },
 			{ address: tokenAddress, symbol: 'TOO-LONG-SYMBOL' },
 			{ address: tokenAddress, image: 'not a url' },
@@ -300,6 +301,34 @@ describe('wallet_watchAsset', () => {
 		})
 
 		expect(reply).toEqual({ type: 'result', method: 'wallet_watchAsset', error: { code: -32602, message: 'The requested symbol does not match the contract symbol (CHAIN).' } })
+	})
+
+	test('returns an error to the webpage when verified metadata cannot be stored by the address book', async () => {
+		const parsed = WalletWatchAsset.parse(interceptedRequest)
+		let enqueueCount = 0
+		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, interceptedRequest, website, parsed, {
+			identifyAddress: async (_ethereum, _abortController, address) => ({
+				type: 'ERC20',
+				address,
+				name: 'N'.repeat(43),
+				symbol: 'LONG',
+				decimals: 18n,
+				entrySource: 'OnChain',
+			}),
+			getAddressBookEntries: async () => [],
+			enqueueRequest: async () => { enqueueCount += 1 },
+			scheduleDialog: () => { throw new Error('Invalid request must not schedule a dialog') },
+		})
+
+		expect(reply).toEqual({
+			type: 'result',
+			method: 'wallet_watchAsset',
+			error: {
+				code: -32602,
+				message: 'The asset name from its verified metadata must contain from 1 to 42 characters.',
+			},
+		})
+		expect(enqueueCount).toBe(0)
 	})
 
 	test('supports legacy ERC20 contracts whose optional metadata is supplied by the request', async () => {
