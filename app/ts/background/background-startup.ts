@@ -32,7 +32,7 @@ import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminal
 import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
 import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
-import { clearSignerExecutionAuthorityForTab, registerCurrentChildSignerSocket, scheduleCurrentChildSignerSocketRemoval } from './signerExecutionAuthority.js'
+import { clearSignerExecutionAuthorityForTab, isTopFrameId, registerCurrentChildSignerSocket, scheduleCurrentChildSignerSocketRemoval } from './signerExecutionAuthority.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { registerTopSignerDocument, releaseSignerSelectionLeasesForTab } from './signerSelectionLease.js'
 import { getChildSignerConnectionSynchronization } from './signerProviderSelection.js'
@@ -148,7 +148,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 	const newConnection = { port, socket, websiteOrigin, frameId: port.sender?.frameId, approved: false, wantsToConnect: false }
 	let startsNewSignerDocument = false
 	let childSignerCatalogResynchronizationNeeded = false
-	const isTopFrame = port.sender.frameId === undefined || port.sender.frameId === 0
+	const isTopFrame = isTopFrameId(port.sender.frameId)
 
 	const listenersRegistered = tryRegisterContentScriptPortListeners(
 		port,
@@ -191,7 +191,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 		checkAndThrowRuntimeLastError,
 	)
 	if (!listenersRegistered) return
-	if (port.sender?.frameId === 0) {
+	if (isTopFrame) {
 		startsNewSignerDocument = registerTopSignerDocument(socket, websiteOrigin)
 	} else if (port.sender?.frameId !== undefined) {
 		childSignerCatalogResynchronizationNeeded = registerCurrentChildSignerSocket(socket, port.sender.frameId)
@@ -230,7 +230,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 			sendSubscriptionReplyOrCallBackToPort(connection.port, { type: 'result', method: 'request_signer_provider_catalog', result: [] })
 		}
 	}
-	if (port.sender?.frameId !== 0) {
+	if (!isTopFrame) {
 		const synchronization = getChildSignerConnectionSynchronization(socket, websiteOrigin, childSignerCatalogResynchronizationNeeded)
 		if (synchronization !== undefined) sendSubscriptionReplyOrCallBackToPort(port, synchronization)
 	}
@@ -240,7 +240,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 	await flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, port)
 	try {
 		const website = await websitePromise
-		if (port.sender?.frameId === 0) {
+		if (isTopFrame) {
 			await updateTabState(socket.tabId, (previousState: TabState) => modifyObject(previousState, { website }))
 		}
 		checkAndThrowRuntimeLastError()

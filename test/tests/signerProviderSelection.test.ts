@@ -413,7 +413,7 @@ describe('EIP-6963 signer provider selection', () => {
 		assert.equal(tabState.explicitlySelectedSignerProviderUuid, provider.uuid)
 	})
 
-	test('delivers an explicit selection to the top frame and commits authority only after its acknowledgement', async () => {
+	test('delivers an explicit selection to a top frame without frameId and commits authority only after its acknowledgement', async () => {
 		installBrowserMock()
 		const { selectSignerProvider, signerProviderSelected } = await import('../../app/ts/background/signerProviderSelection.js')
 		const { getSignerExecutionTargetForOrigin, registerAuthoritativeTopSocket, setSignerExecutionTarget } = await import('../../app/ts/background/signerExecutionAuthority.js')
@@ -428,7 +428,7 @@ describe('EIP-6963 signer provider selection', () => {
 		const childFrameMessages: unknown[] = []
 		const otherSiteMessages: unknown[] = []
 		const websiteTabConnections: WebsiteTabConnections = new Map([[7, { connections: {
-			'7-0x1': { port: { postMessage: (message: unknown) => topFrameMessages.push(message) }, socket: { tabId: 7, connectionName: 1n }, websiteOrigin: 'app.example', frameId: 0, approved: true, wantsToConnect: true },
+			'7-0x1': { port: { postMessage: (message: unknown) => topFrameMessages.push(message) }, socket: { tabId: 7, connectionName: 1n }, websiteOrigin: 'app.example', approved: true, wantsToConnect: true },
 			'7-0x2': { port: { postMessage: (message: unknown) => childFrameMessages.push(message) }, socket: { tabId: 7, connectionName: 2n }, websiteOrigin: 'app.example', frameId: 2, approved: true, wantsToConnect: true },
 			'7-0x3': { port: { postMessage: (message: unknown) => otherSiteMessages.push(message) }, socket: { tabId: 7, connectionName: 3n }, websiteOrigin: 'frame.example', frameId: 3, approved: true, wantsToConnect: true },
 		} }]])

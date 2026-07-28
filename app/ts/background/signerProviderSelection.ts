@@ -6,7 +6,7 @@ import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { getChainChangeConfirmationPromise, getPendingTransactionsAndMessages, getSignerPreference, getTabState, setSignerPreference, updateTabState } from './storageVariables.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { acquireSignerSelectionLease, releaseSignerSelectionLease, signerSelectionLeaseIsActive } from './signerSelectionLease.js'
-import { allowLegacySignerExecution, authorizeSocketForLegacySignerExecution, authorizeSocketForSignerExecution, blockSignerExecution, getSignerExecutionTargetForSocket, isAuthoritativeTopSocket, reconcileSignerExecutionDocument, setSignerExecutionTarget, socketIsEligibleForSignerExecution } from './signerExecutionAuthority.js'
+import { allowLegacySignerExecution, authorizeSocketForLegacySignerExecution, authorizeSocketForSignerExecution, blockSignerExecution, getSignerExecutionTargetForSocket, isAuthoritativeTopSocket, isTopFrameId, reconcileSignerExecutionDocument, setSignerExecutionTarget, socketIsEligibleForSignerExecution } from './signerExecutionAuthority.js'
 
 const tabHasPendingSignerWork = async (tabId: number) => {
 	const [pendingSignerRequests, pendingChainChange] = await Promise.all([
@@ -30,7 +30,7 @@ export async function beginSignerProviderSelection(request: ProviderMessage, web
 	const tabId = socket.tabId
 	const socketCanSelectProvider = () => isTopFrame
 		? isAuthoritativeTopSocket(socket)
-		: frameId !== undefined && frameId !== 0 && providerUuid !== undefined && getSignerExecutionTargetForSocket(socket, websiteOrigin) === providerUuid
+		: !isTopFrameId(frameId) && providerUuid !== undefined && getSignerExecutionTargetForSocket(socket, websiteOrigin) === providerUuid
 	if (!socketCanSelectProvider()) return undefined
 	const token = await acquireSignerSelectionLease(tabId)
 	if (!socketCanSelectProvider()) {
@@ -141,7 +141,7 @@ export async function signerProviderSelected(request: ProviderMessage, websiteOr
 	const provider = { ...announcedProvider, rdns: announcedProvider.rdns.toLowerCase() }
 	const tabId = request.uniqueRequestIdentifier.requestSocket.tabId
 	if (!isTopFrame) {
-		if (frameId === undefined || frameId === 0) throw new Error('Only a current top frame or child frame can select a signer provider')
+		if (isTopFrameId(frameId)) throw new Error('Only a current top frame or child frame can select a signer provider')
 		if (!authorizeSocketForSignerExecution(request.uniqueRequestIdentifier.requestSocket, provider.uuid, websiteOrigin)) throw new Error('The frame selected a signer outside the tab execution authority')
 		return
 	}
@@ -178,7 +178,7 @@ export async function signerProviderSelected(request: ProviderMessage, websiteOr
 		if (connection.socket.connectionName === request.uniqueRequestIdentifier.requestSocket.connectionName) continue
 		if (connection.websiteOrigin !== websiteOrigin) continue
 		if (!socketIsEligibleForSignerExecution(connection.socket, websiteOrigin)) continue
-		if (connection.frameId === 0 && !isAuthoritativeTopSocket(connection.socket)) continue
+		if (isTopFrameId(connection.frameId) && !isAuthoritativeTopSocket(connection.socket)) continue
 		sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, { type: 'result', method: 'select_signer_provider', result: provider.uuid })
 	}
 }
@@ -192,7 +192,7 @@ export async function selectSignerProvider(websiteTabConnections: WebsiteTabConn
 	const tabConnections = websiteTabConnections.get(request.data.tabId)
 	if (tabConnections === undefined) throw new Error('The selected website is no longer connected')
 	const matchingConnections = Object.values(tabConnections.connections).filter((connection) => connection.websiteOrigin === request.data.websiteOrigin)
-	const connection = matchingConnections.find((candidate) => candidate.frameId === 0 && isAuthoritativeTopSocket(candidate.socket))
+	const connection = matchingConnections.find((candidate) => isTopFrameId(candidate.frameId) && isAuthoritativeTopSocket(candidate.socket))
 	if (connection === undefined) throw new Error('The selected website top-frame connection is no longer available')
 	const sent = sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
 		type: 'result',

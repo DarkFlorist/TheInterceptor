@@ -18,8 +18,12 @@ const currentChildSocketKeysByTab = new Map<number, Map<number, string>>()
 const childFrameIdsBySocketKey = new Map<string, number>()
 const pendingChildSocketRemovalTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
+export function isTopFrameId(frameId: number | undefined): frameId is 0 | undefined {
+	return frameId === undefined || frameId === 0
+}
+
 export function registerCurrentChildSignerSocket(socket: WebsiteSocket, frameId: number) {
-	if (frameId === 0) return false
+	if (isTopFrameId(frameId)) return false
 	const key = socketKey(socket)
 	const pendingRemoval = pendingChildSocketRemovalTimers.get(key)
 	if (pendingRemoval !== undefined) {
@@ -101,7 +105,7 @@ export function reconcileSignerExecutionDocument(socket: WebsiteSocket, websiteO
 		authority.eligibleSocketKeys.add(key)
 		return true
 	}
-	if (frameId === undefined || frameId === 0 || currentChildSocketKeysByTab.get(socket.tabId)?.get(frameId) !== key) return false
+	if (isTopFrameId(frameId) || currentChildSocketKeysByTab.get(socket.tabId)?.get(frameId) !== key) return false
 	if (authority.documentGeneration !== documentGeneration) return false
 	authority.eligibleSocketKeys.add(key)
 	return true

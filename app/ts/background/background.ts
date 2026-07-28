@@ -37,7 +37,7 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import { beginSignerProviderSelection, finishSignerProviderSelection, selectSignerProvider, signerProviderSelected, signerProvidersChanged } from './signerProviderSelection.js'
-import { isAuthoritativeTopSocket, socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
+import { isAuthoritativeTopSocket, isTopFrameId, socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { handleWatchAssetRequest, initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
@@ -595,7 +595,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	const requestCanReachSigner = !initialSettings.simulationMode
 		|| (initialSettings.useSignersAddressAsActiveAddress && (isAccountConnectionMethod(request.method) || isAccountOnlyMethod(request.method)))
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
-	const isTopFrame = port?.sender?.frameId === 0 && isAuthoritativeTopSocket(socket)
+	const isTopFrame = port !== undefined && isTopFrameId(port.sender?.frameId) && isAuthoritativeTopSocket(socket)
 	if (request.method === 'signer_providers_changed') {
 		const result = await signerProvidersChanged(request, websiteOrigin, isTopFrame, port?.sender?.frameId)
 		return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'signer_providers_changed', result, uniqueRequestIdentifier: request.uniqueRequestIdentifier })

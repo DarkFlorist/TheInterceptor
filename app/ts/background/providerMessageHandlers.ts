@@ -17,7 +17,7 @@ import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
-import { socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
+import { isTopFrameId, socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 
@@ -185,7 +185,7 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 	const [signerConnected, signerName, signerProviderGeneration] = ConnectedToSigner.parse(request).params
 	// MV2 and test ports may omit frameId. Treat those as the top frame, while preventing an
 	// unapproved MV3 child frame from taking ownership of tab-wide signer state.
-	const isTopFrame = port.sender?.frameId === undefined || port.sender.frameId === 0
+	const isTopFrame = isTopFrameId(port.sender?.frameId)
 	if (approval !== 'hasAccess' && !isTopFrame) {
 		return await getConnectedToSignerResult()
 	}
