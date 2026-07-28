@@ -151,12 +151,24 @@ const { TabIcon } = await import('../../app/ts/types/user-interface-types.js')
 const { parseTabStateItems } = await import('../../app/ts/utils/storageUtils.js')
 
 describe('blocking shield icon selection', () => {
-	test('does not add a shield to access-denied icons', () => {
-		assert.equal(addBlockingShieldToIcon('../img/head-access-denied.png'), '../img/head-access-denied.png')
-	})
-
-	test('adds a shield to active icons', () => {
-		assert.equal(addBlockingShieldToIcon('../img/head.png'), '../img/head-shield.png')
+	test('maps every valid icon to its blocking equivalent without double shielding', () => {
+		const expectedBlockingIcons = new Map([
+			['../img/head.png', '../img/head-shield.png'],
+			['../img/head-access-denied.png', '../img/head-access-denied.png'],
+			['../img/head-not-active.png', '../img/head-not-active-shield.png'],
+			['../img/head-simulating.png', '../img/head-simulating-shield.png'],
+			['../img/head-signing.png', '../img/head-signing-shield.png'],
+			['../img/head-signing-unsupported-network.png', '../img/head-signing-unsupported-network-shield.png'],
+			['../img/head-interceptor-disabled.png', '../img/head-interceptor-disabled.png'],
+			['../img/head-shield.png', '../img/head-shield.png'],
+			['../img/head-not-active-shield.png', '../img/head-not-active-shield.png'],
+			['../img/head-simulating-shield.png', '../img/head-simulating-shield.png'],
+			['../img/head-signing-shield.png', '../img/head-signing-shield.png'],
+			['../img/head-signing-unsupported-network-shield.png', '../img/head-signing-unsupported-network-shield.png'],
+		] as const)
+		for (const [icon, expectedBlockingIcon] of expectedBlockingIcons) {
+			assert.equal(addBlockingShieldToIcon(TabIcon.parse(icon)), expectedBlockingIcon, icon)
+		}
 	})
 
 	test('rejects the nonexistent access-denied shield icon', () => {
