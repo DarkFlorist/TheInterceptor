@@ -1,7 +1,9 @@
 import * as path from 'node:path'
 import * as url from 'node:url'
 
-type PageDefinition = {
+type PolyfillPosition = 'before-root' | 'after-root'
+
+export type PageDefinition = {
 	name: string
 	entryName?: string
 	title: string
@@ -10,11 +12,11 @@ type PageDefinition = {
 	rootMarkup?: string
 	includeBadgeStyles?: boolean
 	manifestV3HtmlStyle?: string
-	keepManifestV3PolyfillBeforeRoot?: boolean
+	manifestV3PolyfillPosition?: PolyfillPosition
 }
 
 const projectRoot = path.join(path.dirname(url.fileURLToPath(import.meta.url)), '..')
-const pageDefinitions: readonly PageDefinition[] = [
+export const pageDefinitions: readonly PageDefinition[] = [
 	{
 		name: 'addressBook',
 		entryName: 'addressBookRender',
@@ -30,7 +32,7 @@ const pageDefinitions: readonly PageDefinition[] = [
 		name: 'confirmTransaction',
 		title: 'Confirm Transaction - The Interceptor',
 		htmlStyle: 'background-color: var(--bg-color); overflow-y: inherit;',
-		keepManifestV3PolyfillBeforeRoot: true,
+		manifestV3PolyfillPosition: 'before-root',
 	},
 	{
 		name: 'fetchSimulationStack',
@@ -71,7 +73,7 @@ const pageDefinitions: readonly PageDefinition[] = [
 
 const polyfillScript = `<script src = '../vendor/webextension-polyfill/dist/browser-polyfill.js'></script>`
 
-function renderPage(definition: PageDefinition, manifestVersion: 2 | 3) {
+export function renderExtensionPage(definition: PageDefinition, manifestVersion: 2 | 3) {
 	const htmlStyle = manifestVersion === 3 ? definition.manifestV3HtmlStyle ?? definition.htmlStyle : definition.htmlStyle
 	const bodyStyle = definition.bodyStyle ?? 'background-color: var(--bg-color); margin: auto;'
 	const stylesheets = [
@@ -80,7 +82,8 @@ function renderPage(definition: PageDefinition, manifestVersion: 2 | 3) {
 		...(definition.includeBadgeStyles === true ? [`<link rel = 'stylesheet' type = 'text/css' href = '../css/bulma-badge.css' />`] : []),
 		`<link rel = 'stylesheet' type = 'text/css' href = '../css/interceptor.css' />`,
 	]
-	const polyfillBeforeRoot = manifestVersion === 2 || definition.keepManifestV3PolyfillBeforeRoot === true
+	const manifestV3PolyfillPosition = definition.manifestV3PolyfillPosition ?? 'after-root'
+	const polyfillBeforeRoot = manifestVersion === 2 || manifestV3PolyfillPosition === 'before-root'
 	const rootMarkup = definition.rootMarkup ?? '<main>Loading...</main>'
 	const entryName = definition.entryName ?? definition.name
 	return [
@@ -105,27 +108,37 @@ function renderPage(definition: PageDefinition, manifestVersion: 2 | 3) {
 	].join('\n')
 }
 
-const generatedPages = pageDefinitions.flatMap((definition) => [
+export const generatedPages = pageDefinitions.flatMap((definition) => [
 	{
 		path: path.join(projectRoot, 'app', 'html', `${ definition.name }.html`),
-		contents: renderPage(definition, 2),
+		contents: renderExtensionPage(definition, 2),
 	},
 	{
 		path: path.join(projectRoot, 'app', 'html3', `${ definition.name }V3.html`),
-		contents: renderPage(definition, 3),
+		contents: renderExtensionPage(definition, 3),
 	},
 ])
 
-if (process.argv.includes('--check')) {
+export async function generateOrCheckExtensionPages(checkOnly: boolean) {
+	if (!checkOnly) {
+		await Promise.all(generatedPages.map(async (page) => await Bun.write(page.path, page.contents)))
+		return
+	}
 	const stalePages: string[] = []
 	for (const page of generatedPages) {
 		const currentContents = await Bun.file(page.path).text()
 		if (currentContents !== page.contents) stalePages.push(path.relative(projectRoot, page.path))
 	}
 	if (stalePages.length > 0) {
-		console.error(`Generated extension pages are stale:\n${ stalePages.join('\n') }\nRun bun run generate-extension-pages.`)
-		process.exit(1)
+		throw new Error(`Generated extension pages are stale:\n${ stalePages.join('\n') }\nRun bun run generate-extension-pages.`)
 	}
-} else {
-	await Promise.all(generatedPages.map(async (page) => await Bun.write(page.path, page.contents)))
+}
+
+if (import.meta.main) {
+	try {
+		await generateOrCheckExtensionPages(process.argv.includes('--check'))
+	} catch (error: unknown) {
+		console.error(error instanceof Error ? error.message : error)
+		process.exitCode = 1
+	}
 }
