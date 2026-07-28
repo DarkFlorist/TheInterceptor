@@ -9,8 +9,17 @@ import type { WebsiteCreatedEthereumTransaction, SimulationState } from '../type
 import { sendToNonContact } from './protectors/sendToNonContactAddress.js'
 import { chainIdMismatch } from './protectors/chainIdMismatch.js'
 import { promiseAllMapAbortSafe } from '../utils/requests.js'
+import type { EnrichedEthereumEvents } from '../types/EnrichedEthereumData.js'
 
-const PROTECTORS = [
+type Protector = (
+	transaction: WebsiteCreatedEthereumTransaction['transaction'],
+	ethereum: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	simulationState: SimulationState,
+	eventsPromise: Promise<EnrichedEthereumEvents>,
+) => Promise<string | undefined>
+
+const PROTECTORS: readonly Protector[] = [
 	selfTokenOops,
 	commonTokenOops,
 	feeOops,
@@ -21,8 +30,8 @@ const PROTECTORS = [
 	chainIdMismatch,
 ]
 
-export const runProtectorsForTransaction = async (simulationState: SimulationState, transaction: WebsiteCreatedEthereumTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
-	const reasons = await promiseAllMapAbortSafe(PROTECTORS, async (protectorMethod) => await protectorMethod(transaction.transaction, ethereum, requestAbortController, simulationState))
+export const runProtectorsForTransaction = async (simulationState: SimulationState, transaction: WebsiteCreatedEthereumTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, eventsPromise: Promise<EnrichedEthereumEvents>) => {
+	const reasons = await promiseAllMapAbortSafe(PROTECTORS, async (protectorMethod) => await protectorMethod(transaction.transaction, ethereum, requestAbortController, simulationState, eventsPromise))
 	const filteredReasons = reasons.filter((reason): reason is string => reason !== undefined)
 	return {
 		quarantine: filteredReasons.length > 0,

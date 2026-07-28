@@ -6,15 +6,13 @@ import { getSwapName, identifySwap } from './SwapTransactions.js'
 import * as funtypes from 'funtypes'
 import { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { CompoundGovernanceAbi } from '../../utils/abi.js'
-import { addressString, dataStringWith0xStart } from '../../utils/bigint.js'
+import { dataStringWith0xStart } from '../../utils/bigint.js'
 import { parseVoteInputParameters } from '../../simulation/compoundGovernanceFaking.js'
 import type { GovernanceVoteInputParameters } from '../../types/interceptor-messages.js'
-import { findDeadEnds } from '../../utils/findDeadEnds.js'
-import type { EthereumAddress, EthereumQuantity } from '../../types/wire-types.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
-import { deduplicateByFunction } from '../../utils/array.js'
 import { decodeCallDataLoose } from '../../utils/abiRuntime.js'
 import { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
+import { analyzeProxyTokenTransfer } from '../../simulation/proxyTokenTransfer.js'
 
 type IdentifiedTransactionBase = {
 	title: string
@@ -181,97 +179,26 @@ export const SimulatedAndVisualizedProxyTokenTransferTransaction = funtypes.Inte
 	})
 )
 
-type ProxyTokenTransferAnalysis = {
-	sourceTransfer: TokenVisualizerResultWithMetadata
-	transferRoute: readonly AddressBookEntry[]
-	transferedFrom: EntryAmount
-	transferedTo: readonly EntryAmount[]
-	hasTransferFee: boolean
-}
-
-const PROXY_TRANSFER_MINIMUM_FORWARDED_NUMERATOR = 95n
-const PROXY_TRANSFER_MINIMUM_FORWARDED_DENOMINATOR = 100n
-
 const getTokenTransferAmount = (tokenResult: TokenVisualizerResultWithMetadata) => tokenResult.isApproval || tokenResult.type === 'ERC721' ? 1n : tokenResult.amount
 
 const getTokenId = (tokenResult: TokenVisualizerResultWithMetadata) => 'tokenId' in tokenResult ? tokenResult.tokenId : undefined
 
-const isContractLikeAddressBookEntry = (entry: AddressBookEntry) => (
-	entry.type === 'contract'
-	|| entry.type === 'ERC20'
-	|| entry.type === 'ERC721'
-	|| entry.type === 'ERC1155'
-)
-
-const isEnoughForwardedForProxyPayment = (forwardedAmount: bigint, sentAmount: bigint) => (
-	sentAmount > 0n
-	&& forwardedAmount <= sentAmount
-	&& forwardedAmount * PROXY_TRANSFER_MINIMUM_FORWARDED_DENOMINATOR >= sentAmount * PROXY_TRANSFER_MINIMUM_FORWARDED_NUMERATOR
-)
-
-const getNetSums = (edges: readonly { from: EthereumAddress, to: EthereumAddress,  amount: EthereumQuantity }[]) => {
-	const netSums = new Map<bigint, bigint>()
-	for (const edge of edges) {
-		netSums.set(edge.from, (netSums.get(edge.from) || 0n) - edge.amount)
-		netSums.set(edge.to, (netSums.get(edge.to) || 0n) + edge.amount)
-	}
-	return netSums
-}
-
-function analyzeProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction): ProxyTokenTransferAnalysis | undefined {
-	if (transaction.transaction.to === undefined) return undefined
+function analyzeVisualizedProxyTokenTransfer(transaction: SimulatedAndVisualizedTransaction) {
 	const tokenResults = extractTokenEvents(transaction.events)
-	// no ENS logs allowed in proxy token transfer
-	if (transaction.events.some((x) => x.type === 'ENS')) return undefined
-	// there need to be atleast two token logs (otherwise its a simple send)
-	if (tokenResults.length < 2) return undefined
-
-	// no burning allowed
-	if (tokenResults.some((result) => BURN_ADDRESSES.includes(result.to.address))) return undefined
-	if (tokenResults.some((result) => BURN_ADDRESSES.includes(result.from.address))) return undefined
-
-	// no approvals allowed
-	if (tokenResults.filter((result) => result.isApproval).length !== 0) return undefined
-	// sender has only one token leaving by logs (gas fees are not in logs)
-	const senderLogs = tokenResults.filter((result) => result.from.address === transaction.transaction.from.address)
-	const senderLog = senderLogs[0]
-	if (senderLogs.length !== 1 || senderLog === undefined) return undefined
-	if (!isContractLikeAddressBookEntry(senderLog.to)) return undefined
-	// sender does not receive any tokens
-	if (tokenResults.filter((result) => result.to.address === transaction.transaction.from.address).length !== 0) return undefined
-	// only one token of specific address is being transacted in the logs
-	if (tokenResults.filter((result) => result.token.address !== senderLog.token.address).length !== 0) return undefined
-	// only one token id (or undefined) is mentioned inte the logs
-	if (new Set(tokenResults.map((result) => getTokenId(result))).size !== 1) return undefined
-	// can find a path
-	const edges = tokenResults.map((tokenResult) => ({ from: tokenResult.from.address, to: tokenResult.to.address, data: tokenResult.to, amount: getTokenTransferAmount(tokenResult) }))
-	const deadEnds = findDeadEnds(edges, transaction.transaction.from.address)
-	if (deadEnds.size === 0) return undefined
-	const netSums = getNetSums(edges)
-	const sentAmount = -(netSums.get(transaction.transaction.from.address) || 0n)
-	if (sentAmount <= 0n) return undefined
-	const positiveDeadEnds = Array.from(deadEnds)
-		.map(([address, path]) => ({ address, path, amount: netSums.get(address) || 0n }))
-		.filter((deadEnd) => deadEnd.amount > 0n)
-	if (positiveDeadEnds.length === 0) return undefined
-	const nonDuplicatedPath = positiveDeadEnds.flatMap(({ path }) => path.slice(0, -1))
-	if (nonDuplicatedPath.length === 0) return undefined
-	const forwardedAmount = positiveDeadEnds.reduce((prev, current) => prev + current.amount, 0n)
-	if (!isEnoughForwardedForProxyPayment(forwardedAmount, sentAmount)) return undefined
-	const transferRoute = deduplicateByFunction(positiveDeadEnds.flatMap(({ path }) => path.slice(0, -1).map((edge) => edge.data)), (entry: AddressBookEntry) => addressString(entry.address))
-	if (transferRoute === undefined) throw new Error('no path found')
-	const transferedTo = positiveDeadEnds.map((deadEnd) => {
-		const destinationEntry = deadEnd.path[deadEnd.path.length - 1]
-		if (destinationEntry === undefined) throw new Error('path was missing')
-		return { entry: destinationEntry.data, amountDelta: deadEnd.amount }
+	return analyzeProxyTokenTransfer({
+		transactionFrom: transaction.transaction.from.address,
+		transactionHasDestination: transaction.transaction.to !== undefined,
+		hasEnsEvents: transaction.events.some((event) => event.type === 'ENS'),
+		tokenTransfers: tokenResults.map((tokenResult) => ({
+			source: tokenResult,
+			from: tokenResult.from,
+			to: tokenResult.to,
+			tokenAddress: tokenResult.token.address,
+			tokenId: getTokenId(tokenResult),
+			amount: getTokenTransferAmount(tokenResult),
+			isApproval: tokenResult.isApproval,
+		})),
 	})
-	return {
-		sourceTransfer: senderLog,
-		transferRoute,
-		transferedFrom: { entry: senderLog.from, amountDelta: sentAmount },
-		transferedTo,
-		hasTransferFee: forwardedAmount !== sentAmount,
-	}
 }
 
 export function identifyTransaction(simTx: MaybeSimulatedTransaction): IdentifiedTransaction {
@@ -303,7 +230,7 @@ export function identifyTransaction(simTx: MaybeSimulatedTransaction): Identifie
 			}
 		}
 
-		const proxyTokenTransfer = analyzeProxyTokenTransfer(simTx)
+		const proxyTokenTransfer = analyzeVisualizedProxyTokenTransfer(simTx)
 		if (proxyTokenTransfer !== undefined) {
 			const transactionTo = simTx.transaction.to
 			if (transactionTo === undefined) throw new Error('proxy transfer transaction destination missing')
@@ -311,7 +238,7 @@ export function identifyTransaction(simTx: MaybeSimulatedTransaction): Identifie
 			if (tokenResult === undefined) throw new Error('token result were undefined')
 			const symbol = tokenResult.token.symbol
 			const feeText = proxyTokenTransfer.hasTransferFee ? ' with fee' : ''
-			const texts = proxyTokenTransfer.transferedTo.length > 1 ? {
+			const texts = proxyTokenTransfer.transferredTo.length > 1 ? {
 				title: `${ symbol } Transfer to many${ feeText } via Proxy`,
 				signingAction: `Transfer ${ symbol } to many${ feeText } via Proxy`,
 				simulationAction: `Simulate ${ symbol } Transfer to many${ feeText } via Proxy`,
@@ -330,8 +257,8 @@ export function identifyTransaction(simTx: MaybeSimulatedTransaction): Identifie
 					transaction: { ...simTx.transaction, to: transactionTo },
 					sourceTransfer: proxyTokenTransfer.sourceTransfer,
 					transferRoute: proxyTokenTransfer.transferRoute,
-					transferedFrom: proxyTokenTransfer.transferedFrom,
-					transferedTo: proxyTokenTransfer.transferedTo,
+					transferedFrom: proxyTokenTransfer.transferredFrom,
+					transferedTo: proxyTokenTransfer.transferredTo,
 				}
 			}
 		}
