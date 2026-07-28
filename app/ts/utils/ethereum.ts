@@ -1,4 +1,4 @@
-import { toRlp as encodeRlp } from './viem.js'
+import { toRlp as encodeRlp } from './ethereumPrimitives.js'
 import { bigintToUint8Array, dataString, stringToUint8Array } from './bigint.js'
 import { stripLeadingZeros } from './typed-arrays.js'
 import { type DistributiveOmit, assertNever } from './typescript.js'
@@ -96,9 +96,13 @@ export interface IUnsignedTransaction7702 {
 		readonly storageKeys: readonly bigint[]
 	}[]
 	readonly authorizationList: readonly {
-		chainId: bigint
-		address: bigint
-		nonce: bigint
+		readonly chainId: bigint
+		readonly address: bigint
+		readonly nonce: bigint
+		readonly authority?: bigint
+		readonly yParity?: 'even' | 'odd'
+		readonly r?: bigint
+		readonly s?: bigint
 	}[]
 }
 
@@ -121,6 +125,7 @@ type ISignedTransaction7702 = {
 		chainId: bigint,
 		address: bigint,
 		nonce: bigint,
+		authority?: bigint,
 		yParity: 'even' | 'odd',
 		r: bigint,
 		s: bigint

@@ -1,22 +1,31 @@
-import { BRAVE_LOGO, COINBASEWALLET_LOGO, METAMASK_LOGO } from './constants.js'
+import { AMBIRE_LOGO, BRAVE_LOGO, COINBASEWALLET_LOGO, METAMASK_LOGO, RABBY_LOGO } from './constants.js'
 import type { SignerName } from '../types/signerTypes.js'
 
 const signerLogos = {
 	MetaMask: METAMASK_LOGO,
+	Ambire: AMBIRE_LOGO,
 	Brave: BRAVE_LOGO,
 	CoinbaseWallet: COINBASEWALLET_LOGO,
+	Rabby: RABBY_LOGO,
 } as const
+
+export function isSignerMissing(signerName: SignerName) {
+	return signerName === 'NoSigner' || signerName === 'NoSignerDetected'
+}
 
 export function getPrettySignerName(signerName: SignerName) {
 	if (signerName === 'NoSigner' || signerName === 'NotRecognizedSigner' || signerName === 'NoSignerDetected') return 'Unknown signer'
+	if (signerName === 'Ambire' || signerName === 'Rabby') return `${ signerName } Wallet`
 	return signerName
 }
 
 export function getSignerLogo(signerName: SignerName) {
 	switch (signerName) {
 		case 'MetaMask': return signerLogos.MetaMask
+		case 'Ambire': return signerLogos.Ambire
 		case 'Brave': return signerLogos.Brave
 		case 'CoinbaseWallet': return signerLogos.CoinbaseWallet
+		case 'Rabby': return signerLogos.Rabby
 		default: return undefined
 	}
 }

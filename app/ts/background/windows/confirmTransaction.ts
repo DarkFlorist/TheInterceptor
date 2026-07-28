@@ -1,10 +1,10 @@
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
-import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedTransactionCount, mockSignTransaction, simulateEstimateGas, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
+import { getInputFieldFromDataOrInput, getSignedTransactionForSimulation, getSimulatedBalance, getSimulatedTransactionCount, simulateEstimateGas, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type WebsiteCreatedEthereumUnsignedTransaction, type WebsiteCreatedEthereumUnsignedTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
+import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { getUpdatedSimulationState, refreshConfirmTransactionSimulation } from '../background.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
@@ -15,12 +15,8 @@ import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalRe
 import {
 	stringToBytes,
 	keccak256,
-	recoverAddress,
-	parseTransaction as parseSerializedTransaction,
-	serializeTransaction,
-} from '../../utils/viem.js'
-import { dataStringWith0xStart, stringToUint8Array } from '../../utils/bigint.js'
-import { EthereumAddress, EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
+} from '../../utils/ethereumPrimitives.js'
+import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, reportLocalRecovery } from '../../utils/errors.js'
 import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
@@ -35,6 +31,8 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../../utils/popupPerfo
 import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
 import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
+import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.js'
+import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -245,7 +243,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			return reply({ type: 'result', result: (await simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor)).signature })
 		}
 		case 'Transaction': {
-			const signedTransaction = mockSignTransaction(pendingTransactionOrMessage.transactionToSimulate.transaction)
+			const signedTransaction = getSignedTransactionForSimulation(pendingTransactionOrMessage.transactionToSimulate)
 			const transaction = { ...pendingTransactionOrMessage.transactionToSimulate, signedTransaction }
 			await updateInterceptorTransactionStack((prevStack: InterceptorTransactionStack) => ({ operations: [
 				...prevStack.operations,
@@ -317,70 +315,11 @@ const formRejectMessage = (code: number, errorString: string) => {
 	}
 }
 
-const isSerializedEip1559Transaction = (transaction: `0x${ string }`): transaction is `0x02${ string }` => transaction.startsWith('0x02')
-const recoverSerializedEip1559TransactionAddress = async (serializedTransaction: `0x02${ string }`) => {
-	const parsedTransaction = parseSerializedTransaction(serializedTransaction)
-	if (parsedTransaction.type !== 'eip1559') throw new Error('Expected EIP-1559 transaction')
-	if (parsedTransaction.chainId === undefined || parsedTransaction.gas === undefined || parsedTransaction.maxFeePerGas === undefined || parsedTransaction.maxPriorityFeePerGas === undefined || parsedTransaction.nonce === undefined || parsedTransaction.r === undefined || parsedTransaction.s === undefined) {
-		throw new Error('Serialized transaction is missing required signature fields')
-	}
-	const unsignedTransaction = serializeTransaction({
-		type: 'eip1559',
-		chainId: Number(parsedTransaction.chainId),
-		nonce: parsedTransaction.nonce,
-		maxFeePerGas: parsedTransaction.maxFeePerGas,
-		maxPriorityFeePerGas: parsedTransaction.maxPriorityFeePerGas,
-		gas: parsedTransaction.gas,
-		to: parsedTransaction.to,
-		value: parsedTransaction.value,
-		data: parsedTransaction.data,
-		accessList: parsedTransaction.accessList,
-	})
-	return await recoverAddress({
-		hash: keccak256(unsignedTransaction),
-		signature: {
-			r: parsedTransaction.r,
-			s: parsedTransaction.s,
-			yParity: parsedTransaction.yParity ?? 0,
-		},
-	})
-}
-
-export const formSendRawTransaction = async(ethereumClientService: EthereumClientService, sendRawTransactionParams: SendRawTransactionParams, website: Website, created: Date, transactionIdentifier: EthereumQuantity): Promise<WebsiteCreatedEthereumUnsignedTransaction> => {
-	const serializedTransaction = dataStringWith0xStart(sendRawTransactionParams.params[0])
-	const parsedTransaction = parseSerializedTransaction(serializedTransaction)
-	if (parsedTransaction.type !== 'eip1559') throw new Error('No support for non-1559 transactions')
-	if (!isSerializedEip1559Transaction(serializedTransaction)) throw new Error('Expected serialized EIP-1559 transaction')
-	const from = await recoverSerializedEip1559TransactionAddress(serializedTransaction)
-	if (parsedTransaction.gas === undefined) throw new Error('Unable to parse gas from serialized transaction')
-	if (parsedTransaction.nonce === undefined) throw new Error('Unable to parse nonce from serialized transaction')
-	const transactionDetails = {
-		from: EthereumAddress.parse(from),
-		input: stringToUint8Array(parsedTransaction.data ?? '0x'),
-		gas: parsedTransaction.gas,
-		value: parsedTransaction.value,
-		...(parsedTransaction.to === undefined || parsedTransaction.to === null ? {} : { to: EthereumAddress.parse(parsedTransaction.to) }),
-		...(parsedTransaction.maxPriorityFeePerGas === undefined ? {} : { maxPriorityFeePerGas: parsedTransaction.maxPriorityFeePerGas }),
-		...(parsedTransaction.maxFeePerGas === undefined ? {} : { maxFeePerGas: parsedTransaction.maxFeePerGas }),
-	}
-
-	if (transactionDetails.maxFeePerGas === undefined) throw new Error('No support for non-1559 transactions')
-
-	const transaction = {
-		type: '1559' as const,
-		from: transactionDetails.from,
-		chainId: ethereumClientService.getChainId(),
-		nonce: BigInt(parsedTransaction.nonce),
-		maxFeePerGas: transactionDetails.maxFeePerGas,
-		maxPriorityFeePerGas: transactionDetails.maxPriorityFeePerGas ? transactionDetails.maxPriorityFeePerGas : 0n,
-		to: transactionDetails.to === undefined ? null : transactionDetails.to,
-		value: transactionDetails.value ? transactionDetails.value : 0n,
-		input: transactionDetails.input,
-		accessList: [],
-		gas: transactionDetails.gas,
-	}
+export const formSendRawTransaction = async(_ethereumClientService: EthereumClientService, sendRawTransactionParams: SendRawTransactionParams, website: Website, created: Date, transactionIdentifier: EthereumQuantity): Promise<WebsiteCreatedEthereumTransaction> => {
+	const parsedTransaction = await parseSendRawTransaction(sendRawTransactionParams.params[0])
 	return {
-		transaction,
+		transaction: parsedTransaction.transaction,
+		signedTransaction: parsedTransaction.signedTransaction,
 		website,
 		created,
 		originalRequestParameters: sendRawTransactionParams,
@@ -389,7 +328,7 @@ export const formSendRawTransaction = async(ethereumClientService: EthereumClien
 	}
 }
 
-export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true): Promise<WebsiteCreatedEthereumUnsignedTransactionOrFailed> => {
+export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true): Promise<WebsiteCreatedEthereumTransactionOrFailed> => {
 	const simulationState = simulationMode ? await getUpdatedSimulationState(ethereumClientService) : PASSTHROUGH_STATE
 	const parentBlockPromise = silenceChromeUnCaughtPromise(ethereumClientService.getBlock(requestAbortController)) // we are getting the real block here, as we are not interested in the current block where this is going to be included, but the parent
 	const transactionDetails = sendTransactionParams.params[0]
@@ -406,8 +345,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	const getFeePerGas = async (gasLimit: bigint) => {
 		return getTransactionFeesForBaseFee(parentBaseFeePerGas, maxPriorityFeePerGas, transactionDetails.maxFeePerGas, await balancePromise, value, gasLimit)
 	}
-	const transactionWithoutGas = {
-		type: '1559' as const,
+	const transactionWithoutGasBase = {
 		from,
 		chainId: ethereumClientService.getChainId(),
 		nonce: await transactionCountPromise,
@@ -418,6 +356,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		input: getInputFieldFromDataOrInput(transactionDetails),
 		accessList: [],
 	}
+	const transactionWithoutGas = await createEip1559Or7702Transaction(transactionWithoutGasBase, transactionDetails)
 	const extraParams = {
 		website,
 		created,

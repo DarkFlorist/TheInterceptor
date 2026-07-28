@@ -144,9 +144,9 @@ export const TimePicker = ({ mode, absoluteTime, deltaValue, deltaUnit, onChange
 	}
 
 	return <div>
-		<div style = 'display: flex; justify-content: space-between'>
+		<div class = 'time-picker-row'>
 			<p class = 'paragraph' style = 'align-content: center;'> { startText } </p>
-			<div style = 'display: grid; grid-template-columns: auto auto auto; column-gap: 10px; padding-left: 5px'>
+			<div class = 'time-picker-actions'>
 				<DropDownMenu selected = { temporaryMode } dropDownOptions = { timePickerModeDownOptionsSignal } onChangedCallBack = { changeMode } buttonClassses = { 'btn btn--outline is-small' } disabled = { disabled }/>
 				<TimePickerModeViews mode = { temporaryMode } absoluteTime = { temporaryAbsoluteTime } deltaValue = { temporaryDeltaValue } deltaUnit = { temporaryDeltaUnit } timePickerDeltaOptionsSignal = { timePickerDeltaOptionsSignal } changeDeltaUnit = { changeDeltaUnit } absoluteTimeChanged = { absoluteTimeChanged } changeDeltaValue = { changeDeltaValue } disabled = { disabled }/>
 

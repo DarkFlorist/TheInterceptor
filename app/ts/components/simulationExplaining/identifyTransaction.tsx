@@ -362,7 +362,9 @@ export function identifyTransaction(simTx: MaybeSimulatedTransaction): Identifie
 		rejectAction: 'Reject Contract Execution',
 	}
 
-	const explanation = FourByteExplanations[fourByte]
+	const explanation = simTx.parsedInputData.type === 'Parsed'
+		? simTx.parsedInputData.name
+		: FourByteExplanations[fourByte]
 
 	if (explanation === undefined) {
 		return {
@@ -375,7 +377,7 @@ export function identifyTransaction(simTx: MaybeSimulatedTransaction): Identifie
 	}
 	return {
 		type: 'ArbitraryContractExecution',
-		title: explanation === undefined ? 'Contract Execution' : explanation,
+		title: explanation,
 		signingAction: `Sign ${ explanation }`,
 		simulationAction: `Simulate ${ explanation }`,
 		rejectAction: `Reject ${ explanation }`,

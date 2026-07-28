@@ -1,6 +1,5 @@
 import { useEffect } from 'preact/hooks'
-import { defaultActiveAddresses, defaultRpcs, defaultSimulationMode } from '../../background/settings.js'
-import { MessageToPopup, type UpdateHomePage, type Settings } from '../../types/interceptor-messages.js'
+import { MessageToPopup, type HomePageBootstrap, type UpdateHomePage, type Settings } from '../../types/interceptor-messages.js'
 import type { RpcConnectionStatus, TabIconDetails, TabState } from '../../types/user-interface-types.js'
 import { PASSTHROUGH_STATE, type BlockTimeManipulation, type CompleteVisualizedSimulation, type NamedTokenId, type ResolvedSimulationResults, type ResolvedSimulationState, type SimulationResultState, type SimulationUpdatingState, type TokenPriceEstimate, type VisualizedSimulationState, toResolvedSimulationResults } from '../../types/visualizer-types.js'
 import type { AddressBookEntries } from '../../types/addressBookTypes.js'
@@ -23,22 +22,36 @@ type LiveSimulationHomeDataOptions = {
 	onInitialSettings?: (settings: Settings) => void
 }
 
+type CachedHomeDataRequest = {
+	refreshSignerAccounts: boolean
+	includeWebsiteAccessAddressMetadata: boolean
+}
+
+type LiveHomeDataUpdateKind = 'metadata' | 'signer-state' | 'simulation-state'
+
+const CACHED_HOME_DATA_REQUESTS: Record<LiveHomeDataUpdateKind, CachedHomeDataRequest> = {
+	metadata: { refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: true },
+	'signer-state': { refreshSignerAccounts: true, includeWebsiteAccessAddressMetadata: true },
+	'simulation-state': { refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: false },
+}
+
 export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions) {
-	const activeAddresses = useSignal<AddressBookEntries>(defaultActiveAddresses)
-	const activeSimulationAddress = useSignal<bigint | undefined>(defaultActiveAddresses[0]?.address)
+	const activeAddresses = useSignal<AddressBookEntries>([])
+	const activeSimulationAddress = useSignal<bigint | undefined>(undefined)
 	const activeSigningAddress = useSignal<bigint | undefined>(undefined)
 	const useSignersAddressAsActiveAddress = useSignal<boolean>(false)
 	const simVisResults = useSignal<ResolvedSimulationResults>(PASSTHROUGH_STATE)
 	const websiteAccess = useSignal<WebsiteAccessArray | undefined>(undefined)
 	const websiteAccessAddressMetadata = useSignal<AddressBookEntries>([])
-	const rpcNetwork = useSignal<RpcNetwork | undefined>(defaultRpcs[0])
+	const rpcNetwork = useSignal<RpcNetwork | undefined>(undefined)
 	const tabIconDetails = useSignal<TabIconDetails>(DEFAULT_TAB_CONNECTION)
 	const isSettingsLoaded = useSignal<boolean>(false)
+	const isFreshHomeDataLoaded = useSignal<boolean>(false)
 	const currentBlockNumber = useSignal<bigint | undefined>(undefined)
 	const tabState = useSignal<TabState | undefined>(undefined)
 	const rpcConnectionStatus = useSignal<RpcConnectionStatus>(undefined)
 	const currentTabId = useSignal<number | undefined>(undefined)
-	const rpcEntries = useSignal<RpcEntries>(defaultRpcs)
+	const rpcEntries = useSignal<RpcEntries>([])
 	const simulationUpdatingState = useSignal<SimulationUpdatingState | undefined>(undefined)
 	const simulationResultState = useSignal<SimulationResultState | undefined>(undefined)
 	const interceptorDisabled = useSignal<boolean>(false)
@@ -50,11 +63,22 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 	const popupIconRefreshGeneration = useSignal(0)
 	const fixedAddressRichList = useSignal<readonly EnrichedRichListElement[]>([])
 	const makeCurrentAddressRich = useSignal<boolean>(false)
-	const simulationMode = useSignal<boolean>(defaultSimulationMode)
+	const simulationMode = useSignal<boolean>(false)
 	const numberOfAddressesMadeRich = useSignal(0)
 
-	const requestCachedHomeData = async (refreshSignerAccounts: boolean, includeWebsiteAccessAddressMetadata: boolean) => {
-		await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData', data: { refreshSignerAccounts, includeWebsiteAccessAddressMetadata } })
+	const requestFreshHomeData = async () => {
+		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
+	}
+	const requestCachedHomeData = async (request: CachedHomeDataRequest) => {
+		await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData', data: request })
+	}
+	const requestHomeDataForLiveUpdate = async (updateKind: LiveHomeDataUpdateKind) => {
+		if (!isFreshHomeDataLoaded.peek() && options.requestFreshHomeDataOnMount) {
+			// A full refresh includes signer accounts and website metadata, so it covers every live-update kind.
+			await requestFreshHomeData()
+			return
+		}
+		await requestCachedHomeData(CACHED_HOME_DATA_REQUESTS[updateKind])
 	}
 
 	useEffect(() => {
@@ -105,8 +129,27 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			websiteAccess.value = settings.websiteAccess
 			simulationMode.value = settings.simulationMode
 		}
-		const updateHomePage = ({ data, popupRefreshGeneration: updateGeneration }: UpdateHomePage) => {
+		const updateHomePageBootstrap = ({ data, popupRefreshGeneration: updateGeneration }: HomePageBootstrap) => {
+			if (isFreshHomeDataLoaded.value) return
 			if (options.filterByTabId !== false && data.tabId !== currentTabId.value && currentTabId.value !== undefined) return
+			const minimumValidGeneration = Math.max(popupRefreshGeneration.value, pendingPopupRefreshGeneration.value)
+			if (shouldIgnoreOutdatedPopupRefreshMessage(updateGeneration, minimumValidGeneration)) return
+			const wasLoaded = isSettingsLoaded.value
+			isSettingsLoaded.value = true
+			activeAddresses.value = data.activeAddresses
+			activeSigningAddress.value = data.activeSigningAddressInThisTab
+			currentTabId.value = data.tabId
+			rpcEntries.value = data.rpcEntries
+			interceptorDisabled.value = data.interceptorDisabled
+			tabState.value = data.tabState
+			tabIconDetails.value = data.tabState.tabIconDetails
+			if (!wasLoaded) options.onInitialSettings?.(data.settings)
+			updateHomePageSettings(data.settings)
+		}
+		const updateHomePage = ({ data, homeDataSource, popupRefreshGeneration: updateGeneration }: UpdateHomePage) => {
+			const waitingForInitialFreshHomeData = options.requestFreshHomeDataOnMount && !isFreshHomeDataLoaded.value
+			if (waitingForInitialFreshHomeData && homeDataSource === 'cached') return
+			if (!waitingForInitialFreshHomeData && options.filterByTabId !== false && data.tabId !== currentTabId.value && currentTabId.value !== undefined) return
 			const minimumValidGeneration = Math.max(popupRefreshGeneration.value, pendingPopupRefreshGeneration.value)
 			if (shouldIgnoreOutdatedPopupRefreshMessage(updateGeneration, minimumValidGeneration)) return
 			popupRefreshGeneration.value = updateGeneration
@@ -115,6 +158,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			}
 			const wasLoaded = isSettingsLoaded.value
 			isSettingsLoaded.value = true
+			if (homeDataSource === 'fresh') isFreshHomeDataLoaded.value = true
 			rpcEntries.value = data.rpcEntries
 			currentTabId.value = data.tabId
 			activeSigningAddress.value = data.activeSigningAddressInThisTab
@@ -130,12 +174,12 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 				popupIconRefreshGeneration.value = updateGeneration
 			}
 			updateVisualizedState(data.visualizedSimulatorState)
-			tabState.value = data.tabState
 			currentBlockNumber.value = data.currentBlockNumber
 			websiteAccessAddressMetadata.value = data.websiteAccessAddressMetadata
 			rpcConnectionStatus.value = data.rpcConnectionStatus
+			tabState.value = data.tabState
 			preSimulationBlockTimeManipulation.value = data.preSimulationBlockTimeManipulation
-			markPerformance(POPUP_PERFORMANCE_MARKS.refreshComplete)
+			if (homeDataSource === 'fresh') markPerformance(POPUP_PERFORMANCE_MARKS.refreshComplete)
 			popupRefreshAppliedGeneration.value += 1
 		}
 
@@ -158,25 +202,28 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			const parsed = maybeParsed.value
 			if (parsed.role === 'confirmTransaction') return undefined
 			switch(parsed.method) {
+				case 'popup_homePageBootstrap':
+					updateHomePageBootstrap(parsed)
+					return undefined
 				case 'popup_UnexpectedErrorOccured':
 					unexpectedError.value = parsed
 					return undefined
 				case 'popup_settingsUpdated':
 					if (shouldIgnoreOutdatedPopupRefreshMessage(parsed.popupRefreshGeneration)) return undefined
 					pendingPopupRefreshGeneration.value = Math.max(pendingPopupRefreshGeneration.value, parsed.popupRefreshGeneration)
-					requestCachedHomeData(false, true)
+					requestHomeDataForLiveUpdate('metadata')
 					return undefined
 				case 'popup_accounts_update':
 				case 'popup_chain_update':
 				case 'popup_signer_name_changed':
-					requestCachedHomeData(true, true)
+					requestHomeDataForLiveUpdate('signer-state')
 					return undefined
 				case 'popup_addressBookEntriesChanged':
 				case 'popup_interceptor_access_changed':
 				case 'popup_websiteAccess_changed':
 				case 'popup_setDisableInterceptorReply':
 				case 'popup_update_rpc_list':
-					requestCachedHomeData(false, true)
+					requestHomeDataForLiveUpdate('metadata')
 					return undefined
 				case 'popup_activeSigningAddressChanged': {
 					if (parsed.data.tabId !== currentTabId.value) return undefined
@@ -198,7 +245,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 					return undefined
 				case 'popup_simulation_state_changed':
 					updateVisualizedState(parsed.data.visualizedSimulatorState)
-					if (options.requestHomeDataOnSimulationStateChange === true) void requestCachedHomeData(false, false)
+					if (options.requestHomeDataOnSimulationStateChange === true) void requestHomeDataForLiveUpdate('simulation-state')
 					return undefined
 			}
 			if (parsed.method !== 'popup_UpdateHomePage') return undefined
@@ -214,10 +261,19 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 
 	useEffect(() => {
 		void (async () => {
-			await requestCachedHomeData(false, false)
 			if (options.requestFreshHomeDataOnMount) {
-				void sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
+				const homePageBootstrapRequest = options.answerMainPopupOpen
+					? sendPopupMessageToBackgroundPage({ method: 'popup_requestHomePageBootstrap' })
+					: undefined
+				const freshHomeDataRequest = requestFreshHomeData()
+				if (homePageBootstrapRequest !== undefined) {
+					await Promise.all([homePageBootstrapRequest, freshHomeDataRequest])
+					return
+				}
+				await freshHomeDataRequest
+				return
 			}
+			await requestCachedHomeData({ refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: false })
 		})()
 	}, [])
 
@@ -232,6 +288,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 		rpcNetwork,
 		tabIconDetails,
 		isSettingsLoaded,
+		isFreshHomeDataLoaded,
 		currentBlockNumber,
 		tabState,
 		rpcConnectionStatus,

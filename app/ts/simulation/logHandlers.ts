@@ -6,6 +6,8 @@ import { extractENSFuses } from '../utils/ethereumNameService.js'
 import type { ParsedEvent, TokenVisualizerResult } from '../types/EnrichedEthereumData.js'
 import { decodeEventStrict } from '../utils/abiRuntime.js'
 
+const isBigintArray = (value: unknown): value is readonly bigint[] => Array.isArray(value) && value.every((entry) => typeof entry === 'bigint')
+
 export function handleERC20TransferLog(eventLog: EthereumEvent): TokenVisualizerResult[] {
 	if (eventLog.topics[1] === undefined || eventLog.topics[2] === undefined) throw new Error('unknown log')
 	const data = {
@@ -85,6 +87,7 @@ export function handleERC1155TransferBatch(eventLog: EthereumEvent): TokenVisual
 	})
 	if (parsed.eventName !== 'TransferBatch') throw new Error('Malformed ERC1155 TransferBatch Event')
 	const { _ids, _values } = parsed.args
+	if (!isBigintArray(_ids) || !isBigintArray(_values)) throw new Error('Malformed ERC1155 TransferBatch Event')
 	return [...Array(_ids.length)].map((_, index) => {
 		if (_ids[index] === undefined || _values[index] === undefined || eventLog.topics[1] === undefined || eventLog.topics[2] === undefined || eventLog.topics[3] === undefined) throw new Error('Malformed ERC1155 TransferBatch Event')
 		const tokenId = _ids[index]

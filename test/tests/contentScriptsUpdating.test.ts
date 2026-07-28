@@ -1,4 +1,5 @@
 import * as assert from 'assert'
+import * as fs from 'node:fs'
 import { describe, test } from 'bun:test'
 import { withSilencedConsole } from './consoleSilence.js'
 
@@ -18,6 +19,7 @@ type BrowserMockOptions = {
 function installBrowserMock({ registerError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead }: BrowserMockOptions = {}) {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
+	const executedScriptFiles: string[] = []
 	let executeScriptCalls = 0
 	let currentTabUrl = tabUrl
 	let committedListener: ((details: browser.webNavigation._OnCommittedDetails) => unknown) | undefined
@@ -66,8 +68,9 @@ function installBrowserMock({ registerError, executeScriptError, tabUrl = 'https
 				async query() { return [{ id: 42, url: currentTabUrl }] },
 				async get() { return hasVisibleTabUrl ? { id: 42, url: currentTabUrl } : { id: 42 } },
 				async update() { return undefined },
-				async executeScript() {
+				async executeScript(_tabId: number, injection: { readonly file?: string }) {
 					executeScriptCalls++
+					if (injection.file !== undefined) executedScriptFiles.push(injection.file)
 					if (executeScriptError !== undefined) throw executeScriptError
 					return undefined
 				},
@@ -105,6 +108,7 @@ function installBrowserMock({ registerError, executeScriptError, tabUrl = 'https
 	return {
 		sentMessages,
 		getExecuteScriptCalls() { return executeScriptCalls },
+		getExecutedScriptFiles() { return [...executedScriptFiles] },
 		getCommittedListener() {
 			if (committedListener === undefined) throw new Error('webNavigation listener was not registered')
 			return committedListener
@@ -130,7 +134,34 @@ async function loadModules() {
 	}
 }
 
-describe('content script injection strategy errors', () => {
+function getManifestV2WebAccessibleResources() {
+	const manifest: unknown = JSON.parse(fs.readFileSync('app/manifestV2.json', 'utf8'))
+	if (typeof manifest !== 'object' || manifest === null || !('web_accessible_resources' in manifest)) throw new Error('Manifest V2 must declare web-accessible resources')
+	const resources = manifest.web_accessible_resources
+	if (!Array.isArray(resources) || !resources.every((resource) => typeof resource === 'string')) throw new Error('Manifest V2 web-accessible resources must be strings')
+	return resources
+}
+
+describe('content script injection strategy', () => {
+	test('exposes every manifest v2 injected file to Firefox', async () => {
+		const { getCommittedListener, getExecutedScriptFiles } = installBrowserMock()
+		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+
+		await updateContentScriptInjectionStrategyManifestV2()
+		await getCommittedListener()(committedDetails)
+
+		const injectedFiles = [
+			'/vendor/webextension-polyfill/dist/browser-polyfill.js',
+			'/inpage/js/listenContentScript.js',
+			'/inpage/js/document_start.js',
+		]
+		assert.deepEqual(getExecutedScriptFiles(), injectedFiles)
+		assert.deepEqual(getManifestV2WebAccessibleResources(), [
+			...injectedFiles.map((file) => file.slice(1)),
+			'inpage/js/inpage.js',
+		])
+	})
+
 	test('records manifest v3 registration failures as unexpected errors', async () => {
 		const { sentMessages } = installBrowserMock({ registerError: new Error('registration failed') })
 		const { updateContentScriptInjectionStrategyManifestV3, getLatestUnexpectedError } = await loadModules()

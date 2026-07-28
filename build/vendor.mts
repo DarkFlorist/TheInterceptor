@@ -24,146 +24,22 @@ const vendoredDependencies = [
 	'@noble/hashes/crypto',
 	'@noble/curves/stark',
 	'@darkflorist/address-metadata',
-	'viem/utils',
-	'viem/ens',
-	'viem/accounts',
+	'micro-eth-signer',
+	'micro-eth-signer/advanced/abi.js',
+	'micro-eth-signer/core/rlp.js',
+	'micro-eth-signer/utils.js',
 ] as const
 
 const extraPackageRoots = [
-	'ox',
-	'abitype',
-	'@adraffy/ens-normalize',
-	'@scure/base',
-	'@scure/bip32',
-	'@scure/bip39',
-	'eventemitter3',
 	'@noble/ciphers',
+	'@scure/base',
+	'micro-packed',
 ] as const
 
 const vendorTypeShims = [
 	{
-		pathParts: ['viem', '_esm', 'utils', 'index.d.ts'],
-		contents: 'export * from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'ens', 'index.d.ts'],
-		contents: 'export * from \'viem/ens\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'accounts', 'index.d.ts'],
-		contents: 'export * from \'viem/accounts\'\n',
-	},
-	{
 		pathParts: ['@noble', 'hashes', 'esm', 'sha3.d.ts'],
 		contents: 'export * from \'@noble/hashes/sha3\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'abi', 'decodeAbiParameters.d.ts'],
-		contents: 'export { decodeAbiParameters } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'abi', 'decodeEventLog.d.ts'],
-		contents: 'export { decodeEventLog } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'abi', 'decodeFunctionData.d.ts'],
-		contents: 'export { decodeFunctionData } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'abi', 'encodeAbiParameters.d.ts'],
-		contents: 'export { encodeAbiParameters } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'abi', 'encodePacked.d.ts'],
-		contents: 'export { encodePacked } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'abi', 'formatAbiItem.d.ts'],
-		contents: 'export { formatAbiItem } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'address', 'getAddress.d.ts'],
-		contents: 'export { getAddress } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'address', 'getContractAddress.d.ts'],
-		contents: 'export { getCreate2Address } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'address', 'isAddress.d.ts'],
-		contents: 'export { isAddress } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'data', 'concat.d.ts'],
-		contents: 'export { concat } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'encoding', 'toHex.d.ts'],
-		contents: 'export { bytesToHex } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'encoding', 'toBytes.d.ts'],
-		contents: 'export { stringToBytes } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'encoding', 'toRlp.d.ts'],
-		contents: 'export { toRlp } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'ens', 'namehash.d.ts'],
-		contents: 'export { namehash } from \'viem/ens\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'hash', 'keccak256.d.ts'],
-		contents: 'export { keccak256 } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'hash', 'toEventSelector.d.ts'],
-		contents: 'export { toEventSelector } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'hash', 'toFunctionSelector.d.ts'],
-		contents: 'export { toFunctionSelector } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'signature', 'recoverAddress.d.ts'],
-		contents: 'export { recoverAddress } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'signature', 'hashMessage.d.ts'],
-		contents: 'export { hashMessage } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'signature', 'hashTypedData.d.ts'],
-		contents: 'export { hashStruct, hashTypedData } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'transaction', 'parseTransaction.d.ts'],
-		contents: 'export { parseTransaction } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'transaction', 'serializeTransaction.d.ts'],
-		contents: 'export { serializeTransaction } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'utils', 'unit', 'formatUnits.d.ts'],
-		contents: 'export { formatUnits } from \'viem/utils\'\n',
-	},
-	{
-		pathParts: ['viem', '_esm', 'accounts', 'privateKeyToAccount.d.ts'],
-		contents: 'export { privateKeyToAccount } from \'viem/accounts\'\n',
-	},
-	{
-		pathParts: ['abitype', 'dist', 'esm', 'human-readable', 'parseAbiItem.d.ts'],
-		contents: 'export { parseAbiItem } from \'abitype\'\n',
-	},
-	{
-		pathParts: ['abitype', 'dist', 'esm', 'human-readable', 'parseAbiParameters.d.ts'],
-		contents: 'export { parseAbiParameters } from \'abitype\'\n',
-	},
-	{
-		pathParts: ['@adraffy', 'ens-normalize', 'dist', 'index.d.ts'],
-		contents: 'export { ens_normalize } from \'@adraffy/ens-normalize\'\n',
 	},
 ] as const
 
@@ -174,21 +50,40 @@ const vendoredPackageRoots = [...new Set([
 	...extraPackageRoots,
 ])]
 
-async function recursiveDirectoryCopy(source: string, destination: string, include?: (path: string, fileType: 'directory' | 'file') => Promise<boolean>, transform?: (sourcePath: string, destinationPath: string) => Promise<void>) {
+const maximumConcurrentFileOperations = 32
+let activeFileOperations = 0
+const pendingFileOperationResolvers: (() => void)[] = []
+
+async function runWithFileOperationLimit<T>(operation: () => Promise<T>) {
+	if (activeFileOperations >= maximumConcurrentFileOperations) {
+		await new Promise<void>((resolve) => pendingFileOperationResolvers.push(resolve))
+	}
+	activeFileOperations++
+	try {
+		return await operation()
+	} finally {
+		activeFileOperations--
+		pendingFileOperationResolvers.shift()?.()
+	}
+}
+
+async function recursiveDirectoryCopy(source: string, destination: string, include?: (path: string, fileType: 'directory' | 'file') => Promise<boolean>, transformFile?: (sourcePath: string, destinationPath: string) => Promise<void>) {
 	const entries = await fs.readdir(source, { withFileTypes: true })
 	await fs.mkdir(destination, { recursive: true })
-	for (const entry of entries) {
+	await Promise.all(entries.map(async (entry) => {
 		const sourcePath = path.join(source, entry.name)
 		const destinationPath = path.join(destination, entry.name)
 		if (entry.isDirectory()) {
-			if (include && !await include(sourcePath, 'directory')) continue
-			await recursiveDirectoryCopy(sourcePath, destinationPath, include, transform)
+			if (include && !await include(sourcePath, 'directory')) return
+			await recursiveDirectoryCopy(sourcePath, destinationPath, include, transformFile)
 		} else {
-			if (include && !await include(sourcePath, 'file')) continue
-			await fs.copyFile(sourcePath, destinationPath)
+			if (include && !await include(sourcePath, 'file')) return
+			await runWithFileOperationLimit(async () => {
+				await fs.copyFile(sourcePath, destinationPath)
+				await transformFile?.(sourcePath, destinationPath)
+			})
 		}
-		await transform?.(sourcePath, destinationPath)
-	}
+	}))
 }
 
 async function vendorDependencies() {
@@ -196,30 +91,30 @@ async function vendorDependencies() {
 	for (const packageRoot of vendoredPackageRoots) {
 		const sourceDirectoryPath = path.join(nodeModulesDirectory, packageRoot)
 		const destinationDirectoryPath = path.join(directoryOfThisFile, '..', 'app', 'vendor', packageRoot)
-		async function inclusionPredicate(path: string, fileType: 'directory' | 'file') {
-			if (/[.](?:spec|test|bench)[.][cm]?[jt]s$/.test(path)) return false
-			if (/(?:^|[\\/])(?:test|tests|__tests__|benchmark|benchmarks)(?:[\\/]|$)/.test(path)) return false
-			if (path.endsWith('.js')) return true
-			if (path.endsWith('.ts')) return true
-			if (path.endsWith('.mjs')) return true
-			if (path.endsWith('.mts')) return true
-			if (path.endsWith('package.json')) return true
-			if (path.endsWith('.map')) return true
-			if (path.endsWith('.git') || path.endsWith('.git/') || path.endsWith('.git\\')) return false
-			if (path.includes('address-metadata/lib/images') || path.includes('address-metadata\\lib\\images')) return true
+		async function inclusionPredicate(candidatePath: string, fileType: 'directory' | 'file') {
+			if (packageRoot === '@darkflorist/address-metadata' && candidatePath === path.join(sourceDirectoryPath, 'lib', 'images')) return false
+			if (/[.](?:spec|test|bench)[.][cm]?[jt]s$/.test(candidatePath)) return false
+			if (/(?:^|[\\/])(?:test|tests|__tests__|benchmark|benchmarks)(?:[\\/]|$)/.test(candidatePath)) return false
+			if (candidatePath.endsWith('.js')) return true
+			if (candidatePath.endsWith('.ts')) return true
+			if (candidatePath.endsWith('.mjs')) return true
+			if (candidatePath.endsWith('.mts')) return true
+			if (candidatePath.endsWith('package.json')) return true
+			if (candidatePath.endsWith('.map')) return true
+			if (candidatePath.endsWith('.git') || candidatePath.endsWith('.git/') || candidatePath.endsWith('.git\\')) return false
 			if (fileType === 'directory') return true
 			return false
 		}
 		await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath, inclusionPredicate, rewriteSourceMapSourcePath.bind(undefined, packageRoot))
 		await rewriteNestedNodeModulesDirectory(destinationDirectoryPath)
-		if (packageRoot === '@darkflorist/address-metadata') await exposeAddressMetadataImagesAtPackageRoot(destinationDirectoryPath)
+		if (packageRoot === '@darkflorist/address-metadata') await copyAddressMetadataImagesToPackageRoot(sourceDirectoryPath, destinationDirectoryPath)
 	}
 	await writeVendorTypeShims()
 }
 
-async function exposeAddressMetadataImagesAtPackageRoot(packageDirectoryPath: string) {
-	const sourceDirectoryPath = path.join(packageDirectoryPath, 'lib', 'images')
-	const destinationDirectoryPath = path.join(packageDirectoryPath, 'images')
+async function copyAddressMetadataImagesToPackageRoot(sourcePackageDirectoryPath: string, destinationPackageDirectoryPath: string) {
+	const sourceDirectoryPath = path.join(sourcePackageDirectoryPath, 'lib', 'images')
+	const destinationDirectoryPath = path.join(destinationPackageDirectoryPath, 'images')
 	const sourceStats = await fs.stat(sourceDirectoryPath)
 	if (!sourceStats.isDirectory()) return
 	await recursiveDirectoryCopy(sourceDirectoryPath, destinationDirectoryPath)

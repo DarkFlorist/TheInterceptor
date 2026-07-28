@@ -14,7 +14,7 @@ export function assertUnreachable(value: never): never {
 
 export const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean'
 export const isString = (value: unknown): value is string => typeof value === 'string'
-export const isNumber = (value: unknown): value is number => typeof value === 'number'
+const isNumber = (value: unknown): value is number => typeof value === 'number'
 export const isBigint = (value: unknown): value is bigint => typeof value === 'bigint'
 export const isNumberOrBigint = (value: unknown): value is number | bigint => isNumber(value) || isBigint(value)
 

@@ -217,7 +217,7 @@ export function SimulationStackPage() {
 		activeAddresses,
 		simVisResults,
 		rpcNetwork,
-		isSettingsLoaded,
+		isFreshHomeDataLoaded,
 		currentBlockNumber,
 		rpcConnectionStatus,
 		rpcEntries,
@@ -335,7 +335,7 @@ export function SimulationStackPage() {
 
 	return <main>
 		<div class = 'layout simulation-stack-page'>
-			{ !isSettingsLoaded.value ? <>
+			{ !isFreshHomeDataLoaded.value ? <>
 				<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>
 				<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 				{ rpcNetwork.value?.httpsRpc === undefined && rpcNetwork.value !== undefined ?

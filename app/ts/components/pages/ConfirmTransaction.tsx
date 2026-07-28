@@ -35,18 +35,19 @@ import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/bro
 import { POPUP_PERFORMANCE_MARKS, markPerformance, markPerformanceOnce } from '../../utils/popupPerformance.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
-import { dataStringWith0xStart } from '../../utils/bigint.js'
+import { bigintToDecimalString, dataStringWith0xStart } from '../../utils/bigint.js'
 import { browserStorageLocalGet2 } from '../../utils/storageUtils.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
+import type { SignerName } from '../../types/signerTypes.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: ReadonlySignal<PendingTransactionOrSignableMessage[]>
 }
 
 export const CONFIRM_TRANSACTION_BOOTSTRAP_RETRY_DELAY_MS = 150
-export const CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS = 10
+const CONFIRM_TRANSACTION_BOOTSTRAP_MAX_ATTEMPTS = 10
 const CONFIRM_TRANSACTION_DATA_PRIORITY = {
 	storage: 1,
 	bootstrap: 2,
@@ -62,7 +63,7 @@ type ConfirmTransactionBootstrapData = {
 	visualizedSimulatorState: CompleteVisualizedSimulation
 }
 
-export async function bootstrapConfirmTransactionDialog(
+async function bootstrapConfirmTransactionDialog(
 	hasLoadedPendingTransaction: () => boolean,
 	applyBootstrapData: (bootstrapData: ConfirmTransactionBootstrapData) => void,
 ) {
@@ -182,7 +183,7 @@ type TransactionNamesParams = {
 	currentPendingTransaction: Signal<PendingTransactionOrSignableMessage| undefined>
 }
 
-export const TransactionNames = (param: TransactionNamesParams) => {
+const TransactionNames = (param: TransactionNamesParams) => {
 	if (param.completeVisualizedSimulation.value.simulationResultState !== 'done' || param.completeVisualizedSimulation.value.simulationState.kind === 'passthrough') return <></>
 
 	const titleOfCurrentPendingTransaction = () => {
@@ -284,7 +285,7 @@ function FailedTransactionPreviewDetails({
 					<dt>To</dt>
 					<dd>{ to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { to } renameAddressCallBack = { () => undefined } /> }</dd>
 					<dt>Value</dt>
-					<dd>{ request?.value === undefined ? 'Unknown' : `${ request.value.toString(10) } wei` }</dd>
+					<dd>{ request === undefined ? 'Unknown' : `${ bigintToDecimalString(request.value ?? 0n, 18n) } ether` }</dd>
 					<dt>Gas limit </dt>
 					<dd>
 						<GasLimitEditor transactionIdentifier = { transactionIdentifier } initialGasLimit = { gasLimit } isRawTransaction = { originalRequestParameters.method === 'eth_sendRawTransaction' } />
@@ -315,7 +316,7 @@ function FailedTransactionPreviewDetails({
 	</div>
 }
 
-export function TransactionCard(param: TransactionCardParams) {
+function TransactionCard(param: TransactionCardParams) {
 	const renderablePendingTransaction = useComputed(() => getRenderableTransaction(param.currentPendingTransaction.value))
 	if (renderablePendingTransaction.value === undefined) return <></>
 	return <TransactionCardContent
@@ -548,7 +549,50 @@ type ButtonsParams = {
 	approveButtonState: AsyncStates
 	confirmDisabled: boolean
 }
-function Buttons({ currentPendingTransactionOrSignableMessage, reject, rejectButtonState, approve, approveButtonState, confirmDisabled }: ButtonsParams) {
+
+type ConfirmationActionButtonsParams = Omit<ButtonsParams, 'currentPendingTransactionOrSignableMessage'> & {
+	identified: {
+		signingAction: string
+		simulationAction: string
+		rejectAction: string
+	}
+	signerName: SignerName
+	simulationMode: boolean
+	waitingForSigner: boolean
+}
+
+export function ConfirmationActionButtons({ identified, signerName, simulationMode, waitingForSigner, reject, rejectButtonState, approve, approveButtonState, confirmDisabled }: ConfirmationActionButtonsParams) {
+	return <div style = 'display: flex; flex-direction: row;'>
+		<AsyncActionButton
+			class = 'button is-primary is-danger button-overflow dialog-action-button'
+			state = { rejectButtonState }
+			disabled = { approveButtonState === 'pending' }
+			text = { identified.rejectAction }
+			pendingText = 'Rejecting...'
+			onClick = { reject }
+		/>
+		<AsyncActionButton
+			class = 'button is-primary button-overflow dialog-action-button'
+			state = { approveButtonState }
+			text = { waitingForSigner
+				? <><span> <Spinner height = '1em' color = 'var(--text-color)' /> Waiting for <SignersLogoName signerName = { signerName } /> </span></>
+				: simulationMode
+					? `${ identified.simulationAction }!`
+					: <SignerLogoText signerName = { signerName } text = { identified.signingAction } />
+			}
+			pendingText = { waitingForSigner
+				? 'Waiting for signer...'
+				: simulationMode
+					? `${ identified.simulationAction }...`
+					: `Sign with ${ signerName }...`
+			}
+			onClick = { approve }
+			disabled = { confirmDisabled || rejectButtonState === 'pending' }
+		/>
+	</div>
+}
+
+function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, reject, rejectButtonState, approve, approveButtonState, confirmDisabled }: ButtonsParams) {
 	if (currentPendingTransactionOrSignableMessage === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
 	if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return <RejectButton onClick = { reject } state = { rejectButtonState }/>
 
@@ -562,34 +606,17 @@ function Buttons({ currentPendingTransactionOrSignableMessage, reject, rejectBut
 	const identified = identify()
 	if (identified === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
 
-	return <div style = 'display: flex; flex-direction: row;'>
-		<AsyncActionButton
-			class = 'button is-primary is-danger button-overflow dialog-action-button'
-			state = { rejectButtonState }
-			disabled = { approveButtonState === 'pending' }
-			text = { identified.rejectAction }
-			pendingText = 'Rejecting...'
-			onClick = { reject }
-		/>
-		<AsyncActionButton
-			class = 'button is-primary button-overflow dialog-action-button'
-			state = { approveButtonState }
-			text = { currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner'
-				? <><span> <Spinner height = '1em' color = 'var(--text-color)' /> Waiting for <SignersLogoName signerName = { signerName } /> </span></>
-				: currentPendingTransactionOrSignableMessage.simulationMode
-					? `${ identified.simulationAction }!`
-					: <SignerLogoText signerName = { signerName } text = { identified.signingAction } />
-			}
-			pendingText = { currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner'
-				? 'Waiting for signer...'
-				: currentPendingTransactionOrSignableMessage.simulationMode
-					? `${ identified.simulationAction }...`
-					: `Sign with ${ signerName }...`
-			}
-			onClick = { approve }
-			disabled = { confirmDisabled || rejectButtonState === 'pending' }
-		/>
-	</div>
+	return <ConfirmationActionButtons
+		identified = { identified }
+		signerName = { signerName }
+		simulationMode = { currentPendingTransactionOrSignableMessage.simulationMode }
+		waitingForSigner = { currentPendingTransactionOrSignableMessage.approvalStatus.status === 'WaitingForSigner' }
+		reject = { reject }
+		rejectButtonState = { rejectButtonState }
+		approve = { approve }
+		approveButtonState = { approveButtonState }
+		confirmDisabled = { confirmDisabled }
+	/>
 }
 
 export function ConfirmTransaction() {
@@ -941,7 +968,7 @@ export function ConfirmTransaction() {
 						</div>
 						<nav class = 'window-footer popup-button-row' style = 'position: sticky; bottom: 0; width: 100%;'>
 							<CheckBoxes currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage } forceSend = { forceSend } />
-					<Buttons
+					<ConfirmationButtons
 						currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage.value }
 						reject = { reject }
 						rejectButtonState = { rejectButtonState.value.state }

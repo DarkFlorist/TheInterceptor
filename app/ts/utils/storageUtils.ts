@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
-import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
+import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
 import { BlockTimeManipulation, CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'
 import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addressBookTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
@@ -83,6 +83,7 @@ const LocalStorageItemsRuntype = funtypes.ReadonlyPartial({
 	preSimulationBlockTimeManipulation: BlockTimeManipulation,
 	fixedAddressRichList: funtypes.ReadonlyArray(RichListElement),
 	fetchSimulationStackRequestPromise: funtypes.Union(funtypes.Undefined, PendingFetchSimulationStackRequestPromise),
+	pendingWatchAssetRequests: funtypes.ReadonlyArray(StoredWatchAssetRequest),
 	popupRefreshGeneration: funtypes.Number,
 	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
 })
@@ -123,6 +124,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('preSimulationBlockTimeManipulation'),
 	funtypes.Literal('fixedAddressRichList'),
 	funtypes.Literal('fetchSimulationStackRequestPromise'),
+	funtypes.Literal('pendingWatchAssetRequests'),
 	funtypes.Literal('popupRefreshGeneration'),
 	funtypes.Literal('pendingTerminalReplies'),
 )

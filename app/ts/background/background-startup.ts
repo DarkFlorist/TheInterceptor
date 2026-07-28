@@ -37,6 +37,7 @@ import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { registerTopSignerDocument, releaseSignerSelectionLeasesForTab } from './signerSelectionLease.js'
 import { getChildSignerConnectionSynchronization } from './signerProviderSelection.js'
 import { getWebsiteDetailsForConnection } from './websiteConnectionMetadata.js'
+import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 let simulationServices: SimulationServices | undefined
@@ -144,16 +145,16 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 	})()
 	silenceChromeUnCaughtPromise(websitePromise)
 
-	const tabConnection = websiteTabConnections.get(socket.tabId)
 	const newConnection = { port, socket, websiteOrigin, frameId: port.sender?.frameId, approved: false, wantsToConnect: false }
 	let startsNewSignerDocument = false
 	let childSignerCatalogResynchronizationNeeded = false
+	const isTopFrame = port.sender.frameId === undefined || port.sender.frameId === 0
 
 	const listenersRegistered = tryRegisterContentScriptPortListeners(
 		port,
 		() => {
 			catchAllErrorsAndCall(async () => {
-				if (removeWebsiteTabConnection(websiteTabConnections, socket, port)) scheduleCurrentChildSignerSocketRemoval(socket)
+				if (await removeWebsiteTabConnection(websiteTabConnections, socket, port)) scheduleCurrentChildSignerSocketRemoval(socket)
 			})
 		},
 		(payload) => {
@@ -197,11 +198,9 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 			&& latestReceivedBridgeRequestIds.has(identifier)
 	}
 
-	if (tabConnection === undefined) {
-		websiteTabConnections.set(socket.tabId, {
-			connections: { [identifier]: newConnection },
-		})
-		if (port.sender?.frameId === 0) await updateTabState(socket.tabId, (previousState: TabState) => {
+	const registration = await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, newConnection, isTopFrame)
+	if (registration.createdTabConnection) {
+		await updateTabState(socket.tabId, (previousState: TabState) => {
 			return modifyObject(previousState, {
 				website: { websiteOrigin, icon: undefined, title: undefined },
 				availableSignerProviders: [],
@@ -212,19 +211,17 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 				tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
 			})
 		})
-		if (port.sender?.frameId === 0) void catchAllErrorsAndCall(async () => updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration()))
-	} else {
-		tabConnection.connections[identifier] = newConnection
-		if (port.sender?.frameId === 0 && startsNewSignerDocument) {
-			await updateTabState(socket.tabId, (previousState: TabState) => modifyObject(previousState, {
-				website: { websiteOrigin, icon: undefined, title: undefined },
-				availableSignerProviders: [],
-				selectedSignerProvider: undefined,
-				explicitlySelectedSignerProviderUuid: undefined,
-				preferredSignerUnavailable: false,
-				signerProviderCatalogOverflowed: false,
-			}))
-		}
+		void catchAllErrorsAndCall(async () => updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration()))
+	}
+	if (!registration.createdTabConnection && startsNewSignerDocument) {
+		await updateTabState(socket.tabId, (previousState: TabState) => modifyObject(previousState, {
+			website: { websiteOrigin, icon: undefined, title: undefined },
+			availableSignerProviders: [],
+			selectedSignerProvider: undefined,
+			explicitlySelectedSignerProviderUuid: undefined,
+			preferredSignerUnavailable: false,
+			signerProviderCatalogOverflowed: false,
+		}))
 	}
 	if (startsNewSignerDocument) {
 		const currentConnections = websiteTabConnections.get(socket.tabId)
@@ -236,6 +233,9 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 	if (port.sender?.frameId !== 0) {
 		const synchronization = getChildSignerConnectionSynchronization(socket, websiteOrigin, childSignerCatalogResynchronizationNeeded)
 		if (synchronization !== undefined) sendSubscriptionReplyOrCallBackToPort(port, synchronization)
+	}
+	if (registration.provisionallyClaimedSignerState) {
+		sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_connection_status', result: [] })
 	}
 	await flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, port)
 	try {

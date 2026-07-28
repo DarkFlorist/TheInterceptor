@@ -5,7 +5,7 @@ import { commonTokenOops } from './protectors/commonTokenOops.js'
 import { eoaApproval } from './protectors/eoaApproval.js'
 import { eoaCalldata } from './protectors/eoaCalldata.js'
 import { tokenToContract } from './protectors/tokenToContract.js'
-import type { WebsiteCreatedEthereumUnsignedTransaction, SimulationState } from '../types/visualizer-types.js'
+import type { WebsiteCreatedEthereumTransaction, SimulationState } from '../types/visualizer-types.js'
 import { sendToNonContact } from './protectors/sendToNonContactAddress.js'
 import { chainIdMismatch } from './protectors/chainIdMismatch.js'
 import { promiseAllMapAbortSafe } from '../utils/requests.js'
@@ -21,7 +21,7 @@ const PROTECTORS = [
 	chainIdMismatch,
 ]
 
-export const runProtectorsForTransaction = async (simulationState: SimulationState, transaction: WebsiteCreatedEthereumUnsignedTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
+export const runProtectorsForTransaction = async (simulationState: SimulationState, transaction: WebsiteCreatedEthereumTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined) => {
 	const reasons = await promiseAllMapAbortSafe(PROTECTORS, async (protectorMethod) => await protectorMethod(transaction.transaction, ethereum, requestAbortController, simulationState))
 	const filteredReasons = reasons.filter((reason): reason is string => reason !== undefined)
 	return {

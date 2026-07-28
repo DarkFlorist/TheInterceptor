@@ -106,7 +106,7 @@ type ActiveAddressParams = {
 }
 
 export function ActiveAddressComponent(params: ActiveAddressParams) {
-	return <div class = 'log-table' style = 'grid-template-columns: auto max-content'>
+	return <div class = 'log-table active-address-row'>
 		<div class = 'log-cell' style = 'display: block;'>
 			<BigAddress
 				addressBookEntry = { params.activeAddress }

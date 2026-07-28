@@ -5,7 +5,7 @@ import { identifyAddress } from '../background/metadataUtils.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { type EnrichedGroupedSolidityType, type PureFlatGroupedSolidityType, type PureGroupedSolidityType, SignedBigInt, SolidityType, type SolidityVariable } from '../types/solidityType.js'
 import { promiseAllMapAbortSafe } from './requests.js'
-import type { AbiParameter } from 'viem'
+import type { AbiParameter } from './ethereumPrimitives.js'
 
 function getSolidityTypeCategory(type: SolidityType) {
 	switch(type) {
@@ -183,7 +183,7 @@ const parseTupleArray = (components: readonly AbiParameter[], value: unknown) =>
 	return value.map((tupleValue) => parseTupleComponents(components, tupleValue))
 }
 
-export function parseAbiParameterToSolidityValue(parameter: AbiParameter, value: unknown): PureGroupedSolidityType {
+function parseAbiParameterToSolidityValue(parameter: AbiParameter, value: unknown): PureGroupedSolidityType {
 	const scalarAbiType = removeSingleArraySuffix(parameter.type)
 	const isArray = scalarAbiType !== parameter.type
 	const indexedHash = isIndexedAbiParameter(parameter) ? parseIndexedHash(value) : undefined
@@ -207,7 +207,7 @@ export function parseAbiParametersToSolidityVariables(parameters: readonly AbiPa
 	})
 }
 
-export function parseSolidityValueByTypePure(type: SolidityType, value: unknown, isArray: boolean): PureFlatGroupedSolidityType {
+function parseSolidityValueByTypePure(type: SolidityType, value: unknown, isArray: boolean): PureFlatGroupedSolidityType {
 	const categorized = getSolidityTypeCategory(type)
 	if (isArray) {
 		switch (categorized) {

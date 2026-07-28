@@ -1,5 +1,5 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumUnsignedTransactions, mockSignTransaction, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { DEFAULT_BLOCK_MANIPULATION, appendTransactionToInputAndSimulate, calculateRealizedEffectiveGasPrice, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, mockSignTransaction, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { runProtectorsForTransaction } from '../simulation/protectorRunner.js'
@@ -24,7 +24,7 @@ import { craftPersonalSignPopupMessage } from './windows/personalSign.js'
 import { formSimulatedAndVisualizedTransactions, getFromAndToMetadata } from '../components/formVisualizerResults.js'
 import { promiseAllMapAbortSafe, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { getUpdatedSimulationState } from './background.js'
-import type { Abi } from 'viem'
+import type { Abi } from '../utils/ethereumPrimitives.js'
 import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
@@ -333,10 +333,20 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 		if (simulationState.kind === 'passthrough') throw new Error('Failed to fetch simulation state for Gnosis Safe transaction.')
 		if (simulationState.value.success === false) throw new JsonRpcResponseError(simulationState.value.jsonRpcError)
 		const resolvedSimulationState = simulationState.value
+		const getTemporaryAccountOverrides = async () => {
+			if (!isDelegateCall) return {}
+			const gnosisSafeCode = await getSimulatedCode(ethereumClientService, undefined, { kind: 'simulated', value: resolvedSimulationState }, gnosisSafeMessage.verifyingContract.address)
+			if (gnosisSafeCode?.getCodeReturn === undefined) throw new Error('Failed to simulate gnosis safe transaction. Could not retrieve gnosis safe code.')
+			return {
+				[addressString(gnosisSafeMessage.verifyingContract.address)]: { code: getGnosisSafeProxyProxy() },
+				[addressString(ORIGINAL_GNOSIS_SAFE)]: { code: gnosisSafeCode.getCodeReturn }
+			}
+		}
+		const temporaryAccountOverrides = await getTemporaryAccountOverrides()
 		const gasLimit = gnosisSafeMessage.message.message.baseGas !== 0n ? {
 			gas: gnosisSafeMessage.message.message.baseGas
 		} : await (async () => {
-			const estimateGas = await simulateEstimateGasFromInput(ethereumClientService, undefined, toResolvedSimulationInput(simulationInput), transactionWithoutGas)
+			const estimateGas = await simulateEstimateGasFromInput(ethereumClientService, undefined, toResolvedSimulationInput(simulationInput), transactionWithoutGas, undefined, temporaryAccountOverrides)
 			if ('error' in estimateGas) throw new Error(estimateGas.error.message)
 			return { gas: estimateGas.gas }
 		})()
@@ -348,16 +358,6 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] },
 			transactionIdentifier: gnosisSafeMessage.messageIdentifier,
 		}
-		const getTemporaryAccountOverrides = async () => {
-			if (!isDelegateCall) return {}
-			const gnosisSafeCode = await getSimulatedCode(ethereumClientService, undefined, { kind: 'simulated', value: resolvedSimulationState }, gnosisSafeMessage.verifyingContract.address)
-			if (gnosisSafeCode?.getCodeReturn === undefined) throw new Error('Failed to simulate gnosis safe transaction. Could not retrieve gnosis safe code.')
-			return {
-				[addressString(gnosisSafeMessage.verifyingContract.address)]: { code: getGnosisSafeProxyProxy() },
-				[addressString(ORIGINAL_GNOSIS_SAFE)]: { code: gnosisSafeCode.getCodeReturn }
-			}
-		}
-		const temporaryAccountOverrides = await getTemporaryAccountOverrides()
 		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransactionToInputAndSimulate(ethereumClientService, undefined, simulationInput, [metaTransaction], undefined, temporaryAccountOverrides)
 		return { success: true as const, result: await visualizeSimulatorState(simulationStateAfterGnosisSafeMetaTransaction, ethereumClientService, tokenPriceService, undefined) }
 	} catch(error) {
@@ -381,7 +381,7 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 			)
 			const parsedInputDataForEachBlockAndTransactionPromise = silenceChromeUnCaughtPromise(promiseAllMapAbortSafe(
 				prevState.simulationState.value.simulatedBlocks, async (block) => {
-					const transactions = getWebsiteCreatedEthereumUnsignedTransactions(block.simulatedTransactions)
+					const transactions = getWebsiteCreatedEthereumTransactions(block.simulatedTransactions)
 					return promiseAllMapAbortSafe(transactions, (transaction) =>
 						parseInputData({ to: transaction.transaction.to, input: transaction.transaction.input, value: transaction.transaction.value }, ethereum, requestAbortController)
 					)
@@ -506,7 +506,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 	)
 	const protectorsForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(
 		simulationState.simulatedBlocks, async (block, blockIndex) => {
-			const transactions = getWebsiteCreatedEthereumUnsignedTransactions(block.simulatedTransactions)
+			const transactions = getWebsiteCreatedEthereumTransactions(block.simulatedTransactions)
 			return await promiseAllMapAbortSafe(transactions, async (transaction, transactionIndex) => {
 				const slicedSimulationState = sliceSimulationState(simulationState, blockIndex, transactionIndex)
 				return await runProtectorsForTransaction(slicedSimulationState, transaction, ethereum, requestAbortController)

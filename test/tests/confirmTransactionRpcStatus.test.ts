@@ -179,6 +179,43 @@ function makePendingTransaction(errorMessage = 'simulation failed') {
 	}
 }
 
+function makeUnexpectedSimulationFailurePendingTransaction(errorMessage: string) {
+	const failedPendingTransaction = makePendingTransaction(errorMessage)
+	const originalTransaction = failedPendingTransaction.originalRequestParameters.params[0]
+	const transactionToSimulate = {
+		website: failedPendingTransaction.website,
+		created: failedPendingTransaction.created,
+		originalRequestParameters: failedPendingTransaction.originalRequestParameters,
+		transactionIdentifier: failedPendingTransaction.transactionIdentifier,
+		success: true as const,
+		transaction: {
+			type: '1559' as const,
+			from: originalTransaction.from,
+			nonce: 0n,
+			maxFeePerGas: originalTransaction.maxFeePerGas,
+			maxPriorityFeePerGas: originalTransaction.maxPriorityFeePerGas,
+			gas: originalTransaction.gas,
+			to: originalTransaction.to,
+			value: originalTransaction.value,
+			input: originalTransaction.input,
+			chainId: 1n,
+			accessList: [],
+		},
+	}
+	return {
+		...failedPendingTransaction,
+		transactionOrMessageCreationStatus: 'Simulated' as const,
+		transactionToSimulate,
+		popupVisualisation: {
+			...failedPendingTransaction.popupVisualisation,
+			data: {
+				...failedPendingTransaction.popupVisualisation.data,
+				transactionToSimulate,
+			},
+		},
+	}
+}
+
 describe('confirm transaction rpc status bootstrap', () => {
 	test('includes rpcConnectionStatus in the initial payload and renders the warning before later push events', async () => {
 		const browser = installBrowserMock()
@@ -382,7 +419,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 		dom.restore()
 	})
 
-	test('hydrates pending transaction details from storage when the initial popup push is missed', async () => {
+	test('renders an unexpected simulation failure instead of a simulation spinner', async () => {
 		const dom = installDomMock()
 		installBrowserMock((message) => {
 			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
@@ -400,7 +437,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 		])
 
 		await browserStorageLocalSet2({
-			pendingTransactionsAndMessages: [makePendingTransaction()],
+			pendingTransactionsAndMessages: [makeUnexpectedSimulationFailurePendingTransaction('Failed to decode ABI data')],
 		})
 
 		await act(() => {
@@ -408,7 +445,8 @@ describe('confirm transaction rpc status bootstrap', () => {
 		})
 		await new Promise((resolve) => setTimeout(resolve, 25))
 
-		assert.equal(dom.document.body.textContent?.includes('simulation failed'), true)
+		assert.equal(dom.document.body.textContent?.includes('Failed to decode ABI data'), true)
+		assert.equal(dom.document.body.textContent?.includes('Simulating...'), false)
 		assert.equal(dom.document.body.textContent?.includes('Initializing...'), false)
 		await unmountConfirmTransaction(dom)
 		dom.restore()

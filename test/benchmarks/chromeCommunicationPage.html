@@ -71,6 +71,7 @@
 					phase: 'loading',
 					accounts: undefined,
 					error: undefined,
+					errorCode: undefined,
 				}
 				const statusElement = document.getElementById('status')
 
@@ -78,6 +79,7 @@
 					state.phase = phase
 					state.accounts = Array.isArray(extra.accounts) ? extra.accounts : undefined
 					state.error = extra.error
+					state.errorCode = typeof extra.errorCode === 'number' ? extra.errorCode : undefined
 					if (statusElement !== null) {
 						statusElement.textContent = phase === 'error'
 							? `error: ${ extra.error ?? 'unknown error' }`
@@ -105,7 +107,8 @@
 						updateState('access-granted', { accounts: Array.isArray(accounts) ? accounts : [] })
 					} catch (error) {
 						const message = error instanceof Error ? error.message : String(error)
-						updateState('error', { error: message })
+						const errorCode = typeof error === 'object' && error !== null && typeof error.code === 'number' ? error.code : undefined
+						updateState('error', { error: message, errorCode })
 					}
 				})()
 			})()

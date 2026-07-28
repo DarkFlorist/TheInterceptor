@@ -1,4 +1,5 @@
 import type { RpcConnectionStatus, RpcSlowRequest } from '../types/user-interface-types.js'
+import type { RpcEntries } from '../types/rpc.js'
 import { TIME_BETWEEN_BLOCKS } from './constants.js'
 
 type RpcWarningBase = {
@@ -42,4 +43,8 @@ export function shouldShowRpcWarningCountdown(warningState: RpcWarningState, now
 	return warningState.retryState === 'active'
 		&& warningState.nextRetryAt !== undefined
 		&& warningState.nextRetryAt.getTime() > now.getTime()
+}
+
+export function shouldOfferBundledRpcReset(rpcEntries: RpcEntries) {
+	return rpcEntries.length === 0
 }

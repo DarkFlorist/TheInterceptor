@@ -1,4 +1,4 @@
-import { getAddress, isAddress, formatUnits } from './viem.js'
+import { getAddress, isAddress, formatUnits } from './ethereumPrimitives.js'
 
 export function bigintToDecimalString(value: bigint, power: bigint) {
 	const integerPart = abs(value / 10n ** power)

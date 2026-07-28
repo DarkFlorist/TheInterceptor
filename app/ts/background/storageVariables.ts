@@ -1,6 +1,6 @@
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
-import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, TabState } from '../types/user-interface-types.js'
+import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
 import { type PartialIdsOfOpenedTabs, TabStateItems, browserStorageLocalGet, browserStorageLocalGet2, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
@@ -11,7 +11,7 @@ import type { SignerName } from '../types/signerTypes.js'
 import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
-import { keccak256, namehash, stringToBytes } from '../utils/viem.js'
+import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { isValidEnsName } from '../utils/ens.js'
 import { modifyObject } from '../utils/typescript.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
@@ -80,6 +80,16 @@ export const getFetchSimulationStackRequestPromise = async() => (await browserSt
 export async function setFetchSimulationStackRequestPromise(fetchSimulationStackRequestPromise: PendingFetchSimulationStackRequestPromise | undefined) {
 	if (fetchSimulationStackRequestPromise === undefined) return await browserStorageLocalRemove('fetchSimulationStackRequestPromise')
 	return await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
+}
+
+const pendingWatchAssetRequestsSemaphore = new Semaphore(1)
+export const getPendingWatchAssetRequests = async () => (await browserStorageLocalGet('pendingWatchAssetRequests'))?.pendingWatchAssetRequests ?? []
+export async function updatePendingWatchAssetRequests(update: (requests: readonly StoredWatchAssetRequest[]) => readonly StoredWatchAssetRequest[]) {
+	return await pendingWatchAssetRequestsSemaphore.execute(async () => {
+		const requests = update(await getPendingWatchAssetRequests())
+		await browserStorageLocalSet({ pendingWatchAssetRequests: requests })
+		return requests
+	})
 }
 
 export const getPopupRefreshGeneration = async () => (await browserStorageLocalGet('popupRefreshGeneration'))?.popupRefreshGeneration ?? 0

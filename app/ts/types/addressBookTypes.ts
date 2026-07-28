@@ -41,6 +41,7 @@ export const Erc721Entry = funtypes.ReadonlyObject({
 	symbol: funtypes.String,
 	entrySource: EntrySource,
 }).And(funtypes.Partial({
+	watchedTokenIds: funtypes.ReadonlyArray(EthereumQuantity),
 	protocol: funtypes.String,
 	logoUri: funtypes.String,
 	abi: funtypes.String,
@@ -59,6 +60,7 @@ export const Erc1155Entry = funtypes.ReadonlyObject({
 	decimals: funtypes.Undefined,
 	entrySource: EntrySource,
 }).And(funtypes.Partial({
+	watchedTokenIds: funtypes.ReadonlyArray(EthereumQuantity),
 	protocol: funtypes.String,
 	logoUri: funtypes.String,
 	abi: funtypes.String,

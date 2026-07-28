@@ -1,14 +1,25 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
+import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignatureParity, LiteralConverterParserFactory } from './wire-types.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { EthSimulateV1Params } from './ethSimulate-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
+import { checksummedAddress } from '../utils/bigint.js'
 
 export type EthGetStorageAtResponse = funtypes.Static<typeof EthGetStorageAtResponse>
+// Some clients return bare `0x` for an empty storage slot. Accept it as zero;
+// RPC replies still serialize through EthereumBytes32's canonical 32-byte form.
+const EmptyEthGetStorageAtResponse = funtypes.String.withParser({
+	parse: value => value === '0x'
+		? { success: true, value: 0n }
+		: { success: false, message: `eth_getStorageAt didn't return 32 bytes of data nor 0x.` },
+	serialize: value => value === 0n
+		? { success: true, value: '0x' }
+		: { success: false, message: 'eth_getStorageAt value is not zero.' },
+})
 export const EthGetStorageAtResponse = funtypes.Union(
 	EthereumBytes32,
-	funtypes.String.withParser({ parse: x => x === '0x' ? { success: true, value: null } : { success: false, message: `eth_getStorageAt didn't return 32 bytes of data nor 0x.` } }),
+	EmptyEthGetStorageAtResponse,
 )
 
 export type EthGetLogsRequest = funtypes.Static<typeof EthGetLogsRequest>
@@ -61,6 +72,13 @@ export const EthBalanceChanges = funtypes.ReadonlyArray(
 
 export type PartialEthereumTransaction = funtypes.Static<typeof PartialEthereumTransaction>
 export const PartialEthereumTransaction = funtypes.ReadonlyPartial({
+	type: funtypes.Union(
+		funtypes.Literal('0x0').withParser(LiteralConverterParserFactory('0x0', 'legacy' as const)),
+		funtypes.Literal('0x1').withParser(LiteralConverterParserFactory('0x1', '2930' as const)),
+		funtypes.Literal('0x2').withParser(LiteralConverterParserFactory('0x2', '1559' as const)),
+		funtypes.Literal('0x3').withParser(LiteralConverterParserFactory('0x3', '4844' as const)),
+		funtypes.Literal('0x4').withParser(LiteralConverterParserFactory('0x4', '7702' as const)),
+	),
 	from: EthereumAddress,
 	gas: EthereumQuantity,
 	value: EthereumQuantity,
@@ -70,6 +88,15 @@ export const PartialEthereumTransaction = funtypes.ReadonlyPartial({
 	maxFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
 	data: EthereumData,
 	input: EthereumData,
+	authorizationList: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
+		chainId: EthereumQuantity,
+		address: EthereumAddress,
+		nonce: EthereumQuantity,
+	}).And(funtypes.ReadonlyPartial({
+		r: EthereumQuantity,
+		s: EthereumQuantity,
+		yParity: EthereumSignatureParity,
+	}))),
 }).withConstraint((PartialEthereumTransaction) => {
 	if (PartialEthereumTransaction.input !== undefined && PartialEthereumTransaction.data !== undefined) {
 		return areEqualUint8Arrays(PartialEthereumTransaction.input, PartialEthereumTransaction.data)
@@ -171,30 +198,40 @@ export const SendRawTransactionParams = funtypes.ReadonlyObject({
 
 export type EthereumAccountsReply = funtypes.Static<typeof EthereumAccountsReply>
 export const EthereumAccountsReply = funtypes.ReadonlyTuple(
-	funtypes.Union(
+	funtypes.Intersect(
 		funtypes.ReadonlyObject({
-			type: funtypes.Literal('success'),
-			accounts: funtypes.ReadonlyArray(EthereumAddress),
-			requestAccounts: funtypes.Boolean,
+			signerProviderGeneration: funtypes.Number,
 		}),
-		funtypes.ReadonlyObject({
-			type: funtypes.Literal('error'),
-			requestAccounts: funtypes.Boolean,
-			error: funtypes.Intersect(
+		funtypes.Union(
+			funtypes.ReadonlyObject({
+				type: funtypes.Literal('success'),
+				accounts: funtypes.ReadonlyArray(EthereumAddress),
+				requestAccounts: funtypes.Boolean,
+			}),
+			funtypes.Intersect(
 				funtypes.ReadonlyObject({
-					code: funtypes.Number,
-					message: funtypes.String,
+					type: funtypes.Literal('error'),
+					requestAccounts: funtypes.Boolean,
+					error: funtypes.Intersect(
+						funtypes.ReadonlyObject({
+							code: funtypes.Number,
+							message: funtypes.String,
+						}),
+						funtypes.Partial({
+							data: funtypes.Unknown
+						})
+					)
 				}),
-				funtypes.Partial({
-					data: funtypes.Unknown
-				})
+				funtypes.ReadonlyPartial({
+					signerUnavailable: funtypes.Literal(true),
+				}),
 			)
-		})
+		)
 	)
 )
 
 export type EthereumChainReply = funtypes.Static<typeof EthereumChainReply>
-export const EthereumChainReply = funtypes.ReadonlyArray(EthereumQuantity)
+export const EthereumChainReply = funtypes.ReadonlyTuple(EthereumQuantity, funtypes.Number)
 
 export type TransactionReceiptParams = funtypes.Static<typeof TransactionReceiptParams>
 export const TransactionReceiptParams = funtypes.ReadonlyObject({
@@ -328,10 +365,45 @@ export const WalletAddEthereumChain = funtypes.ReadonlyObject({
 	))
 })
 
+export type WalletWatchAsset = funtypes.Static<typeof WalletWatchAsset>
+const ChecksummedWatchAssetAddress = funtypes.String.withConstraint((value) => {
+	if (!/^0x[a-fA-F0-9]{40}$/.test(value)) return false
+	return checksummedAddress(BigInt(value)) === value
+}).withParser({
+	parse: value => ({ success: true, value: BigInt(value) }),
+	serialize: value => ({ success: true, value: checksummedAddress(value) }),
+})
+export type WalletWatchAssetParameters = funtypes.Static<typeof WalletWatchAssetParameters>
+const WatchAssetCommonOptions = funtypes.ReadonlyObject({ address: ChecksummedWatchAssetAddress }).And(funtypes.Partial({ chainId: funtypes.Number }))
+const WatchNftOptions = WatchAssetCommonOptions.And(funtypes.ReadonlyObject({ tokenId: funtypes.String }))
+export const WalletWatchAssetParameters = funtypes.Union(
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('ERC20'),
+		options: WatchAssetCommonOptions.And(funtypes.Partial({
+			name: funtypes.String,
+			symbol: funtypes.String,
+			decimals: funtypes.Number,
+			image: funtypes.String,
+		})),
+	}),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('ERC1046'), options: WatchAssetCommonOptions }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('ERC721'), options: WatchNftOptions }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('ERC1155'), options: WatchNftOptions }),
+)
+export const WalletWatchAsset = funtypes.ReadonlyObject({
+	method: funtypes.Literal('wallet_watchAsset'),
+	params: funtypes.ReadonlyTuple(WalletWatchAssetParameters),
+})
+
 type Web3ClientVersion = funtypes.Static<typeof Web3ClientVersion>
 const Web3ClientVersion = funtypes.ReadonlyObject({
 	method: funtypes.Literal('web3_clientVersion'),
 	params: funtypes.ReadonlyTuple()
+})
+
+export type EthMaxPriorityFeePerGasParams = funtypes.Static<typeof EthMaxPriorityFeePerGasParams>
+export const EthMaxPriorityFeePerGasParams = funtypes.ReadonlyObject({
+	method: funtypes.Literal('eth_maxPriorityFeePerGas'),
 })
 
 //https://docs.infura.io/networks/ethereum/json-rpc-methods/eth_feehistory
@@ -415,7 +487,9 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	EthSign,
 	EthSimulateV1Params,
 	WalletAddEthereumChain,
+	WalletWatchAsset,
 	Web3ClientVersion,
+	EthMaxPriorityFeePerGasParams,
 	FeeHistory,
 	EthNewFilter,
 	UninstallFilter,
