@@ -384,6 +384,16 @@ export const Erc1155ABI = [
 	},
 ] as const satisfies Abi
 
+export const Erc1046ABI = [
+	{
+		type: 'function',
+		name: 'tokenURI',
+		stateMutability: 'view',
+		inputs: [],
+		outputs: [{ name: '', type: 'string' }],
+	},
+] as const satisfies Abi
+
 export const CompoundGovernanceAbi = [
 	{
 		type: 'function',

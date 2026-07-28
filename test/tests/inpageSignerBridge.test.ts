@@ -4,10 +4,11 @@ import { describe, test } from 'bun:test'
 type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[] }
 type Listener = (event: WindowEvent) => void
 type InpageRequest = { readonly method: string, readonly requestId: number, readonly params?: readonly unknown[], readonly internal?: true, readonly replayOnDisconnect?: true }
+type SignerRequest = { readonly method: string, readonly params?: readonly unknown[] | Readonly<Record<string, unknown>> }
 type FakeWindowOptions = {
 	readonly onConnectedToSignerRequest?: () => void
 	readonly handleRequest?: (request: InpageRequest, sendBackgroundMessage: (data: unknown) => void) => boolean
-	readonly handleSignerRequest?: (request: { readonly method: string, readonly params?: readonly unknown[] }) => unknown | Promise<unknown>
+	readonly handleSignerRequest?: (request: SignerRequest) => unknown | Promise<unknown>
 	readonly signerChainIdReply?: unknown
 	readonly signerInitialSelectedAddress?: string
 }
@@ -48,7 +49,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 		...(signerInitialSelectedAddress === undefined ? {} : { selectedAddress: signerInitialSelectedAddress }),
 		isMetaMask: true,
 		isConnected: () => true,
-		request: async ({ method, params }: { method: string, params?: readonly unknown[] }) => {
+		request: async ({ method, params }: SignerRequest) => {
 			const customReply = handleSignerRequest?.({ method, ...(params === undefined ? {} : { params }) })
 			if (customReply !== undefined) return await customReply
 			signerRequests.push(method)
@@ -748,6 +749,118 @@ describe('inpage signer bridge', () => {
 		assert.equal(reply.accept, false)
 		assert.equal(reply.error.code, 4900)
 		assert.match(String(reply.error.message), /No signer wallet is available/)
+	})
+
+	test('forwards an approved watch-asset dialog action to the selected signer', async () => {
+		const signerRequests: SignerRequest[] = []
+		let signerReply: unknown
+		let signerProviderGeneration: number | undefined
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				if (request.method === 'connected_to_signer') {
+					const generation = request.params?.[2]
+					if (typeof generation === 'number') signerProviderGeneration = generation
+					return false
+				}
+				if (request.method !== 'signer_reply') return false
+				signerReply = request.params?.[0]
+				sendBackgroundMessageForRequest({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'signer_reply',
+					result: '0x',
+				})
+				return true
+			},
+			handleSignerRequest: (request) => {
+				signerRequests.push(request)
+				return true
+			},
+		})
+		const parameters = {
+			type: 'ERC20',
+			options: { address: '0x1111111111111111111111111111111111111111', chainId: 1 },
+		}
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?watch-asset-forward', async () => {
+			await waitFor(() => signerProviderGeneration !== undefined)
+			if (signerProviderGeneration === undefined) throw new Error('Missing signer provider generation')
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'request_signer_to_wallet_watchAsset',
+				result: {
+					parameters,
+					uniqueRequestIdentifier: { requestId: 91, requestSocket: { tabId: 7, connectionName: '0x3' } },
+					signerIdentity: {
+						tabId: 7,
+						connectionName: '0x3',
+						ownerGeneration: 2,
+						signerProviderGeneration,
+					},
+				},
+			})
+			await waitFor(() => signerRequests.some(({ method }) => method === 'wallet_watchAsset'))
+			await waitFor(() => signerReply !== undefined)
+		})
+
+		assert.deepEqual(signerRequests.find(({ method }) => method === 'wallet_watchAsset'), {
+			method: 'wallet_watchAsset',
+			params: parameters,
+		})
+		if (!isRecord(signerReply) || !isRecord(signerReply.forwardRequest)) throw new Error('Malformed signer reply')
+		assert.equal(signerReply.success, true)
+		assert.equal(signerReply.forwardRequest.method, 'wallet_watchAsset')
+		assert.deepEqual(signerReply.forwardRequest.params, {
+			parameters,
+			uniqueRequestIdentifier: { requestId: 91, requestSocket: { tabId: 7, connectionName: '0x3' } },
+			signerIdentity: {
+				tabId: 7,
+				connectionName: '0x3',
+				ownerGeneration: 2,
+				signerProviderGeneration,
+			},
+		})
+	})
+
+	test('accepts MetaMask by-name wallet_watchAsset parameters from webpages', async () => {
+		let capturedRequest: InpageRequest | undefined
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request) => {
+				if (request.method !== 'wallet_watchAsset') return false
+				capturedRequest = request
+				return true
+			},
+		})
+		const parameters = {
+			type: 'ERC20',
+			options: { address: '0x1111111111111111111111111111111111111111', chainId: 1 },
+		}
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?watch-asset-named-params', async () => {
+			const provider = fakeWindow.ethereum as { request: (payload: { method: string, params: Readonly<Record<string, unknown>> }) => Promise<unknown> }
+			const resultPromise = provider.request({ method: 'wallet_watchAsset', params: parameters })
+			await waitFor(() => capturedRequest !== undefined)
+			assert.deepEqual(capturedRequest?.params, [parameters])
+			if (capturedRequest === undefined) throw new Error('Expected a captured wallet_watchAsset request')
+			sendBackgroundMessage({ interceptorApproved: true, requestId: capturedRequest.requestId, type: 'result', method: 'wallet_watchAsset', result: true })
+			assert.equal(await resultPromise, true)
+		})
+	})
+
+	test('rejects named parameters for methods that only accept positional parameters', async () => {
+		const { fakeWindow } = createFakeWindow()
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?unsupported-named-params', async () => {
+			const provider = fakeWindow.ethereum as { request: (payload: { method: string, params: Readonly<Record<string, unknown>> }) => Promise<unknown> }
+			await assert.rejects(
+				async () => await provider.request({ method: 'eth_chainId', params: {} }),
+				(error: unknown) => isRecord(error)
+					&& error.code === -32602
+					&& error.message === 'Named parameters are not supported for eth_chainId.',
+			)
+		})
 	})
 
 	test('ignores replayed terminal replies after the original request settles', async () => {

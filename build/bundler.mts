@@ -372,6 +372,7 @@ const runtimeEntrypointPaths = [
 	path.join(appDirectory, 'js', 'background', 'background-startup.js'),
 	path.join(appDirectory, 'js', 'addressBookRender.js'),
 	path.join(appDirectory, 'js', 'changeChain.js'),
+	path.join(appDirectory, 'js', 'watchAsset.js'),
 	path.join(appDirectory, 'js', 'confirmTransaction.js'),
 	path.join(appDirectory, 'js', 'fetchSimulationStack.js'),
 	path.join(appDirectory, 'js', 'interceptorAccess.js'),

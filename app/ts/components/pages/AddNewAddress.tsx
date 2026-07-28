@@ -20,6 +20,7 @@ import { DropDownMenu } from '../subcomponents/DropDownMenu.js'
 import { NonHexBigInt } from '../../types/wire-types.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
+import { isValidAddressBookEntryName, MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH } from '../../utils/addressBookValidation.js'
 
 export function mergeAddressWindowErrorState(
 	currentErrorState: ModifyAddressWindowState['errorState'],
@@ -82,7 +83,7 @@ function NameInput({ nameInput, setNameInput, disabled }: NameInputParams) {
 		value = { nameInput }
 		placeholder = { 'What should we call this address?' }
 		onInput = { e => setNameInput((e.target as HTMLInputElement).value) }
-		maxLength = { 42 }
+		maxLength = { MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH }
 		ref = { ref }
 		style = { 'width: 100%' }
 		disabled = { disabled }
@@ -333,10 +334,10 @@ export function AddNewAddress(param: AddAddressParam) {
 
 	function getCompleteAddressBookEntry(): AddressBookEntry | { type: 'error', error: string } {
 		const incompleteAddressBookEntry = param.modifyAddressWindowState.peek().incompleteAddressBookEntry
-		if (incompleteAddressBookEntry.name !== undefined && incompleteAddressBookEntry.name.length > 42) return { type: 'error', error: 'Name is not valid' }
 		const inputedAddressBigInt = stringToAddress(incompleteAddressBookEntry.address)
 		if (inputedAddressBigInt === undefined) return { type: 'error', error: 'Address is not valid' }
 		const name = incompleteAddressBookEntry.name ? incompleteAddressBookEntry.name : checksummedAddress(inputedAddressBigInt)
+		if (!isValidAddressBookEntryName(name)) return { type: 'error', error: 'Name is not valid' }
 		if (incompleteAddressBookEntry.abi !== undefined && !isValidAbi(incompleteAddressBookEntry.abi)) return { type: 'error', error: 'Abi is not valid' }
 		const base = {
 			name,

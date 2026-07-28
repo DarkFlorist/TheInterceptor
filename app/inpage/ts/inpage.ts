@@ -264,7 +264,16 @@ type AnyCallBack =  ((message: ProviderMessage) => void)
 	| ((error: ProviderRpcError) => void)
 	| ((chainId: string) => void)
 
-type EthereumRequest = (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }) => Promise<unknown>
+type EthereumRequestParameters = readonly unknown[] | Readonly<Record<string, unknown>>
+type EthereumRequest = (methodAndParams: { readonly method: string, readonly params?: EthereumRequestParameters }) => Promise<unknown>
+type InterceptorEthereumRequestParameters = EthereumRequestParameters
+const METHODS_ACCEPTING_NAMED_PARAMETERS: ReadonlySet<string> = new Set(['wallet_watchAsset'])
+
+function normalizeInterceptorEthereumRequestParameters(method: string, params: InterceptorEthereumRequestParameters | undefined): readonly unknown[] | undefined {
+	if (params === undefined || Array.isArray(params)) return params
+	if (!METHODS_ACCEPTING_NAMED_PARAMETERS.has(method)) throw new EthereumJsonRpcError(METAMASK_INVALID_METHOD_PARAMS, `Named parameters are not supported for ${ method }.`)
+	return [params]
+}
 
 type InjectFunctions = {
 	request: EthereumRequest
@@ -320,7 +329,7 @@ interface EIP6963ProviderInfo {
 	rdns: string
 }
 
-type SingleSendAsyncParam = { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] }
+type SingleSendAsyncParam = { readonly id: string | number | null, readonly method: string, readonly params: InterceptorEthereumRequestParameters }
 type ForwardedDiagnosticsRequestContext = {
 	readonly requestId?: number
 	readonly requestMethod?: string
@@ -705,13 +714,14 @@ class InterceptorMessageListener {
 	}
 
 	// sends a message to interceptors background script
-	private readonly WindowEthereumRequest = async (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }) => {
+	private readonly WindowEthereumRequest = async (methodAndParams: { readonly method: string, readonly params?: InterceptorEthereumRequestParameters }) => {
 		try {
 			if (isInternalBackgroundMethod(methodAndParams.method)) throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, `Method not supported: ${ methodAndParams.method }`)
+			const params = normalizeInterceptorEthereumRequestParameters(methodAndParams.method, methodAndParams.params)
 			// make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
 			return await this.sendMessageToBackgroundPage({
 				method: methodAndParams.method,
-				...(methodAndParams.params !== undefined ? { params: methodAndParams.params } : {}),
+				...(params !== undefined ? { params } : {}),
 			})
 		} catch (error: unknown) {
 			if (error instanceof Error) throw error
@@ -719,7 +729,7 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private readonly requestFromSigner = async (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }, allowRequestAccountsFallbackToRoot = false) => {
+	private readonly requestFromSigner = async (methodAndParams: { readonly method: string, readonly params?: EthereumRequestParameters }, allowRequestAccountsFallbackToRoot = false) => {
 		if (this.signerWindowEthereumRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
 		try {
 			return await this.signerWindowEthereumRequest(methodAndParams)
@@ -1056,7 +1066,7 @@ class InterceptorMessageListener {
 		return { type: 'error', requestAccounts, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } }
 	}
 
-	private readonly requestFromCurrentSigner = async (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }, allowRequestAccountsFallbackToRoot = false): Promise<SignerProviderRequestOutcome> => {
+	private readonly requestFromCurrentSigner = async (methodAndParams: { readonly method: string, readonly params?: EthereumRequestParameters }, allowRequestAccountsFallbackToRoot = false): Promise<SignerProviderRequestOutcome> => {
 		const signerProviderGeneration = this.signerProviderGeneration
 		const providerChange = new InterceptorFuture<void>()
 		this.signerProviderChangeWaiters.add(providerChange)
@@ -1218,6 +1228,79 @@ class InterceptorMessageListener {
 		})
 	}
 
+	private readonly requestWatchAssetFromSigner = async (parameters: unknown) => {
+		if (typeof parameters !== 'object' || parameters === null || Array.isArray(parameters)
+			|| !('parameters' in parameters)
+			|| typeof parameters.parameters !== 'object'
+			|| parameters.parameters === null
+			|| Array.isArray(parameters.parameters)
+			|| !('uniqueRequestIdentifier' in parameters)
+			|| typeof parameters.uniqueRequestIdentifier !== 'object'
+			|| parameters.uniqueRequestIdentifier === null
+			|| !('requestId' in parameters.uniqueRequestIdentifier)
+			|| typeof parameters.uniqueRequestIdentifier.requestId !== 'number'
+			|| !('signerIdentity' in parameters)
+			|| typeof parameters.signerIdentity !== 'object'
+			|| parameters.signerIdentity === null
+			|| !('tabId' in parameters.signerIdentity)
+			|| typeof parameters.signerIdentity.tabId !== 'number'
+			|| !('connectionName' in parameters.signerIdentity)
+			|| typeof parameters.signerIdentity.connectionName !== 'string'
+			|| !('ownerGeneration' in parameters.signerIdentity)
+			|| typeof parameters.signerIdentity.ownerGeneration !== 'number'
+			|| !('signerProviderGeneration' in parameters.signerIdentity)
+			|| typeof parameters.signerIdentity.signerProviderGeneration !== 'number'
+		) throw new Error('Malformed wallet_watchAsset signer request.')
+		const walletParameters = Object.fromEntries(Object.entries(parameters.parameters))
+		const forwardRequest: {
+			type: 'forwardToSigner'
+			replyWithSignersReply: true
+			method: string
+			requestId: number
+			params: unknown
+		} = {
+			type: 'forwardToSigner',
+			replyWithSignersReply: true,
+			method: 'wallet_watchAsset',
+			requestId: parameters.uniqueRequestIdentifier.requestId,
+			params: parameters,
+		}
+		if (this.signerWindowEthereumRequest === undefined || this.signerProviderGeneration !== parameters.signerIdentity.signerProviderGeneration) {
+			await this.sendInternalMessageToBackgroundPage({
+				method: 'signer_reply',
+				params: [{
+					success: false,
+					forwardRequest,
+					error: { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'Signer connection changed before the watch-asset request reached the wallet.' },
+					signerProviderGeneration: parameters.signerIdentity.signerProviderGeneration,
+				}],
+			})
+			return
+		}
+		const outcome = await this.requestFromCurrentSigner({ method: 'wallet_watchAsset', params: walletParameters })
+		const signerReply: {
+			success: true
+			forwardRequest: typeof forwardRequest
+			reply: unknown
+			signerProviderGeneration: number
+		} | {
+			success: false
+			forwardRequest: typeof forwardRequest
+			error: { code: number, message: string, data?: unknown }
+			signerProviderGeneration: number
+		} = outcome.type === 'success'
+			? { success: true, forwardRequest, reply: outcome.reply, signerProviderGeneration: outcome.signerProviderGeneration }
+			: {
+				success: false,
+				forwardRequest,
+				error: outcome.type === 'error'
+					? this.normalizeSignerErrorForBackground(outcome.error)
+					: { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'Signer connection changed before the previous wallet replied.' },
+				signerProviderGeneration: outcome.signerProviderGeneration,
+			}
+		await this.sendInternalMessageToBackgroundPage({ method: 'signer_reply', params: [signerReply] })
+	}
+
 	private readonly handleReplyRequest = async(replyRequest: InterceptedRequestForwardWithResult) => {
 		try {
 			if (replyRequest.subscription !== undefined) {
@@ -1298,6 +1381,7 @@ class InterceptorMessageListener {
 				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner()
 				case 'request_signer_to_eth_accounts': return await this.getAccountsFromSigner()
 				case 'request_signer_to_wallet_switchEthereumChain': return await this.requestChangeChainFromSigner(replyRequest.result as string)
+				case 'request_signer_to_wallet_watchAsset': return await this.requestWatchAssetFromSigner(replyRequest.result)
 				case 'request_signer_connection_status': return await this.connectToSigner(this.signerName)
 				case 'request_signer_chainId': return await this.requestChainIdFromSigner()
 				default: break

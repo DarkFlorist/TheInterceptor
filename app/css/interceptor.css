@@ -2744,6 +2744,7 @@ header:has(form[role='search']) h1 {
 				font-size: 0.9em;
 				background: var(--button-color);
 				color: var(--text-color);
+				white-space: nowrap;
 				border: 0 none;
 				border-radius: 3px;
 				padding: 0 0.25em;
