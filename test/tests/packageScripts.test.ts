@@ -65,6 +65,12 @@ describe('package scripts', () => {
 		])
 	})
 
+	test('lint enforces single-line named imports', () => {
+		const scripts = getPackageScripts()
+		assert.equal(getScript(scripts, 'lint:imports'), 'bun ./scripts/check-single-line-imports.mts')
+		assert.ok(getScript(scripts, 'lint').split(' && ').includes('bun run lint:imports'))
+	})
+
 	test('browser builds generate pages and compile app scripts before writing their manifests', () => {
 		const scripts = getPackageScripts()
 		for (const browserName of ['firefox', 'chrome'] as const) {
