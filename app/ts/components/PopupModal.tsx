@@ -12,29 +12,41 @@ export type PopupPage = { page: 'Home' | 'ChangeActiveAddress' | 'AccessList' | 
 	| { page: 'ModifyAddress' | 'AddNewAddress', state: Signal<ModifyAddressWindowState> }
 	| { page: 'ImportSimulation', state: Signal<string> }
 
-type LazyPageComponent<T extends object> = ((props: T) => JSX.Element) | undefined
+type LazyPageComponent<T extends object> = (props: T) => JSX.Element
 type LazyPageModule<T extends object, ExportName extends string> = Record<ExportName, (props: T) => JSX.Element>
+type LazyPageState<T extends object> =
+	| { status: 'loading' }
+	| { status: 'loaded', component: LazyPageComponent<T> }
+	| { status: 'failed', error: Error }
 
 function useLazyPage<T extends object, ExportName extends string>(loader: () => Promise<LazyPageModule<T, ExportName>>, exportName: ExportName) {
-	const component = useSignal<LazyPageComponent<T>>(undefined)
+	const state = useSignal<LazyPageState<T>>({ status: 'loading' })
 	useEffect(() => {
 		let cancelled = false
-		void loader().then((module) => {
-			if (cancelled) return
-			component.value = module[exportName]
-		})
+		void loader().then(
+			(module) => {
+				if (cancelled) return
+				state.value = { status: 'loaded', component: module[exportName] }
+			},
+			(reason: unknown) => {
+				if (cancelled) return
+				const error = reason instanceof Error ? reason : new Error(typeof reason === 'string' ? reason : 'Failed to load popup page.')
+				state.value = { status: 'failed', error }
+			},
+		)
 		return () => {
 			cancelled = true
 		}
 	}, [])
-	return component
+	return state
 }
 
-function createLazyPage<T extends object, ExportName extends string>(loader: () => Promise<LazyPageModule<T, ExportName>>, exportName: ExportName) {
+export function createLazyPage<T extends object, ExportName extends string>(loader: () => Promise<LazyPageModule<T, ExportName>>, exportName: ExportName) {
 	return function LazyPage(props: T) {
-		const component = useLazyPage(loader, exportName)
-		if (component.value === undefined) return <CenterToPageTextSpinner />
-		const Component = component.value
+		const state = useLazyPage(loader, exportName).value
+		if (state.status === 'loading') return <CenterToPageTextSpinner />
+		if (state.status === 'failed') throw state.error
+		const Component = state.component
 		return <Component { ...props } />
 	}
 }
