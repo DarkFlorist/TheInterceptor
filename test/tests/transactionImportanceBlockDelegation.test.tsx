@@ -11,6 +11,7 @@ import type { TokenEvent } from '../../app/ts/types/EnrichedEthereumData.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import type { MaybeSimulatedTransaction, TokenBalancesAfter } from '../../app/ts/types/visualizer-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../app/ts/utils/constants.js'
+import { getDeployedContractAddress } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 
 const senderEntry: AddressBookEntry = {
 	type: 'contact',
@@ -249,6 +250,50 @@ function createDelegatedSelfCallTransaction({
 	}
 }
 
+function createContractDeploymentTransaction(): MaybeSimulatedTransaction {
+	return {
+		website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+		created: new Date('2024-01-01T00:00:00.000Z'),
+		parsedInputData: { type: 'NonParsed', input: new Uint8Array() },
+		transactionIdentifier: 4n,
+		originalRequestParameters: {
+			method: 'eth_sendTransaction',
+			params: [{
+				from: senderEntry.address,
+				to: null,
+				value: 0n,
+				input: new Uint8Array(),
+				gas: 100_000n,
+				maxFeePerGas: 1n,
+				maxPriorityFeePerGas: 1n,
+				type: '0x2',
+			}],
+		},
+		transaction: {
+			from: senderEntry,
+			to: undefined,
+			value: 0n,
+			input: new Uint8Array(),
+			rpcNetwork,
+			hash: 0x1237n,
+			gas: 100_000n,
+			nonce: 10n,
+			type: '1559',
+			maxFeePerGas: 1n,
+			maxPriorityFeePerGas: 1n,
+		},
+		transactionStatus: 'Transaction Succeeded',
+		tokenBalancesAfter: [],
+		tokenPriceEstimates: [],
+		tokenPriceQuoteToken: undefined,
+		gasSpent: 50_000n,
+		realizedGasPrice: 1n,
+		quarantine: false,
+		quarantineReasons: [],
+		events: [],
+	}
+}
+
 function createProxyPaymentTransaction({
 	events,
 	to = proxyEntry,
@@ -458,6 +503,25 @@ describe('TransactionImportanceBlock delegation notice', () => {
 		assert.equal(dom.document.body.textContent?.includes('Delegated Executor'), true)
 		assert.equal(dom.document.body.textContent?.includes('Actual recipient'), true)
 		assert.equal(dom.document.body.textContent?.includes('Send'), true)
+
+		dom.restore()
+	})
+})
+
+describe('TransactionImportanceBlock contract deployment', () => {
+	test('renders the created contract using its address book entry', async () => {
+		const transaction = createContractDeploymentTransaction()
+		const deployedAddress = getDeployedContractAddress(senderEntry.address, transaction.transaction.nonce)
+		const deployedContractEntry: AddressBookEntry = {
+			type: 'contract',
+			name: 'My deployed contract',
+			address: deployedAddress,
+			entrySource: 'User',
+		}
+		const dom = await renderImportanceBlock(transaction, [senderEntry, deployedContractEntry])
+
+		assert.equal(dom.document.body.textContent?.includes('A contract is deployed to address'), true)
+		assert.equal(dom.document.body.textContent?.includes('My deployed contract'), true)
 
 		dom.restore()
 	})
