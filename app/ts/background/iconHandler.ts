@@ -16,6 +16,11 @@ import { sanitizeStoredWebsiteIcon } from '../utils/websiteIcons.js'
 const ALLOWED_FAVICON_PROTOCOLS = new Set(['http:', 'https:', 'data:'])
 const WAIT_FOR_LOADED_TAB_TIMEOUT_MESSAGE = 'Timed out waiting for tab to finish loading.'
 
+export function addBlockingShieldToIcon(icon: TabIcon): TabIcon {
+	if (icon === ICON_INTERCEPTOR_DISABLED || icon === ICON_ACCESS_DENIED) return icon
+	return TabIcon.parse(icon.replace('.png', '-shield.png'))
+}
+
 async function getCachedWebsiteIcon(tabId: number, websiteOrigin: string) {
 	const storedWebsiteAccess = await getWebsiteAccess()
 	const storedWebsite = storedWebsiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
@@ -94,7 +99,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 	}
 	const blockingWebsitePromise = areWeBlocking(websiteTabConnections, tabId, websiteOrigin)
 	silenceChromeUnCaughtPromise(blockingWebsitePromise)
-	const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => await blockingWebsitePromise && icon !== ICON_INTERCEPTOR_DISABLED ? TabIcon.parse(icon.replace('.png', '-shield.png')) : icon
+	const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => await blockingWebsitePromise ? addBlockingShieldToIcon(icon) : icon
 	const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason, popupRefreshGeneration)
 
 	const settings = await getSettings()

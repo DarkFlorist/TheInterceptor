@@ -69,6 +69,7 @@ describe('package scripts', () => {
 		const scripts = getPackageScripts()
 
 		assert.deepEqual(getScript(scripts, 'build-firefox').split(' && '), [
+			'bun run generate-extension-pages',
 			'bun run compile-app',
 			'bun run bundle',
 			'bun run firefox',

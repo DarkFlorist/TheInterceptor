@@ -6,7 +6,7 @@ import { InterceptedRequest, UniqueRequestIdentifier, type WebsiteSocket } from 
 import type { AddressBookEntries, AddressBookEntry } from './addressBookTypes.js'
 import { PopupOrTabId, Website, type WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
-import { ICON_ACCESS_DENIED, ICON_ACCESS_DENIED_WITH_SHIELD, ICON_ACTIVE, ICON_ACTIVE_WITH_SHIELD, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD, ICON_SIGNING_WITH_SHIELD, ICON_SIMULATING, ICON_SIMULATING_WITH_SHIELD } from '../utils/constants.js'
+import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_ACTIVE_WITH_SHIELD, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD, ICON_SIGNING_WITH_SHIELD, ICON_SIMULATING, ICON_SIMULATING_WITH_SHIELD } from '../utils/constants.js'
 import { type RpcEntries, type RpcEntry, RpcNetwork } from './rpc.js'
 import type { TransactionOrMessageIdentifier } from './interceptor-messages.js'
 import type { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.js'
@@ -139,7 +139,6 @@ export const TabIcon = funtypes.Union(
 	funtypes.Literal(ICON_INTERCEPTOR_DISABLED),
 
 	funtypes.Literal(ICON_ACTIVE_WITH_SHIELD),
-	funtypes.Literal(ICON_ACCESS_DENIED_WITH_SHIELD),
 	funtypes.Literal(ICON_NOT_ACTIVE_WITH_SHIELD),
 	funtypes.Literal(ICON_SIMULATING_WITH_SHIELD),
 	funtypes.Literal(ICON_SIGNING_WITH_SHIELD),
