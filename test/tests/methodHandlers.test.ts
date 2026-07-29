@@ -12,7 +12,7 @@ const testHandler = createMethodHandlerFor<TestMessage, number, number>()
 const handlers = {
 	double: testHandler('double', (context, message) => context + message.value * 2),
 	length: testHandler('length', (context, message) => context + message.value.length),
-} satisfies Record<TestMessage['method'], TestHandler>
+} as const satisfies Record<TestMessage['method'], TestHandler>
 
 test('method handler tables dispatch narrowed messages and reject mismatched direct calls', () => {
 	assert.equal(handlers.double(1, { method: 'double', value: 3 }), 7)
