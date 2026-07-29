@@ -3,6 +3,7 @@ import { dataStringWith0xStart, stringifyJSONWithBigInts } from './bigint.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity } from '../types/wire-types.js'
 import { decodeCallDataLoose } from './abiRuntime.js'
+import { isAbiDataDecodeError } from './ethereumPrimitives.js'
 
 const erc20andErc721FunctionSignatures = [
 	{
@@ -68,17 +69,36 @@ const CallDataType = funtypes.Union(
 	}),
 )
 
-export function parseTransaction(transaction: { input?: Uint8Array, from: bigint }) {
+const getParsedTransactionData = (transaction: { input?: Uint8Array, from: bigint }) => {
 	if (!('input' in transaction) || transaction.input === undefined || transaction.input.length < 4) return undefined
 	const parsed = decodeCallDataLoose(erc20andErc721FunctionSignatures, dataStringWith0xStart(transaction.input))
 	if (parsed === undefined) return undefined
 
 	// https://github.com/ForbesLindesay/funtypes/issues/53
 	// a bit hacky as there's no bigint funtype, so we convert bigints to strings and then parse them into bigits
-	return CallDataType.parse(JSON.parse(stringifyJSONWithBigInts({
+	return JSON.parse(stringifyJSONWithBigInts({
 		name: parsed.name,
 		arguments: parsed.namedArgs,
-	})))
+	}))
+}
+
+export function parseTransaction(transaction: { input?: Uint8Array, from: bigint }) {
+	const parsedTransactionData: unknown = getParsedTransactionData(transaction)
+	if (parsedTransactionData === undefined) return undefined
+	return CallDataType.parse(parsedTransactionData)
+}
+
+export function parseTransactionIfPossible(transaction: { input?: Uint8Array, from: bigint }) {
+	let parsedTransactionData: unknown
+	try {
+		parsedTransactionData = getParsedTransactionData(transaction)
+	} catch(error: unknown) {
+		if (!isAbiDataDecodeError(error)) throw error
+		return undefined
+	}
+	if (parsedTransactionData === undefined) return undefined
+	const parsedTransaction = CallDataType.safeParse(parsedTransactionData)
+	return parsedTransaction.success ? parsedTransaction.value : undefined
 }
 
 export function get4Byte(data: Uint8Array) {

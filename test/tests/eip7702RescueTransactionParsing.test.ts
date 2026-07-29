@@ -12,6 +12,10 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { normalizeEip7702AuthorizationList } from '../../app/ts/utils/eip7702Authorization.js'
 import { EthereumSignedTransactionToSignedTransaction, serializeSignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
+import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
+import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { Erc20ABI } from '../../app/ts/utils/abi.js'
+import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
 
 const zeroAddress = '0x0000000000000000000000000000000000000000'
 const recipientAddress = '0x0000000000000000000000000000000000000002'
@@ -115,6 +119,46 @@ const createEip7702TransactionParsingRequestHandler = () => ({
 	},
 })
 
+const createFailedGasEstimationRequestHandler = (balance: bigint | Error, tokenBalance?: bigint) => {
+	const baseHandler = createEip7702TransactionParsingRequestHandler()
+	const balanceOfSelector = encodeFunctionCall(Erc20ABI, 'balanceOf', [recipientAddress]).slice(0, 10)
+	return {
+		...baseHandler,
+		jsonRpcRequest: async (rpcRequest: EthereumJsonRpcRequest) => {
+			if (rpcRequest.method === 'eth_getBalance') {
+				if (balance instanceof Error) throw balance
+				return serialize(EthereumQuantity, balance)
+			}
+			if (rpcRequest.method !== 'eth_simulateV1') return await baseHandler.jsonRpcRequest(rpcRequest)
+			return serialize(EthSimulateV1Result, rpcRequest.params[0].blockStateCalls.map((blockStateCall) => ({
+				number: 2n,
+				hash: 0x1236n,
+				timestamp: 0x6592008cn,
+				gasLimit: 30_000_000n,
+				gasUsed: 21_000n,
+				baseFeePerGas: 1n,
+				calls: blockStateCall.calls.map((call) => {
+					const input = call.input ?? call.data
+					if (tokenBalance !== undefined && input !== undefined && dataStringWith0xStart(input).startsWith(balanceOfSelector)) {
+						return {
+							status: 'success' as const,
+							returnData: stringToUint8Array(encodeFunctionReturn(Erc20ABI, 'balanceOf', [tokenBalance])),
+							gasUsed: 21_000n,
+							logs: [],
+						}
+					}
+					return {
+						status: 'failure' as const,
+						returnData: new Uint8Array(),
+						gasUsed: 21_000n,
+						error: { code: -32000, message: 'execution reverted', data: undefined },
+					}
+				}),
+			})))
+		},
+	}
+}
+
 type SignedAuthorizationForRpc = {
 	readonly chainId: number | bigint
 	readonly address: `0x${ string }`
@@ -139,20 +183,6 @@ function restoreGlobalProperty(key: 'browser' | 'chrome', descriptor: PropertyDe
 		return
 	}
 	Object.defineProperty(globalThis, key, descriptor)
-}
-
-function installExtensionImportGlobals() {
-	const browserDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'browser')
-	const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome')
-	Object.defineProperty(globalThis, 'chrome', {
-		value: { runtime: { id: 'test-extension' } },
-		configurable: true,
-		writable: true,
-	})
-	return () => {
-		restoreGlobalProperty('browser', browserDescriptor)
-		restoreGlobalProperty('chrome', chromeDescriptor)
-	}
 }
 
 function installBrowserMock() {
@@ -190,10 +220,12 @@ function installBrowserMock() {
 		tabs: {
 			async get() { return undefined },
 			async update() { return undefined },
+			onRemoved: { addListener: () => undefined },
 		},
 		windows: {
 			async get() { return undefined },
 			async update() { return undefined },
+			onRemoved: { addListener: () => undefined },
 		},
 	}
 	Object.defineProperty(globalThis, 'browser', {
@@ -394,7 +426,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 				authorizationList: [signedAuthorizationToRpc(clearDelegationAuthorization)],
 			}],
 		})
-		const restoreGlobals = installExtensionImportGlobals()
+		const browserMock = installBrowserMock()
 		try {
 			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
 			const transaction = await formEthSendTransaction(
@@ -419,7 +451,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 			assert.equal(authorization.s, BigInt(clearDelegationAuthorization.s))
 			assert.equal(authorization.yParity, clearDelegationAuthorization.yParity === 0 ? 'even' : 'odd')
 		} finally {
-			restoreGlobals()
+			browserMock.restore()
 		}
 	})
 
@@ -451,7 +483,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		const [parsedAuthorization] = params.params[0].authorizationList ?? []
 		if (parsedAuthorization === undefined) throw new Error('Expected authorization to be parsed')
 		assert.equal('authority' in parsedAuthorization, false)
-		const restoreGlobals = installExtensionImportGlobals()
+		const browserMock = installBrowserMock()
 		try {
 			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
 			const transaction = await formEthSendTransaction(
@@ -475,7 +507,121 @@ describe('EIP-7702 rescue transaction parsing', () => {
 			assert.equal(authorization.s, BigInt(clearDelegationAuthorization.s))
 			assert.equal(authorization.yParity, clearDelegationAuthorization.yParity === 0 ? 'even' : 'odd')
 		} finally {
-			restoreGlobals()
+			browserMock.restore()
+		}
+	})
+
+	test('formEthSendTransaction explains omitted-gas native balance shortfalls and preserves unrelated failures', async () => {
+		const browserMock = installBrowserMock()
+		try {
+			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const sender = 0x0000000000000000000000000000000000000001n
+			const value = 2n * 10n ** 18n
+			const params = SendTransactionParams.parse({
+				method: 'eth_sendTransaction',
+				params: [{
+					from: `0x${ sender.toString(16).padStart(40, '0') }`,
+					to: recipientAddress,
+					value: `0x${ value.toString(16) }`,
+				}],
+			})
+			const createTransaction = async (balance: bigint) => await formEthSendTransaction(
+				new EthereumClientService(createFailedGasEstimationRequestHandler(balance), async () => undefined, async () => undefined, rpcNetwork),
+				undefined,
+				sender,
+				{ websiteOrigin: 'test', icon: undefined, title: undefined },
+				params,
+				new Date('2024-01-01T00:00:00.000Z'),
+				1n,
+				true,
+			)
+
+			const insufficientBalanceTransaction = await createTransaction(10n ** 18n)
+			assert.equal(insufficientBalanceTransaction.success, false)
+			if (insufficientBalanceTransaction.success === true) throw new Error('transaction creation unexpectedly succeeded')
+			assert.equal(insufficientBalanceTransaction.error.message, 'Insufficient ETH balance. Available: 1 ETH. Attempting to send: 2 ETH.')
+
+			const unrelatedFailureTransaction = await createTransaction(3n * 10n ** 18n)
+			assert.equal(unrelatedFailureTransaction.success, false)
+			if (unrelatedFailureTransaction.success === true) throw new Error('transaction creation unexpectedly succeeded')
+			assert.equal(unrelatedFailureTransaction.error.message, 'execution reverted')
+
+			const tokenTransferParams = SendTransactionParams.parse({
+				method: 'eth_sendTransaction',
+				params: [{
+					from: `0x${ sender.toString(16).padStart(40, '0') }`,
+					to: '0x8888888888888888888888888888888888888888',
+					value: '0x0',
+					input: encodeFunctionCall(Erc20ABI, 'transfer', [recipientAddress, value]),
+				}],
+			})
+			const metadataFailureTransaction = await formEthSendTransaction(
+				new EthereumClientService(createFailedGasEstimationRequestHandler(3n * 10n ** 18n), async () => undefined, async () => undefined, rpcNetwork),
+				undefined,
+				sender,
+				{ websiteOrigin: 'test', icon: undefined, title: undefined },
+				tokenTransferParams,
+				new Date('2024-01-01T00:00:00.000Z'),
+				2n,
+				true,
+			)
+			assert.equal(metadataFailureTransaction.success, false)
+			if (metadataFailureTransaction.success === true) throw new Error('transaction creation unexpectedly succeeded')
+			assert.equal(metadataFailureTransaction.error.message, 'execution reverted')
+
+			const balanceFailureTransaction = await formEthSendTransaction(
+				new EthereumClientService(createFailedGasEstimationRequestHandler(new Error('balance unavailable')), async () => undefined, async () => undefined, rpcNetwork),
+				undefined,
+				sender,
+				{ websiteOrigin: 'test', icon: undefined, title: undefined },
+				params,
+				new Date('2024-01-01T00:00:00.000Z'),
+				3n,
+				true,
+			)
+			assert.equal(balanceFailureTransaction.success, false)
+			if (balanceFailureTransaction.success === true) throw new Error('transaction creation unexpectedly succeeded')
+			assert.equal(balanceFailureTransaction.error.message, 'execution reverted')
+
+			await assert.rejects(
+				async () => await formEthSendTransaction(
+					new EthereumClientService(createFailedGasEstimationRequestHandler(new Error(NEW_BLOCK_ABORT)), async () => undefined, async () => undefined, rpcNetwork),
+					undefined,
+					sender,
+					{ websiteOrigin: 'test', icon: undefined, title: undefined },
+					params,
+					new Date('2024-01-01T00:00:00.000Z'),
+					4n,
+					true,
+				),
+				(error) => error instanceof Error && error.message === NEW_BLOCK_ABORT,
+			)
+
+			const usdcAddress = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+			const usdcTransferParams = SendTransactionParams.parse({
+				method: 'eth_sendTransaction',
+				params: [{
+					from: `0x${ sender.toString(16).padStart(40, '0') }`,
+					to: usdcAddress,
+					value: '0x0',
+					input: encodeFunctionCall(Erc20ABI, 'transfer', [recipientAddress, 2_000_000n]),
+				}],
+			})
+			const insufficientTokenBalanceTransaction = await formEthSendTransaction(
+				new EthereumClientService(createFailedGasEstimationRequestHandler(3n * 10n ** 18n, 1_000_000n), async () => undefined, async () => undefined, rpcNetwork),
+				undefined,
+				sender,
+				{ websiteOrigin: 'test', icon: undefined, title: undefined },
+				usdcTransferParams,
+				new Date('2024-01-01T00:00:00.000Z'),
+				5n,
+				true,
+			)
+			assert.equal(insufficientTokenBalanceTransaction.success, false)
+			if (insufficientTokenBalanceTransaction.success === true) throw new Error('transaction creation unexpectedly succeeded')
+			assert.equal(insufficientTokenBalanceTransaction.error.message, 'Insufficient USDC balance. Available: 1 USDC. Attempting to send: 2 USDC.')
+		} finally {
+			browserMock.restore()
 		}
 	})
 
