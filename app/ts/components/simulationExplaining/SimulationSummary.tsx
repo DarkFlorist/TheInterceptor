@@ -16,7 +16,7 @@ import type { AddressBookEntry, Erc1155Entry, Erc20TokenEntry, Erc721Entry } fro
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
-import type { EnrichedEthereumInputData } from '../../types/EnrichedEthereumData.js'
+import type { EnrichedEthereumInputData, EnsEvent } from '../../types/EnrichedEthereumData.js'
 import { ChevronIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
@@ -26,6 +26,10 @@ import { createAsyncActionRunner, useAsyncState } from '../../utils/preact-utili
 import { useOptionalSignal } from '../../utils/OptionalSignal.js'
 import { type ReadonlySignal, type Signal, useComputed, useSignal } from '@preact/signals'
 import type { SignalOrValue } from '../../utils/signals.js'
+import type { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
+import { identifySignature } from './identifySignature.js'
+import { Collapsible } from '../subcomponents/Collapsible.js'
+import { EnsEventsExplainer, getVisibleEnsEvents } from './customExplainers/EnsEventExplainer.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -703,6 +707,7 @@ type SimulationSummaryParams = {
 	currentBlockNumber: Signal<bigint | undefined>,
 	activeAddress: ReadonlySignal<bigint | undefined>,
 	renameAddressCallBack: RenameAddressCallBack,
+	editEnsNamedHashCallBack: EditEnsNamedHashCallBack,
 	rpcConnectionStatus: Signal<RpcConnectionStatus>,
 }
 
@@ -710,14 +715,109 @@ function isSuccessfulVisualizedSimulationState(visualizedSimulationState: Simula
 	return visualizedSimulationState.success
 }
 
-function getSuccessfulSimulatedAndVisualizedTransactions(visualizedSimulationState: Extract<SimulationAndVisualisationResults['visualizedSimulationState'], { success: true }>) {
-	const transactions: SimulatedAndVisualizedTransaction[] = []
+function getSuccessfulSimulationSummaryEntries(visualizedSimulationState: Extract<SimulationAndVisualisationResults['visualizedSimulationState'], { success: true }>) {
+	const simulatedTransactions: SimulatedAndVisualizedTransaction[] = []
+	const simulatedSignatures: VisualizedPersonalSignRequest[] = []
+	const ensEvents: EnsEvent[] = []
 	for (const block of visualizedSimulationState.visualizedBlocks) {
 		for (const transaction of block.simulatedAndVisualizedTransactions) {
-			transactions.push(transaction)
+			simulatedTransactions.push(transaction)
+			for (const event of transaction.events) {
+				if (event.type === 'ENS') ensEvents.push(event)
+			}
+		}
+		for (const signature of block.visualizedPersonalSignRequests) {
+			simulatedSignatures.push(signature)
 		}
 	}
-	return transactions
+	return { simulatedTransactions, simulatedSignatures, ensEvents }
+}
+
+function getSimulatedSignatureSummaryStatus(signature: VisualizedPersonalSignRequest) {
+	if (signature.isValidMessage === false) {
+		return {
+			icon: '../img/error-icon.svg',
+			label: 'Invalid message format',
+			modifier: 'invalid',
+		}
+	}
+	if (signature.quarantine) {
+		return {
+			icon: '../img/warning-sign.svg',
+			label: signature.quarantineReasons.length === 0 ? 'Flagged for review' : `Flagged: ${ signature.quarantineReasons.join('; ') }`,
+			modifier: 'warning',
+		}
+	}
+	return {
+		icon: '../img/head-simulating.png',
+		label: 'Included in this simulation',
+		modifier: 'simulated',
+	}
+}
+
+function SimulatedSignaturesSummary({ simulatedSignatures, renameAddressCallBack }: {
+	simulatedSignatures: readonly VisualizedPersonalSignRequest[]
+	renameAddressCallBack: RenameAddressCallBack
+}) {
+	if (simulatedSignatures.length === 0) return <></>
+	return <Collapsible
+		summary = { `Simulated signatures (${ simulatedSignatures.length })` }
+		defaultOpen
+		class = 'card simulation-summary-section-card simulation-summary-signatures'
+	>
+		<div class = 'card-content simulation-summary-section-content'>
+			<ul class = 'simulation-summary-signature-list'>
+				{ simulatedSignatures.map((signature) => {
+					const status = getSimulatedSignatureSummaryStatus(signature)
+					return <li
+						key = { signature.messageIdentifier.toString() }
+						class = { `simulation-summary-signature simulation-summary-signature--${ status.modifier }` }
+					>
+						<div class = 'simulation-summary-signature-identity'>
+							<img aria-hidden = 'true' src = { status.icon } width = '24' height = '24' />
+							<div class = 'simulation-summary-signature-copy'>
+								<strong>{ identifySignature(signature).title }</strong>
+								<span>{ status.label }</span>
+							</div>
+						</div>
+						<WebsiteOriginText website = { signature.website } class = 'simulation-summary-signature-website' />
+						<div class = 'simulation-summary-signature-account'>
+							<span>Signing account</span>
+							<SmallAddress
+								addressBookEntry = { signature.activeAddress }
+								renameAddressCallBack = { renameAddressCallBack }
+							/>
+						</div>
+					</li>
+				}) }
+			</ul>
+		</div>
+	</Collapsible>
+}
+
+function EnsChangesSummary({ ensEvents, editEnsNamedHashCallBack, renameAddressCallBack, rpcNetwork }: {
+	ensEvents: readonly EnsEvent[]
+	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
+	renameAddressCallBack: RenameAddressCallBack
+	rpcNetwork: RpcNetwork
+}) {
+	const visibleEnsEvents = getVisibleEnsEvents(ensEvents)
+	if (visibleEnsEvents.length === 0) return <></>
+	return <Collapsible
+		summary = { `ENS changes (${ visibleEnsEvents.length })` }
+		defaultOpen
+		class = 'card simulation-summary-section-card simulation-summary-ens-changes'
+	>
+		<div class = 'card-content simulation-summary-section-content'>
+			<EnsEventsExplainer
+				ensEvents = { visibleEnsEvents }
+				textColor = 'var(--text-color)'
+				editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
+				renameAddressCallBack = { renameAddressCallBack }
+				rpcNetwork = { rpcNetwork }
+			/>
+		</div>
+	</Collapsible>
 }
 
 export function SimulationSummary(param: SimulationSummaryParams) {
@@ -726,17 +826,19 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	const visualizedSimulationState = currentResults.value.visualizedSimulationState
 	if (!isSuccessfulVisualizedSimulationState(visualizedSimulationState) || isEmptySimulationAndVisualisationResults(currentResults.value)) return <></>
 	const simulationAndVisualisationResults = currentResults.value
-	const simulatedAndVisualizedTransactions = getSuccessfulSimulatedAndVisualizedTransactions(visualizedSimulationState)
+	const { simulatedTransactions, simulatedSignatures, ensEvents } = getSuccessfulSimulationSummaryEntries(visualizedSimulationState)
 	const addressMetaData = new Map(simulationAndVisualisationResults.addressBookEntries.map((x) => [addressString(x.address), x]))
-	const originalSummary = summarizeLogs(simulatedAndVisualizedTransactions, addressMetaData, simulationAndVisualisationResults.tokenPriceEstimates, simulationAndVisualisationResults.namedTokenIds)
+	const originalSummary = summarizeLogs(simulatedTransactions, addressMetaData, simulationAndVisualisationResults.tokenPriceEstimates, simulationAndVisualisationResults.namedTokenIds)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, param.activeAddress.value)
 	const showOtherAccountChanges = useSignal<boolean>(false)
 
 	if (ownAddresses === undefined || notOwnAddresses === undefined) throw new Error('addresses were undefined')
 
-	const icon = simulatedAndVisualizedTransactions.some((transaction) => transaction.transactionStatus !== 'Transaction Succeeded')
+	const icon = simulatedTransactions.some((transaction) => transaction.transactionStatus !== 'Transaction Succeeded')
+		|| simulatedSignatures.some((signature) => signature.isValidMessage === false)
 		? '../img/error-icon.svg'
-		: simulatedAndVisualizedTransactions.some((transaction) => transaction.quarantine)
+		: simulatedTransactions.some((transaction) => transaction.quarantine)
+			|| simulatedSignatures.some((signature) => signature.quarantine)
 			? '../img/warning-sign.svg'
 			: '../img/success-icon.svg'
 
@@ -753,6 +855,16 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 				</div>
 			</header>
 			<div class = 'card-content'>
+				<SimulatedSignaturesSummary
+					simulatedSignatures = { simulatedSignatures }
+					renameAddressCallBack = { param.renameAddressCallBack }
+				/>
+				<EnsChangesSummary
+					ensEvents = { ensEvents }
+					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
+					renameAddressCallBack = { param.renameAddressCallBack }
+					rpcNetwork = { simulationAndVisualisationResults.rpcNetwork }
+				/>
 				<div class = 'container' style = 'margin-bottom: 10px'>
 					{ ownAddresses.length === 0 ? <p class = 'paragraph'> No changes to your accounts </p>
 						: <div class = 'notification transaction-importance-box'>

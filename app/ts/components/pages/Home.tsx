@@ -654,6 +654,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 							currentBlockNumber = { param.currentBlockNumber }
 							activeAddress = { param.activeSimulationAddress }
 							renameAddressCallBack = { param.renameAddressCallBack }
+							editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 							rpcConnectionStatus = { param.rpcConnectionStatus }
 						/>
 					}
