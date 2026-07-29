@@ -525,7 +525,31 @@ async function verifyInpageIsNotifiedAfterBackgroundBridgeReconnect(source: Cont
 	})
 }
 
+async function verifyContentScriptStartsWithoutRandomUuid() {
+	const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+	const getRandomValues = globalThis.crypto.getRandomValues.bind(globalThis.crypto)
+	Object.defineProperty(globalThis, 'crypto', {
+		configurable: true,
+		value: { getRandomValues },
+	})
+	try {
+		await withContentScriptMock('standalone-listener', async ({ eventListeners, getConnectionCount }) => {
+			assert.equal(getConnectionCount(), 1)
+			const inpageBridge = await dispatchBridgeRequest(eventListeners, 'signer_providers_changed', false, true)
+			assert.match(getContentScriptCapability(inpageBridge.receivedMessages), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u)
+			inpageBridge.close()
+		})
+	} finally {
+		if (cryptoDescriptor === undefined) Reflect.deleteProperty(globalThis, 'crypto')
+		else Object.defineProperty(globalThis, 'crypto', cryptoDescriptor)
+	}
+}
+
 if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
+	test('content script starts without crypto.randomUUID on insecure pages', async () => {
+		await verifyContentScriptStartsWithoutRandomUuid()
+	})
+
 	test('standalone content script recovers its background port without reconnect churn', async () => {
 		await verifyContentScriptReconnect('standalone-listener')
 	})

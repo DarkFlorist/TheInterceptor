@@ -37,12 +37,20 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		globalThis.crypto.getRandomValues(arr)
 		return `0x${ Array.from(arr, dec2hex).join('') }`
 	}
+	const generateUuidV4 = () => {
+		const bytes = new Uint8Array(16)
+		globalThis.crypto.getRandomValues(bytes)
+		bytes[6] = (bytes[6] & 0x0f) | 0x40
+		bytes[8] = (bytes[8] & 0x3f) | 0x80
+		const hex = Array.from(bytes, dec2hex).join('')
+		return `${ hex.slice(0, 8) }-${ hex.slice(8, 12) }-${ hex.slice(12, 16) }-${ hex.slice(16, 20) }-${ hex.slice(20) }`
+	}
 	const connectionNameNotUndefined = connectionName === undefined ? generateId(40) : connectionName
 	let pageHidden = false
 	let extensionPort: browser.runtime.Port | undefined 
 	let inpagePort: MessagePort | undefined
 	let inpageBridgeCapability: string | undefined
-	const contentScriptCapability = globalThis.crypto.randomUUID()
+	const contentScriptCapability = generateUuidV4()
 	let hasConnectedExtensionPort = false
 
 	type BridgeRequestCandidate = {
