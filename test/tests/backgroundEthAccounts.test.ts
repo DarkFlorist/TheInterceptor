@@ -6,7 +6,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlowRequestTracking.js'
-import { allowLegacySignerExecution, clearSignerExecutionAuthorityForTab, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
+import { allowLegacySignerExecution, authorizeSocketForSignerExecution, clearSignerExecutionAuthorityForTab, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket, registerCurrentChildSignerSocket, setSignerExecutionTarget } from '../../app/ts/background/signerExecutionAuthority.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 
 type Listener = () => void
@@ -246,6 +246,48 @@ describe('background eth_accounts', () => {
 			method: 'wallet_watchAsset',
 			error: { code: -32602, message: 'Invalid wallet_watchAsset parameters.' },
 		})
+	})
+
+	test('blocks simulated wallet_watchAsset requests until the child frame acknowledges the selected provider', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+
+		const topSocket = { tabId: 1, connectionName: 0n }
+		const childSocket = { tabId: 1, connectionName: 2n }
+		const providerUuid = '22222222-2222-4222-8222-222222222222'
+		registerCurrentChildSignerSocket(childSocket, 2)
+		reconcileSignerExecutionDocument(childSocket, websiteOrigin, '11111111-1111-4111-8111-111111111111', false, 2)
+		setSignerExecutionTarget(childSocket.tabId, providerUuid, websiteOrigin)
+
+		const top = createPort(topSocket.tabId, undefined, 0, topSocket.connectionName)
+		const child = createPort(childSocket.tabId, undefined, 2, childSocket.connectionName)
+		const websiteTabConnections: WebsiteTabConnections = new Map([[childSocket.tabId, { ...confirmedSignerOwnership(topSocket), connections: {
+			[websiteSocketToString(topSocket)]: { port: top.port, socket: topSocket, websiteOrigin, frameId: 0, approved: true, wantsToConnect: true },
+			[websiteSocketToString(childSocket)]: { port: child.port, socket: childSocket, websiteOrigin, frameId: 2, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: childSocket },
+			method: 'wallet_watchAsset',
+			params: [{ type: 'ERC20', options: { address: '0x1111111111111111111111111111111111111111', chainId: 2 } }],
+		} as const
+
+		await handleInterceptedRequest(child.port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, childSocket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		assert.equal(child.messages.at(-1)?.error?.code, 4100)
+
+		assert.equal(authorizeSocketForSignerExecution(childSocket, providerUuid, websiteOrigin), true)
+		await handleInterceptedRequest(child.port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, childSocket, {
+			...request,
+			uniqueRequestIdentifier: { ...request.uniqueRequestIdentifier, requestId: 2 },
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		assert.equal(child.messages.at(-1)?.error?.code, -32602)
 	})
 
 	test('reject public calls to internal provider callback methods', async () => {

@@ -578,6 +578,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	}
 	const initialActiveAddress = await getActiveAddressForRequest(initialSettings, websiteTabConnections, socket.tabId)
 	const requestCanReachSigner = !initialSettings.simulationMode
+		|| request.method === 'wallet_watchAsset'
 		|| (initialSettings.useSignersAddressAsActiveAddress && (isAccountConnectionMethod(request.method) || isAccountOnlyMethod(request.method)))
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
 	const isTopFrame = port !== undefined && isTopFrameId(port.sender?.frameId) && isAuthoritativeTopSocket(socket)
