@@ -1,8 +1,8 @@
-import { ICON_ACCESS_DENIED, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIMULATING, PRIMARY_COLOR, WARNING_COLOR } from '../utils/constants.js'
+import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_ACTIVE_WITH_SHIELD, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD, ICON_SIGNING_WITH_SHIELD, ICON_SIMULATING, ICON_SIMULATING_WITH_SHIELD, PRIMARY_COLOR, WARNING_COLOR } from '../utils/constants.js'
 import { areWeBlocking, hasAccess, hasAddressAccess } from './accessManagement.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon, setExtensionTitle } from './backgroundUtils.js'
 import { Future } from '../utils/future.js'
-import { TabIcon, type TabState, type WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { TabIcon, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { getSettings, getWebsiteAccess } from './settings.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './popupMessageHandlers.js'
@@ -15,6 +15,25 @@ import { sanitizeStoredWebsiteIcon } from '../utils/websiteIcons.js'
 
 const ALLOWED_FAVICON_PROTOCOLS = new Set(['http:', 'https:', 'data:'])
 const WAIT_FOR_LOADED_TAB_TIMEOUT_MESSAGE = 'Timed out waiting for tab to finish loading.'
+
+const blockingShieldIcons = {
+	[ICON_ACTIVE]: ICON_ACTIVE_WITH_SHIELD,
+	[ICON_ACCESS_DENIED]: ICON_ACCESS_DENIED,
+	[ICON_NOT_ACTIVE]: ICON_NOT_ACTIVE_WITH_SHIELD,
+	[ICON_SIMULATING]: ICON_SIMULATING_WITH_SHIELD,
+	[ICON_SIGNING]: ICON_SIGNING_WITH_SHIELD,
+	[ICON_SIGNING_NOT_SUPPORTED]: ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD,
+	[ICON_INTERCEPTOR_DISABLED]: ICON_INTERCEPTOR_DISABLED,
+	[ICON_ACTIVE_WITH_SHIELD]: ICON_ACTIVE_WITH_SHIELD,
+	[ICON_NOT_ACTIVE_WITH_SHIELD]: ICON_NOT_ACTIVE_WITH_SHIELD,
+	[ICON_SIMULATING_WITH_SHIELD]: ICON_SIMULATING_WITH_SHIELD,
+	[ICON_SIGNING_WITH_SHIELD]: ICON_SIGNING_WITH_SHIELD,
+	[ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD]: ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD,
+} as const satisfies Record<TabIcon, TabIcon>
+
+export function addBlockingShieldToIcon(icon: TabIcon): TabIcon {
+	return blockingShieldIcons[icon]
+}
 
 async function getCachedWebsiteIcon(tabId: number, websiteOrigin: string) {
 	const storedWebsiteAccess = await getWebsiteAccess()
@@ -94,7 +113,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 	}
 	const blockingWebsitePromise = areWeBlocking(websiteTabConnections, tabId, websiteOrigin)
 	silenceChromeUnCaughtPromise(blockingWebsitePromise)
-	const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => await blockingWebsitePromise && icon !== ICON_INTERCEPTOR_DISABLED ? TabIcon.parse(icon.replace('.png', '-shield.png')) : icon
+	const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => await blockingWebsitePromise ? addBlockingShieldToIcon(icon) : icon
 	const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason, popupRefreshGeneration)
 
 	const settings = await getSettings()
