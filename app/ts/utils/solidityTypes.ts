@@ -110,7 +110,7 @@ const solidityTypeCategories = {
 	address: 'address',
 	string: 'string',
 	bytes: 'bytes',
-} satisfies Record<SolidityType, SolidityTypeCategory>
+} as const satisfies Record<SolidityType, SolidityTypeCategory>
 
 function getSolidityTypeCategory(type: SolidityType) {
 	return solidityTypeCategories[type]
