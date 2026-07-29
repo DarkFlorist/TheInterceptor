@@ -65,14 +65,22 @@ describe('package scripts', () => {
 		])
 	})
 
-	test('firefox build compiles app scripts before writing the manifest', () => {
+	test('lint enforces single-line named imports', () => {
 		const scripts = getPackageScripts()
+		assert.equal(getScript(scripts, 'lint:imports'), 'bun ./scripts/check-single-line-imports.mts')
+		assert.ok(getScript(scripts, 'lint').split(' && ').includes('bun run lint:imports'))
+	})
 
-		assert.deepEqual(getScript(scripts, 'build-firefox').split(' && '), [
-			'bun run compile-app',
-			'bun run bundle',
-			'bun run firefox',
-		])
+	test('browser builds generate pages and compile app scripts before writing their manifests', () => {
+		const scripts = getPackageScripts()
+		for (const browserName of ['firefox', 'chrome'] as const) {
+			assert.deepEqual(getScript(scripts, `build-${ browserName }`).split(' && '), [
+				'bun run generate-extension-pages',
+				'bun run compile-app',
+				'bun run bundle',
+				`bun run ${ browserName }`,
+			])
+		}
 	})
 
 	test('typescript is new enough for micro-eth-signer declarations', () => {

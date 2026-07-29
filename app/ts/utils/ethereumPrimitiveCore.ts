@@ -1,15 +1,6 @@
 import { createContract, events } from 'micro-eth-signer/advanced/abi.js'
 import { canonicalAbiType, FIXED_BYTES_REGEX, INTEGER_REGEX, parseIntegerString } from './ethereumAbiInternals.js'
-import {
-	bytesFromHex,
-	bytesToHex,
-	ensureHex,
-	getAddress,
-	keccak256,
-	stringToBytes,
-	stripHexPrefix,
-	type Hex,
-} from './ethereumBytes.js'
+import { bytesFromHex, bytesToHex, ensureHex, getAddress, keccak256, stringToBytes, stripHexPrefix, type Hex } from './ethereumBytes.js'
 import { getRecordProperty, isRecord } from './runtimeTypeGuards.js'
 
 export {

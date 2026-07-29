@@ -1,15 +1,11 @@
 import process from 'node:process'
 import ts from 'typescript'
+import { collectFilePaths, scriptKindForPath } from './typescript-lint-utils.mts'
 
 const defaultFilePatterns = ['app/ts/**/*.ts', 'app/ts/**/*.tsx'] as const
 
 type Diagnostic = { file: string, line: number, column: number, text: string }
 type Scope = { reportValues: Map<string, boolean> }
-
-function scriptKindForPath(path: string) {
-	if (path.endsWith('.tsx')) return ts.ScriptKind.TSX
-	return ts.ScriptKind.TS
-}
 
 function diagnosticForNode(sourceFile: ts.SourceFile, node: ts.Node): Diagnostic {
 	const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
@@ -105,22 +101,9 @@ function collectDiagnostics(path: string, sourceText: string) {
 	return { unhandledDiagnostics, wrappedDiagnostics }
 }
 
-async function getFilePaths() {
-	const explicitPaths = process.argv.slice(2)
-	if (explicitPaths.length > 0) return explicitPaths
-
-	const filePaths = new Set<string>()
-	for (const pattern of defaultFilePatterns) {
-		for await (const path of new Bun.Glob(pattern).scan('.')) {
-			filePaths.add(path)
-		}
-	}
-	return [...filePaths].sort()
-}
-
 const unhandledDiagnostics: Diagnostic[] = []
 const wrappedDiagnostics: Diagnostic[] = []
-for (const path of await getFilePaths()) {
+for (const path of await collectFilePaths(defaultFilePatterns, process.argv.slice(2))) {
 	const sourceText = await Bun.file(path).text()
 	const diagnostics = collectDiagnostics(path, sourceText)
 	unhandledDiagnostics.push(...diagnostics.unhandledDiagnostics)
