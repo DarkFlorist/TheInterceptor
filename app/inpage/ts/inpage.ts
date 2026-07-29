@@ -2137,6 +2137,11 @@ class InterceptorMessageListener {
 		const interceptorMessageListener = this
 		const interceptorProviderUuid = generateUuidV4()
 		window.addEventListener('eip6963:announceProvider', this.collectAnnouncedProvider)
+		// Other extensions also inject at document_start, so the first request can run
+		// before their EIP-6963 listeners exist. Refresh at bounded page lifecycle
+		// milestones even when a usable legacy window.ethereum signer was found.
+		window.addEventListener('DOMContentLoaded', this.requestAnnouncedProviders, { once: true })
+		window.addEventListener('load', this.requestAnnouncedProviders, { once: true })
 		function announceProvider() {
 			const info: EIP6963ProviderInfo = {
 				uuid: interceptorProviderUuid,

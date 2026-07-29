@@ -329,6 +329,44 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 }
 
 describe('inpage signer bridge', () => {
+	test('refreshes EIP-6963 providers after startup when a legacy Rabby signer connected first', async () => {
+		const connectedSignerNames: unknown[] = []
+		const catalogRequests: InpageRequest[] = []
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request) => {
+				if (request.method === 'connected_to_signer') connectedSignerNames.push(request.params?.[1])
+				if (request.method === 'signer_providers_changed') catalogRequests.push(request)
+				return false
+			},
+		})
+		const metaMaskProvider = fakeWindow.ethereum
+		const rabbyProvider = {
+			isRabby: true,
+			isConnected: () => true,
+			request: metaMaskProvider.request,
+			on: metaMaskProvider.on,
+			removeListener: metaMaskProvider.removeListener,
+		}
+		Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: rabbyProvider })
+		const providerInfos = [
+			{ uuid: '11111111-1111-4111-8111-111111111111', name: 'Rabby Wallet', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.rabby' },
+			{ uuid: '22222222-2222-4222-8222-222222222222', name: 'MetaMask', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.metamask' },
+		]
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?late-eip6963-after-legacy-rabby', async () => {
+			await waitFor(() => connectedSignerNames.includes('Rabby'))
+			await waitFor(() => catalogRequests.some((request) => Array.isArray(request.params?.[0]) && request.params[0].length === 0))
+			fakeWindow.addEventListener('eip6963:requestProvider', () => {
+				fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: providerInfos[0], provider: rabbyProvider } })
+				fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: providerInfos[1], provider: metaMaskProvider } })
+			})
+
+			fakeWindow.dispatchEvent({ type: 'DOMContentLoaded' })
+
+			await waitFor(() => catalogRequests.some((request) => Array.isArray(request.params?.[0]) && request.params[0].length === providerInfos.length))
+		})
+	})
+
 	test('starts on HTTP-style pages where crypto.randomUUID is unavailable', async () => {
 		const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
 		const getRandomValues = globalThis.crypto.getRandomValues.bind(globalThis.crypto)
