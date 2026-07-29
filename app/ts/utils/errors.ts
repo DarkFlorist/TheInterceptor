@@ -46,7 +46,7 @@ export const ERROR_REPORTING_POLICY = {
 	externalService: { category: 'external_service', severity: 'warning', userVisible: false },
 	localRecovery: { category: 'local_recovery', severity: 'warning', userVisible: false },
 	unexpected: { category: 'unexpected', severity: 'error', userVisible: true },
-} satisfies Record<string, ErrorPolicyEntry>
+} as const satisfies Record<string, ErrorPolicyEntry>
 
 type InterceptorErrorReport = InterceptorErrorDiagnostic
 
