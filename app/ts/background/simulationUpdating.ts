@@ -210,7 +210,7 @@ export const getGovernanceExecutionTokenBalancesAfter = async (
 		undefined,
 		simulationInputAfterExecution,
 		callResult,
-		executionTransaction.signedTransaction.from
+		executionTransaction.signedTransaction
 	)
 }
 
