@@ -33,6 +33,7 @@ export const pageDefinitions: readonly PageDefinition[] = [
 		name: 'confirmTransaction',
 		title: 'Confirm Transaction - The Interceptor',
 		htmlStyle: 'background-color: var(--bg-color); overflow-y: inherit;',
+		// Keep the MV3 polyfill before the root as a workaround for https://bugzilla.mozilla.org/show_bug.cgi?id=1803984.
 		manifestV3PolyfillPosition: 'before-root',
 	},
 	{
