@@ -40,8 +40,7 @@ import type { Website } from '../../types/websiteAccessTypes.js'
 import type { EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { Blockie } from '../subcomponents/SVGBlockie.js'
 import { getSimulationStackElementId } from '../../utils/simulationStackTargets.js'
-import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
-import { getInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
+import { getSimulatedTransactionInsufficientBalanceMessage } from '../../simulation/insufficientBalance.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -177,39 +176,12 @@ function ConnectedDelegationStack({ delegationNotice, children }: { delegationNo
 	</div>
 }
 
-const getInsufficientBalanceError = (transaction: Extract<MaybeSimulatedTransaction, { transactionStatus: 'Transaction Failed' }>) => {
-	const sender = transaction.transaction.from.address
-	const nativeBalanceAfter = transaction.tokenBalancesAfter.find((balance) => balance.token === ETHEREUM_LOGS_LOGGER_ADDRESS && balance.owner === sender)?.balance
-	const token = transaction.transaction.to
-	const tokenBalance = token?.type === 'ERC20'
-		? transaction.tokenBalancesAfter.find((balance) => balance.token === token.address && balance.owner === sender)?.balance
-		: undefined
-	return getInsufficientBalanceMessage(
-		{
-			from: sender,
-			to: token?.address ?? null,
-			value: transaction.transaction.value,
-			input: transaction.transaction.input,
-		},
-		nativeBalanceAfter === undefined
-			? undefined
-			: {
-				balance: nativeBalanceAfter + transaction.gasSpent * transaction.realizedGasPrice,
-				symbol: transaction.transaction.rpcNetwork.currencyTicker,
-				decimals: 18n,
-			},
-		token?.type !== 'ERC20' || tokenBalance === undefined
-			? undefined
-			: { token: token.address, balance: tokenBalance, symbol: token.symbol, decimals: token.decimals },
-	)
-}
-
 // showcases the most important things the transaction does
 export function TransactionImportanceBlock(param: TransactionImportanceBlockParams) {
 	const delegationNotice = getDelegationNotice(param.simTx.transaction, param.addressMetadata, param.renameAddressCallBack)
 	const content = (() => {
 		if (param.simTx.transactionStatus === 'Failed To Simulate') return <ErrorComponent text = { 'Failed to simulate this transaction.' } containerStyle = { { margin: '0px' } } />
-		if (param.simTx.transactionStatus === 'Transaction Failed') return <ErrorComponent text = { getInsufficientBalanceError(param.simTx) ?? `The transaction fails with an error: '${ param.simTx.error.decodedErrorMessage }' ${ param.simTx.error.data !== undefined ? ` (data: '${ param.simTx.error.data }')` : '' }` } containerStyle = { { margin: '0px' } } />
+		if (param.simTx.transactionStatus === 'Transaction Failed') return <ErrorComponent text = { getSimulatedTransactionInsufficientBalanceMessage(param.simTx) ?? `The transaction fails with an error: '${ param.simTx.error.decodedErrorMessage }' ${ param.simTx.error.data !== undefined ? ` (data: '${ param.simTx.error.data }')` : '' }` } containerStyle = { { margin: '0px' } } />
 		const transactionIdentification = identifyTransaction(param.simTx)
 		switch (transactionIdentification.type) {
 			case 'SimpleTokenTransfer': return <SimpleTokenTransferVisualisation simTx = { transactionIdentification.identifiedTransaction } renameAddressCallBack = { param.renameAddressCallBack }/>
