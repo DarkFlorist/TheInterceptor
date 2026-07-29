@@ -20,6 +20,7 @@ import type { PureGroupedSolidityType } from '../types/solidityType.js'
 import { promiseAllMapAbortSafe } from '../utils/requests.js'
 import { getFilledInContactEntry } from '../utils/addressBookEntries.js'
 import { JsonRpcResponseError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
+import { getDeployedContractAddress } from '../simulation/services/SimulationModeEthereumClientService.js'
 
 const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
 
@@ -233,7 +234,7 @@ export function getAddressesToIdentifyForVisualiserFromTransactions(events: Enri
 
 	for (const tx of simulationStateInput.flatMap((block) => block.transactions)) {
 		addressesToFetchMetadata.push(tx.signedTransaction.from)
-		if (tx.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.signedTransaction.to)
+		addressesToFetchMetadata.push(tx.signedTransaction.to ?? getDeployedContractAddress(tx.signedTransaction.from, tx.signedTransaction.nonce))
 		if (tx.signedTransaction.type === '7702') addressesToFetchMetadata.push(...tx.signedTransaction.authorizationList.map((authorization) => authorization.address))
 	}
 
