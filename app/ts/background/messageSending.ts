@@ -12,6 +12,7 @@ const isSignerTouchingCallback = (message: SubscriptionReplyOrCallBack) => messa
 	|| message.method === 'request_signer_to_eth_accounts'
 	|| message.method === 'request_signer_chainId'
 	|| message.method === 'request_signer_to_wallet_switchEthereumChain'
+	|| message.method === 'request_signer_to_wallet_watchAsset'
 
 function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptorMessageToInpage) {
 	try {

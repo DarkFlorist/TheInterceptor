@@ -329,6 +329,43 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 }
 
 describe('inpage signer bridge', () => {
+	test('starts on HTTP-style pages where crypto.randomUUID is unavailable', async () => {
+		const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+		const getRandomValues = globalThis.crypto.getRandomValues.bind(globalThis.crypto)
+		const catalogRequests: InpageRequest[] = []
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request) => {
+				if (request.method === 'signer_providers_changed') catalogRequests.push(request)
+				return false
+			},
+		})
+		const announcedProvider = fakeWindow.ethereum
+		const providerInfo = {
+			uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+			name: 'HTTP Wallet',
+			icon: 'data:image/svg+xml,<svg/>',
+			rdns: 'com.example.http',
+		}
+		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+			type: 'eip6963:announceProvider',
+			detail: { info: providerInfo, provider: announcedProvider },
+		}))
+		Object.defineProperty(globalThis, 'crypto', {
+			configurable: true,
+			value: { getRandomValues },
+		})
+
+		try {
+			await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?http-without-random-uuid', async () => {
+				await waitFor(() => catalogRequests.some((request) => Array.isArray(request.params?.[0])
+					&& request.params[0].some((provider) => isRecord(provider) && provider.uuid === providerInfo.uuid)))
+			})
+		} finally {
+			if (cryptoDescriptor === undefined) Reflect.deleteProperty(globalThis, 'crypto')
+			else Object.defineProperty(globalThis, 'crypto', cryptoDescriptor)
+		}
+	})
+
 	test('shares the top document generation when a same-origin child initializes first', async () => {
 		const childDocumentGenerations: string[] = []
 		const topDocumentGenerations: string[] = []

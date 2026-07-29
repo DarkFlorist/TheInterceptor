@@ -112,7 +112,15 @@ const MAX_EIP6963_PROVIDERS = 16
 const MAX_EIP6963_CATALOG_CHARACTERS = 512_000
 const MAX_CONFLICTING_EIP6963_UUIDS = 64
 const SIGNER_DOCUMENT_GENERATION_KEY = Symbol.for('dark.florist.interceptor.signerDocumentGeneration')
-const signerFrameFallbackDocumentGeneration = globalThis.crypto.randomUUID()
+const generateUuidV4 = () => {
+	const bytes = new Uint8Array(16)
+	globalThis.crypto.getRandomValues(bytes)
+	bytes[6] = (bytes[6] & 0x0f) | 0x40
+	bytes[8] = (bytes[8] & 0x3f) | 0x80
+	const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+	return `${ hex.slice(0, 8) }-${ hex.slice(8, 12) }-${ hex.slice(12, 16) }-${ hex.slice(16, 20) }-${ hex.slice(20) }`
+}
+const signerFrameFallbackDocumentGeneration = generateUuidV4()
 
 class SignerSynchronizationBridgeReconnectedError extends Error {}
 
@@ -559,7 +567,7 @@ class InterceptorMessageListener {
 	private signerWindowEthereumRequest: EthereumRequest | undefined = undefined
 	private fallbackSignerWindowEthereumRequest: EthereumRequest | undefined = undefined
 	private extensionMessagePort: MessagePort | undefined = undefined
-	private readonly bridgeCapability = globalThis.crypto.randomUUID()
+	private readonly bridgeCapability = generateUuidV4()
 	private contentScriptCapability: string | undefined = undefined
 	private readonly contentScriptBridgeInitialized = new InterceptorFuture<void>()
 	private readonly subscribedSignerProviders = new WeakSet<object>()
@@ -2127,7 +2135,7 @@ class InterceptorMessageListener {
 
 	private readonly onPageLoad = () => {
 		const interceptorMessageListener = this
-		const interceptorProviderUuid = globalThis.crypto.randomUUID()
+		const interceptorProviderUuid = generateUuidV4()
 		window.addEventListener('eip6963:announceProvider', this.collectAnnouncedProvider)
 		function announceProvider() {
 			const info: EIP6963ProviderInfo = {

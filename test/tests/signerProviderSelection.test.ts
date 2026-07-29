@@ -781,6 +781,15 @@ describe('EIP-6963 signer provider selection', () => {
 		sendSubscriptionReplyOrCallBack(websiteTabConnections, childSocket, { type: 'result', method: 'request_signer_to_eth_accounts', result: [] })
 		sendSubscriptionReplyOrCallBack(websiteTabConnections, childSocket, { type: 'result', method: 'request_signer_chainId', result: [] })
 		sendSubscriptionReplyOrCallBack(websiteTabConnections, childSocket, { type: 'result', method: 'request_signer_to_wallet_switchEthereumChain', result: 1n })
+		sendSubscriptionReplyOrCallBack(websiteTabConnections, childSocket, {
+			type: 'result',
+			method: 'request_signer_to_wallet_watchAsset',
+			result: {
+				parameters: {},
+				uniqueRequestIdentifier: { requestId: 4, requestSocket: childSocket },
+				signerIdentity: { ...childSocket, ownerGeneration: 1, signerProviderGeneration: 1 },
+			},
+		})
 		assert.deepEqual(deliveredMessages, [])
 
 		assert.equal(authorizeSocketForSignerExecution(childSocket, provider.uuid, 'app.example'), true)
