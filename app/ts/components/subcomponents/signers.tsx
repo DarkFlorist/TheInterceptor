@@ -10,8 +10,13 @@ const SignerLogoPlaceholder = () => <svg class = 'signer-logo-placeholder' viewB
 	<circle cx = '17' cy = '12' r = '0.75' fill = 'currentColor'/>
 </svg>
 
-export function SignerLogoText(param: { signerName: SignalOrValue<SignerName>, text: SignalOrValue<string>, reserveLogoSpace?: boolean }) {
-	const signerLogo = getSignerLogo(resolveSignal(param.signerName))
+export function getSignerDisplayLogo(signerName: SignerName, providerIcon: string | undefined) {
+	return providerIcon ?? getSignerLogo(signerName)
+}
+
+export function SignerLogoText(param: { signerName: SignalOrValue<SignerName>, text: SignalOrValue<string>, providerIcon?: SignalOrValue<string | undefined>, reserveLogoSpace?: boolean }) {
+	const providerIcon = param.providerIcon === undefined ? undefined : resolveSignal(param.providerIcon)
+	const signerLogo = getSignerDisplayLogo(resolveSignal(param.signerName), providerIcon)
 	const showLogoSlot = signerLogo !== undefined || param.reserveLogoSpace === true
 	return <p class = 'signer-logo-text'>
 		{ showLogoSlot ? <span class = 'signer-logo-slot' aria-hidden = 'true'>

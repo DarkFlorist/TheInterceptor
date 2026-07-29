@@ -1,6 +1,15 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { signerProviderOptionLabel, signerProviderUuidSuffix } from '../../app/ts/components/pages/Home.js'
+import { getSignerDisplayLogo } from '../../app/ts/components/subcomponents/signers.js'
+
+test('signing controls prefer the selected EIP-6963 provider icon over legacy name matching', () => {
+	const announcedRabbyIcon = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>'
+
+	assert.equal(getSignerDisplayLogo('Rabby Wallet', announcedRabbyIcon), announcedRabbyIcon)
+	assert.notEqual(getSignerDisplayLogo('Rabby', undefined), undefined)
+	assert.equal(getSignerDisplayLogo('Rabby Wallet', undefined), undefined)
+})
 
 test('signer provider choices visibly disambiguate identical wallet identities by UUID', () => {
 	const firstProvider = {
@@ -29,6 +38,7 @@ test('signer provider selector renders a contained logo-led accessible dropdown'
 	])
 
 	assert.match(homeSource, /<SignerProviderLogo provider = \{ provider \}\/>/)
+	assert.match(homeSource, /providerIcon = \{ selectedSignerProviderIcon \}/)
 	assert.match(homeSource, />Signer for this tab<\/span>/)
 	assert.match(homeSource, /aria-haspopup = 'listbox'/)
 	assert.match(homeSource, /class = 'signer-provider-options' role = 'listbox'/)

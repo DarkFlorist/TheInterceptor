@@ -397,6 +397,7 @@ function SignerExplanation(param: SignerExplanationParams) {
 function FirstCardHeader(param: FirstCardParams) {
 	const tabIconReason = useComputed(() => param.tabIconDetails.value.iconReason)
 	const signerName = useComputed(() => param.tabState.value?.signerName ?? 'NoSignerDetected')
+	const selectedSignerProviderIcon = useComputed(() => param.tabState.value?.selectedSignerProvider?.icon)
 	const { value: setSimulatingState, waitFor: waitForSetSimulating } = useAsyncState<void>()
 	const { value: setSigningState, waitFor: waitForSetSigning } = useAsyncState<void>()
 	const simulatingPending = setSimulatingState.value.state === 'pending'
@@ -440,7 +441,7 @@ function FirstCardHeader(param: FirstCardParams) {
 						disabled = { !param.simulationMode.value || simulatingPending || !param.isInitialHomeDataLoaded.value }
 						keepTextWhilePending = { true }
 						pendingIndicatorPlacement = 'overlay'
-						text = { <SignerLogoText signerName = { signerName } text = 'Signing' reserveLogoSpace = { true } /> }
+						text = { <SignerLogoText signerName = { signerName } text = 'Signing' providerIcon = { selectedSignerProviderIcon } reserveLogoSpace = { true } /> }
 						pendingText = 'Switching to signing mode...'
 						onClick = { enableSigning }
 					/>
