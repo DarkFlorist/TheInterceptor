@@ -3,16 +3,7 @@ import { concatBytes, hexToBytes, utf8ToBytes } from '@noble/hashes/utils'
 import { RLP } from 'micro-eth-signer/core/rlp.js'
 import { canonicalAbiType, FIXED_BYTES_REGEX, INTEGER_REGEX } from './ethereumAbiInternals.js'
 import { ens_normalize as normalizeEnsNameWithLocalData } from './ensNormalize.js'
-import {
-	bytesFromHex,
-	bytesToHex,
-	ensureHex,
-	getAddress,
-	keccak256,
-	stringToBytes,
-	stripHexPrefix,
-	type Hex,
-} from './ethereumBytes.js'
+import { bytesFromHex, bytesToHex, ensureHex, getAddress, keccak256, stringToBytes, stripHexPrefix, type Hex } from './ethereumBytes.js'
 
 const PACKED_ARRAY_TYPE_REGEX = /^(.*)\[([0-9]*)\]$/u
 const PACKED_ARRAY_ELEMENT_BYTES = 32

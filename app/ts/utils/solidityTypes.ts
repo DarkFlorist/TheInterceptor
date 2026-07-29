@@ -1,4 +1,3 @@
-import { assertNever } from './typescript.js'
 import { EthereumAddress, EthereumData, EthereumQuantity, NonHexBigInt } from '../types/wire-types.js'
 import * as funtypes from 'funtypes'
 import { identifyAddress } from '../background/metadataUtils.js'
@@ -6,111 +5,115 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import { type EnrichedGroupedSolidityType, type PureFlatGroupedSolidityType, type PureGroupedSolidityType, SignedBigInt, SolidityType, type SolidityVariable } from '../types/solidityType.js'
 import { promiseAllMapAbortSafe } from './requests.js'
 import type { AbiParameter } from './ethereumPrimitives.js'
+import { assertNever } from './typescript.js'
+
+type SolidityTypeCategory = 'address' | 'bool' | 'bytes' | 'fixedBytes' | 'signedInteger' | 'string' | 'unsignedInteger'
+
+const solidityTypeCategories = {
+	uint8: 'unsignedInteger',
+	uint16: 'unsignedInteger',
+	uint24: 'unsignedInteger',
+	uint32: 'unsignedInteger',
+	uint40: 'unsignedInteger',
+	uint48: 'unsignedInteger',
+	uint56: 'unsignedInteger',
+	uint64: 'unsignedInteger',
+	uint72: 'unsignedInteger',
+	uint80: 'unsignedInteger',
+	uint88: 'unsignedInteger',
+	uint96: 'unsignedInteger',
+	uint104: 'unsignedInteger',
+	uint112: 'unsignedInteger',
+	uint120: 'unsignedInteger',
+	uint128: 'unsignedInteger',
+	uint136: 'unsignedInteger',
+	uint144: 'unsignedInteger',
+	uint152: 'unsignedInteger',
+	uint160: 'unsignedInteger',
+	uint168: 'unsignedInteger',
+	uint176: 'unsignedInteger',
+	uint184: 'unsignedInteger',
+	uint192: 'unsignedInteger',
+	uint200: 'unsignedInteger',
+	uint208: 'unsignedInteger',
+	uint216: 'unsignedInteger',
+	uint224: 'unsignedInteger',
+	uint232: 'unsignedInteger',
+	uint240: 'unsignedInteger',
+	uint248: 'unsignedInteger',
+	uint256: 'unsignedInteger',
+	int8: 'signedInteger',
+	int16: 'signedInteger',
+	int24: 'signedInteger',
+	int32: 'signedInteger',
+	int40: 'signedInteger',
+	int48: 'signedInteger',
+	int56: 'signedInteger',
+	int64: 'signedInteger',
+	int72: 'signedInteger',
+	int80: 'signedInteger',
+	int88: 'signedInteger',
+	int96: 'signedInteger',
+	int104: 'signedInteger',
+	int112: 'signedInteger',
+	int120: 'signedInteger',
+	int128: 'signedInteger',
+	int136: 'signedInteger',
+	int144: 'signedInteger',
+	int152: 'signedInteger',
+	int160: 'signedInteger',
+	int168: 'signedInteger',
+	int176: 'signedInteger',
+	int184: 'signedInteger',
+	int192: 'signedInteger',
+	int200: 'signedInteger',
+	int208: 'signedInteger',
+	int216: 'signedInteger',
+	int224: 'signedInteger',
+	int232: 'signedInteger',
+	int240: 'signedInteger',
+	int248: 'signedInteger',
+	int256: 'signedInteger',
+	bytes1: 'fixedBytes',
+	bytes2: 'fixedBytes',
+	bytes3: 'fixedBytes',
+	bytes4: 'fixedBytes',
+	bytes5: 'fixedBytes',
+	bytes6: 'fixedBytes',
+	bytes7: 'fixedBytes',
+	bytes8: 'fixedBytes',
+	bytes9: 'fixedBytes',
+	bytes10: 'fixedBytes',
+	bytes11: 'fixedBytes',
+	bytes12: 'fixedBytes',
+	bytes13: 'fixedBytes',
+	bytes14: 'fixedBytes',
+	bytes15: 'fixedBytes',
+	bytes16: 'fixedBytes',
+	bytes17: 'fixedBytes',
+	bytes18: 'fixedBytes',
+	bytes19: 'fixedBytes',
+	bytes20: 'fixedBytes',
+	bytes21: 'fixedBytes',
+	bytes22: 'fixedBytes',
+	bytes23: 'fixedBytes',
+	bytes24: 'fixedBytes',
+	bytes25: 'fixedBytes',
+	bytes26: 'fixedBytes',
+	bytes27: 'fixedBytes',
+	bytes28: 'fixedBytes',
+	bytes29: 'fixedBytes',
+	bytes30: 'fixedBytes',
+	bytes31: 'fixedBytes',
+	bytes32: 'fixedBytes',
+	bool: 'bool',
+	address: 'address',
+	string: 'string',
+	bytes: 'bytes',
+} satisfies Record<SolidityType, SolidityTypeCategory>
 
 function getSolidityTypeCategory(type: SolidityType) {
-	switch(type) {
-		case 'uint8':
-		case 'uint16':
-		case 'uint24':
-		case 'uint32':
-		case 'uint40':
-		case 'uint48':
-		case 'uint56':
-		case 'uint64':
-		case 'uint72':
-		case 'uint80':
-		case 'uint88':
-		case 'uint96':
-		case 'uint104':
-		case 'uint112':
-		case 'uint120':
-		case 'uint128':
-		case 'uint136':
-		case 'uint144':
-		case 'uint152':
-		case 'uint160':
-		case 'uint168':
-		case 'uint176':
-		case 'uint184':
-		case 'uint192':
-		case 'uint200':
-		case 'uint208':
-		case 'uint216':
-		case 'uint224':
-		case 'uint232':
-		case 'uint240':
-		case 'uint248':
-		case 'uint256': return 'unsignedInteger'
-		case 'int8':
-		case 'int16':
-		case 'int24':
-		case 'int32':
-		case 'int40':
-		case 'int48':
-		case 'int56':
-		case 'int64':
-		case 'int72':
-		case 'int80':
-		case 'int88':
-		case 'int96':
-		case 'int104':
-		case 'int112':
-		case 'int120':
-		case 'int128':
-		case 'int136':
-		case 'int144':
-		case 'int152':
-		case 'int160':
-		case 'int168':
-		case 'int176':
-		case 'int184':
-		case 'int192':
-		case 'int200':
-		case 'int208':
-		case 'int216':
-		case 'int224':
-		case 'int232':
-		case 'int240':
-		case 'int248':
-		case 'int256': return 'signedInteger'
-		case 'bytes1':
-		case 'bytes2':
-		case 'bytes3':
-		case 'bytes4':
-		case 'bytes5':
-		case 'bytes6':
-		case 'bytes7':
-		case 'bytes8':
-		case 'bytes9':
-		case 'bytes10':
-		case 'bytes11':
-		case 'bytes12':
-		case 'bytes13':
-		case 'bytes14':
-		case 'bytes15':
-		case 'bytes16':
-		case 'bytes17':
-		case 'bytes18':
-		case 'bytes19':
-		case 'bytes20':
-		case 'bytes21':
-		case 'bytes22':
-		case 'bytes23':
-		case 'bytes24':
-		case 'bytes25':
-		case 'bytes26':
-		case 'bytes27':
-		case 'bytes28':
-		case 'bytes29':
-		case 'bytes30':
-		case 'bytes31':
-		case 'bytes32': return 'fixedBytes'
-		case 'bool': return 'bool'
-		case 'address': return 'address'
-		case 'string': return 'string'
-		case 'bytes': return 'bytes'
-		default: assertNever(type)
-	}
+	return solidityTypeCategories[type]
 }
 
 export async function parseSolidityValueByTypeEnriched(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, type: SolidityType, value: unknown, isArray: boolean, useLocalStorage = true): Promise<EnrichedGroupedSolidityType> {
@@ -218,7 +221,7 @@ function parseSolidityValueByTypePure(type: SolidityType, value: unknown, isArra
 			case 'signedInteger': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(SignedIntegerType).parse(value).map((x) => BigInt(x)) }
 			case 'unsignedInteger': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(UnsignedIntegerType).parse(value).map((x) => BigInt(x)) }
 			case 'string': return { type: `${ categorized }[]`, value: funtypes.ReadonlyArray(funtypes.String).parse(value) }
-			default: assertNever(categorized)
+			default: return assertNever(categorized)
 		}
 	}
 	switch (categorized) {
@@ -232,6 +235,6 @@ function parseSolidityValueByTypePure(type: SolidityType, value: unknown, isArra
 		case 'signedInteger': return { type: categorized, value: BigInt(SignedIntegerType.parse(value)) }
 		case 'unsignedInteger': return { type: categorized, value: BigInt(UnsignedIntegerType.parse(value)) }
 		case 'string': return { type: categorized, value: funtypes.String.parse(value) }
-		default: assertNever(categorized)
+		default: return assertNever(categorized)
 	}
 }
