@@ -40,9 +40,8 @@ import type { Website } from '../../types/websiteAccessTypes.js'
 import type { EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { Blockie } from '../subcomponents/SVGBlockie.js'
 import { getSimulationStackElementId } from '../../utils/simulationStackTargets.js'
-import { parseTransactionIfPossible } from '../../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
-import { formatInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
+import { getInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -181,19 +180,28 @@ function ConnectedDelegationStack({ delegationNotice, children }: { delegationNo
 const getInsufficientBalanceError = (transaction: Extract<MaybeSimulatedTransaction, { transactionStatus: 'Transaction Failed' }>) => {
 	const sender = transaction.transaction.from.address
 	const nativeBalanceAfter = transaction.tokenBalancesAfter.find((balance) => balance.token === ETHEREUM_LOGS_LOGGER_ADDRESS && balance.owner === sender)?.balance
-	if (nativeBalanceAfter !== undefined) {
-		const nativeBalanceBefore = nativeBalanceAfter + transaction.gasSpent * transaction.realizedGasPrice
-		if (transaction.transaction.value > nativeBalanceBefore) {
-			return formatInsufficientBalanceMessage(transaction.transaction.rpcNetwork.currencyTicker, 18n, nativeBalanceBefore, transaction.transaction.value)
-		}
-	}
 	const token = transaction.transaction.to
-	if (token?.type !== 'ERC20') return undefined
-	const attemptedTransfer = parseTransactionIfPossible({ input: transaction.transaction.input, from: sender })
-	if (attemptedTransfer?.name !== 'transfer') return undefined
-	const tokenBalance = transaction.tokenBalancesAfter.find((balance) => balance.token === token.address && balance.owner === sender)?.balance
-	if (tokenBalance === undefined || attemptedTransfer.arguments.value <= tokenBalance) return undefined
-	return formatInsufficientBalanceMessage(token.symbol, token.decimals, tokenBalance, attemptedTransfer.arguments.value)
+	const tokenBalance = token?.type === 'ERC20'
+		? transaction.tokenBalancesAfter.find((balance) => balance.token === token.address && balance.owner === sender)?.balance
+		: undefined
+	return getInsufficientBalanceMessage(
+		{
+			from: sender,
+			to: token?.address ?? null,
+			value: transaction.transaction.value,
+			input: transaction.transaction.input,
+		},
+		nativeBalanceAfter === undefined
+			? undefined
+			: {
+				balance: nativeBalanceAfter + transaction.gasSpent * transaction.realizedGasPrice,
+				symbol: transaction.transaction.rpcNetwork.currencyTicker,
+				decimals: 18n,
+			},
+		token?.type !== 'ERC20' || tokenBalance === undefined
+			? undefined
+			: { token: token.address, balance: tokenBalance, symbol: token.symbol, decimals: token.decimals },
+	)
 }
 
 // showcases the most important things the transaction does

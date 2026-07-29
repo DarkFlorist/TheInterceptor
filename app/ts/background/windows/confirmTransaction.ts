@@ -34,8 +34,7 @@ import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExpl
 import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.js'
 import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization.js'
 import { identifyAddress } from '../metadataUtils.js'
-import { parseTransactionIfPossible } from '../../utils/calldata.js'
-import { formatInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
+import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -318,7 +317,7 @@ const formRejectMessage = (code: number, errorString: string) => {
 	}
 }
 
-const getInsufficientBalanceMessage = async (
+const resolveInsufficientBalanceMessageForTransaction = async (
 	ethereumClientService: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 	simulationState: Awaited<ReturnType<typeof getUpdatedSimulationState>>,
@@ -332,17 +331,17 @@ const getInsufficientBalanceMessage = async (
 ) => {
 	try {
 		const nativeBalance = await nativeBalancePromise
-		if (transaction.value > nativeBalance) {
-			return formatInsufficientBalanceMessage(ethereumClientService.getRpcEntry().currencyTicker, 18n, nativeBalance, transaction.value)
-		}
-		if (transaction.to === null) return undefined
-		const parsedTransaction = parseTransactionIfPossible(transaction)
-		if (parsedTransaction?.name !== 'transfer') return undefined
-		const tokenEntry = await identifyAddress(ethereumClientService, requestAbortController, transaction.to)
-		if (tokenEntry.type !== 'ERC20') return undefined
-		const tokenBalance = await getSimulatedErc20Balance(ethereumClientService, requestAbortController, simulationState, transaction.to, transaction.from)
-		if (tokenBalance === undefined || parsedTransaction.arguments.value <= tokenBalance) return undefined
-		return formatInsufficientBalanceMessage(tokenEntry.symbol, tokenEntry.decimals, tokenBalance, parsedTransaction.arguments.value)
+		return await resolveInsufficientBalanceMessage(
+			transaction,
+			{ balance: nativeBalance, symbol: ethereumClientService.getRpcEntry().currencyTicker, decimals: 18n },
+			async (token, owner) => {
+				const tokenEntry = await identifyAddress(ethereumClientService, requestAbortController, token)
+				if (tokenEntry.type !== 'ERC20') return undefined
+				const tokenBalance = await getSimulatedErc20Balance(ethereumClientService, requestAbortController, simulationState, token, owner)
+				if (tokenBalance === undefined) return undefined
+				return { token, balance: tokenBalance, symbol: tokenEntry.symbol, decimals: tokenEntry.decimals }
+			},
+		)
 	} catch(error: unknown) {
 		if (isNewBlockAbort(error)) throw error
 		await reportLocalRecovery(error, {
@@ -406,7 +405,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		try {
 			const estimateGas = await simulateEstimateGas(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas)
 			if ('error' in estimateGas) {
-				const insufficientBalanceMessage = await getInsufficientBalanceMessage(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas, balancePromise)
+				const insufficientBalanceMessage = await resolveInsufficientBalanceMessageForTransaction(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas, balancePromise)
 				return {
 					...extraParams,
 					error: insufficientBalanceMessage === undefined ? estimateGas.error : { ...estimateGas.error, message: insufficientBalanceMessage },
