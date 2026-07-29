@@ -816,6 +816,7 @@ describe('EIP-6963 signer provider selection', () => {
 
 	test('releases only the reconnecting socket signer-selection lease', async () => {
 		installBrowserMock()
+		const { finishSignerProviderSelection } = await import('../../app/ts/background/signerProviderSelection.js')
 		const {
 			acquireSignerSelectionLease,
 			releaseSignerSelectionLease,
@@ -826,6 +827,7 @@ describe('EIP-6963 signer provider selection', () => {
 		const reconnectingLease = await acquireSignerSelectionLease(7, reconnectingSocket)
 		releaseSignerSelectionLeasesForSocket(reconnectingSocket)
 		assert.equal(releaseSignerSelectionLease(7, reconnectingLease), false)
+		assert.equal(finishSignerProviderSelection(createProviderMessage('finish_signer_provider_selection', [reconnectingLease])), false)
 
 		const otherTabLease = await acquireSignerSelectionLease(8, otherTabSocket)
 		releaseSignerSelectionLeasesForSocket(reconnectingSocket)

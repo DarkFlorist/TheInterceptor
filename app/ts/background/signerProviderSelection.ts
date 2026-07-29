@@ -50,7 +50,7 @@ export async function beginSignerProviderSelection(request: ProviderMessage, web
 export function finishSignerProviderSelection(request: ProviderMessage) {
 	const [token] = FinishSignerProviderSelection.parse(request).params
 	const tabId = request.uniqueRequestIdentifier.requestSocket.tabId
-	if (!releaseSignerSelectionLease(tabId, token)) throw new Error('The signer selection lease is no longer active')
+	return releaseSignerSelectionLease(tabId, token)
 }
 
 export async function signerProvidersChanged(request: ProviderMessage, websiteOrigin: string, isTopFrame: boolean, frameId: number | undefined = isTopFrame ? 0 : undefined) {
