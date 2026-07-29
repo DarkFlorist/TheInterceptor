@@ -1,6 +1,4 @@
 import { useEffect } from 'preact/hooks'
-import type { JSX } from 'preact'
-import type { ModifyAddressWindowState, EditEnsNamedHashWindowState } from '../types/visualizer-types.js'
 import { Home } from './pages/Home.js'
 import Hint from './subcomponents/Hint.js'
 import { getAddress, isAddress } from '../utils/ethereumPrimitives.js'
@@ -13,78 +11,19 @@ import type { EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { RpcEntry } from '../types/rpc.js'
-import { ErrorBoundary, UnexpectedError } from './subcomponents/Error.js'
+import { UnexpectedError } from './subcomponents/Error.js'
 import { addressEditEntry } from './ui-utils.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
-import { CenterToPageTextSpinner } from './subcomponents/Spinner.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformanceOnce } from '../utils/popupPerformance.js'
-import type { AddAddressParam, ChangeActiveAddressParam, InterceptorAccessListParams } from '../types/user-interface-types.js'
 import { createUnexpectedErrorPopupMessage } from '../utils/unexpectedErrorPopupMessage.js'
 import { useLiveSimulationHomeData } from './hooks/useLiveSimulationHomeData.js'
 import { NetworkErrors } from './subcomponents/NetworkErrors.js'
 import { ProviderErrors } from './subcomponents/ProviderErrors.js'
+import { PopupModal, type PopupPage } from './PopupModal.js'
 export { NetworkErrors } from './subcomponents/NetworkErrors.js'
 
-type Page = { page: 'Home' | 'ChangeActiveAddress' | 'AccessList' | 'Settings' | 'Unknown' }
-	| { page: 'EditEnsNamedHash', state: EditEnsNamedHashWindowState }
-	| { page: 'ModifyAddress' | 'AddNewAddress', state: Signal<ModifyAddressWindowState> }
-	| { page: 'ChangeActiveAddress' }
-	| { page: 'ImportSimulation', state: Signal<string> }
-
-type LazyPageComponent<T extends object> = ((props: T) => JSX.Element) | undefined
-type LazyPageModule<T extends object, ExportName extends string> = Record<ExportName, (props: T) => JSX.Element>
-
-function useLazyPage<T extends object, ExportName extends string>(loader: () => Promise<LazyPageModule<T, ExportName>>, exportName: ExportName) {
-	const component = useSignal<LazyPageComponent<T>>(undefined)
-	useEffect(() => {
-		let cancelled = false
-		void loader().then((module) => {
-			if (cancelled) return
-			component.value = module[exportName]
-		})
-		return () => {
-			cancelled = true
-		}
-	}, [])
-	return component
-}
-
-function createLazyPage<T extends object, ExportName extends string>(loader: () => Promise<LazyPageModule<T, ExportName>>, exportName: ExportName) {
-	return function LazyPage(props: T) {
-		const component = useLazyPage(loader, exportName)
-		if (component.value === undefined) return <CenterToPageTextSpinner />
-		const Component = component.value
-		return <Component { ...props } />
-	}
-}
-
-const LazyChangeActiveAddress = createLazyPage<ChangeActiveAddressParam, 'ChangeActiveAddress'>(
-	() => import('./pages/ChangeActiveAddress.js'),
-	'ChangeActiveAddress',
-)
-
-const LazyAddNewAddress = createLazyPage<AddAddressParam, 'AddNewAddress'>(
-	() => import('./pages/AddNewAddress.js'),
-	'AddNewAddress',
-)
-
-const LazyInterceptorAccessList = createLazyPage<InterceptorAccessListParams, 'InterceptorAccessList'>(
-	() => import('./pages/InterceptorAccessList.js'),
-	'InterceptorAccessList',
-)
-
-const LazyEditEnsLabelHash = createLazyPage<{ close: () => void, editEnsNamedHashWindowState: EditEnsNamedHashWindowState }, 'EditEnsLabelHash'>(
-	() => import('./pages/EditEnsLabelHash.js'),
-	'EditEnsLabelHash',
-)
-
-const LazyImportSimulationStack = createLazyPage<{ close: () => void, simulationInput: Signal<string> }, 'ImportSimulationStack'>(
-	() => import('./pages/ImportSimulationStack.js'),
-	'ImportSimulationStack',
-)
-
 export function App() {
-	const appPage = useSignal<Page>({ page: 'Unknown' })
+	const appPage = useSignal<PopupPage>({ page: 'Unknown' })
 	const {
 		activeAddresses,
 		activeSimulationAddress,
@@ -337,48 +276,22 @@ export function App() {
 						isFreshHomeDataLoaded = { isFreshHomeDataLoaded }
 					/>
 
-					<div class = { `modal ${ appPage.value.page !== 'Home' && appPage.value.page !== 'Unknown' ? 'is-active' : ''}` }>
-						{ appPage.value.page === 'EditEnsNamedHash' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyEditEnsLabelHash
-								close = { goHome }
-								editEnsNamedHashWindowState = { appPage.value.state }
-							/></ErrorBoundary>
-						: <></> }
-						{ appPage.value.page === 'AccessList' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyInterceptorAccessList
-								goHome = { goHome }
-								websiteAccess = { websiteAccess }
-								websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
-								renameAddressCallBack = { renameAddressCallBack }
-							/></ErrorBoundary>
-						: <></> }
-						{ appPage.value.page === 'ChangeActiveAddress' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyChangeActiveAddress
-								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-								signerAccounts = { tabState.value?.signerAccounts ?? [] }
-								close = { goHome }
-								activeAddresses = { activeAddresses }
-								signerName = { tabState.value?.signerName ?? 'NoSignerDetected' }
-								renameAddressCallBack = { renameAddressCallBack }
-								addNewAddress = { addNewAddress }
-							/></ErrorBoundary>
-						: <></> }
-						{ appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyAddNewAddress
-								setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
-								modifyAddressWindowState = { appPage.value.state }
-								close = { goHome }
-								activeAddress = { activeAddress.value }
-								rpcEntries = { rpcEntries }
-							/></ErrorBoundary>
-						: <></> }
-						{ appPage.value.page === 'ImportSimulation' ?
-							<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }><LazyImportSimulationStack
-								close = { goHome }
-								simulationInput = { appPage.value.state }
-							/></ErrorBoundary>
-						: <></> }
-					</div>
+						<PopupModal
+							page = { appPage }
+							boundaryResetKey = { boundaryResetKey }
+							onRenderError = { onRenderError }
+							goHome = { goHome }
+							websiteAccess = { websiteAccess }
+							websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
+							renameAddressCallBack = { renameAddressCallBack }
+							setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
+							signerAccounts = { tabState.value?.signerAccounts ?? [] }
+							activeAddresses = { activeAddresses }
+							signerName = { tabState.value?.signerName ?? 'NoSignerDetected' }
+							addNewAddress = { addNewAddress }
+							activeAddress = { activeAddress.value }
+							rpcEntries = { rpcEntries }
+						/>
 				</div>
 			</Hint>
 		</main>

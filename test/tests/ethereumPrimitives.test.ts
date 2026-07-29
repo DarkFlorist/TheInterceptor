@@ -1,36 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { Abi, Hex } from '../../app/ts/utils/ethereumPrimitives.js'
-import {
-	bytesToHex,
-	concat,
-	decodeAbiParameters,
-	decodeEventLog,
-	decodeFunctionData,
-	encodeAbiParameters,
-	encodePacked,
-	ens_normalize,
-	formatAbiItem,
-	formatUnits,
-	getAddress,
-	getCreate2Address,
-	hashMessage,
-	hashStruct,
-	hashTypedData,
-	isAddress,
-	keccak256,
-	namehash,
-	parseAbiItem,
-	parseAbiParameters,
-	parseTransaction,
-	privateKeyToAccount,
-	recoverAddress,
-	serializeTransaction,
-	stringToBytes,
-	toEventSelector,
-	toFunctionSelector,
-	toRlp,
-} from '../../app/ts/utils/ethereumPrimitives.js'
+import { bytesToHex, concat, decodeAbiParameters, decodeEventLog, decodeFunctionData, encodeAbiParameters, encodePacked, ens_normalize, formatAbiItem, formatUnits, getAddress, getCreate2Address, hashMessage, hashStruct, hashTypedData, isAddress, keccak256, namehash, parseAbiItem, parseAbiParameters, parseTransaction, privateKeyToAccount, recoverAddress, serializeTransaction, stringToBytes, toEventSelector, toFunctionSelector, toRlp } from '../../app/ts/utils/ethereumPrimitives.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { canVerifyStructArray, d2Array, d2ArrayFixed, d3ArrayFixed, hasFixedArray } from './data/eip712Data.js'
 
