@@ -5,7 +5,7 @@ import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { SimulationSummary } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
 import type { ContactEntry, Erc20TokenEntry } from '../../app/ts/types/addressBookTypes.js'
-import type { TokenEvent } from '../../app/ts/types/EnrichedEthereumData.js'
+import type { EnsEvent, TokenEvent } from '../../app/ts/types/EnrichedEthereumData.js'
 import type { VisualizedPersonalSignRequest } from '../../app/ts/types/personal-message-definitions.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { toResolvedSimulationResults } from '../../app/ts/types/visualizer-types.js'
@@ -111,6 +111,28 @@ const transferEvent: TokenEvent = {
 	},
 }
 
+const ensTextChangeEvent: EnsEvent = {
+	type: 'ENS',
+	subType: 'ENSTextChangedKeyValue',
+	isParsed: 'Parsed',
+	name: 'TextChanged',
+	signature: 'TextChanged(bytes32,string,string)',
+	args: [],
+	address: TOKEN_ADDRESS,
+	loggersAddressBookEntry: tokenEntry,
+	data: new Uint8Array(),
+	topics: [],
+	logInformation: {
+		node: {
+			nameHash: 0n,
+			name: 'vitalik.eth',
+		},
+		indexedKey: new Uint8Array([1, 2, 3]),
+		key: 'avatar',
+		value: 'ipfs://updated-avatar',
+	},
+}
+
 const simulatedTransaction: SimulatedAndVisualizedTransaction = {
 	website: { websiteOrigin: 'https://transaction.example', icon: undefined, title: 'Transaction Example' },
 	created: new Date('2024-01-01T00:00:00.000Z'),
@@ -165,6 +187,7 @@ function renderSummary(simulationAndVisualisationResults: SimulationAndVisualisa
 		currentBlockNumber: new Signal<bigint | undefined>(100n),
 		activeAddress: new Signal<bigint | undefined>(SIGNER_ADDRESS),
 		renameAddressCallBack: () => undefined,
+		editEnsNamedHashCallBack: () => undefined,
 		rpcConnectionStatus: new Signal(undefined),
 	}), dom.document.body)
 	return dom
@@ -173,6 +196,7 @@ function renderSummary(simulationAndVisualisationResults: SimulationAndVisualisa
 type TestNode = {
 	childNodes?: readonly TestNode[]
 	getAttribute?: (name: string) => string | null
+	tagName?: string
 }
 
 function collectAttributeValues(node: TestNode, attributeName: string): string[] {
@@ -181,7 +205,14 @@ function collectAttributeValues(node: TestNode, attributeName: string): string[]
 	return currentValue === undefined || currentValue === null ? descendantValues : [currentValue, ...descendantValues]
 }
 
-describe('SimulationSummary simulated signatures', () => {
+function collectElements(node: TestNode, tagName: string): TestNode[] {
+	return [
+		...(node.tagName === tagName.toUpperCase() ? [node] : []),
+		...(node.childNodes ?? []).flatMap((child) => collectElements(child, tagName)),
+	]
+}
+
+describe('SimulationSummary aggregate changes', () => {
 	test('renders message-only summaries in block order and surfaces quarantined messages', async () => {
 		const firstSignature = makeSignature({ messageIdentifier: 1n, websiteTitle: 'First App' })
 		const secondSignature = makeSignature({
@@ -211,6 +242,7 @@ describe('SimulationSummary simulated signatures', () => {
 			assert.equal(summaryText.indexOf('First App') < summaryText.indexOf('Second App'), true)
 			assert.equal(summaryText.includes('No changes to your accounts'), true)
 			assert.equal(collectAttributeValues(dom.document.body, 'src').filter((src) => src === '../img/warning-sign.svg').length, 2)
+			assert.notEqual(collectElements(dom.document.body, 'details')[0]?.getAttribute?.('open'), null)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
@@ -271,6 +303,33 @@ describe('SimulationSummary simulated signatures', () => {
 			await act(() => undefined)
 			assert.equal(dom.document.body.textContent.includes('Simulated signatures'), false)
 			assert.equal(dom.document.body.textContent.includes('Summary Token'), true)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('shows ENS changes from simulated transactions in their own collapsible section', async () => {
+		const transactionWithEnsChange: SimulatedAndVisualizedTransaction = {
+			...simulatedTransaction,
+			events: [ensTextChangeEvent],
+		}
+		const dom = renderSummary(makeResults([{
+			simulatedAndVisualizedTransactions: [transactionWithEnsChange],
+			visualizedPersonalSignRequests: [],
+			blockTimeManipulation,
+		}]))
+
+		try {
+			await act(() => undefined)
+			const summaryText = dom.document.body.textContent
+			assert.equal(summaryText.includes('ENS changes (1)'), true)
+			assert.equal(summaryText.includes('Change ENS text value of'), true)
+			assert.equal(summaryText.includes('vitalik.eth'), true)
+			assert.equal(summaryText.includes('avatar'), true)
+			assert.equal(summaryText.includes('ipfs://updated-avatar'), true)
+			assert.equal(summaryText.includes('Simulated signatures'), false)
+			assert.notEqual(collectElements(dom.document.body, 'details')[0]?.getAttribute?.('open'), null)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()

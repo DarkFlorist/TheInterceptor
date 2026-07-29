@@ -377,6 +377,7 @@ export function SimulationStackPage() {
 								currentBlockNumber = { currentBlockNumber }
 								activeAddress = { activeSimulationAddress }
 								renameAddressCallBack = { renameAddressCallBack }
+								editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 								rpcConnectionStatus = { rpcConnectionStatus }
 							/>
 						</div>

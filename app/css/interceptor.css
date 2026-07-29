@@ -630,15 +630,49 @@ li {
 	margin: 10px;
 }
 
-.simulation-summary-signatures {
+.simulation-summary-section-card {
 	margin-bottom: 10px;
 }
 
-.simulation-summary-section-title {
-	color: var(--subtitle-text-color);
-	font-size: 0.85rem;
-	font-weight: 600;
-	margin: 0 0 6px;
+.simulation-summary-section-card > summary {
+	background-color: var(--card-header-bg-color);
+	color: var(--text-color);
+	font-size: 0.8rem;
+	min-height: 30px;
+	padding: 0 10px;
+}
+
+.simulation-summary-section-card > summary::after {
+	display: none;
+}
+
+.simulation-summary-section-card > summary .details--arrow {
+	margin-left: auto;
+	order: 2;
+}
+
+.simulation-summary-section-content {
+	padding: 8px;
+}
+
+.simulation-summary-ens-changes .simulation-summary-section-content > .vertical-center,
+.simulation-summary-ens-changes .simulation-summary-section-content > .vertical-center > .token-box {
+	box-sizing: border-box;
+	display: block;
+	width: 100%;
+}
+
+.simulation-summary-ens-changes .ens-table {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+
+.simulation-summary-card .transaction-importance-box {
+	box-sizing: border-box;
+	max-width: none;
+	width: 100%;
 }
 
 .simulation-summary-signature-list {
