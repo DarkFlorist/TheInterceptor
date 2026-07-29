@@ -143,6 +143,16 @@ function getManifestV2WebAccessibleResources() {
 }
 
 describe('content script injection strategy', () => {
+	test('keeps manifest v3 exclusions scoped to the approved scheme and exact host', async () => {
+		installBrowserMock()
+		const { websiteOriginToMatchPattern } = await loadModules()
+
+		assert.equal(websiteOriginToMatchPattern('http://example.test'), 'http://example.test/*')
+		assert.equal(websiteOriginToMatchPattern('https://example.test'), 'https://example.test/*')
+		assert.equal(websiteOriginToMatchPattern('https://subdomain.example.test'), 'https://subdomain.example.test/*')
+		assert.notEqual(websiteOriginToMatchPattern('https://example.test'), websiteOriginToMatchPattern('http://example.test'))
+	})
+
 	test('exposes every manifest v2 injected file to Firefox', async () => {
 		const { getCommittedListener, getExecutedScriptFiles } = installBrowserMock()
 		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()

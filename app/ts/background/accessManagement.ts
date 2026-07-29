@@ -27,11 +27,12 @@ function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, sock
 	return tabConnection?.connections[identifier]
 }
 
-function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
+function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean, approvedAddress?: bigint) {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection === undefined) return
 	if (approved) connection.wantsToConnect = true
 	connection.approved = approved
+	connection.approvedAddress = approved ? approvedAddress : undefined
 }
 
 export function clearWebsiteConnectionIntent(websiteTabConnections: WebsiteTabConnections, websiteOrigin: string) {
@@ -88,7 +89,8 @@ export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'intercepto
 
 export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, ignoreConnectionApproval = false) {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
-	if (connection?.approved && !ignoreConnectionApproval) return 'hasAccess'
+	if (connection?.approved && !ignoreConnectionApproval
+		&& (requestAccessForAddress === undefined || connection.approvedAddress === requestAccessForAddress.address)) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
 	if (access === 'hasAccess') {
 		const popupRefreshGeneration = bumpPopupRefreshGeneration()
@@ -226,7 +228,7 @@ function connectToPort(
 	settings: Settings,
 	connectWithActiveAddress: bigint | undefined,
 ): true {
-	setWebsitePortApproval(websiteTabConnections, socket, true)
+	setWebsitePortApproval(websiteTabConnections, socket, true, connectWithActiveAddress)
 	if (!shouldSendUnscopedConnectionEvents(socket)) return true
 	sendProviderConnectionEventsToPort(websiteTabConnections, socket, settings, connectWithActiveAddress === undefined ? [] : [connectWithActiveAddress])
 	return true
@@ -256,6 +258,15 @@ function disconnectFromPort(
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: [] })
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'disconnect', result: [] })
 	return false
+}
+
+export function suspendWebsitePortApprovalsForTab(websiteTabConnections: WebsiteTabConnections, tabId: number) {
+	const tabConnection = websiteTabConnections.get(tabId)
+	if (tabConnection === undefined) return
+	for (const connection of Object.values(tabConnection.connections)) {
+		if (!connection.approved) continue
+		disconnectFromPort(websiteTabConnections, connection.socket)
+	}
 }
 
 export async function getAssociatedAddresses(settings: Settings, websiteOrigin: string, activeAddress: AddressBookEntry | undefined) : Promise<AddressBookEntries> {
@@ -331,7 +342,7 @@ const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
 const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections) => {
 	const approvedTabIds = getApprovedTabs(websiteTabConnections)
 	const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
-	const sitesToBlock = (await getWebsiteAccess()).filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
+	const sitesToBlock = (await getWebsiteAccess()).filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => getHostWithPort(acccess.website.websiteOrigin))
 	return {
 		tabIdsToBlock,
 		sitesToBlock
@@ -401,7 +412,7 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 
 export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {
 	const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
-	if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return true
+	if (sitesToBlock.find((blockUrl) => blockUrl === getHostWithPort(websiteOrigin)) !== undefined) return true
 	if (tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined) return true
 	return false
 }

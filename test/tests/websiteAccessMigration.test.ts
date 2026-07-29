@@ -42,4 +42,23 @@ describe('website access migration', () => {
 		assert.equal(storageState.websiteAccess[0]?.website.icon, undefined)
 		assert.equal(storageState.websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
 	})
+
+	test('migrates legacy host-only access to one scheme without authorizing both', async () => {
+		const storageState = installBrowserMock()
+		const { migrateWebsiteAccess } = await import('../../app/ts/background/websiteAccessMigration.js')
+		storageState.websiteAccess = [
+			{ website: { websiteOrigin: 'example.com', icon: undefined, title: 'Production' }, access: true },
+			{ website: { websiteOrigin: 'example.test:8080', icon: undefined, title: 'Local test' }, access: true },
+			{ website: { websiteOrigin: 'https://already.example/path', icon: undefined, title: 'Canonical' }, access: true },
+		]
+
+		await migrateWebsiteAccess()
+
+		assert.equal(Array.isArray(storageState.websiteAccess), true)
+		if (!Array.isArray(storageState.websiteAccess)) throw new Error('Expected websiteAccess to remain an array')
+		assert.equal(storageState.websiteAccess[0]?.website.websiteOrigin, 'https://example.com')
+		assert.equal(storageState.websiteAccess[1]?.website.websiteOrigin, 'http://example.test:8080')
+		assert.equal(storageState.websiteAccess[2]?.website.websiteOrigin, 'https://already.example')
+		assert.notEqual(storageState.websiteAccess[0]?.website.websiteOrigin, 'http://example.com')
+	})
 })

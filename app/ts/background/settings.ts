@@ -13,6 +13,7 @@ import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
+import { normalizeWebsiteAccessOrigins } from './websiteAccessMigration.js'
 
 export const defaultActiveAddresses: AddressBookEntries = [
 	{
@@ -193,7 +194,7 @@ export async function changeSimulationMode(changes: { simulationMode: boolean, r
 const websiteAccessSemaphore = new Semaphore(1)
 async function getNormalizedWebsiteAccessFromStorage() {
 	const rawWebsiteAccess = await getParsedStorageValueOrDefault('websiteAccess', [])
-	const sanitizedWebsiteAccess = sanitizeWebsiteAccess(rawWebsiteAccess)
+	const sanitizedWebsiteAccess = normalizeWebsiteAccessOrigins(sanitizeWebsiteAccess(rawWebsiteAccess))
 	return { rawWebsiteAccess, sanitizedWebsiteAccess }
 }
 
@@ -204,7 +205,7 @@ export async function getWebsiteAccess() {
 export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
 	await websiteAccessSemaphore.execute(async () => {
 		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
-		const nextWebsiteAccess = sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
+		const nextWebsiteAccess = normalizeWebsiteAccessOrigins(sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess)))
 		if (nextWebsiteAccess === sanitizedWebsiteAccess && rawWebsiteAccess === sanitizedWebsiteAccess) return
 		return await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
 	})

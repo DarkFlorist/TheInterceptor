@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignatureParity, LiteralConverterParserFactory } from './wire-types.js'
+import { EthereumAccessList, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignatureParity, LiteralConverterParserFactory } from './wire-types.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { EthSimulateV1Params } from './ethSimulate-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
@@ -80,6 +80,8 @@ export const PartialEthereumTransaction = funtypes.ReadonlyPartial({
 		funtypes.Literal('0x4').withParser(LiteralConverterParserFactory('0x4', '7702' as const)),
 	),
 	from: EthereumAddress,
+	chainId: EthereumQuantity,
+	nonce: EthereumQuantity,
 	gas: EthereumQuantity,
 	value: EthereumQuantity,
 	to: funtypes.Union(EthereumAddress, funtypes.Null),
@@ -88,6 +90,9 @@ export const PartialEthereumTransaction = funtypes.ReadonlyPartial({
 	maxFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
 	data: EthereumData,
 	input: EthereumData,
+	accessList: EthereumAccessList,
+	maxFeePerBlobGas: EthereumQuantity,
+	blobVersionedHashes: funtypes.ReadonlyArray(EthereumBytes32),
 	authorizationList: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
 		chainId: EthereumQuantity,
 		address: EthereumAddress,

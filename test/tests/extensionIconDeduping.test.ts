@@ -187,7 +187,7 @@ describe('extension icon deduping', () => {
 		const { updateExtensionIcon, updateTabState, updateWebsiteAccess } = await loadModules()
 
 		await updateWebsiteAccess(() => [{
-			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Example' },
+			website: { websiteOrigin: 'https://example.test', icon: undefined, title: 'Example' },
 			addressAccess: undefined,
 			access: false,
 			declarativeNetRequestBlockMode: 'block-all',
@@ -200,7 +200,7 @@ describe('extension icon deduping', () => {
 			},
 		}))
 
-		await updateExtensionIcon(new Map(), 1, 'example.test', 0)
+		await updateExtensionIcon(new Map(), 1, 'https://example.test', 0)
 
 		assert.deepEqual(setIconCalls.at(-1)?.path, { 128: ICON_ACCESS_DENIED })
 		assert.match(setTitleCalls.at(-1)?.title ?? '', /DENIED.*blocking external requests/u)

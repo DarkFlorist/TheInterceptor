@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact'
 import type { JSX } from 'preact/jsx-runtime'
 import { checksummedAddress } from '../../utils/bigint.js'
+import { getWebsiteOriginForDisplay } from '../../utils/requests.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
@@ -162,7 +163,7 @@ export function WebsiteOriginText({ website, class: cssClass, style }: {
 		</span>
 
 		<div class = 'media-content website-origin-text-body'>
-			<p class = 'title is-5 is-spaced address-text website-origin-text-origin'>{ websiteOrigin }</p>
+			<p class = 'title is-5 is-spaced address-text website-origin-text-origin'>{ getWebsiteOriginForDisplay(websiteOrigin) }</p>
 			<p class = 'subtitle is-7 website-origin-text-title'> { title } </p>
 		</div>
 	</div>

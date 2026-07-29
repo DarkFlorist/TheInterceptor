@@ -3377,4 +3377,52 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal(hasAccess([], websiteOrigin), 'askAccess')
 		assert.equal(hasAddressAccess([], websiteOrigin, address), 'askAccess')
 	})
+
+	test('does not let a cached port approval authorize a newly selected unapproved account', async () => {
+		installBrowserMock()
+		const { getSettings, updateWebsiteAccess, verifyAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const approvedAddress = 0x1111111111111111111111111111111111111111n
+		const unapprovedAddress = {
+			address: 0x2222222222222222222222222222222222222222n,
+			askForAddressAccess: true,
+			type: 'contact',
+			name: 'Unapproved',
+		} as const
+		await updateWebsiteAccess(() => [{
+			website: { websiteOrigin, icon: undefined, title: undefined },
+			access: true,
+			addressAccess: [{ address: approvedAddress, access: true }],
+		}])
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, approvedAddress, wantsToConnect: true },
+		} }]])
+
+		const result = verifyAccess(websiteTabConnections, socket, true, websiteOrigin, unapprovedAddress, await getSettings())
+
+		assert.equal(result, 'askAccess')
+		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.approved, true)
+	})
+
+	test('suspends approved ports before publishing a signer account transition', async () => {
+		installBrowserMock()
+		const { suspendWebsitePortApprovalsForTab, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, approvedAddress: 1n, wantsToConnect: true },
+		} }]])
+
+		suspendWebsitePortApprovalsForTab(websiteTabConnections, socket.tabId)
+
+		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.approved, false)
+		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.approvedAddress, undefined)
+		assert.deepEqual(messages.slice(-2).map((message) => ({ method: message.method, result: message.result })), [
+			{ method: 'accountsChanged', result: [] },
+			{ method: 'disconnect', result: [] },
+		])
+	})
 })

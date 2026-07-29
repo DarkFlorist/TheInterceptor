@@ -437,7 +437,7 @@ export function SignatureCard(params: SignatureCardParams) {
 			{ params.visualizedPersonalSignRequest.type === 'NotParsed' ? <></> : <RawMessage { ...params }/> }
 
 			<Signer
-				signer = { params.visualizedPersonalSignRequest.activeAddress }
+				signer = { params.visualizedPersonalSignRequest.account }
 				renameAddressCallBack = { params.renameAddressCallBack }
 			/>
 
