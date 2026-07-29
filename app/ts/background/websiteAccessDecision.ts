@@ -47,6 +47,23 @@ export function applyWebsiteAccessDecision(previousWebsiteAccess: WebsiteAccessA
 
 	const mergedWebsiteMetadata = mergeStoredWebsiteMetadata(foundEntry.website, website)
 	const websiteData = { ...mergedWebsiteMetadata, websiteOrigin: website.websiteOrigin }
+	if (exactEntryIndex === -1 && access === false) {
+		// A denial identifies the exact origin but does not authorize carrying
+		// scheme-ambiguous legacy grants into that origin.
+		const restrictiveAddressAccess = foundEntry.addressAccess?.filter((entry) => entry.access === false) ?? []
+		const nextAddressAccess = address === undefined
+			? restrictiveAddressAccess
+			: [
+				...restrictiveAddressAccess.filter((entry) => entry.address !== address),
+				{ address, access: false },
+			]
+		return replaceElementInReadonlyArray(previousWebsiteAccess, foundEntryIndex, {
+			...foundEntry,
+			website: websiteData,
+			access: false,
+			addressAccess: nextAddressAccess.length === 0 ? undefined : nextAddressAccess,
+		})
+	}
 	if (address === undefined) {
 		return replaceElementInReadonlyArray(previousWebsiteAccess, foundEntryIndex, modifyObject(foundEntry, { website: websiteData, access }))
 	}

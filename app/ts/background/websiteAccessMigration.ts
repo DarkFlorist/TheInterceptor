@@ -11,6 +11,7 @@ function normalizeCanonicalWebsiteOrigin(websiteOrigin: string): string | undefi
 	try {
 		const url = new URL(websiteOrigin)
 		if (!isCanonicalWebsiteProtocol(url.protocol)) return undefined
+		if (url.username !== '' || url.password !== '') return undefined
 		return getWebsiteOrigin(websiteOrigin)
 	} catch {
 		return undefined

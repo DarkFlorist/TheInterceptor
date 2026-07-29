@@ -3388,6 +3388,63 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		}], websiteOrigin, address), 'askAccess')
 	})
 
+	test('preserves restrictive legacy website decisions without trusting legacy grants', async () => {
+		installBrowserMock()
+		const { hasAccess, hasAddressAccess } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const address = { address: 0x1111111111111111111111111111111111111111n, askForAddressAccess: true, type: 'contact', name: 'Test Address' } as const
+		const otherAddress = { ...address, address: 0x2222222222222222222222222222222222222222n }
+
+		assert.equal(hasAccess([{
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy denial' },
+			access: false,
+		}], websiteOrigin), 'noAccess')
+		assert.equal(hasAddressAccess([{
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy address denial' },
+			access: true,
+			addressAccess: [
+				{ address: address.address, access: false },
+				{ address: otherAddress.address, access: true },
+			],
+		}], websiteOrigin, address), 'noAccess')
+		assert.equal(hasAddressAccess([{
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy mixed grants' },
+			access: true,
+			addressAccess: [
+				{ address: address.address, access: false },
+				{ address: otherAddress.address, access: true },
+			],
+		}], websiteOrigin, otherAddress), 'askAccess')
+		assert.equal(hasAddressAccess([
+			{
+				website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy address denial' },
+				access: true,
+				addressAccess: [{ address: address.address, access: false }],
+			},
+			{
+				website: { websiteOrigin, icon: undefined, title: 'Exact site grant' },
+				access: true,
+			},
+		], websiteOrigin, { ...address, askForAddressAccess: false }), 'noAccess')
+		assert.equal(hasAddressAccess([
+			{
+				website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy address denial' },
+				access: true,
+				addressAccess: [{ address: address.address, access: false }],
+			},
+			{
+				website: { websiteOrigin, icon: undefined, title: 'Exact address grant' },
+				access: true,
+				addressAccess: [{ address: address.address, access: true }],
+			},
+		], websiteOrigin, address), 'hasAccess')
+		assert.equal(hasAddressAccess([{
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy disabled site' },
+			access: true,
+			interceptorDisabled: true,
+		}], websiteOrigin, address), 'interceptorDisabled')
+	})
+
 	test('does not let a cached port approval authorize a newly selected unapproved account', async () => {
 		installBrowserMock()
 		const { getSettings, updateWebsiteAccess, verifyAccess, websiteSocketToString } = await loadModules()

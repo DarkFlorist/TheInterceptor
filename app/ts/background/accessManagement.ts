@@ -18,7 +18,7 @@ import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
-import { getWebsiteHostWithPortFromStoredOrigin } from './websiteAccessMigration.js'
+import { getLegacyWebsiteOriginForCanonicalOrigin, getWebsiteHostWithPortFromStoredOrigin } from './websiteAccessMigration.js'
 import { applyInterceptorDisabledDecision, applyWebsiteAccessDecision } from './websiteAccessDecision.js'
 
 function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
@@ -87,6 +87,15 @@ export async function withSuppressedUnscopedConnectionEventsForSocketAsync<T>(so
 
 export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled'
 
+function getExactAndLegacyWebsiteAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string) {
+	const exactAccess = websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+	const legacyWebsiteOrigin = getLegacyWebsiteOriginForCanonicalOrigin(websiteOrigin)
+	const legacyAccess = legacyWebsiteOrigin === undefined
+		? undefined
+		: websiteAccess.find((entry) => entry.website.websiteOrigin === legacyWebsiteOrigin)
+	return { exactAccess, legacyAccess }
+}
+
 export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, ignoreConnectionApproval = false) {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection?.approved && !ignoreConnectionApproval
@@ -139,34 +148,33 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 }
 
 export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : ApprovalState {
-	for (const web of websiteAccess) {
-		if (web.website.websiteOrigin === websiteOrigin) {
-			if (web.interceptorDisabled) return 'interceptorDisabled'
-			if (web.access === true) return 'hasAccess'
-			if (web.access === false) return 'noAccess'
-			return 'askAccess'
-		}
-	}
+	const { exactAccess, legacyAccess } = getExactAndLegacyWebsiteAccess(websiteAccess, websiteOrigin)
+	if (exactAccess?.interceptorDisabled === true || legacyAccess?.interceptorDisabled === true) return 'interceptorDisabled'
+	if (exactAccess?.access === true) return 'hasAccess'
+	// Legacy grants are scheme-ambiguous, but applying a legacy denial to both
+	// schemes cannot expose an account that the user did not authorize.
+	if (exactAccess?.access === false || legacyAccess?.access === false) return 'noAccess'
 	return 'askAccess'
 }
 
 export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: AddressBookEntry) : ApprovalState {
-	for (const web of websiteAccess) {
-		if (web.website.websiteOrigin === websiteOrigin) {
-			if (web.interceptorDisabled) return 'interceptorDisabled'
-			if (web.access === false) return 'noAccess'
-			if (web.access !== true) return 'askAccess'
-			if (web.addressAccess !== undefined) {
-				for (const addressAccess of web.addressAccess) {
-					if (addressAccess.address === address.address) {
-						return addressAccess.access ? 'hasAccess' : 'noAccess'
-					}
+	const { exactAccess, legacyAccess } = getExactAndLegacyWebsiteAccess(websiteAccess, websiteOrigin)
+	if (exactAccess?.interceptorDisabled === true || legacyAccess?.interceptorDisabled === true) return 'interceptorDisabled'
+	if (exactAccess?.access === false) return 'noAccess'
+	if (exactAccess?.access === true) {
+		if (exactAccess.addressAccess !== undefined) {
+			for (const addressAccess of exactAccess.addressAccess) {
+				if (addressAccess.address === address.address) {
+					return addressAccess.access ? 'hasAccess' : 'noAccess'
 				}
 			}
-			if (address.askForAddressAccess === false) return 'hasAccess'
-			return 'askAccess'
 		}
+		if (legacyAccess?.addressAccess?.some((entry) => entry.address === address.address && entry.access === false) === true) return 'noAccess'
+		if (address.askForAddressAccess === false) return 'hasAccess'
+		return 'askAccess'
 	}
+	if (legacyAccess?.access === false) return 'noAccess'
+	if (legacyAccess?.addressAccess?.some((entry) => entry.address === address.address && entry.access === false) === true) return 'noAccess'
 	return 'askAccess'
 }
 

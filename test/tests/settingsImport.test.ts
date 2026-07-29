@@ -165,6 +165,7 @@ describe('settings import', () => {
 				addressAccess: [{ address: 0x1111111111111111111111111111111111111111n, access: true }],
 			},
 			{ website: { websiteOrigin: 'https://', icon: undefined, title: 'Malformed' }, access: true },
+			{ website: { websiteOrigin: 'https://attacker.invalid@example.test/path', icon: undefined, title: 'Credentialed canonical URL' }, access: true },
 		]))
 
 		const websiteAccess = await getWebsiteAccess()

@@ -16,12 +16,11 @@ export const websiteOriginToMatchPattern = (origin: string) => {
 	if (normalizedOrigin === undefined) return undefined
 	if (!isCanonicalWebsiteOrigin(normalizedOrigin)) {
 		if (normalizedOrigin === '') return 'file://*/*'
-		const legacyUrl = new URL(`https://${ normalizedOrigin }`)
-		return `*://${ legacyUrl.hostname }/*`
+		return `*://${ normalizedOrigin }/*`
 	}
 	const url = new URL(normalizedOrigin)
 	if (url.protocol === 'file:') return `${ origin }*`
-	return `${ url.protocol }//${ url.hostname }/*`
+	return `${ url.protocol }//${ url.host }/*`
 }
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {

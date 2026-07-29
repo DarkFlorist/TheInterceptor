@@ -63,6 +63,32 @@ describe('website access legacy rebinding', () => {
 		])
 	})
 
+	test('does not promote legacy grants when the current origin is denied', () => {
+		const updated = applyWebsiteAccessDecision([{
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy site' },
+			access: true,
+			declarativeNetRequestBlockMode: 'block-all',
+			addressAccess: [
+				{ address: firstAddress, access: true },
+				{ address: secondAddress, access: false },
+			],
+		}], {
+			websiteOrigin: 'https://example.test',
+			icon: undefined,
+			title: 'Current site',
+		}, false, firstAddress)
+
+		assert.deepEqual(updated, [{
+			website: { websiteOrigin: 'https://example.test', icon: undefined, title: 'Legacy site' },
+			access: false,
+			declarativeNetRequestBlockMode: 'block-all',
+			addressAccess: [
+				{ address: secondAddress, access: false },
+				{ address: firstAddress, access: false },
+			],
+		}])
+	})
+
 	test('binds the legacy file-page marker to only the explicitly approved file', () => {
 		const updated = applyWebsiteAccessDecision([{
 			website: { websiteOrigin: '', icon: undefined, title: 'Legacy file access' },

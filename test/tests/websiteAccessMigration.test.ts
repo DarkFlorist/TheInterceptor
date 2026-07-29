@@ -70,6 +70,7 @@ describe('website access migration', () => {
 		const { migrateWebsiteAccess } = await import('../../app/ts/background/websiteAccessMigration.js')
 		storageState.websiteAccess = [
 			{ website: { websiteOrigin: 'https://', icon: undefined, title: 'Malformed scheme' }, access: true },
+			{ website: { websiteOrigin: 'https://attacker.invalid@example.test/path', icon: undefined, title: 'Credentialed canonical URL' }, access: true },
 			{ website: { websiteOrigin: 'example.com/path', icon: undefined, title: 'Malformed legacy host' }, access: true },
 			{ website: { websiteOrigin: 'example.test', icon: undefined, title: 'Valid legacy host' }, access: true },
 		]
