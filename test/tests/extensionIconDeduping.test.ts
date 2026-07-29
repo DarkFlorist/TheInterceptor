@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { ICON_ACCESS_DENIED, ICON_NOT_ACTIVE, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
+import { ICON_ACCESS_DENIED, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
 
 type BrowserStorageState = Record<string, unknown>
 type MockTab = {
@@ -204,6 +204,30 @@ describe('extension icon deduping', () => {
 
 		assert.deepEqual(setIconCalls.at(-1)?.path, { 128: ICON_ACCESS_DENIED })
 		assert.match(setTitleCalls.at(-1)?.title ?? '', /DENIED.*blocking external requests/u)
+	})
+
+	test('legacy interceptor-disabled sites use the disabled icon for the current canonical origin', async () => {
+		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
+		const { updateExtensionIcon, updateTabState, updateWebsiteAccess } = await loadModules()
+
+		await updateWebsiteAccess(() => [{
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy disabled site' },
+			addressAccess: undefined,
+			access: true,
+			interceptorDisabled: true,
+		}])
+		await updateTabState(1, (previousState) => ({
+			...previousState,
+			tabIconDetails: {
+				icon: ICON_SIMULATING,
+				iconReason: 'The Interceptor simulates your sent transactions.',
+			},
+		}))
+
+		await updateExtensionIcon(new Map(), 1, 'https://example.test', 0)
+
+		assert.deepEqual(setIconCalls.at(-1)?.path, { 128: ICON_INTERCEPTOR_DISABLED })
+		assert.match(setTitleCalls.at(-1)?.title ?? '', /disabled for https:\/\/example\.test/u)
 	})
 
 	test('access refresh collapses duplicate icon recomputations for the same tab and origin', async () => {

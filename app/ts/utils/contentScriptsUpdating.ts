@@ -1,6 +1,7 @@
 import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
 import { checkAndThrowRuntimeLastError, getTabIfExists, getWebsiteOrigin, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
+import { getLegacyWebsiteOriginForCanonicalOrigin, isCanonicalWebsiteOrigin, normalizeStoredWebsiteOrigin } from '../background/websiteAccessMigration.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
@@ -11,13 +12,23 @@ const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPatt
 const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
 
 export const websiteOriginToMatchPattern = (origin: string) => {
-	const url = new URL(origin)
+	const normalizedOrigin = normalizeStoredWebsiteOrigin(origin)
+	if (normalizedOrigin === undefined) return undefined
+	if (!isCanonicalWebsiteOrigin(normalizedOrigin)) {
+		if (normalizedOrigin === '') return 'file://*/*'
+		const legacyUrl = new URL(`https://${ normalizedOrigin }`)
+		return `*://${ legacyUrl.hostname }/*`
+	}
+	const url = new URL(normalizedOrigin)
 	if (url.protocol === 'file:') return `${ origin }*`
 	return `${ url.protocol }//${ url.hostname }/*`
 }
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
-	const excludeMatches = getInterceptorDisabledSites(await getSettings()).map(websiteOriginToMatchPattern)
+	const excludeMatches = getInterceptorDisabledSites(await getSettings()).flatMap((origin) => {
+		const matchPattern = websiteOriginToMatchPattern(origin)
+		return matchPattern === undefined ? [] : [matchPattern]
+	})
 	try {
 		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 		// 'MAIN'` is not supported in `browser.` but its in `chrome.`. This code is only going to be run in manifest v3 environment (chrome) so this should be fine, just ugly
@@ -55,7 +66,10 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false
 	const urls = [content.url, thisTab.url]
 	const origins = urls.map((url) => getWebsiteOrigin(url))
-	const noMatches = disabledSites.every(excludeMatch => !origins.includes(excludeMatch))
+	const noMatches = disabledSites.every((disabledSite) => origins.every((origin) => {
+		if (disabledSite === origin) return false
+		return getLegacyWebsiteOriginForCanonicalOrigin(origin) !== disabledSite
+	}))
 	if (!noMatches) return false
 	try {
 		await browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/dist/browser-polyfill.js', allFrames: false, runAt: 'document_start' })

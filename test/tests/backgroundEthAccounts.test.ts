@@ -3376,6 +3376,16 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal(hasAddressAccess([{ website: { websiteOrigin, icon: undefined, title: undefined }, addressAccess: undefined }], websiteOrigin, address), 'askAccess')
 		assert.equal(hasAccess([], websiteOrigin), 'askAccess')
 		assert.equal(hasAddressAccess([], websiteOrigin, address), 'askAccess')
+		assert.equal(hasAccess([{
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy grant' },
+			access: true,
+			addressAccess: [{ address: address.address, access: true }],
+		}], websiteOrigin), 'askAccess')
+		assert.equal(hasAddressAccess([{
+			website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy grant' },
+			access: true,
+			addressAccess: [{ address: address.address, access: true }],
+		}], websiteOrigin, address), 'askAccess')
 	})
 
 	test('does not let a cached port approval authorize a newly selected unapproved account', async () => {

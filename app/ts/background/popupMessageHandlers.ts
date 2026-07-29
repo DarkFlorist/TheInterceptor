@@ -7,6 +7,7 @@ import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransacti
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from './accessManagement.js'
+import { isInterceptorDisabledForWebsiteOrigin } from './websiteAccessDecision.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners } from './signerStateOwnership.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './medataSearch.js'
@@ -66,7 +67,7 @@ const importSimulationStackFailure = (message: string): ImportSimulationStackRep
 
 function isInterceptorDisabledForWebsite(settings: Settings, websiteOrigin: string | undefined) {
 	if (websiteOrigin === undefined) return false
-	return settings.websiteAccess.some((entry) => entry.website.websiteOrigin === websiteOrigin && entry.interceptorDisabled === true)
+	return isInterceptorDisabledForWebsiteOrigin(settings.websiteAccess, websiteOrigin)
 }
 
 async function refreshSignerAccountsForTabIfNeeded(websiteTabConnections: WebsiteTabConnections, tabId: number | undefined, tabState: TabState, shouldRefreshSignerAccounts: boolean) {

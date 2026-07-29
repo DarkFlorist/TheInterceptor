@@ -237,7 +237,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 	const settings = await getSettings()
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
-		version: '1.4' as const,
+		version: '1.5' as const,
 		exportedDate: exportDate,
 		settings: {
 			activeSimulationAddress: settings.activeSimulationAddress,
@@ -277,7 +277,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') {
 		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
 	}
-	if (exportedSetings.version === '1.4') {
+	if (exportedSetings.version === '1.4' || exportedSetings.version === '1.5') {
 		await updateUserAddressBookEntries(() => exportedSetings.settings.addressBookEntries)
 	} else {
 		await updateUserAddressBookEntries((previousEntries) => {

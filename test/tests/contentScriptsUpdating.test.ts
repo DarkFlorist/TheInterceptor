@@ -106,6 +106,7 @@ function installBrowserMock({ registerError, executeScriptError, tabUrl = 'https
 	Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true, value: { runtime: { id: 'test-extension' } } })
 
 	return {
+		storageState,
 		sentMessages,
 		getExecuteScriptCalls() { return executeScriptCalls },
 		getExecutedScriptFiles() { return [...executedScriptFiles] },
@@ -151,6 +152,24 @@ describe('content script injection strategy', () => {
 		assert.equal(websiteOriginToMatchPattern('https://example.test'), 'https://example.test/*')
 		assert.equal(websiteOriginToMatchPattern('https://subdomain.example.test'), 'https://subdomain.example.test/*')
 		assert.notEqual(websiteOriginToMatchPattern('https://example.test'), websiteOriginToMatchPattern('http://example.test'))
+		assert.equal(websiteOriginToMatchPattern('example.test'), '*://example.test/*')
+		assert.equal(websiteOriginToMatchPattern(''), 'file://*/*')
+		assert.equal(websiteOriginToMatchPattern('https://'), undefined)
+	})
+
+	test('preserves legacy manifest v2 interceptor-disabled behavior without treating it as an access grant', async () => {
+		const { getCommittedListener, getExecuteScriptCalls, storageState } = installBrowserMock()
+		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+		storageState.websiteAccess = [{
+			website: { websiteOrigin: 'example.com', icon: undefined, title: 'Legacy disabled site' },
+			access: true,
+			interceptorDisabled: true,
+		}]
+
+		await updateContentScriptInjectionStrategyManifestV2()
+		await getCommittedListener()(committedDetails)
+
+		assert.equal(getExecuteScriptCalls(), 0)
 	})
 
 	test('exposes every manifest v2 injected file to Firefox', async () => {

@@ -9,17 +9,17 @@ import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
-import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
-import { modifyObject } from '../utils/typescript.js'
+import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
-import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
+import { getWebsiteHostWithPortFromStoredOrigin } from './websiteAccessMigration.js'
+import { applyInterceptorDisabledDecision, applyWebsiteAccessDecision } from './websiteAccessDecision.js'
 
 function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
@@ -183,33 +183,11 @@ function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: Addre
 }
 
 export async function setInterceptorDisabledForWebsite(website: Website, interceptorDisabled: boolean) {
-	return await updateWebsiteAccess((previousWebsiteAccess) => {
-		const index = previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === website.websiteOrigin)
-		const previousAccess = index !== -1 ? previousWebsiteAccess[index] : undefined;
-		if (previousAccess === undefined) return [...previousWebsiteAccess, { website, addressAccess: [], interceptorDisabled } ]
-		return replaceElementInReadonlyArray(previousWebsiteAccess, index, { ...previousAccess, interceptorDisabled })
-	})
+	return await updateWebsiteAccess((previousWebsiteAccess) => applyInterceptorDisabledDecision(previousWebsiteAccess, website, interceptorDisabled))
 }
 
 export async function setAccess(website: Website, access: boolean, address: bigint | undefined) {
-	return await updateWebsiteAccess((previousWebsiteAccess) => {
-		const foundEntry = previousWebsiteAccess.find((entry) => entry.website.websiteOrigin === website.websiteOrigin)
-		if (foundEntry === undefined) return [...previousWebsiteAccess, { website, access, addressAccess: address === undefined || !access ? undefined : [ { address, access } ] }]
-		return previousWebsiteAccess.map((prevAccess) => {
-			if (prevAccess.website.websiteOrigin === website.websiteOrigin) {
-				const websiteData = mergeStoredWebsiteMetadata(prevAccess.website, website)
-				if (address === undefined) return modifyObject(prevAccess, { website: websiteData, access })
-				const addressAccess = { address, access }
-				const updatedEntry = modifyObject(prevAccess, { website: websiteData, access: prevAccess.access ? prevAccess.access : access })
-				if (prevAccess.addressAccess === undefined) return modifyObject(updatedEntry, { addressAccess: [addressAccess] })
-				if (prevAccess.addressAccess.find((x) => x.address === address) === undefined) {
-					return modifyObject(updatedEntry, { addressAccess: [ ...prevAccess.addressAccess, addressAccess ] })
-				}
-				return modifyObject(updatedEntry, { addressAccess: prevAccess.addressAccess.map((x) => (x.address === address ? addressAccess : x)) })
-			}
-			return prevAccess
-		})
-	})
+	return await updateWebsiteAccess((previousWebsiteAccess) => applyWebsiteAccessDecision(previousWebsiteAccess, website, access, address))
 }
 
 // gets active address if the website has been give access for it, otherwise returns undefined
@@ -342,7 +320,12 @@ const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
 const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections) => {
 	const approvedTabIds = getApprovedTabs(websiteTabConnections)
 	const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
-	const sitesToBlock = (await getWebsiteAccess()).filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => getHostWithPort(acccess.website.websiteOrigin))
+	const sitesToBlock = (await getWebsiteAccess())
+		.filter((access) => access.declarativeNetRequestBlockMode === 'block-all')
+		.flatMap((access) => {
+			const host = getWebsiteHostWithPortFromStoredOrigin(access.website.websiteOrigin)
+			return host === undefined ? [] : [host]
+		})
 	return {
 		tabIdsToBlock,
 		sitesToBlock
