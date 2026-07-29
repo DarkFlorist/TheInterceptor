@@ -37,6 +37,7 @@ async function setupChrome(profile: boolean) {
 	const setupStartTime = performance.now()
 	const preparationStartTime = performance.now()
 	const settledPreparationResults = await Promise.allSettled([
+		runPackageScript('generate-extension-pages'),
 		runPackageScript('vendor'),
 		runPackageScript('inpage'),
 		runPackageScript('compile-app'),
