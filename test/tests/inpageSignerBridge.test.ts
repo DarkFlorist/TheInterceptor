@@ -44,6 +44,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 	let rejectPendingRequestAccounts: ((error: { code: number, message: string }) => void) | undefined
 	let resolvePendingRequestAccounts: ((accounts: string[]) => void) | undefined
 	let bridgePort: MessagePort | undefined
+	let bridgeCapability: string | undefined
 
 	const fakeSigner = {
 		...(signerInitialSelectedAddress === undefined ? {} : { selectedAddress: signerInitialSelectedAddress }),
@@ -106,8 +107,10 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 		},
 		postMessage: (data: unknown, _targetOrigin?: string, transfer?: readonly Transferable[]) => {
 			if (!isRecord(data) || data.type !== 'interceptor_bridge_port') return
+			if (typeof data.bridgeCapability !== 'string') throw new Error('missing bridge capability')
 			const port = transfer?.find((item): item is MessagePort => item instanceof MessagePort)
 			if (port === undefined) throw new Error('missing bridge port')
+			bridgeCapability = data.bridgeCapability
 			bridgePort = port
 			bridgePort.onmessage = (event: MessageEvent<unknown>) => handleInpageRequest(event.data)
 		},
@@ -195,6 +198,10 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 		signerAccounts,
 		interceptorErrorPayloads,
 		sendBackgroundMessage,
+		notifyBridgeReconnected: () => {
+			if (bridgeCapability === undefined) throw new Error('bridge capability is not initialized')
+			sendBackgroundMessage({ type: 'interceptor_bridge_reconnected', bridgeCapability })
+		},
 		setBlockRequestAccounts: (value: boolean) => { blockRequestAccounts = value },
 		resolvePendingRequestAccounts: (accounts: string[]) => resolvePendingRequestAccounts?.(accounts),
 		rejectPendingRequestAccounts: (error: { code: number, message: string }) => rejectPendingRequestAccounts?.(error),
@@ -304,6 +311,103 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 }
 
 describe('inpage signer bridge', () => {
+	test('shares the top document generation when a same-origin child initializes first', async () => {
+		const childDocumentGenerations: string[] = []
+		const topDocumentGenerations: string[] = []
+		const createGenerationCapture = (documentGenerations: string[]) => createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method !== 'signer_providers_changed') return false
+				const documentGeneration = request.params?.[2]
+				if (typeof documentGeneration === 'string') documentGenerations.push(documentGeneration)
+				reply({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: request.method,
+					result: { preferredSignerRdns: undefined, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true },
+				})
+				return true
+			},
+		})
+		const top = createGenerationCapture(topDocumentGenerations)
+		const child = createGenerationCapture(childDocumentGenerations)
+		Reflect.defineProperty(top.fakeWindow, 'top', { configurable: true, value: top.fakeWindow })
+		Reflect.defineProperty(child.fakeWindow, 'top', { configurable: true, value: top.fakeWindow })
+
+		await withFakeInpageWindow(child.fakeWindow, '../../app/inpage/ts/inpage.js?child-first-shared-document-generation', async () => {
+			await waitFor(() => childDocumentGenerations.length > 0)
+		})
+		await withFakeInpageWindow(top.fakeWindow, '../../app/inpage/ts/inpage.js?top-after-child-shared-document-generation', async () => {
+			await waitFor(() => topDocumentGenerations.length > 0)
+		})
+
+		const childDocumentGeneration = childDocumentGenerations[0]
+		const topDocumentGeneration = topDocumentGenerations[0]
+		if (childDocumentGeneration === undefined || topDocumentGeneration === undefined) throw new Error('Missing signer document generation')
+		assert.equal(childDocumentGeneration, topDocumentGeneration)
+
+		const topSocket = { tabId: 101, connectionName: 1n }
+		const childSocket = { tabId: 101, connectionName: 2n }
+		const {
+			clearSignerExecutionAuthorityForTab,
+			reconcileSignerExecutionDocument,
+			registerAuthoritativeTopSocket,
+			registerCurrentChildSignerSocket,
+		} = await import('../../app/ts/background/signerExecutionAuthority.js')
+		try {
+			registerAuthoritativeTopSocket(topSocket, 'app.example')
+			registerCurrentChildSignerSocket(childSocket, 2)
+			assert.equal(reconcileSignerExecutionDocument(topSocket, 'app.example', topDocumentGeneration, true, 0), true)
+			assert.equal(reconcileSignerExecutionDocument(childSocket, 'app.example', childDocumentGeneration, false, 2), true)
+		} finally {
+			clearSignerExecutionAuthorityForTab(topSocket.tabId)
+		}
+	})
+
+	test('retries initial provider catalog reconciliation after the background bridge reconnects', async () => {
+		let catalogRequestCount = 0
+		let publicRequestForwarded = false
+		const { fakeWindow, notifyBridgeReconnected } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_providers_changed') {
+					catalogRequestCount++
+					if (catalogRequestCount === 1) return true
+					reply({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: { preferredSignerRdns: undefined, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true },
+					})
+					return true
+				}
+				if (request.method === 'eth_sendTransaction') {
+					publicRequestForwarded = true
+					reply({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: '0x1111111111111111111111111111111111111111111111111111111111111111',
+					})
+					return true
+				}
+				return false
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?catalog-reconciliation-after-bridge-reconnect', async () => {
+			await waitFor(() => catalogRequestCount === 1)
+			const publicRequest = fakeWindow.ethereum.request({ method: 'eth_sendTransaction', params: [] })
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(publicRequestForwarded, false)
+
+			notifyBridgeReconnected()
+			await waitFor(() => catalogRequestCount >= 2 && publicRequestForwarded)
+			assert.equal(await publicRequest, '0x1111111111111111111111111111111111111111111111111111111111111111')
+		})
+	})
+
 	test('annotates only public eth_requestAccounts requests for replay after disconnect', async () => {
 		const bridgeRequests: InpageRequest[] = []
 		const account = '0x1111111111111111111111111111111111111111'
@@ -957,12 +1061,14 @@ describe('inpage signer bridge', () => {
 				sendAsync: (payload: unknown, callback: (error: unknown, response: unknown) => void) => Promise<void>
 				on: (eventName: string, callback: (value: unknown) => void) => void
 			}
-			try {
-				await provider.request({ method: 'eth_accounts_reply', params: [] })
-				assert.fail('public internal provider method should reject')
-			} catch (error: unknown) {
-				if (!(typeof error === 'object' && error !== null && 'code' in error)) throw error
-				assert.equal(error.code, -32004)
+			for (const method of ['begin_signer_provider_selection', 'eth_accounts_reply', 'finish_signer_provider_selection']) {
+				try {
+					await provider.request({ method, params: [] })
+					assert.fail(`public internal provider method ${ method } should reject`)
+				} catch (error: unknown) {
+					if (!(typeof error === 'object' && error !== null && 'code' in error)) throw error
+					assert.equal(error.code, -32004)
+				}
 			}
 			assert.deepEqual(provider.send({ id: 77, method: 'eth_coinbase', params: [] }), { jsonrpc: '2.0', id: 77, result: null })
 			let batchCallbackCount = 0
@@ -1721,6 +1827,74 @@ describe('inpage signer bridge', () => {
 		const selectedProvider = selectedProviders[0]
 		if (!isRecord(selectedProvider)) throw new Error('Missing restored EIP-6963 provider metadata')
 		assert.equal(selectedProvider.rdns, 'com.example.preferred')
+	})
+
+	test('unblocks public requests when a remembered EIP-6963 provider is announced but unusable', async () => {
+		const catalogSizes: number[] = []
+		const connectedSignerNames: unknown[] = []
+		let publicRequestForwarded = false
+		const { fakeWindow, interceptorErrorPayloads } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_providers_changed') {
+					const providers = request.params?.[0]
+					catalogSizes.push(Array.isArray(providers) ? providers.length : -1)
+					reply({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: {
+							preferredSignerRdns: 'com.example.unusable',
+							automaticSelectionAllowed: true,
+							signerSelectionChangeAllowed: true,
+						},
+					})
+					return true
+				}
+				if (request.method === 'connected_to_signer') connectedSignerNames.push(request.params?.[1])
+				if (request.method === 'eth_sendTransaction') {
+					publicRequestForwarded = true
+					reply({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						error: { code: 4900, message: 'No usable signer provider' },
+					})
+					return true
+				}
+				return false
+			},
+		})
+		const unusableProvider = {
+			isConnected: () => true,
+			request: async () => undefined,
+			on: () => { throw new Error('Provider event subscription failed') },
+			removeListener: () => unusableProvider,
+		}
+		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+			type: 'eip6963:announceProvider',
+			detail: {
+				info: {
+					uuid: '34343434-3434-4434-8434-343434343434',
+					name: 'Unusable Wallet',
+					icon: 'data:image/svg+xml,<svg/>',
+					rdns: 'com.example.unusable',
+				},
+				provider: unusableProvider,
+			},
+		}))
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-unusable-remembered-selection', async () => {
+			const publicRequest = fakeWindow.ethereum.request({ method: 'eth_sendTransaction', params: [] })
+			await assert.rejects(publicRequest, /No usable signer provider/)
+			await waitFor(() => catalogSizes.includes(0) && connectedSignerNames.includes('NoSigner'))
+		})
+
+		assert.equal(publicRequestForwarded, true)
+		assert.equal(catalogSizes.includes(1), true)
+		assert.equal(catalogSizes.includes(0), true)
+		assert.equal(interceptorErrorPayloads.some((payload) => typeof payload === 'string' && payload.includes('Unusable Wallet')), true)
 	})
 
 	test('does not restore a remembered provider when the catalog reply forbids automatic selection', async () => {

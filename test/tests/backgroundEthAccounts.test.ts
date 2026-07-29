@@ -266,11 +266,15 @@ describe('background eth_accounts', () => {
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
 
 		for (const [index, method] of [
+			'begin_signer_provider_selection',
 			'connected_to_signer',
 			'eth_accounts_reply',
+			'finish_signer_provider_selection',
 			'InterceptorError',
 			'signer_chainChanged',
 			'signer_reply',
+			'signer_provider_selected',
+			'signer_providers_changed',
 			'wallet_switchEthereumChain_reply',
 		].entries()) {
 			await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {

@@ -15,7 +15,7 @@ import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon, ChevronIcon, OpenInNewIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { type Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
-import { useEffect, useRef } from 'preact/hooks'
+import { useCallback, useEffect, useRef } from 'preact/hooks'
 import { type DeltaUnit, TimePicker, type TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
 import { assertNever } from '../../utils/typescript.js'
 import { bigintSecondsToDate } from '../../utils/bigint.js'
@@ -248,16 +248,25 @@ function SignerProviderSelector(param: { tabState: Signal<TabState | undefined>,
 	const isOpen = useSignal(false)
 	const dropdownRef = useRef<HTMLDivElement>(null)
 	const triggerRef = useRef<HTMLButtonElement>(null)
-	clickOutsideAlerter(dropdownRef, () => { isOpen.value = false })
+	const closeDropdown = useCallback(() => { isOpen.value = false }, [isOpen])
+	clickOutsideAlerter(dropdownRef, closeDropdown)
 	if (providers.length === 0 && tabState?.preferredSignerUnavailable !== true && tabState?.signerProviderCatalogOverflowed !== true) return <></>
 	const selectedProvider = tabState?.selectedSignerProvider
 
-	const focusFirstOption = () => {
-		scheduleAfterPaint(() => dropdownRef.current?.querySelector<HTMLButtonElement>('.signer-provider-option')?.focus())
+	const focusOption = (position: 'selectedOrFirst' | 'last') => {
+		scheduleAfterPaint(() => {
+			const options = Array.from(dropdownRef.current?.querySelectorAll<HTMLButtonElement>('.signer-provider-option') ?? [])
+			const option = position === 'last'
+				? options[options.length - 1]
+				: options.find((candidate) => candidate.getAttribute('aria-selected') === 'true') ?? options[0]
+			option?.focus()
+		})
 	}
 	const toggle = () => {
 		if (!param.isInitialHomeDataLoaded.value) return
-		isOpen.value = !isOpen.value
+		const opening = !isOpen.value
+		isOpen.value = opening
+		if (opening) focusOption('selectedOrFirst')
 	}
 	const selectProvider = (provider: EIP6963ProviderInfo) => {
 		isOpen.value = false
@@ -272,11 +281,11 @@ function SignerProviderSelector(param: { tabState: Signal<TabState | undefined>,
 		})
 	}
 	const onTriggerKeyDown = (event: JSX.TargetedKeyboardEvent<HTMLButtonElement>) => {
-		if (event.key !== 'ArrowDown') return
+		if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
 		event.preventDefault()
 		if (!param.isInitialHomeDataLoaded.value) return
 		isOpen.value = true
-		focusFirstOption()
+		focusOption(event.key === 'ArrowUp' && selectedProvider === undefined ? 'last' : 'selectedOrFirst')
 	}
 	const onDropdownKeyDown = (event: JSX.TargetedKeyboardEvent<HTMLDivElement>) => {
 		if (event.key === 'Escape') {
@@ -285,21 +294,40 @@ function SignerProviderSelector(param: { tabState: Signal<TabState | undefined>,
 			triggerRef.current?.focus()
 			return
 		}
-		if ((event.key !== 'ArrowDown' && event.key !== 'ArrowUp')
+		if ((event.key === 'Enter' || event.key === ' ')
+			&& event.target instanceof HTMLButtonElement
+			&& event.target.classList.contains('signer-provider-option')) {
+			event.preventDefault()
+			event.target.click()
+			return
+		}
+		if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)
 			|| !(event.target instanceof HTMLButtonElement)
 			|| !event.target.classList.contains('signer-provider-option')) return
 		event.preventDefault()
 		const options = Array.from(dropdownRef.current?.querySelectorAll<HTMLButtonElement>('.signer-provider-option') ?? [])
 		const currentIndex = options.indexOf(event.target)
+		if (event.key === 'Home') {
+			options[0]?.focus()
+			return
+		}
+		if (event.key === 'End') {
+			options[options.length - 1]?.focus()
+			return
+		}
 		const direction = event.key === 'ArrowDown' ? 1 : -1
 		const nextIndex = (currentIndex + direction + options.length) % options.length
 		options[nextIndex]?.focus()
 	}
+	const onDropdownFocusOut = (event: JSX.TargetedFocusEvent<HTMLDivElement>) => {
+		if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
+		isOpen.value = false
+	}
 	const placeholderText = tabState?.preferredSignerUnavailable === true ? 'Preferred signer needs selection' : 'Choose a signer'
 
-	return <div class = 'signer-provider-selector' title = 'Wallet names and icons are self-reported by installed providers.'>
-		<span class = 'signer-provider-selector-label'>Signer for this site</span>
-		<div ref = { dropdownRef } class = 'signer-provider-dropdown' onKeyDown = { onDropdownKeyDown }>
+	return <div class = 'signer-provider-selector' title = 'This tab uses the selected wallet, and the preference is remembered for this site. Wallet names and icons are self-reported by installed providers.'>
+		<span class = 'signer-provider-selector-label'>Signer for this tab</span>
+		<div ref = { dropdownRef } class = 'signer-provider-dropdown' onFocusOut = { onDropdownFocusOut } onKeyDown = { onDropdownKeyDown }>
 			<button
 				ref = { triggerRef }
 				id = 'signer-provider-selector'
@@ -329,7 +357,7 @@ function SignerProviderSelector(param: { tabState: Signal<TabState | undefined>,
 			</button>
 			{ isOpen.value
 				? <div id = 'signer-provider-options' class = 'signer-provider-options' role = 'listbox' aria-label = 'Available signers'>
-					{ providers.map((provider) => {
+					{ providers.map((provider, index) => {
 						const isSelected = provider.uuid === selectedProvider?.uuid
 						return <button
 							key = { provider.uuid }
@@ -338,6 +366,7 @@ function SignerProviderSelector(param: { tabState: Signal<TabState | undefined>,
 							role = 'option'
 							aria-selected = { isSelected }
 							aria-label = { signerProviderOptionLabel(provider) }
+							tabIndex = { isSelected || (selectedProvider === undefined && index === 0) ? 0 : -1 }
 							data-provider-uuid = { provider.uuid }
 							title = { signerProviderOptionLabel(provider) }
 							onClick = { () => selectProvider(provider) }

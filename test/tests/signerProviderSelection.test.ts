@@ -66,6 +66,45 @@ function createProviderMessage(method: string, params: readonly unknown[], tabId
 }
 
 describe('EIP-6963 signer provider selection', () => {
+	test('keeps active signer execution targets isolated per tab while sharing the site preference', async () => {
+		installBrowserMock()
+		const secondProvider = {
+			...provider,
+			uuid: '33333333-3333-4333-8333-333333333333',
+			name: 'Third Wallet',
+			rdns: 'com.example.third',
+		}
+		const secondTabSocket = { tabId: 8, connectionName: 1n }
+		const {
+			authorizeSocketForSignerExecution,
+			clearSignerExecutionAuthorityForTab,
+			getSignerExecutionTargetForOrigin,
+			registerAuthoritativeTopSocket,
+			setSignerExecutionTarget,
+			socketCanExecuteWithSelectedSigner,
+		} = await import('../../app/ts/background/signerExecutionAuthority.js')
+		const { getSignerPreference, setSignerPreference } = await import('../../app/ts/background/storageVariables.js')
+		registerAuthoritativeTopSocket(secondTabSocket, 'app.example')
+		reconcileSignerExecutionDocument(secondTabSocket, 'app.example', NEXT_DOCUMENT_GENERATION, true, 0)
+
+		try {
+			assert.equal(setSignerExecutionTarget(7, provider.uuid, 'app.example'), true)
+			assert.equal(setSignerExecutionTarget(8, secondProvider.uuid, 'app.example'), true)
+			assert.equal(authorizeSocketForSignerExecution({ tabId: 7, connectionName: 1n }, provider.uuid, 'app.example'), true)
+			assert.equal(authorizeSocketForSignerExecution(secondTabSocket, secondProvider.uuid, 'app.example'), true)
+
+			await setSignerPreference('app.example', secondProvider.rdns)
+
+			assert.equal(getSignerExecutionTargetForOrigin(7, 'app.example'), provider.uuid)
+			assert.equal(getSignerExecutionTargetForOrigin(8, 'app.example'), secondProvider.uuid)
+			assert.equal(socketCanExecuteWithSelectedSigner({ tabId: 7, connectionName: 1n }), true)
+			assert.equal(socketCanExecuteWithSelectedSigner(secondTabSocket), true)
+			assert.equal((await getSignerPreference('app.example'))?.rdns, secondProvider.rdns)
+		} finally {
+			clearSignerExecutionAuthorityForTab(8)
+		}
+	})
+
 	test('returns the per-origin preference and publishes only top-frame provider metadata', async () => {
 		const { storageState } = installBrowserMock()
 		storageState.signerPreferences = [{ websiteOrigin: 'app.example', rdns: provider.rdns }]
