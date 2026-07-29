@@ -20,12 +20,13 @@ import { deduplicateByFunction, last } from '../../utils/array.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
 import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
 import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
-import { decodeCallDataLoose, decodeEventLoose, decodeFunctionOutput, encodeFunctionCall, type AbiLike } from '../../utils/abiRuntime.js'
+import { decodeCallDataLoose, decodeEventLoose, decodeFunctionOutput, decodeFunctionOutputSafely, encodeFunctionCall, type AbiLike } from '../../utils/abiRuntime.js'
 import { Erc20ABI, Erc1155ABI } from '../../utils/abi.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 import { createEip1559Or7702Transaction, hasEip7702AuthorizationSignature, hasPartialEip7702AuthorizationSignature, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
+import { parseTransactionIfPossible } from '../../utils/calldata.js'
 
 type SuccessfulExecutionSimulationState = Extract<ExecutionSimulationState, { success: true }>
 
@@ -1794,6 +1795,25 @@ const simulatedCall = async (ethereumClientService: EthereumClientService, reque
 	}
 }
 
+export const getSimulatedErc20Balance = async (
+	ethereumClientService: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	simulationState: ResolvedSimulationState,
+	token: EthereumAddress,
+	owner: EthereumAddress,
+): Promise<bigint | undefined> => {
+	const response = await simulatedCall(ethereumClientService, requestAbortController, simulationState, {
+		to: token,
+		from: owner,
+		value: 0n,
+		input: stringToUint8Array(encodeFunctionCall(Erc20ABI, 'balanceOf', [addressString(owner)])),
+		maxFeePerGas: 0n,
+		maxPriorityFeePerGas: 0n,
+	})
+	if ('error' in response) return undefined
+	return decodeFunctionOutputSafely(Erc20ABI, 'balanceOf', response.result, (value): value is bigint => typeof value === 'bigint')
+}
+
 // prefer the node-provided simulated block hash when available, and fall back to a deterministic synthetic hash for grouped logical blocks
 const getHashOfSimulatedBlock = (simulationState: SimulationState, blockDelta: number) => getSimulatedBlockHeaderTemplate(simulationState, blockDelta)?.hash ?? getHashOfSimulatedBlockFromInput(simulationState.simulationStateInput, blockDelta)
 
@@ -1969,11 +1989,16 @@ export const getTokenBalancesAfterForTransaction = async (
 	requestAbortController: AbortController | undefined,
 	simulationStateInput: SimulationStateInput,
 	callResult: EthSimulateV1CallResult,
-	sender: EthereumAddress,
+	transaction: EthereumSendableSignedTransaction,
 ): Promise<TokenBalancesAfter> => {
 	const events = callResult.status === 'success' ? callResult.logs : []
+	const attemptedTransfer = parseTransactionIfPossible(transaction)
+	const attemptedErc20BalanceQuery = attemptedTransfer?.name === 'transfer' && transaction.to !== null
+		? [{ token: transaction.to, owner: transaction.from, tokenId: undefined, type: 'ERC20' as const }]
+		: []
 	const erc20sAddresses = [
-		{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, owner: sender, tokenId: undefined, type: 'ERC20' as const }, // add original sender for eth always, as there's always gas payment
+		{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, owner: transaction.from, tokenId: undefined, type: 'ERC20' as const }, // add original sender for eth always, as there's always gas payment
+		...attemptedErc20BalanceQuery,
 		...getAddressesInteractedWithErc20s(events)
 	]
 	const erc1155AddressIds = getAddressesAndTokensIdsInteractedWithErc1155s(events)
@@ -2023,14 +2048,13 @@ const getTokenBalancesAfter = async (
 		return await promiseAllMapAbortSafe(Array.from(inputBlock.transactions.entries()), async ([inputTransactionIndex, inputTransaction]) => {
 			const simulateResultTransaction = groupedResultBlock.calls[inputTransactionIndex]
 			if (simulateResultTransaction === undefined) throw new Error('singleResult transaction was undefined')
-			const sender = inputTransaction.signedTransaction.from
 			const inputStateJustAfterTransaction = sliceSimulationStateInput(simulationStateInput, inputBlockIndex, inputTransactionIndex + 1)
 			return getTokenBalancesAfterForTransaction(
 				ethereumClientService,
 				requestAbortController,
 				inputStateJustAfterTransaction,
 				simulateResultTransaction,
-				sender,
+				inputTransaction.signedTransaction,
 			)
 		})
 	})
