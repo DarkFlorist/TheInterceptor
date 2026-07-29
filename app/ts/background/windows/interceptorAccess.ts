@@ -20,6 +20,7 @@ import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.
 import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { isAccountConnectionMethod } from '../accountRequestMethods.js'
+import { socketCanExecuteWithSelectedSigner } from '../signerExecutionAuthority.js'
 import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
 import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, signerConnectionReplacedError, signerUnavailableError, tabHasApprovedWebsiteConnection, waitForConfirmedSignerStateToken } from '../signerStateOwnership.js'
 
@@ -143,6 +144,7 @@ export async function updateInterceptorAccessViewWithPendingRequests() {
 
 async function requestSignerAccountsFromSigner(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, requestAccounts: boolean, onlyIfUnavailable: boolean) {
 	return await serializeSignerAccountRequest(websiteTabConnections, socket.tabId, async () => {
+		if (!socketCanExecuteWithSelectedSigner(socket)) return { accounts: [], error: signerUnavailableError }
 		const signerStateToken = await waitForConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 		if (signerStateToken === undefined) return { accounts: [], error: signerUnavailableError }
 		const tabState = await getTabState(socket.tabId)

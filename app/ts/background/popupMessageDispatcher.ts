@@ -15,6 +15,7 @@ import { interceptorAccessMetadataRefresh } from './windows/interceptorAccess.js
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { addOrModifyAddressBookEntry, allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, changeActiveAddress, changeAddOrModifyAddressWindowState, changeChainDialog, changeInterceptorAccess, changePage, changePreSimulationBlockTimeManipulation, changeSettings, confirmDialog, confirmRequestAccess, disableInterceptor, enableSimulationMode, exportSettings, fetchSimulationStackRequestConfirmation, forceSetGasLimitForTransaction, getAddressBookData, importSettings, importSimulationStack, interceptorAccessChangeAddressOrRefresh, modifyMakeMeRich, openNewTab, openWebPage, popupChangeActiveRpc, popupReadyAndListening, refreshHomeData, refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation, removeAddressBookEntry, removeTransactionOrSignedMessage, removeWebsiteAccess, removeWebsiteAddressAccess, reportUnexpectedErrorInWindow, requestAbiAndNameFromBlockExplorer, requestAccountsFromSigner, requestActiveAddresses, requestCompleteVisualizedSimulation, requestHomePageBootstrap, requestIdentifyAddress, requestInterceptorSimulationInput, requestLatestUnexpectedError, requestMakeMeRichList, requestNewHomeData, requestSimulationMetadata, requestSimulationMode, retrieveWebsiteAccess, setEnsNameForHash, setNewRpcList, setTransactionOrMessageBlockTimeManipulator, settingsOpened, simulateGnosisSafeTransactionOnPass, simulateGovernanceContractExecutionOnPass, watchAssetDialog } from './popupMessageHandlers.js'
+import { selectSignerProvider } from './signerProviderSelection.js'
 
 export type PopupMessageDispatcherContext = {
 	websiteTabConnections: WebsiteTabConnections
@@ -37,6 +38,7 @@ const popupMessageHandlers = {
 	popup_modifyMakeMeRich: popupMessageHandler('popup_modifyMakeMeRich', async (_context, request) => await modifyMakeMeRich(request)),
 	popup_changePage: popupMessageHandler('popup_changePage', async (_context, request) => await changePage(request)),
 	popup_requestAccountsFromSigner: popupMessageHandler('popup_requestAccountsFromSigner', async (context, request) => await requestAccountsFromSigner(context.websiteTabConnections, request)),
+	popup_selectSignerProvider: popupMessageHandler('popup_selectSignerProvider', async (context, request) => await selectSignerProvider(context.websiteTabConnections, request)),
 	popup_resetSimulation: popupMessageHandler('popup_resetSimulation', async (context) => await context.resetSimulationState()),
 	popup_removeTransactionOrSignedMessage: popupMessageHandler('popup_removeTransactionOrSignedMessage', async (context, request) => await removeTransactionOrSignedMessage(context.ethereum, context.tokenPriceService, request)),
 	popup_refreshSimulation: popupMessageHandler('popup_refreshSimulation', async (context) => {

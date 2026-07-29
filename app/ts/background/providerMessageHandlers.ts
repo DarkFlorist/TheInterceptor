@@ -3,7 +3,7 @@ import type { TabState, WebsiteTabConnections } from '../types/user-interface-ty
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { changeActiveAddressAndChain } from './background.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
+import { getRpcNetworkForChain, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { getPendingSignerChainChangeTokenForCallback, isPendingSignerChainChangeReply, resolveSignerChainChange } from './windows/changeChain.js'
 import { type ApprovalState, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
@@ -17,12 +17,13 @@ import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
+import { isTopFrameId, socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
-	if (socket === undefined) return undefined
+	if (socket === undefined || !socketCanExecuteWithSelectedSigner(socket)) return undefined
 	const token = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 	if (token === undefined) return undefined
 	if (token.socket.connectionName !== socket.connectionName || token.port !== port) return undefined
@@ -122,6 +123,7 @@ async function changeSignerChain(ethereum: EthereumClientService, tokenPriceServ
 	const oldSignerChain = tabStateChange.previousState.signerChain
 	// update active address if we are using signers address
 	const settings = await getSettings()
+	if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken) || !socketCanExecuteWithSelectedSigner(signerStateToken.socket)) return
 	if ((settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && settings.activeRpcNetwork.chainId !== signerChain) {
 		const rpcNetwork = await getRpcNetworkForChain(signerChain)
 		return changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
@@ -151,7 +153,7 @@ export async function walletSwitchEthereumChainReply(ethereum: EthereumClientSer
 	const returnValue = { type: 'result' as const, method: 'wallet_switchEthereumChain_reply' as const, result: '0x' as const }
 	const params = WalletSwitchEthereumChainReply.parse(request).params[0]
 	const socket = getSocketFromPort(port)
-	if (socket === undefined) return returnValue
+	if (socket === undefined || !socketCanExecuteWithSelectedSigner(socket)) return returnValue
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
 		const currentSignerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 		if (currentSignerStateToken?.socket.connectionName !== socket.connectionName || currentSignerStateToken.port !== port) return returnValue
@@ -183,13 +185,16 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 	const [signerConnected, signerName, signerProviderGeneration] = ConnectedToSigner.parse(request).params
 	// MV2 and test ports may omit frameId. Treat those as the top frame, while preventing an
 	// unapproved MV3 child frame from taking ownership of tab-wide signer state.
-	const isTopFrame = port.sender?.frameId === undefined || port.sender.frameId === 0
+	const isTopFrame = isTopFrameId(port.sender?.frameId)
 	if (approval !== 'hasAccess' && !isTopFrame) {
 		return await getConnectedToSignerResult()
 	}
 	const socket = getSocketFromPort(port)
 	const requestSocket = request.uniqueRequestIdentifier.requestSocket
-	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName) return await getConnectedToSignerResult()
+	if (socket === undefined
+		|| socket.tabId !== requestSocket.tabId
+		|| socket.connectionName !== requestSocket.connectionName
+		|| !socketCanExecuteWithSelectedSigner(socket)) return await getConnectedToSignerResult()
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
 		const tabConnection = websiteTabConnections.get(socket.tabId)
 		if (!isCurrentWebsiteConnection(tabConnection, socket, port) || tabConnection?.signerStateOwner?.connectionName !== socket.connectionName) {
@@ -218,7 +223,6 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 			return await getConnectedToSignerResult()
 		}
 		confirmSignerState(tabConnection, signerProviderGeneration)
-		await setDefaultSignerName(signerName)
 		await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 		if (hasSignerCallbackAccess(websiteTabConnections, socket.tabId, approval)) {
 			const settings = await getSettings()
@@ -259,7 +263,8 @@ export async function signerReply(ethereum: EthereumClientService, tokenPriceSer
 		// the inpage bridge converts a provider-generation change into a terminal disconnected error.
 		if (!isCurrentWebsiteConnection(tabConnection, socket, port)
 			|| requestSocket.tabId !== socket.tabId
-			|| requestSocket.connectionName !== socket.connectionName) {
+			|| requestSocket.connectionName !== socket.connectionName
+			|| !socketCanExecuteWithSelectedSigner(socket)) {
 			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...signerConnectionReplacedError } }))
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 			return doNotReply

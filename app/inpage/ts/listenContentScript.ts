@@ -3,6 +3,8 @@ const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentS
 function listenContentScript(connectionName: string | undefined, diagnosticsSource: 'content-script' | 'document-start') {
 	const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
 	const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
+	const INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE = 'interceptor_bridge_initialized'
+	const INTERCEPTOR_BRIDGE_RECONNECTED_MESSAGE = 'interceptor_bridge_reconnected'
 	// This non-module inpage build cannot import the canonical background constant from bridgeRequestDelivery.ts; contentScriptReconnect.test.ts enforces that both values match.
 	const INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE = 'interceptor_bridge_acknowledgement'
 	const checkAndThrowRuntimeLastError = () => {
@@ -35,13 +37,25 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		globalThis.crypto.getRandomValues(arr)
 		return `0x${ Array.from(arr, dec2hex).join('') }`
 	}
+	const generateUuidV4 = () => {
+		const bytes = new Uint8Array(16)
+		globalThis.crypto.getRandomValues(bytes)
+		bytes[6] = (bytes[6] & 0x0f) | 0x40
+		bytes[8] = (bytes[8] & 0x3f) | 0x80
+		const hex = Array.from(bytes, dec2hex).join('')
+		return `${ hex.slice(0, 8) }-${ hex.slice(8, 12) }-${ hex.slice(12, 16) }-${ hex.slice(16, 20) }-${ hex.slice(20) }`
+	}
 	const connectionNameNotUndefined = connectionName === undefined ? generateId(40) : connectionName
 	let pageHidden = false
 	let extensionPort: browser.runtime.Port | undefined 
 	let inpagePort: MessagePort | undefined
+	let inpageBridgeCapability: string | undefined
+	const contentScriptCapability = generateUuidV4()
+	let hasConnectedExtensionPort = false
 
 	type BridgeRequestCandidate = {
 		readonly type?: unknown
+		readonly bridgeCapability?: unknown
 		readonly method?: unknown
 		readonly params?: unknown
 		readonly usingInterceptorWithoutSigner?: unknown
@@ -50,10 +64,12 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		readonly replayOnDisconnect?: unknown
 	}
 
+	const isUuid = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value)
 	const isForwardedDiagnosticsRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
 	const isBridgeRequestCandidate = (value: unknown): value is BridgeRequestCandidate => typeof value === 'object' && value !== null
-	const isBridgeRequest = (value: unknown): value is {
+	const isBridgeRequest = (value: unknown, expectedBridgeCapability: string): value is {
 		readonly type: typeof INTERCEPTOR_BRIDGE_REQUEST_MESSAGE
+		readonly bridgeCapability: string
 		readonly method: string
 		readonly params?: readonly unknown[]
 		readonly usingInterceptorWithoutSigner: boolean
@@ -63,6 +79,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 	} => {
 		if (!isBridgeRequestCandidate(value)) return false
 		if (value.type !== INTERCEPTOR_BRIDGE_REQUEST_MESSAGE) return false
+		if (value.bridgeCapability !== expectedBridgeCapability) return false
 		if (typeof value.method !== 'string') return false
 		if (value.params !== undefined && !Array.isArray(value.params)) return false
 		if (typeof value.usingInterceptorWithoutSigner !== 'boolean') return false
@@ -247,7 +264,8 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 	}
 
 	const forwardInpageMessageToBackground = (data: unknown) => {
-		if (!isBridgeRequest(data)) return
+		const expectedBridgeCapability = inpageBridgeCapability
+		if (expectedBridgeCapability === undefined || !isBridgeRequest(data, expectedBridgeCapability)) return
 		const message: ForwardedBridgeMessage = { replayOnDisconnect: data.replayOnDisconnect === true, data: {
 			interceptorRequest: true,
 			method: data.method,
@@ -274,18 +292,32 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 	globalThis.addEventListener('message', (messageEvent: MessageEvent<unknown>) => {
 		if (
 			inpagePort !== undefined
+			|| (messageEvent.source !== null && messageEvent.source !== window)
 			|| typeof messageEvent.data !== 'object'
 			|| messageEvent.data === null
 			|| !('type' in messageEvent.data)
 			|| messageEvent.data.type !== INTERCEPTOR_BRIDGE_PORT_MESSAGE
+			|| !('bridgeCapability' in messageEvent.data)
+			|| !isUuid(messageEvent.data.bridgeCapability)
 		) return
 		const port = messageEvent.ports[0]
 		if (port === undefined) {
 			reportInterceptorError(createForwardedDiagnosticsFromRaw(diagnosticsSource, 'connect inpage bridge', 'Missing inpage MessagePort', messageEvent.data, getForwardedDiagnosticsRequestContext(messageEvent.data)))
 			return
 		}
+		// Both scripts run at document_start. The inpage side retains the opposite
+		// MessagePort endpoint in a closure, so page code that observes this transferred
+		// endpoint can only send toward the inpage provider, not toward the extension.
+		// Pinning every request to this session capability also prevents a later page
+		// message or replacement port from being treated as the established bridge.
+		inpageBridgeCapability = messageEvent.data.bridgeCapability
 		inpagePort = port
 		inpagePort.onmessage = (portMessageEvent: MessageEvent<unknown>) => forwardInpageMessageToBackground(portMessageEvent.data)
+		inpagePort.postMessage({
+			type: INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE,
+			bridgeCapability: inpageBridgeCapability,
+			contentScriptCapability,
+		})
 	})
 
 	connect = () => {
@@ -305,6 +337,8 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		}
 		const connectedExtensionPort = browser.runtime.connect({ name: connectionNameNotUndefined })
 		extensionPort = connectedExtensionPort
+		const reconnectingExistingBridge = hasConnectedExtensionPort
+		hasConnectedExtensionPort = true
 
 		// forward all messages we get from the background script to the window so the page script can filter and process them
 		connectedExtensionPort.onMessage.addListener(messageEvent => {
@@ -334,7 +368,9 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 					reportInterceptorError(createForwardedDiagnosticsFromRaw(diagnosticsSource, 'forward background message', 'Inpage MessagePort is not connected', messageEvent, getForwardedDiagnosticsRequestContext(messageEvent)))
 					return
 				}
-				inpagePort.postMessage(withoutBridgeSettlementMarker(messageEvent))
+				const backgroundMessage = withoutBridgeSettlementMarker(messageEvent)
+				if (typeof backgroundMessage !== 'object' || backgroundMessage === null) throw new Error('Malformed message from background script')
+				inpagePort.postMessage({ ...backgroundMessage, contentScriptCapability })
 				checkAndThrowRuntimeLastError()
 				const settledBridgeRequestId = getSettledBridgeRequestId(messageEvent)
 				if (settledBridgeRequestId !== undefined) settleReplayableRequest(settledBridgeRequestId)
@@ -350,6 +386,13 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 			reconnectAfterPortFailure(connectedExtensionPort, disconnectError)
 		})
 		flushPendingBridgeMessages(connectedExtensionPort)
+		if (reconnectingExistingBridge && inpagePort !== undefined && inpageBridgeCapability !== undefined) {
+			inpagePort.postMessage({
+				type: INTERCEPTOR_BRIDGE_RECONNECTED_MESSAGE,
+				bridgeCapability: inpageBridgeCapability,
+				contentScriptCapability,
+			})
+		}
 		return connectedExtensionPort
 	}
 	connect()

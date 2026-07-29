@@ -20,6 +20,12 @@ export function getPrettySignerName(signerName: SignerName) {
 }
 
 export function getSignerLogo(signerName: SignerName) {
-	if (signerName === 'NoSigner' || signerName === 'NotRecognizedSigner' || signerName === 'NoSignerDetected') return undefined
-	return signerLogos[signerName]
+	switch (signerName) {
+		case 'MetaMask': return signerLogos.MetaMask
+		case 'Ambire': return signerLogos.Ambire
+		case 'Brave': return signerLogos.Brave
+		case 'CoinbaseWallet': return signerLogos.CoinbaseWallet
+		case 'Rabby': return signerLogos.Rabby
+		default: return undefined
+	}
 }

@@ -14,6 +14,7 @@ type FakeWindowOptions = {
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
+const CONTENT_SCRIPT_CAPABILITY = '22222222-2222-4222-8222-222222222222'
 
 function parseInpageRequest(value: unknown): InpageRequest | undefined {
 	if (!isRecord(value)) return undefined
@@ -44,6 +45,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 	let rejectPendingRequestAccounts: ((error: { code: number, message: string }) => void) | undefined
 	let resolvePendingRequestAccounts: ((accounts: string[]) => void) | undefined
 	let bridgePort: MessagePort | undefined
+	let bridgeCapability: string | undefined
 
 	const fakeSigner = {
 		...(signerInitialSelectedAddress === undefined ? {} : { selectedAddress: signerInitialSelectedAddress }),
@@ -106,15 +108,26 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 		},
 		postMessage: (data: unknown, _targetOrigin?: string, transfer?: readonly Transferable[]) => {
 			if (!isRecord(data) || data.type !== 'interceptor_bridge_port') return
+			if (typeof data.bridgeCapability !== 'string') throw new Error('missing bridge capability')
 			const port = transfer?.find((item): item is MessagePort => item instanceof MessagePort)
 			if (port === undefined) throw new Error('missing bridge port')
+			bridgeCapability = data.bridgeCapability
 			bridgePort = port
 			bridgePort.onmessage = (event: MessageEvent<unknown>) => handleInpageRequest(event.data)
+			bridgePort.postMessage({
+				type: 'interceptor_bridge_initialized',
+				bridgeCapability,
+				contentScriptCapability: CONTENT_SCRIPT_CAPABILITY,
+			})
 		},
 	}
 
 	const sendBackgroundMessage = (data: unknown) => {
 		if (bridgePort === undefined) throw new Error('bridge port is not connected')
+		if (isRecord(data)) {
+			bridgePort.postMessage({ ...data, contentScriptCapability: CONTENT_SCRIPT_CAPABILITY })
+			return
+		}
 		bridgePort.postMessage(data)
 	}
 
@@ -124,7 +137,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 		queueMicrotask(() => {
 			if (handleRequest?.(request, sendBackgroundMessage) === true) return
 			switch (request.method) {
-				case 'connected_to_signer':
+			case 'connected_to_signer':
 					onConnectedToSignerRequest?.()
 					sendBackgroundMessage({
 						interceptorApproved: true,
@@ -132,8 +145,26 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 						type: 'result',
 						method: 'connected_to_signer',
 						result: { metamaskCompatibilityMode: true },
-					})
-					return
+				})
+				return
+			case 'signer_providers_changed':
+				sendBackgroundMessage({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'signer_providers_changed',
+					result: { automaticSelectionAllowed: true, signerSelectionChangeAllowed: true },
+				})
+				return
+			case 'signer_provider_selected':
+				sendBackgroundMessage({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: 'signer_provider_selected',
+					result: '0x',
+				})
+				return
 				case 'InterceptorError':
 					interceptorErrorPayloads.push(request.params?.[0])
 					return
@@ -177,6 +208,18 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 		signerAccounts,
 		interceptorErrorPayloads,
 		sendBackgroundMessage,
+		sendUnauthenticatedBridgeMessage: (data: unknown) => {
+			if (bridgePort === undefined) throw new Error('bridge port is not connected')
+			bridgePort.postMessage(data)
+		},
+		notifyUnauthenticatedBridgeReconnected: () => {
+			if (bridgePort === undefined || bridgeCapability === undefined) throw new Error('bridge capability is not initialized')
+			bridgePort.postMessage({ type: 'interceptor_bridge_reconnected', bridgeCapability })
+		},
+		notifyBridgeReconnected: () => {
+			if (bridgeCapability === undefined) throw new Error('bridge capability is not initialized')
+			sendBackgroundMessage({ type: 'interceptor_bridge_reconnected', bridgeCapability })
+		},
 		setBlockRequestAccounts: (value: boolean) => { blockRequestAccounts = value },
 		resolvePendingRequestAccounts: (accounts: string[]) => resolvePendingRequestAccounts?.(accounts),
 		rejectPendingRequestAccounts: (error: { code: number, message: string }) => rejectPendingRequestAccounts?.(error),
@@ -286,6 +329,277 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 }
 
 describe('inpage signer bridge', () => {
+	test('refreshes EIP-6963 providers after startup when a legacy Rabby signer connected first', async () => {
+		const connectedSignerNames: unknown[] = []
+		const catalogRequests: InpageRequest[] = []
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request) => {
+				if (request.method === 'connected_to_signer') connectedSignerNames.push(request.params?.[1])
+				if (request.method === 'signer_providers_changed') catalogRequests.push(request)
+				return false
+			},
+		})
+		const metaMaskProvider = fakeWindow.ethereum
+		const rabbyProvider = {
+			isRabby: true,
+			isConnected: () => true,
+			request: metaMaskProvider.request,
+			on: metaMaskProvider.on,
+			removeListener: metaMaskProvider.removeListener,
+		}
+		Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: rabbyProvider })
+		const providerInfos = [
+			{ uuid: '11111111-1111-4111-8111-111111111111', name: 'Rabby Wallet', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.rabby' },
+			{ uuid: '22222222-2222-4222-8222-222222222222', name: 'MetaMask', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.metamask' },
+		]
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?late-eip6963-after-legacy-rabby', async () => {
+			await waitFor(() => connectedSignerNames.includes('Rabby'))
+			await waitFor(() => catalogRequests.some((request) => Array.isArray(request.params?.[0]) && request.params[0].length === 0))
+			fakeWindow.addEventListener('eip6963:requestProvider', () => {
+				fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: providerInfos[0], provider: rabbyProvider } })
+				fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: providerInfos[1], provider: metaMaskProvider } })
+			})
+
+			fakeWindow.dispatchEvent({ type: 'DOMContentLoaded' })
+
+			await waitFor(() => catalogRequests.some((request) => Array.isArray(request.params?.[0]) && request.params[0].length === providerInfos.length))
+		})
+	})
+
+	test('starts on HTTP-style pages where crypto.randomUUID is unavailable', async () => {
+		const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+		const getRandomValues = globalThis.crypto.getRandomValues.bind(globalThis.crypto)
+		const catalogRequests: InpageRequest[] = []
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request) => {
+				if (request.method === 'signer_providers_changed') catalogRequests.push(request)
+				return false
+			},
+		})
+		const announcedProvider = fakeWindow.ethereum
+		const providerInfo = {
+			uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+			name: 'HTTP Wallet',
+			icon: 'data:image/svg+xml,<svg/>',
+			rdns: 'com.example.http',
+		}
+		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+			type: 'eip6963:announceProvider',
+			detail: { info: providerInfo, provider: announcedProvider },
+		}))
+		Object.defineProperty(globalThis, 'crypto', {
+			configurable: true,
+			value: { getRandomValues },
+		})
+
+		try {
+			await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?http-without-random-uuid', async () => {
+				await waitFor(() => catalogRequests.some((request) => Array.isArray(request.params?.[0])
+					&& request.params[0].some((provider) => isRecord(provider) && provider.uuid === providerInfo.uuid)))
+			})
+		} finally {
+			if (cryptoDescriptor === undefined) Reflect.deleteProperty(globalThis, 'crypto')
+			else Object.defineProperty(globalThis, 'crypto', cryptoDescriptor)
+		}
+	})
+
+	test('shares the top document generation when a same-origin child initializes first', async () => {
+		const childDocumentGenerations: string[] = []
+		const topDocumentGenerations: string[] = []
+		const createGenerationCapture = (documentGenerations: string[]) => createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method !== 'signer_providers_changed') return false
+				const documentGeneration = request.params?.[2]
+				if (typeof documentGeneration === 'string') documentGenerations.push(documentGeneration)
+				reply({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: request.method,
+					result: { preferredSignerRdns: undefined, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true },
+				})
+				return true
+			},
+		})
+		const top = createGenerationCapture(topDocumentGenerations)
+		const child = createGenerationCapture(childDocumentGenerations)
+		Reflect.defineProperty(top.fakeWindow, 'top', { configurable: true, value: top.fakeWindow })
+		Reflect.defineProperty(child.fakeWindow, 'top', { configurable: true, value: top.fakeWindow })
+
+		await withFakeInpageWindow(child.fakeWindow, '../../app/inpage/ts/inpage.js?child-first-shared-document-generation', async () => {
+			await waitFor(() => childDocumentGenerations.length > 0)
+		})
+		await withFakeInpageWindow(top.fakeWindow, '../../app/inpage/ts/inpage.js?top-after-child-shared-document-generation', async () => {
+			await waitFor(() => topDocumentGenerations.length > 0)
+		})
+
+		const childDocumentGeneration = childDocumentGenerations[0]
+		const topDocumentGeneration = topDocumentGenerations[0]
+		if (childDocumentGeneration === undefined || topDocumentGeneration === undefined) throw new Error('Missing signer document generation')
+		assert.equal(childDocumentGeneration, topDocumentGeneration)
+
+		const topSocket = { tabId: 101, connectionName: 1n }
+		const childSocket = { tabId: 101, connectionName: 2n }
+		const {
+			clearSignerExecutionAuthorityForTab,
+			reconcileSignerExecutionDocument,
+			registerAuthoritativeTopSocket,
+			registerCurrentChildSignerSocket,
+		} = await import('../../app/ts/background/signerExecutionAuthority.js')
+		try {
+			registerAuthoritativeTopSocket(topSocket, 'app.example')
+			registerCurrentChildSignerSocket(childSocket, 2)
+			assert.equal(reconcileSignerExecutionDocument(topSocket, 'app.example', topDocumentGeneration, true, 0), true)
+			assert.equal(reconcileSignerExecutionDocument(childSocket, 'app.example', childDocumentGeneration, false, 2), true)
+		} finally {
+			clearSignerExecutionAuthorityForTab(topSocket.tabId)
+		}
+	})
+
+	test('retries initial provider catalog reconciliation after the background bridge reconnects', async () => {
+		let catalogRequestCount = 0
+		let publicRequestForwarded = false
+		const { fakeWindow, notifyBridgeReconnected } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_providers_changed') {
+					catalogRequestCount++
+					if (catalogRequestCount === 1) return true
+					reply({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: { preferredSignerRdns: undefined, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true },
+					})
+					return true
+				}
+				if (request.method === 'eth_sendTransaction') {
+					publicRequestForwarded = true
+					reply({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: '0x1111111111111111111111111111111111111111111111111111111111111111',
+					})
+					return true
+				}
+				return false
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?catalog-reconciliation-after-bridge-reconnect', async () => {
+			await waitFor(() => catalogRequestCount === 1)
+			const publicRequest = fakeWindow.ethereum.request({ method: 'eth_sendTransaction', params: [] })
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(publicRequestForwarded, false)
+
+			notifyBridgeReconnected()
+			await waitFor(() => catalogRequestCount >= 2 && publicRequestForwarded)
+			assert.equal(await publicRequest, '0x1111111111111111111111111111111111111111111111111111111111111111')
+		})
+	})
+
+	test('ignores unauthenticated background replies and reconnect controls on the observed bridge endpoint', async () => {
+		let catalogRequestCount = 0
+		let pendingPublicRequest: InpageRequest | undefined
+		const {
+			fakeWindow,
+			sendBackgroundMessage,
+			sendUnauthenticatedBridgeMessage,
+			notifyUnauthenticatedBridgeReconnected,
+		} = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_providers_changed') {
+					catalogRequestCount++
+					reply({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: { preferredSignerRdns: undefined, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true },
+					})
+					return true
+				}
+				if (request.method === 'eth_sendTransaction') {
+					pendingPublicRequest = request
+					return true
+				}
+				return false
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?authenticated-content-script-direction', async () => {
+			await waitFor(() => catalogRequestCount === 1)
+			const publicRequest = fakeWindow.ethereum.request({ method: 'eth_sendTransaction', params: [] })
+			await waitFor(() => pendingPublicRequest !== undefined)
+			const request = pendingPublicRequest
+			if (request === undefined) throw new Error('Missing pending public request')
+			let publicRequestSettled = false
+			void publicRequest.finally(() => { publicRequestSettled = true })
+
+			sendUnauthenticatedBridgeMessage({
+				interceptorApproved: true,
+				requestId: request.requestId,
+				type: 'result',
+				method: request.method,
+				result: '0xforged',
+			})
+			notifyUnauthenticatedBridgeReconnected()
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(publicRequestSettled, false)
+			assert.equal(catalogRequestCount, 1)
+
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				requestId: request.requestId,
+				type: 'result',
+				method: request.method,
+				result: '0xauthenticated',
+			})
+			assert.equal(await publicRequest, '0xauthenticated')
+		})
+	})
+
+	test('retries explicit selection when reconnect interrupts each lease phase', async () => {
+		const providerInfo = {
+			uuid: '33333333-3333-4333-8333-333333333333',
+			name: 'Reconnect Wallet',
+			icon: 'data:image/svg+xml,<svg/>',
+			rdns: 'com.example.reconnect',
+		}
+		for (const interruptedMethod of ['begin_signer_provider_selection', 'signer_provider_selected', 'finish_signer_provider_selection']) {
+			const methodCounts = new Map<string, number>()
+			const { fakeWindow, notifyBridgeReconnected, sendBackgroundMessage } = createFakeWindow({
+				handleRequest: (request) => {
+					const methodCount = (methodCounts.get(request.method) ?? 0) + 1
+					methodCounts.set(request.method, methodCount)
+					return request.method === interruptedMethod && methodCount === 1
+				},
+			})
+			const announcedProvider = fakeWindow.ethereum
+			fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+				type: 'eip6963:announceProvider',
+				detail: { info: providerInfo, provider: announcedProvider },
+			}))
+
+			await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?selection-reconnect-${ interruptedMethod }`, async () => {
+				await waitFor(() => methodCounts.has('signer_providers_changed'))
+				sendBackgroundMessage({
+					interceptorApproved: true,
+					type: 'result',
+					method: 'select_signer_provider',
+					result: providerInfo.uuid,
+				})
+				await waitFor(() => methodCounts.get(interruptedMethod) === 1)
+				notifyBridgeReconnected()
+				await waitFor(() => (methodCounts.get(interruptedMethod) ?? 0) >= 2)
+				await waitFor(() => (methodCounts.get('finish_signer_provider_selection') ?? 0) >= 1)
+			})
+		}
+	})
+
 	test('annotates only public eth_requestAccounts requests for replay after disconnect', async () => {
 		const bridgeRequests: InpageRequest[] = []
 		const account = '0x1111111111111111111111111111111111111111'
@@ -330,7 +644,7 @@ describe('inpage signer bridge', () => {
 		assert.equal(bridgeRequests.filter((request) => request.internal === true).every((request) => request.replayOnDisconnect === undefined), true)
 	})
 
-	test('waits for late MetaMask instead of using Brave for the first account request and signing', async () => {
+	test('keeps a legacy Brave signer until a late EIP-6963 provider is explicitly selected', async () => {
 		const signerAccountReplies: unknown[] = []
 		const connectedSignerNames: unknown[] = []
 		const signerRequestMethods: string[] = []
@@ -410,10 +724,11 @@ describe('inpage signer bridge', () => {
 			isBraveWallet: true,
 			isConnected: () => true,
 			request: async ({ method }: { method: string }) => {
-				braveSignerRequestMethods.push(method)
-				if (method === 'eth_chainId') return '0x1'
-				if (method === 'eth_accounts' || method === 'eth_requestAccounts') return []
-				throw new Error(`Unexpected Brave signer request: ${ method }`)
+					braveSignerRequestMethods.push(method)
+					if (method === 'eth_chainId') return '0x1'
+					if (method === 'eth_accounts' || method === 'eth_requestAccounts') return []
+					if (method === 'eth_sendTransaction') return signedTransactionHash
+					throw new Error(`Unexpected Brave signer request: ${ method }`)
 			},
 			on: () => braveSigner,
 			removeListener: () => braveSigner,
@@ -431,29 +746,33 @@ describe('inpage signer bridge', () => {
 				result: [],
 			})
 			await new Promise((resolve) => setTimeout(resolve, 0))
-			assert.equal(braveSignerRequestMethods.includes('eth_requestAccounts'), false)
+			assert.equal(braveSignerRequestMethods.includes('eth_requestAccounts'), true)
 
-			fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+			fakeWindow.dispatchEvent({
 				type: 'eip6963:announceProvider',
 				detail: {
 					info: { uuid: '55555555-5555-4555-8555-555555555555', name: 'MetaMask', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.metamask' },
 					provider: lateMetaMaskProvider,
 				},
-			}))
+			})
 
 			await waitFor(() => signerAccountReplies.length === 1, 500)
-			assert.deepEqual(signerAccountReplies, [{ type: 'success', accounts: signerAccounts, requestAccounts: true, signerProviderGeneration: 4 }])
-			assert.deepEqual(await accountRequest, signerAccounts)
+			const signerAccountReply = signerAccountReplies[0]
+			if (!isRecord(signerAccountReply)) throw new Error('Malformed signer account reply')
+			assert.equal(signerAccountReply.type, 'success')
+			assert.deepEqual(signerAccountReply.accounts, [])
+			assert.deepEqual(await accountRequest, [])
 			assert.equal(await interceptorProvider.request({ method: 'eth_sendTransaction', params: [{ from: signerAccounts[0] }] }), signedTransactionHash)
 		})
 
-		assert.deepEqual(connectedSignerNames, ['Brave', 'MetaMask'])
-		assert.equal(braveSignerRequestMethods.includes('eth_requestAccounts'), false)
-		assert.equal(signerRequestMethods.includes('eth_requestAccounts'), true)
-		assert.equal(signerRequestMethods.includes('eth_sendTransaction'), true)
+		assert.deepEqual(connectedSignerNames, ['Brave'])
+		assert.equal(braveSignerRequestMethods.includes('eth_requestAccounts'), true)
+		assert.equal(braveSignerRequestMethods.includes('eth_sendTransaction'), true)
+		assert.equal(signerRequestMethods.includes('eth_requestAccounts'), false)
+		assert.equal(signerRequestMethods.includes('eth_sendTransaction'), false)
 	})
 
-	test('retries an in-flight Brave account request when MetaMask becomes available', async () => {
+	test('does not replace an in-flight legacy signer when another provider is announced', async () => {
 		const connectedSignerNames: unknown[] = []
 		const braveSignerRequestMethods: string[] = []
 		const braveAccounts = ['0x3333333333333333333333333333333333333333']
@@ -492,25 +811,27 @@ describe('inpage signer bridge', () => {
 			})
 			await waitFor(() => resolveBraveAccounts !== undefined, 3500)
 
-			fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+			fakeWindow.dispatchEvent({
 				type: 'eip6963:announceProvider',
 				detail: {
 					info: { uuid: '66666666-6666-4666-8666-666666666666', name: 'MetaMask', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.metamask' },
 					provider: lateMetaMaskProvider,
 				},
-			}))
-			fakeWindow.dispatchEvent({ type: 'ethereum#initialized' })
+			})
 
-			await waitFor(() => connectedSignerNames.includes('MetaMask'))
-			await waitFor(() => backgroundEthAccountsReplies.length === 1)
-			assert.deepEqual(backgroundEthAccountsReplies, [{ type: 'success', accounts: signerAccounts, requestAccounts: true, signerProviderGeneration: 4 }])
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.deepEqual(connectedSignerNames, ['Brave'])
+			assert.deepEqual(backgroundEthAccountsReplies, [])
 
 			resolveBraveAccounts?.(braveAccounts)
-			await new Promise((resolve) => setTimeout(resolve, 0))
-			assert.equal(backgroundEthAccountsReplies.length, 1)
+			await waitFor(() => backgroundEthAccountsReplies.length === 1)
+			const signerAccountReply = backgroundEthAccountsReplies[0]
+			if (!isRecord(signerAccountReply)) throw new Error('Malformed signer account reply')
+			assert.equal(signerAccountReply.type, 'success')
+			assert.deepEqual(signerAccountReply.accounts, braveAccounts)
 		})
 
-		assert.deepEqual(connectedSignerNames, ['Brave', 'MetaMask'])
+		assert.deepEqual(connectedSignerNames, ['Brave'])
 		assert.equal(braveSignerRequestMethods.filter((method) => method === 'eth_requestAccounts').length, 1)
 	}, 7000)
 
@@ -932,12 +1253,14 @@ describe('inpage signer bridge', () => {
 				sendAsync: (payload: unknown, callback: (error: unknown, response: unknown) => void) => Promise<void>
 				on: (eventName: string, callback: (value: unknown) => void) => void
 			}
-			try {
-				await provider.request({ method: 'eth_accounts_reply', params: [] })
-				assert.fail('public internal provider method should reject')
-			} catch (error: unknown) {
-				if (!(typeof error === 'object' && error !== null && 'code' in error)) throw error
-				assert.equal(error.code, -32004)
+			for (const method of ['begin_signer_provider_selection', 'eth_accounts_reply', 'finish_signer_provider_selection']) {
+				try {
+					await provider.request({ method, params: [] })
+					assert.fail(`public internal provider method ${ method } should reject`)
+				} catch (error: unknown) {
+					if (!(typeof error === 'object' && error !== null && 'code' in error)) throw error
+					assert.equal(error.code, -32004)
+				}
 			}
 			assert.deepEqual(provider.send({ id: 77, method: 'eth_coinbase', params: [] }), { jsonrpc: '2.0', id: 77, result: null })
 			let batchCallbackCount = 0
@@ -1198,7 +1521,7 @@ describe('inpage signer bridge', () => {
 		const duplicateProviderSubscriptions: string[] = []
 		const backgroundMessages: InpageRequest[] = []
 		const signedTransactionHash = '0x1111111111111111111111111111111111111111111111111111111111111111'
-		const { fakeWindow, emitSignerEvent } = createFakeWindow({
+		const { fakeWindow, emitSignerEvent, sendBackgroundMessage } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageForRequest) => {
 				backgroundMessages.push(request)
 				if (request.method === 'eth_sendTransaction') {
@@ -1344,8 +1667,8 @@ describe('inpage signer bridge', () => {
 			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: metaMaskInfo, provider: { ...ignoredProvider, isInterceptor: true } } })
 			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: metaMaskInfo, provider: { ...ignoredProvider, isConnected: true } } })
 			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: metaMaskInfo, provider: throwingAnnouncedProvider } })
-			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: metaMaskInfo, provider: partiallyThrowingAnnouncedProvider } })
-			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: metaMaskInfo, provider: statefulRequestAnnouncedProvider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...metaMaskInfo, uuid: 'not-a-uuid' }, provider: partiallyThrowingAnnouncedProvider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...metaMaskInfo, uuid: 'not-a-uuid' }, provider: statefulRequestAnnouncedProvider } })
 			for (const provider of throwingGetterProviders) fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: metaMaskInfo, provider } })
 			fakeWindow.dispatchEvent({
 				type: 'eip6963:announceProvider',
@@ -1364,6 +1687,9 @@ describe('inpage signer bridge', () => {
 		})
 
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-metamask-signing', async () => {
+			await waitFor(() => backgroundMessages.some((message) => message.method === 'signer_providers_changed'))
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: metaMaskInfo.uuid })
+			await waitFor(() => backgroundMessages.some((message) => message.method === 'signer_provider_selected'))
 			const result = await fakeWindow.ethereum.request({ method: 'eth_sendTransaction', params: [{ from: '0x1111111111111111111111111111111111111111' }] })
 			assert.equal(result, signedTransactionHash)
 		})
@@ -1375,7 +1701,7 @@ describe('inpage signer bridge', () => {
 		assert.deepEqual(duplicateProviderSubscriptions, [])
 		assert.equal(partialSubscriptions.size, 0)
 		assert.equal(statefulRequestProviderSubscriptions, 0)
-		const hostileAnnouncementDiagnostic = backgroundMessages.find((message) => message.method === 'InterceptorError' && typeof message.params?.[0] === 'string' && message.params[0].includes('phase: read EIP-6963 MetaMask announcement'))
+		const hostileAnnouncementDiagnostic = backgroundMessages.find((message) => message.method === 'InterceptorError' && typeof message.params?.[0] === 'string' && message.params[0].includes('phase: read EIP-6963 provider announcement'))
 		if (hostileAnnouncementDiagnostic === undefined || typeof hostileAnnouncementDiagnostic.params?.[0] !== 'string') throw new Error('missing hostile EIP-6963 announcement diagnostic')
 		assert.match(hostileAnnouncementDiagnostic.params[0], /Failed to read thrown-value summary: Error: Invalid hostile announcement error message getter/)
 		await waitFor(() => backgroundMessages.some((message) => message.method === 'signer_chainChanged'))
@@ -1386,60 +1712,83 @@ describe('inpage signer bridge', () => {
 		aggregateEventHandlers.get('disconnect')?.({ code: 4900, message: 'disconnected' })
 		aggregateEventHandlers.get('chainChanged')?.('0x2')
 		await new Promise((resolve) => setTimeout(resolve, 0))
-		assert.equal(backgroundMessages.length, messageCountBeforeStaleEvents)
+		const messagesAfterStaleEvents = backgroundMessages.slice(messageCountBeforeStaleEvents)
+		assert.equal(messagesAfterStaleEvents.some((message) => message.method === 'signer_chainChanged' && message.params?.[0] === '0x2'), false)
+		assert.equal(messagesAfterStaleEvents.some((message) => message.method === 'connected_to_signer' && message.params?.[0] === false && message.params?.[1] === 'Brave'), false)
+		assert.equal(messagesAfterStaleEvents.some((message) => message.method === 'eth_accounts_reply' && JSON.stringify(message.params).includes('0x2222222222222222222222222222222222222222')), false)
 
 		emitSignerEvent('chainChanged', '0x3')
 		await waitFor(() => backgroundMessages.some((message) => message.method === 'signer_chainChanged' && message.params?.[0] === '0x3'))
 	})
 
-	test('uses an initially announced MetaMask provider instead of MetaMask-compatible Ambire or Rabby', async () => {
-		const walletCases = [
-			{ name: 'Ambire', marker: { isAmbire: true, isMetaMask: true } },
-			{ name: 'Rabby', marker: { isMetaMask: true, isRabby: true } },
-		] as const
+	test('publishes an empty initial catalog and clears an unavailable remembered signer before forwarding', async () => {
+		let emptyCatalogRequest: InpageRequest | undefined
+		const connectedSignerNames: unknown[] = []
+		const { fakeWindow, sendBackgroundMessage, signerRequests } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				if (request.method === 'connected_to_signer') {
+					connectedSignerNames.push(request.params?.[1])
+					sendBackgroundMessageForRequest({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: { metamaskCompatibilityMode: true },
+					})
+					return true
+				}
+				if (request.method === 'signer_providers_changed') {
+					emptyCatalogRequest = request
+					sendBackgroundMessageForRequest({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: { preferredSignerRdns: 'com.example.missing', automaticSelectionAllowed: true, signerSelectionChangeAllowed: true },
+					})
+					return true
+				}
+				if (request.method === 'eth_sendTransaction') {
+					sendBackgroundMessageForRequest({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'forwardToSigner',
+						method: request.method,
+						params: request.params,
+					})
+					return true
+				}
+				if (request.method === 'signer_reply') {
+					const signerReply = request.params?.[0]
+					if (!isRecord(signerReply) || !isRecord(signerReply.forwardRequest) || typeof signerReply.forwardRequest.requestId !== 'number') throw new Error('Malformed signer reply')
+					sendBackgroundMessageForRequest({
+						interceptorApproved: true,
+						requestId: signerReply.forwardRequest.requestId,
+						type: 'result',
+						method: 'eth_sendTransaction',
+						error: { code: 4100, message: 'No selected signer' },
+					})
+					sendBackgroundMessageForRequest({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: '0x' })
+					return true
+				}
+				return false
+			},
+		})
 
-		for (const walletCase of walletCases) {
-			const connectedSignerNames: unknown[] = []
-			const announcedSignerRequests: string[] = []
-			const { fakeWindow } = createFakeWindow({
-				handleRequest: (request) => {
-					if (request.method === 'connected_to_signer') connectedSignerNames.push(request.params?.[1])
-					return false
-				},
-			})
-			const rootSigner = {
-				...walletCase.marker,
-				isConnected: () => true,
-				request: async ({ method }: { method: string }) => method === 'eth_chainId' ? '0x1' : [],
-				on: () => rootSigner,
-				removeListener: () => rootSigner,
-			}
-			const announcedMetaMaskProvider = {
-				isMetaMask: true,
-				isConnected: () => true,
-				request: async ({ method }: { method: string }) => {
-					announcedSignerRequests.push(method)
-					return method === 'eth_chainId' ? '0x1' : []
-				},
-				on: () => announcedMetaMaskProvider,
-				removeListener: () => announcedMetaMaskProvider,
-			}
-			Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: rootSigner })
-			fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
-				type: 'eip6963:announceProvider',
-				detail: {
-					info: { uuid: '55555555-5555-4555-8555-555555555555', name: 'MetaMask', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.metamask' },
-					provider: announcedMetaMaskProvider,
-				},
-			}))
-
-			await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?eip6963-replace-${ walletCase.name }-${ Date.now() }-${ Math.random() }`, async () => {
-				await waitFor(() => connectedSignerNames.includes('MetaMask'))
-				await waitFor(() => announcedSignerRequests.includes('eth_chainId'))
-			})
-
-			assert.deepEqual(connectedSignerNames, [walletCase.name, 'MetaMask'])
-		}
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?empty-eip6963-catalog', async () => {
+			await waitFor(() => emptyCatalogRequest !== undefined && connectedSignerNames.includes('NoSigner'))
+			assert.equal(Array.isArray(emptyCatalogRequest?.params), true)
+			assert.deepEqual(emptyCatalogRequest?.params?.slice(0, 2), [[], false])
+			assert.equal(typeof emptyCatalogRequest?.params?.[2], 'string')
+			assert.equal(connectedSignerNames.includes('MetaMask'), false)
+			emptyCatalogRequest = undefined
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'request_signer_provider_catalog', result: [] })
+			await waitFor(() => emptyCatalogRequest !== undefined)
+			const signerRequestCountAfterReconciliation = signerRequests.length
+			const provider = fakeWindow.ethereum as { request: (payload: { method: string, params: readonly unknown[] }) => Promise<unknown> }
+			await assert.rejects(provider.request({ method: 'eth_sendTransaction', params: [{ from: '0x1111111111111111111111111111111111111111' }] }), /should not forward to an external wallet/)
+			assert.equal(signerRequests.length, signerRequestCountAfterReconciliation)
+		})
 	})
 
 	test('normalizes object-valued MetaMask rejection data before sending signer_reply', async () => {
@@ -1494,10 +1843,760 @@ describe('inpage signer bridge', () => {
 		assert.doesNotThrow(() => SignerReply.parse({ method: 'signer_reply', params: [signerReply] }))
 	})
 
-	test('reports unusable-root NoSigner before EIP-6963 MetaMask recovery', async () => {
+	test('collects multiple EIP-6963 providers and switches only after an explicit selection', async () => {
+		const firstRequests: string[] = []
+		const secondRequests: string[] = []
+		const catalogs: unknown[] = []
+		const selectedProviders: unknown[] = []
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_providers_changed') {
+					catalogs.push(request.params?.[0])
+					reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { preferredSignerRdns: undefined, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true } })
+					return true
+				}
+				if (request.method === 'signer_provider_selected') selectedProviders.push(request.params?.[0])
+				return false
+			},
+		})
+		const createProvider = (requests: string[]) => {
+			const provider = {
+				isConnected: () => true,
+				request: async ({ method }: { method: string }) => {
+					requests.push(method)
+					if (method === 'eth_chainId') return '0x1'
+					if (method === 'eth_accounts') return ['0x1111111111111111111111111111111111111111']
+					return undefined
+				},
+				on: () => provider,
+				removeListener: () => provider,
+			}
+			return provider
+		}
+		const firstProvider = createProvider(firstRequests)
+		const secondProvider = createProvider(secondRequests)
+		Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: {
+			isBraveWallet: true,
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => method === 'eth_chainId' ? '0x1' : [],
+			on: () => fakeWindow.ethereum,
+			removeListener: () => fakeWindow.ethereum,
+		} })
+		fakeWindow.addEventListener('eip6963:requestProvider', () => {
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { uuid: '11111111-1111-4111-8111-111111111111', name: 'First Wallet', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.first' }, provider: firstProvider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { uuid: '22222222-2222-4222-8222-222222222222', name: 'Second Wallet', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.second' }, provider: secondProvider } })
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-explicit-selection', async () => {
+			await waitFor(() => {
+				const latestCatalog = catalogs[catalogs.length - 1]
+				return Array.isArray(latestCatalog) && latestCatalog.length === 2
+			})
+			assert.deepEqual(firstRequests, [])
+			assert.deepEqual(secondRequests, [])
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: '22222222-2222-4222-8222-222222222222' })
+			await waitFor(() => selectedProviders.length === 1 && secondRequests.includes('eth_accounts'))
+		})
+
+		assert.deepEqual(firstRequests, [])
+		assert.equal(secondRequests.includes('eth_chainId'), true)
+		const selectedProvider = selectedProviders[0]
+		if (!isRecord(selectedProvider)) throw new Error('Missing selected EIP-6963 provider metadata')
+		assert.equal(selectedProvider.name, 'Second Wallet')
+	})
+
+	test('bounds announcement floods and rejects selection of discarded providers', async () => {
+		const catalogs: { readonly providers: readonly unknown[], readonly overflowed: boolean }[] = []
+		const { fakeWindow, sendBackgroundMessage, interceptorErrorPayloads } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method !== 'signer_providers_changed') return false
+				catalogs.push({ providers: Array.isArray(request.params?.[0]) ? request.params[0] : [], overflowed: request.params?.[1] === true })
+				reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { preferredSignerRdns: undefined, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true } })
+				return true
+			},
+		})
+		const announcedProvider = {
+			request: async () => undefined,
+			on: () => announcedProvider,
+			removeListener: () => announcedProvider,
+		}
+		fakeWindow.addEventListener('eip6963:requestProvider', () => {
+			for (let index = 0; index < 20; index++) {
+				const suffix = index.toString().padStart(12, '0')
+				fakeWindow.dispatchEvent({
+					type: 'eip6963:announceProvider',
+					detail: {
+						info: { uuid: `00000000-0000-4000-8000-${ suffix }`, name: `Wallet ${ index }`, icon: 'data:image/svg+xml,<svg/>', rdns: `wallet${ index }.example.com` },
+						provider: announcedProvider,
+					},
+				})
+			}
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-catalog-bounds', async () => {
+			await waitFor(() => catalogs.some((catalog) => catalog.overflowed))
+			const finalCatalog = catalogs[catalogs.length - 1]
+			if (finalCatalog === undefined) throw new Error('Missing bounded provider catalog')
+			assert.equal(finalCatalog.providers.length, 16)
+			assert.equal(catalogs.length <= 2, true)
+
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: '00000000-0000-4000-8000-000000000019' })
+			await waitFor(() => interceptorErrorPayloads.some((payload) => typeof payload === 'string' && payload.includes('no longer available')))
+		})
+	})
+
+	test('snapshots EIP-6963 metadata getters once before validating the catalog entry', async () => {
+		const catalogs: unknown[][] = []
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method !== 'signer_providers_changed') return false
+				if (Array.isArray(request.params?.[0])) catalogs.push(request.params[0])
+				reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { preferredSignerRdns: undefined, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true } })
+				return true
+			},
+		})
+		const announcedProvider = {
+			request: async () => undefined,
+			on: () => announcedProvider,
+			removeListener: () => announcedProvider,
+		}
+		let iconReads = 0
+		const statefulInfo = {
+			uuid: 'abababab-abab-4bab-8bab-abababababab',
+			name: 'Stateful Metadata Wallet',
+			rdns: 'com.example.stateful',
+			get icon() {
+				iconReads++
+				return iconReads === 1 ? 'data:image/svg+xml,<svg/>' : 'https://attacker.example/icon.svg'
+			},
+		}
+		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+			type: 'eip6963:announceProvider',
+			detail: { info: statefulInfo, provider: announcedProvider },
+		}))
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-metadata-snapshot', async () => {
+			await waitFor(() => catalogs.length > 0)
+		})
+		assert.equal(iconReads, 1)
+		const catalogEntry = catalogs[0]?.[0]
+		if (!isRecord(catalogEntry)) throw new Error('Missing stateful metadata catalog entry')
+		assert.equal(catalogEntry.icon, 'data:image/svg+xml,<svg/>')
+	})
+
+	test('restores a remembered EIP-6963 provider by RDNS', async () => {
+		const selectedProviders: unknown[] = []
+		const preferredRequests: string[] = []
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_providers_changed') {
+					reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { preferredSignerRdns: 'com.example.preferred', automaticSelectionAllowed: true, signerSelectionChangeAllowed: true } })
+					return true
+				}
+				if (request.method === 'signer_provider_selected') selectedProviders.push(request.params?.[0])
+				return false
+			},
+		})
+		const preferredProvider = {
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				preferredRequests.push(method)
+				if (method === 'eth_chainId') return '0x1'
+				if (method === 'eth_accounts') return []
+				return undefined
+			},
+			on: () => preferredProvider,
+			removeListener: () => preferredProvider,
+		}
+		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+			type: 'eip6963:announceProvider',
+			detail: { info: { uuid: '33333333-3333-4333-8333-333333333333', name: 'Preferred Wallet', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.preferred' }, provider: preferredProvider },
+		}))
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-remembered-selection', async () => {
+			await waitFor(() => selectedProviders.length === 1 && preferredRequests.includes('eth_accounts'))
+		})
+		const selectedProvider = selectedProviders[0]
+		if (!isRecord(selectedProvider)) throw new Error('Missing restored EIP-6963 provider metadata')
+		assert.equal(selectedProvider.rdns, 'com.example.preferred')
+	})
+
+	test('unblocks public requests when a remembered EIP-6963 provider is announced but unusable', async () => {
+		const catalogSizes: number[] = []
 		const connectedSignerNames: unknown[] = []
-		const { fakeWindow, signerRequests } = createFakeWindow({
+		let publicRequestForwarded = false
+		const { fakeWindow, interceptorErrorPayloads } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_providers_changed') {
+					const providers = request.params?.[0]
+					catalogSizes.push(Array.isArray(providers) ? providers.length : -1)
+					reply({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: {
+							preferredSignerRdns: 'com.example.unusable',
+							automaticSelectionAllowed: true,
+							signerSelectionChangeAllowed: true,
+						},
+					})
+					return true
+				}
+				if (request.method === 'connected_to_signer') connectedSignerNames.push(request.params?.[1])
+				if (request.method === 'eth_sendTransaction') {
+					publicRequestForwarded = true
+					reply({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						error: { code: 4900, message: 'No usable signer provider' },
+					})
+					return true
+				}
+				return false
+			},
+		})
+		const unusableProvider = {
+			isConnected: () => true,
+			request: async () => undefined,
+			on: () => { throw new Error('Provider event subscription failed') },
+			removeListener: () => unusableProvider,
+		}
+		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+			type: 'eip6963:announceProvider',
+			detail: {
+				info: {
+					uuid: '34343434-3434-4434-8434-343434343434',
+					name: 'Unusable Wallet',
+					icon: 'data:image/svg+xml,<svg/>',
+					rdns: 'com.example.unusable',
+				},
+				provider: unusableProvider,
+			},
+		}))
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-unusable-remembered-selection', async () => {
+			const publicRequest = fakeWindow.ethereum.request({ method: 'eth_sendTransaction', params: [] })
+			await assert.rejects(publicRequest, /No usable signer provider/)
+			await waitFor(() => catalogSizes.includes(0) && connectedSignerNames.includes('NoSigner'))
+		})
+
+		assert.equal(publicRequestForwarded, true)
+		assert.equal(catalogSizes.includes(1), true)
+		assert.equal(catalogSizes.includes(0), true)
+		assert.equal(interceptorErrorPayloads.some((payload) => typeof payload === 'string' && payload.includes('Unusable Wallet')), true)
+	})
+
+	test('does not restore a remembered provider when the catalog reply forbids automatic selection', async () => {
+		const preferredRequests: string[] = []
+		const selectedProviders: unknown[] = []
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_providers_changed') {
+					reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { preferredSignerRdns: 'com.example.preferred', automaticSelectionAllowed: false, signerSelectionChangeAllowed: true } })
+					return true
+				}
+				if (request.method === 'signer_provider_selected') selectedProviders.push(request.params?.[0])
+				return false
+			},
+		})
+		const preferredProvider = {
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				preferredRequests.push(method)
+				return method === 'eth_chainId' ? '0x1' : []
+			},
+			on: () => preferredProvider,
+			removeListener: () => preferredProvider,
+		}
+		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+			type: 'eip6963:announceProvider',
+			detail: { info: { uuid: '44444444-4444-4444-8444-444444444444', name: 'Preferred Wallet', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.preferred' }, provider: preferredProvider },
+		}))
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-automatic-selection-forbidden', async () => {
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.deepEqual(preferredRequests, [])
+			assert.deepEqual(selectedProviders, [])
+		})
+	})
+
+	test('retries remembered restoration after background pending work clears', async () => {
+		const preferredRequests: string[] = []
+		const selectedProviders: unknown[] = []
+		let signerSelectionChangeAllowed = false
+		let catalogRequestCount = 0
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_providers_changed') {
+					catalogRequestCount++
+					reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: {
+						preferredSignerRdns: 'com.example.deferred',
+						automaticSelectionAllowed: true,
+						signerSelectionChangeAllowed,
+					} })
+					return true
+				}
+				if (request.method === 'signer_provider_selected') selectedProviders.push(request.params?.[0])
+				return false
+			},
+		})
+		const preferredProvider = {
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				preferredRequests.push(method)
+				return method === 'eth_chainId' ? '0x1' : []
+			},
+			on: () => preferredProvider,
+			removeListener: () => preferredProvider,
+		}
+		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+			type: 'eip6963:announceProvider',
+			detail: { info: { uuid: '45454545-4545-4545-8545-454545454545', name: 'Deferred Wallet', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.deferred' }, provider: preferredProvider },
+		}))
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-background-pending-retry', async () => {
+			await waitFor(() => catalogRequestCount === 1)
+			assert.deepEqual(preferredRequests, [])
+			signerSelectionChangeAllowed = true
+			await waitFor(() => selectedProviders.length === 1 && preferredRequests.includes('eth_accounts'))
+		})
+	})
+
+	test('keeps an explicit provider selected when overflow disables remembered restoration', async () => {
+		const selectedProviders: unknown[] = []
+		const explicitRequests: string[] = []
+		let selectionRequested = false
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_providers_changed') {
+					reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: {
+						preferredSignerRdns: selectionRequested ? 'com.example.explicit' : undefined,
+						automaticSelectionAllowed: request.params?.[1] !== true,
+						signerSelectionChangeAllowed: true,
+					} })
+					return true
+				}
+				if (request.method === 'signer_provider_selected') selectedProviders.push(request.params?.[0])
+				return false
+			},
+		})
+		const explicitProvider = {
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				explicitRequests.push(method)
+				return method === 'eth_chainId' ? '0x1' : []
+			},
+			on: () => explicitProvider,
+			removeListener: () => explicitProvider,
+		}
+		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+			type: 'eip6963:announceProvider',
+			detail: { info: { uuid: '55555555-5555-4555-8555-555555555555', name: 'Explicit Wallet', icon: 'data:image/svg+xml,<svg/>', rdns: 'COM.Example.Explicit' }, provider: explicitProvider },
+		}))
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-explicit-overflow', async () => {
+			selectionRequested = true
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: '55555555-5555-4555-8555-555555555555' })
+			await waitFor(() => selectedProviders.length === 1 && explicitRequests.includes('eth_accounts'))
+			for (let index = 0; index < 16; index++) {
+				fakeWindow.dispatchEvent({
+					type: 'eip6963:announceProvider',
+					detail: {
+						info: { uuid: `66666666-6666-4666-8666-${ index.toString().padStart(12, '0') }`, name: `Overflow ${ index }`, icon: 'data:image/svg+xml,<svg/>', rdns: `overflow${ index }.example.com` },
+						provider: explicitProvider,
+					},
+				})
+			}
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(selectedProviders.length, 1)
+		})
+		const selectedProvider = selectedProviders[0]
+		if (!isRecord(selectedProvider)) throw new Error('Missing explicit provider metadata')
+		assert.equal(selectedProvider.rdns, 'com.example.explicit')
+	})
+
+	test('ignores a stale catalog preference after a newer explicit selection', async () => {
+		const selectedProviders: unknown[] = []
+		const firstRequests: string[] = []
+		const secondRequests: string[] = []
+		let replyToCatalog: ((data: unknown) => void) | undefined
+		let catalogRequestId: number | undefined
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_providers_changed') {
+					replyToCatalog = reply
+					catalogRequestId = request.requestId
+					return true
+				}
+				if (request.method === 'signer_provider_selected') selectedProviders.push(request.params?.[0])
+				return false
+			},
+		})
+		const createProvider = (requests: string[]) => {
+			const announcedProvider = {
+				isConnected: () => true,
+				request: async ({ method }: { method: string }) => {
+					requests.push(method)
+					return method === 'eth_chainId' ? '0x1' : []
+				},
+				on: () => announcedProvider,
+				removeListener: () => announcedProvider,
+			}
+			return announcedProvider
+		}
+		const firstProvider = createProvider(firstRequests)
+		const secondProvider = createProvider(secondRequests)
+		fakeWindow.addEventListener('eip6963:requestProvider', () => {
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { uuid: '77777777-7777-4777-8777-777777777777', name: 'First', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.first' }, provider: firstProvider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { uuid: '88888888-8888-4888-8888-888888888888', name: 'Second', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.second' }, provider: secondProvider } })
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-stale-catalog-reply', async () => {
+			await waitFor(() => replyToCatalog !== undefined && catalogRequestId !== undefined)
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: '88888888-8888-4888-8888-888888888888' })
+			await waitFor(() => selectedProviders.length === 1)
+			replyToCatalog?.({ interceptorApproved: true, requestId: catalogRequestId, type: 'result', method: 'signer_providers_changed', result: { preferredSignerRdns: 'com.example.first', automaticSelectionAllowed: true, signerSelectionChangeAllowed: true } })
+			await new Promise((resolve) => setTimeout(resolve, 0))
+		})
+
+		assert.deepEqual(firstRequests, [])
+		assert.equal(secondRequests.includes('eth_accounts'), true)
+		assert.equal(selectedProviders.length, 1)
+	})
+
+	test('ignores a stale catalog reply after later announcements overflow the catalog', async () => {
+		const selectedProviders: unknown[] = []
+		const preferredRequests: string[] = []
+		let delayedCatalogReply: ((data: unknown) => void) | undefined
+		let delayedCatalogRequestId: number | undefined
+		let catalogRequestCount = 0
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_providers_changed') {
+					catalogRequestCount++
+					if (catalogRequestCount === 1) {
+						delayedCatalogReply = reply
+						delayedCatalogRequestId = request.requestId
+						return true
+					}
+					reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { preferredSignerRdns: 'com.example.preferred-stale', automaticSelectionAllowed: false, signerSelectionChangeAllowed: true } })
+					return true
+				}
+				if (request.method === 'signer_provider_selected') selectedProviders.push(request.params?.[0])
+				return false
+			},
+		})
+		const preferredProvider = {
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				preferredRequests.push(method)
+				return method === 'eth_chainId' ? '0x1' : []
+			},
+			on: () => preferredProvider,
+			removeListener: () => preferredProvider,
+		}
+		const ignoredProvider = {
+			request: async () => undefined,
+			on: () => ignoredProvider,
+			removeListener: () => ignoredProvider,
+		}
+		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+			type: 'eip6963:announceProvider',
+			detail: { info: { uuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Preferred', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.preferred-stale' }, provider: preferredProvider },
+		}))
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-stale-overflow-reply', async () => {
+			await waitFor(() => delayedCatalogReply !== undefined && delayedCatalogRequestId !== undefined)
+			for (let index = 0; index < 16; index++) {
+				fakeWindow.dispatchEvent({
+					type: 'eip6963:announceProvider',
+					detail: {
+						info: { uuid: `eeeeeeee-eeee-4eee-8eee-${ index.toString().padStart(12, '0') }`, name: `Overflow ${ index }`, icon: 'data:image/svg+xml,<svg/>', rdns: `stale-overflow${ index }.example.com` },
+						provider: ignoredProvider,
+					},
+				})
+			}
+			delayedCatalogReply?.({ interceptorApproved: true, requestId: delayedCatalogRequestId, type: 'result', method: 'signer_providers_changed', result: { preferredSignerRdns: 'com.example.preferred-stale', automaticSelectionAllowed: true, signerSelectionChangeAllowed: true } })
+			await waitFor(() => catalogRequestCount === 2)
+		})
+		assert.deepEqual(preferredRequests, [])
+		assert.deepEqual(selectedProviders, [])
+	})
+
+	test('waits for signer event acknowledgement before applying another provider selection', async () => {
+		const selectedProviders: unknown[] = []
+		const nextProviderRequests: string[] = []
+		let delayedChainReportReply: (() => void) | undefined
+		const { fakeWindow, sendBackgroundMessage, emitSignerEvent } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_providers_changed') {
+					reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { preferredSignerRdns: undefined, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true } })
+					return true
+				}
+				if (request.method === 'signer_chainChanged' && delayedChainReportReply === undefined) {
+					delayedChainReportReply = () => reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: '0x' })
+					return true
+				}
+				if (request.method === 'signer_provider_selected') selectedProviders.push(request.params?.[0])
+				return false
+			},
+		})
+		const nextProvider = {
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				nextProviderRequests.push(method)
+				return method === 'eth_chainId' ? '0x1' : []
+			},
+			on: () => nextProvider,
+			removeListener: () => nextProvider,
+		}
+		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+			type: 'eip6963:announceProvider',
+			detail: { info: { uuid: 'ffffffff-ffff-4fff-8fff-ffffffffffff', name: 'Next Wallet', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.next-event' }, provider: nextProvider },
+		}))
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-event-report-barrier', async () => {
+			emitSignerEvent('chainChanged', '0x2')
+			await waitFor(() => delayedChainReportReply !== undefined)
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: 'ffffffff-ffff-4fff-8fff-ffffffffffff' })
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.deepEqual(nextProviderRequests, [])
+			delayedChainReportReply?.()
+			await waitFor(() => selectedProviders.length === 1 && nextProviderRequests.includes('eth_accounts'))
+		})
+	})
+
+	test('holds initial public requests until remembered provider restoration finishes', async () => {
+		const selectedProviders: unknown[] = []
+		const rememberedRequests: string[] = []
+		let signerRequestStarted = false
+		let delayedCatalogReply: ((data: unknown) => void) | undefined
+		let delayedCatalogRequestId: number | undefined
+		let pendingPublicRequestId: number | undefined
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'eth_sendTransaction') {
+					pendingPublicRequestId = request.requestId
+					reply({ interceptorApproved: true, requestId: request.requestId, type: 'forwardToSigner', method: request.method, params: request.params })
+					return true
+				}
+				if (request.method === 'signer_reply' && pendingPublicRequestId !== undefined) {
+					reply({ interceptorApproved: true, requestId: pendingPublicRequestId, type: 'result', method: 'eth_sendTransaction', result: '0xsigned' })
+				}
+				if (request.method === 'signer_providers_changed') {
+					if (delayedCatalogReply === undefined) {
+						delayedCatalogReply = reply
+						delayedCatalogRequestId = request.requestId
+						return true
+					}
+					reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { preferredSignerRdns: 'com.example.remembered', automaticSelectionAllowed: true, signerSelectionChangeAllowed: true } })
+					return true
+				}
+				if (request.method === 'signer_provider_selected') selectedProviders.push(request.params?.[0])
+				return false
+			},
+			handleSignerRequest: ({ method }) => {
+				if (method !== 'eth_sendTransaction') return undefined
+				signerRequestStarted = true
+				return '0xunexpected-legacy-signature'
+			},
+		})
+		const rememberedProvider = {
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				rememberedRequests.push(method)
+				return method === 'eth_chainId' ? '0x1' : []
+			},
+			on: () => rememberedProvider,
+			removeListener: () => rememberedProvider,
+		}
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-deferred-remembered-selection', async () => {
+			fakeWindow.dispatchEvent({
+				type: 'eip6963:announceProvider',
+				detail: { info: { uuid: '99999999-9999-4999-8999-999999999999', name: 'Remembered', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.remembered' }, provider: rememberedProvider },
+			})
+			await waitFor(() => delayedCatalogReply !== undefined && delayedCatalogRequestId !== undefined)
+			void fakeWindow.ethereum.request({ method: 'eth_sendTransaction', params: [] })
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(signerRequestStarted, false)
+			delayedCatalogReply?.({ interceptorApproved: true, requestId: delayedCatalogRequestId, type: 'result', method: 'signer_providers_changed', result: { preferredSignerRdns: 'com.example.remembered', automaticSelectionAllowed: true, signerSelectionChangeAllowed: true } })
+			await waitFor(() => selectedProviders.length === 1 && rememberedRequests.includes('eth_accounts') && rememberedRequests.includes('eth_sendTransaction'))
+			assert.equal(signerRequestStarted, false)
+		})
+	})
+
+	test('defers provider restoration while a public request is waiting for background approval', async () => {
+		const selectedProviders: unknown[] = []
+		const rememberedRequests: string[] = []
+		let pendingPublicRequestId: number | undefined
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'eth_sendTransaction') {
+					pendingPublicRequestId = request.requestId
+					return true
+				}
+				if (request.method === 'signer_providers_changed') {
+					reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { preferredSignerRdns: 'com.example.pending', automaticSelectionAllowed: true, signerSelectionChangeAllowed: true } })
+					return true
+				}
+				if (request.method === 'signer_provider_selected') selectedProviders.push(request.params?.[0])
+				return false
+			},
+		})
+		const rememberedProvider = {
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				rememberedRequests.push(method)
+				return method === 'eth_chainId' ? '0x1' : []
+			},
+			on: () => rememberedProvider,
+			removeListener: () => rememberedProvider,
+		}
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-pending-public-request', async () => {
+			const pendingRequest = fakeWindow.ethereum.request({ method: 'eth_sendTransaction', params: [] })
+			await waitFor(() => pendingPublicRequestId !== undefined)
+			fakeWindow.dispatchEvent({
+				type: 'eip6963:announceProvider',
+				detail: { info: { uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'Pending Wallet', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.pending' }, provider: rememberedProvider },
+			})
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.deepEqual(rememberedRequests, [])
+			sendBackgroundMessage({ interceptorApproved: true, requestId: pendingPublicRequestId, type: 'result', method: 'eth_sendTransaction', result: '0xsigned' })
+			await pendingRequest
+			await waitFor(() => selectedProviders.length === 1 && rememberedRequests.includes('eth_accounts'))
+		})
+	})
+
+	test('holds public requests behind a delayed initial provider selection lease', async () => {
+		const selectedProviders: unknown[] = []
+		const nextProviderRequests: string[] = []
+		let delayedLeaseReply: ((data: unknown) => void) | undefined
+		let delayedLeaseRequestId: number | undefined
+		let pendingPublicRequestId: number | undefined
+		let beginLeaseRequestCount = 0
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_providers_changed') {
+					reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { preferredSignerRdns: undefined, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true } })
+					return true
+				}
+				if (request.method === 'begin_signer_provider_selection') {
+					beginLeaseRequestCount++
+					if (beginLeaseRequestCount === 1) {
+						delayedLeaseReply = reply
+						delayedLeaseRequestId = request.requestId
+						return true
+					}
+					reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: 'retry-lease' })
+					return true
+				}
+				if (request.method === 'eth_sendTransaction') {
+					pendingPublicRequestId = request.requestId
+					return true
+				}
+				if (request.method === 'signer_provider_selected') selectedProviders.push(request.params?.[0])
+				return false
+			},
+		})
+		const nextProvider = {
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				nextProviderRequests.push(method)
+				return method === 'eth_chainId' ? '0x1' : []
+			},
+			on: () => nextProvider,
+			removeListener: () => nextProvider,
+		}
+		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+			type: 'eip6963:announceProvider',
+			detail: { info: { uuid: '12121212-1212-4212-8212-121212121212', name: 'Lease Wallet', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.lease' }, provider: nextProvider },
+		}))
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-delayed-lease-blocker', async () => {
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: '12121212-1212-4212-8212-121212121212' })
+			await waitFor(() => delayedLeaseReply !== undefined && delayedLeaseRequestId !== undefined)
+			const pendingPublicRequest = fakeWindow.ethereum.request({ method: 'eth_sendTransaction', params: [] })
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(pendingPublicRequestId, undefined)
+			delayedLeaseReply?.({ interceptorApproved: true, requestId: delayedLeaseRequestId, type: 'result', method: 'begin_signer_provider_selection', result: 'delayed-lease' })
+			await waitFor(() => selectedProviders.length === 1 && nextProviderRequests.includes('eth_accounts') && pendingPublicRequestId !== undefined)
+			sendBackgroundMessage({ interceptorApproved: true, requestId: pendingPublicRequestId, type: 'result', method: 'eth_sendTransaction', result: '0xsigned' })
+			await pendingPublicRequest
+		})
+	})
+
+	test('waits for an internal accounts reply acknowledgement before applying a deferred selection', async () => {
+		const selectedProviders: unknown[] = []
+		const secondRequests: string[] = []
+		let delayFirstProviderAccounts = false
+		let delayedAccountsRequestStarted = false
+		let resolveDelayedAccountsRequest: ((accounts: string[]) => void) | undefined
+		let acknowledgeAccountsReply: (() => void) | undefined
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_providers_changed') {
+					reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { preferredSignerRdns: undefined, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true } })
+					return true
+				}
+				if (request.method === 'signer_provider_selected') selectedProviders.push(request.params?.[0])
+				if (request.method === 'eth_accounts_reply' && delayFirstProviderAccounts) {
+					acknowledgeAccountsReply = () => reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: undefined })
+					return true
+				}
+				return false
+			},
+		})
+		const firstProvider = {
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				if (method === 'eth_chainId') return '0x1'
+				if (method !== 'eth_accounts' || !delayFirstProviderAccounts) return []
+				delayedAccountsRequestStarted = true
+				return await new Promise<string[]>((resolve) => { resolveDelayedAccountsRequest = resolve })
+			},
+			on: () => firstProvider,
+			removeListener: () => firstProvider,
+		}
+		const secondProvider = {
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => {
+				secondRequests.push(method)
+				return method === 'eth_chainId' ? '0x1' : []
+			},
+			on: () => secondProvider,
+			removeListener: () => secondProvider,
+		}
+		fakeWindow.addEventListener('eip6963:requestProvider', () => {
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { uuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'First Wallet', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.first-workflow' }, provider: firstProvider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { uuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', name: 'Second Wallet', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.second-workflow' }, provider: secondProvider } })
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?eip6963-internal-workflow-order', async () => {
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' })
+			await waitFor(() => selectedProviders.length === 1)
+			delayFirstProviderAccounts = true
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'request_signer_to_eth_accounts', result: [] })
+			await waitFor(() => delayedAccountsRequestStarted)
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' })
+			resolveDelayedAccountsRequest?.([])
+			await waitFor(() => acknowledgeAccountsReply !== undefined)
+			assert.deepEqual(secondRequests, [])
+			acknowledgeAccountsReply?.()
+			await waitFor(() => selectedProviders.length === 2 && secondRequests.includes('eth_accounts'))
+		})
+	})
+
+	test('serializes unusable-root NoSigner recovery before EIP-6963 MetaMask connection', async () => {
+		const connectedSignerNames: unknown[] = []
+		const backgroundMethods: string[] = []
+		const { fakeWindow, signerRequests, sendBackgroundMessage } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
+				backgroundMethods.push(request.method)
 				if (request.method !== 'connected_to_signer') return false
 				connectedSignerNames.push(request.params?.[1])
 				const delay = request.params?.[1] === 'NoSigner' ? 10 : 0
@@ -1527,6 +2626,8 @@ describe('inpage signer bridge', () => {
 		}))
 
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?serialized-no-signer-eip-recovery', async () => {
+			await waitFor(() => backgroundMethods.includes('signer_providers_changed'))
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: '33333333-3333-4333-8333-333333333333' })
 			await waitFor(() => connectedSignerNames.length === 2)
 			await waitFor(() => signerRequests.includes('eth_chainId'))
 		})
@@ -1581,7 +2682,7 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
-	test('only replaces a selected Brave signer during requested provider discovery', async () => {
+	test('does not replace a selected Brave signer during requested provider discovery', async () => {
 		const connectedSignerNames: unknown[] = []
 		let announcedProviderSubscriptionCount = 0
 		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
@@ -1629,17 +2730,19 @@ describe('inpage signer bridge', () => {
 					provider: announcedProvider,
 				},
 			}))
+			fakeWindow.dispatchEvent({ type: 'eip6963:requestProvider' })
+			await new Promise((resolve) => setTimeout(resolve, 0))
 			sendBackgroundMessage({
 				interceptorApproved: true,
 				type: 'result',
 				method: 'request_signer_to_eth_requestAccounts',
 				result: [],
 			})
-			await waitFor(() => connectedSignerNames.includes('MetaMask'))
+			await new Promise((resolve) => setTimeout(resolve, 0))
 		})
 
-		assert.equal(announcedProviderSubscriptionCount > 0, true)
-		assert.deepEqual(connectedSignerNames, ['Brave', 'MetaMask'])
+		assert.equal(announcedProviderSubscriptionCount, 0)
+		assert.deepEqual(connectedSignerNames, ['Brave'])
 	})
 
 	test('keeps signer selectedAddress mutations hidden until Interceptor account replay', async () => {

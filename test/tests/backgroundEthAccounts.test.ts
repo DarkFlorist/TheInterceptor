@@ -6,6 +6,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import type { PublishRpcConnectionStatus } from '../../app/ts/background/rpcSlowRequestTracking.js'
+import { allowLegacySignerExecution, authorizeSocketForSignerExecution, clearSignerExecutionAuthorityForTab, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket, registerCurrentChildSignerSocket, setSignerExecutionTarget } from '../../app/ts/background/signerExecutionAuthority.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 
 type Listener = () => void
@@ -19,7 +20,16 @@ function createDeferredSignal() {
 	return { promise, resolve: () => resolveSignal() }
 }
 
-function installBrowserMock({ deferFirstChainChangeRemoval = false } = {}) {
+function authorizeLegacySignerSocket(socket: { readonly tabId: number, readonly connectionName: bigint }) {
+	clearSignerExecutionAuthorityForTab(socket.tabId)
+	registerAuthoritativeTopSocket(socket, 'https://example.test')
+	reconcileSignerExecutionDocument(socket, 'https://example.test', '11111111-1111-4111-8111-111111111111', true, 0)
+	allowLegacySignerExecution(socket, 'https://example.test')
+}
+
+function installBrowserMock({ deferFirstChainChangeRemoval = false, tabStatus = 'complete' }: { deferFirstChainChangeRemoval?: boolean, tabStatus?: 'loading' | 'complete' } = {}) {
+	const signerSocket = { tabId: 1, connectionName: 0n }
+	authorizeLegacySignerSocket(signerSocket)
 	const storageState: Record<string, unknown> = {}
 	const chainChangeRemovalStarted = createDeferredSignal()
 	const chainChangeRemovalRelease = createDeferredSignal()
@@ -59,7 +69,7 @@ function installBrowserMock({ deferFirstChainChangeRemoval = false } = {}) {
 		tabs: {
 			async query() { return [] },
 			async create() { return { id: 2, active: true } },
-			async get(tabId: number) { return { id: tabId, active: true, status: 'complete' as const } },
+			async get(tabId: number) { return { id: tabId, active: true, status: tabStatus } },
 			async update() { return undefined },
 			async remove() { return undefined },
 			onUpdated: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
@@ -238,6 +248,48 @@ describe('background eth_accounts', () => {
 		})
 	})
 
+	test('blocks simulated wallet_watchAsset requests until the child frame acknowledges the selected provider', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+
+		const topSocket = { tabId: 1, connectionName: 0n }
+		const childSocket = { tabId: 1, connectionName: 2n }
+		const providerUuid = '22222222-2222-4222-8222-222222222222'
+		registerCurrentChildSignerSocket(childSocket, 2)
+		reconcileSignerExecutionDocument(childSocket, websiteOrigin, '11111111-1111-4111-8111-111111111111', false, 2)
+		setSignerExecutionTarget(childSocket.tabId, providerUuid, websiteOrigin)
+
+		const top = createPort(topSocket.tabId, undefined, 0, topSocket.connectionName)
+		const child = createPort(childSocket.tabId, undefined, 2, childSocket.connectionName)
+		const websiteTabConnections: WebsiteTabConnections = new Map([[childSocket.tabId, { ...confirmedSignerOwnership(topSocket), connections: {
+			[websiteSocketToString(topSocket)]: { port: top.port, socket: topSocket, websiteOrigin, frameId: 0, approved: true, wantsToConnect: true },
+			[websiteSocketToString(childSocket)]: { port: child.port, socket: childSocket, websiteOrigin, frameId: 2, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: childSocket },
+			method: 'wallet_watchAsset',
+			params: [{ type: 'ERC20', options: { address: '0x1111111111111111111111111111111111111111', chainId: 2 } }],
+		} as const
+
+		await handleInterceptedRequest(child.port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, childSocket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		assert.equal(child.messages.at(-1)?.error?.code, 4100)
+
+		assert.equal(authorizeSocketForSignerExecution(childSocket, providerUuid, websiteOrigin), true)
+		await handleInterceptedRequest(child.port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, childSocket, {
+			...request,
+			uniqueRequestIdentifier: { ...request.uniqueRequestIdentifier, requestId: 2 },
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		assert.equal(child.messages.at(-1)?.error?.code, -32602)
+	})
+
 	test('reject public calls to internal provider callback methods', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, getTabState, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
@@ -256,11 +308,15 @@ describe('background eth_accounts', () => {
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
 
 		for (const [index, method] of [
+			'begin_signer_provider_selection',
 			'connected_to_signer',
 			'eth_accounts_reply',
+			'finish_signer_provider_selection',
 			'InterceptorError',
 			'signer_chainChanged',
 			'signer_reply',
+			'signer_provider_selected',
+			'signer_providers_changed',
 			'wallet_switchEthereumChain_reply',
 		].entries()) {
 			await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
@@ -277,6 +333,44 @@ describe('background eth_accounts', () => {
 		}
 
 		assert.deepEqual((await getTabState(socket.tabId)).signerAccounts, [])
+	})
+
+	test('treats an omitted content-script frameId as the top frame for provider catalogs and popup selection', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, getTabState, updateTabState, websiteSocketToString } = await loadModules()
+		const { selectSignerProvider } = await import('../../app/ts/background/signerProviderSelection.js')
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: 'Example' }
+		const provider = {
+			uuid: '22222222-2222-4222-8222-222222222222',
+			name: 'Example Wallet',
+			icon: 'data:image/svg+xml,<svg/>',
+			rdns: 'com.example.wallet',
+		}
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, website }))
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 10, requestSocket: socket },
+			method: 'signer_providers_changed',
+			params: [[provider], false, '11111111-1111-4111-8111-111111111111'],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.deepEqual((await getTabState(socket.tabId)).availableSignerProviders, [provider])
+		await selectSignerProvider(websiteTabConnections, {
+			method: 'popup_selectSignerProvider',
+			data: { tabId: socket.tabId, websiteOrigin, uuid: provider.uuid },
+		})
+		assert.equal(messages.filter((message) => message.method === 'select_signer_provider').length, 1)
 	})
 
 	test('allow marked internal eth_accounts_reply callbacks', async () => {
@@ -516,6 +610,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.deepEqual((await getTabState(socket.tabId)).signerAccounts, [metaMaskAccount])
 
 		const nextSocket = { tabId: socket.tabId, connectionName: 1n }
+		authorizeLegacySignerSocket(nextSocket)
 		const { port: nextPort } = createPort(nextSocket.tabId, undefined, 0, nextSocket.connectionName)
 		const tabConnection = websiteTabConnections.get(nextSocket.tabId)
 		if (tabConnection === undefined) throw new Error('Missing tab connection')
@@ -622,6 +717,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 
 		const previousSocket = { tabId: 1, connectionName: 50n }
 		const restoredSocket = { tabId: 1, connectionName: 51n }
+		authorizeLegacySignerSocket(restoredSocket)
 		const { port: previousPort } = createPort(previousSocket.tabId, undefined, 0, previousSocket.connectionName)
 		let restoredPort: browser.runtime.Port
 		const { port: createdRestoredPort, messages } = createPort(restoredSocket.tabId, (message) => {
@@ -705,6 +801,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
 
 		const socket = { tabId: 1, connectionName: 59n }
+		authorizeLegacySignerSocket(socket)
 		let port: browser.runtime.Port
 		let websiteTabConnections: WebsiteTabConnections
 		const createdPort = createPort(socket.tabId, (message) => {
@@ -1457,6 +1554,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const requestSocket = { tabId: 1, connectionName: 0n }
 		const popupSocket = { tabId: 2, connectionName: 0n }
+		authorizeLegacySignerSocket(popupSocket)
 		const { port: requestPort, messages: requestMessages } = createPort(requestSocket.tabId)
 		const { port: popupPort, messages: popupMessages } = createPort(popupSocket.tabId)
 		const websiteTabConnections = new Map([
@@ -3278,6 +3376,42 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal(access?.access, undefined)
 		assert.equal(access?.addressAccess, undefined)
 		assert.equal(access?.interceptorDisabled, true)
+	})
+
+	test('access refresh reuses top metadata for same-origin children without leaking it cross-origin', async () => {
+		installBrowserMock({ tabStatus: 'loading' })
+		const { changeSimulationMode, getPendingAccessRequests, getSettings, setUseSignersAddressAsActiveAddress, updateTabState, updateWebsiteAccess, updateWebsiteApprovalAccesses, websiteSocketToString } = await loadModules()
+		const sameOrigin = 'https://example.test'
+		const crossOrigin = 'https://frame.test'
+		const account = 0x1111111111111111111111111111111111111111n
+		const cachedWebsite = { websiteOrigin: sameOrigin, icon: undefined, title: 'Cached top-frame title' }
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateTabState(1, (previousState) => ({ ...previousState, website: cachedWebsite }))
+		await updateWebsiteAccess(() => [
+			{ website: cachedWebsite, access: true, addressAccess: undefined },
+			{ website: { websiteOrigin: crossOrigin, icon: undefined, title: 'Untrusted frame title' }, access: true, addressAccess: undefined },
+		])
+
+		const sameOriginSocket = { tabId: 1, connectionName: 2n }
+		const crossOriginSocket = { tabId: 1, connectionName: 3n }
+		const websiteTabConnections = new Map([[1, { connections: {
+			[websiteSocketToString(sameOriginSocket)]: { port: createPort(1).port, socket: sameOriginSocket, websiteOrigin: sameOrigin, frameId: 2, approved: false, wantsToConnect: true },
+			[websiteSocketToString(crossOriginSocket)]: { port: createPort(1).port, socket: crossOriginSocket, websiteOrigin: crossOrigin, frameId: 3, approved: false, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const metadataTimeout = new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('Child access refresh waited for the loading tab')), ADDRESS_PROMPT_TIMEOUT_MS))
+		await Promise.race([
+			updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true),
+			metadataTimeout,
+		])
+
+		const pendingRequests = await getPendingAccessRequests()
+		const sameOriginRequest = pendingRequests.find((request) => request.website.websiteOrigin === sameOrigin)
+		const crossOriginRequest = pendingRequests.find((request) => request.website.websiteOrigin === crossOrigin)
+		assert.equal(sameOriginRequest?.website.title, cachedWebsite.title)
+		assert.equal(crossOriginRequest?.website.title, undefined)
+		assert.equal(crossOriginRequest?.website.icon, undefined)
 	})
 
 	test('wallet_revokePermissions causes later account requests to prompt again instead of auto-denying', async () => {

@@ -151,6 +151,7 @@ async function loadModules() {
 		pendingTerminalReplies,
 		terminalReplyDelivery,
 		providerMessageHandlers,
+		signerExecutionAuthority,
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/EthereumClientService.js'),
 		import('../../app/ts/simulation/services/priceEstimator.js'),
@@ -168,6 +169,7 @@ async function loadModules() {
 		import('../../app/ts/background/pendingTerminalReplies.js'),
 		import('../../app/ts/background/terminalReplyDelivery.js'),
 		import('../../app/ts/background/providerMessageHandlers.js'),
+		import('../../app/ts/background/signerExecutionAuthority.js'),
 	])
 	const flushPendingTerminalRepliesForSocket: typeof flushPendingTerminalRepliesForSocketType = terminalReplyDelivery.flushPendingTerminalRepliesForSocket
 
@@ -192,6 +194,11 @@ async function loadModules() {
 		attemptQueuedTerminalReplyDelivery: terminalReplyDelivery.attemptQueuedTerminalReplyDelivery,
 		queueTerminalReplyAndAttemptDelivery: terminalReplyDelivery.queueTerminalReplyAndAttemptDelivery,
 		signerReply: providerMessageHandlers.signerReply,
+		authorizeSocketForSignerExecution: signerExecutionAuthority.authorizeSocketForSignerExecution,
+		reconcileSignerExecutionDocument: signerExecutionAuthority.reconcileSignerExecutionDocument,
+		registerAuthoritativeTopSocket: signerExecutionAuthority.registerAuthoritativeTopSocket,
+		registerCurrentChildSignerSocket: signerExecutionAuthority.registerCurrentChildSignerSocket,
+		setSignerExecutionTarget: signerExecutionAuthority.setSignerExecutionTarget,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
 		websiteSocketToString: backgroundUtils.websiteSocketToString,
 		serialize: wireTypes.serialize,
@@ -458,6 +465,14 @@ test('accepts a signer reply from the current approved child-frame port', async 
 	const topPort = createWebsitePort(topSocket, 0, topMessages)
 	const childPort = createWebsitePort(childSocket, 2, childMessages)
 	const websiteOrigin = 'https://example.com'
+	const documentGeneration = '11111111-1111-4111-8111-111111111111'
+	const providerUuid = '22222222-2222-4222-8222-222222222222'
+	modules.registerAuthoritativeTopSocket(topSocket, websiteOrigin)
+	modules.registerCurrentChildSignerSocket(childSocket, 2)
+	modules.reconcileSignerExecutionDocument(topSocket, websiteOrigin, documentGeneration, true, 0)
+	modules.reconcileSignerExecutionDocument(childSocket, websiteOrigin, documentGeneration, false, 2)
+	modules.setSignerExecutionTarget(topSocket.tabId, providerUuid, websiteOrigin)
+	modules.authorizeSocketForSignerExecution(childSocket, providerUuid, websiteOrigin)
 	const websiteTabConnections = new Map([[topSocket.tabId, {
 		signerStateOwner: {
 			connectionName: topSocket.connectionName,
