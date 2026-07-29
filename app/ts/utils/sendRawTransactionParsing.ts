@@ -2,11 +2,7 @@ import type { EthereumSendableSignedTransaction, EthereumUnsignedTransaction } f
 import { EthereumAddress, EthereumBytes32 } from '../types/wire-types.js'
 import { dataStringWith0xStart, stringToUint8Array } from './bigint.js'
 import { normalizeEip7702AuthorizationList, type NormalizedEip7702Authorization } from './eip7702Authorization.js'
-import {
-	keccak256,
-	parseTransaction as parseSerializedTransaction,
-	recoverTransactionSender,
-} from './ethereumPrimitives.js'
+import { keccak256, parseTransaction as parseSerializedTransaction, recoverTransactionSender } from './ethereumPrimitives.js'
 
 const parseAccessList = (accessList: readonly { readonly address: `0x${ string }`, readonly storageKeys: readonly `0x${ string }`[] }[] | undefined) => {
 	return (accessList ?? []).map((accessListEntry) => ({

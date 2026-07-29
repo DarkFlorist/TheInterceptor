@@ -5,16 +5,7 @@ import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { fetchWithTimeout } from '../../utils/requests.js'
 import { Future } from '../../utils/future.js'
 import { recordBenchmarkRpcRequest } from '../../utils/benchmarking.js'
-import {
-	HTTP_STATUS_REQUEST_TIMEOUT,
-	HTTP_STATUS_SERVER_ERROR_RANGE_START,
-	HTTP_STATUS_TOO_EARLY,
-	HTTP_STATUS_TOO_MANY_REQUESTS,
-	JSON_RPC_ERROR_CODE_INTERNAL_ERROR,
-	JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED,
-	JSON_RPC_ERROR_CODE_RESOURCE_UNAVAILABLE,
-	TIME_BETWEEN_BLOCKS,
-} from '../../utils/constants.js'
+import { HTTP_STATUS_REQUEST_TIMEOUT, HTTP_STATUS_SERVER_ERROR_RANGE_START, HTTP_STATUS_TOO_EARLY, HTTP_STATUS_TOO_MANY_REQUESTS, JSON_RPC_ERROR_CODE_INTERNAL_ERROR, JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED, JSON_RPC_ERROR_CODE_RESOURCE_UNAVAILABLE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 
 type ResolvedResponse = { responseState: 'failed', status: number, response: unknown } | { responseState: 'success', response: unknown }
 export type SlowRpcRequest = {

@@ -162,7 +162,55 @@ afterAll(() => {
 	console.warn = originalWarn
 })
 
-const { retrieveWebsiteDetails } = await import('../../app/ts/background/iconHandler.js')
+const { addBlockingShieldToIcon, retrieveWebsiteDetails } = await import('../../app/ts/background/iconHandler.js')
+const { TabIcon } = await import('../../app/ts/types/user-interface-types.js')
+const { parseTabStateItems } = await import('../../app/ts/utils/storageUtils.js')
+
+describe('blocking shield icon selection', () => {
+	test('maps every valid icon to its blocking equivalent without double shielding', () => {
+		const expectedBlockingIcons = new Map([
+			['../img/head.png', '../img/head-shield.png'],
+			['../img/head-access-denied.png', '../img/head-access-denied.png'],
+			['../img/head-not-active.png', '../img/head-not-active-shield.png'],
+			['../img/head-simulating.png', '../img/head-simulating-shield.png'],
+			['../img/head-signing.png', '../img/head-signing-shield.png'],
+			['../img/head-signing-unsupported-network.png', '../img/head-signing-unsupported-network-shield.png'],
+			['../img/head-interceptor-disabled.png', '../img/head-interceptor-disabled.png'],
+			['../img/head-shield.png', '../img/head-shield.png'],
+			['../img/head-not-active-shield.png', '../img/head-not-active-shield.png'],
+			['../img/head-simulating-shield.png', '../img/head-simulating-shield.png'],
+			['../img/head-signing-shield.png', '../img/head-signing-shield.png'],
+			['../img/head-signing-unsupported-network-shield.png', '../img/head-signing-unsupported-network-shield.png'],
+		] as const)
+		for (const [icon, expectedBlockingIcon] of expectedBlockingIcons) {
+			assert.equal(addBlockingShieldToIcon(TabIcon.parse(icon)), expectedBlockingIcon, icon)
+		}
+	})
+
+	test('rejects the nonexistent access-denied shield icon', () => {
+		assert.equal(TabIcon.safeParse('../img/head-access-denied-shield.png').success, false)
+	})
+
+	test('normalizes a previously stored access-denied shield icon', () => {
+		const tabStates = parseTabStateItems({
+			tabState_1: {
+				tabId: 1,
+				website: undefined,
+				signerConnected: false,
+				signerName: 'NoSignerDetected',
+				signerAccounts: [],
+				signerAccountError: undefined,
+				signerChain: undefined,
+				tabIconDetails: {
+					icon: '../img/head-access-denied-shield.png',
+					iconReason: 'Denied',
+				},
+				activeSigningAddress: undefined,
+			},
+		})
+		assert.equal(tabStates.tabState_1?.tabIconDetails.icon, '../img/head-access-denied.png')
+	})
+})
 
 describe('retrieveWebsiteDetails favicon handling', () => {
 	test('rethrows unexpected tab lookup failures', async () => {
