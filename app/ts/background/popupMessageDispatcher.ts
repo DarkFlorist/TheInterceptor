@@ -107,7 +107,7 @@ const popupMessageHandlers = {
 	popup_requestIdentifyAddress: popupMessageHandler('popup_requestIdentifyAddress', async (context, request) => await requestIdentifyAddress(context.ethereum, request)),
 	popup_isMainPopupWindowOpen: popupMessageHandler('popup_isMainPopupWindowOpen', async () => undefined),
 	popup_isSimulationVisualizerOpen: popupMessageHandler('popup_isSimulationVisualizerOpen', async () => undefined),
-} satisfies Record<PopupMessage['method'], PopupMessageHandler>
+} as const satisfies Record<PopupMessage['method'], PopupMessageHandler>
 
 export async function dispatchPopupMessage(context: PopupMessageDispatcherContext, request: PopupMessage): Promise<PopupReplyOption | void> {
 	return await popupMessageHandlers[request.method](context, request)

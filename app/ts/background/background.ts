@@ -294,7 +294,7 @@ async function handleRPCRequest(
 		eth_getFilterChanges: rpcRequestHandler('eth_getFilterChanges', async (_context, rpcRequest) => await withExecutionSimulationState((simulationState) => getFilterChanges(rpcRequest, ethereum, simulationState))),
 		eth_getFilterLogs: rpcRequestHandler('eth_getFilterLogs', async (_context, rpcRequest) => await withExecutionSimulationState((simulationState) => getFilterLogs(rpcRequest, ethereum, simulationState))),
 		InterceptorError: rpcRequestHandler('InterceptorError', async (_context, rpcRequest) => await handleIterceptorError(rpcRequest)),
-	} satisfies Record<ParsedRpcRequest['method'], RpcRequestHandler>
+	} as const satisfies Record<ParsedRpcRequest['method'], RpcRequestHandler>
 	return await rpcRequestHandlers[parsedRequest.method](undefined, parsedRequest)
 }
 

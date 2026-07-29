@@ -44,7 +44,7 @@ const addressMetaData = [
 		address: CONSIDERATION_RECIPIENT_ADDRESS,
 		entrySource: 'User',
 	},
-] satisfies readonly AddressBookEntry[]
+] as const satisfies readonly AddressBookEntry[]
 
 const web3jAbiV2Tuple = {
 	type: 'tuple',
@@ -52,7 +52,7 @@ const web3jAbiV2Tuple = {
 		{ paramName: 'id', typeValue: { type: 'string', value: 'foo-id' } },
 		{ paramName: 'name', typeValue: { type: 'string', value: 'Example Foo' } },
 	],
-} satisfies PureGroupedSolidityType
+} as const satisfies PureGroupedSolidityType
 
 const seaportTupleArray = {
 	type: 'tuple[]',
@@ -71,7 +71,7 @@ const seaportTupleArray = {
 			{ paramName: 'recipient', typeValue: { type: 'address', value: CONSIDERATION_RECIPIENT_ADDRESS } },
 		],
 	],
-} satisfies PureGroupedSolidityType
+} as const satisfies PureGroupedSolidityType
 
 describe('Solidity type rendering', () => {
 	test('renders generic unavailable input parser copy after tuple support', async () => {

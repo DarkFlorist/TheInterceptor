@@ -210,7 +210,7 @@ export const getGovernanceExecutionTokenBalancesAfter = async (
 		undefined,
 		simulationInputAfterExecution,
 		callResult,
-		executionTransaction.signedTransaction.from
+		executionTransaction.signedTransaction
 	)
 }
 
@@ -509,7 +509,13 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 			const transactions = getWebsiteCreatedEthereumTransactions(block.simulatedTransactions)
 			return await promiseAllMapAbortSafe(transactions, async (transaction, transactionIndex) => {
 				const slicedSimulationState = sliceSimulationState(simulationState, blockIndex, transactionIndex)
-				return await runProtectorsForTransaction(slicedSimulationState, transaction, ethereum, requestAbortController)
+				const eventsForTransactionPromise = eventsForEachBlockAndTransactionPromise.then((eventsForEachBlock) => {
+					const eventsForBlock = eventsForEachBlock[blockIndex]
+					const eventsForTransaction = eventsForBlock?.[transactionIndex]
+					if (eventsForTransaction === undefined) throw new Error('Transaction event index overflow')
+					return eventsForTransaction
+				})
+				return await runProtectorsForTransaction(slicedSimulationState, transaction, ethereum, requestAbortController, eventsForTransactionPromise)
 			})
 		}
 	)

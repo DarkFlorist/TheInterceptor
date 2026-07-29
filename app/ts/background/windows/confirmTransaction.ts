@@ -1,5 +1,5 @@
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
-import { getInputFieldFromDataOrInput, getSignedTransactionForSimulation, getSimulatedBalance, getSimulatedTransactionCount, simulateEstimateGas, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
+import { getInputFieldFromDataOrInput, getSignedTransactionForSimulation, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
@@ -15,7 +15,7 @@ import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalRe
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
-import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, reportLocalRecovery } from '../../utils/errors.js'
+import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
 import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
@@ -30,6 +30,8 @@ import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabO
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.js'
 import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization.js'
+import { identifyAddress } from '../metadataUtils.js'
+import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -312,6 +314,41 @@ const formRejectMessage = (code: number, errorString: string) => {
 	}
 }
 
+const resolveInsufficientBalanceMessageForTransaction = async (
+	ethereumClientService: EthereumClientService,
+	requestAbortController: AbortController | undefined,
+	simulationState: Awaited<ReturnType<typeof getUpdatedSimulationState>>,
+	transaction: {
+		from: bigint
+		to: bigint | null
+		value: bigint
+		input: Uint8Array
+	},
+	nativeBalancePromise: Promise<bigint>,
+) => {
+	try {
+		const nativeBalance = await nativeBalancePromise
+		return await resolveInsufficientBalanceMessage(
+			transaction,
+			{ balance: nativeBalance, symbol: ethereumClientService.getRpcEntry().currencyTicker, decimals: 18n },
+			async (token, owner) => {
+				const tokenEntry = await identifyAddress(ethereumClientService, requestAbortController, token)
+				if (tokenEntry.type !== 'ERC20') return undefined
+				const tokenBalance = await getSimulatedErc20Balance(ethereumClientService, requestAbortController, simulationState, token, owner)
+				if (tokenBalance === undefined) return undefined
+				return { token, balance: tokenBalance, symbol: tokenEntry.symbol, decimals: tokenEntry.decimals }
+			},
+		)
+	} catch(error: unknown) {
+		if (isNewBlockAbort(error)) throw error
+		await reportLocalRecovery(error, {
+			code: 'insufficient_balance_diagnosis_failed',
+			message: 'Keeping the original gas-estimation error because optional balance diagnosis failed.',
+		})
+		return undefined
+	}
+}
+
 export const formSendRawTransaction = async(_ethereumClientService: EthereumClientService, sendRawTransactionParams: SendRawTransactionParams, website: Website, created: Date, transactionIdentifier: EthereumQuantity): Promise<WebsiteCreatedEthereumTransaction> => {
 	const parsedTransaction = await parseSendRawTransaction(sendRawTransactionParams.params[0])
 	return {
@@ -364,9 +401,17 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	if (transactionDetails.gas === undefined) {
 		try {
 			const estimateGas = await simulateEstimateGas(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas)
-			if ('error' in estimateGas) return { ...extraParams, ...estimateGas, success: false }
+			if ('error' in estimateGas) {
+				const insufficientBalanceMessage = await resolveInsufficientBalanceMessageForTransaction(ethereumClientService, requestAbortController, simulationState, transactionWithoutGas, balancePromise)
+				return {
+					...extraParams,
+					error: insufficientBalanceMessage === undefined ? estimateGas.error : { ...estimateGas.error, message: insufficientBalanceMessage },
+					success: false,
+				}
+			}
 			return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(estimateGas.gas), gas: estimateGas.gas }, ...extraParams, success: true }
 		} catch(error: unknown) {
+			if (isNewBlockAbort(error)) throw error
 			if (error instanceof JsonRpcResponseError) return { ...extraParams, error: { code: error.code, message: error.message, data: typeof error.data === 'string' ? error.data : '0x' }, success: false }
 			await reportLocalRecovery(error, { code: 'transaction_gas_estimation_failed', message: 'Returning a typed RPC error to the requesting page.' })
 			if (error instanceof Error) return { ...extraParams, error: { code: 123456, message: error.message, data: 'data' in error && typeof error.data === 'string' ? error.data : '0x' }, success: false }
