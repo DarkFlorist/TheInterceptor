@@ -525,6 +525,47 @@ type ModalState =
 	{ page: 'editEns', state: EditEnsNamedHashWindowState } |
 	{ page: 'noModal' }
 
+function ConfirmTransactionModal({ modalState, activeAddress, rpcEntries }: {
+	modalState: Signal<ModalState>
+	activeAddress: bigint | undefined
+	rpcEntries: ReadonlySignal<RpcEntries>
+}) {
+	const close = () => {
+		modalState.value = { page: 'noModal' }
+	}
+	return <div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : ''}` }>
+		{ modalState.value.page === 'editEns' ?
+			<EditEnsLabelHash
+				close = { close }
+				editEnsNamedHashWindowState = { modalState.value.state }
+			/>
+		: <></> }
+		{ modalState.value.page === 'modifyAddress' ?
+			<AddNewAddress
+				setActiveAddressAndInformAboutIt = { undefined }
+				modifyAddressWindowState = { modalState.value.state }
+				close = { close }
+				activeAddress = { activeAddress }
+				rpcEntries = { rpcEntries }
+			/>
+		: <></> }
+	</div>
+}
+
+function ConfirmTransactionAlerts({ unexpectedError, clearUnexpectedError, rpcConnectionStatus, currentPendingTransaction }: {
+	unexpectedError: CaughtError | undefined
+	clearUnexpectedError: () => Promise<void>
+	rpcConnectionStatus: ReadonlySignal<RpcConnectionStatus>
+	currentPendingTransaction: ReadonlySignal<PendingTransactionOrSignableMessage | undefined>
+}) {
+	return <>
+		<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError }/>
+		<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
+		<WebsiteErrors currentPendingTransactionOrSignableMessage = { currentPendingTransaction }/>
+		<InvalidMessage pendingTransactionOrSignableMessage = { currentPendingTransaction }/>
+	</>
+}
+
 type RejectButtonParams = {
 	onClick: () => void | Promise<void>
 	state: AsyncStates
@@ -865,31 +906,12 @@ export function ConfirmTransaction() {
 
 	if (currentPendingTransactionOrSignableMessage.value === undefined || (currentPendingTransactionOrSignableMessage.value.transactionOrMessageCreationStatus !== 'Simulated' && currentPendingTransactionOrSignableMessage.value.transactionOrMessageCreationStatus !== 'FailedToSimulate')) {
 		return <>
-			<main>
-				<Hint>
-					<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : ''}` }>
-						{ modalState.value.page === 'editEns' ?
-							<EditEnsLabelHash
-								close = { () => { modalState.value = { page: 'noModal' } } }
-								editEnsNamedHashWindowState = { modalState.value.state }
-							/>
-						: <></> }
-						{ modalState.value.page === 'modifyAddress' ?
-							<AddNewAddress
-								setActiveAddressAndInformAboutIt = { undefined }
-								modifyAddressWindowState = { modalState.value.state }
-								close = { () => { modalState.value = { page: 'noModal' } } }
-								activeAddress = { currentPendingTransactionOrSignableMessage.value?.activeAddress }
-								rpcEntries = { rpcEntries }
-							/>
-						: <></> }
-					</div>
-					<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px;'>
-						<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value }/>
-						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
-						<WebsiteErrors currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage }/>
-						<InvalidMessage pendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage }/>
-							<CenterToPageTextSpinner text = { loadingText }/>
+				<main>
+					<Hint>
+						<ConfirmTransactionModal modalState = { modalState } activeAddress = { currentPendingTransactionOrSignableMessage.value?.activeAddress } rpcEntries = { rpcEntries }/>
+						<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px;'>
+							<ConfirmTransactionAlerts unexpectedError = { unexpectedError.value } clearUnexpectedError = { clearUnexpectedError } rpcConnectionStatus = { rpcConnectionStatus } currentPendingTransaction = { currentPendingTransactionOrSignableMessage }/>
+								<CenterToPageTextSpinner text = { loadingText }/>
 					</div>
 				</Hint>
 			</main>
@@ -897,31 +919,12 @@ export function ConfirmTransaction() {
 	}
 	const underTransactions = useComputed(() => pendingTransactionsAndSignableMessages.value.slice(1).reverse())
 	return (
-		<main>
-			<Hint>
-				<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : ''}` }>
-					{ modalState.value.page === 'editEns' ?
-						<EditEnsLabelHash
-							close = { () => { modalState.value = { page: 'noModal' } } }
-							editEnsNamedHashWindowState = { modalState.value.state }
-						/>
-					: <></> }
-					{ modalState.value.page === 'modifyAddress' ?
-						<AddNewAddress
-							setActiveAddressAndInformAboutIt = { undefined }
-							modifyAddressWindowState = { modalState.value.state }
-							close = { () => { modalState.value = { page: 'noModal' } } }
-							activeAddress = { currentPendingTransactionOrSignableMessage.value?.activeAddress }
-							rpcEntries = { rpcEntries }
-						/>
-					: <></> }
-				</div>
-				<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
-					<div style = 'position: sticky; top: 0; z-index: 1;'>
-						<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value }/>
-						<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
-						<WebsiteErrors currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage }/>
-						<InvalidMessage pendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage }/>
+			<main>
+				<Hint>
+					<ConfirmTransactionModal modalState = { modalState } activeAddress = { currentPendingTransactionOrSignableMessage.value?.activeAddress } rpcEntries = { rpcEntries }/>
+					<div class = 'block popup-block popup-block-scroll' style = 'padding: 0px'>
+						<div style = 'position: sticky; top: 0; z-index: 1;'>
+							<ConfirmTransactionAlerts unexpectedError = { unexpectedError.value } clearUnexpectedError = { clearUnexpectedError } rpcConnectionStatus = { rpcConnectionStatus } currentPendingTransaction = { currentPendingTransactionOrSignableMessage }/>
 					</div>
 					<div class = 'popup-contents'>
 						<div style = 'margin: 10px'>

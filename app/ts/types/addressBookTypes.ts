@@ -16,6 +16,25 @@ export const EntrySource = funtypes.Union(
 export type DeclarativeNetRequestBlockMode = funtypes.Static<typeof DeclarativeNetRequestBlockMode>
 export const DeclarativeNetRequestBlockMode = funtypes.Union(funtypes.Literal('block-all'), funtypes.Literal('disabled'))
 
+const sharedAddressBookEntryOptionalFields = {
+	logoUri: funtypes.String,
+	abi: funtypes.String,
+	useAsActiveAddress: funtypes.Boolean,
+	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
+	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode,
+	chainId: ChainIdWithUniversal,
+}
+
+const protocolAddressBookEntryOptionalFields = {
+	protocol: funtypes.String,
+	...sharedAddressBookEntryOptionalFields,
+}
+
+const nftAddressBookEntryOptionalFields = {
+	watchedTokenIds: funtypes.ReadonlyArray(EthereumQuantity),
+	...protocolAddressBookEntryOptionalFields,
+}
+
 export type Erc20TokenEntry = funtypes.Static<typeof Erc20TokenEntry>
 export const Erc20TokenEntry = funtypes.ReadonlyObject({
 	type: funtypes.Literal('ERC20'),
@@ -25,12 +44,7 @@ export const Erc20TokenEntry = funtypes.ReadonlyObject({
 	decimals: EthereumQuantity,
 	entrySource: EntrySource,
 }).And(funtypes.Partial({
-	logoUri: funtypes.String,
-	abi: funtypes.String,
-	useAsActiveAddress: funtypes.Boolean,
-	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
-	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode,
-	chainId: ChainIdWithUniversal,
+	...sharedAddressBookEntryOptionalFields,
 }))
 
 export type Erc721Entry = funtypes.Static<typeof Erc721Entry>
@@ -41,14 +55,7 @@ export const Erc721Entry = funtypes.ReadonlyObject({
 	symbol: funtypes.String,
 	entrySource: EntrySource,
 }).And(funtypes.Partial({
-	watchedTokenIds: funtypes.ReadonlyArray(EthereumQuantity),
-	protocol: funtypes.String,
-	logoUri: funtypes.String,
-	abi: funtypes.String,
-	useAsActiveAddress: funtypes.Boolean,
-	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
-	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode,
-	chainId: ChainIdWithUniversal,
+	...nftAddressBookEntryOptionalFields,
 }))
 
 export type Erc1155Entry = funtypes.Static<typeof Erc1155Entry>
@@ -60,14 +67,7 @@ export const Erc1155Entry = funtypes.ReadonlyObject({
 	decimals: funtypes.Undefined,
 	entrySource: EntrySource,
 }).And(funtypes.Partial({
-	watchedTokenIds: funtypes.ReadonlyArray(EthereumQuantity),
-	protocol: funtypes.String,
-	logoUri: funtypes.String,
-	abi: funtypes.String,
-	useAsActiveAddress: funtypes.Boolean,
-	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
-	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode,
-	chainId: ChainIdWithUniversal,
+	...nftAddressBookEntryOptionalFields,
 }))
 
 export type ContactEntry = funtypes.Static<typeof ContactEntry>
@@ -77,12 +77,7 @@ export const ContactEntry = funtypes.ReadonlyObject({
 	address: EthereumAddress,
 	entrySource: funtypes.Union(EntrySource, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, 'User' as const))),
 }).And(funtypes.Partial({
-	logoUri: funtypes.String,
-	abi: funtypes.String,
-	useAsActiveAddress: funtypes.Boolean,
-	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
-	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode,
-	chainId: ChainIdWithUniversal,
+	...sharedAddressBookEntryOptionalFields,
 }))
 
 export type ContactEntries = funtypes.Static<typeof ContactEntries>
@@ -95,13 +90,7 @@ export const ContractEntry = funtypes.ReadonlyObject({
 	address: EthereumAddress,
 	entrySource: EntrySource,
 }).And(funtypes.Partial({
-	protocol: funtypes.String,
-	logoUri: funtypes.String,
-	abi: funtypes.String,
-	useAsActiveAddress: funtypes.Boolean,
-	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
-	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode,
-	chainId: ChainIdWithUniversal,
+	...protocolAddressBookEntryOptionalFields,
 }))
 
 export type AddressBookEntryCategory = 'contact' | 'activeAddress' | 'ERC20' | 'ERC721' | 'contract' | 'ERC1155'

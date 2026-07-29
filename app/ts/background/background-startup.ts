@@ -34,7 +34,7 @@ import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
 import { clearSignerExecutionAuthorityForTab, isTopFrameId, registerCurrentChildSignerSocket, scheduleCurrentChildSignerSocketRemoval } from './signerExecutionAuthority.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
-import { registerTopSignerDocument, releaseSignerSelectionLeasesForTab } from './signerSelectionLease.js'
+import { registerTopSignerDocument, releaseSignerSelectionLeasesForSocket, releaseSignerSelectionLeasesForTab } from './signerSelectionLease.js'
 import { getChildSignerConnectionSynchronization } from './signerProviderSelection.js'
 import { getWebsiteDetailsForConnection } from './websiteConnectionMetadata.js'
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
@@ -137,6 +137,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 	}
 	const websiteOrigin = getHostWithPort(port.sender.url)
 	const identifier = websiteSocketToString(socket)
+	if (latestReceivedBridgeRequestIds.has(identifier)) releaseSignerSelectionLeasesForSocket(socket)
 	const websitePromise = (async () => {
 		const websiteDetails = await getWebsiteDetailsForConnection(socket.tabId, websiteOrigin, port.sender?.frameId)
 		const website = { websiteOrigin, ...websiteDetails }

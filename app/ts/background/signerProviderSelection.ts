@@ -32,7 +32,7 @@ export async function beginSignerProviderSelection(request: ProviderMessage, web
 		? isAuthoritativeTopSocket(socket)
 		: !isTopFrameId(frameId) && providerUuid !== undefined && getSignerExecutionTargetForSocket(socket, websiteOrigin) === providerUuid
 	if (!socketCanSelectProvider()) return undefined
-	const token = await acquireSignerSelectionLease(tabId)
+	const token = await acquireSignerSelectionLease(tabId, socket)
 	if (!socketCanSelectProvider()) {
 		releaseSignerSelectionLease(tabId, token)
 		return undefined

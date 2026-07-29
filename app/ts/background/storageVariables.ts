@@ -1,7 +1,7 @@
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, TabStateItems, browserStorageLocalGet, browserStorageLocalGet2, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { defaultActiveAddresses, defaultRpcs } from './settings.js'
@@ -178,7 +178,7 @@ const getTabAllStateKeys = async () => {
 }
 
 export const clearTabStates = async () => await browser.storage.local.remove(await getTabAllStateKeys())
-export const getAllTabStates = async () => Object.values(TabStateItems.parse(await browser.storage.local.get(await getTabAllStateKeys()))).filter((state): state is TabState => state !== undefined)
+export const getAllTabStates = async () => Object.values(parseTabStateItems(await browser.storage.local.get(await getTabAllStateKeys()))).filter((state): state is TabState => state !== undefined)
 
 const tabStateSemaphore = new Semaphore(1)
 export async function updateTabState(tabId: number, updateFunc: (prevState: TabState) => TabState) {

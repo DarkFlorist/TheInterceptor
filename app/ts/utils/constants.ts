@@ -175,7 +175,6 @@ export const ICON_SIGNING_NOT_SUPPORTED = '../img/head-signing-unsupported-netwo
 export const ICON_INTERCEPTOR_DISABLED = '../img/head-interceptor-disabled.png' as const
 
 export const ICON_ACTIVE_WITH_SHIELD = '../img/head-shield.png' as const
-export const ICON_ACCESS_DENIED_WITH_SHIELD = '../img/head-access-denied-shield.png' as const
 export const ICON_NOT_ACTIVE_WITH_SHIELD = '../img/head-not-active-shield.png' as const
 export const ICON_SIMULATING_WITH_SHIELD = '../img/head-simulating-shield.png' as const
 export const ICON_SIGNING_WITH_SHIELD = '../img/head-signing-shield.png' as const

@@ -804,4 +804,22 @@ describe('EIP-6963 signer provider selection', () => {
 		assert.equal(socketCanExecuteWithSelectedSigner(socket), false)
 		assert.equal(releaseSignerSelectionLease(7, leaseToken), false)
 	})
+
+	test('releases only the reconnecting socket signer-selection lease', async () => {
+		installBrowserMock()
+		const {
+			acquireSignerSelectionLease,
+			releaseSignerSelectionLease,
+			releaseSignerSelectionLeasesForSocket,
+		} = await import('../../app/ts/background/signerSelectionLease.js')
+		const reconnectingSocket = { tabId: 7, connectionName: 1n }
+		const otherTabSocket = { tabId: 8, connectionName: 1n }
+		const reconnectingLease = await acquireSignerSelectionLease(7, reconnectingSocket)
+		releaseSignerSelectionLeasesForSocket(reconnectingSocket)
+		assert.equal(releaseSignerSelectionLease(7, reconnectingLease), false)
+
+		const otherTabLease = await acquireSignerSelectionLease(8, otherTabSocket)
+		releaseSignerSelectionLeasesForSocket(reconnectingSocket)
+		assert.equal(releaseSignerSelectionLease(8, otherTabLease), true)
+	})
 })

@@ -113,6 +113,18 @@ function getPostedBridgeRequestId(value: unknown) {
 	return data.requestId
 }
 
+function getContentScriptCapability(receivedMessages: readonly unknown[]) {
+	const initializationMessage = receivedMessages.find((message) => typeof message === 'object'
+		&& message !== null
+		&& 'type' in message
+		&& message.type === 'interceptor_bridge_initialized')
+	if (typeof initializationMessage !== 'object'
+		|| initializationMessage === null
+		|| !('contentScriptCapability' in initializationMessage)
+		|| typeof initializationMessage.contentScriptCapability !== 'string') throw new Error('Missing content-script bridge capability')
+	return initializationMessage.contentScriptCapability
+}
+
 async function dispatchBridgeRequest(eventListeners: Map<string, EventListenerOrEventListenerObject[]>, method = 'eth_sendTransaction', replayOnDisconnect = false, keepBridgeOpen = false) {
 	const channel = new MessageChannel()
 	const receivedMessages: unknown[] = []
@@ -270,6 +282,7 @@ async function verifyAcknowledgedReplayableRequestReplayedUntilMarkedSettled(sou
 			method: 'example_terminalReply',
 			requestId: 1,
 			result: [],
+			contentScriptCapability: getContentScriptCapability(inpageBridge.receivedMessages),
 		})
 
 		disconnectListeners[1]?.()
@@ -506,6 +519,7 @@ async function verifyInpageIsNotifiedAfterBackgroundBridgeReconnect(source: Cont
 		assert.deepEqual(inpageBridge.receivedMessages.at(-1), {
 			type: 'interceptor_bridge_reconnected',
 			bridgeCapability: BRIDGE_CAPABILITY,
+			contentScriptCapability: getContentScriptCapability(inpageBridge.receivedMessages),
 		})
 		inpageBridge.close()
 	})

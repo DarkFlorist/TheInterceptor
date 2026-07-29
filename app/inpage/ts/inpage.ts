@@ -105,6 +105,7 @@ type InterceptedRequestForward = InterceptedRequestForwardWithResult | Intercept
 
 const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
 const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
+const INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE = 'interceptor_bridge_initialized'
 const INTERCEPTOR_BRIDGE_RECONNECTED_MESSAGE = 'interceptor_bridge_reconnected'
 const REQUEST_SCOPED_PROVIDER_EVENT_METHODS = new Set(['accountsChanged', 'connect', 'disconnect', 'chainChanged'])
 const MAX_EIP6963_PROVIDERS = 16
@@ -113,7 +114,7 @@ const MAX_CONFLICTING_EIP6963_UUIDS = 64
 const SIGNER_DOCUMENT_GENERATION_KEY = Symbol.for('dark.florist.interceptor.signerDocumentGeneration')
 const signerFrameFallbackDocumentGeneration = globalThis.crypto.randomUUID()
 
-class SignerProviderCatalogBridgeReconnectedError extends Error {}
+class SignerSynchronizationBridgeReconnectedError extends Error {}
 
 const isUuid = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value)
 
@@ -559,6 +560,8 @@ class InterceptorMessageListener {
 	private fallbackSignerWindowEthereumRequest: EthereumRequest | undefined = undefined
 	private extensionMessagePort: MessagePort | undefined = undefined
 	private readonly bridgeCapability = globalThis.crypto.randomUUID()
+	private contentScriptCapability: string | undefined = undefined
+	private readonly contentScriptBridgeInitialized = new InterceptorFuture<void>()
 	private readonly subscribedSignerProviders = new WeakSet<object>()
 	private readonly rejectedSignerProviders = new WeakSet<object>()
 	private readonly announcedProviders = new Map<string, AnnouncedProvider>()
@@ -709,6 +712,7 @@ class InterceptorMessageListener {
 
 	private readonly sendMessageToBackgroundPage = async (messageMethodAndParams: MessageMethodAndParams) => {
 		if (messageMethodAndParams.internal !== true && !this.initialSignerProviderCatalogReconciled) await this.initialSignerProviderCatalogReconciliation
+		await this.contentScriptBridgeInitialized
 		this.requestId++
 		const pendingRequestId = this.requestId
 		const blocksSignerSelection = messageMethodAndParams.internal !== true
@@ -837,6 +841,7 @@ class InterceptorMessageListener {
 	}
 
 	private readonly reportSignerDiscoveryError = (phase: string, error: unknown) => {
+		if (error instanceof SignerSynchronizationBridgeReconnectedError) return
 		this.reportInterceptorError(serializeForwardedDiagnostics('inpage', phase, error))
 	}
 
@@ -1293,7 +1298,7 @@ class InterceptorMessageListener {
 		try {
 			await this.synchronizeAnnouncedProviders()
 		} catch (error: unknown) {
-			if (!(error instanceof SignerProviderCatalogBridgeReconnectedError)) throw error
+			if (!(error instanceof SignerSynchronizationBridgeReconnectedError)) throw error
 			this.signerProviderCatalogReconciliationNeeded = true
 			this.enqueueProviderCatalogSynchronization()
 		}
@@ -1916,21 +1921,40 @@ class InterceptorMessageListener {
 			|| typeof messageEvent.data !== 'object'
 			|| messageEvent.data === null
 		) return
-		if ('type' in messageEvent.data
-			&& messageEvent.data.type === INTERCEPTOR_BRIDGE_RECONNECTED_MESSAGE
-			&& 'bridgeCapability' in messageEvent.data
-			&& messageEvent.data.bridgeCapability === this.bridgeCapability) {
+		const messageData = messageEvent.data
+		if ('type' in messageData
+			&& messageData.type === INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE
+			&& 'bridgeCapability' in messageData
+			&& messageData.bridgeCapability === this.bridgeCapability
+			&& 'contentScriptCapability' in messageData
+			&& isUuid(messageData.contentScriptCapability)) {
+			if (this.contentScriptCapability !== undefined && this.contentScriptCapability !== messageData.contentScriptCapability) return
+			this.contentScriptCapability = messageData.contentScriptCapability
+			this.contentScriptBridgeInitialized.resolve(undefined)
+			return
+		}
+		if (this.contentScriptCapability === undefined
+			|| !('contentScriptCapability' in messageData)
+			|| messageData.contentScriptCapability !== this.contentScriptCapability) return
+		const { contentScriptCapability: _contentScriptCapability, ...authenticatedMessageData } = messageData
+		if ('type' in authenticatedMessageData
+			&& authenticatedMessageData.type === INTERCEPTOR_BRIDGE_RECONNECTED_MESSAGE
+			&& 'bridgeCapability' in authenticatedMessageData
+			&& authenticatedMessageData.bridgeCapability === this.bridgeCapability) {
 			this.signerProviderCatalogReconciliationNeeded = true
+			if (this.explicitlySelectedSignerProviderUuid !== undefined) {
+				this.pendingExplicitSignerProviderUuid = this.explicitlySelectedSignerProviderUuid
+			}
 			for (const outstandingRequest of this.outstandingRequests.values()) {
-				if (outstandingRequest.method !== 'signer_providers_changed') continue
-				outstandingRequest.future.reject(new SignerProviderCatalogBridgeReconnectedError('The background bridge reconnected before provider catalog reconciliation completed'))
+				if (!isInternalBackgroundMethod(outstandingRequest.method)) continue
+				outstandingRequest.future.reject(new SignerSynchronizationBridgeReconnectedError('The background bridge reconnected before signer synchronization completed'))
 			}
 			this.enqueueProviderCatalogSynchronization()
 			return
 		}
 		try {
 			if (!('ethereum' in inpageWindow) || !inpageWindow.ethereum) throw new Error('window.ethereum missing')
-			const forwardRequest = parseInterceptorApprovedMessage(messageEvent.data)
+			const forwardRequest = parseInterceptorApprovedMessage(authenticatedMessageData)
 			if (forwardRequest === undefined) throw new Error('Malformed message from content script')
 			if (!('type' in messageEvent)) throw new Error('missing type field')
 			if (forwardRequest.type === 'result' && forwardRequest.requestId !== undefined && !this.outstandingRequests.has(forwardRequest.requestId)) return
@@ -2003,10 +2027,11 @@ class InterceptorMessageListener {
 				return pendingRequest.future.reject(this.parseRpcError(error))
 			}
 		} catch(error: unknown) {
+			if (error instanceof SignerSynchronizationBridgeReconnectedError) return
 			console.error(messageEvent)
 			console.error(error)
-			this.reportInterceptorError(serializeForwardedDiagnostics('inpage', 'handle background reply', error, getForwardedDiagnosticsRequestContext(messageEvent.data)))
-			const requestId = 'requestId' in messageEvent.data && typeof messageEvent.data.requestId === 'number' ? messageEvent.data.requestId : undefined
+			this.reportInterceptorError(serializeForwardedDiagnostics('inpage', 'handle background reply', error, getForwardedDiagnosticsRequestContext(authenticatedMessageData)))
+			const requestId = 'requestId' in authenticatedMessageData && typeof authenticatedMessageData.requestId === 'number' ? authenticatedMessageData.requestId : undefined
 			if (requestId === undefined) return
 			const pendingRequest = this.outstandingRequests.get(requestId)
 			if (pendingRequest === undefined) return

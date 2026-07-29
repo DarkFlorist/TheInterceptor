@@ -14,6 +14,7 @@ type FakeWindowOptions = {
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
+const CONTENT_SCRIPT_CAPABILITY = '22222222-2222-4222-8222-222222222222'
 
 function parseInpageRequest(value: unknown): InpageRequest | undefined {
 	if (!isRecord(value)) return undefined
@@ -113,11 +114,20 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 			bridgeCapability = data.bridgeCapability
 			bridgePort = port
 			bridgePort.onmessage = (event: MessageEvent<unknown>) => handleInpageRequest(event.data)
+			bridgePort.postMessage({
+				type: 'interceptor_bridge_initialized',
+				bridgeCapability,
+				contentScriptCapability: CONTENT_SCRIPT_CAPABILITY,
+			})
 		},
 	}
 
 	const sendBackgroundMessage = (data: unknown) => {
 		if (bridgePort === undefined) throw new Error('bridge port is not connected')
+		if (isRecord(data)) {
+			bridgePort.postMessage({ ...data, contentScriptCapability: CONTENT_SCRIPT_CAPABILITY })
+			return
+		}
 		bridgePort.postMessage(data)
 	}
 
@@ -198,6 +208,14 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 		signerAccounts,
 		interceptorErrorPayloads,
 		sendBackgroundMessage,
+		sendUnauthenticatedBridgeMessage: (data: unknown) => {
+			if (bridgePort === undefined) throw new Error('bridge port is not connected')
+			bridgePort.postMessage(data)
+		},
+		notifyUnauthenticatedBridgeReconnected: () => {
+			if (bridgePort === undefined || bridgeCapability === undefined) throw new Error('bridge capability is not initialized')
+			bridgePort.postMessage({ type: 'interceptor_bridge_reconnected', bridgeCapability })
+		},
 		notifyBridgeReconnected: () => {
 			if (bridgeCapability === undefined) throw new Error('bridge capability is not initialized')
 			sendBackgroundMessage({ type: 'interceptor_bridge_reconnected', bridgeCapability })
@@ -406,6 +424,105 @@ describe('inpage signer bridge', () => {
 			await waitFor(() => catalogRequestCount >= 2 && publicRequestForwarded)
 			assert.equal(await publicRequest, '0x1111111111111111111111111111111111111111111111111111111111111111')
 		})
+	})
+
+	test('ignores unauthenticated background replies and reconnect controls on the observed bridge endpoint', async () => {
+		let catalogRequestCount = 0
+		let pendingPublicRequest: InpageRequest | undefined
+		const {
+			fakeWindow,
+			sendBackgroundMessage,
+			sendUnauthenticatedBridgeMessage,
+			notifyUnauthenticatedBridgeReconnected,
+		} = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'signer_providers_changed') {
+					catalogRequestCount++
+					reply({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: { preferredSignerRdns: undefined, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true },
+					})
+					return true
+				}
+				if (request.method === 'eth_sendTransaction') {
+					pendingPublicRequest = request
+					return true
+				}
+				return false
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?authenticated-content-script-direction', async () => {
+			await waitFor(() => catalogRequestCount === 1)
+			const publicRequest = fakeWindow.ethereum.request({ method: 'eth_sendTransaction', params: [] })
+			await waitFor(() => pendingPublicRequest !== undefined)
+			const request = pendingPublicRequest
+			if (request === undefined) throw new Error('Missing pending public request')
+			let publicRequestSettled = false
+			void publicRequest.finally(() => { publicRequestSettled = true })
+
+			sendUnauthenticatedBridgeMessage({
+				interceptorApproved: true,
+				requestId: request.requestId,
+				type: 'result',
+				method: request.method,
+				result: '0xforged',
+			})
+			notifyUnauthenticatedBridgeReconnected()
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(publicRequestSettled, false)
+			assert.equal(catalogRequestCount, 1)
+
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				requestId: request.requestId,
+				type: 'result',
+				method: request.method,
+				result: '0xauthenticated',
+			})
+			assert.equal(await publicRequest, '0xauthenticated')
+		})
+	})
+
+	test('retries explicit selection when reconnect interrupts each lease phase', async () => {
+		const providerInfo = {
+			uuid: '33333333-3333-4333-8333-333333333333',
+			name: 'Reconnect Wallet',
+			icon: 'data:image/svg+xml,<svg/>',
+			rdns: 'com.example.reconnect',
+		}
+		for (const interruptedMethod of ['begin_signer_provider_selection', 'signer_provider_selected', 'finish_signer_provider_selection']) {
+			const methodCounts = new Map<string, number>()
+			const { fakeWindow, notifyBridgeReconnected, sendBackgroundMessage } = createFakeWindow({
+				handleRequest: (request) => {
+					const methodCount = (methodCounts.get(request.method) ?? 0) + 1
+					methodCounts.set(request.method, methodCount)
+					return request.method === interruptedMethod && methodCount === 1
+				},
+			})
+			const announcedProvider = fakeWindow.ethereum
+			fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+				type: 'eip6963:announceProvider',
+				detail: { info: providerInfo, provider: announcedProvider },
+			}))
+
+			await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?selection-reconnect-${ interruptedMethod }`, async () => {
+				await waitFor(() => methodCounts.has('signer_providers_changed'))
+				sendBackgroundMessage({
+					interceptorApproved: true,
+					type: 'result',
+					method: 'select_signer_provider',
+					result: providerInfo.uuid,
+				})
+				await waitFor(() => methodCounts.get(interruptedMethod) === 1)
+				notifyBridgeReconnected()
+				await waitFor(() => (methodCounts.get(interruptedMethod) ?? 0) >= 2)
+				await waitFor(() => (methodCounts.get('finish_signer_provider_selection') ?? 0) >= 1)
+			})
+		}
 	})
 
 	test('annotates only public eth_requestAccounts requests for replay after disconnect', async () => {

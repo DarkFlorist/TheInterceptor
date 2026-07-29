@@ -12,6 +12,7 @@ import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { InterceptedRequestForward } from '../types/interceptor-messages.js'
+import { ICON_ACCESS_DENIED } from './constants.js'
 
 type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
 const IdsOfOpenedTabs = funtypes.Intersect(
@@ -171,9 +172,23 @@ const getTabStateKey = (tabId: number): `tabState_${ number }` => `tabState_${ t
 
 type TabStateItems = funtypes.Static<typeof TabStateItems>
 export const TabStateItems = funtypes.Record(funtypes.String, TabState)
+const LEGACY_ACCESS_DENIED_SHIELD_ICON = '../img/head-access-denied-shield.png'
+
+function normalizeLegacyTabStateIcons(items: unknown) {
+	if (typeof items !== 'object' || items === null) return items
+	return Object.fromEntries(Object.entries(items).map(([key, value]) => {
+		if (typeof value !== 'object' || value === null || !('tabIconDetails' in value)) return [key, value]
+		const tabIconDetails = value.tabIconDetails
+		if (typeof tabIconDetails !== 'object' || tabIconDetails === null || !('icon' in tabIconDetails)) return [key, value]
+		if (tabIconDetails.icon !== LEGACY_ACCESS_DENIED_SHIELD_ICON) return [key, value]
+		return [key, { ...value, tabIconDetails: { ...tabIconDetails, icon: ICON_ACCESS_DENIED } }]
+	}))
+}
+
+export const parseTabStateItems = (items: unknown) => TabStateItems.parse(normalizeLegacyTabStateIcons(items))
 
 export async function getTabStateFromStorage(tabId: number) {
-	return TabStateItems.parse(await browser.storage.local.get(getTabStateKey(tabId)))?.[getTabStateKey(tabId)] ?? undefined
+	return parseTabStateItems(await browser.storage.local.get(getTabStateKey(tabId)))?.[getTabStateKey(tabId)] ?? undefined
 }
 export async function setTabStateToStorage(tabId: number, tabState: TabState) {
 	await browser.storage.local.set({ [getTabStateKey(tabId)]: serialize(TabState, tabState) })

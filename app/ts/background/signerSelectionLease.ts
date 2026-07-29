@@ -7,6 +7,7 @@ type GateReservation = {
 
 type ActiveSignerSelectionLease = {
 	readonly tabId: number
+	readonly socket?: WebsiteSocket
 	readonly release: () => void
 	readonly timeout: ReturnType<typeof setTimeout>
 }
@@ -33,7 +34,7 @@ async function reserveSignerSelectionGate(tabId: number): Promise<GateReservatio
 	return { release }
 }
 
-export async function acquireSignerSelectionLease(tabId: number) {
+export async function acquireSignerSelectionLease(tabId: number, socket?: WebsiteSocket) {
 	const reservation = await reserveSignerSelectionGate(tabId)
 	const token = crypto.randomUUID()
 	const release = () => {
@@ -44,7 +45,7 @@ export async function acquireSignerSelectionLease(tabId: number) {
 		reservation.release()
 	}
 	const timeout = setTimeout(release, 30_000)
-	activeLeasesByToken.set(token, { tabId, release, timeout })
+	activeLeasesByToken.set(token, { tabId, socket, release, timeout })
 	return token
 }
 
@@ -62,6 +63,12 @@ export function signerSelectionLeaseIsActive(tabId: number, token: string) {
 export function releaseSignerSelectionLeasesForTab(tabId: number) {
 	for (const lease of activeLeasesByToken.values()) {
 		if (lease.tabId === tabId) lease.release()
+	}
+}
+
+export function releaseSignerSelectionLeasesForSocket(socket: WebsiteSocket) {
+	for (const lease of activeLeasesByToken.values()) {
+		if (lease.socket?.tabId === socket.tabId && lease.socket.connectionName === socket.connectionName) lease.release()
 	}
 }
 

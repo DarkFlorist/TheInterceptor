@@ -3,6 +3,7 @@ const contentScriptListenerGlobalKey = Symbol.for('TheInterceptor.listenContentS
 function listenContentScript(connectionName: string | undefined, diagnosticsSource: 'content-script' | 'document-start') {
 	const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
 	const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
+	const INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE = 'interceptor_bridge_initialized'
 	const INTERCEPTOR_BRIDGE_RECONNECTED_MESSAGE = 'interceptor_bridge_reconnected'
 	// This non-module inpage build cannot import the canonical background constant from bridgeRequestDelivery.ts; contentScriptReconnect.test.ts enforces that both values match.
 	const INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE = 'interceptor_bridge_acknowledgement'
@@ -41,6 +42,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 	let extensionPort: browser.runtime.Port | undefined 
 	let inpagePort: MessagePort | undefined
 	let inpageBridgeCapability: string | undefined
+	const contentScriptCapability = globalThis.crypto.randomUUID()
 	let hasConnectedExtensionPort = false
 
 	type BridgeRequestCandidate = {
@@ -303,6 +305,11 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		inpageBridgeCapability = messageEvent.data.bridgeCapability
 		inpagePort = port
 		inpagePort.onmessage = (portMessageEvent: MessageEvent<unknown>) => forwardInpageMessageToBackground(portMessageEvent.data)
+		inpagePort.postMessage({
+			type: INTERCEPTOR_BRIDGE_INITIALIZED_MESSAGE,
+			bridgeCapability: inpageBridgeCapability,
+			contentScriptCapability,
+		})
 	})
 
 	connect = () => {
@@ -353,7 +360,9 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 					reportInterceptorError(createForwardedDiagnosticsFromRaw(diagnosticsSource, 'forward background message', 'Inpage MessagePort is not connected', messageEvent, getForwardedDiagnosticsRequestContext(messageEvent)))
 					return
 				}
-				inpagePort.postMessage(withoutBridgeSettlementMarker(messageEvent))
+				const backgroundMessage = withoutBridgeSettlementMarker(messageEvent)
+				if (typeof backgroundMessage !== 'object' || backgroundMessage === null) throw new Error('Malformed message from background script')
+				inpagePort.postMessage({ ...backgroundMessage, contentScriptCapability })
 				checkAndThrowRuntimeLastError()
 				const settledBridgeRequestId = getSettledBridgeRequestId(messageEvent)
 				if (settledBridgeRequestId !== undefined) settleReplayableRequest(settledBridgeRequestId)
@@ -373,6 +382,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 			inpagePort.postMessage({
 				type: INTERCEPTOR_BRIDGE_RECONNECTED_MESSAGE,
 				bridgeCapability: inpageBridgeCapability,
+				contentScriptCapability,
 			})
 		}
 		return connectedExtensionPort
