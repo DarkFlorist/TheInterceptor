@@ -152,11 +152,10 @@ describe('interceptor access close handling', () => {
 		await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, request, undefined, await getSettings(), account, async () => undefined)
 
 		const postedMessages = browserMock.postedMessages as Array<{ method?: string, result?: unknown, requestId?: number }>
-		assert.deepEqual(postedMessages.map((message) => message.method), ['connect', 'accountsChanged', 'eth_accounts'])
-		assert.deepEqual(postedMessages.map((message) => message.requestId), [7, 7, 7])
-		assert.deepEqual(postedMessages[0]?.result, ['0x1'])
+		assert.deepEqual(postedMessages.map((message) => message.method), ['accountsChanged', 'eth_accounts'])
+		assert.deepEqual(postedMessages.map((message) => message.requestId), [7, 7])
+		assert.deepEqual(postedMessages[0]?.result, ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'])
 		assert.deepEqual(postedMessages[1]?.result, ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'])
-		assert.deepEqual(postedMessages[2]?.result, ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'])
 	})
 
 	test('serializes dialog close cleanup with matching request creation', async () => {
