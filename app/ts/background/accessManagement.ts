@@ -189,25 +189,27 @@ export async function setInterceptorDisabledForWebsite(website: Website, interce
 	})
 }
 
-export async function setAccess(website: Website, access: boolean, address: bigint | undefined) {
-	return await updateWebsiteAccess((previousWebsiteAccess) => {
-		const foundEntry = previousWebsiteAccess.find((entry) => entry.website.websiteOrigin === website.websiteOrigin)
-		if (foundEntry === undefined) return [...previousWebsiteAccess, { website, access, addressAccess: address === undefined || !access ? undefined : [ { address, access } ] }]
-		return previousWebsiteAccess.map((prevAccess) => {
-			if (prevAccess.website.websiteOrigin === website.websiteOrigin) {
-				const websiteData = mergeStoredWebsiteMetadata(prevAccess.website, website)
-				if (address === undefined) return modifyObject(prevAccess, { website: websiteData, access })
-				const addressAccess = { address, access }
-				const updatedEntry = modifyObject(prevAccess, { website: websiteData, access: prevAccess.access ? prevAccess.access : access })
-				if (prevAccess.addressAccess === undefined) return modifyObject(updatedEntry, { addressAccess: [addressAccess] })
-				if (prevAccess.addressAccess.find((x) => x.address === address) === undefined) {
-					return modifyObject(updatedEntry, { addressAccess: [ ...prevAccess.addressAccess, addressAccess ] })
-				}
-				return modifyObject(updatedEntry, { addressAccess: prevAccess.addressAccess.map((x) => (x.address === address ? addressAccess : x)) })
+function applyAccessDecision(previousWebsiteAccess: WebsiteAccessArray, website: Website, access: boolean, address: bigint | undefined) {
+	const foundEntry = previousWebsiteAccess.find((entry) => entry.website.websiteOrigin === website.websiteOrigin)
+	if (foundEntry === undefined) return [...previousWebsiteAccess, { website, access, addressAccess: address === undefined || !access ? undefined : [ { address, access } ] }]
+	return previousWebsiteAccess.map((prevAccess) => {
+		if (prevAccess.website.websiteOrigin === website.websiteOrigin) {
+			const websiteData = mergeStoredWebsiteMetadata(prevAccess.website, website)
+			if (address === undefined) return modifyObject(prevAccess, { website: websiteData, access })
+			const addressAccess = { address, access }
+			const updatedEntry = modifyObject(prevAccess, { website: websiteData, access: prevAccess.access ? prevAccess.access : access })
+			if (prevAccess.addressAccess === undefined) return modifyObject(updatedEntry, { addressAccess: [addressAccess] })
+			if (prevAccess.addressAccess.find((x) => x.address === address) === undefined) {
+				return modifyObject(updatedEntry, { addressAccess: [ ...prevAccess.addressAccess, addressAccess ] })
 			}
-			return prevAccess
-		})
+			return modifyObject(updatedEntry, { addressAccess: prevAccess.addressAccess.map((x) => (x.address === address ? addressAccess : x)) })
+		}
+		return prevAccess
 	})
+}
+
+export async function setAccess(website: Website, access: boolean, address: bigint | undefined) {
+	return await updateWebsiteAccess((previousWebsiteAccess) => applyAccessDecision(previousWebsiteAccess, website, access, address))
 }
 
 // gets active address if the website has been give access for it, otherwise returns undefined
@@ -468,6 +470,37 @@ export async function persistWebsiteAccessChange(
 		websiteTabConnections,
 		refreshedSettings,
 		promptForAccessesIfNeeded,
+	)
+	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+	return refreshedSettings
+}
+
+export async function persistAddressAccessForApprovedWebsite(
+	ethereum: EthereumClientService | undefined,
+	tokenPriceService: TokenPriceService | undefined,
+	resetSimulationServices: ResetSimulationServices | undefined,
+	websiteTabConnections: WebsiteTabConnections,
+	website: Website,
+	address: AddressBookEntry,
+): Promise<Settings | undefined> {
+	let accessStillAllowed = false
+	await updateWebsiteAccess((previousWebsiteAccess) => {
+		if (hasAccess(previousWebsiteAccess, website.websiteOrigin) !== 'hasAccess') return previousWebsiteAccess
+		const addressAccess = hasAddressAccess(previousWebsiteAccess, website.websiteOrigin, address)
+		if (addressAccess === 'noAccess' || addressAccess === 'interceptorDisabled') return previousWebsiteAccess
+		accessStillAllowed = true
+		if (addressAccess === 'hasAccess') return previousWebsiteAccess
+		return applyAccessDecision(previousWebsiteAccess, website, true, address.address)
+	})
+	if (!accessStillAllowed) return undefined
+	const refreshedSettings = await getSettings()
+	await updateWebsiteApprovalAccesses(
+		ethereum,
+		tokenPriceService,
+		resetSimulationServices,
+		websiteTabConnections,
+		refreshedSettings,
+		false,
 	)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 	return refreshedSettings
