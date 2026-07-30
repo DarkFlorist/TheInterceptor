@@ -19,18 +19,23 @@ function createDeferredSignal() {
 	return { promise, resolve: () => resolveSignal() }
 }
 
-function installBrowserMock({ deferFirstChainChangeRemoval = false } = {}) {
+function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3 }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3 } = {}) {
 	const storageState: Record<string, unknown> = {}
 	const chainChangeRemovalStarted = createDeferredSignal()
 	const chainChangeRemovalRelease = createDeferredSignal()
 	let chainChangeRemovalDeferred = false
+	const requestBlockingCalls = {
+		declarativeNetRequestUpdates: 0,
+		webRequestListenerAdds: 0,
+		webRequestListenerRemovals: 0,
+	}
 	;(globalThis as typeof globalThis & { browser: typeof globalThis.browser }).browser = {
 		runtime: {
 			lastError: null,
 			async sendMessage() {
 				return undefined
 			},
-			getManifest: () => ({ manifest_version: 3 }),
+			getManifest: () => ({ manifest_version: manifestVersion }),
 			onMessage: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
 			onConnect: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
 		},
@@ -87,8 +92,24 @@ function installBrowserMock({ deferFirstChainChangeRemoval = false } = {}) {
 		declarativeNetRequest: {
 			async getDynamicRules() { return [] },
 			async getSessionRules() { return [] },
-			async updateDynamicRules() { return undefined },
-			async updateSessionRules() { return undefined },
+			async updateDynamicRules() {
+				requestBlockingCalls.declarativeNetRequestUpdates += 1
+				return undefined
+			},
+			async updateSessionRules() {
+				requestBlockingCalls.declarativeNetRequestUpdates += 1
+				return undefined
+			},
+		},
+		webRequest: {
+			onBeforeRequest: {
+				addListener() {
+					requestBlockingCalls.webRequestListenerAdds += 1
+				},
+				removeListener() {
+					requestBlockingCalls.webRequestListenerRemovals += 1
+				},
+			},
 		},
 	} as unknown as typeof globalThis.browser
 	;(globalThis as typeof globalThis & { chrome: { runtime: { id: string } } }).chrome = { runtime: { id: 'test-extension' } }
@@ -96,6 +117,8 @@ function installBrowserMock({ deferFirstChainChangeRemoval = false } = {}) {
 	return {
 		waitForDeferredChainChangeRemoval: async () => await chainChangeRemovalStarted.promise,
 		releaseDeferredChainChangeRemoval: chainChangeRemovalRelease.resolve,
+		requestBlockingCalls,
+		readStoredValue: (key: string) => storageState[key],
 	}
 }
 
@@ -1735,17 +1758,12 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const requestAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 9)
 		assert.deepEqual(requestAccountsReplies.at(-1)?.result, ['0x4444444444444444444444444444444444444444'])
 		const requestAccountsReplyIndex = messages.findIndex((message) => message.method === 'eth_accounts' && message.requestId === 9)
-		const connectMessages = messages.filter((message) => message.method === 'connect')
-		const connectIndex = messages.findIndex((message) => message.method === 'connect')
 		const accountChangedMessages = messages.filter((message) => message.method === 'accountsChanged')
 		const accountChangedIndex = messages.findIndex((message) => message.method === 'accountsChanged')
 		assert.notEqual(requestAccountsReplyIndex, -1)
-		assert.notEqual(connectIndex, -1)
 		assert.notEqual(accountChangedIndex, -1)
-		assert.equal(connectIndex < accountChangedIndex, true)
 		assert.equal(accountChangedIndex < requestAccountsReplyIndex, true)
-		assert.deepEqual(connectMessages.map((message) => message.result), [['0x1']])
-		assert.deepEqual(connectMessages.map((message) => message.requestId), [9])
+		assert.equal(messages.some((message) => message.method === 'connect'), false)
 		assert.deepEqual(accountChangedMessages.map((message) => message.result), [[accountString]])
 		assert.deepEqual(accountChangedMessages.map((message) => message.requestId), [9])
 		const siblingAccountChangedMessages = siblingMessages.filter((message) => message.method === 'accountsChanged')
@@ -1810,72 +1828,80 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
-		assert.deepEqual(messages.filter((message) => message.method === 'connect').map((message) => message.requestId), [17])
+		assert.equal(messages.some((message) => message.method === 'connect'), false)
 		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.requestId), [17])
 		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 17).map((message) => message.result), [[accountString]])
-		assert.deepEqual(messages.filter((message) => message.method !== 'eth_accounts_reply').map((message) => message.method), ['request_signer_to_eth_requestAccounts', 'connect', 'accountsChanged', 'eth_accounts'])
+		assert.deepEqual(messages.filter((message) => message.method !== 'eth_accounts_reply').map((message) => message.method), ['request_signer_to_eth_requestAccounts', 'accountsChanged', 'eth_accounts'])
 		assert.deepEqual(siblingMessages.filter((message) => message.method === 'accountsChanged').map((message) => message.requestId), [undefined])
 		assert.deepEqual(siblingMessages.filter((message) => message.method === 'accountsChanged').map((message) => message.result), [[accountString]])
 	})
 
-	test('replays account state before resolving wallet_requestPermissions after signer refresh', async () => {
-		installBrowserMock()
-		const {
-			handleInterceptedRequest,
-			websiteSocketToString,
-			changeSimulationMode,
-			setUseSignersAddressAsActiveAddress,
-			updateWebsiteAccess,
-		} = await loadModules()
-		const websiteOrigin = 'https://example.test'
-		const website = { websiteOrigin, icon: undefined, title: undefined }
-		const account = 0x4646464646464646464646464646464646464646n
-		const accountString = '0x4646464646464646464646464646464646464646'
-		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
-		await setUseSignersAddressAsActiveAddress(false)
-		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+	for (const manifestVersion of [2, 3] as const) {
+		test(`replays only accountsChanged before wallet_requestPermissions resolves for manifest v${ manifestVersion }`, async () => {
+			const browserMock = installBrowserMock({ manifestVersion })
+			const {
+				handleInterceptedRequest,
+				websiteSocketToString,
+				changeSimulationMode,
+				setUseSignersAddressAsActiveAddress,
+				updateWebsiteAccess,
+				updateDeclarativeNetRequestBlocks,
+			} = await loadModules()
+			const websiteOrigin = `https://manifest-v${ manifestVersion }.example.test`
+			const website = { websiteOrigin, icon: undefined, title: undefined }
+			const account = 0x4646464646464646464646464646464646464646n
+			const accountString = '0x4646464646464646464646464646464646464646'
+			await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+			await setUseSignersAddressAsActiveAddress(false)
+			await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }], declarativeNetRequestBlockMode: 'block-all' }])
 
-		const socket = { tabId: 1, connectionName: 0n }
-		const { port: createdPort, messages } = createPort(socket.tabId, (message) => {
-			if (message.method !== 'request_signer_to_eth_requestAccounts') return
-			void handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			const socket = { tabId: 1, connectionName: 0n }
+			const { port: createdPort, messages } = createPort(socket.tabId, (message) => {
+				if (message.method !== 'request_signer_to_eth_requestAccounts') return
+				void handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+					interceptorRequest: true,
+					interceptorInternalRequest: true,
+					usingInterceptorWithoutSigner: false,
+					uniqueRequestIdentifier: { requestId: 104, requestSocket: socket },
+					method: 'eth_accounts_reply',
+					params: [{ signerProviderGeneration: 1, type: 'success', accounts: [accountString], requestAccounts: true }],
+				}, websiteTabConnections, noopPublishRpcConnectionStatus)
+			})
+			const port = createdPort
+			const connectionKey = websiteSocketToString(socket)
+			const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+				[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+			} }]])
+			await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+			const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+			const request = {
 				interceptorRequest: true,
-				interceptorInternalRequest: true,
 				usingInterceptorWithoutSigner: false,
-				uniqueRequestIdentifier: { requestId: 104, requestSocket: socket },
-				method: 'eth_accounts_reply',
-				params: [{ signerProviderGeneration: 1, type: 'success', accounts: [accountString], requestAccounts: true }],
-			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+				uniqueRequestIdentifier: { requestId: 19, requestSocket: socket },
+				method: 'wallet_requestPermissions',
+				params: [{ eth_accounts: {} }],
+			}
+
+			await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+			const permissionResult = [{
+				parentCapability: 'eth_accounts',
+				caveats: [{
+					type: 'restrictReturnedAccounts',
+					value: [accountString],
+				}],
+				invoker: websiteOrigin,
+			}]
+			assert.equal(messages.some((message) => message.method === 'connect'), false)
+			assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.requestId), [19])
+			assert.deepEqual(messages.filter((message) => message.method === 'wallet_requestPermissions' && message.requestId === 19).map((message) => message.result), [permissionResult])
+			assert.deepEqual(messages.filter((message) => message.method !== 'eth_accounts_reply').map((message) => message.method), ['request_signer_to_eth_requestAccounts', 'accountsChanged', 'wallet_requestPermissions'])
+			assert.equal(browserMock.readStoredValue('latestUnexpectedError'), undefined)
+			assert.equal(browserMock.requestBlockingCalls.webRequestListenerAdds > 0, manifestVersion === 2)
+			assert.equal(browserMock.requestBlockingCalls.webRequestListenerRemovals > 0, manifestVersion === 2)
+			assert.equal(browserMock.requestBlockingCalls.declarativeNetRequestUpdates > 0, manifestVersion === 3)
 		})
-		const port = createdPort
-		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
-			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
-		} }]])
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
-		const request = {
-			interceptorRequest: true,
-			usingInterceptorWithoutSigner: false,
-			uniqueRequestIdentifier: { requestId: 19, requestSocket: socket },
-			method: 'wallet_requestPermissions',
-			params: [{ eth_accounts: {} }],
-		}
-
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
-
-		const permissionResult = [{
-			parentCapability: 'eth_accounts',
-			caveats: [{
-				type: 'restrictReturnedAccounts',
-				value: [accountString],
-			}],
-			invoker: websiteOrigin,
-		}]
-		assert.deepEqual(messages.filter((message) => message.method === 'connect').map((message) => message.requestId), [19])
-		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.requestId), [19])
-		assert.deepEqual(messages.filter((message) => message.method === 'wallet_requestPermissions' && message.requestId === 19).map((message) => message.result), [permissionResult])
-		assert.deepEqual(messages.filter((message) => message.method !== 'eth_accounts_reply').map((message) => message.method), ['request_signer_to_eth_requestAccounts', 'connect', 'accountsChanged', 'wallet_requestPermissions'])
-	})
+	}
 
 	test('replays account state after already-approved eth_requestAccounts with cached active signer address', async () => {
 		installBrowserMock()
@@ -1913,13 +1939,12 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_requestAccounts'), false)
-		assert.deepEqual(messages.filter((message) => message.method === 'connect').map((message) => message.result), [['0x1']])
-		assert.deepEqual(messages.filter((message) => message.method === 'connect').map((message) => message.requestId), [11])
+		assert.equal(messages.some((message) => message.method === 'connect'), false)
 		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.result), [[accountString]])
 		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.requestId), [11])
 		const requestAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 11)
 		assert.deepEqual(requestAccountsReplies.at(-1)?.result, [accountString])
-		assert.deepEqual(messages.map((message) => message.method), ['connect', 'accountsChanged', 'eth_accounts'])
+		assert.deepEqual(messages.map((message) => message.method), ['accountsChanged', 'eth_accounts'])
 	})
 
 	test('replays account state for already-approved eth_requestAccounts on signer-only networks', async () => {
@@ -1974,11 +1999,10 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_requestAccounts'), false)
 		const requestAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 16)
 		assert.deepEqual(requestAccountsReplies.at(-1)?.result, [accountString])
-		assert.deepEqual(messages.filter((message) => message.method === 'connect').map((message) => message.result), [['0x1']])
-		assert.deepEqual(messages.filter((message) => message.method === 'connect').map((message) => message.requestId), [16])
+		assert.equal(messages.some((message) => message.method === 'connect'), false)
 		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.result), [[accountString]])
 		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.requestId), [16])
-		assert.deepEqual(messages.map((message) => message.method), ['connect', 'accountsChanged', 'eth_accounts'])
+		assert.deepEqual(messages.map((message) => message.method), ['accountsChanged', 'eth_accounts'])
 	})
 
 	test('does not expose an active address in connected_to_signer replies', async () => {
@@ -2639,8 +2663,8 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await siteApprovalResolution
 
 		const requestLifecycleMessages = messages.filter((message) => message.method === 'connect' || message.method === 'accountsChanged' || message.method === 'chainChanged')
-		assert.deepEqual(requestLifecycleMessages.map((message) => message.method), ['connect', 'accountsChanged'])
-		assert.deepEqual(requestLifecycleMessages.map((message) => message.requestId), [18, 18])
+		assert.deepEqual(requestLifecycleMessages.map((message) => message.method), ['accountsChanged'])
+		assert.deepEqual(requestLifecycleMessages.map((message) => message.requestId), [18])
 		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 18).at(-1)?.result, [accountString])
 		const siblingLifecycleMessages = siblingMessages.filter((message) => message.method === 'connect' || message.method === 'accountsChanged' || message.method === 'chainChanged')
 		assert.deepEqual(siblingLifecycleMessages.map((message) => message.method), ['connect', 'accountsChanged', 'chainChanged'])

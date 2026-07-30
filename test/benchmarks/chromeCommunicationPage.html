@@ -72,6 +72,9 @@
 					accounts: undefined,
 					error: undefined,
 					errorCode: undefined,
+					connectEvents: 0,
+					accountsChangedEvents: 0,
+					eventOrder: [],
 				}
 				const statusElement = document.getElementById('status')
 
@@ -100,10 +103,29 @@
 					try {
 						const ethereum = await waitForEthereum()
 						updateState('provider-ready')
-						updateState('requesting-access')
-						const accounts = await ethereum.request({
-							method: 'eth_requestAccounts',
+						ethereum.on('connect', () => {
+							state.connectEvents += 1
+							state.eventOrder.push('connect')
 						})
+						ethereum.on('accountsChanged', () => {
+							state.accountsChangedEvents += 1
+							state.eventOrder.push('accountsChanged')
+						})
+						updateState('requesting-access')
+						const useWalletRequestPermissions = new URLSearchParams(location.search).get('flow') === 'wallet-request-permissions'
+						let accounts
+						if (useWalletRequestPermissions) {
+							await ethereum.request({
+								method: 'wallet_requestPermissions',
+								params: [{ eth_accounts: {} }],
+							})
+							state.eventOrder.push('permissionsResolved')
+							accounts = await ethereum.request({ method: 'eth_accounts' })
+							state.eventOrder.push('accountsResolved')
+						} else {
+							accounts = await ethereum.request({ method: 'eth_requestAccounts' })
+							state.eventOrder.push('accountsResolved')
+						}
 						updateState('access-granted', { accounts: Array.isArray(accounts) ? accounts : [] })
 					} catch (error) {
 						const message = error instanceof Error ? error.message : String(error)

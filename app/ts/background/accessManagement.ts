@@ -237,13 +237,19 @@ export function sendProviderConnectionEventsToPort(
 	socket: WebsiteSocket,
 	settings: Settings,
 	accounts: readonly bigint[],
-	options: { readonly requestId?: number, readonly includeChainChanged?: boolean } = {},
 ) {
-	const requestScope = options.requestId === undefined ? {} : { requestId: options.requestId }
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId], ...requestScope })
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: accounts, ...requestScope })
-	if (options.includeChainChanged === false) return
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'chainChanged', result: settings.activeRpcNetwork.chainId, ...requestScope })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId] })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: accounts })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'chainChanged', result: settings.activeRpcNetwork.chainId })
+}
+
+export function sendAccountsChangedToPort(
+	websiteTabConnections: WebsiteTabConnections,
+	socket: WebsiteSocket,
+	accounts: readonly bigint[],
+	requestId: number,
+) {
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: accounts, requestId })
 }
 
 function disconnectFromPort(
