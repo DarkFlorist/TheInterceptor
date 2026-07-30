@@ -1873,18 +1873,11 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
-	test('delivers request-scoped connect and accountsChanged before eth_requestAccounts resumes even when address is cached', async () => {
+	test('delivers request-scoped accountsChanged without connect before eth_requestAccounts resumes even when address is cached', async () => {
 		const signerAccount = '0x1111111111111111111111111111111111111111'
 		const { fakeWindow, sendBackgroundMessage, signerRequests } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageForRequest) => {
 				if (request.method !== 'eth_requestAccounts') return false
-				sendBackgroundMessageForRequest({
-					interceptorApproved: true,
-					requestId: request.requestId,
-					type: 'result',
-					method: 'connect',
-					result: ['0x1'],
-				})
 				sendBackgroundMessageForRequest({
 					interceptorApproved: true,
 					requestId: request.requestId,
@@ -1943,11 +1936,11 @@ describe('inpage signer bridge', () => {
 
 			assert.deepEqual(accountReply, [signerAccount])
 			assert.deepEqual(accountEvents, [[signerAccount]])
-			assert.deepEqual(events, ['connect', 'accountsChanged', 'resolved'])
+			assert.deepEqual(events, ['accountsChanged', 'resolved'])
 		})
 	})
 
-	test('delivers request-scoped connect and accountsChanged before wallet_requestPermissions resumes', async () => {
+	test('delivers request-scoped accountsChanged without connect before wallet_requestPermissions resumes', async () => {
 		const signerAccount = '0x1212121212121212121212121212121212121212'
 		const permissions = [{
 			parentCapability: 'eth_accounts',
@@ -1960,13 +1953,6 @@ describe('inpage signer bridge', () => {
 		const { fakeWindow, signerRequests } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageForRequest) => {
 				if (request.method !== 'wallet_requestPermissions') return false
-				sendBackgroundMessageForRequest({
-					interceptorApproved: true,
-					requestId: request.requestId,
-					type: 'result',
-					method: 'connect',
-					result: ['0x1'],
-				})
 				sendBackgroundMessageForRequest({
 					interceptorApproved: true,
 					requestId: request.requestId,
@@ -2008,7 +1994,7 @@ describe('inpage signer bridge', () => {
 			})
 
 			assert.deepEqual(permissionReply, permissions)
-			assert.deepEqual(events, ['connect', 'accountsChanged', 'resolved'])
+			assert.deepEqual(events, ['accountsChanged', 'resolved'])
 		})
 	})
 

@@ -7,7 +7,7 @@ import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type Resolved
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
-import { clearWebsiteConnectionIntent, hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, persistAddressAccessForApprovedWebsite, persistWebsiteAccessChange, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, sendProviderConnectionEventsToPort, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
+import { clearWebsiteConnectionIntent, hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, persistAddressAccessForApprovedWebsite, persistWebsiteAccessChange, sendAccountsChangedToPort, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import { getActiveAddressEntry, identifyAddress } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { assertNever } from '../utils/typescript.js'
@@ -18,7 +18,7 @@ import { JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureEr
 import { InterceptedRequest, type UniqueRequestIdentifier, type WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { EthereumJsonRpcRequest, type EthGetStorageAtParams, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
+import { EthereumJsonRpcRequest, type EthGetStorageAtParams, RequestPermissions, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
 import type { RpcNetwork } from '../types/rpc.js'
@@ -439,10 +439,10 @@ function getApprovedAccountsForAccountRequest(request: InterceptedRequest, resol
 	return getAccountRequestResultAccounts(resolved)
 }
 
-function replayProviderStateForAccountRequest(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, settings: Settings, resolved: RPCReply, activeAddress: bigint | undefined) {
+function replayProviderStateForAccountRequest(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, resolved: RPCReply, activeAddress: bigint | undefined) {
 	const accounts = getApprovedAccountsForAccountRequest(request, resolved, activeAddress)
 	if (accounts === undefined || accounts.length === 0) return
-	sendProviderConnectionEventsToPort(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, settings, accounts, { requestId: request.uniqueRequestIdentifier.requestId, includeChainChanged: false })
+	sendAccountsChangedToPort(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, accounts, request.uniqueRequestIdentifier.requestId)
 }
 
 async function persistApprovedAccountsForAccountRequest(
@@ -454,12 +454,11 @@ async function persistApprovedAccountsForAccountRequest(
 	website: Website,
 	resolved: RPCReply,
 	activeAddress: bigint | undefined,
-): Promise<Settings | undefined> {
+): Promise<void> {
 	const accounts = getApprovedAccountsForAccountRequest(request, resolved, activeAddress)
-	if (accounts === undefined || accounts.length === 0) return undefined
+	if (accounts === undefined || accounts.length === 0) return
 
 	const settings = await getSettings()
-	let storedAddressAccess = false
 	for (const account of accounts) {
 		const addressEntry = await getActiveAddressEntry(account)
 		const existingApprovalState = getWebsiteAddressAccessApprovalState(settings.websiteAccess, website.websiteOrigin, addressEntry)
@@ -475,11 +474,7 @@ async function persistApprovedAccountsForAccountRequest(
 			account,
 			false,
 		)
-		storedAddressAccess = true
 	}
-
-	if (!storedAddressAccess) return settings
-	return await getSettings()
 }
 
 async function revokeWebsitePermissions(
@@ -598,7 +593,8 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	const addressAccess = activeAddress === undefined
 		? undefined
 		: getWebsiteAddressAccessApprovalState(settings.websiteAccess, websiteOrigin, activeAddress)
-	const useExistingSiteApproval = request.method === 'eth_requestAccounts'
+	const requestsAccountPermission = request.method === 'eth_requestAccounts' || RequestPermissions.safeParse(request).success
+	const useExistingSiteApproval = requestsAccountPermission
 		&& getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) === 'hasAccess'
 		&& addressAccess === 'askAccess'
 	const verifyRequestAccess = () => verifyAccess(
@@ -698,7 +694,7 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 			return await executionSimulationStatePromise
 		}
 		const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress, publishRpcConnectionStatus)
-		const refreshedSettings = await persistApprovedAccountsForAccountRequest(
+		await persistApprovedAccountsForAccountRequest(
 			ethereum,
 			tokenPriceService,
 			resetSimulationServices,
@@ -708,7 +704,7 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 			resolved,
 			activeAddress,
 		)
-		replayProviderStateForAccountRequest(websiteTabConnections, request, refreshedSettings ?? settings, resolved, activeAddress)
+		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress)
 		return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
 	} catch (error: unknown) {
 		if (isFailedToFetchError(error)) {

@@ -308,13 +308,15 @@ export const GetCode = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(EthereumAddress, EthereumBlockTag)
 }).asReadonly()
 
-type RequestPermissions = funtypes.Static<typeof RequestPermissions>
-const RequestPermissions = funtypes.ReadonlyObject({
+const EmptyPermissionOptions = funtypes.Sealed(funtypes.ReadonlyObject({}))
+const RequestPermissionsParams = funtypes.Sealed(funtypes.ReadonlyObject({ eth_accounts: EmptyPermissionOptions }), { deep: true })
+
+export type RequestPermissions = funtypes.Static<typeof RequestPermissions>
+export const RequestPermissions = funtypes.ReadonlyObject({
 	method: funtypes.Literal('wallet_requestPermissions'),
-	params: funtypes.ReadonlyTuple( funtypes.ReadonlyObject({ eth_accounts: funtypes.ReadonlyObject({ }) }) )
+	params: funtypes.ReadonlyTuple(RequestPermissionsParams)
 }).asReadonly()
 
-const EmptyPermissionOptions = funtypes.Sealed(funtypes.ReadonlyObject({}))
 const WalletRevokePermissionsParams = funtypes.Sealed(funtypes.ReadonlyObject({ eth_accounts: EmptyPermissionOptions }), { deep: true })
 
 export type WalletRevokePermissions = funtypes.Static<typeof WalletRevokePermissions>
