@@ -13,6 +13,8 @@ import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
+import type { RichToken } from '../types/richMode.js'
+import { filterRichTokensSupportedByAddressBook, sameRichTokenIdentity } from '../utils/richTokens.js'
 
 export const defaultActiveAddresses: AddressBookEntries = [
 	{
@@ -80,6 +82,7 @@ type StartupStorageDefaults = {
 	activeRpcNetwork: RpcNetwork
 	makeCurrentAddressRich: boolean
 	fixedAddressRichList: readonly RichListElement[]
+	richTokens: readonly RichToken[]
 }
 
 async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDefaults>(key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
@@ -136,6 +139,7 @@ export async function updateMakeCurrentAddressRich(update: (makeCurrentAddressRi
 
 export const setFixedMakeMeRichList = async (fixedAddressRichList: readonly RichListElement[]) => await browserStorageLocalSet({ fixedAddressRichList })
 export async function getFixedAddressRichList() { return await getParsedStorageValueOrDefault('fixedAddressRichList', []) }
+export async function getRichTokens() { return await getParsedStorageValueOrDefault('richTokens', []) }
 
 function toComparableRichListElement(element: RichListElement): RichListElement {
 	return {
@@ -161,6 +165,38 @@ export async function updateFixedMakeMeRichList(update: (fixedAddressRichList: r
 		})) return false
 		await setFixedMakeMeRichList(next)
 		return true
+	})
+}
+
+export async function updateRichTokens(update: (richTokens: readonly RichToken[]) => readonly RichToken[]) {
+	return await makeMeRichSettingsSemaphore.execute(async () => {
+		const previous = await getRichTokens()
+		const next = update(previous)
+		await browserStorageLocalSet({ richTokens: next })
+		return next
+	})
+}
+
+export async function reconcileRichTokensWithAddressBook() {
+	return await makeMeRichSettingsSemaphore.execute(async () => {
+		const previous = await getRichTokens()
+		const supported = filterRichTokensSupportedByAddressBook(previous, await getUserAddressBookEntries())
+		if (supported.length !== previous.length) await browserStorageLocalSet({ richTokens: supported })
+		return supported
+	})
+}
+
+export async function updateRichTokenAmount(chainId: bigint, tokenAddress: bigint, tokenId: bigint | undefined, amount: bigint) {
+	return await makeMeRichSettingsSemaphore.execute(async () => {
+		const previous = await getRichTokens()
+		const identity = { tokenAddress, tokenId }
+		const existing = previous.find((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity))
+		if (existing === undefined) return undefined
+		const richToken = { ...existing, amount }
+		await browserStorageLocalSet({
+			richTokens: previous.map((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity) ? richToken : token),
+		})
+		return richToken
 	})
 }
 
@@ -284,6 +320,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])
 		})
 	}
+	await reconcileRichTokensWithAddressBook()
 }
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })

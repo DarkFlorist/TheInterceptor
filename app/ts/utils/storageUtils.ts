@@ -12,6 +12,7 @@ import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { InterceptedRequestForward } from '../types/interceptor-messages.js'
+import { RichToken } from '../types/richMode.js'
 import { ICON_ACCESS_DENIED } from './constants.js'
 
 type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
@@ -82,6 +83,7 @@ const LocalStorageItemsRuntype = funtypes.ReadonlyPartial({
 	ensLabelHashes: ENSLabelHashes,
 	preSimulationBlockTimeManipulation: BlockTimeManipulation,
 	fixedAddressRichList: funtypes.ReadonlyArray(RichListElement),
+	richTokens: funtypes.ReadonlyArray(RichToken),
 	fetchSimulationStackRequestPromise: funtypes.Union(funtypes.Undefined, PendingFetchSimulationStackRequestPromise),
 	pendingWatchAssetRequests: funtypes.ReadonlyArray(StoredWatchAssetRequest),
 	popupRefreshGeneration: funtypes.Number,
@@ -122,6 +124,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('ensLabelHashes'),
 	funtypes.Literal('preSimulationBlockTimeManipulation'),
 	funtypes.Literal('fixedAddressRichList'),
+	funtypes.Literal('richTokens'),
 	funtypes.Literal('fetchSimulationStackRequestPromise'),
 	funtypes.Literal('pendingWatchAssetRequests'),
 	funtypes.Literal('popupRefreshGeneration'),

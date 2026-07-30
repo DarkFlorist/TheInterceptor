@@ -15,6 +15,7 @@ import type { ReadonlySignal, Signal } from '@preact/signals'
 import { SimulationStackVersion, WalletWatchAssetParameters } from './JsonRpc-types.js'
 import type { EnrichedRichListElement } from './interceptor-reply-messages.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
+import type { RichTokenOption } from './richMode.js'
 
 export type InterceptorAccessListParams = {
 	goHome: () => void,
@@ -54,6 +55,7 @@ export type HomeParams = {
 	interceptorDisabled: Signal<boolean>
 	preSimulationBlockTimeManipulation: Signal<BlockTimeManipulation | undefined>
 	fixedAddressRichList: Signal<readonly EnrichedRichListElement[]>
+	richTokenOptions: Signal<readonly RichTokenOption[]>
 	numberOfAddressesMadeRich: Signal<number>
 	isInitialHomeDataLoaded: Signal<boolean>
 	isFreshHomeDataLoaded: Signal<boolean>
@@ -79,6 +81,7 @@ export type FirstCardParams = {
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>
 	richList: Signal<readonly EnrichedRichListElement[]>
+	richTokenOptions: Signal<readonly RichTokenOption[]>
 	tabIconDetails: Signal<TabIconDetails>
 	tabState: Signal<TabState | undefined>
 	renameAddressCallBack: RenameAddressCallBack,

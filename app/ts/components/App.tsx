@@ -48,6 +48,7 @@ export function App() {
 		popupRefreshAppliedGeneration,
 		fixedAddressRichList,
 		makeCurrentAddressRich,
+		richTokenOptions,
 		simulationMode,
 		numberOfAddressesMadeRich,
 	} = useLiveSimulationHomeData({
@@ -257,6 +258,7 @@ export function App() {
 						activeSimulationAddress = { activeSimulationAddress }
 						changeActiveAddress = { changeActiveAddress }
 						makeCurrentAddressRich = { makeCurrentAddressRich }
+						richTokenOptions = { richTokenOptions }
 						activeAddresses = { activeAddresses }
 						simulationMode = { simulationMode }
 						tabIconDetails = { tabIconDetails }

@@ -11,6 +11,7 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { DEFAULT_TAB_CONNECTION } from '../../utils/constants.js'
 import { useSignal } from '@preact/signals'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../../utils/popupPerformance.js'
+import type { RichTokenOption } from '../../types/richMode.js'
 
 type LiveSimulationHomeDataOptions = {
 	answerMainPopupOpen: boolean
@@ -63,6 +64,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 	const popupIconRefreshGeneration = useSignal(0)
 	const fixedAddressRichList = useSignal<readonly EnrichedRichListElement[]>([])
 	const makeCurrentAddressRich = useSignal<boolean>(false)
+	const richTokenOptions = useSignal<readonly RichTokenOption[]>([])
 	const simulationMode = useSignal<boolean>(false)
 	const numberOfAddressesMadeRich = useSignal(0)
 
@@ -165,6 +167,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			activeAddresses.value = data.activeAddresses
 			interceptorDisabled.value = data.interceptorDisabled
 			makeCurrentAddressRich.value = data.makeCurrentAddressRich
+			richTokenOptions.value = data.richTokenOptions ?? []
 			fixedAddressRichList.value = data.richList
 			unexpectedError.value = data.latestUnexpectedError
 			if (!wasLoaded) options.onInitialSettings?.(data.settings)
@@ -302,6 +305,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 		popupRefreshAppliedGeneration,
 		fixedAddressRichList,
 		makeCurrentAddressRich,
+		richTokenOptions,
 		simulationMode,
 		numberOfAddressesMadeRich,
 	}

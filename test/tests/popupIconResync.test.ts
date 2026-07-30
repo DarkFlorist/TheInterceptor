@@ -8,10 +8,11 @@ import type { Settings } from '../../app/ts/types/interceptor-messages.js'
 import { installDomMock } from './domMock.js'
 import { ICON_SIGNING, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
 import { POPUP_PERFORMANCE_MARKS, clearPerformanceMarks } from '../../app/ts/utils/popupPerformance.js'
+import { MAX_RICH_TOKEN_AMOUNT } from '../../app/ts/utils/richTokens.js'
 
 type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => void
 
-function installBrowserMock() {
+function installBrowserMock(replyForMessage: (message: unknown) => unknown | Promise<unknown> = () => undefined) {
 	const sentMessages: unknown[] = []
 	let messageListener: RuntimeMessageListener | undefined
 
@@ -20,7 +21,7 @@ function installBrowserMock() {
 			lastError: null,
 			async sendMessage(message: unknown) {
 				sentMessages.push(message)
-				return undefined
+				return await replyForMessage(message)
 			},
 			getManifest: () => ({ manifest_version: 3 }),
 			onMessage: {
@@ -1065,4 +1066,154 @@ describe('popup icon sync', () => {
 			dom.restore()
 		}
 	})
+
+	test('renders configured ERC-20 and ERC-1155 rich balances with editable amounts', async () => {
+		const dom = installDomMock()
+		const clipboardMock = installClipboardMock()
+		const { messageListener } = installBrowserMock()
+		try {
+			Object.defineProperty(globalThis, 'window', {
+				value: {
+					document: dom.document,
+					addEventListener: () => undefined,
+					removeEventListener: () => undefined,
+				},
+				configurable: true,
+				writable: true,
+			})
+			await act(() => {
+				render(h(App, {}), dom.document.body)
+			})
+			const listener = messageListener()
+			assert.equal(typeof listener, 'function')
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 10, {
+						activeAddresses: [loadedAddressBookEntry],
+						settings: { ...defaultSettings, activeSimulationAddress: loadedAddress, simulationMode: true },
+						richTokenOptions: [{
+							chainId: '0x1',
+							tokenAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+							tokenType: 'ERC20',
+							tokenId: undefined,
+							name: 'USD Coin',
+							symbol: 'USDC',
+							decimals: '0x6',
+							amount: '0xe8d4a51000',
+							balanceSlot: '0x9',
+							erc1155StorageOrder: undefined,
+							enabled: true,
+						}, {
+							chainId: '0x1',
+							tokenAddress: '0x4444444444444444444444444444444444444444',
+							tokenType: 'ERC1155',
+							tokenId: '0x2a',
+							name: 'Game Items',
+							symbol: 'ITEM',
+							decimals: '0x0',
+							amount: '0xf4240',
+							balanceSlot: '0x3',
+							erc1155StorageOrder: 'TokenIdThenOwner',
+							enabled: true,
+						}],
+					}),
+				}, undefined, () => undefined)
+			})
+
+			const richHeader = collectElements(dom.document.body, 'header').find((header) => header.textContent?.includes('Make current account rich'))
+			assert.notEqual(richHeader, undefined)
+			await act(async () => {
+				if (richHeader !== undefined) await clickElement(richHeader)
+			})
+			assert.equal(hasAriaLabel(dom.document.body, 'Toggle rich token USDC'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Toggle rich token ITEM #42'), true)
+			const amountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'USDC rich amount')
+			assert.equal(amountInput?.getAttribute?.('value'), '1000000')
+			const erc1155AmountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'ITEM #42 rich amount')
+			assert.equal(erc1155AmountInput?.getAttribute?.('value'), '1000000')
+		} finally {
+			clipboardMock.restore()
+			dom.restore()
+		}
+	})
+
+	test('rejects rich token amounts above uint256 before sending a popup message', async () => {
+		const dom = installDomMock()
+		const clipboardMock = installClipboardMock()
+		const previousHTMLInputElement = globalThis.HTMLInputElement
+		const { messageListener, sentMessages } = installBrowserMock((message) => {
+			if (typeof message !== 'object' || message === null || !('method' in message) || message.method !== 'popup_modifyRichToken') return undefined
+			return { method: 'popup_modifyRichToken', result: { success: true } }
+		})
+		try {
+			Object.defineProperty(globalThis, 'window', {
+				value: {
+					document: dom.document,
+					addEventListener: () => undefined,
+					removeEventListener: () => undefined,
+				},
+				configurable: true,
+				writable: true,
+			})
+			await act(() => {
+				render(h(App, {}), dom.document.body)
+			})
+			const listener = messageListener()
+			assert.equal(typeof listener, 'function')
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 10, {
+						activeAddresses: [loadedAddressBookEntry],
+						settings: { ...defaultSettings, activeSimulationAddress: loadedAddress, simulationMode: true },
+						richTokenOptions: [{
+							chainId: '0x1',
+							tokenAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+							tokenType: 'ERC20',
+							tokenId: undefined,
+							name: 'USD Coin',
+							symbol: 'USDC',
+							decimals: '0x6',
+							amount: '0xe8d4a51000',
+							balanceSlot: '0x9',
+							erc1155StorageOrder: undefined,
+							enabled: true,
+						}],
+					}),
+				}, undefined, () => undefined)
+			})
+			sentMessages.splice(0)
+			const richHeader = collectElements(dom.document.body, 'header').find((header) => header.textContent?.includes('Make current account rich'))
+			await act(async () => {
+				if (richHeader !== undefined) await clickElement(richHeader)
+			})
+			const amountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'USDC rich amount')
+			if (amountInput === undefined) throw new Error('Expected USDC rich amount input')
+			Object.defineProperty(globalThis, 'HTMLInputElement', { configurable: true, value: amountInput.constructor })
+			Object.defineProperty(amountInput, 'value', { configurable: true, value: (MAX_RICH_TOKEN_AMOUNT + 1n).toString(), writable: true })
+			const changeHandler = amountInput.l === undefined ? undefined : Object.entries(amountInput.l).find(([key]) => key.startsWith('Change'))?.[1]
+			assert.notEqual(changeHandler, undefined)
+			await act(async () => {
+				await changeHandler?.({ target: amountInput })
+			})
+			assert.equal(dom.document.body.textContent?.includes('Token amount cannot exceed the maximum uint256 value.'), true)
+			assert.equal(sentMessages.length, 0)
+			Object.defineProperty(amountInput, 'value', { configurable: true, value: '2', writable: true })
+			await act(async () => {
+				await changeHandler?.({ target: amountInput })
+			})
+			assert.equal(dom.document.body.textContent?.includes('Token amount cannot exceed the maximum uint256 value.'), false)
+			assert.equal(sentMessages.length, 1)
+		} finally {
+			if (previousHTMLInputElement === undefined) {
+				Reflect.deleteProperty(globalThis, 'HTMLInputElement')
+			} else {
+				Object.defineProperty(globalThis, 'HTMLInputElement', { configurable: true, value: previousHTMLInputElement })
+			}
+			clipboardMock.restore()
+			dom.restore()
+		}
+	})
+
 })

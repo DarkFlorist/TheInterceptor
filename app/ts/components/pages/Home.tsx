@@ -7,7 +7,7 @@ import { ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIV
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
-import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
@@ -21,6 +21,9 @@ import { assertNever } from '../../utils/typescript.js'
 import { bigintSecondsToDate } from '../../utils/bigint.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
+import type { RichTokenOption } from '../../types/richMode.js'
+import { formatUnits, parseUnits } from '../../utils/ethereumUnits.js'
+import { MAX_RICH_TOKEN_AMOUNT, sameRichTokenIdentity } from '../../utils/richTokens.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
 import { updateRichListAddress } from '../../utils/richList.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
@@ -318,11 +321,12 @@ type RichListParams = {
 	makeCurrentAddressRich: Signal<boolean>
 	activeAddress: Signal<AddressBookEntry | undefined>
 	richList: Signal<readonly EnrichedRichListElement[]>
+	richTokenOptions: Signal<readonly RichTokenOption[]>
 	renameAddressCallBack: RenameAddressCallBack
 	isInitialHomeDataLoaded: Signal<boolean>
 }
 
-function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddressCallBack, isInitialHomeDataLoaded }: RichListParams) {
+function RichList({ makeCurrentAddressRich, activeAddress, richList, richTokenOptions, renameAddressCallBack, isInitialHomeDataLoaded }: RichListParams) {
 	async function enableMakeCurrentAddressRich(enabled: boolean) {
 		if (!isInitialHomeDataLoaded.value) return
 		sendPopupMessageToBackgroundPage( { method: 'popup_modifyMakeMeRich', data: { add: enabled, address: 'CurrentAddress'} } )
@@ -341,6 +345,63 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 	}
 
 	const showList = useSignal<boolean>(false)
+	const richTokenError = useSignal<string | undefined>(undefined)
+	const richTokenPending = useSignal(false)
+	const getRichTokenLabel = (option: RichTokenOption) => option.tokenId === undefined ? option.symbol : `${ option.symbol } #${ option.tokenId.toString() }`
+
+	const setRichTokenEnabled = async (option: RichTokenOption, enabled: boolean) => {
+		if (richTokenPending.value) return
+		richTokenPending.value = true
+		richTokenError.value = undefined
+		const reply = await sendPopupMessageWithReply({
+			method: 'popup_modifyRichToken',
+			data: { action: enabled ? 'Add' : 'Remove', tokenAddress: option.tokenAddress, tokenId: option.tokenId },
+		})
+		richTokenPending.value = false
+		if (reply === undefined) {
+			richTokenError.value = 'The background service did not return a token funding result.'
+			return
+		}
+		if (reply.result.success === false) {
+			richTokenError.value = reply.result.error
+			return
+		}
+		const configuredRichToken = reply.result.richToken
+		richTokenOptions.value = enabled
+			? richTokenOptions.value.some((entry) => sameRichTokenIdentity(entry, option))
+				? richTokenOptions.value.map((entry) => sameRichTokenIdentity(entry, option)
+					? { ...(configuredRichToken ?? entry), enabled: true }
+					: entry)
+				: configuredRichToken === undefined
+					? richTokenOptions.value
+					: richTokenOptions.value
+			: richTokenOptions.value.map((entry) => sameRichTokenIdentity(entry, option) ? { ...entry, enabled: false, balanceSlot: undefined, erc1155StorageOrder: undefined } : entry)
+	}
+
+	const setRichTokenAmount = async (option: RichTokenOption, input: HTMLInputElement) => {
+		richTokenError.value = undefined
+		const amount = parseUnits(input.value, Number(option.decimals))
+		if (amount === undefined || amount <= 0n) {
+			richTokenError.value = `Enter a positive ${ option.symbol } amount with at most ${ option.decimals.toString() } decimal places.`
+			input.value = formatUnits(option.amount, Number(option.decimals))
+			return
+		}
+		if (amount > MAX_RICH_TOKEN_AMOUNT) {
+			richTokenError.value = 'Token amount cannot exceed the maximum uint256 value.'
+			input.value = formatUnits(option.amount, Number(option.decimals))
+			return
+		}
+		const reply = await sendPopupMessageWithReply({ method: 'popup_modifyRichToken', data: { action: 'SetAmount', tokenAddress: option.tokenAddress, tokenId: option.tokenId, amount } })
+		if (reply === undefined) {
+			richTokenError.value = 'The background service did not return a token funding result.'
+			return
+		}
+		if (reply.result.success === false) {
+			richTokenError.value = reply.result.error
+			return
+		}
+		richTokenOptions.value = richTokenOptions.value.map((entry) => sameRichTokenIdentity(entry, option) ? { ...entry, amount } : entry)
+	}
 
 	const activeAddressSetAsRichViaFixedAddressList = useComputed(() =>
 		richList.value.filter((element) => element.makingRich).some((element) => element.addressBookEntry.address === activeAddress.value?.address)
@@ -385,6 +446,16 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 							<SmallAddress addressBookEntry = { richListElement.addressBookEntry } renameAddressCallBack = { renameAddressCallBack } noCopying = { !isInitialHomeDataLoaded.value } noEditAddress = { !isInitialHomeDataLoaded.value }/>
 						</label>
 					) }
+					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap; padding-top: 0.75em;'> Token balances</p>
+					{ richTokenOptions.value.map((option) =>
+						<div style = 'display: grid; grid-template-columns: 1em minmax(4em, 1fr) minmax(5em, 8em); gap: 0.75em; align-items: center;' key = { `${ option.tokenAddress.toString() }-${ option.tokenId?.toString() ?? 'erc20' }` }>
+							<input type = 'checkbox' disabled = { richTokenPending.value } checked = { option.enabled } aria-label = { `Toggle rich token ${ getRichTokenLabel(option) }` } onInput = { event => { if (event.target instanceof HTMLInputElement) void setRichTokenEnabled(option, event.target.checked) } } />
+							<span class = 'paragraph checkbox-text'>{ getRichTokenLabel(option) }</span>
+							<input class = 'input is-small' aria-label = { `${ getRichTokenLabel(option) } rich amount` } disabled = { !option.enabled } value = { formatUnits(option.amount, Number(option.decimals)) } onChange = { event => { if (event.target instanceof HTMLInputElement) void setRichTokenAmount(option, event.target) } } />
+						</div>
+					) }
+					{ richTokenOptions.value.length === 0 ? <p class = 'help'>Add ERC-20 tokens or watched ERC-1155 token IDs to the address book to make them available here.</p> : <></> }
+					{ richTokenError.value === undefined ? <></> : <p class = 'help is-danger'>{ richTokenError.value }</p> }
 				</div>
 			</div>
 		}
@@ -493,7 +564,7 @@ function FirstCard(param: FirstCardParams) {
 				</> : !param.isFreshHomeDataLoaded.value ?
 					<SimulationControlsLoadingSkeleton/>
 				: <div class = 'popup-simulation-controls popup-data-reveal'>
-					<RichList activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
+					<RichList activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList } richTokenOptions = { param.richTokenOptions } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
 					<div class = 'popup-simulation-controls-gap'/>
 					<TimePicker
 						startText = 'Delay first transaction'
@@ -744,6 +815,7 @@ export function Home(param: HomeParams) {
 			changeActiveAddress = { param.changeActiveAddress }
 			makeCurrentAddressRich = { param.makeCurrentAddressRich }
 			richList = { param.fixedAddressRichList }
+			richTokenOptions = { param.richTokenOptions }
 			tabState = { param.tabState }
 			tabIconDetails = { param.tabIconDetails }
 			renameAddressCallBack = { param.renameAddressCallBack }
