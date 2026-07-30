@@ -313,6 +313,7 @@ export async function changeActiveAddressAndChain(
 		activeAddress?: bigint,
 		rpcNetwork?: RpcNetwork,
 	},
+	promptForAccessesIfNeeded = true,
 ) {
 
 	if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressforRichList()
@@ -333,7 +334,7 @@ export async function changeActiveAddressAndChain(
 	}
 
 	const updatedSettings = await getSettings()
-	const popupRefreshGeneration = await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings, true)
+	const popupRefreshGeneration = await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings, promptForAccessesIfNeeded)
 	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration })
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	await changeActiveAddressAndChainSemaphore.execute(async () => {
