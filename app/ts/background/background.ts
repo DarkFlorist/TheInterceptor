@@ -416,10 +416,11 @@ function replyWithEmptyPermissions(websiteTabConnections: WebsiteTabConnections,
 	return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'wallet_getPermissions' as const, result: [], uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 }
 
-function replyWithEmptyAccountIdentity(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
+function replyWithoutActiveAccount(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
 	switch (request.method) {
 		case 'eth_accounts': return replyWithEmptyAccounts(websiteTabConnections, request)
 		case 'wallet_getPermissions': return replyWithEmptyPermissions(websiteTabConnections, request)
+		case 'wallet_getCapabilities': return refuseAccess(websiteTabConnections, request)
 		default: throw new Error(`Unsupported account identity request method: ${ request.method }`)
 	}
 }
@@ -625,13 +626,16 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		const result: unknown = await handleInterceptedRequest(port, websiteOrigin, websitePromise, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, publishRpcConnectionStatus)
 		return result
 	}
-	if (access === 'hasAccess' && activeAddress === undefined && (request.method === 'eth_accounts' || request.method === 'wallet_getPermissions') && (!settings.simulationMode || settings.useSignersAddressAsActiveAddress)) {
+	if (access === 'hasAccess' && activeAddress === undefined && (request.method === 'eth_accounts' || request.method === 'wallet_getPermissions' || request.method === 'wallet_getCapabilities') && (!settings.simulationMode || settings.useSignersAddressAsActiveAddress)) {
 		const signerAccountsResult = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, false)
-		if (isSignerProviderDisconnectedError(signerAccountsResult.error)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountsResult.error)
+		if (isSignerProviderDisconnectedError(signerAccountsResult.error)) {
+			if (request.method === 'wallet_getCapabilities') return replyWithoutActiveAccount(websiteTabConnections, request)
+			return replyWithSignerAccountError(websiteTabConnections, request, signerAccountsResult.error)
+		}
 		const signerAccounts = signerAccountsResult.accounts
-		if (signerAccounts.length === 0) return replyWithEmptyAccountIdentity(websiteTabConnections, request)
+		if (signerAccounts.length === 0) return replyWithoutActiveAccount(websiteTabConnections, request)
 		const firstSignerAccount = signerAccounts[0]
-		if (firstSignerAccount === undefined) return replyWithEmptyAccountIdentity(websiteTabConnections, request)
+		if (firstSignerAccount === undefined) return replyWithoutActiveAccount(websiteTabConnections, request)
 		const refreshedSettings = await getSettings()
 		let refreshedActiveAddress = await getActiveAddressForRequest(refreshedSettings, websiteTabConnections, socket.tabId)
 		if (refreshedActiveAddress === undefined) {
@@ -641,9 +645,9 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 				if (isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) refreshedActiveAddress = firstSignerAddress
 			}
 		}
-		if (refreshedActiveAddress === undefined) return replyWithEmptyAccountIdentity(websiteTabConnections, request)
+		if (refreshedActiveAddress === undefined) return replyWithoutActiveAccount(websiteTabConnections, request)
 		const refreshedAccess = verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, refreshedSettings, true)
-		if (refreshedAccess !== 'hasAccess') return replyWithEmptyAccountIdentity(websiteTabConnections, request)
+		if (refreshedAccess !== 'hasAccess') return replyWithoutActiveAccount(websiteTabConnections, request)
 		return await handleContentScriptMessage(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request, await websitePromise, refreshedActiveAddress.address, publishRpcConnectionStatus)
 	}
 
