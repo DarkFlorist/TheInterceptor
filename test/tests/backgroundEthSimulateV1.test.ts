@@ -155,7 +155,7 @@ async function createApprovedDappHarness(ethSimulateV1Result?: unknown) {
 	const { port, messages } = createPort(socket.tabId)
 	const connectionKey = websiteSocketToString(socket)
 	const websiteTabConnections = new Map([[socket.tabId, { connections: {
-		[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		[connectionKey]: { port, socket, websiteOrigin, approved: true, approvedAddress: activeAddress, wantsToConnect: true },
 	} }]])
 	const { ethereum, requestHandler, tokenPriceService, resetSimulationServices } = createEthereum(rpcEntry, ethSimulateV1Result)
 	return { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, ethereum, requestHandler, tokenPriceService, resetSimulationServices }

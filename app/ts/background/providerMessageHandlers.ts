@@ -3,10 +3,10 @@ import type { TabState, WebsiteTabConnections } from '../types/user-interface-ty
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { changeActiveAddressAndChain } from './background.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
+import { getRpcNetworkForChain, getTabState, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { getPendingSignerChainChangeTokenForCallback, isPendingSignerChainChangeReply, resolveSignerChainChange } from './windows/changeChain.js'
-import { type ApprovalState, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
+import { type ApprovalState, suspendWebsitePortApprovalsForTab, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { reportUnexpectedError } from '../utils/errors.js'
@@ -78,6 +78,12 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 		}
 		const signerAccounts = signerAccountsReply.accounts
 		const activeSigningAddress = signerAccounts.length > 0 ? signerAccounts[0] : undefined
+		const settings = await getSettings()
+		const previousActiveSigningAddress = (await getTabState(tabId)).activeSigningAddress
+		const signerAddressControlsWebsiteAccess = !settings.simulationMode || settings.useSignersAddressAsActiveAddress
+		if (!signerAccountsReply.requestAccounts && signerAddressControlsWebsiteAccess && previousActiveSigningAddress !== activeSigningAddress) {
+			suspendWebsitePortApprovalsForTab(websiteTabConnections, tabId)
+		}
 		const tabStateChange = await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, {
 			...signerAccounts.length > 0 ? { signerAccountError: undefined } : {},
 			signerAccounts,
@@ -95,7 +101,6 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 		})
 		// Update the active address if we are using the signer's address. This remains inside the signer-state
 		// operation so a reconnect cannot interleave with the downstream address and chain mutations.
-		const settings = await getSettings()
 		if ((settings.useSignersAddressAsActiveAddress && settings.activeSimulationAddress !== signerAccounts[0])
 		|| (settings.simulationMode === false && tabStateChange.previousState.activeSigningAddress !== tabStateChange.newState.activeSigningAddress)) {
 			const changeActiveAddress = async () => await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {

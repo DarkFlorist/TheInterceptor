@@ -234,7 +234,11 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 					signerReply: funtypes.Unknown,
 				}),
 				funtypes.ReadonlyObject({
-					action: funtypes.Union(funtypes.Literal('accept'), funtypes.Literal('noResponse')),
+					action: funtypes.Literal('accept'),
+					quarantineAccepted: funtypes.Boolean,
+				}),
+				funtypes.ReadonlyObject({
+					action: funtypes.Literal('noResponse'),
 				}),
 				funtypes.ReadonlyObject({
 					action: funtypes.Literal('reject'),

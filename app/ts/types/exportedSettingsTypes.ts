@@ -51,6 +51,18 @@ const compatibilityExportedSettingsFields = {
 	metamaskCompatibilityMode: funtypes.Boolean,
 }
 
+const currentExportedSettingsFields = {
+	activeSimulationAddress: OptionalEthereumAddress,
+	rpcNetwork: RpcNetwork,
+	openedPage: Page,
+	useSignersAddressAsActiveAddress: funtypes.Boolean,
+	websiteAccess: WebsiteAccessArray,
+	simulationMode: funtypes.Boolean,
+	addressBookEntries: AddressBookEntries,
+	useTabsInsteadOfPopup: funtypes.Boolean,
+	metamaskCompatibilityMode: funtypes.Boolean,
+}
+
 export type ExportedSettings = funtypes.Static<typeof ExportedSettings>
 export const ExportedSettings = funtypes.Union(
 	funtypes.ReadonlyObject({
@@ -86,16 +98,11 @@ export const ExportedSettings = funtypes.Union(
 	funtypes.ReadonlyObject({
 		...exportedSettingsEnvelopeFields,
 		version: funtypes.Literal('1.4'),
-		settings: funtypes.ReadonlyObject({
-			activeSimulationAddress: OptionalEthereumAddress,
-			rpcNetwork: RpcNetwork,
-			openedPage: Page,
-			useSignersAddressAsActiveAddress: funtypes.Boolean,
-			websiteAccess: WebsiteAccessArray,
-			simulationMode: funtypes.Boolean,
-			addressBookEntries: AddressBookEntries,
-			useTabsInsteadOfPopup: funtypes.Boolean,
-			metamaskCompatibilityMode: funtypes.Boolean,
-		})
+		settings: funtypes.ReadonlyObject(currentExportedSettingsFields)
+	}),
+	funtypes.ReadonlyObject({
+		...exportedSettingsEnvelopeFields,
+		version: funtypes.Literal('1.5'),
+		settings: funtypes.ReadonlyObject(currentExportedSettingsFields)
 	}),
 )
