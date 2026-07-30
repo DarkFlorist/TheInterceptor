@@ -7,7 +7,7 @@ import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type Resolved
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
-import { clearWebsiteConnectionIntent, hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, persistAddressAccessForApprovedWebsite, persistWebsiteAccessChange, sendAccountsChangedToPort, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
+import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, persistAddressAccessFromWebsiteApproval, persistWebsiteAccessChange, sendAccountsChangedToPort, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import { getActiveAddressEntry, identifyAddress } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { assertNever } from '../utils/typescript.js'
@@ -494,8 +494,7 @@ async function revokeWebsitePermissions(
 		}
 	}))
 	clearWebsiteConnectionIntent(websiteTabConnections, websiteOrigin)
-	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), false)
-	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+	await finalizeWebsiteAccessChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), false)
 	return { type: 'result' as const, method: 'wallet_revokePermissions' as const, result: null }
 }
 
@@ -590,13 +589,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	}
 	const accountConnectionRequest = isAccountConnectionMethod(request.method)
 	const accountIdentityRequest = isAccountOnlyMethod(request.method)
-	const addressAccess = activeAddress === undefined
-		? undefined
-		: getWebsiteAddressAccessApprovalState(settings.websiteAccess, websiteOrigin, activeAddress)
 	const requestsAccountPermission = request.method === 'eth_requestAccounts' || RequestPermissions.safeParse(request).success
-	const useExistingSiteApproval = requestsAccountPermission
-		&& getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) === 'hasAccess'
-		&& addressAccess === 'askAccess'
 	const verifyRequestAccess = () => verifyAccess(
 		websiteTabConnections,
 		socket,
@@ -604,11 +597,12 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		websiteOrigin,
 		activeAddress,
 		settings,
-		accountIdentityRequest,
+		{
+			ignoreConnectionApproval: accountIdentityRequest,
+			allowWebsiteApprovalToGrantAddressAccess: requestsAccountPermission,
+		},
 	)
-	const access = useExistingSiteApproval
-		? 'hasAccess'
-		: accountConnectionRequest ? withSuppressedUnscopedConnectionEventsForSocket(socket, verifyRequestAccess) : verifyRequestAccess()
+	const access = accountConnectionRequest ? withSuppressedUnscopedConnectionEventsForSocket(socket, verifyRequestAccess) : verifyRequestAccess()
 	if (access === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
 	if (access === 'hasAccess' && activeAddress === undefined && accountConnectionRequest) {
 		// user has granted access to the site, but not to this account and the application is requesting accounts
@@ -636,7 +630,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 			}
 		}
 		if (refreshedActiveAddress === undefined) return replyWithEmptyAccountIdentity(websiteTabConnections, request)
-		const refreshedAccess = verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, refreshedSettings, true)
+		const refreshedAccess = verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, refreshedSettings, { ignoreConnectionApproval: true })
 		if (refreshedAccess !== 'hasAccess') return replyWithEmptyAccountIdentity(websiteTabConnections, request)
 		return await handleContentScriptMessage(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request, await websitePromise, refreshedActiveAddress.address, publishRpcConnectionStatus)
 	}
@@ -658,9 +652,13 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		case 'hasAccess': {
 			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
 			const website = await websitePromise
-			if (!useExistingSiteApproval) return await handleContentScriptMessage(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request, website, activeAddress.address, publishRpcConnectionStatus)
+			return await handleContentScriptMessage(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request, website, activeAddress.address, publishRpcConnectionStatus)
+		}
+		case 'websiteApprovalCanGrantAddressAccess': {
+			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
+			const website = await websitePromise
 			return await withSuppressedUnscopedConnectionEventsForSocketAsync(socket, async () => {
-				const persistedSettings = await persistAddressAccessForApprovedWebsite(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, website, activeAddress)
+				const persistedSettings = await persistAddressAccessFromWebsiteApproval(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, website, activeAddress)
 				if (persistedSettings === undefined) {
 					const currentSiteAccess = getWebsiteAccessApprovalState((await getSettings()).websiteAccess, websiteOrigin)
 					if (currentSiteAccess === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })

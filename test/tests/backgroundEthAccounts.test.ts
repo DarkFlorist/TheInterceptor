@@ -3511,4 +3511,26 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal(hasAccess([], websiteOrigin), 'askAccess')
 		assert.equal(hasAddressAccess([], websiteOrigin, address), 'askAccess')
 	})
+
+	test('verifyAccess exposes website-approved address persistence as a distinct decision', async () => {
+		installBrowserMock()
+		const { getSettings, updateWebsiteAccess, verifyAccess } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const address = { address: 0x1111111111111111111111111111111111111111n, askForAddressAccess: true, type: 'contact', name: 'Test Address' } as const
+		const socket = { tabId: 1, connectionName: 0n }
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [] }])
+		const settings = await getSettings()
+
+		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, settings), 'askAccess')
+		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, settings, {
+			allowWebsiteApprovalToGrantAddressAccess: true,
+		}), 'websiteApprovalCanGrantAddressAccess')
+
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: address.address, access: false }] }])
+		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, await getSettings(), {
+			allowWebsiteApprovalToGrantAddressAccess: true,
+		}), 'noAccess')
+	})
 })

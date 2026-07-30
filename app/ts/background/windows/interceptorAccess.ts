@@ -250,7 +250,7 @@ export async function requestAccessFromUser(
 			website.websiteOrigin,
 			activeAddressEntry,
 			currentSettings,
-			request !== undefined && isAccountConnectionMethod(request.method),
+			{ ignoreConnectionApproval: request !== undefined && isAccountConnectionMethod(request.method) },
 		)
 		if (request === undefined || !isAccountConnectionMethod(request.method)) return verify()
 		return withSuppressedUnscopedConnectionEventsForSocket(request.uniqueRequestIdentifier.requestSocket, verify)
