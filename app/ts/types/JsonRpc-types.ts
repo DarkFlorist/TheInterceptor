@@ -323,6 +323,28 @@ export const WalletRevokePermissions = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(WalletRevokePermissionsParams)
 }).asReadonly()
 
+const CanonicalChainIdParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
+	parse: value => {
+		if (!/^0x(?:0|[1-9a-fA-F][0-9a-fA-F]{0,63})$/.test(value)) return { success: false, message: `${ value } is not a canonical hex chain ID.` }
+		return { success: true, value: BigInt(value) }
+	},
+	serialize: value => {
+		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.` }
+		if (value < 0n) return { success: false, message: `${ value } is not a non-negative bigint.` }
+		return { success: true, value: `0x${ value.toString(16) }` }
+	},
+}
+const WalletCapabilitiesChainId = funtypes.String.withParser(CanonicalChainIdParser)
+
+export type WalletGetCapabilities = funtypes.Static<typeof WalletGetCapabilities>
+export const WalletGetCapabilities = funtypes.ReadonlyObject({
+	method: funtypes.Literal('wallet_getCapabilities'),
+	params: funtypes.Union(
+		funtypes.ReadonlyTuple(EthereumAddress),
+		funtypes.ReadonlyTuple(EthereumAddress, funtypes.ReadonlyArray(WalletCapabilitiesChainId)),
+	),
+}).asReadonly()
+
 export type GetTransactionCount = funtypes.Static<typeof GetTransactionCount>
 export const GetTransactionCount = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_getTransactionCount'),
@@ -477,6 +499,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	SwitchEthereumChainParams,
 	RequestPermissions,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions') }),
+	WalletGetCapabilities,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_requestAccounts') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice') }),

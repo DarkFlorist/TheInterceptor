@@ -41,6 +41,7 @@ import { getSimulationErrorAbis } from './simulationErrorAbi.js'
 import { dispatchPopupMessage } from './popupMessageDispatcher.js'
 import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
 import { createMethodHandlerFor, hasOwnKey } from '../utils/methodHandlers.js'
+import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
 
 if (initializeWatchAssetWindowListeners()) {
 	void processWatchAssetQueue(undefined).catch(async (error: unknown) => {
@@ -49,7 +50,7 @@ if (initializeWatchAssetWindowListeners()) {
 }
 
 const simulationAbortController = new AbortController()
-const RPC_PARSE_FAILURE_HANDLERS = [getWatchAssetRpcParseFailureReply]
+const RPC_PARSE_FAILURE_HANDLERS = [getWatchAssetRpcParseFailureReply, getWalletGetCapabilitiesParseFailureReply]
 const JSON_RPC_METHOD_NOT_FOUND = -32601
 const INTERNAL_PROVIDER_METHODS = [
 	'connected_to_signer',
@@ -262,6 +263,20 @@ async function handleRPCRequest(
 		wallet_watchAsset: rpcRequestHandler('wallet_watchAsset', async (_context, rpcRequest) => await handleWatchAssetRequest(ethereum, websiteTabConnections, request, website, rpcRequest, {}, activeAddress)),
 		wallet_requestPermissions: rpcRequestHandler('wallet_requestPermissions', async () => await requestPermissions(activeAddress, website)),
 		wallet_getPermissions: rpcRequestHandler('wallet_getPermissions', async () => await getPermissions(activeAddress, website)),
+		wallet_getCapabilities: rpcRequestHandler('wallet_getCapabilities', async (_context, rpcRequest) => {
+			if (rpcRequest.params[0] !== activeAddress) {
+				return {
+					type: 'result' as const,
+					method: rpcRequest.method,
+					error: {
+						code: METAMASK_ERROR_NOT_AUTHORIZED,
+						message: 'The requested account has not been authorized by the user.',
+					},
+				}
+			}
+			if (forwardToSigner) return { type: 'forwardToSigner' as const, replyWithSignersReply: true as const, ...request }
+			return { type: 'result' as const, method: rpcRequest.method, result: {} }
+		}),
 		eth_accounts: rpcRequestHandler('eth_accounts', async () => await getAccounts(activeAddress)),
 		eth_requestAccounts: rpcRequestHandler('eth_requestAccounts', async () => await getAccounts(activeAddress)),
 		eth_gasPrice: rpcRequestHandler('eth_gasPrice', async () => await gasPrice(ethereum)),
