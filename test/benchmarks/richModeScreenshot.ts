@@ -104,6 +104,7 @@ try {
 		if (!(richHeader instanceof HTMLElement)) throw new Error('Rich-mode header not found')
 		richHeader.click()
 	})()`)
+	await clickAriaLabel(popup, 'Choose rich token')
 	await waitForText(popup, 'USDC')
 	await waitForText(popup, 'ITEM #42')
 	await chooseToken(popup, 'USDC')
@@ -111,19 +112,20 @@ try {
 	await captureScreenshot(popup, availableScreenshotPath)
 
 	await clickAriaLabel(popup, 'Add selected rich token')
-	await waitForText(popup, 'Preparing USDC for simulation')
+	await waitForText(popup, 'Preparing USDC')
 	await sleep(150)
 	await captureScreenshot(popup, detectingScreenshotPath)
 	await waitForCondition(
 		popup,
 		'USDC enabled',
-		`document.querySelector(${ JSON.stringify('[aria-label="USDC rich amount"]') }) !== null && document.body?.textContent?.includes('Preparing USDC for simulation') === false`,
+		`document.querySelector(${ JSON.stringify('[aria-label="USDC rich amount"]') }) !== null && document.body?.textContent?.includes('Preparing USDC') === false`,
 	)
+	await clickAriaLabel(popup, 'Choose rich token')
 	await addToken(popup, 'ITEM #42')
 	await waitForCondition(
 		popup,
 		'ITEM #42 enabled',
-		`document.querySelector(${ JSON.stringify('[aria-label="ITEM #42 rich amount"]') }) !== null && document.body?.textContent?.includes('Preparing ITEM #42 for simulation') === false`,
+		`document.querySelector(${ JSON.stringify('[aria-label="ITEM #42 rich amount"]') }) !== null && document.body?.textContent?.includes('Preparing ITEM #42') === false`,
 	)
 	await sleep(250)
 	await captureScreenshot(popup, screenshotPath)

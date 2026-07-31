@@ -1146,6 +1146,10 @@ describe('popup icon sync', () => {
 			assert.equal(amountInput?.getAttribute?.('value'), '1000000')
 			const erc1155AmountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'ITEM #42 rich amount')
 			assert.equal(erc1155AmountInput?.getAttribute?.('value'), '1000000')
+			const chooseTokenButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Choose rich token')
+			await act(async () => {
+				if (chooseTokenButton !== undefined) await clickElement(chooseTokenButton)
+			})
 			const tokenPicker = collectElements(dom.document.body, 'select').find((select) => select.getAttribute?.('aria-label') === 'Choose address-book token')
 			assert.equal(tokenPicker?.textContent?.includes('DAI'), true)
 			assert.equal(hasAriaLabel(dom.document.body, 'DAI rich amount'), false)
