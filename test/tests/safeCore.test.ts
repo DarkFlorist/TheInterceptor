@@ -177,10 +177,15 @@ describe('Safe transaction support', () => {
 			isOwner: encodeFunctionCall(SAFE_ABI, 'isOwner', ['0x0000000000000000000000000000000000005678']).slice(0, 10),
 		}
 		const createEthereum = (ownerIsValid: boolean) => ({
-			async getCode() {
+			async getBlockNumber() {
+				return 123n
+			},
+			async getCode(_address: bigint, blockTag: bigint | string) {
+				assert.equal(blockTag, 123n)
 				return new Uint8Array([1])
 			},
-			async call(transaction: { readonly input: Uint8Array }) {
+			async call(transaction: { readonly input: Uint8Array }, blockTag: bigint | string) {
+				assert.equal(blockTag, 123n)
 				switch (bytesToHex(transaction.input).slice(0, 10)) {
 					case selectors.version: return encodeFunctionReturn(SAFE_ABI, 'VERSION', ['1.4.1'])
 					case selectors.nonce: return encodeFunctionReturn(SAFE_ABI, 'nonce', [3n])

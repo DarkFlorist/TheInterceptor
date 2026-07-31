@@ -9,7 +9,7 @@ import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import type { EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
-import { isSafeEntryWithSafeSigner, type AddressBookEntry } from '../types/addressBookTypes.js'
+import { getConfiguredSafeSigningEntry, isSafeEntryWithSafeSigner, type AddressBookEntry } from '../types/addressBookTypes.js'
 import type { RpcEntry } from '../types/rpc.js'
 import { UnexpectedError } from './subcomponents/Error.js'
 import { addressEditEntry } from './ui-utils.js'
@@ -230,14 +230,13 @@ export function App() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_clearUnexpectedError' })
 	}
 
-	const activeSafe = useComputed(() => activeAddresses.value.find((entry) =>
-		entry.address === activeSimulationAddress.value
-		&& entry.chainId === rpcNetwork.value?.chainId
-		&& isSafeEntryWithSafeSigner(entry)
-	))
-	const safeSigningMode = useComputed(() =>
-		!simulationMode.value && !useSignersAddressAsActiveAddress.value && activeSafe.value !== undefined
-	)
+	const activeSafe = useComputed(() => getConfiguredSafeSigningEntry(activeAddresses.value, {
+		simulationMode: simulationMode.value,
+		useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress.value,
+		activeSimulationAddress: activeSimulationAddress.value,
+		chainId: rpcNetwork.value?.chainId,
+	}))
+	const safeSigningMode = useComputed(() => activeSafe.value !== undefined)
 	const activeAddress = useComputed(() =>
 		simulationMode.value || safeSigningMode.value ? activeSimulationAddress.value : activeSigningAddress.value
 	)

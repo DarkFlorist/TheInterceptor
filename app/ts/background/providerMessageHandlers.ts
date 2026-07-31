@@ -19,7 +19,7 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
-import { isSafeEntryWithSafeSigner } from '../types/addressBookTypes.js'
+import { getConfiguredSafeSigningEntry } from '../types/addressBookTypes.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
@@ -40,9 +40,10 @@ function hasSignerCallbackAccess(websiteTabConnections: WebsiteTabConnections, t
 }
 
 async function getConfiguredSigningSafe(settings: Settings) {
-	if (settings.simulationMode || settings.useSignersAddressAsActiveAddress || settings.activeSimulationAddress === undefined) return undefined
-	return (await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId))
-		.find((entry) => entry.address === settings.activeSimulationAddress && isSafeEntryWithSafeSigner(entry))
+	return getConfiguredSafeSigningEntry(
+		await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId),
+		{ ...settings, chainId: settings.activeRpcNetwork.chainId },
+	)
 }
 
 export async function ethAccountsReply(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {

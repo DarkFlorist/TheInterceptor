@@ -129,6 +129,28 @@ export function isSafeEntryWithSafeSigner(entry: AddressBookEntry | undefined): 
 	return entry?.type === 'safe' && entry.safeSignerAddress !== undefined
 }
 
+export function getConfiguredSafeSigningEntry(
+	entries: readonly AddressBookEntry[],
+	settings: {
+		readonly simulationMode: boolean
+		readonly useSignersAddressAsActiveAddress: boolean
+		readonly activeSimulationAddress: EthereumAddress | undefined
+		readonly chainId: bigint | undefined
+	},
+): SafeEntryWithSafeSigner | undefined {
+	if (
+		settings.simulationMode
+		|| settings.useSignersAddressAsActiveAddress
+		|| settings.activeSimulationAddress === undefined
+		|| settings.chainId === undefined
+	) return undefined
+	return entries.find((entry): entry is SafeEntryWithSafeSigner =>
+		entry.address === settings.activeSimulationAddress
+		&& entry.chainId === settings.chainId
+		&& isSafeEntryWithSafeSigner(entry)
+	)
+}
+
 export function getSafeSignerAddresses(entry: SafeEntry) {
 	const configuredSigners = Array.from(new Set(entry.safeSignerAddresses ?? []))
 	if (entry.safeSignerAddress === undefined || configuredSigners.includes(entry.safeSignerAddress)) return configuredSigners

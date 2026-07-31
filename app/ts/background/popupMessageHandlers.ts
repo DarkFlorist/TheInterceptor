@@ -16,7 +16,7 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import { CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState } from '../types/visualizer-types.js'
 import { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { isJSON } from '../utils/json.js'
-import { getSafeSignerAddresses, isSafeEntryWithSafeSigner, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
+import { getConfiguredSafeSigningEntry, getSafeSignerAddresses, isSafeEntryWithSafeSigner, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
 import { checksummedAddress, generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
@@ -50,6 +50,7 @@ import { updateRichListAddress } from '../utils/richList.js'
 import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply.js'
 import { assertSafeEoaOwner, getSafeContractState } from '../safe/safeCore.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
+import { getPendingSafeSignerAddress } from './safeConfirmationResolver.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
 
 type TimestampedPopupVisualisation = {
@@ -92,8 +93,7 @@ export async function confirmDialog(ethereum: EthereumClientService, tokenPriceS
 			doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, confirmation.data.uniqueRequestIdentifier)
 		)
 		: undefined
-	const refreshedSafeSignerSelection = pending?.type === 'Transaction'
-		&& (pending.safeTransaction !== undefined || pending.safeExecutionSignerAddress !== undefined)
+	const refreshedSafeSignerSelection = pending !== undefined && getPendingSafeSignerAddress(pending) !== undefined
 		? await (async () => {
 			const refreshResult = await refreshSignerAccountsForTab(
 				websiteTabConnections,
@@ -618,11 +618,16 @@ export async function enableSimulationMode(
 		if (tabId !== undefined) sendCallbackToConfirmedSignerOwner(websiteTabConnections, tabId, { method: 'request_signer_chainId', result: [] })
 		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain
 		const networkToSwitch = chainToSwitch === undefined ? (await getRpcList())[0] : await getPrimaryRpcForChain(chainToSwitch)
-		const configuredSigningSafe = params.data === false && settings.activeSimulationAddress !== undefined
-			? (await getUserAddressBookEntriesForChainIdMorePreciseFirst(networkToSwitch?.chainId ?? settings.activeRpcNetwork.chainId)).find((entry) =>
-				entry.address === settings.activeSimulationAddress && isSafeEntryWithSafeSigner(entry)
-			)
-			: undefined
+		const targetChainId = networkToSwitch?.chainId ?? settings.activeRpcNetwork.chainId
+		const configuredSigningSafe = getConfiguredSafeSigningEntry(
+			await getUserAddressBookEntriesForChainIdMorePreciseFirst(targetChainId),
+			{
+				simulationMode: params.data,
+				useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
+				activeSimulationAddress: settings.activeSimulationAddress,
+				chainId: targetChainId,
+			},
+		)
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			simulationMode: params.data,
 			activeAddress: configuredSigningSafe?.address ?? await getSignerAccount(),

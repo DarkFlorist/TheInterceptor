@@ -68,14 +68,6 @@ export async function assertReviewedSafeSignerIsStillConfigured(ethereum: Ethere
 	}
 }
 
-export function getUnavailableSafeSignerMessage(expectedSigner: bigint, signerName: string, signerAccounts: readonly bigint[]) {
-	const expectedAddress = checksummedAddress(expectedSigner)
-	const exposedAccounts = signerAccounts.length === 0
-		? 'no accounts'
-		: signerAccounts.map(checksummedAddress).join(', ')
-	return `The configured Gnosis Safe signer is not available in the connected signer wallet. Expected ${ expectedAddress }, but ${ signerName } currently exposes ${ exposedAccounts }.`
-}
-
 export async function getSafeSignerMismatchApprovalStatus(
 	tabId: number,
 	configuredSafeSigner: bigint,
@@ -105,6 +97,13 @@ export async function getSafeSignerMismatchApprovalStatus(
 	}
 }
 
+export function getPendingSafeSignerAddress(pending: PendingTransactionOrSignableMessage) {
+	if (pending.type === 'Transaction') {
+		return pending.safeTransaction?.safeSignerAddress ?? pending.safeExecutionSignerAddress
+	}
+	return pending.safeMessageCoSignSnapshot?.safeSignerAddress
+}
+
 async function getSafeMessageCoSignContext(
 	ethereum: EthereumClientService,
 	pending: PendingTransactionOrSignableMessage,
@@ -128,10 +127,6 @@ async function getSafeMessageCoSignContext(
 	const safeEntry = await getCurrentSafeEntryWithSigner(ethereum, pending.activeAddress)
 	if (safeEntry.safeVersion === undefined) {
 		throw new Error('Re-save the active Gnosis Safe address-book entry to verify and record its current Gnosis Safe version before co-signing.')
-	}
-	const tabState = await getTabState(pending.uniqueRequestIdentifier.requestSocket.tabId)
-	if (!tabState.signerAccounts.some((account) => account === safeEntry.safeSignerAddress)) {
-		throw new Error(getUnavailableSafeSignerMessage(safeEntry.safeSignerAddress, tabState.signerName, tabState.signerAccounts))
 	}
 	if (reviewedSnapshot.safeAddress !== safeEntry.address || reviewedSnapshot.safeSignerAddress !== safeEntry.safeSignerAddress) {
 		throw new Error('The configured Gnosis Safe signer changed after this co-signing confirmation opened.')
@@ -261,8 +256,8 @@ export async function resolveSafeConfirmation(
 		}
 	}
 
-	if (!pending.simulationMode && pending.type === 'Transaction') {
-		if (pending.safeTransaction !== undefined) {
+	if (!pending.simulationMode) {
+		if (pending.type === 'Transaction' && pending.safeTransaction !== undefined) {
 			try {
 				if (pending.safeTransaction.reviewedSafeState === undefined) {
 					throw new Error('Review this Gnosis Safe proposal again so its current owners, threshold, nonce, and signer can be verified.')
@@ -275,7 +270,7 @@ export async function resolveSafeConfirmation(
 				}
 			}
 		}
-		const safeSignerAddress = pending.safeTransaction?.safeSignerAddress ?? pending.safeExecutionSignerAddress
+		const safeSignerAddress = getPendingSafeSignerAddress(pending)
 		if (safeSignerAddress !== undefined) {
 			const mismatch = await getSafeSignerMismatchApprovalStatus(
 				pending.uniqueRequestIdentifier.requestSocket.tabId,

@@ -7,7 +7,7 @@ import { getActiveAddressEntry } from './metadataUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
-import { isSafeEntryWithSafeSigner, type AddressBookEntry } from '../types/addressBookTypes.js'
+import { getConfiguredSafeSigningEntry, type AddressBookEntry } from '../types/addressBookTypes.js'
 
 function isIgnorableExtensionMessagingError(error: Error) {
 	return isIgnorablePortLifecycleError(error)
@@ -22,13 +22,17 @@ async function resolveConfiguredActiveAddress(settings: Settings): Promise<Confi
 	if (settings.useSignersAddressAsActiveAddress || settings.activeSimulationAddress === undefined) {
 		return { useConfiguredAddress: false }
 	}
-	const configuredEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId))
-		.find((entry) => entry.address === settings.activeSimulationAddress)
+	const chainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 	if (!settings.simulationMode) {
-		return isSafeEntryWithSafeSigner(configuredEntry)
-			? { useConfiguredAddress: true, activeAddress: configuredEntry }
+		const configuredSafe = getConfiguredSafeSigningEntry(chainEntries, {
+			...settings,
+			chainId: settings.activeRpcNetwork.chainId,
+		})
+		return configuredSafe !== undefined
+			? { useConfiguredAddress: true, activeAddress: configuredSafe }
 			: { useConfiguredAddress: false }
 	}
+	const configuredEntry = chainEntries.find((entry) => entry.address === settings.activeSimulationAddress)
 	if (configuredEntry !== undefined) return { useConfiguredAddress: true, activeAddress: configuredEntry }
 	const isSafeOnAnotherChain = (await getUserAddressBookEntries())
 		.some((entry) => entry.type === 'safe' && entry.address === settings.activeSimulationAddress)

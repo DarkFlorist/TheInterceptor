@@ -105,6 +105,9 @@ const WalletCapabilities = funtypes.ReadonlyRecord(
 	funtypes.String,
 	funtypes.ReadonlyRecord(funtypes.String, funtypes.Unknown),
 )
+// Keep the discriminant in a separate intersection member. Combining this method with
+// the nested capability record makes funtypes inspect typed arrays as records while
+// formatting parse failures, masking the useful validation error.
 const WalletCapabilitiesReply = funtypes.Intersect(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getCapabilities') }),
 	funtypes.ReadonlyObject({ result: WalletCapabilities }),

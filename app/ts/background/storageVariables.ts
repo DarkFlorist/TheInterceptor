@@ -373,14 +373,6 @@ export async function updateInterceptorTransactionStack(updateFunc: (prevStack: 
 }
 
 export const getSafeTransactionStacks = async () => await getLargeStateValue('safeTransactionStacks', SafeTransactionStacks) ?? []
-export async function updateSafeTransactionStacks(updateFunc: (previousStacks: SafeTransactionStacks) => SafeTransactionStacks): Promise<SafeTransactionStacks> {
-	return await transactionStateSemaphore.execute(async () => {
-		const previousStacks = await getSafeTransactionStacks()
-		const updatedStacks = updateFunc(previousStacks)
-		await setLargeStateValue('safeTransactionStacks', SafeTransactionStacks, updatedStacks)
-		return updatedStacks
-	})
-}
 
 function assertUniqueInterceptorTransactionIds(interceptorTransactionStack: InterceptorTransactionStack) {
 	const ids = interceptorTransactionStack.operations

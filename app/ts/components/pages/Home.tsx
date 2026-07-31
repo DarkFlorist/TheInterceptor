@@ -11,7 +11,7 @@ import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
-import { getSafeSignerAddresses, isSafeEntryWithSafeSigner, type AddressBookEntry } from '../../types/addressBookTypes.js'
+import { getConfiguredSafeSigningEntry, getSafeSignerAddresses, isSafeEntryWithSafeSigner, type AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon, ChevronIcon, OpenInNewIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { type Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
@@ -796,12 +796,13 @@ export function Home(param: HomeParams) {
 	const activeSigningAddress = useComputed(() =>
 		param.activeSigningAddress.value !== undefined ? getActiveAddressEntry(param.activeSigningAddress.value, param.activeAddresses.value) : undefined
 	)
-	const safeSigningMode = useComputed(() =>
-		!param.simulationMode.value
-		&& !param.useSignersAddressAsActiveAddress.value
-		&& activeSimulationAddress.value?.chainId === param.rpcNetwork.value?.chainId
-		&& isSafeEntryWithSafeSigner(activeSimulationAddress.value)
-	)
+	const activeSafe = useComputed(() => getConfiguredSafeSigningEntry(param.activeAddresses.value, {
+		simulationMode: param.simulationMode.value,
+		useSignersAddressAsActiveAddress: param.useSignersAddressAsActiveAddress.value,
+		activeSimulationAddress: param.activeSimulationAddress.value,
+		chainId: param.rpcNetwork.value?.chainId,
+	}))
+	const safeSigningMode = useComputed(() => activeSafe.value !== undefined)
 	const currentActiveAddress = useComputed(() =>
 		param.simulationMode.value || safeSigningMode.value ? activeSimulationAddress.value : activeSigningAddress.value
 	)

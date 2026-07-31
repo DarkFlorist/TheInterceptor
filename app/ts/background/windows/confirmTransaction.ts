@@ -33,7 +33,7 @@ import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization
 import { identifyAddress } from '../metadataUtils.js'
 import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
 import { prepareSafeTransactionConfirmation } from '../safeTransactionConfirmation.js'
-import { createSafeMessageCoSignSnapshot, getSafeSignerMismatchApprovalStatus, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
+import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
 import { resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
@@ -48,12 +48,9 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 	}
 	let pendingStateChanged = false
 	for (const pending of await getPendingTransactionsAndMessages()) {
-		const safeSignerAddress = pending.type === 'Transaction'
-			? pending.safeTransaction?.safeSignerAddress ?? pending.safeExecutionSignerAddress
-			: undefined
+		const safeSignerAddress = getPendingSafeSignerAddress(pending)
 		if (
-			pending.type !== 'Transaction'
-			|| safeSignerAddress === undefined
+			safeSignerAddress === undefined
 			|| pending.uniqueRequestIdentifier.requestSocket.tabId !== tabId
 			|| pending.approvalStatus.status === 'WaitingForSigner'
 			|| pending.approvalStatus.status === 'SignerError' && pending.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE

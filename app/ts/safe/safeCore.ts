@@ -1,7 +1,7 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { SafeTx } from '../types/personal-message-definitions.js'
 import type { SafeOwnerSignature, SafeTransactionSigningRequest, SafeTransactionStack } from '../types/safeTypes.js'
-import type { EthereumAddress } from '../types/wire-types.js'
+import type { EthereumAddress, EthereumBlockTag } from '../types/wire-types.js'
 import type { Abi, Hex } from '../utils/ethereumPrimitives.js'
 import { decodeFunctionOutput, encodeFunctionCall } from '../utils/abiRuntime.js'
 import { addressString, bytes32String, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
@@ -11,17 +11,21 @@ import { getSafeTxHash } from '../utils/eip712.js'
 
 export const SUPPORTED_SAFE_VERSIONS = ['1.3.0', '1.4.0', '1.4.1'] as const
 
+export const SAFE_TRANSACTION_CORE_FIELDS = [
+	{ name: 'to', type: 'address' },
+	{ name: 'value', type: 'uint256' },
+	{ name: 'data', type: 'bytes' },
+	{ name: 'operation', type: 'uint8' },
+	{ name: 'safeTxGas', type: 'uint256' },
+	{ name: 'baseGas', type: 'uint256' },
+	{ name: 'gasPrice', type: 'uint256' },
+	{ name: 'gasToken', type: 'address' },
+	{ name: 'refundReceiver', type: 'address' },
+] as const
+
 const SAFE_TX_TYPES = {
 	SafeTx: [
-		{ name: 'to', type: 'address' },
-		{ name: 'value', type: 'uint256' },
-		{ name: 'data', type: 'bytes' },
-		{ name: 'operation', type: 'uint8' },
-		{ name: 'safeTxGas', type: 'uint256' },
-		{ name: 'baseGas', type: 'uint256' },
-		{ name: 'gasPrice', type: 'uint256' },
-		{ name: 'gasToken', type: 'address' },
-		{ name: 'refundReceiver', type: 'address' },
+		...SAFE_TRANSACTION_CORE_FIELDS,
 		{ name: 'nonce', type: 'uint256' },
 	],
 	EIP712Domain: [
@@ -71,15 +75,7 @@ export const SAFE_ABI = [
 		name: 'getTransactionHash',
 		stateMutability: 'view',
 		inputs: [
-			{ name: 'to', type: 'address' },
-			{ name: 'value', type: 'uint256' },
-			{ name: 'data', type: 'bytes' },
-			{ name: 'operation', type: 'uint8' },
-			{ name: 'safeTxGas', type: 'uint256' },
-			{ name: 'baseGas', type: 'uint256' },
-			{ name: 'gasPrice', type: 'uint256' },
-			{ name: 'gasToken', type: 'address' },
-			{ name: 'refundReceiver', type: 'address' },
+			...SAFE_TRANSACTION_CORE_FIELDS,
 			{ name: '_nonce', type: 'uint256' },
 		],
 		outputs: [{ name: '', type: 'bytes32' }],
@@ -90,10 +86,11 @@ const callSafe = async (
 	ethereum: EthereumClientService,
 	safeAddress: EthereumAddress,
 	input: Hex,
+	blockTag: EthereumBlockTag,
 ) => await ethereum.call({
 		to: safeAddress,
 		input: stringToUint8Array(input),
-	}, 'latest', undefined)
+	}, blockTag, undefined)
 
 export type SafeContractState = {
 	readonly version: string
@@ -123,14 +120,14 @@ export function assertSafeContractStateUnchanged(reviewedState: SafeContractStat
 	}
 }
 
-export async function getSafeContractState(ethereum: EthereumClientService, safeAddress: EthereumAddress): Promise<SafeContractState> {
-	const code = await ethereum.getCode(safeAddress, 'latest', undefined)
+async function getSafeContractStateAtBlock(ethereum: EthereumClientService, safeAddress: EthereumAddress, blockNumber: bigint): Promise<SafeContractState> {
+	const code = await ethereum.getCode(safeAddress, blockNumber, undefined)
 	if (code.length === 0) throw new Error('The Gnosis Safe address does not contain a deployed contract on the selected chain.')
 	const [versionResult, nonceResult, ownersResult, thresholdResult] = await Promise.all([
-		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'VERSION', [])),
-		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'nonce', [])),
-		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'getOwners', [])),
-		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'getThreshold', [])),
+		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'VERSION', []), blockNumber),
+		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'nonce', []), blockNumber),
+		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'getOwners', []), blockNumber),
+		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'getThreshold', []), blockNumber),
 	])
 	const version = decodeFunctionOutput(SAFE_ABI, 'VERSION', versionResult)
 	const nonce = decodeFunctionOutput(SAFE_ABI, 'nonce', nonceResult)
@@ -142,18 +139,30 @@ export async function getSafeContractState(ethereum: EthereumClientService, safe
 	return { version, nonce, owners: owners.map((owner) => BigInt(owner)), threshold }
 }
 
-export async function assertSafeOwner(ethereum: EthereumClientService, safeAddress: EthereumAddress, owner: EthereumAddress) {
-	const result = await callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'isOwner', [addressString(owner)]))
+export async function getSafeContractState(ethereum: EthereumClientService, safeAddress: EthereumAddress): Promise<SafeContractState> {
+	return await getSafeContractStateAtBlock(ethereum, safeAddress, await ethereum.getBlockNumber(undefined))
+}
+
+async function assertSafeOwnerAtBlock(ethereum: EthereumClientService, safeAddress: EthereumAddress, owner: EthereumAddress, blockNumber: bigint) {
+	const result = await callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'isOwner', [addressString(owner)]), blockNumber)
 	const isOwner = decodeFunctionOutput(SAFE_ABI, 'isOwner', result)
 	if (!isOwner) throw new Error(`${ addressString(owner) } is not an owner of Gnosis Safe ${ addressString(safeAddress) }.`)
 }
 
-export async function assertSafeEoaOwner(ethereum: EthereumClientService, safeAddress: EthereumAddress, owner: EthereumAddress) {
-	await assertSafeOwner(ethereum, safeAddress, owner)
-	const ownerCode = await ethereum.getCode(owner, 'latest', undefined)
+export async function assertSafeOwner(ethereum: EthereumClientService, safeAddress: EthereumAddress, owner: EthereumAddress) {
+	await assertSafeOwnerAtBlock(ethereum, safeAddress, owner, await ethereum.getBlockNumber(undefined))
+}
+
+async function assertSafeEoaOwnerAtBlock(ethereum: EthereumClientService, safeAddress: EthereumAddress, owner: EthereumAddress, blockNumber: bigint) {
+	await assertSafeOwnerAtBlock(ethereum, safeAddress, owner, blockNumber)
+	const ownerCode = await ethereum.getCode(owner, blockNumber, undefined)
 	if (ownerCode.length > 0) {
 		throw new Error(`${ addressString(owner) } is a contract owner. This Gnosis Safe workflow currently supports EOA owners only.`)
 	}
+}
+
+export async function assertSafeEoaOwner(ethereum: EthereumClientService, safeAddress: EthereumAddress, owner: EthereumAddress) {
+	await assertSafeEoaOwnerAtBlock(ethereum, safeAddress, owner, await ethereum.getBlockNumber(undefined))
 }
 
 export function assertUniqueSafeTransactionStacks(stacks: readonly SafeTransactionStack[]) {
@@ -208,6 +217,7 @@ async function getSafeTransactionHashFromContract(
 	ethereum: EthereumClientService,
 	safeAddress: EthereumAddress,
 	safeTx: SafeTx,
+	blockNumber: bigint,
 ) {
 	const contractHashResult = await callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'getTransactionHash', [
 		addressString(safeTx.message.to),
@@ -220,7 +230,7 @@ async function getSafeTransactionHashFromContract(
 		addressString(safeTx.message.gasToken),
 		addressString(safeTx.message.refundReceiver),
 		safeTx.message.nonce,
-	]))
+	]), blockNumber)
 	return BigInt(decodeFunctionOutput(SAFE_ABI, 'getTransactionHash', contractHashResult))
 }
 
@@ -236,16 +246,17 @@ export async function validateSafeTransactionForSigning(
 	if (safeTx.domain.chainId !== chainId) throw new Error('The Gnosis Safe transaction chain ID does not match the selected chain.')
 	if (safeTx.domain.verifyingContract !== safeAddress) throw new Error('The Gnosis Safe transaction verifying contract does not match the active Gnosis Safe.')
 	assertInterceptorSafeTransactionPolicy(safeTx)
-	const state = await getSafeContractState(ethereum, safeAddress)
+	const blockNumber = await ethereum.getBlockNumber(undefined)
+	const state = await getSafeContractStateAtBlock(ethereum, safeAddress, blockNumber)
 	if (expectedSafeVersion !== undefined && state.version !== expectedSafeVersion) {
 		throw new Error(`The Gnosis Safe version is now ${ state.version }, but the address-book entry records ${ expectedSafeVersion }.`)
 	}
 	if (safeTx.message.nonce < state.nonce) {
 		throw new Error(`The Gnosis Safe transaction nonce ${ safeTx.message.nonce.toString() } is older than the current nonce ${ state.nonce.toString() }.`)
 	}
-	await assertSafeEoaOwner(ethereum, safeAddress, safeSignerAddress)
+	await assertSafeEoaOwnerAtBlock(ethereum, safeAddress, safeSignerAddress, blockNumber)
 	const localHash = BigInt(getSafeTxHash(safeTx))
-	const contractHash = await getSafeTransactionHashFromContract(ethereum, safeAddress, safeTx)
+	const contractHash = await getSafeTransactionHashFromContract(ethereum, safeAddress, safeTx, blockNumber)
 	if (localHash !== contractHash) throw new Error('The locally computed Gnosis Safe transaction hash does not match the Gnosis Safe contract.')
 	return { safeTxHash: localHash, safeState: state }
 }

@@ -38,7 +38,7 @@ import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { handleWatchAssetRequest, initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
-import { isSafeEntryWithSafeSigner } from '../types/addressBookTypes.js'
+import { getConfiguredSafeSigningEntry, isSafeEntryWithSafeSigner } from '../types/addressBookTypes.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import { createSafeExecutionPreSimulationTransaction } from '../safe/safeSimulation.js'
 import { getSafeModeRpcPolicyReply } from '../safe/safeRequestPolicy.js'
@@ -728,12 +728,20 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		const settings = await getSettings()
+		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 		const activeAddressBookEntry = activeAddress === undefined
 			? undefined
-			: (await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)).find((entry) => entry.address === activeAddress)
+			: currentChainEntries.find((entry) => entry.address === activeAddress)
 		const simulationOverlayEnabled = settings.simulationMode || activeAddressBookEntry?.type === 'safe'
-		const safeSigningMode = !settings.simulationMode && isSafeEntryWithSafeSigner(activeAddressBookEntry)
-		const activeSafeSigner = safeSigningMode ? activeAddressBookEntry.safeSignerAddress : undefined
+		const configuredSafe = getConfiguredSafeSigningEntry(currentChainEntries, {
+			...settings,
+			// The request's active address is captured before async handling begins. Do not
+			// reroute an in-flight request if the popup selects another account meanwhile.
+			activeSimulationAddress: activeAddress,
+			chainId: settings.activeRpcNetwork.chainId,
+		})
+		const safeSigningMode = configuredSafe !== undefined
+		const activeSafeSigner = configuredSafe?.safeSignerAddress
 		let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
 		let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
 		const getSimulationInput = async () => {
