@@ -225,19 +225,21 @@ export async function changeActiveAddress(ethereum: EthereumClientService, token
 
 export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich) {
 	if ('nativeAmount' in makeMeRichChange.data) {
-		if (makeMeRichChange.data.nativeAmount <= 0n || makeMeRichChange.data.nativeAmount > MAX_RICH_TOKEN_AMOUNT) return
+		if (makeMeRichChange.data.nativeAmount <= 0n || makeMeRichChange.data.nativeAmount > MAX_RICH_TOKEN_AMOUNT) {
+			return { method: 'popup_modifyMakeMeRich' as const, result: { success: false as const, error: 'Native amount must be greater than zero and fit within uint256.' } }
+		}
 		const nativeAmount = makeMeRichChange.data.nativeAmount
 		const chainId = (await getSettings()).activeRpcNetwork.chainId
 		await ensureRichAccountBalances(chainId, [makeMeRichChange.data.address])
 		await updateRichAccountBalances((profiles) => profiles.map((profile) => profile.chainId === chainId && profile.address === makeMeRichChange.data.address
 			? { ...profile, nativeAmount }
 			: profile))
-		return
+		return { method: 'popup_modifyMakeMeRich' as const, result: { success: true as const } }
 	}
 	const { add, address } = makeMeRichChange.data
 	if (address === 'CurrentAddress') {
 		await updateMakeCurrentAddressRich(() => add)
-		return
+		return { method: 'popup_modifyMakeMeRich' as const, result: { success: true as const } }
 	}
 	await updateFixedMakeMeRichList((currentList) => updateRichListAddress(
 		currentList,
@@ -250,6 +252,7 @@ export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich) {
 			type: 'UserAdded' as const
 		}),
 	))
+	return { method: 'popup_modifyMakeMeRich' as const, result: { success: true as const } }
 }
 
 export async function modifyRichToken(

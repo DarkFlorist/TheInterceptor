@@ -153,6 +153,32 @@ describe('settings import', () => {
 		assert.equal(websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
 	})
 
+	test('clears rich-mode state when importing backups that predate rich-mode exports', async () => {
+		const {
+			getFixedAddressRichList,
+			getMakeCurrentAddressRich,
+			getRichAccountBalances,
+			getRichNativeAmount,
+			getRichTokens,
+			importSettingsAndAddressBook,
+		} = await settingsModulePromise
+		await browser.storage.local.set({
+			makeCurrentAddressRich: true,
+			richNativeAmount: 123n,
+			fixedAddressRichList: [{ address: 0x1111111111111111111111111111111111111111n, makingRich: true, type: 'UserAdded' }],
+			richTokens: [{ stale: true }],
+			richAccountBalances: [{ stale: true }],
+		})
+
+		await importSettingsAndAddressBook(buildVersion14Import(false, false))
+
+		assert.equal(await getMakeCurrentAddressRich(), false)
+		assert.equal(await getRichNativeAmount(), 200_000n * 10n ** 18n)
+		assert.deepEqual(await getFixedAddressRichList(), [])
+		assert.deepEqual(await getRichTokens(), [])
+		assert.deepEqual(await getRichAccountBalances(), [])
+	})
+
 	test('round-trips rich-mode account and token settings in version 1.5 exports', async () => {
 		const {
 			exportSettingsAndAddressBook,

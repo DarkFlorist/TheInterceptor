@@ -371,15 +371,21 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])
 		})
 	}
-	if (exportedSetings.version === '1.5') {
-		await browserStorageLocalSet({
+	await browserStorageLocalSet(exportedSetings.version === '1.5'
+		? {
 			makeCurrentAddressRich: exportedSetings.settings.makeCurrentAddressRich,
 			richNativeAmount: exportedSetings.settings.richNativeAmount,
 			fixedAddressRichList: exportedSetings.settings.fixedAddressRichList,
 			richTokens: exportedSetings.settings.richTokens,
 			richAccountBalances: exportedSetings.settings.richAccountBalances,
+		}
+		: {
+			makeCurrentAddressRich: false,
+			richNativeAmount: MAKE_YOU_RICH_TRANSACTION.transaction.value,
+			fixedAddressRichList: [],
+			richTokens: [],
+			richAccountBalances: [],
 		})
-	}
 	await reconcileRichTokensWithAddressBook()
 }
 

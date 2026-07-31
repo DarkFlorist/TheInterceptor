@@ -237,37 +237,6 @@ export const getRichTokenOptions = (chainId: bigint, configuredTokens: readonly 
 	})
 }
 
-export const addRichTokenBalanceOverrides = (
-	stateOverrides: StateOverrides,
-	addresses: readonly EthereumAddress[],
-	richTokens: readonly RichToken[],
-): StateOverrides => {
-	let result = stateOverrides
-	for (const token of richTokens) {
-		const tokenKey = addressString(token.tokenAddress)
-		for (const address of addresses) {
-			const existingOverride = result[tokenKey]
-			const storageKey = token.tokenType === 'ERC20'
-				? getErc20BalanceStorageKey(address, token.balanceSlot)
-				: token.tokenId === undefined || token.erc1155StorageOrder === undefined
-					? undefined
-					: getErc1155BalanceStorageKey(address, token.tokenId, token.balanceSlot, token.erc1155StorageOrder)
-			if (storageKey === undefined) continue
-			result = {
-				...result,
-				[tokenKey]: {
-					...existingOverride,
-					stateDiff: {
-						...existingOverride?.stateDiff,
-						[bytes32String(storageKey)]: token.amount,
-					},
-				},
-			}
-		}
-	}
-	return result
-}
-
 export const addRichAccountBalanceOverrides = (
 	stateOverrides: StateOverrides,
 	accountBalances: readonly RichAccountBalance[],

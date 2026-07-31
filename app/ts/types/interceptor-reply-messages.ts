@@ -77,6 +77,28 @@ const ModifyRichTokenReply = funtypes.ReadonlyObject({
 	),
 })
 
+const ModifyMakeMeRichRequest = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_modifyMakeMeRich'),
+	data: funtypes.Union(
+		funtypes.ReadonlyObject({
+			add: funtypes.Boolean,
+			address: funtypes.Union(funtypes.Literal('CurrentAddress'), EthereumAddress),
+		}),
+		funtypes.ReadonlyObject({
+			nativeAmount: EthereumQuantity,
+			address: EthereumAddress,
+		}),
+	),
+}).asReadonly()
+
+const ModifyMakeMeRichReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_modifyMakeMeRich'),
+	result: funtypes.Union(
+		funtypes.ReadonlyObject({ success: funtypes.Literal(true) }),
+		funtypes.ReadonlyObject({ success: funtypes.Literal(false), error: funtypes.String }),
+	),
+})
+
 type RequestActiveAddressesReply = funtypes.Static<typeof RequestActiveAddressesReply>
 const RequestActiveAddressesReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestActiveAddresses'),
@@ -209,6 +231,7 @@ const PopupReadyAndListeningReply = funtypes.ReadonlyObject({
 
 type PopupRequestsRepliesMap = {
 	popup_requestMakeMeRichData: typeof RequestMakeMeRichDataReply
+	popup_modifyMakeMeRich: typeof ModifyMakeMeRichReply
 	popup_modifyRichToken: typeof ModifyRichTokenReply
 	popup_requestActiveAddresses: typeof RequestActiveAddressesReply
 	popup_requestSimulationMode: typeof RequestSimulationModeReply
@@ -228,6 +251,7 @@ type PopupRequestsRepliesMap = {
 
 export const PopupRequestsReplies: PopupRequestsRepliesMap = {
 	popup_requestMakeMeRichData: RequestMakeMeRichDataReply,
+	popup_modifyMakeMeRich: ModifyMakeMeRichReply,
 	popup_modifyRichToken: ModifyRichTokenReply,
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
 	popup_requestSimulationMode: RequestSimulationModeReply,
@@ -261,6 +285,7 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	RequestSimulateGovernanceContractExecution,
 	RequestSimulateGnosisSafeTransaction,
 	ModifyRichTokenRequest,
+	ModifyMakeMeRichRequest,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestMakeMeRichData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestActiveAddresses') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMode') }),
@@ -290,6 +315,7 @@ export type PopupRequestsReplyReturn<Request extends PopupRequests> = Request['m
 
 export type PopupReplyOption =
 	| RequestMakeMeRichDataReply
+	| funtypes.Static<typeof ModifyMakeMeRichReply>
 	| funtypes.Static<typeof ModifyRichTokenReply>
 	| RequestActiveAddressesReply
 	| RequestSimulationModeReply
@@ -308,6 +334,7 @@ export type PopupReplyOption =
 
 export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union(
 	RequestMakeMeRichDataReply,
+	ModifyMakeMeRichReply,
 	ModifyRichTokenReply,
 	RequestActiveAddressesReply,
 	RequestSimulationModeReply,
