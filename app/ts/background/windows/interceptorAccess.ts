@@ -3,7 +3,7 @@ import { Future } from '../../utils/future.js'
 import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
 import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { getAssociatedAddresses, persistWebsiteAccessChange, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
+import { getAssociatedAddresses, persistWebsiteAccessChange, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
 import { changeActiveAddressAndChain, handleInterceptedRequest, refuseAccess } from '../background.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntry, getActiveAddresses } from '../metadataUtils.js'
@@ -79,7 +79,7 @@ export async function resolveInterceptorAccess(ethereum: EthereumClientService, 
 			originalRequestAccessToAddress: reply.originalRequestAccessToAddress ?? pendingRequest.originalRequestAccessToAddress?.address,
 		}
 		return {
-			pendingRequestsToReplay: await resolve(
+			...await resolve(
 				ethereum,
 				tokenPriceService,
 				resetSimulationServices,
@@ -94,6 +94,16 @@ export async function resolveInterceptorAccess(ethereum: EthereumClientService, 
 				: undefined,
 		}
 	})
+	if (resolution.promptForFollowUpAccesses) {
+		await updateWebsiteApprovalAccesses(
+			ethereum,
+			tokenPriceService,
+			resetSimulationServices,
+			websiteTabConnections,
+			await getSettings(),
+			true,
+		)
+	}
 	const replayPendingRequests = async () => await Promise.all(resolution.pendingRequestsToReplay.map((pendingRequest) => handleInterceptedRequest(
 			undefined,
 			pendingRequest.website.websiteOrigin,
@@ -390,16 +400,18 @@ export async function requestAccessFromUser(
 }
 
 async function resolve(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website, publishRpcConnectionStatus: PublishRpcConnectionStatus | undefined) {
+	let promptForFollowUpAccesses = false
 	if (accessReply.userReply === 'noResponse') {
 		if (request !== undefined) refuseAccess(websiteTabConnections, request)
 	} else {
 		const userRequestedAddressChange = accessReply.requestAccessToAddress !== accessReply.originalRequestAccessToAddress
 		const replyCompletesAccountRequest = request !== undefined && isAccountConnectionMethod(request.method)
 		const shouldPromptForFollowUpAccesses = !replyCompletesAccountRequest
+		promptForFollowUpAccesses = shouldPromptForFollowUpAccesses
 		const accountRequestSocket = replyCompletesAccountRequest ? request.uniqueRequestIdentifier.requestSocket : undefined
 		const applyAccessReply = async () => {
 			if (!userRequestedAddressChange) {
-				await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, shouldPromptForFollowUpAccesses)
+				await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, false)
 				return
 			}
 			if (accessReply.requestAccessToAddress === undefined) throw new Error('Changed request to page level')
@@ -408,6 +420,7 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 			await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 				simulationMode: settings.simulationMode,
 				activeAddress: accessReply.requestAccessToAddress,
+				promptForAccessesIfNeeded: false,
 			})
 		}
 		if (accountRequestSocket === undefined) {
@@ -423,7 +436,7 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 
 	if (pendingRequests.current.length > 0) {
 		sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getActiveAddresses(), pendingAccessRequests: pendingRequests.current } })
-		return []
+		return { pendingRequestsToReplay: [], promptForFollowUpAccesses }
 	}
 
 	if (openedDialog) {
@@ -433,9 +446,9 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 	}
 	const affectedEntryWithPendingRequest = pendingRequests.previous.filter((pending): pending is PendingAccessRequest & { request: InterceptedRequest } => isAffectedEntry(pending) && pending.request !== undefined)
 
-	if (affectedEntryWithPendingRequest.length === 0) return []
+	if (affectedEntryWithPendingRequest.length === 0) return { pendingRequestsToReplay: [], promptForFollowUpAccesses }
 	if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay intercepted requests.')
-	return affectedEntryWithPendingRequest
+	return { pendingRequestsToReplay: affectedEntryWithPendingRequest, promptForFollowUpAccesses }
 }
 
 export async function requestAddressChange(websiteTabConnections: WebsiteTabConnections, message: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
