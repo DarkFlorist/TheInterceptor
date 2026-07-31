@@ -41,6 +41,14 @@ const clickAriaLabel = async (connection: CdpConnection, ariaLabel: string) => {
 		element.click()
 	})()`)
 }
+const clickFirstAriaLabelPrefix = async (connection: CdpConnection, ariaLabelPrefix: string) => {
+	await waitForCondition(connection, `control starting with ${ ariaLabelPrefix }`, `document.querySelector(${ JSON.stringify(`[aria-label^="${ ariaLabelPrefix }"]`) }) !== null`)
+	await connection.evaluate(`(() => {
+		const element = document.querySelector(${ JSON.stringify(`[aria-label^="${ ariaLabelPrefix }"]`) })
+		if (!(element instanceof HTMLElement)) throw new Error(${ JSON.stringify(`Element not found with aria-label prefix: ${ ariaLabelPrefix }`) })
+		element.click()
+	})()`)
+}
 const searchToken = async (connection: CdpConnection, label: string) => {
 	await connection.evaluate(`(() => {
 		const input = document.querySelector('[aria-label="Search address-book tokens"]')
@@ -118,6 +126,7 @@ try {
 		if (!(richHeader instanceof HTMLElement)) throw new Error('Rich-mode header not found')
 		richHeader.click()
 	})()`)
+	await clickFirstAriaLabelPrefix(popup, 'Edit balances for ')
 	await waitForCondition(popup, 'token picker enabled', `document.querySelector('[aria-label="Choose rich token"]')?.disabled === false`)
 	await clickAriaLabel(popup, 'Choose rich token')
 	await waitForText(popup, 'USDC')
@@ -186,7 +195,7 @@ try {
 		if (!(richHeader instanceof HTMLElement)) throw new Error('Rich-mode header not found')
 		richHeader.click()
 	})()`)
-	await waitForText(popup, 'TOK14')
+	await waitForText(popup, 'Rich account 12')
 	await sleep(250)
 	await captureScreenshot(popup, manyBalancesScreenshotPath)
 	await clickAriaLabel(popup, 'Edit balances for Rich account 2')
@@ -216,6 +225,7 @@ try {
 		if (!(richHeader instanceof HTMLElement)) throw new Error('Rich-mode header not found')
 		richHeader.click()
 	})()`)
+	await clickFirstAriaLabelPrefix(popup, 'Edit balances for ')
 	await waitForCondition(popup, 'large token picker enabled', `document.querySelector('[aria-label="Choose rich token"]')?.disabled === false`)
 	await clickAriaLabel(popup, 'Choose rich token')
 	await waitForCondition(popup, '80-token search', `document.querySelector('[aria-label="Search address-book tokens"]')?.getAttribute('placeholder')?.includes('80 address-book tokens') === true`)
