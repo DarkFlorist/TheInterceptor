@@ -36,6 +36,21 @@ export const parseRichTokenAmountInput = (value: string, decimals: bigint) => {
 	return { valid: true as const, amount }
 }
 
+export const getMatchingRichTokenOptions = (options: readonly RichTokenOption[], search: string, maximumResults = 50) => {
+	const query = search.trim().toLowerCase()
+	return options
+		.filter((option) => query.length === 0 || [
+			option.symbol,
+			option.name,
+			option.tokenAddress.toString(16),
+			addressString(option.tokenAddress),
+			option.tokenId?.toString(),
+			option.tokenId === undefined ? option.symbol : `${ option.symbol } #${ option.tokenId.toString() }`,
+		]
+			.some((value) => value?.toLowerCase().includes(query) === true))
+		.slice(0, maximumResults)
+}
+
 export const getErc20BalanceStorageKey = (owner: EthereumAddress, balanceSlot: bigint) => (
 	BigInt(keccak256(encodeAbiValues(['address', 'uint256'], [addressString(owner), balanceSlot])))
 )

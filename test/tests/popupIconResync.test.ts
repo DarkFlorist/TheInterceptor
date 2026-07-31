@@ -1140,6 +1140,8 @@ describe('popup icon sync', () => {
 			})
 			assert.equal(hasAriaLabel(dom.document.body, 'Remove rich token USDC'), true)
 			assert.equal(hasAriaLabel(dom.document.body, 'Remove rich token ITEM #42'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Additional rich accounts'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Configured rich tokens'), true)
 			const nativeAmountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'ETH? rich amount')
 			assert.equal(nativeAmountInput?.getAttribute?.('value'), '12.5')
 			const amountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'USDC rich amount')
@@ -1150,8 +1152,11 @@ describe('popup icon sync', () => {
 			await act(async () => {
 				if (chooseTokenButton !== undefined) await clickElement(chooseTokenButton)
 			})
-			const tokenPicker = collectElements(dom.document.body, 'select').find((select) => select.getAttribute?.('aria-label') === 'Choose address-book token')
-			assert.equal(tokenPicker?.textContent?.includes('DAI'), true)
+			const tokenSearch = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')
+			assert.equal(tokenSearch?.getAttribute?.('placeholder'), 'Search 1 token…')
+			const tokenResult = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label')?.startsWith('Add rich token DAI '))
+			assert.notEqual(tokenResult, undefined)
+			assert.equal(tokenResult?.getAttribute?.('role'), undefined)
 			assert.equal(hasAriaLabel(dom.document.body, 'DAI rich amount'), false)
 		} finally {
 			clipboardMock.restore()

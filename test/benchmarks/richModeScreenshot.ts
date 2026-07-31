@@ -7,6 +7,9 @@ const collapsedScreenshotPath = path.resolve('docs/screenshots/rich-mode-collaps
 const availableScreenshotPath = path.resolve('docs/screenshots/rich-mode-token-options.png')
 const detectingScreenshotPath = path.resolve('docs/screenshots/rich-mode-detecting-token.png')
 const screenshotPath = path.resolve('docs/screenshots/rich-mode-token-balances.png')
+const manyBalancesScreenshotPath = path.resolve('docs/screenshots/rich-mode-many-balances.png')
+const manyTokenPickerScreenshotPath = path.resolve('docs/screenshots/rich-mode-token-search.png')
+const searchableTokenAddress = `0x${ (0x2000n + 73n).toString(16).padStart(40, '0') }`
 const sleep = async (milliseconds: number) => await new Promise<void>((resolve) => globalThis.setTimeout(resolve, milliseconds))
 const waitForCondition = async (connection: CdpConnection, description: string, expression: string) => {
 	for (let attempt = 0; attempt < 300; attempt += 1) {
@@ -37,19 +40,29 @@ const clickAriaLabel = async (connection: CdpConnection, ariaLabel: string) => {
 		element.click()
 	})()`)
 }
-const chooseToken = async (connection: CdpConnection, label: string) => {
+const searchToken = async (connection: CdpConnection, label: string) => {
 	await connection.evaluate(`(() => {
-		const select = document.querySelector('[aria-label="Choose address-book token"]')
-		if (!(select instanceof HTMLSelectElement)) throw new Error('Rich token picker not found')
-		const option = Array.from(select.options).find((entry) => entry.textContent === ${ JSON.stringify(label) })
-		if (option === undefined) throw new Error(${ JSON.stringify(`Token option not found: ${ label }`) })
-		select.value = option.value
-		select.dispatchEvent(new Event('change', { bubbles: true }))
+		const input = document.querySelector('[aria-label="Search address-book tokens"]')
+		if (!(input instanceof HTMLInputElement)) throw new Error('Rich token search not found')
+		input.value = ${ JSON.stringify(label) }
+		input.dispatchEvent(new Event('input', { bubbles: true }))
+	})()`)
+}
+const clickTokenResult = async (connection: CdpConnection, label: string) => {
+	await waitForCondition(
+		connection,
+		`token result ${ label }`,
+		`Array.from(document.querySelectorAll('[data-rich-token-result]')).some((element) => element.textContent?.includes(${ JSON.stringify(label) }))`,
+	)
+	await connection.evaluate(`(() => {
+		const result = Array.from(document.querySelectorAll('[data-rich-token-result]')).find((element) => element.textContent?.includes(${ JSON.stringify(label) }))
+		if (!(result instanceof HTMLElement)) throw new Error(${ JSON.stringify(`Token result not found: ${ label }`) })
+		result.click()
 	})()`)
 }
 const addToken = async (connection: CdpConnection, label: string) => {
-	await chooseToken(connection, label)
-	await clickAriaLabel(connection, 'Add selected rich token')
+	await searchToken(connection, label)
+	await clickTokenResult(connection, label)
 }
 
 const chrome = await launchChromeSession()
@@ -107,11 +120,11 @@ try {
 	await clickAriaLabel(popup, 'Choose rich token')
 	await waitForText(popup, 'USDC')
 	await waitForText(popup, 'ITEM #42')
-	await chooseToken(popup, 'USDC')
+	await searchToken(popup, 'USDC')
 	await sleep(250)
 	await captureScreenshot(popup, availableScreenshotPath)
 
-	await clickAriaLabel(popup, 'Add selected rich token')
+	await clickTokenResult(popup, 'USDC')
 	await waitForText(popup, 'Preparing USDC')
 	await sleep(150)
 	await captureScreenshot(popup, detectingScreenshotPath)
@@ -129,6 +142,68 @@ try {
 	)
 	await sleep(250)
 	await captureScreenshot(popup, screenshotPath)
+
+	await popup.evaluate(`(() => {
+		const contacts = Array.from({ length: 12 }, (_, index) => {
+			const address = '0x' + BigInt(index + 1).toString(16).padStart(40, '0')
+			return { type: 'contact', name: 'Rich account ' + (index + 1).toString(), address, entrySource: 'User' }
+		})
+		const tokenEntries = Array.from({ length: 14 }, (_, index) => {
+			const address = '0x' + (0x1000n + BigInt(index)).toString(16).padStart(40, '0')
+			return { type: 'ERC20', name: 'Demo Token ' + (index + 1).toString(), address, symbol: 'TOK' + (index + 1).toString(), decimals: '0x12', entrySource: 'User', chainId: '0x1' }
+		})
+		const richTokens = tokenEntries.map((token, index) => ({
+			chainId: '0x1',
+			tokenAddress: token.address,
+			tokenType: 'ERC20',
+			name: token.name,
+			symbol: token.symbol,
+			decimals: token.decimals,
+			amount: '0x3635c9adc5dea00000',
+			balanceSlot: '0x' + BigInt(index).toString(16),
+		}))
+		void chrome.storage.local.set({
+			userAddressBookEntriesV3: [...contacts, ...tokenEntries],
+			fixedAddressRichList: contacts.map((contact) => ({ address: contact.address, makingRich: true, type: 'UserAdded' })),
+			richTokens,
+		})
+		return true
+	})()`)
+	await sleep(250)
+	await popup.send('Page.reload')
+	await waitForText(popup, '(+12 rich addresses)')
+	await popup.evaluate(`(() => {
+		const richHeader = Array.from(document.querySelectorAll('header')).find((element) => element.textContent?.includes('Make current account rich'))
+		if (!(richHeader instanceof HTMLElement)) throw new Error('Rich-mode header not found')
+		richHeader.click()
+	})()`)
+	await waitForText(popup, 'TOK14')
+	await sleep(250)
+	await captureScreenshot(popup, manyBalancesScreenshotPath)
+
+	await popup.evaluate(`(() => {
+		const tokenEntries = Array.from({ length: 80 }, (_, index) => {
+			const address = '0x' + (0x2000n + BigInt(index)).toString(16).padStart(40, '0')
+			return { type: 'ERC20', name: 'Searchable Token ' + (index + 1).toString(), address, symbol: 'TOK' + (index + 1).toString(), decimals: '0x12', entrySource: 'User', chainId: '0x1' }
+		})
+		void chrome.storage.local.set({ userAddressBookEntriesV3: tokenEntries, fixedAddressRichList: [], richTokens: [] })
+		return true
+	})()`)
+	await sleep(250)
+	await popup.send('Page.reload')
+	await waitForText(popup, 'Make current account rich')
+	await popup.evaluate(`(() => {
+		const richHeader = Array.from(document.querySelectorAll('header')).find((element) => element.textContent?.includes('Make current account rich'))
+		if (!(richHeader instanceof HTMLElement)) throw new Error('Rich-mode header not found')
+		richHeader.click()
+	})()`)
+	await clickAriaLabel(popup, 'Choose rich token')
+	await waitForCondition(popup, '80-token search', `document.querySelector('[aria-label="Search address-book tokens"]')?.getAttribute('placeholder')?.includes('80 tokens') === true`)
+	await waitForCondition(popup, 'bounded initial token results', `document.querySelectorAll('[data-rich-token-result]').length === 50`)
+	await sleep(250)
+	await captureScreenshot(popup, manyTokenPickerScreenshotPath)
+	await searchToken(popup, searchableTokenAddress)
+	await waitForCondition(popup, 'full-address token search', `document.querySelectorAll('[data-rich-token-result]').length === 1 && document.body?.textContent?.includes('TOK74') === true`)
 	popup.close()
 } finally {
 	await chrome.close()

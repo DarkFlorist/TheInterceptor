@@ -1,7 +1,7 @@
 import assert from 'node:assert'
 import { describe, test } from 'node:test'
 import type { IEthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { addRichTokenBalanceOverrides, discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, getDefaultRichTokenAmount, getErc1155BalanceStorageKey, getErc20BalanceStorageKey, getRichTokenOptions, MAX_RICH_TOKEN_AMOUNT, parseRichTokenAmountInput, verifyErc1155BalanceStorageSlot, verifyErc20BalanceStorageSlot } from '../../app/ts/utils/richTokens.js'
+import { addRichTokenBalanceOverrides, discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, getDefaultRichTokenAmount, getErc1155BalanceStorageKey, getErc20BalanceStorageKey, getMatchingRichTokenOptions, getRichTokenOptions, MAX_RICH_TOKEN_AMOUNT, parseRichTokenAmountInput, verifyErc1155BalanceStorageSlot, verifyErc20BalanceStorageSlot } from '../../app/ts/utils/richTokens.js'
 import { addressString, bigintToUint8Array, bytes32String } from '../../app/ts/utils/bigint.js'
 
 const owner = 0x1111111111111111111111111111111111111111n
@@ -25,6 +25,31 @@ const successfulBalanceCall = (balance: bigint) => ({
 })
 
 describe('rich token support', () => {
+	test('searches large address-book token lists and bounds rendered results', () => {
+		const options = Array.from({ length: 75 }, (_, index) => ({
+			chainId: 1n,
+			tokenAddress: 0x1000n + BigInt(index),
+			tokenType: 'ERC20' as const,
+			tokenId: undefined,
+			name: `Demo Token ${ (index + 1).toString() }`,
+			symbol: `TOK${ (index + 1).toString() }`,
+			decimals: 18n,
+			amount: 1n,
+			balanceSlot: undefined,
+			erc1155StorageOrder: undefined,
+			enabled: false,
+		}))
+
+		assert.equal(getMatchingRichTokenOptions(options, '').length, 50)
+		assert.deepEqual(getMatchingRichTokenOptions(options, 'tok75').map((option) => option.symbol), ['TOK75'])
+		assert.deepEqual(getMatchingRichTokenOptions(options, 'Demo Token 38').map((option) => option.symbol), ['TOK38'])
+		assert.deepEqual(getMatchingRichTokenOptions(options, (0x1000n + 61n).toString(16)).map((option) => option.symbol), ['TOK62'])
+		assert.deepEqual(getMatchingRichTokenOptions(options, addressString(0x1000n + 61n)).map((option) => option.symbol), ['TOK62'])
+		const firstOption = options[0]
+		if (firstOption === undefined) throw new Error('Expected a rich token option')
+		assert.deepEqual(getMatchingRichTokenOptions([{ ...firstOption, tokenType: 'ERC1155', tokenId: 42n, symbol: 'ITEM' }], 'ITEM #42').map((option) => option.tokenId), [42n])
+	})
+
 	test('offers ERC-20 address book entries without requiring a preset', () => {
 		const options = getRichTokenOptions(1n, [], [
 			{
