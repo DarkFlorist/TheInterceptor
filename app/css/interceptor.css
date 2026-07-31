@@ -3158,6 +3158,120 @@ header:has(form[role='search']) h1 {
 	border-bottom: 1px solid var(--white-alpha-20);
 }
 
+.rich-mode-account-list {
+	max-height: 12em;
+	overflow-y: auto;
+	padding-right: 0.25rem;
+}
+
+.rich-mode-account-row {
+	align-items: center;
+	border-radius: 4px;
+	display: grid;
+	gap: 0.65em;
+	grid-template-columns: 1em minmax(0, 1fr) min-content;
+	min-height: 2rem;
+	padding: 0.1rem 0.2rem;
+}
+
+.rich-mode-account-row:hover {
+	background-color: var(--alpha-005);
+}
+
+.rich-mode-balance-action {
+	--btn-text-color: var(--subtitle-text-color);
+	font-size: 0.7rem;
+	min-height: 1.8em;
+	padding: 0.15rem 0.4rem;
+}
+
+.rich-mode-modal-card {
+	max-height: calc(100% - 2rem);
+	width: calc(100% - 2rem);
+}
+
+.rich-mode-modal-head .card-header-title {
+	align-items: flex-start;
+	display: flex;
+	flex-direction: column;
+	gap: 0.1rem;
+	min-width: 0;
+}
+
+.rich-mode-modal-account {
+	color: var(--subtitle-text-color);
+	font-size: 0.7rem;
+	font-weight: normal;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.rich-mode-modal-content {
+	margin: 10px;
+}
+
+.rich-mode-modal-toolbar {
+	align-items: center;
+	display: flex;
+	justify-content: space-between;
+	margin-bottom: 0.5rem;
+}
+
+.rich-mode-modal-section-title {
+	font-weight: 600;
+}
+
+.rich-mode-balance-row {
+	align-items: center;
+	display: grid;
+	gap: 0.75em;
+	grid-template-columns: 1em minmax(4em, 1fr) minmax(5em, 8em);
+	padding: 0.2em 0;
+}
+
+.rich-mode-configured-tokens {
+	max-height: min(14em, 45vh);
+	overflow-y: auto;
+}
+
+.rich-mode-token-results {
+	display: flex;
+	flex-direction: column;
+	max-height: min(20em, 50vh);
+	overflow-y: auto;
+}
+
+.rich-mode-token-result {
+	--btn-justify: start;
+	border-bottom: 1px solid var(--white-alpha-10);
+	border-radius: 0;
+	display: grid;
+	grid-template-columns: minmax(4em, auto) minmax(0, 1fr);
+	padding: 0.6rem 0.5rem;
+	text-align: left;
+	width: 100%;
+}
+
+.rich-mode-token-result:last-child {
+	border-bottom: 0;
+}
+
+.rich-mode-token-result-details {
+	color: var(--subtitle-text-color);
+	min-width: 0;
+	overflow: hidden;
+	padding-left: 0.75em;
+	text-overflow: ellipsis;
+}
+
+.rich-mode-modal-footer {
+	display: flex;
+	justify-content: flex-end;
+	padding: 10px;
+}
+
 input[type="number"] {
     -moz-appearance: textfield;
 }

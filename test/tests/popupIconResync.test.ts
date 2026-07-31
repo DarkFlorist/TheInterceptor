@@ -1193,6 +1193,7 @@ describe('popup icon sync', () => {
 			assert.equal(tokenSearch?.getAttribute?.('placeholder'), 'Search 2 address-book tokens…')
 			const tokenResult = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label')?.startsWith('Add rich token DAI '))
 			assert.notEqual(tokenResult, undefined)
+			assert.equal(tokenResult?.getAttribute?.('aria-label')?.includes('0x6b175474e89094c44da98b954eedeac495271d0f'), true)
 			assert.equal(tokenResult?.getAttribute?.('role'), undefined)
 			assert.equal(hasAriaLabel(dom.document.body, 'DAI rich amount'), false)
 		} finally {
