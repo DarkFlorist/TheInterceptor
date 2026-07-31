@@ -1,6 +1,6 @@
 import type { HomeParams, FirstCardParams, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
 import { type SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
-import { ActiveAddressComponent, SmallAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
+import { ActiveAddressComponent, AddressIcon, SmallAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
 import { ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../utils/constants.js'
@@ -646,17 +646,25 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 				} }
 			>
 				<InterceptorDialogSurface ariaLabel = { `Balance editor for ${ selectedRichAccount.value.addressBookEntry.name }` } class = { `rich-mode-modal-card${ showRichTokenPicker.value ? ' is-selecting-tokens' : '' }` } onBackdropClick = { closeRichBalanceDialog } size = 'large'>
-					<InterceptorDialogHeader close = { closeRichBalanceDialog } closeDisabled = { richTokenPending.value } closeLabel = 'Close balance editor' icon = '../img/address-book.svg' title = 'Balances' subtitle = { selectedRichAccount.value.addressBookEntry.name }/>
+					<InterceptorDialogHeader
+						accessory = { richAccounts.value.length < 2 ? undefined : <div class = 'rich-mode-header-account-switcher' aria-label = 'Rich account navigation'>
+							<button type = 'button' class = 'btn btn--ghost is-small' aria-label = 'Previous rich account' disabled = { richTokenPending.value } onClick = { () => { showAdjacentRichAccount(-1) } }>‹</button>
+							<span>{ (selectedRichAccountIndex.value + 1).toString() } / { richAccounts.value.length.toString() }</span>
+							<button type = 'button' class = 'btn btn--ghost is-small' aria-label = 'Next rich account' disabled = { richTokenPending.value } onClick = { () => { showAdjacentRichAccount(1) } }>›</button>
+						</div> }
+						close = { closeRichBalanceDialog }
+						closeDisabled = { richTokenPending.value }
+						closeLabel = 'Close balance editor'
+						icon = '../img/address-book.svg'
+						iconContent = { <AddressIcon address = { selectedRichAccount.value.addressBookEntry.address } logoUri = { 'logoUri' in selectedRichAccount.value.addressBookEntry ? selectedRichAccount.value.addressBookEntry.logoUri : undefined } isBig = { false } backgroundColor = 'var(--surface-dark-color)'/> }
+						title = 'Balances'
+						subtitle = { selectedRichAccount.value.addressBookEntry.name }
+					/>
 					<InterceptorDialogBody class = 'rich-mode-dialog-body'>
 						<div class = 'card rich-mode-modal-content'>
 							<div class = { `card-content rich-mode-balance-page${ showRichTokenPicker.value ? ' is-recessed' : '' }` } aria-hidden = { showRichTokenPicker.value ? 'true' : undefined } inert = { showRichTokenPicker.value }>
-								{ richAccounts.value.length < 2 ? <></> : <div class = 'rich-mode-account-switcher' aria-label = 'Rich account navigation'>
-									<button type = 'button' class = 'btn btn--ghost is-small' aria-label = 'Previous rich account' disabled = { richTokenPending.value } onClick = { () => { showAdjacentRichAccount(-1) } }>‹</button>
-									<span>{ (selectedRichAccountIndex.value + 1).toString() } of { richAccounts.value.length.toString() }</span>
-									<button type = 'button' class = 'btn btn--ghost is-small' aria-label = 'Next rich account' disabled = { richTokenPending.value } onClick = { () => { showAdjacentRichAccount(1) } }>›</button>
-								</div> }
 								<div class = 'rich-mode-modal-toolbar'>
-									<p class = 'paragraph checkbox-text rich-mode-modal-section-title'>Amounts</p>
+									<div class = 'rich-mode-modal-title-group'><p class = 'paragraph checkbox-text rich-mode-modal-section-title'>Amounts</p><span class = 'rich-mode-count-badge'>{ enabledRichTokens.value.length.toString() } token{ enabledRichTokens.value.length === 1 ? '' : 's' }</span></div>
 									<div class = 'actions'>
 										<button type = 'button' class = 'btn btn--ghost is-small' aria-label = 'Open token address book' data-tooltip = 'Open token address book' onClick = { () => { void sendPopupMessageToBackgroundPage({ method: 'popup_openAddressBook' }) } }>
 											<span class = 'icon'><img src = '../img/address-book.svg' width = '18' height = '18'/></span>
@@ -675,6 +683,11 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 										<span/>
 									</div>
 									<div aria-busy = { richTokenPending.value } aria-label = 'Configured rich tokens' class = 'rich-mode-configured-tokens'>
+										{ enabledRichTokens.value.length !== 0 ? <></> : <div class = 'rich-mode-empty-state'>
+											<span class = 'rich-mode-empty-state-icon' aria-hidden = 'true'>+</span>
+											<span><strong>Only { nativeCurrencyTicker }</strong><small>Add an address-book token.</small></span>
+											<button type = 'button' class = 'btn btn--ghost is-small' disabled = { richTokenPending.value || availableRichTokens.value.length === 0 } onClick = { showRichTokenSelection }>Select token</button>
+										</div> }
 										{ enabledRichTokens.value.map((option) => <div class = 'rich-mode-balance-row' key = { getRichTokenKey(option) }>
 											<RichTokenIcon class = 'rich-mode-balance-token-icon' label = { option.symbol } logoUri = { option.logoUri }/>
 											<span class = 'rich-mode-balance-token-name'><strong>{ getRichTokenLabel(option) }</strong><small>{ option.name }</small></span>
@@ -692,14 +705,14 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 						</div>
 					</InterceptorDialogBody>
 					<InterceptorDialogFooter class = { `rich-mode-modal-footer${ showRichTokenPicker.value ? ' is-recessed' : '' }` } ariaHidden = { showRichTokenPicker.value ? 'true' : undefined } inert = { showRichTokenPicker.value }>
-						<button type = 'button' class = 'btn btn--outline' disabled = { richTokenPending.value } onClick = { closeRichBalanceDialog }>Close</button>
+						<button type = 'button' class = 'btn btn--ghost' disabled = { richTokenPending.value } onClick = { closeRichBalanceDialog }>Close</button>
 					</InterceptorDialogFooter>
 					{ !showRichTokenPicker.value ? <></> : <section class = 'rich-mode-token-sheet' role = 'region' aria-label = { `Select tokens for ${ selectedRichAccount.value.addressBookEntry.name }` }>
 						<header class = 'rich-mode-token-sheet-head'>
 							<button type = 'button' class = 'btn btn--ghost rich-mode-modal-back' aria-label = 'Back to balances' disabled = { richTokenPending.value } onClick = { hideRichTokenSelection }>‹</button>
-							<div>
-								<p class = 'paragraph'>Select tokens</p>
-								<p class = 'rich-mode-modal-account'>{ selectedRichAccount.value.addressBookEntry.name }</p>
+							<div class = 'rich-mode-token-sheet-heading'>
+								<div><p class = 'paragraph'>Select tokens</p><p class = 'rich-mode-modal-account'>{ selectedRichAccount.value.addressBookEntry.name }</p></div>
+								<span class = 'rich-mode-count-badge'>{ availableRichTokens.value.length.toString() } available</span>
 							</div>
 						</header>
 						<div class = 'rich-mode-token-sheet-body'>
@@ -717,6 +730,12 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 									/>
 								</div>
 							</div>
+							{ selectedAvailableRichTokens.value.length === 0 ? <></> : <div class = 'rich-mode-selected-token-chips' aria-label = 'Selected tokens'>
+								{ selectedAvailableRichTokens.value.map((option) => <button type = 'button' class = 'rich-mode-selected-token-chip' aria-label = { `Remove ${ getRichTokenLabel(option) } from selection` } disabled = { richTokenPending.value } onClick = { () => { toggleRichTokenSelection(option) } } key = { getRichTokenKey(option) }>
+									<RichTokenIcon class = 'rich-mode-selected-token-chip-icon' label = { option.symbol } logoUri = { option.logoUri }/>
+									<span>{ getRichTokenLabel(option) }</span><span aria-hidden = 'true'>×</span>
+								</button>) }
+							</div> }
 							<div aria-label = 'Matching address-book tokens' class = 'rich-mode-token-results'>
 								{ matchingAvailableRichTokens.value.map((option) => {
 									const selected = selectedRichTokenKeys.value.includes(getRichTokenKey(option))
@@ -740,14 +759,14 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 										<span class = 'rich-mode-token-selection-mark' aria-hidden = 'true'>{ selected ? '✓' : '' }</span>
 									</button>
 								}) }
-								{ matchingAvailableRichTokens.value.length === 0 ? <p class = 'help'>No matching tokens in the active-chain address book.</p> : <></> }
+								{ matchingAvailableRichTokens.value.length === 0 ? <div class = 'rich-mode-empty-state rich-mode-token-empty-state'><span class = 'rich-mode-empty-state-icon' aria-hidden = 'true'>⌕</span><span><strong>No matching tokens</strong><small>Try a symbol, name, or address.</small></span>{ richTokenSearch.value === '' ? <></> : <button type = 'button' class = 'btn btn--ghost is-small' onClick = { () => { richTokenSearch.value = '' } }>Clear</button> }</div> : <></> }
 							</div>
 							{ richTokenPendingLabel.value === undefined ? <></> : <p class = 'help is-light' role = 'status'>{ richTokenPendingLabel.value }</p> }
 							{ richTokenError.value === undefined ? <></> : <p class = 'help is-danger'>{ richTokenError.value }</p> }
 						</div>
 						<footer class = 'rich-mode-token-sheet-footer'>
 							<button type = 'button' class = 'btn btn--ghost' disabled = { richTokenPending.value } onClick = { hideRichTokenSelection }>Cancel</button>
-							<span class = 'rich-mode-token-selection-count'>{ selectedAvailableRichTokens.value.length.toString() } selected</span>
+							<span class = 'rich-mode-token-selection-count rich-mode-count-badge'>{ selectedAvailableRichTokens.value.length.toString() } selected</span>
 							<button type = 'button' class = 'btn btn--primary' aria-label = 'Add selected tokens' disabled = { richTokenPending.value || selectedAvailableRichTokens.value.length === 0 } onClick = { () => { void addSelectedRichTokens() } }>Add { selectedAvailableRichTokens.value.length === 0 ? '' : selectedAvailableRichTokens.value.length.toString() } token{ selectedAvailableRichTokens.value.length === 1 ? '' : 's' }</button>
 						</footer>
 					</section> }

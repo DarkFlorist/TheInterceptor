@@ -30,7 +30,7 @@ describe('InterceptorDialog', () => {
 			await act(() => {
 				render(
 					<InterceptorDialogSurface ariaLabel = 'Example settings' size = 'large' fill = { true }>
-						<InterceptorDialogHeader close = { () => undefined } closeLabel = 'Close example settings' icon = '../img/address-book.svg' title = 'Example settings' subtitle = 'A concise explanation'/>
+						<InterceptorDialogHeader accessory = { <span>2 / 4</span> } close = { () => undefined } closeLabel = 'Close example settings' icon = '../img/address-book.svg' iconContent = { <span>Custom icon</span> } title = 'Example settings' subtitle = 'A concise explanation'/>
 						<InterceptorDialogBody><InterceptorDialogSection label = 'Options'>Content</InterceptorDialogSection></InterceptorDialogBody>
 						<InterceptorDialogFooter><button type = 'button'>Save</button></InterceptorDialogFooter>
 					</InterceptorDialogSurface>,
@@ -48,6 +48,8 @@ describe('InterceptorDialog', () => {
 			const header = findByClass(dialog, 'interceptor-dialog-header')
 			assert.equal(findByClass(header, 'interceptor-dialog-title')?.textContent, 'Example settings')
 			assert.equal(findByClass(header, 'interceptor-dialog-subtitle')?.textContent, 'A concise explanation')
+			assert.equal(findByClass(header, 'interceptor-dialog-icon')?.textContent, 'Custom icon')
+			assert.equal(findByClass(header, 'interceptor-dialog-header-accessory')?.textContent, '2 / 4')
 			assert.equal(findByClass(header, 'interceptor-dialog-close')?.getAttribute?.('aria-label'), 'Close example settings')
 			assert.equal(findByClass(dialog, 'interceptor-dialog-section')?.getAttribute?.('aria-label'), 'Options')
 			assert.equal(findByClass(dialog, 'interceptor-dialog-footer')?.textContent, 'Save')

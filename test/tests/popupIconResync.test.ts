@@ -1217,7 +1217,10 @@ describe('popup icon sync', () => {
 			await act(async () => {
 				if (tokenResult !== undefined) await clickElement(tokenResult)
 			})
-			assert.equal(tokenResult?.getAttribute?.('aria-pressed'), true)
+			const selectedTokenResult = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label')?.startsWith('Select rich token DAI '))
+			assert.equal(selectedTokenResult?.getAttribute?.('aria-pressed'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Selected tokens'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Remove DAI from selection'), true)
 			const addSelectedTokensButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Add selected tokens')
 			assert.equal(addSelectedTokensButton?.textContent, 'Add 1 token')
 			assert.equal(hasAriaLabel(dom.document.body, 'DAI rich amount'), false)

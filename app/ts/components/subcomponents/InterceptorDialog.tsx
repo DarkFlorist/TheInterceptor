@@ -74,21 +74,24 @@ export function InterceptorDialogSurface({ ariaLabel, children, class: className
 }
 
 type InterceptorDialogHeaderProps = {
+	accessory?: ComponentChildren
 	close: () => void
 	closeDisabled?: boolean
 	closeLabel?: string
 	icon: string
+	iconContent?: ComponentChildren
 	subtitle?: string
 	title: string
 }
 
-export function InterceptorDialogHeader({ close, closeDisabled = false, closeLabel = 'Close dialog', icon, subtitle, title }: InterceptorDialogHeaderProps) {
+export function InterceptorDialogHeader({ accessory, close, closeDisabled = false, closeLabel = 'Close dialog', icon, iconContent, subtitle, title }: InterceptorDialogHeaderProps) {
 	return <header class = 'modal-card-head interceptor-dialog-header'>
-		<span class = 'interceptor-dialog-icon' aria-hidden = 'true'><img src = { icon } width = '20' height = '20'/></span>
+		<span class = 'interceptor-dialog-icon' aria-hidden = 'true'>{ iconContent ?? <img src = { icon } width = '18' height = '18'/> }</span>
 		<div class = 'interceptor-dialog-heading'>
 			<p class = 'interceptor-dialog-title'>{ title }</p>
 			{ subtitle === undefined ? <></> : <p class = 'interceptor-dialog-subtitle'>{ subtitle }</p> }
 		</div>
+		{ accessory === undefined ? <></> : <div class = 'interceptor-dialog-header-accessory'>{ accessory }</div> }
 		<button type = 'button' class = 'interceptor-dialog-close' aria-label = { closeLabel } onClick = { close } disabled = { closeDisabled }><XMarkIcon/></button>
 	</header>
 }
