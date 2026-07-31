@@ -4,6 +4,7 @@ import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory, Optio
 import { AddressBookEntries, ContactEntries } from './addressBookTypes.js'
 import { WebsiteAccessArray } from './websiteAccessTypes.js'
 import { EditEnsNamedHashWindowState, ModifyAddressWindowState } from './visualizer-types.js'
+import { RichAccountBalances, RichToken } from './richMode.js'
 
 export type Page = funtypes.Static<typeof Page>
 export const Page = funtypes.Union(
@@ -51,6 +52,24 @@ const compatibilityExportedSettingsFields = {
 	metamaskCompatibilityMode: funtypes.Boolean,
 }
 
+const currentExportedSettingsFields = {
+	activeSimulationAddress: OptionalEthereumAddress,
+	rpcNetwork: RpcNetwork,
+	openedPage: Page,
+	useSignersAddressAsActiveAddress: funtypes.Boolean,
+	websiteAccess: WebsiteAccessArray,
+	simulationMode: funtypes.Boolean,
+	addressBookEntries: AddressBookEntries,
+	useTabsInsteadOfPopup: funtypes.Boolean,
+	metamaskCompatibilityMode: funtypes.Boolean,
+}
+
+const ExportedRichListElement = funtypes.ReadonlyObject({
+	address: EthereumAddress,
+	makingRich: funtypes.Boolean,
+	type: funtypes.Union(funtypes.Literal('CurrentActiveAddress'), funtypes.Literal('PreviousActiveAddress'), funtypes.Literal('UserAdded')),
+})
+
 export type ExportedSettings = funtypes.Static<typeof ExportedSettings>
 export const ExportedSettings = funtypes.Union(
 	funtypes.ReadonlyObject({
@@ -86,16 +105,18 @@ export const ExportedSettings = funtypes.Union(
 	funtypes.ReadonlyObject({
 		...exportedSettingsEnvelopeFields,
 		version: funtypes.Literal('1.4'),
+		settings: funtypes.ReadonlyObject(currentExportedSettingsFields)
+	}),
+	funtypes.ReadonlyObject({
+		...exportedSettingsEnvelopeFields,
+		version: funtypes.Literal('1.5'),
 		settings: funtypes.ReadonlyObject({
-			activeSimulationAddress: OptionalEthereumAddress,
-			rpcNetwork: RpcNetwork,
-			openedPage: Page,
-			useSignersAddressAsActiveAddress: funtypes.Boolean,
-			websiteAccess: WebsiteAccessArray,
-			simulationMode: funtypes.Boolean,
-			addressBookEntries: AddressBookEntries,
-			useTabsInsteadOfPopup: funtypes.Boolean,
-			metamaskCompatibilityMode: funtypes.Boolean,
+			...currentExportedSettingsFields,
+			makeCurrentAddressRich: funtypes.Boolean,
+			richNativeAmount: EthereumQuantity,
+			fixedAddressRichList: funtypes.ReadonlyArray(ExportedRichListElement),
+			richTokens: funtypes.ReadonlyArray(RichToken),
+			richAccountBalances: RichAccountBalances,
 		})
 	}),
 )

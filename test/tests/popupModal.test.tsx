@@ -12,13 +12,34 @@ import { installDomMock } from './domMock.js'
 
 type TestNode = {
 	readonly childNodes?: readonly TestNode[]
+	readonly dispatchEvent?: (event: { bubbles?: boolean, type: string }) => boolean
 	readonly getAttribute?: (name: string) => string | null
+	readonly tagName?: string
+	readonly textContent?: string | null
 }
 
 function findByClass(node: TestNode | undefined, className: string): TestNode | undefined {
 	if (node?.getAttribute?.('class')?.split(/\s+/).includes(className)) return node
 	for (const child of node?.childNodes ?? []) {
 		const match = findByClass(child, className)
+		if (match !== undefined) return match
+	}
+	return undefined
+}
+
+function findByAttribute(node: TestNode | undefined, name: string, value: string): TestNode | undefined {
+	if (node?.getAttribute?.(name) === value) return node
+	for (const child of node?.childNodes ?? []) {
+		const match = findByAttribute(child, name, value)
+		if (match !== undefined) return match
+	}
+	return undefined
+}
+
+function findButtonByText(node: TestNode | undefined, text: string): TestNode | undefined {
+	if (node?.tagName === 'BUTTON' && node.textContent?.trim() === text) return node
+	for (const child of node?.childNodes ?? []) {
+		const match = findButtonByText(child, text)
 		if (match !== undefined) return match
 	}
 	return undefined
@@ -144,9 +165,54 @@ describe('lazy popup pages', () => {
 			await act(() => {
 				render(<PopupModal { ...createPopupModalProps({ page: 'ImportSimulation', state: signal('') }) } />, dom.document.body)
 			})
-			await act(async () => await waitForRealLazyPage(() => dom.document.body.textContent.includes('Import Interceptor Simulation Stack')))
+			await act(async () => await waitForRealLazyPage(() => dom.document.body.textContent.includes('Import simulation stack')))
 			assert.notEqual(findByClass(findByClass(dom.document.body, 'modal'), 'is-active'), undefined)
-			assert.match(dom.document.body.textContent, /Import Interceptor Simulation Stack/u)
+			assert.match(dom.document.body.textContent, /Import simulation stack/u)
+		} finally {
+			render(null, dom.document.body)
+			restoreBrowserGlobals()
+			dom.restore()
+		}
+	})
+
+	test('renders Website Access with shared dialog semantics and editable access details', async () => {
+		const dom = installDomMock()
+		const restoreBrowserGlobals = installBrowserExtensionGlobals()
+		let closeCount = 0
+		const accountAddress = 0x1111111111111111111111111111111111111111n
+		const props = createPopupModalProps({ page: 'AccessList' })
+		props.goHome = () => { closeCount += 1 }
+		props.websiteAccess = signal<WebsiteAccessArray | undefined>([{
+			website: { websiteOrigin: 'https://example.test', icon: undefined, title: 'Example' },
+			addressAccess: [{ address: accountAddress, access: true }],
+			access: true,
+			interceptorDisabled: false,
+			declarativeNetRequestBlockMode: 'disabled',
+		}])
+		props.websiteAccessAddressMetadata = signal<AddressBookEntries>([{
+			type: 'contact',
+			name: 'Test account',
+			address: accountAddress,
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			askForAddressAccess: true,
+		}])
+		try {
+			await act(() => {
+				render(<PopupModal { ...props } />, dom.document.body)
+			})
+			await act(async () => await waitForRealLazyPage(() => dom.document.body.textContent.includes('https://example.test')))
+
+			const dialog = findByAttribute(dom.document.body, 'aria-label', 'Website access')
+			assert.notEqual(dialog, undefined)
+			assert.equal(dialog?.getAttribute?.('role'), 'dialog')
+			assert.match(dialog?.textContent ?? '', /https:\/\/example\.test/u)
+			assert.match(dialog?.textContent ?? '', /Test account/u)
+			assert.notEqual(findButtonByText(dialog, 'Cancel'), undefined)
+			assert.notEqual(findButtonByText(dialog, 'Close'), undefined)
+
+			findButtonByText(dialog, 'Cancel')?.dispatchEvent?.({ type: 'click', bubbles: true })
+			assert.equal(closeCount, 1)
 		} finally {
 			render(null, dom.document.body)
 			restoreBrowserGlobals()

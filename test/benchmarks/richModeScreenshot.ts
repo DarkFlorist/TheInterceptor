@@ -10,6 +10,8 @@ const screenshotPath = path.resolve('docs/screenshots/rich-mode-token-balances.p
 const manyBalancesScreenshotPath = path.resolve('docs/screenshots/rich-mode-many-balances.png')
 const accountBalancesScreenshotPath = path.resolve('docs/screenshots/rich-mode-account-balances.png')
 const manyTokenPickerScreenshotPath = path.resolve('docs/screenshots/rich-mode-token-search.png')
+const changeActiveAddressScreenshotPath = path.resolve('docs/screenshots/dialog-change-active-address.png')
+const addAddressScreenshotPath = path.resolve('docs/screenshots/dialog-add-address.png')
 const searchableTokenAddress = `0x${ (0x2000n + 73n).toString(16).padStart(40, '0') }`
 const sleep = async (milliseconds: number) => await new Promise<void>((resolve) => globalThis.setTimeout(resolve, milliseconds))
 const waitForCondition = async (connection: CdpConnection, description: string, expression: string) => {
@@ -38,6 +40,14 @@ const clickAriaLabel = async (connection: CdpConnection, ariaLabel: string) => {
 	await connection.evaluate(`(() => {
 		const element = document.querySelector(${ JSON.stringify(`[aria-label="${ ariaLabel }"]`) })
 		if (!(element instanceof HTMLElement)) throw new Error(${ JSON.stringify(`Element not found: ${ ariaLabel }`) })
+		element.click()
+	})()`)
+}
+const clickButtonText = async (connection: CdpConnection, text: string) => {
+	await waitForCondition(connection, `button ${ text }`, `Array.from(document.querySelectorAll('button')).some((element) => element.textContent?.trim() === ${ JSON.stringify(text) })`)
+	await connection.evaluate(`(() => {
+		const element = Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.trim() === ${ JSON.stringify(text) })
+		if (!(element instanceof HTMLButtonElement)) throw new Error(${ JSON.stringify(`Button not found: ${ text }`) })
 		element.click()
 	})()`)
 }
@@ -238,6 +248,18 @@ try {
 	await captureScreenshot(popup, manyTokenPickerScreenshotPath)
 	await searchToken(popup, searchableTokenAddress)
 	await waitForCondition(popup, 'full-address token search', `document.querySelectorAll('[data-rich-token-result]').length === 1 && document.body?.textContent?.includes('TOK74') === true`)
+
+	await clickAriaLabel(popup, 'Back to balances')
+	await clickAriaLabel(popup, 'Close balance editor')
+	await clickButtonText(popup, 'Change')
+	await waitForCondition(popup, 'change active address dialog', `document.querySelector('[aria-label="Change active address"]') !== null`)
+	await sleep(250)
+	await captureScreenshot(popup, changeActiveAddressScreenshotPath)
+
+	await clickButtonText(popup, 'Add new address')
+	await waitForCondition(popup, 'add address dialog', `document.querySelector('[aria-label^="Add New"]') !== null`)
+	await sleep(250)
+	await captureScreenshot(popup, addAddressScreenshotPath)
 	popup.close()
 } finally {
 	await chrome.close()

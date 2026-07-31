@@ -2,6 +2,17 @@ import type { render } from 'preact'
 
 type AttributeMap = Record<string, string | undefined>
 type RenderContainer = Parameters<typeof render>[1]
+type TestEvent = {
+	bubbles?: boolean
+	cancelBubble?: boolean
+	currentTarget?: TestElement
+	defaultPrevented?: boolean
+	preventDefault?: () => void
+	shiftKey?: boolean
+	stopPropagation?: () => void
+	target?: TestElement
+	type: string
+}
 
 class TestNode {
 	readonly nodeType: number = 0
@@ -71,6 +82,11 @@ class TestNode {
 		if (this === node) return true
 		return this.childNodes.some((child) => child.contains(node))
 	}
+
+	get isConnected() {
+		if (this === this.ownerDocument.body) return true
+		return this.parentNode?.isConnected ?? false
+	}
 }
 
 class TestTextNode extends TestNode {
@@ -96,6 +112,7 @@ class TestElement extends TestNode {
 	tagName: string
 	nodeName: string
 	attributes: AttributeMap = {}
+	readonly eventListeners = new Map<string, Set<(event: TestEvent) => void>>()
 	style = {
 		setProperty: (name: string, value: string) => {
 			this.style[name] = value
@@ -124,10 +141,52 @@ class TestElement extends TestNode {
 		delete this.attributes[name]
 	}
 
-	addEventListener() { return undefined }
-	removeEventListener() { return undefined }
-	focus() { return undefined }
-	blur() { return undefined }
+	addEventListener(type: string, listener: (event: TestEvent) => void) {
+		const listeners = this.eventListeners.get(type) ?? new Set()
+		listeners.add(listener)
+		this.eventListeners.set(type, listeners)
+	}
+	removeEventListener(type: string, listener: (event: TestEvent) => void) {
+		this.eventListeners.get(type)?.delete(listener)
+	}
+	dispatchEvent(event: TestEvent) {
+		event.target ??= this
+		event.currentTarget = this
+		event.stopPropagation ??= () => { event.cancelBubble = true }
+		event.preventDefault ??= () => { event.defaultPrevented = true }
+		const eventType = this.eventListeners.has(event.type)
+			? event.type
+			: [...this.eventListeners.keys()].find((registeredType) => registeredType.toLowerCase() === event.type.toLowerCase()) ?? event.type
+		event.type = eventType
+		for (const listener of this.eventListeners.get(eventType) ?? []) listener.call(this, event)
+		if (event.bubbles === true && event.cancelBubble !== true && this.parentNode instanceof TestElement) this.parentNode.dispatchEvent(event)
+		return event.cancelBubble !== true
+	}
+	querySelectorAll() {
+		const matches: TestElement[] = []
+		const collect = (node: TestNode) => {
+			for (const child of node.childNodes) {
+				if (child instanceof TestElement) {
+					const tagName = child.tagName.toLowerCase()
+					const isFormControl = ['button', 'input', 'select', 'textarea'].includes(tagName) && child.getAttribute('disabled') === null
+					const isLink = child.getAttribute('href') !== null
+					const tabIndex = child.getAttribute('tabindex') ?? child.getAttribute('tabIndex')
+					if (isFormControl || isLink || (tabIndex !== null && tabIndex !== '-1')) matches.push(child)
+				}
+				collect(child)
+			}
+		}
+		collect(this)
+		return matches
+	}
+	closest(selector: string): TestElement | null {
+		if (selector === '[inert], [aria-hidden="true"]' && (this.getAttribute('inert') !== null || this.getAttribute('aria-hidden') === 'true')) return this
+		return this.parentNode instanceof TestElement ? this.parentNode.closest(selector) : null
+	}
+	focus() { this.ownerDocument.activeElement = this }
+	blur() {
+		if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = null
+	}
 	showPopover() { return undefined }
 	hidePopover() { return undefined }
 	togglePopover() { return undefined }
@@ -148,17 +207,6 @@ class TestElement extends TestNode {
 class TestDialogElement extends TestElement {
 	open = false
 	returnValue = ''
-	readonly eventListeners = new Map<string, Set<(event: { currentTarget: TestDialogElement }) => void>>()
-
-	override addEventListener(type: string, listener: (event: { currentTarget: TestDialogElement }) => void) {
-		const listeners = this.eventListeners.get(type) ?? new Set()
-		listeners.add(listener)
-		this.eventListeners.set(type, listeners)
-	}
-
-	override removeEventListener(type: string, listener: (event: { currentTarget: TestDialogElement }) => void) {
-		this.eventListeners.get(type)?.delete(listener)
-	}
 
 	showModal() {
 		this.open = true
@@ -167,11 +215,12 @@ class TestDialogElement extends TestElement {
 	close(returnValue = '') {
 		this.open = false
 		this.returnValue = returnValue
-		for (const listener of this.eventListeners.get('close') ?? []) listener({ currentTarget: this })
+		this.dispatchEvent({ type: 'close' })
 	}
 }
 
 class TestDocument {
+	activeElement: TestElement | null = null
 	body: TestElement
 	readonly dialogElementConstructor: typeof TestDialogElement
 

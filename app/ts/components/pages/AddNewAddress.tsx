@@ -11,7 +11,6 @@ import type { AddressBookEntry, AddressBookEntryType, DeclarativeNetRequestBlock
 import { isBlockExplorerAvailableForChain, isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
 import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
-import { XMarkIcon } from '../subcomponents/icons.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import type { ChainEntry, RpcEntries } from '../../types/rpc.js'
 import { type Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
@@ -21,6 +20,7 @@ import { NonHexBigInt } from '../../types/wire-types.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { isValidAddressBookEntryName, MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH } from '../../utils/addressBookValidation.js'
+import { InterceptorDialogBody, InterceptorDialogFooter, InterceptorDialogHeader, InterceptorDialogSection, InterceptorDialogSurface } from '../subcomponents/InterceptorDialog.js'
 
 export function mergeAddressWindowErrorState(
 	currentErrorState: ModifyAddressWindowState['errorState'],
@@ -476,53 +476,30 @@ export function AddNewAddress(param: AddAddressParam) {
 		return `Modify ${ name }`
 	}
 	const incompleteAddressBookEntry = useComputed(() => param.modifyAddressWindowState.value.incompleteAddressBookEntry )
-	return ( <>
-		<div class = 'modal-background'> </div>
-		<div class = 'modal-card'>
-			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
-				<div class = 'card-header-icon unset-cursor'>
-					<span class = 'icon'>
-						<img src = '../img/address-book.svg' width = '24' height = '24'/>
-					</span>
-				</div>
-				<div class = 'card-header-title'>
-					<p class = 'paragraph'> { getCardTitle() } </p>
-				</div>
-				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close } disabled = { isBlockExplorerLookupPending.value }>
-					<XMarkIcon />
-				</button>
-			</header>
-			<section class = 'modal-card-body'>
-				<div class = 'card' style = 'margin: 10px;'>
-					<div class = 'card-content'>
-						<RenderIncompleteAddressBookEntry
-							modifyAddressWindowState = { param.modifyAddressWindowState }
-							rpcEntries = { param.rpcEntries }
-							canFetchFromEtherScan = { canFetchFromEtherScan }
-							blockExplorerLookupState = { blockExplorerLookup.value.state }
-							fetchAbiAndNameFromBlockExplorer = { fetchAbiAndNameFromBlockExplorer }
-						/>
-					</div>
-				</div>
-				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; min-height: 80px'>
-					{ completeAddressBookEntryOrError.value.type !== 'error' ? <></> : <ErrorText text = { completeAddressBookEntryOrError.value.error } /> }
-
-					{ param.modifyAddressWindowState.value.errorState === undefined ? <></> : <ErrorText text = { param.modifyAddressWindowState.value.errorState.message } /> }
-					{ !showOnChainVerificationErrorBox.value ? <></> :
-						<ErrorCheckBox
-							text = { `The name and symbol for this token was provided by the token itself and we have not validated its legitimacy. A token may claim to have a name/symbol that is the same as another popular token (e.g., USDC or DAI) in an attempt to trick you. If you recognize this token's name, please verify elsewhere that this is the correct address for it.` }
-							checked = { onChainInformationVerifiedByUser }
-						/>
-					}
-				</div>
-			</section>
-			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value.incompleteAddressBookEntry === undefined || activeAddress.value === stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { !areInputsValid.value || isBlockExplorerLookupPending.value }>
-					{ param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' }
-				</button> }
-				<button class = 'button is-success is-primary' onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled.value }> { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
-				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close } disabled = { isBlockExplorerLookupPending.value }>Cancel</button>
-			</footer>
-		</div>
-	</> )
+	const title = getCardTitle()
+	const actionVerb = param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify'
+	return <InterceptorDialogSurface ariaLabel = { title } closeDisabled = { isBlockExplorerLookupPending.value } onClose = { param.close } size = 'regular'>
+		<InterceptorDialogHeader close = { param.close } closeDisabled = { isBlockExplorerLookupPending.value } closeLabel = 'Close address editor' icon = '../img/address-book.svg' title = { title } subtitle = 'Address book details and contract metadata'/>
+		<InterceptorDialogBody>
+			<InterceptorDialogSection>
+				<RenderIncompleteAddressBookEntry
+					modifyAddressWindowState = { param.modifyAddressWindowState }
+					rpcEntries = { param.rpcEntries }
+					canFetchFromEtherScan = { canFetchFromEtherScan }
+					blockExplorerLookupState = { blockExplorerLookup.value.state }
+					fetchAbiAndNameFromBlockExplorer = { fetchAbiAndNameFromBlockExplorer }
+				/>
+			</InterceptorDialogSection>
+			<div class = 'interceptor-dialog-feedback'>
+				{ completeAddressBookEntryOrError.value.type !== 'error' ? <></> : <ErrorText text = { completeAddressBookEntryOrError.value.error } /> }
+				{ param.modifyAddressWindowState.value.errorState === undefined ? <></> : <ErrorText text = { param.modifyAddressWindowState.value.errorState.message } /> }
+				{ !showOnChainVerificationErrorBox.value ? <></> : <ErrorCheckBox text = { `The name and symbol for this token was provided by the token itself and we have not validated its legitimacy. A token may claim to have a name/symbol that is the same as another popular token (e.g., USDC or DAI) in an attempt to trick you. If you recognize this token's name, please verify elsewhere that this is the correct address for it.` } checked = { onChainInformationVerifiedByUser }/> }
+			</div>
+		</InterceptorDialogBody>
+		<InterceptorDialogFooter>
+			<button type = 'button' class = 'btn btn--ghost' onClick = { param.close } disabled = { isBlockExplorerLookupPending.value }>Cancel</button>
+			{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value.incompleteAddressBookEntry === undefined || activeAddress.value === stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) ? <></> : <button type = 'button' class = 'btn btn--outline' onClick = { createAndSwitch } disabled = { !areInputsValid.value || isBlockExplorerLookupPending.value }>{ actionVerb } and switch</button> }
+			<button type = 'button' class = 'btn btn--primary' onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled.value }>{ actionVerb }</button>
+		</InterceptorDialogFooter>
+	</InterceptorDialogSurface>
 }

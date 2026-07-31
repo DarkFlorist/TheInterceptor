@@ -12,7 +12,7 @@ import { DinoSays } from '../subcomponents/DinoSays.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
-import { BroomIcon, ChevronIcon, OpenInNewIcon, XMarkIcon } from '../subcomponents/icons.js'
+import { BroomIcon, ChevronIcon, OpenInNewIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { type Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
@@ -30,6 +30,7 @@ import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import type { ComponentChildren, JSX } from 'preact'
 import { DropDownMenuButtonContent } from '../subcomponents/DropDownMenu.js'
+import { InterceptorDialogBody, InterceptorDialogFooter, InterceptorDialogHeader, InterceptorDialogSurface } from '../subcomponents/InterceptorDialog.js'
 
 function scheduleAfterPaint(callback: () => void) {
 	if (typeof globalThis.requestAnimationFrame === 'function' && typeof globalThis.cancelAnimationFrame === 'function') {
@@ -639,25 +640,14 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 			? <></>
 			: <div
 				class = 'modal is-active rich-mode-modal-layer'
-				aria-modal = 'true'
-				role = 'dialog'
-				aria-label = { `Balance editor for ${ selectedRichAccount.value.addressBookEntry.name }` }
 				onKeyDown = { event => {
 					if (event.key !== 'Escape' || richTokenPending.value) return
 					showRichTokenPicker.value ? hideRichTokenSelection() : closeRichBalanceDialog()
 				} }
 			>
-				<div class = 'modal-background' onClick = { closeRichBalanceDialog }/>
-				<div class = { `modal-card rich-mode-modal-card${ showRichTokenPicker.value ? ' is-selecting-tokens' : '' }` }>
-					<header class = 'modal-card-head card-header interceptor-modal-head window-header rich-mode-modal-head'>
-						<div class = 'card-header-icon unset-cursor'><span class = 'icon'><img src = '../img/address-book.svg' width = '24' height = '24'/></span></div>
-						<div class = 'card-header-title'>
-							<p class = 'paragraph'>Balances</p>
-							<p class = 'rich-mode-modal-account'>{ selectedRichAccount.value.addressBookEntry.name }</p>
-						</div>
-						<button type = 'button' class = 'card-header-icon' aria-label = 'Close balance editor' disabled = { richTokenPending.value } onClick = { closeRichBalanceDialog }><XMarkIcon/></button>
-					</header>
-					<section class = 'modal-card-body'>
+				<InterceptorDialogSurface ariaLabel = { `Balance editor for ${ selectedRichAccount.value.addressBookEntry.name }` } class = { `rich-mode-modal-card${ showRichTokenPicker.value ? ' is-selecting-tokens' : '' }` } onBackdropClick = { closeRichBalanceDialog } size = 'large'>
+					<InterceptorDialogHeader close = { closeRichBalanceDialog } closeDisabled = { richTokenPending.value } closeLabel = 'Close balance editor' icon = '../img/address-book.svg' title = 'Balances' subtitle = { selectedRichAccount.value.addressBookEntry.name }/>
+					<InterceptorDialogBody class = 'rich-mode-dialog-body'>
 						<div class = 'card rich-mode-modal-content'>
 							<div class = { `card-content rich-mode-balance-page${ showRichTokenPicker.value ? ' is-recessed' : '' }` } aria-hidden = { showRichTokenPicker.value ? 'true' : undefined } inert = { showRichTokenPicker.value }>
 								{ richAccounts.value.length < 2 ? <></> : <div class = 'rich-mode-account-switcher' aria-label = 'Rich account navigation'>
@@ -700,10 +690,10 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 							{ showRichTokenPicker.value || richTokenError.value === undefined ? <></> : <p class = 'help is-danger'>{ richTokenError.value }</p> }
 							</div>
 						</div>
-					</section>
-					<footer class = { `modal-card-foot window-footer rich-mode-modal-footer${ showRichTokenPicker.value ? ' is-recessed' : '' }` } aria-hidden = { showRichTokenPicker.value ? 'true' : undefined } inert = { showRichTokenPicker.value }>
+					</InterceptorDialogBody>
+					<InterceptorDialogFooter class = { `rich-mode-modal-footer${ showRichTokenPicker.value ? ' is-recessed' : '' }` } ariaHidden = { showRichTokenPicker.value ? 'true' : undefined } inert = { showRichTokenPicker.value }>
 						<button type = 'button' class = 'btn btn--outline' disabled = { richTokenPending.value } onClick = { closeRichBalanceDialog }>Close</button>
-					</footer>
+					</InterceptorDialogFooter>
 					{ !showRichTokenPicker.value ? <></> : <section class = 'rich-mode-token-sheet' role = 'region' aria-label = { `Select tokens for ${ selectedRichAccount.value.addressBookEntry.name }` }>
 						<header class = 'rich-mode-token-sheet-head'>
 							<button type = 'button' class = 'btn btn--ghost rich-mode-modal-back' aria-label = 'Back to balances' disabled = { richTokenPending.value } onClick = { hideRichTokenSelection }>‹</button>
@@ -761,7 +751,7 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 							<button type = 'button' class = 'btn btn--primary' aria-label = 'Add selected tokens' disabled = { richTokenPending.value || selectedAvailableRichTokens.value.length === 0 } onClick = { () => { void addSelectedRichTokens() } }>Add { selectedAvailableRichTokens.value.length === 0 ? '' : selectedAvailableRichTokens.value.length.toString() } token{ selectedAvailableRichTokens.value.length === 1 ? '' : 's' }</button>
 						</footer>
 					</section> }
-				</div>
+				</InterceptorDialogSurface>
 			</div>
 		}
 	</>

@@ -8,7 +8,7 @@ import { useSignal } from '@preact/signals'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { keccak256, namehash, stringToBytes } from '../../utils/ethereumPrimitives.js'
 import { isValidEnsName } from '../../utils/ens.js'
-import { XMarkIcon } from '../subcomponents/icons.js'
+import { InterceptorDialogBody, InterceptorDialogFooter, InterceptorDialogHeader, InterceptorDialogSection, InterceptorDialogSurface } from '../subcomponents/InterceptorDialog.js'
 
 type EditEnsNamedHashParams = {
 	close: () => void,
@@ -79,42 +79,22 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 		/>
 	}
 
-	return ( <>
-		<div class = 'modal-background'> </div>
-		<div class = 'modal-card'>
-			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
-				<div class = 'card-header-icon unset-cursor'>
-					<span class = 'icon'>
-						<img src = '../img/address-book.svg' width = '24' height = '24'/>
-					</span>
-				</div>
-				<div class = 'card-header-title'>
-					<p class = 'paragraph'> { param.editEnsNamedHashWindowState.type === 'labelHash' ? 'What is the correct ENS label for this hash?' : 'What is the correct ENS name for this hash?' } </p>
-				</div>
-				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
-					<XMarkIcon />
-				</button>
-			</header>
-			<section class = 'modal-card-body'>
-				<div class = 'card' style = 'margin: 10px;'>
-					<div class = 'card-content'>
-						<div class = 'container' style = 'margin-bottom: 10px;'>
-							<span class = 'log-table' style = 'column-gap: 5px; row-gap: 5px; grid-template-columns: max-content auto;'>
-								<CellElement element = { <Text text = { 'Hash: ' }/> }/>
-								<CellElement element = { <TextInput value = { bytes32String(param.editEnsNamedHashWindowState.nameHash) } setInput = { () => undefined } disabled = { true } placeholder = {''}/> } />
-								<CellElement element = { <Text text = { 'Name: ' }/> }/>
-								<CellElement element = { <TextInput value = { param.editEnsNamedHashWindowState.name ? param.editEnsNamedHashWindowState.name : name.value } disabled = { param.editEnsNamedHashWindowState.name !== undefined || inputDisabled.value } setInput = { validateAndSetName } placeholder = { param.editEnsNamedHashWindowState.type === 'labelHash' ? 'ENS label, eg. "vitalik"' : 'ENS name, eg "vitalik.eth"' }/> } />
-							</span>
-						</div>
-					</div>
-				</div>
-				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; min-height: 80px'>
-					{ errorString.value === '' ? <></> : <Notice text = { errorString.value } /> }
-				</div>
-			</section>
-			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				<button class = 'button is-primary'  onClick = { param.close }>Ok</button>
-			</footer>
-		</div>
-	</> )
+	const title = param.editEnsNamedHashWindowState.type === 'labelHash' ? 'Resolve ENS label' : 'Resolve ENS name'
+	return <InterceptorDialogSurface ariaLabel = { title } onClose = { param.close } size = 'compact'>
+		<InterceptorDialogHeader close = { param.close } closeLabel = 'Close ENS editor' icon = '../img/address-book.svg' title = { title } subtitle = 'Provide the human-readable value for this hash'/>
+		<InterceptorDialogBody>
+			<InterceptorDialogSection>
+				<span class = 'log-table interceptor-dialog-form-grid'>
+					<CellElement element = { <Text text = { 'Hash' }/> }/>
+					<CellElement element = { <TextInput value = { bytes32String(param.editEnsNamedHashWindowState.nameHash) } setInput = { () => undefined } disabled = { true } placeholder = {''}/> } />
+					<CellElement element = { <Text text = { 'Name' }/> }/>
+					<CellElement element = { <TextInput value = { param.editEnsNamedHashWindowState.name ? param.editEnsNamedHashWindowState.name : name.value } disabled = { param.editEnsNamedHashWindowState.name !== undefined || inputDisabled.value } setInput = { validateAndSetName } placeholder = { param.editEnsNamedHashWindowState.type === 'labelHash' ? 'ENS label, eg. "vitalik"' : 'ENS name, eg. "vitalik.eth"' }/> } />
+				</span>
+			</InterceptorDialogSection>
+			{ errorString.value === '' ? <></> : <div class = 'interceptor-dialog-feedback'><Notice text = { errorString.value } /></div> }
+		</InterceptorDialogBody>
+		<InterceptorDialogFooter>
+			<button type = 'button' class = 'btn btn--primary' onClick = { param.close }>Done</button>
+		</InterceptorDialogFooter>
+	</InterceptorDialogSurface>
 }

@@ -11,6 +11,7 @@ import { XMarkIcon } from '../subcomponents/icons.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { createAsyncActionRunner, useAsyncState } from '../../utils/preact-utilities.js'
+import { InterceptorDialogBody, InterceptorDialogFooter, InterceptorDialogHeader, InterceptorDialogSurface } from '../subcomponents/InterceptorDialog.js'
 
 interface ModifiedAddressAccess {
 	address: bigint,
@@ -42,7 +43,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 
 	function updateEditableAccessList(newList: WebsiteAccessArray | undefined) {
 		if (newList === undefined) { editableAccessList.value = undefined; return }
-		const current = editableAccessList.value
+		const current = editableAccessList.peek()
 		if (current === undefined) {
 			editableAccessList.value = newList.map((x) => ({
 				websiteAccess: x,
@@ -197,26 +198,10 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 		return param.goHome()
 	}
 
-	return ( <>
-		<div class = 'modal-background'> </div>
-		<div class = 'modal-card' style = 'height: 100%;'>
-			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
-				<div class = 'card-header-icon unset-cursor'>
-					<span class = 'icon'>
-						<img src = '../img/internet.svg' width = '24' height = '24'/>
-					</span>
-				</div>
-				<div class = 'card-header-title'>
-					<p class = 'paragraph'>
-						Website Access
-					</p>
-				</div>
-				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.goHome }>
-					<XMarkIcon />
-				</button>
-			</header>
-			<section class = 'modal-card-body'>
-				<ul>
+	return <InterceptorDialogSurface ariaLabel = 'Website access' onClose = { param.goHome } size = 'large' fill = { true }>
+		<InterceptorDialogHeader close = { param.goHome } closeLabel = 'Close website access' icon = '../img/internet.svg' title = 'Website access' subtitle = 'Review sites and addresses allowed to use Interceptor'/>
+		<InterceptorDialogBody>
+				<ul class = 'interceptor-dialog-list'>
 					{ editableAccessList.value !== undefined && editableAccessList.value.length === 0 ?
 						<li>
 							<div class = 'card'>
@@ -307,18 +292,17 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 						</li>
 					) ) }
 				</ul>
-			</section>
+		</InterceptorDialogBody>
 
-			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.goHome }>Cancel</button>
+		<InterceptorDialogFooter>
+				<button type = 'button' class = 'btn btn--ghost' onClick = { param.goHome }>Cancel</button>
 					<AsyncActionButton
-						class = 'button is-success is-primary'
+						class = 'btn btn--primary'
 						state = { saveChangesState.value.state }
 						onClick = { createAsyncActionRunner({ value: saveChangesState, waitFor: waitForSaveChangesState, reset: resetSaveChangesState }, saveChanges) }
 						text = { areThereChanges() ? 'Save Changes' : 'Close' }
 						pendingText = 'Saving...'
 					/>
-			</footer>
-		</div>
-	</> )
+		</InterceptorDialogFooter>
+	</InterceptorDialogSurface>
 }

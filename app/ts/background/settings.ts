@@ -318,7 +318,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 	const settings = await getSettings()
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
-		version: '1.4' as const,
+		version: '1.5' as const,
 		exportedDate: exportDate,
 		settings: {
 			activeSimulationAddress: settings.activeSimulationAddress,
@@ -330,6 +330,11 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 			addressBookEntries: await getUserAddressBookEntries(),
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
 			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
+			makeCurrentAddressRich: await getMakeCurrentAddressRich(),
+			richNativeAmount: await getRichNativeAmount(),
+			fixedAddressRichList: await getFixedAddressRichList(),
+			richTokens: await getRichTokens(),
+			richAccountBalances: await getRichAccountBalances(),
 		}
 	}
 }
@@ -358,12 +363,21 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') {
 		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
 	}
-	if (exportedSetings.version === '1.4') {
+	if (exportedSetings.version === '1.4' || exportedSetings.version === '1.5') {
 		await updateUserAddressBookEntries(() => exportedSetings.settings.addressBookEntries)
 	} else {
 		await updateUserAddressBookEntries((previousEntries) => {
 			const convertActiveAddressToAddressBookEntry = (info: ActiveAddress): AddressBookEntry => ({ ...info, type: 'contact' as const, useAsActiveAddress: true, entrySource: 'User' as const })
 			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])
+		})
+	}
+	if (exportedSetings.version === '1.5') {
+		await browserStorageLocalSet({
+			makeCurrentAddressRich: exportedSetings.settings.makeCurrentAddressRich,
+			richNativeAmount: exportedSetings.settings.richNativeAmount,
+			fixedAddressRichList: exportedSetings.settings.fixedAddressRichList,
+			richTokens: exportedSetings.settings.richTokens,
+			richAccountBalances: exportedSetings.settings.richAccountBalances,
 		})
 	}
 	await reconcileRichTokensWithAddressBook()
