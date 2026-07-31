@@ -1,14 +1,16 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 
-type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[] }
+type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[], stopImmediatePropagation?: () => void }
 type Listener = (event: WindowEvent) => void
+type ListenerRegistration = { readonly listener: Listener, readonly capture: boolean }
 type InpageRequest = { readonly method: string, readonly requestId: number, readonly params?: readonly unknown[], readonly internal?: true, readonly replayOnDisconnect?: true }
 type SignerRequest = { readonly method: string, readonly params?: readonly unknown[] | Readonly<Record<string, unknown>> }
 type FakeWindowOptions = {
 	readonly onConnectedToSignerRequest?: () => void
 	readonly handleRequest?: (request: InpageRequest, sendBackgroundMessage: (data: unknown) => void) => boolean
 	readonly handleSignerRequest?: (request: SignerRequest) => unknown | Promise<unknown>
+	readonly metamaskCompatibilityMode?: boolean
 	readonly signerChainIdReply?: unknown
 	readonly signerInitialSelectedAddress?: string
 }
@@ -32,8 +34,8 @@ function parseInpageRequest(value: unknown): InpageRequest | undefined {
 	}
 }
 
-function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSignerRequest, signerChainIdReply = '0x1', signerInitialSelectedAddress }: FakeWindowOptions = {}) {
-	const listeners = new Map<string, Set<Listener>>()
+function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSignerRequest, metamaskCompatibilityMode = true, signerChainIdReply = '0x1', signerInitialSelectedAddress }: FakeWindowOptions = {}) {
+	const listeners = new Map<string, ListenerRegistration[]>()
 	const signerRequests: string[] = []
 	const backgroundEthAccountsReplies: unknown[] = []
 	const backgroundSignerChainChanges: unknown[] = []
@@ -89,20 +91,45 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 	const fakeWindow = {
 		ethereum: fakeSigner,
 		...(signerInitialSelectedAddress === undefined ? {} : { web3: { accounts: [signerInitialSelectedAddress], currentProvider: fakeSigner } }),
-		addEventListener: (type: string, listener: Listener) => {
+		addEventListener: (type: string, listener: Listener, options?: boolean | { readonly capture?: boolean }) => {
+			const capture = options === true || (typeof options === 'object' && options.capture === true)
 			const existing = listeners.get(type)
 			if (existing === undefined) {
-				listeners.set(type, new Set([listener]))
+				listeners.set(type, [{ listener, capture }])
 				return
 			}
-			existing.add(listener)
+			if (existing.some((registration) => registration.listener === listener && registration.capture === capture)) return
+			existing.push({ listener, capture })
 		},
-		removeEventListener: (type: string, listener: Listener) => {
-			listeners.get(type)?.delete(listener)
+		removeEventListener: (type: string, listener: Listener, options?: boolean | { readonly capture?: boolean }) => {
+			const capture = options === true || (typeof options === 'object' && options.capture === true)
+			const existing = listeners.get(type)
+			if (existing === undefined) return
+			const registrationIndex = existing.findIndex((registration) => registration.listener === listener && registration.capture === capture)
+			if (registrationIndex !== -1) existing.splice(registrationIndex, 1)
 		},
 		dispatchEvent: (event: WindowEvent) => {
-			for (const listener of listeners.get(event.type) ?? []) listener(event)
-			return true
+			let immediatePropagationStopped = false
+			const originalStopImmediatePropagation = event.stopImmediatePropagation
+			event.stopImmediatePropagation = () => {
+				immediatePropagationStopped = true
+				originalStopImmediatePropagation?.call(event)
+			}
+			try {
+				const registrations = listeners.get(event.type) ?? []
+				const orderedRegistrations = [
+					...registrations.filter((registration) => registration.capture),
+					...registrations.filter((registration) => !registration.capture),
+				]
+				for (const registration of orderedRegistrations) {
+					registration.listener(event)
+					if (immediatePropagationStopped) break
+				}
+				return true
+			} finally {
+				if (originalStopImmediatePropagation === undefined) delete event.stopImmediatePropagation
+				else event.stopImmediatePropagation = originalStopImmediatePropagation
+			}
 		},
 		postMessage: (data: unknown, _targetOrigin?: string, transfer?: readonly Transferable[]) => {
 			if (!isRecord(data) || data.type !== 'interceptor_bridge_port') return
@@ -131,7 +158,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode },
 					})
 					return
 				case 'InterceptorError':
@@ -1390,6 +1417,122 @@ describe('inpage signer bridge', () => {
 
 		emitSignerEvent('chainChanged', '0x3')
 		await waitFor(() => backgroundMessages.some((message) => message.method === 'signer_chainChanged' && message.params?.[0] === '0x3'))
+	})
+
+	test('replaces MetaMask EIP-6963 announcements with the Interceptor provider in compatibility mode', async () => {
+		const dappAnnouncements: unknown[] = []
+		const metaMaskInfo = {
+			uuid: '77777777-7777-4777-8777-777777777777',
+			name: 'MetaMask',
+			icon: 'data:image/svg+xml,<svg/>',
+			rdns: 'io.metamask',
+		}
+		const { fakeWindow, signerRequests } = createFakeWindow({ metamaskCompatibilityMode: false })
+		const announcedMetaMaskProvider = fakeWindow.ethereum
+		const braveSigner = {
+			isBraveWallet: true,
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => method === 'eth_chainId' ? '0x1' : [],
+			on: () => braveSigner,
+			removeListener: () => braveSigner,
+		}
+		Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: braveSigner })
+		fakeWindow.addEventListener('eip6963:announceProvider', (event) => dappAnnouncements.push(event.detail))
+		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+			type: 'eip6963:announceProvider',
+			detail: { info: metaMaskInfo, provider: announcedMetaMaskProvider },
+		}))
+		Reflect.set(fakeWindow, Symbol.for('TheInterceptor.metamaskCompatibilityMode'), true)
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?replace-eip6963-metamask-announcement', async () => {
+			const interceptorProvider = fakeWindow.ethereum
+			assert.equal((interceptorProvider as unknown as { isInterceptor?: unknown }).isInterceptor, true)
+			assert.equal((interceptorProvider as unknown as { isMetaMask?: unknown }).isMetaMask, true)
+			assert.notEqual(interceptorProvider, announcedMetaMaskProvider)
+			assert.equal(dappAnnouncements.length, 1)
+			assert.deepEqual(dappAnnouncements[0], {
+				info: metaMaskInfo,
+				provider: interceptorProvider,
+			})
+
+			fakeWindow.dispatchEvent({ type: 'eip6963:requestProvider' })
+			assert.equal(dappAnnouncements.length, 2)
+			assert.deepEqual(dappAnnouncements[1], {
+				info: metaMaskInfo,
+				provider: interceptorProvider,
+			})
+			await waitFor(() => signerRequests.includes('eth_chainId'))
+
+			const lateMetaMaskInfo = {
+				...metaMaskInfo,
+				uuid: '99999999-9999-4999-8999-999999999999',
+			}
+			const lateMetaMaskProvider = {
+				request: async () => undefined,
+				on: () => lateMetaMaskProvider,
+			}
+			fakeWindow.dispatchEvent({
+				type: 'eip6963:announceProvider',
+				detail: { info: lateMetaMaskInfo, provider: lateMetaMaskProvider },
+			})
+			assert.equal(dappAnnouncements.length, 3)
+			assert.deepEqual(dappAnnouncements[2], {
+				info: lateMetaMaskInfo,
+				provider: interceptorProvider,
+			})
+		})
+	})
+
+	test('leaves MetaMask EIP-6963 announcements unchanged outside compatibility mode', async () => {
+		const dappAnnouncements: unknown[] = []
+		const metaMaskInfo = {
+			uuid: '88888888-8888-4888-8888-888888888888',
+			name: 'MetaMask',
+			icon: 'data:image/svg+xml,<svg/>',
+			rdns: 'io.metamask',
+		}
+		const { fakeWindow, signerRequests } = createFakeWindow({ metamaskCompatibilityMode: true })
+		const announcedMetaMaskProvider = fakeWindow.ethereum
+		const braveSigner = {
+			isBraveWallet: true,
+			isConnected: () => true,
+			request: async ({ method }: { method: string }) => method === 'eth_chainId' ? '0x1' : [],
+			on: () => braveSigner,
+			removeListener: () => braveSigner,
+		}
+		Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: braveSigner })
+		fakeWindow.addEventListener('eip6963:announceProvider', (event) => dappAnnouncements.push(event.detail))
+		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
+			type: 'eip6963:announceProvider',
+			detail: { info: metaMaskInfo, provider: announcedMetaMaskProvider },
+		}))
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?preserve-eip6963-metamask-announcement', async () => {
+			await waitFor(() => signerRequests.includes('eth_chainId'))
+			const lateMetaMaskInfo = {
+				...metaMaskInfo,
+				uuid: '99999999-9999-4999-8999-999999999998',
+			}
+			const lateMetaMaskProvider = {
+				request: async () => undefined,
+				on: () => lateMetaMaskProvider,
+			}
+			fakeWindow.dispatchEvent({
+				type: 'eip6963:announceProvider',
+				detail: { info: lateMetaMaskInfo, provider: lateMetaMaskProvider },
+			})
+			const metaMaskAnnouncements = dappAnnouncements.filter((detail) => isRecord(detail)
+				&& isRecord(detail.info)
+				&& detail.info.rdns === 'io.metamask')
+			assert.equal(metaMaskAnnouncements.length, 2)
+			assert.deepEqual(metaMaskAnnouncements, [{
+				info: metaMaskInfo,
+				provider: announcedMetaMaskProvider,
+			}, {
+				info: lateMetaMaskInfo,
+				provider: lateMetaMaskProvider,
+			}])
+		})
 	})
 
 	test('uses an initially announced MetaMask provider instead of MetaMask-compatible Ambire or Rabby', async () => {

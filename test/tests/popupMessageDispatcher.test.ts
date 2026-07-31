@@ -9,6 +9,7 @@ const storageState: Record<string, unknown> = {}
 const sentMessages: unknown[] = []
 const dynamicRuleUpdates: unknown[] = []
 const dispatcherEvents: ({ type: 'message', message: unknown } | { type: 'dynamicRuleUpdate' })[] = []
+const registeredContentScripts: { readonly id?: string, readonly js?: readonly string[] }[] = []
 
 Reflect.set(globalThis, 'chrome', { runtime: { id: 'test-extension' } })
 Reflect.set(globalThis, 'browser', {
@@ -37,6 +38,14 @@ Reflect.set(globalThis, 'browser', {
 			async remove(keys: string | string[]) {
 				for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 			},
+		},
+	},
+	scripting: {
+		unregisterContentScripts: async () => {
+			registeredContentScripts.splice(0, registeredContentScripts.length)
+		},
+		registerContentScripts: async (scripts: readonly { readonly id?: string, readonly js?: readonly string[] }[]) => {
+			registeredContentScripts.push(...scripts)
 		},
 	},
 	tabs: {
@@ -125,6 +134,7 @@ beforeEach(() => {
 	sentMessages.splice(0, sentMessages.length)
 	dynamicRuleUpdates.splice(0, dynamicRuleUpdates.length)
 	dispatcherEvents.splice(0, dispatcherEvents.length)
+	registeredContentScripts.splice(0, registeredContentScripts.length)
 })
 
 describe('popup message dispatcher seams', () => {
@@ -214,6 +224,7 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(messages[1].data.activeSimulationAddress, 2n)
 		assert.equal(messages[1].data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
 		assert.equal(messages[1].data.simulationMode, false)
+		assert.deepEqual(registeredContentScripts.find((registration) => registration.id === 'inpage')?.js, ['/inpage/js/inpage.js'])
 		assert.deepEqual(dynamicRuleUpdates, [{
 			removeRuleIds: [],
 			addRules: [{
