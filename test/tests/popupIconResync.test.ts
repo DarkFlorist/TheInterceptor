@@ -159,18 +159,20 @@ async function pressElementKey(element: TestDomNode, key: string) {
 	await keyDownHandler({ currentTarget: element, key, preventDefault() { return undefined } })
 }
 
+async function dispatchElementValueEvent(element: TestDomNode, value: string, acceptedEventTypes: readonly string[]) {
+	if (element.dispatchEvent === undefined) throw new Error('Expected event dispatch support')
+	element.value = value
+	const eventType = [...(element.eventListeners?.keys() ?? [])].find((registeredType) => acceptedEventTypes.includes(registeredType.toLowerCase()))
+	if (eventType === undefined) throw new Error('Expected a registered input value event')
+	element.dispatchEvent({ type: eventType, bubbles: true })
+}
+
 async function inputElementValue(element: TestDomNode, value: string) {
-	const inputHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([eventName]) => eventName.startsWith('Input'))?.[1]
-	if (inputHandler === undefined) throw new Error('Expected input handler')
-	await inputHandler({ currentTarget: { value } })
+	await dispatchElementValueEvent(element, value, ['input'])
 }
 
 async function changeElementValue(element: TestDomNode, value: string) {
-	if (element.dispatchEvent === undefined) throw new Error('Expected event dispatch support')
-	element.value = value
-	const eventType = [...(element.eventListeners?.keys() ?? [])].find((registeredType) => registeredType.toLowerCase() === 'change' || registeredType.toLowerCase() === 'input')
-	if (eventType === undefined) throw new Error('Expected a registered input value event')
-	element.dispatchEvent({ type: eventType, bubbles: true })
+	await dispatchElementValueEvent(element, value, ['change', 'input'])
 }
 
 function installClipboardMock() {
