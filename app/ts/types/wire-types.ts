@@ -14,6 +14,18 @@ const BigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	},
 }
 
+const CanonicalBigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
+	parse: value => {
+		if (!/^0x(?:0|[1-9a-fA-F][0-9a-fA-F]{0,63})$/.test(value)) return { success: false, message: `${ value } is not a canonical hex quantity.` }
+		return { success: true, value: BigInt(value) }
+	},
+	serialize: value => {
+		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.` }
+		if (value < 0n) return { success: false, message: `${ value } is not a non-negative bigint.` }
+		return { success: true, value: `0x${ value.toString(16) }` }
+	},
+}
+
 const SmallIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{1,64})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded number.` }
@@ -177,6 +189,9 @@ export type NonHexBigInt = funtypes.Static<typeof NonHexBigInt>
 
 export const EthereumQuantity = funtypes.String.withParser(BigIntParser)
 export type EthereumQuantity = funtypes.Static<typeof EthereumQuantity>
+
+export const CanonicalEthereumQuantity = funtypes.String.withParser(CanonicalBigIntParser)
+export type CanonicalEthereumQuantity = funtypes.Static<typeof CanonicalEthereumQuantity>
 
 export const EthereumSignatureParity = funtypes.String.withParser(EthereumSignatureParityParser)
 export type EthereumSignatureParity = funtypes.Static<typeof EthereumSignatureParity>
