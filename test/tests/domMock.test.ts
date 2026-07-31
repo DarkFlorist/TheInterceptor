@@ -8,12 +8,14 @@ test('installDomMock restore keeps newer interleaved mock globals active', () =>
 	const firstClearInterval = globalThis.clearInterval
 	const firstRequestAnimationFrame = globalThis.requestAnimationFrame
 	const firstCancelAnimationFrame = globalThis.cancelAnimationFrame
+	const firstHtmlDialogElement = globalThis.HTMLDialogElement
 
 	const second = installDomMock()
 	const secondSetInterval = globalThis.setInterval
 	const secondClearInterval = globalThis.clearInterval
 	const secondRequestAnimationFrame = globalThis.requestAnimationFrame
 	const secondCancelAnimationFrame = globalThis.cancelAnimationFrame
+	const secondHtmlDialogElement = globalThis.HTMLDialogElement
 
 	first.restore()
 
@@ -23,6 +25,7 @@ test('installDomMock restore keeps newer interleaved mock globals active', () =>
 	assert.equal(globalThis.clearInterval, secondClearInterval)
 	assert.equal(globalThis.requestAnimationFrame, secondRequestAnimationFrame)
 	assert.equal(globalThis.cancelAnimationFrame, secondCancelAnimationFrame)
+	assert.equal(globalThis.HTMLDialogElement, secondHtmlDialogElement)
 
 	second.restore()
 
@@ -38,4 +41,6 @@ test('installDomMock restore keeps newer interleaved mock globals active', () =>
 	assert.notEqual(globalThis.requestAnimationFrame, secondRequestAnimationFrame)
 	assert.notEqual(globalThis.cancelAnimationFrame, firstCancelAnimationFrame)
 	assert.notEqual(globalThis.cancelAnimationFrame, secondCancelAnimationFrame)
+	assert.notEqual(globalThis.HTMLDialogElement, firstHtmlDialogElement)
+	assert.notEqual(globalThis.HTMLDialogElement, secondHtmlDialogElement)
 })
