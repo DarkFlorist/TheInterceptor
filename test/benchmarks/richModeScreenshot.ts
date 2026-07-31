@@ -37,6 +37,20 @@ const clickAriaLabel = async (connection: CdpConnection, ariaLabel: string) => {
 		element.click()
 	})()`)
 }
+const chooseToken = async (connection: CdpConnection, label: string) => {
+	await connection.evaluate(`(() => {
+		const select = document.querySelector('[aria-label="Choose address-book token"]')
+		if (!(select instanceof HTMLSelectElement)) throw new Error('Rich token picker not found')
+		const option = Array.from(select.options).find((entry) => entry.textContent === ${ JSON.stringify(label) })
+		if (option === undefined) throw new Error(${ JSON.stringify(`Token option not found: ${ label }`) })
+		select.value = option.value
+		select.dispatchEvent(new Event('change', { bubbles: true }))
+	})()`)
+}
+const addToken = async (connection: CdpConnection, label: string) => {
+	await chooseToken(connection, label)
+	await clickAriaLabel(connection, 'Add selected rich token')
+}
 
 const chrome = await launchChromeSession()
 try {
@@ -49,6 +63,7 @@ try {
 		void chrome.storage.local.set({
 			simulationMode: true,
 			makeCurrentAddressRich: true,
+			richNativeAmount: '0xad78ebc5ac620000',
 			activeSimulationAddress: '0x1111111111111111111111111111111111111111',
 			userAddressBookEntriesV3: [
 				{
@@ -91,23 +106,24 @@ try {
 	})()`)
 	await waitForText(popup, 'USDC')
 	await waitForText(popup, 'ITEM #42')
+	await chooseToken(popup, 'USDC')
 	await sleep(250)
 	await captureScreenshot(popup, availableScreenshotPath)
 
-	await clickAriaLabel(popup, 'Toggle rich token USDC')
-	await waitForText(popup, 'Detecting USDC balance storage')
+	await clickAriaLabel(popup, 'Add selected rich token')
+	await waitForText(popup, 'Preparing USDC for simulation')
 	await sleep(150)
 	await captureScreenshot(popup, detectingScreenshotPath)
 	await waitForCondition(
 		popup,
 		'USDC enabled',
-		`document.querySelector(${ JSON.stringify('[aria-label="Toggle rich token USDC"]') })?.checked === true && document.body?.textContent?.includes('Detecting USDC balance storage') === false`,
+		`document.querySelector(${ JSON.stringify('[aria-label="USDC rich amount"]') }) !== null && document.body?.textContent?.includes('Preparing USDC for simulation') === false`,
 	)
-	await clickAriaLabel(popup, 'Toggle rich token ITEM #42')
+	await addToken(popup, 'ITEM #42')
 	await waitForCondition(
 		popup,
 		'ITEM #42 enabled',
-		`document.querySelector(${ JSON.stringify('[aria-label="Toggle rich token ITEM #42"]') })?.checked === true && document.body?.textContent?.includes('Detecting ITEM #42 balance storage') === false`,
+		`document.querySelector(${ JSON.stringify('[aria-label="ITEM #42 rich amount"]') }) !== null && document.body?.textContent?.includes('Preparing ITEM #42 for simulation') === false`,
 	)
 	await sleep(250)
 	await captureScreenshot(popup, screenshotPath)

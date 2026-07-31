@@ -1,5 +1,5 @@
 import { changeActiveAddressAndChain, changeActiveRpc, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, refreshConfirmTransactionSimulation } from './background.js'
-import { getSettings, setUseTabsInsteadOfPopup, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeCurrentAddressRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList, getRichTokens, updateRichTokenAmount, updateRichTokens, reconcileRichTokensWithAddressBook } from './settings.js'
+import { getSettings, setUseTabsInsteadOfPopup, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeCurrentAddressRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList, getRichTokens, updateRichTokenAmount, updateRichTokens, reconcileRichTokensWithAddressBook, getRichNativeAmount, setRichNativeAmount } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type WatchAssetConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type ImportSettings, type ImportSettingsReply, type SetRpcList, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type DisableInterceptor, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type BlockOrAllowExternalRequests, type RemoveWebsiteAccess, type AllowOrPreventAddressAccessForWebsite, type RemoveWebsiteAddressAccess, type ForceSetGasLimitForTransaction, type RetrieveWebsiteAccess, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
@@ -224,15 +224,20 @@ export async function changeActiveAddress(ethereum: EthereumClientService, token
 }
 
 export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich) {
-	if (makeMeRichChange.data.address === 'CurrentAddress') {
-		await updateMakeCurrentAddressRich(() => makeMeRichChange.data.add)
+	if ('nativeAmount' in makeMeRichChange.data) {
+		if (makeMeRichChange.data.nativeAmount <= 0n || makeMeRichChange.data.nativeAmount > MAX_RICH_TOKEN_AMOUNT) return
+		await setRichNativeAmount(makeMeRichChange.data.nativeAmount)
 		return
 	}
-	const address = makeMeRichChange.data.address
+	const { add, address } = makeMeRichChange.data
+	if (address === 'CurrentAddress') {
+		await updateMakeCurrentAddressRich(() => add)
+		return
+	}
 	await updateFixedMakeMeRichList((currentList) => updateRichListAddress(
 		currentList,
 		address,
-		makeMeRichChange.data.add,
+		add,
 		(element) => element.address,
 		() => ({
 			address,
@@ -1089,6 +1094,7 @@ export async function setTransactionOrMessageBlockTimeManipulator(ethereum: Ethe
 
 export async function requestMakeMeRichList(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined) {
 	const makeMeRichPromise = silenceChromeUnCaughtPromise(getMakeCurrentAddressRich())
+	const richNativeAmountPromise = silenceChromeUnCaughtPromise(getRichNativeAmount())
 	const richTokensPromise = silenceChromeUnCaughtPromise(getRichTokens())
 	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
 	const addressBookTokensPromise = settingsPromise.then(async (settings) => await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId))
@@ -1120,6 +1126,7 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 		method: 'popup_requestMakeMeRichData' as const,
 		richList: await Promise.all(fixedRichListPromises),
 		makeCurrentAddressRich: await makeMeRichPromise,
+		richNativeAmount: await richNativeAmountPromise,
 		richTokenOptions: getRichTokenOptions(
 			(await settingsPromise).activeRpcNetwork.chainId,
 			await richTokensPromise,
@@ -1135,8 +1142,9 @@ export const requestSimulationMode = async () => ({ method: 'popup_requestSimula
 export const requestLatestUnexpectedError = async () => ({ method: 'popup_requestLatestUnexpectedError' as const, latestUnexpectedError: await getLatestUnexpectedError() })
 
 async function getCachedRichData() {
-	const [makeCurrentAddressRich, fixedAddressRichList, richTokens, settings] = await Promise.all([
+	const [makeCurrentAddressRich, richNativeAmount, fixedAddressRichList, richTokens, settings] = await Promise.all([
 		getMakeCurrentAddressRich(),
+		getRichNativeAmount(),
 		getFixedAddressRichList(),
 		getRichTokens(),
 		getSettings(),
@@ -1148,6 +1156,7 @@ async function getCachedRichData() {
 			{ ...element, addressBookEntry: await getActiveAddressEntry(element.address) }
 		))),
 		makeCurrentAddressRich,
+		richNativeAmount,
 		richTokenOptions: getRichTokenOptions(settings.activeRpcNetwork.chainId, richTokens, addressBookEntries),
 	}
 }
@@ -1203,6 +1212,7 @@ async function buildHomePageUpdate(
 			activeAddresses: await activeAddressesPromise,
 			richList: richData.richList,
 			makeCurrentAddressRich: richData.makeCurrentAddressRich,
+			richNativeAmount: richData.richNativeAmount,
 			richTokenOptions: richData.richTokenOptions,
 			latestUnexpectedError: await latestUnexpectedErrorPromise,
 			websiteAccessAddressMetadata,

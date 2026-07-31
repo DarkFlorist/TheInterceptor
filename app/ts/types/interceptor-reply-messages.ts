@@ -36,6 +36,7 @@ const RequestMakeMeRichDataReply = funtypes.ReadonlyObject({
 	makeCurrentAddressRich: funtypes.Boolean,
 }).And(funtypes.ReadonlyPartial({
 	richTokenOptions: RichTokenOptions,
+	richNativeAmount: EthereumQuantity,
 }))
 
 export type ModifyRichTokenRequest = funtypes.Static<typeof ModifyRichTokenRequest>

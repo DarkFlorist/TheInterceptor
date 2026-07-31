@@ -1066,7 +1066,7 @@ describe('popup icon sync', () => {
 		}
 	})
 
-	test('renders configured ERC-20 and ERC-1155 rich balances with editable amounts', async () => {
+	test('renders configured balances and keeps unselected address-book tokens in the picker', async () => {
 		const dom = installDomMock()
 		const clipboardMock = installClipboardMock()
 		const { messageListener } = installBrowserMock()
@@ -1091,6 +1091,7 @@ describe('popup icon sync', () => {
 					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 10, {
 						activeAddresses: [loadedAddressBookEntry],
 						settings: { ...defaultSettings, activeSimulationAddress: loadedAddress, simulationMode: true },
+						richNativeAmount: '0xad78ebc5ac620000',
 						richTokenOptions: [{
 							chainId: '0x1',
 							tokenAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
@@ -1115,6 +1116,18 @@ describe('popup icon sync', () => {
 							balanceSlot: '0x3',
 							erc1155StorageOrder: 'TokenIdThenOwner',
 							enabled: true,
+						}, {
+							chainId: '0x1',
+							tokenAddress: '0x6b175474e89094c44da98b954eedeac495271d0f',
+							tokenType: 'ERC20',
+							tokenId: undefined,
+							name: 'Dai Stablecoin',
+							symbol: 'DAI',
+							decimals: '0x12',
+							amount: '0x56bc75e2d63100000',
+							balanceSlot: undefined,
+							erc1155StorageOrder: undefined,
+							enabled: false,
 						}],
 					}),
 				}, undefined, () => undefined)
@@ -1125,12 +1138,17 @@ describe('popup icon sync', () => {
 			await act(async () => {
 				if (richHeader !== undefined) await clickElement(richHeader)
 			})
-			assert.equal(hasAriaLabel(dom.document.body, 'Toggle rich token USDC'), true)
-			assert.equal(hasAriaLabel(dom.document.body, 'Toggle rich token ITEM #42'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Remove rich token USDC'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Remove rich token ITEM #42'), true)
+			const nativeAmountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'ETH? rich amount')
+			assert.equal(nativeAmountInput?.getAttribute?.('value'), '12.5')
 			const amountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'USDC rich amount')
 			assert.equal(amountInput?.getAttribute?.('value'), '1000000')
 			const erc1155AmountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'ITEM #42 rich amount')
 			assert.equal(erc1155AmountInput?.getAttribute?.('value'), '1000000')
+			const tokenPicker = collectElements(dom.document.body, 'select').find((select) => select.getAttribute?.('aria-label') === 'Choose address-book token')
+			assert.equal(tokenPicker?.textContent?.includes('DAI'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'DAI rich amount'), false)
 		} finally {
 			clipboardMock.restore()
 			dom.restore()

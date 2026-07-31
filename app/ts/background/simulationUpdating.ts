@@ -9,10 +9,10 @@ import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookType
 import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
 import { type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
-import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
-import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, type getRichTokens, getSettings, getWethForChainId, reconcileRichTokensWithAddressBook } from './settings.js'
+import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getRichNativeAmount, type getRichTokens, getSettings, getWethForChainId, reconcileRichTokensWithAddressBook } from './settings.js'
 import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
@@ -43,12 +43,12 @@ const delegateCallExecuteAbi = [
 	},
 ] as const satisfies Abi
 
-const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: bigint[], richTokens: Awaited<ReturnType<typeof getRichTokens>>) => {
+const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: bigint[], nativeAmount: bigint, richTokens: Awaited<ReturnType<typeof getRichTokens>>) => {
 	if (addressesToMakeRich.length === 0) return {}
 	const nativeOverrides = Object.fromEntries(
 		addressesToMakeRich.map(currentAddress => {
 			const addressKey = addressString(currentAddress)
-			return [addressKey, { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value }]
+			return [addressKey, { balance: nativeAmount }]
 		})
 	)
 	return addRichTokenBalanceOverrides(nativeOverrides, addressesToMakeRich, richTokens)
@@ -61,9 +61,10 @@ export const getAddressesbeingMadeRich = async () => {
 }
 
 export const getCurrentSimulationInput = async (): Promise<SimulationStateInput> => {
-	const [settings, preSimulationBlockTimeManipulation, richTokens] = await Promise.all([
+	const [settings, preSimulationBlockTimeManipulation, richNativeAmount, richTokens] = await Promise.all([
 		getSettings(),
 		getPreSimulationBlockTimeManipulation(),
+		getRichNativeAmount(),
 		reconcileRichTokensWithAddressBook(),
 	])
 	const richListPromise = silenceChromeUnCaughtPromise(getAddressesbeingMadeRich())
@@ -73,6 +74,7 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
 	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(
 		await richListPromise,
+		richNativeAmount,
 		richTokens.filter((token) => token.chainId === settings.activeRpcNetwork.chainId),
 	)
 	let previousBlockTimeManipulation = settings.simulationMode ? preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION

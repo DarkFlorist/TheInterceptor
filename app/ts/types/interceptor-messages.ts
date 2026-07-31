@@ -286,10 +286,15 @@ export const ChangeActiveAddress = funtypes.ReadonlyObject({
 export type ModifyMakeMeRich = funtypes.Static<typeof ModifyMakeMeRich>
 export const ModifyMakeMeRich = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_modifyMakeMeRich'),
-	data: funtypes.ReadonlyObject({
-		add: funtypes.Boolean,
-		address: funtypes.Union(funtypes.Literal('CurrentAddress'), EthereumAddress),
-	})
+	data: funtypes.Union(
+		funtypes.ReadonlyObject({
+			add: funtypes.Boolean,
+			address: funtypes.Union(funtypes.Literal('CurrentAddress'), EthereumAddress),
+		}),
+		funtypes.ReadonlyObject({
+			nativeAmount: EthereumQuantity,
+		}),
+	)
 }).asReadonly()
 
 export type AddressBookCategory = funtypes.Static<typeof AddressBookCategory>
@@ -631,6 +636,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		preSimulationBlockTimeManipulation: BlockTimeManipulation,
 	}).And(funtypes.ReadonlyPartial({
 		richTokenOptions: RichTokenOptions,
+		richNativeAmount: EthereumQuantity,
 	}))
 })
 

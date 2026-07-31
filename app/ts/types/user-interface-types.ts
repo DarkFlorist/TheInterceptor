@@ -35,6 +35,7 @@ export type AddAddressParam = {
 export type HomeParams = {
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>
+	richNativeAmount: Signal<bigint>
 	activeAddresses: Signal<AddressBookEntries>
 	tabState: Signal<TabState | undefined>
 	activeSimulationAddress: Signal<bigint | undefined>
@@ -80,6 +81,7 @@ export type FirstCardParams = {
 	simulationMode: Signal<boolean>
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>
+	richNativeAmount: Signal<bigint>
 	richList: Signal<readonly EnrichedRichListElement[]>
 	richTokenOptions: Signal<readonly RichTokenOption[]>
 	tabIconDetails: Signal<TabIconDetails>

@@ -48,6 +48,7 @@ export function App() {
 		popupRefreshAppliedGeneration,
 		fixedAddressRichList,
 		makeCurrentAddressRich,
+		richNativeAmount,
 		richTokenOptions,
 		simulationMode,
 		numberOfAddressesMadeRich,
@@ -258,6 +259,7 @@ export function App() {
 						activeSimulationAddress = { activeSimulationAddress }
 						changeActiveAddress = { changeActiveAddress }
 						makeCurrentAddressRich = { makeCurrentAddressRich }
+						richNativeAmount = { richNativeAmount }
 						richTokenOptions = { richTokenOptions }
 						activeAddresses = { activeAddresses }
 						simulationMode = { simulationMode }

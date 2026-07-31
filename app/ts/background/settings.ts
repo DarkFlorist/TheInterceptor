@@ -1,4 +1,4 @@
-import { ETHEREUM_COIN_ICON, MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
+import { ETHEREUM_COIN_ICON, MAKE_YOU_RICH_TRANSACTION, MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
 import type { ActiveAddress, ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -81,6 +81,7 @@ type StartupStorageDefaults = {
 	simulationMode: boolean
 	activeRpcNetwork: RpcNetwork
 	makeCurrentAddressRich: boolean
+	richNativeAmount: bigint
 	fixedAddressRichList: readonly RichListElement[]
 	richTokens: readonly RichToken[]
 }
@@ -124,6 +125,8 @@ export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))
 
 export const setMakeCurrentAddressRich = async (makeCurrentAddressRich: boolean) => await browserStorageLocalSet({ makeCurrentAddressRich })
 export const getMakeCurrentAddressRich = async() => await getParsedStorageValueOrDefault('makeCurrentAddressRich', false)
+export const setRichNativeAmount = async (richNativeAmount: bigint) => await browserStorageLocalSet({ richNativeAmount })
+export const getRichNativeAmount = async() => await getParsedStorageValueOrDefault('richNativeAmount', MAKE_YOU_RICH_TRANSACTION.transaction.value)
 
 const makeMeRichSettingsSemaphore = new Semaphore(1)
 

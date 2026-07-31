@@ -14,6 +14,7 @@ import { getSimulatedStackV1, getSimulatedStackV2 } from '../../simulation/Simul
 import { getAddressToMakeRich } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { assertNever } from '../../utils/typescript.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
+import { getRichNativeAmount } from '../settings.js'
 
 export type SimulationStackSnapshot = {
 	simulationInput: ResolvedSimulationInput
@@ -43,7 +44,7 @@ export async function getSimulationStack(simulationState: ResolvedSimulationStat
 		case '1.0.0':
 		case '1.0.1': {
 			const addressToMakeRich = await getAddressToMakeRich()
-			return { version, payload: getSimulatedStackV1(simulationState, addressToMakeRich, version) } as const
+			return { version, payload: getSimulatedStackV1(simulationState, addressToMakeRich, await getRichNativeAmount(), version) } as const
 		}
 		default: assertNever(version)
 	}

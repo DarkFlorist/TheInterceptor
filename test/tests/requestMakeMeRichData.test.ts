@@ -240,6 +240,19 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.equal(runtimeSendMessageCount, 0)
 	})
 
+	test('uses the configured native rich amount in the next simulation input', async () => {
+		installBrowserMock()
+		const { modifyMakeMeRich, getCurrentSimulationInput } = await loadModules()
+		const richAddress = 0x9000000000000000000000000000000000000009n
+		const configuredAmount = 12_345_678_000_000_000_000n
+
+		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { add: true, address: richAddress } })
+		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { nativeAmount: configuredAmount } })
+
+		const simulationInput = await getCurrentSimulationInput()
+		assert.deepEqual(simulationInput[0]?.stateOverrides[addressString(richAddress)], { balance: configuredAmount })
+	})
+
 	test('falls back per address and preserves the underlying error message', async () => {
 		const storageState = installBrowserMock()
 		const { requestMakeMeRichList, setFixedMakeMeRichList, setMakeCurrentAddressRich, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
