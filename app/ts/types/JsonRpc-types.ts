@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignatureParity, LiteralConverterParserFactory } from './wire-types.js'
+import { CanonicalEthereumQuantity, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignatureParity, LiteralConverterParserFactory } from './wire-types.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { EthSimulateV1Params } from './ethSimulate-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
@@ -323,6 +323,15 @@ export const WalletRevokePermissions = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(WalletRevokePermissionsParams)
 }).asReadonly()
 
+export type WalletGetCapabilities = funtypes.Static<typeof WalletGetCapabilities>
+export const WalletGetCapabilities = funtypes.ReadonlyObject({
+	method: funtypes.Literal('wallet_getCapabilities'),
+	params: funtypes.Union(
+		funtypes.ReadonlyTuple(EthereumAddress),
+		funtypes.ReadonlyTuple(EthereumAddress, funtypes.ReadonlyArray(CanonicalEthereumQuantity)),
+	),
+}).asReadonly()
+
 export type GetTransactionCount = funtypes.Static<typeof GetTransactionCount>
 export const GetTransactionCount = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_getTransactionCount'),
@@ -477,6 +486,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	SwitchEthereumChainParams,
 	RequestPermissions,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions') }),
+	WalletGetCapabilities,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_requestAccounts') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice') }),
