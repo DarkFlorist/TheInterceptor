@@ -260,7 +260,7 @@ export async function requestAccessFromUser(
 			website.websiteOrigin,
 			activeAddressEntry,
 			currentSettings,
-			request !== undefined && isAccountConnectionMethod(request.method),
+			{ ignoreConnectionApproval: request !== undefined && isAccountConnectionMethod(request.method) },
 		)
 		if (request === undefined || !isAccountConnectionMethod(request.method)) return verify()
 		return withSuppressedUnscopedConnectionEventsForSocket(request.uniqueRequestIdentifier.requestSocket, verify)
@@ -406,7 +406,7 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 	} else {
 		const userRequestedAddressChange = accessReply.requestAccessToAddress !== accessReply.originalRequestAccessToAddress
 		const replyCompletesAccountRequest = request !== undefined && isAccountConnectionMethod(request.method)
-		const shouldPromptForFollowUpAccesses = !(replyCompletesAccountRequest && accessReply.requestAccessToAddress === undefined)
+		const shouldPromptForFollowUpAccesses = !replyCompletesAccountRequest
 		promptForFollowUpAccesses = shouldPromptForFollowUpAccesses
 		const accountRequestSocket = replyCompletesAccountRequest ? request.uniqueRequestIdentifier.requestSocket : undefined
 		const applyAccessReply = async () => {
@@ -420,7 +420,8 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 			await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 				simulationMode: settings.simulationMode,
 				activeAddress: accessReply.requestAccessToAddress,
-			}, false)
+				promptForAccessesIfNeeded: false,
+			})
 		}
 		if (accountRequestSocket === undefined) {
 			await applyAccessReply()
