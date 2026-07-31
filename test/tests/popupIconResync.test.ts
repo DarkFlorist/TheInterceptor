@@ -1190,7 +1190,9 @@ describe('popup icon sync', () => {
 			const amountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'USDC rich amount')
 			if (amountInput === undefined) throw new Error('Expected USDC rich amount input')
 			Object.defineProperty(amountInput, 'value', { configurable: true, value: (MAX_RICH_TOKEN_AMOUNT + 1n).toString(), writable: true })
-			const changeHandler = amountInput.l === undefined ? undefined : Object.entries(amountInput.l).find(([key]) => key.startsWith('Change'))?.[1]
+			const changeHandler = amountInput.l === undefined
+				? undefined
+				: Object.entries(amountInput.l).find(([key]) => key.startsWith('Change') || key.startsWith('Input'))?.[1]
 			assert.notEqual(changeHandler, undefined)
 			await act(async () => {
 				await changeHandler?.({ currentTarget: amountInput })
