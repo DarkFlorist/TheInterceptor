@@ -101,6 +101,7 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 			const changeActiveAddress = async () => await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 				simulationMode: settings.simulationMode,
 				activeAddress: tabStateChange.newState.activeSigningAddress,
+				promptForAccessesIfNeeded: !signerAccountsReply.requestAccounts,
 			})
 			if (signerAccountsReply.requestAccounts) {
 				await withSuppressedUnscopedConnectionEventsForSocketAsync(signerStateToken.socket, changeActiveAddress)

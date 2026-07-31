@@ -11,12 +11,17 @@ import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-ty
 type Listener = () => void
 type PortMessage = { type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
 const noopPublishRpcConnectionStatus: PublishRpcConnectionStatus = async () => undefined
-const ADDRESS_PROMPT_TIMEOUT_MS = 100
 
 function createDeferredSignal() {
 	let resolveSignal = () => undefined
 	const promise = new Promise<void>((resolve) => { resolveSignal = resolve })
 	return { promise, resolve: () => resolveSignal() }
+}
+
+function createDeferredValue<T>() {
+	let resolveValue = (_value: T) => undefined
+	const promise = new Promise<T>((resolve) => { resolveValue = resolve })
+	return { promise, resolve: (value: T) => resolveValue(value) }
 }
 
 function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3 }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3 } = {}) {
@@ -170,20 +175,6 @@ async function waitForPortMessageCount(messages: readonly PortMessage[], method:
 	}
 }
 
-async function waitForPendingAddressRequest<T extends { requestAccessToAddress?: { address?: bigint } }>(
-	getPendingAccessRequests: () => Promise<readonly T[]>,
-	account: bigint,
-	timeoutMs = ADDRESS_PROMPT_TIMEOUT_MS,
-): Promise<T> {
-	const deadline = Date.now() + timeoutMs
-	for (;;) {
-		const pendingRequest = (await getPendingAccessRequests())[0]
-		if (pendingRequest?.requestAccessToAddress?.address === account) return pendingRequest
-		if (Date.now() >= deadline) throw new Error('Missing address-level pending request')
-		await new Promise((resolve) => setTimeout(resolve, 0))
-	}
-}
-
 function createEthereumWithGetBlockCounter(getBlockCalls: { count: number }, initialBlockPolling = true) {
 	const rpcEntry: RpcEntry = {
 		name: 'Test RPC',
@@ -226,6 +217,76 @@ function createEthereumWithGetBlockCounter(getBlockCalls: { count: number }, ini
 }
 
 describe('background eth_accounts', () => {
+	test('handles wallet_getCapabilities locally and protects capabilities for other accounts', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateTabState } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x1111111111111111111111111111111111111111n
+		const accountString = '0x1111111111111111111111111111111111111111'
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		for (const [requestId, queriedAccount] of [
+			[1, accountString],
+			[2, '0x2222222222222222222222222222222222222222'],
+		] as const) {
+			await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId, requestSocket: socket },
+				method: 'wallet_getCapabilities',
+				params: [queriedAccount, ['0x1', '0x2105']],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		}
+
+		assert.deepEqual(messages.find((message) => message.requestId === 1), {
+			interceptorApproved: true,
+			requestId: 1,
+			bridgeRequestSettled: true,
+			type: 'result',
+			method: 'wallet_getCapabilities',
+			result: {},
+		})
+		assert.deepEqual(messages.find((message) => message.requestId === 2), {
+			interceptorApproved: true,
+			requestId: 2,
+			bridgeRequestSettled: true,
+			type: 'result',
+			method: 'wallet_getCapabilities',
+			error: { code: 4100, message: 'The requested account has not been authorized by the user.' },
+		})
+
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: account, activeSigningAddress: account })
+		await setUseSignersAddressAsActiveAddress(true)
+		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 3, requestSocket: socket },
+			method: 'wallet_getCapabilities',
+			params: [accountString, ['0x2105']],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.deepEqual(messages.find((message) => message.requestId === 3), {
+			interceptorApproved: true,
+			requestId: 3,
+			type: 'forwardToSigner',
+			replyWithSignersReply: true,
+			method: 'wallet_getCapabilities',
+			params: [accountString, ['0x2105']],
+		})
+	})
+
 	test('returns invalid params to the webpage for malformed wallet_watchAsset requests', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
@@ -1165,6 +1226,61 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.deepEqual(ethAccountsReplies.at(-1)?.result, ['0x2222222222222222222222222222222222222222'])
 	})
 
+	test('refreshes an approved signer account before forwarding wallet_getCapabilities', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			websiteSocketToString,
+			sendInternalWindowMessage,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			updateWebsiteAccess,
+			updateTabState,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x2323232323232323232323232323232323232323n
+		const accountString = '0x2323232323232323232323232323232323232323'
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId, (message) => {
+			if (message.method !== 'request_signer_to_eth_accounts') return
+			void (async () => {
+				await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+				sendInternalWindowMessage({
+					method: 'window_signer_accounts_changed',
+					data: { socket, signerStateOwnerGeneration: 1, signerProviderGeneration: 1 },
+				})
+			})()
+		})
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 8, requestSocket: socket },
+			method: 'wallet_getCapabilities',
+			params: [accountString, ['0x2105']],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_accounts').length, 1)
+		assert.deepEqual(messages.find((message) => message.method === 'wallet_getCapabilities'), {
+			interceptorApproved: true,
+			requestId: 8,
+			type: 'forwardToSigner',
+			replyWithSignersReply: true,
+			method: 'wallet_getCapabilities',
+			params: [accountString, ['0x2105']],
+		})
+	})
+
 	test('routes one tab-wide signer refresh while serializing passive and interactive discovery', async () => {
 		installBrowserMock()
 		const {
@@ -2045,7 +2161,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.deepEqual(connectedReplies.at(-1)?.result, { metamaskCompatibilityMode: false })
 	})
 
-	test('opens address access dialog after signer account discovery for site-approved eth_requestAccounts', async () => {
+	test('requires visible address consent after signer discovery for site-approved eth_requestAccounts', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -2054,6 +2170,8 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			setUseSignersAddressAsActiveAddress,
 			updateWebsiteAccess,
 			getPendingAccessRequests,
+			getSettings,
+			resolveInterceptorAccess,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -2091,16 +2209,27 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 
 		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_requestAccounts').length, 1)
 		assert.equal(messages.some((message) => message.method === 'connect'), false)
-		assert.equal(messages.some((message) => message.method === 'accountsChanged'), false)
-		assert.equal(messages.some((message) => message.method === 'eth_requestAccounts' && message.requestId === 10), false)
-		const pendingRequests = await getPendingAccessRequests()
-		assert.equal(pendingRequests.length, 1)
-		assert.equal(pendingRequests[0]?.request?.method, 'eth_requestAccounts')
-		assert.equal(pendingRequests[0]?.requestAccessToAddress?.address, account)
-		assert.equal(pendingRequests[0]?.originalRequestAccessToAddress?.address, account)
+		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged'), [])
+		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 10), [])
+		const pendingRequest = (await getPendingAccessRequests())[0]
+		if (pendingRequest === undefined) throw new Error('Missing address access request')
+		assert.equal(pendingRequest.requestAccessToAddress?.address, account)
+		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, undefined)
+
+		await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			userReply: 'Approved',
+			requestAccessToAddress: account,
+			originalRequestAccessToAddress: account,
+			accessRequestId: pendingRequest.accessRequestId,
+		}, noopPublishRpcConnectionStatus)
+
+		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.result), [[accountString]])
+		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 10).map((message) => message.result), [[accountString]])
+		assert.equal((await getPendingAccessRequests()).length, 0)
+		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: true }])
 	})
 
-	test('uses cached signer account instead of a stale provider-disconnected error when active signing address is missing', async () => {
+	test('does not override an explicitly denied address for site-approved eth_requestAccounts', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -2110,6 +2239,162 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			updateWebsiteAccess,
 			updateTabState,
 			getPendingAccessRequests,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x5656565656565656565656565656565656565656n
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: false }] }])
+		await updateTabState(1, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 22, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.equal(messages.some((message) => message.method === 'connect' || message.method === 'accountsChanged'), false)
+		assert.equal(messages.filter((message) => message.method === 'eth_requestAccounts' && message.requestId === 22).at(-1)?.error?.code, 4100)
+		assert.equal((await getPendingAccessRequests()).length, 0)
+	})
+
+	test('does not approve the port before site-approved eth_requestAccounts receives address consent', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			websiteSocketToString,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			updateWebsiteAccess,
+			updateTabState,
+			getPendingAccessRequests,
+			getSettings,
+			resolveInterceptorAccess,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const pendingWebsite = createDeferredValue<typeof website>()
+		const account = 0x5757575757575757575757575757575757575757n
+		const accountString = '0x5757575757575757575757575757575757575757'
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		await updateTabState(1, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: true }
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: connection,
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const requestAccountsPromise = handleInterceptedRequest(port, websiteOrigin, pendingWebsite.promise, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 23, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 24, requestSocket: socket },
+			method: 'eth_accounts',
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.equal(connection.approved, false)
+		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 24).map((message) => message.result), [[]])
+		assert.equal((await getSettings()).websiteAccess[0]?.addressAccess, undefined)
+
+		pendingWebsite.resolve(website)
+		await requestAccountsPromise
+
+		const pendingRequest = (await getPendingAccessRequests())[0]
+		if (pendingRequest === undefined) throw new Error('Missing address access request')
+		assert.equal(pendingRequest.requestAccessToAddress?.address, account)
+		assert.equal(connection.approved, false)
+		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 23), [])
+		assert.equal((await getSettings()).websiteAccess[0]?.addressAccess, undefined)
+
+		await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			userReply: 'Approved',
+			requestAccessToAddress: account,
+			originalRequestAccessToAddress: account,
+			accessRequestId: pendingRequest.accessRequestId,
+		}, noopPublishRpcConnectionStatus)
+
+		assert.equal(connection.approved, true)
+		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 23).map((message) => message.result), [[accountString]])
+		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: true }])
+	})
+
+	test('does not overwrite an address denial made while site-approved eth_requestAccounts is pending', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			websiteSocketToString,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			updateWebsiteAccess,
+			updateTabState,
+			getSettings,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const pendingWebsite = createDeferredValue<typeof website>()
+		const account = 0x5858585858585858585858585858585858585858n
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		await updateTabState(1, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: true }
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: connection,
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const requestAccountsPromise = handleInterceptedRequest(port, websiteOrigin, pendingWebsite.promise, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 25, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: false }] }])
+		pendingWebsite.resolve(website)
+		await requestAccountsPromise
+
+		assert.equal(connection.approved, false)
+		assert.equal(messages.filter((message) => message.method === 'eth_requestAccounts' && message.requestId === 25).at(-1)?.error?.code, 4100)
+		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: false }])
+	})
+
+	test('uses a cached signer account for address consent when active signing address is missing', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			websiteSocketToString,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			updateWebsiteAccess,
+			updateTabState,
+			getPendingAccessRequests,
+			getSettings,
 			resolveInterceptorAccess,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
@@ -2143,32 +2428,22 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 
 		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_requestAccounts'), false)
 		assert.equal(messages.some((message) => message.method === 'connect'), false)
-		assert.equal(messages.some((message) => message.method === 'accountsChanged'), false)
-		assert.equal(messages.some((message) => message.method === 'eth_requestAccounts' && message.requestId === 11), false)
-		const pendingRequests = await getPendingAccessRequests()
-		assert.equal(pendingRequests.length, 1)
-		assert.equal(pendingRequests[0]?.request?.method, 'eth_requestAccounts')
-		assert.equal(pendingRequests[0]?.requestAccessToAddress?.address, account)
-		assert.equal(pendingRequests[0]?.originalRequestAccessToAddress?.address, account)
-		const pendingRequest = pendingRequests[0]
-		if (pendingRequest === undefined) throw new Error('Missing pending request')
-		const siteApprovalResolution = resolveInterceptorAccess(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
-			websiteTabConnections,
-			{
-				userReply: 'Approved',
-				websiteOrigin,
-				requestAccessToAddress: pendingRequest.requestAccessToAddress?.address,
-				originalRequestAccessToAddress: pendingRequest.originalRequestAccessToAddress?.address,
-				accessRequestId: pendingRequest.accessRequestId,
-			},
-			noopPublishRpcConnectionStatus,
-		)
-		await siteApprovalResolution
-		assert.equal(messages.some((message) => message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length === 0), false)
+		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged'), [])
+		const pendingRequest = (await getPendingAccessRequests())[0]
+		if (pendingRequest === undefined) throw new Error('Missing address access request')
+		assert.equal(pendingRequest.requestAccessToAddress?.address, account)
+
+		await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			userReply: 'Approved',
+			requestAccessToAddress: account,
+			originalRequestAccessToAddress: account,
+			accessRequestId: pendingRequest.accessRequestId,
+		}, noopPublishRpcConnectionStatus)
+
+		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.result), [['0x6666666666666666666666666666666666666666']])
 		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 11).at(-1)?.result, ['0x6666666666666666666666666666666666666666'])
+		assert.equal((await getPendingAccessRequests()).length, 0)
+		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: true }])
 	})
 
 	test('reuses a persisted access dialog when the same eth_requestAccounts is replayed after restart', async () => {
@@ -2479,15 +2754,18 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			code: 4900,
 			message: 'No signer wallet is available to this page. Enable your wallet extension for this site, then try again.',
 		}
+		const account = 0x2424242424242424242424242424242424242424n
+		const accountString = '0x2424242424242424242424242424242424242424'
 		const accountRequests = [
 			{ method: 'eth_requestAccounts', signerRequestMethod: 'request_signer_to_eth_requestAccounts', expectedPublicErrorCode: 4001, requestAccounts: true },
 			{ method: 'wallet_requestPermissions', signerRequestMethod: 'request_signer_to_eth_requestAccounts', expectedPublicErrorCode: 4001, requestAccounts: true },
 			{ method: 'eth_accounts', signerRequestMethod: 'request_signer_to_eth_accounts', expectedPublicErrorCode: 4900, requestAccounts: false },
 			{ method: 'wallet_getPermissions', signerRequestMethod: 'request_signer_to_eth_accounts', expectedPublicErrorCode: 4900, requestAccounts: false },
+			{ method: 'wallet_getCapabilities', signerRequestMethod: 'request_signer_to_eth_accounts', expectedPublicErrorCode: 4100, requestAccounts: false },
 		] as const
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
 
 		const socket = { tabId: 1, connectionName: 0n }
 		let port: browser.runtime.Port
@@ -2519,14 +2797,17 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 				usingInterceptorWithoutSigner: true,
 				uniqueRequestIdentifier: { requestId, requestSocket: socket },
 				method: accountRequest.method,
+				...(accountRequest.method === 'wallet_getCapabilities' ? { params: [accountString] } : {}),
 			}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 			const replies = messages.filter((message) => message.method === accountRequest.method && message.requestId === requestId)
 			assert.equal(replies.length, 1)
-			assert.deepEqual(replies[0]?.error, {
-				...unavailableSignerError,
-				code: accountRequest.expectedPublicErrorCode,
-			})
+			assert.deepEqual(
+				replies[0]?.error,
+				accountRequest.method === 'wallet_getCapabilities'
+					? { code: 4100, message: 'The requested method and/or account has not been authorized by the user.' }
+					: { ...unavailableSignerError, code: accountRequest.expectedPublicErrorCode },
+			)
 			assert.equal(messages.some((message) => (message.method === 'connect' || message.method === 'accountsChanged') && message.requestId === requestId), false)
 		}
 		assert.equal((await getTabState(socket.tabId)).signerAccountError, undefined)
@@ -2597,7 +2878,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.deepEqual(requestAccountsReplies[0]?.result, [accountString])
 	})
 
-	test('keeps sibling connection events when popup approval resolves eth_requestAccounts', async () => {
+	test('keeps sibling connection events when address consent resolves eth_requestAccounts', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -2607,8 +2888,8 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			updateWebsiteAccess,
 			updateTabState,
 			getPendingAccessRequests,
-			resolveInterceptorAccess,
 			getSettings,
+			resolveInterceptorAccess,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -2639,29 +2920,20 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
-		assert.equal(messages.some((message) => message.method === 'connect'), false)
-		assert.equal(messages.some((message) => message.method === 'accountsChanged'), false)
-		assert.equal(siblingMessages.length, 0)
-		const pendingRequests = await getPendingAccessRequests()
-		assert.equal(pendingRequests.length, 1)
-		const pendingRequest = pendingRequests[0]
-		if (pendingRequest === undefined) throw new Error('Missing pending request')
-		const siteApprovalResolution = resolveInterceptorAccess(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
-			websiteTabConnections,
-			{
-				userReply: 'Approved',
-				websiteOrigin,
-				requestAccessToAddress: pendingRequest.requestAccessToAddress?.address,
-				originalRequestAccessToAddress: pendingRequest.originalRequestAccessToAddress?.address,
-				accessRequestId: pendingRequest.accessRequestId,
-			},
-			noopPublishRpcConnectionStatus,
-		)
-		await siteApprovalResolution
+		const pendingRequest = (await getPendingAccessRequests())[0]
+		if (pendingRequest === undefined) throw new Error('Missing address access request')
+		assert.equal(pendingRequest.requestAccessToAddress?.address, account)
+		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 18), [])
+		assert.deepEqual(siblingMessages.filter((message) => message.method === 'connect' || message.method === 'accountsChanged' || message.method === 'chainChanged'), [])
 
+		await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			userReply: 'Approved',
+			requestAccessToAddress: account,
+			originalRequestAccessToAddress: account,
+			accessRequestId: pendingRequest.accessRequestId,
+		}, noopPublishRpcConnectionStatus)
+
+		assert.equal((await getPendingAccessRequests()).length, 0)
 		const requestLifecycleMessages = messages.filter((message) => message.method === 'connect' || message.method === 'accountsChanged' || message.method === 'chainChanged')
 		assert.deepEqual(requestLifecycleMessages.map((message) => message.method), ['accountsChanged'])
 		assert.deepEqual(requestLifecycleMessages.map((message) => message.requestId), [18])
@@ -2693,7 +2965,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const account = 0x6969696969696969696969696969696969696969n
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		await updateWebsiteAccess(() => [])
 		await updateTabState(1, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
 
 		const socket = { tabId: 1, connectionName: 0n }
@@ -2707,7 +2979,8 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 21, requestSocket: socket },
-			method: 'eth_requestAccounts',
+			method: 'wallet_requestPermissions',
+			params: [{ eth_accounts: {} }],
 		}
 
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
@@ -2753,7 +3026,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const accountString = '0x6767676767676767676767676767676767676767'
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		await updateWebsiteAccess(() => [])
 		await updateTabState(1, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
 
 		const socket = { tabId: 1, connectionName: 0n }
@@ -2804,7 +3077,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.deepEqual(access?.addressAccess, [{ address: account, access: true }])
 	})
 
-	test('simulation-mode wallet_requestPermissions still prompts for address access when only the site socket is approved', async () => {
+	test('simulation-mode wallet_requestPermissions requires address consent for a site-only approval', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -2813,10 +3086,13 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			setUseSignersAddressAsActiveAddress,
 			updateWebsiteAccess,
 			getPendingAccessRequests,
+			getSettings,
+			resolveInterceptorAccess,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const account = 0x7171717171717171717171717171717171717171n
+		const accountString = '0x7171717171717171717171717171717171717171'
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
 		await setUseSignersAddressAsActiveAddress(false)
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
@@ -2838,14 +3114,74 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
-		assert.equal(messages.some((message) => message.method === 'wallet_requestPermissions' && message.requestId === 24), false)
-		const pendingRequests = await getPendingAccessRequests()
-		assert.equal(pendingRequests.length, 1)
-		assert.equal(pendingRequests[0]?.request?.method, 'wallet_requestPermissions')
-		assert.equal(pendingRequests[0]?.requestAccessToAddress?.address, account)
+		const pendingRequest = (await getPendingAccessRequests())[0]
+		if (pendingRequest === undefined) throw new Error('Missing address access request')
+		assert.equal(pendingRequest.requestAccessToAddress?.address, account)
+		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged'), [])
+		assert.deepEqual(messages.filter((message) => message.method === 'wallet_requestPermissions' && message.requestId === 24), [])
+
+		await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			userReply: 'Approved',
+			requestAccessToAddress: account,
+			originalRequestAccessToAddress: account,
+			accessRequestId: pendingRequest.accessRequestId,
+		}, noopPublishRpcConnectionStatus)
+
+		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.requestId), [24])
+		assert.deepEqual(messages.filter((message) => message.method === 'wallet_requestPermissions' && message.requestId === 24).at(-1)?.result, [{
+			parentCapability: 'eth_accounts',
+			caveats: [{
+				type: 'restrictReturnedAccounts',
+				value: [accountString],
+			}],
+			invoker: websiteOrigin,
+		}])
+		assert.equal((await getPendingAccessRequests()).length, 0)
+		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: true }])
 	})
 
-	test('site-approved wallet_requestPermissions still prompts for address access before completing', async () => {
+	test('does not bypass access for wallet_requestPermissions with unsupported permission keys', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			websiteSocketToString,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			updateWebsiteAccess,
+			getPendingAccessRequests,
+			getSettings,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x7474747474747474747474747474747474747474n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: true }
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: connection,
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 26, requestSocket: socket },
+			method: 'wallet_requestPermissions',
+			params: [{ eth_accounts: {}, wallet_snap: {} }],
+		}
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.equal(connection.approved, false)
+		assert.equal((await getPendingAccessRequests()).length, 1)
+		assert.equal((await getSettings()).websiteAccess[0]?.addressAccess, undefined)
+	})
+
+	test('first-time wallet_requestPermissions uses one dialog that identifies the address', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -2893,8 +3229,8 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const siteLevelPendingRequest = (await getPendingAccessRequests())[0]
-		if (siteLevelPendingRequest === undefined) throw new Error('Missing site-level pending request')
-		assert.equal(siteLevelPendingRequest.requestAccessToAddress, undefined)
+		if (siteLevelPendingRequest === undefined) throw new Error('Missing combined site and address access request')
+		assert.equal(siteLevelPendingRequest.requestAccessToAddress?.address, account)
 		const siteApprovalResolution = resolveInterceptorAccess(
 			ethereum,
 			tokenPriceService,
@@ -2902,31 +3238,18 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			websiteTabConnections,
 			{
 				userReply: 'Approved',
-				requestAccessToAddress: undefined,
-				originalRequestAccessToAddress: undefined,
+				requestAccessToAddress: account,
+				originalRequestAccessToAddress: account,
 				accessRequestId: siteLevelPendingRequest.accessRequestId,
-			},
-			noopPublishRpcConnectionStatus,
-		)
-
-		const addressLevelPendingRequest = await waitForPendingAddressRequest(getPendingAccessRequests, account)
-		assert.equal(addressLevelPendingRequest.requestAccessToAddress?.address, account)
-		await resolveInterceptorAccess(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
-			websiteTabConnections,
-			{
-				userReply: 'Approved',
-				requestAccessToAddress: addressLevelPendingRequest.requestAccessToAddress?.address,
-				originalRequestAccessToAddress: addressLevelPendingRequest.originalRequestAccessToAddress?.address,
-				accessRequestId: addressLevelPendingRequest.accessRequestId,
 			},
 			noopPublishRpcConnectionStatus,
 		)
 		await siteApprovalResolution
 
+		assert.equal((await getPendingAccessRequests()).length, 0)
+		await waitForPortMessageCount(messages, 'wallet_requestPermissions', 1)
 		const permissionReply = messages.filter((message) => message.method === 'wallet_requestPermissions' && message.requestId === 23).at(-1)
+		assert.equal(permissionReply?.error, undefined)
 		assert.deepEqual(permissionReply?.result, [{
 			parentCapability: 'eth_accounts',
 			caveats: [{
@@ -2940,7 +3263,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.deepEqual(access?.addressAccess, [{ address: account, access: true }])
 	})
 
-	test('site-approved wallet_requestPermissions replays for address access after releasing the popup semaphore', async () => {
+	test('site-approved wallet_requestPermissions opens address consent after releasing the popup semaphore', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -2951,6 +3274,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			updateWebsiteAccess,
 			getPendingAccessRequests,
 			getSettings,
+			resolveInterceptorAccess,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -3007,83 +3331,19 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const pendingRequests = await getPendingAccessRequests()
 		assert.equal(messages.some((message) => message.method === 'wallet_requestPermissions' && message.requestId === 73 && message.error?.code === -32002), false)
 		assert.equal(pendingRequests.length, 1)
-		assert.equal(pendingRequests[0]?.request?.uniqueRequestIdentifier.requestId, 73)
-		assert.equal(pendingRequests[0]?.requestAccessToAddress?.address, account)
-	})
+		const pendingRequest = pendingRequests[0]
+		if (pendingRequest === undefined) throw new Error('Missing address access request')
+		assert.equal(pendingRequest.requestAccessToAddress?.address, account)
 
-	test('site-approved wallet_requestPermissions keeps the replay-owned address prompt when signer state appears before approval', async () => {
-		installBrowserMock()
-		const {
-			handleInterceptedRequest,
-			websiteSocketToString,
-			changeSimulationMode,
-			setUseSignersAddressAsActiveAddress,
-			getPendingAccessRequests,
-			resolveInterceptorAccess,
-			updateTabState,
-		} = await loadModules()
-		const websiteOrigin = 'https://example.test'
-		const website = { websiteOrigin, icon: undefined, title: undefined }
-		const account = 0x7272727272727272727272727272727272727272n
-		const accountString = '0x7272727272727272727272727272727272727272'
-		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
-		await setUseSignersAddressAsActiveAddress(false)
+		await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			userReply: 'Approved',
+			requestAccessToAddress: account,
+			originalRequestAccessToAddress: account,
+			accessRequestId: pendingRequest.accessRequestId,
+		}, noopPublishRpcConnectionStatus)
 
-		const socket = { tabId: 1, connectionName: 0n }
-		const { port, messages } = createPort(socket.tabId)
-		const connectionKey = websiteSocketToString(socket)
-		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
-			[connectionKey]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
-		} }]])
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
-		const request = {
-			interceptorRequest: true,
-			usingInterceptorWithoutSigner: false,
-			uniqueRequestIdentifier: { requestId: 25, requestSocket: socket },
-			method: 'wallet_requestPermissions',
-			params: [{ eth_accounts: {} }],
-		}
-
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
-
-		const siteLevelPendingRequest = (await getPendingAccessRequests())[0]
-		if (siteLevelPendingRequest === undefined) throw new Error('Missing site-level pending request')
-		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
-		const siteApprovalResolution = resolveInterceptorAccess(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
-			websiteTabConnections,
-			{
-				userReply: 'Approved',
-				requestAccessToAddress: undefined,
-				originalRequestAccessToAddress: undefined,
-				accessRequestId: siteLevelPendingRequest.accessRequestId,
-			},
-			noopPublishRpcConnectionStatus,
-		)
-
-		const addressLevelPendingRequest = await waitForPendingAddressRequest(getPendingAccessRequests, account)
-		assert.equal(addressLevelPendingRequest.request?.method, 'wallet_requestPermissions')
-		assert.equal(addressLevelPendingRequest.request?.uniqueRequestIdentifier.requestId, 25)
-		assert.equal(messages.some((message) => message.method === 'wallet_requestPermissions' && message.requestId === 25 && message.error?.code === -32002), false)
-		await resolveInterceptorAccess(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
-			websiteTabConnections,
-			{
-				userReply: 'Approved',
-				requestAccessToAddress: addressLevelPendingRequest.requestAccessToAddress?.address,
-				originalRequestAccessToAddress: addressLevelPendingRequest.originalRequestAccessToAddress?.address,
-				accessRequestId: addressLevelPendingRequest.accessRequestId,
-			},
-			noopPublishRpcConnectionStatus,
-		)
-		await siteApprovalResolution
-
-		const permissionReply = messages.filter((message) => message.method === 'wallet_requestPermissions' && message.requestId === 25).at(-1)
-		assert.deepEqual(permissionReply?.result, [{
+		assert.equal((await getPendingAccessRequests()).length, 0)
+		assert.deepEqual(messages.filter((message) => message.method === 'wallet_requestPermissions' && message.requestId === 73).at(-1)?.result, [{
 			parentCapability: 'eth_accounts',
 			caveats: [{
 				type: 'restrictReturnedAccounts',
@@ -3091,6 +3351,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			}],
 			invoker: websiteOrigin,
 		}])
+		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: true }])
 	})
 
 	test('delivers accountsChanged before an approved active-address switch resolves', async () => {
@@ -3400,5 +3661,22 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal(hasAddressAccess([{ website: { websiteOrigin, icon: undefined, title: undefined }, addressAccess: undefined }], websiteOrigin, address), 'askAccess')
 		assert.equal(hasAccess([], websiteOrigin), 'askAccess')
 		assert.equal(hasAddressAccess([], websiteOrigin, address), 'askAccess')
+	})
+
+	test('verifyAccess requires an address decision despite website approval', async () => {
+		installBrowserMock()
+		const { getSettings, updateWebsiteAccess, verifyAccess } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const address = { address: 0x1111111111111111111111111111111111111111n, askForAddressAccess: true, type: 'contact', name: 'Test Address' } as const
+		const socket = { tabId: 1, connectionName: 0n }
+		const websiteTabConnections: WebsiteTabConnections = new Map()
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [] }])
+		const settings = await getSettings()
+
+		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, settings), 'askAccess')
+
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: address.address, access: false }] }])
+		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, await getSettings()), 'noAccess')
 	})
 })
