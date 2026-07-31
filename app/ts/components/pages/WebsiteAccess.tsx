@@ -410,6 +410,7 @@ const AddressAccessCard = ({ website, addressAccess, renameAddressCallBack }: { 
 }
 
 const RemoveAddressConfirmation = ({ website, addressBookEntry, renameAddressCallBack }: { addressBookEntry: AddressBookEntry, website: ReadonlySignal<Website | undefined>, renameAddressCallBack: RenameAddressCallBack }) => {
+	const dialogRef = useRef<HTMLDialogElement>(null)
 	const removeAddressAccessForWebsite = async () => {
 		if (!addressBookEntry) return
 		const currentWebsite = website.value
@@ -422,12 +423,17 @@ const RemoveAddressConfirmation = ({ website, addressBookEntry, renameAddressCal
 		removeAddressAccessForWebsite()
 	}
 
+	const editAddress = (entry: AddressBookEntry) => {
+		dialogRef.current?.close('reject')
+		renameAddressCallBack(entry)
+	}
+
 	return (
-		<Modal>
+		<Modal dialogRef = { dialogRef }>
 			<Modal.Open class = 'btn btn--ghost'><TrashIcon /></Modal.Open>
 			<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectRemoval }>
 				<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Removing Address</h2>
-				<div style = { { marginBlock: '0.5rem' } }>This will prevent <WebsiteCard website = { website.value } /> from accessing or using <SmallAddress addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack } />
+				<div style = { { marginBlock: '0.5rem' } }>This will prevent <WebsiteCard website = { website.value } /> from accessing or using <SmallAddress addressBookEntry = { addressBookEntry } renameAddressCallBack = { editAddress } />
 				</div>
 				<p style = { { marginBlock: '1rem' } }>Remove the website's access to this address anyway?</p>
 				<div style = { { display: 'flex', flexWrap: 'wrap', columnGap: '1rem', justifyContent: 'center', marginBlock: '1rem' } }>

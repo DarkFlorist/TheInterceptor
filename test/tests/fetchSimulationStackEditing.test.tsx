@@ -33,6 +33,7 @@ async function clickElement(element: TestDomNode) {
 const signerAddress = 0x1111111111111111111111111111111111111111n
 const contractAddress = 0x2222222222222222222222222222222222222222n
 const nameHash = 0x1234n
+const labelHash = 0x5678n
 const rpcNetwork = {
 	name: 'Ethereum',
 	chainId: 1n,
@@ -111,6 +112,26 @@ const ensEvent: EnsEvent = {
 		value: 'ipfs://avatar',
 	},
 }
+const ensLabelEvent: EnsEvent = {
+	type: 'ENS',
+	subType: 'ENSBaseRegistrarNameRegistered',
+	isParsed: 'Parsed',
+	name: 'NameRegistered',
+	signature: 'NameRegistered(uint256,address,uint256)',
+	args: [],
+	address: contractAddress,
+	loggersAddressBookEntry: contractEntry,
+	data: new Uint8Array(),
+	topics: [],
+	logInformation: {
+		labelHash: {
+			labelHash,
+			label: 'example',
+		},
+		owner: signerEntry,
+		expires: 2_000_000_000n,
+	},
+}
 const simulatedTransaction: SimulatedAndVisualizedTransaction = {
 	website: preSimulationTransaction.website,
 	created,
@@ -166,33 +187,68 @@ const simulationResults: SimulationAndVisualisationResults = {
 	namedTokenIds: [],
 }
 
+function replaceEnsEvent(event: EnsEvent): SimulationAndVisualisationResults {
+	return {
+		...simulationResults,
+		visualizedSimulationState: {
+			success: true,
+			visualizedBlocks: [{
+				simulatedAndVisualizedTransactions: [{ ...simulatedTransaction, events: [event] }],
+				visualizedPersonalSignRequests: [],
+				blockTimeManipulation,
+			}],
+		},
+	}
+}
+
+async function renderAndOpenEnsEditor(event: EnsEvent) {
+	const dom = installDomMock()
+	const modalState = new Signal<FetchSimulationStackModalState>({ page: 'noModal' })
+
+	await act(() => {
+		render(h('div', {},
+			h(FetchSimulationStackRows, {
+				simulationAndVisualisationResults: new Signal(replaceEnsEvent(event)),
+				activeAddress: new Signal<bigint | undefined>(signerAddress),
+				addressMetaData: new Signal([signerEntry, contractEntry, nativeTokenEntry]),
+				renameAddressCallBack: () => undefined,
+				modalState,
+			}),
+			h(FetchSimulationStackModal, {
+				modalState,
+				rpcEntries: new Signal([rpcNetwork]),
+			}),
+		), dom.document.body)
+	})
+
+	const renameEnsButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('class')?.split(/\s+/).includes('rename-address-button'))
+	if (renameEnsButton === undefined) throw new Error('Expected ENS rename button')
+
+	await act(async () => {
+		await clickElement(renameEnsButton)
+	})
+
+	return { dom, modalState }
+}
+
+async function closeEnsEditor(dom: ReturnType<typeof installDomMock>, modalState: Signal<FetchSimulationStackModalState>) {
+	const closeEditorButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.trim() === 'Ok')
+	if (closeEditorButton === undefined) throw new Error('Expected ENS editor close button')
+
+	await act(async () => {
+		await clickElement(closeEditorButton)
+	})
+
+	assert.deepEqual(modalState.value, { page: 'noModal' })
+	await act(() => {
+		render(null, dom.document.body)
+	})
+	dom.restore()
+}
+
 describe('FetchSimulationStack editing', () => {
 	test('opens the ENS hash editor from a simulation stack event', async () => {
-		const dom = installDomMock()
-		const modalState = new Signal<FetchSimulationStackModalState>({ page: 'noModal' })
-
-		await act(() => {
-			render(h('div', {},
-				h(FetchSimulationStackRows, {
-					simulationAndVisualisationResults: new Signal(simulationResults),
-					activeAddress: new Signal<bigint | undefined>(signerAddress),
-					addressMetaData: new Signal([signerEntry, contractEntry, nativeTokenEntry]),
-					renameAddressCallBack: () => undefined,
-					modalState,
-				}),
-				h(FetchSimulationStackModal, {
-					modalState,
-					rpcEntries: new Signal([rpcNetwork]),
-				}),
-			), dom.document.body)
-		})
-
-		const renameEnsButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('class')?.split(/\s+/).includes('rename-address-button'))
-		if (renameEnsButton === undefined) throw new Error('Expected ENS rename button')
-
-		await act(async () => {
-			await clickElement(renameEnsButton)
-		})
+		const { dom, modalState } = await renderAndOpenEnsEditor(ensEvent)
 
 		assert.deepEqual(modalState.value, {
 			page: 'editEnsNamedHash',
@@ -203,18 +259,23 @@ describe('FetchSimulationStack editing', () => {
 			},
 		})
 		assert.equal(dom.document.body.textContent.includes('What is the correct ENS name for this hash?'), true)
-		const closeEditorButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.trim() === 'Ok')
-		if (closeEditorButton === undefined) throw new Error('Expected ENS editor close button')
-
-		await act(async () => {
-			await clickElement(closeEditorButton)
-		})
-
-		assert.deepEqual(modalState.value, { page: 'noModal' })
+		await closeEnsEditor(dom, modalState)
 		assert.equal(dom.document.body.textContent.includes('What is the correct ENS name for this hash?'), false)
-		await act(() => {
-			render(null, dom.document.body)
+	})
+
+	test('opens the ENS label editor from a simulation stack event', async () => {
+		const { dom, modalState } = await renderAndOpenEnsEditor(ensLabelEvent)
+
+		assert.deepEqual(modalState.value, {
+			page: 'editEnsNamedHash',
+			state: {
+				type: 'labelHash',
+				nameHash: labelHash,
+				name: 'example',
+			},
 		})
-		dom.restore()
+		assert.equal(dom.document.body.textContent.includes('What is the correct ENS label for this hash?'), true)
+		await closeEnsEditor(dom, modalState)
+		assert.equal(dom.document.body.textContent.includes('What is the correct ENS label for this hash?'), false)
 	})
 })

@@ -15,12 +15,14 @@ type RuntimeMessage = {
 type DomElement = {
 	tagName?: string
 	childNodes?: readonly DomElement[]
+	parentNode?: DomElement | null
 	textContent?: string | null
 	type?: string
 	value?: string
 	checked?: boolean
 	attributes?: Record<string, string | undefined>
 	l?: Record<string, (event: unknown) => unknown>
+	open?: boolean
 }
 
 function createBrowserMock() {
@@ -314,6 +316,15 @@ describe('WebsiteAccessView selection', () => {
 
 		const removeAddressDialog = collectElements(dom.document.body, 'dialog').filter((dialog) => dialog.textContent?.includes('Removing Address')).at(-1)
 		if (removeAddressDialog === undefined) throw new Error('Expected remove address dialog')
+		const dialogSiblings = removeAddressDialog.parentNode?.childNodes ?? []
+		const removeAddressButton = dialogSiblings[dialogSiblings.indexOf(removeAddressDialog) - 1]
+		if (removeAddressButton === undefined) throw new Error('Expected remove address button')
+
+		await act(async () => {
+			await clickElement(removeAddressButton)
+		})
+		assert.equal(removeAddressDialog.open, true)
+
 		const editAddressButton = collectElements(removeAddressDialog, 'button').find((button) => button.textContent?.trim() === 'edit')
 		if (editAddressButton === undefined) throw new Error('Expected address edit button in remove dialog')
 
@@ -321,6 +332,7 @@ describe('WebsiteAccessView selection', () => {
 			await clickElement(editAddressButton)
 		})
 
+		assert.equal(removeAddressDialog.open, false)
 		assert.equal(dom.document.body.textContent.includes('Abi:'), true)
 		dom.restore()
 	})

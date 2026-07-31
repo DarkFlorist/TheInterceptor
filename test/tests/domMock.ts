@@ -145,6 +145,32 @@ class TestElement extends TestNode {
 	}
 }
 
+class TestDialogElement extends TestElement {
+	open = false
+	returnValue = ''
+	readonly eventListeners = new Map<string, Set<(event: { currentTarget: TestDialogElement }) => void>>()
+
+	override addEventListener(type: string, listener: (event: { currentTarget: TestDialogElement }) => void) {
+		const listeners = this.eventListeners.get(type) ?? new Set()
+		listeners.add(listener)
+		this.eventListeners.set(type, listeners)
+	}
+
+	override removeEventListener(type: string, listener: (event: { currentTarget: TestDialogElement }) => void) {
+		this.eventListeners.get(type)?.delete(listener)
+	}
+
+	showModal() {
+		this.open = true
+	}
+
+	close(returnValue = '') {
+		this.open = false
+		this.returnValue = returnValue
+		for (const listener of this.eventListeners.get('close') ?? []) listener({ currentTarget: this })
+	}
+}
+
 class TestDocument {
 	body: TestElement
 
@@ -156,6 +182,7 @@ class TestDocument {
 	removeEventListener() { return undefined }
 
 	createElement(tagName: string) {
+		if (tagName.toLowerCase() === 'dialog') return new TestDialogElement(this, tagName)
 		return new TestElement(this, tagName)
 	}
 
@@ -227,6 +254,7 @@ export function installDomMock() {
 	const previousClearInterval = globalThis.clearInterval
 	const previousRequestAnimationFrame = globalThis.requestAnimationFrame
 	const previousCancelAnimationFrame = globalThis.cancelAnimationFrame
+	const previousHtmlDialogElement = globalThis.HTMLDialogElement
 	const state: DomMockState = {
 		restored: false,
 		previousDocument,
@@ -244,6 +272,7 @@ export function installDomMock() {
 	defineGlobalValue('clearInterval', clearIntervalMock)
 	defineGlobalValue('requestAnimationFrame', requestAnimationFrameMock)
 	defineGlobalValue('cancelAnimationFrame', cancelAnimationFrameMock)
+	defineGlobalValue('HTMLDialogElement', TestDialogElement)
 
 	return {
 		document,
@@ -257,6 +286,7 @@ export function installDomMock() {
 			restoreOwnedGlobal('clearInterval', globalThis.clearInterval === clearIntervalMock, previousClearInterval, undefined, (owner) => owner.previousClearInterval)
 			restoreOwnedGlobal('requestAnimationFrame', globalThis.requestAnimationFrame === requestAnimationFrameMock, previousRequestAnimationFrame, undefined, (owner) => owner.previousRequestAnimationFrame)
 			restoreOwnedGlobal('cancelAnimationFrame', globalThis.cancelAnimationFrame === cancelAnimationFrameMock, previousCancelAnimationFrame, undefined, (owner) => owner.previousCancelAnimationFrame)
+			if (globalThis.HTMLDialogElement === TestDialogElement && previousHtmlDialogElement !== undefined) defineGlobalValue('HTMLDialogElement', previousHtmlDialogElement)
 		},
 	}
 }
