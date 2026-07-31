@@ -223,6 +223,7 @@ export const getRichTokenOptions = (chainId: bigint, configuredTokens: readonly 
 				name: metadataEntry.name,
 				symbol: metadataEntry.symbol,
 				decimals,
+				logoUri: metadataEntry.logoUri,
 			}
 			return configured === undefined
 				? {

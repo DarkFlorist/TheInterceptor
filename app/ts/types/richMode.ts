@@ -34,7 +34,7 @@ export const RichTokenOption = funtypes.ReadonlyObject({
 	balanceSlot: funtypes.Union(EthereumQuantity, funtypes.Undefined),
 	erc1155StorageOrder: funtypes.Union(Erc1155StorageOrder, funtypes.Undefined),
 	enabled: funtypes.Boolean,
-})
+}).And(funtypes.ReadonlyPartial({ logoUri: funtypes.String }))
 
 export const RichTokenOptions = funtypes.ReadonlyArray(RichTokenOption)
 

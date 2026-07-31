@@ -330,6 +330,30 @@ type RichListParams = {
 	isInitialHomeDataLoaded: Signal<boolean>
 }
 
+function RichBalanceSummary({ profile, tokenOptions, nativeCurrencyTicker }: {
+	profile: RichAccountBalance | undefined
+	tokenOptions: readonly RichTokenOption[]
+	nativeCurrencyTicker: string
+}) {
+	if (profile === undefined) return <></>
+	const tokenItems = profile.tokenBalances.flatMap((balance) => {
+		const option = tokenOptions.find((candidate) => sameRichTokenIdentity(candidate, balance))
+		return option === undefined ? [] : [{ key: `${ option.tokenAddress.toString() }:${ option.tokenId?.toString() ?? 'erc20' }`, label: option.tokenId === undefined ? option.symbol : `${ option.symbol } #${ option.tokenId.toString() }`, logoUri: option.logoUri }]
+	})
+	const items = [{ key: 'native', label: nativeCurrencyTicker, logoUri: nativeCurrencyTicker === 'ETH' ? '../img/coins/ethereum.png' : undefined }, ...tokenItems]
+	const visibleItems = items.slice(0, 3)
+	return <div class = 'rich-mode-balance-summary' aria-label = { `Rich balances: ${ items.map((item) => item.label).join(', ') }` }>
+		{ visibleItems.map((item) => <span class = 'rich-mode-balance-summary-item' title = { item.label } key = { item.key }>
+			{ item.logoUri === undefined
+				? <span class = 'rich-mode-balance-summary-monogram' aria-hidden = 'true'>{ item.label.slice(0, 2) }</span>
+				: <img class = 'rich-mode-balance-summary-icon' src = { item.logoUri } width = '14' height = '14' aria-hidden = 'true'/>
+			}
+			<span>{ item.label }</span>
+		</span>) }
+		{ items.length <= visibleItems.length ? <></> : <span class = 'rich-mode-balance-summary-overflow'>+{ (items.length - visibleItems.length).toString() }</span> }
+	</div>
+}
+
 function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTicker, activeAddress, richList, richTokenOptions, richAccountBalances, chainId, renameAddressCallBack, isInitialHomeDataLoaded }: RichListParams) {
 	async function enableMakeCurrentAddressRich(enabled: boolean) {
 		if (!isInitialHomeDataLoaded.value) return
@@ -531,10 +555,14 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 					<div aria-label = 'Additional rich accounts' class = 'rich-mode-account-list'>
 						{ visibleRichList.value.map((richListElement) => {
 							const accountIsRich = richAccounts.value.some((account) => account.addressBookEntry.address === richListElement.addressBookEntry.address)
+							const accountProfile = richAccountBalances.value.find((profile) => profile.chainId === chainId && profile.address === richListElement.addressBookEntry.address)
 							const isCurrentAddressRow = richListElement.type === 'CurrentActiveAddress'
 							return <div class = 'rich-mode-account-row' key = { richListElement.addressBookEntry.address.toString() }>
 								<input type = 'checkbox' disabled = { !isInitialHomeDataLoaded.value } checked = { isCurrentAddressRow ? makeCurrentAddressRich.value : richListElement.makingRich } aria-label = { `Toggle rich address ${ richListElement.addressBookEntry.address.toString() }` } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { isCurrentAddressRow ? enableMakeCurrentAddressRich(e.target.checked) : modifyRichList(richListElement.addressBookEntry, e.target.checked) } } } />
-								<div style = 'min-width: 0;'><SmallAddress addressBookEntry = { richListElement.addressBookEntry } renameAddressCallBack = { renameAddressCallBack } noCopying = { !isInitialHomeDataLoaded.value } noEditAddress = { !isInitialHomeDataLoaded.value }/></div>
+								<div class = 'rich-mode-account-details'>
+									<SmallAddress addressBookEntry = { richListElement.addressBookEntry } renameAddressCallBack = { renameAddressCallBack } noCopying = { !isInitialHomeDataLoaded.value } noEditAddress = { !isInitialHomeDataLoaded.value }/>
+									{ !accountIsRich ? <></> : <RichBalanceSummary profile = { accountProfile } tokenOptions = { richTokenOptions.value } nativeCurrencyTicker = { nativeCurrencyTicker }/> }
+								</div>
 								<button type = 'button' class = 'btn btn--ghost is-small rich-mode-balance-action' disabled = { !accountIsRich } aria-label = { `Edit balances for ${ richListElement.addressBookEntry.name }` } onClick = { () => { selectedRichAddress.value = richListElement.addressBookEntry.address; showRichBalanceDialog.value = true } }>Balances</button>
 							</div>
 						}) }
@@ -542,11 +570,19 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 				</div>
 			</div>
 		}
-		{ !showRichBalanceDialog.value || showRichTokenPicker.value || selectedRichAccount.value === undefined
+		{ !showRichBalanceDialog.value || selectedRichAccount.value === undefined
 			? <></>
-			: <div class = 'modal is-active' aria-modal = 'true' role = 'dialog' aria-label = { `Balance editor for ${ selectedRichAccount.value.addressBookEntry.name }` }>
+			: <div
+				class = { `modal is-active rich-mode-modal-layer${ showRichTokenPicker.value ? ' rich-mode-modal-layer--underlay' : '' }` }
+				aria-modal = { showRichTokenPicker.value ? undefined : 'true' }
+				aria-hidden = { showRichTokenPicker.value ? 'true' : undefined }
+				inert = { showRichTokenPicker.value }
+				role = 'dialog'
+				aria-label = { `Balance editor for ${ selectedRichAccount.value.addressBookEntry.name }` }
+				onKeyDown = { event => { if (event.key === 'Escape' && !richTokenPending.value) showRichBalanceDialog.value = false } }
+			>
 				<div class = 'modal-background' onClick = { () => { if (!richTokenPending.value) showRichBalanceDialog.value = false } }/>
-				<div class = 'modal-card rich-mode-modal-card'>
+				<div class = { `modal-card rich-mode-modal-card${ showRichTokenPicker.value ? ' rich-mode-modal-card--underlay' : '' }` }>
 					<header class = 'modal-card-head card-header interceptor-modal-head window-header rich-mode-modal-head'>
 						<div class = 'card-header-icon unset-cursor'>
 							<span class = 'icon'><img src = '../img/address-book.svg' width = '24' height = '24'/></span>
@@ -569,25 +605,31 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 							<button
 								type = 'button'
 								class = 'btn btn--primary is-small'
-								aria-label = 'Choose rich token'
+								aria-label = 'Select token'
 								data-tooltip = 'Choose from the address book; only the selected contract is checked'
 								disabled = { richTokenPending.value || selectedRichProfile.value === undefined || availableRichTokens.value.length === 0 }
 								onClick = { () => { richTokenSearch.value = ''; showRichTokenPicker.value = true } }
-							>+ Token</button>
+							>Select token</button>
 							</div>
 						</div>
 						{ selectedRichProfile.value === undefined ? <p class = 'help'>This account has no balance profile.</p> : <>
 							<div class = 'rich-mode-balance-row'>
 								<span/>
 								<span class = 'paragraph checkbox-text'>{ nativeCurrencyTicker }</span>
-								<input class = 'input is-small' aria-label = { `${ nativeCurrencyTicker } rich amount for ${ selectedRichAccount.value.addressBookEntry.name }` } disabled = { richTokenPending.value } value = { formatUnits(selectedRichProfile.value.nativeAmount, 18) } onChange = { event => { setNativeAmount(event.currentTarget) } } />
+								<div class = 'rich-mode-amount-with-unit'>
+									<input class = 'input is-small' aria-label = { `${ nativeCurrencyTicker } rich amount for ${ selectedRichAccount.value.addressBookEntry.name }` } disabled = { richTokenPending.value } value = { formatUnits(selectedRichProfile.value.nativeAmount, 18) } onChange = { event => { setNativeAmount(event.currentTarget) } } />
+									<span class = 'rich-mode-amount-unit' aria-hidden = 'true'>{ nativeCurrencyTicker }</span>
+								</div>
 							</div>
 							<div aria-busy = { richTokenPending.value } aria-label = 'Configured rich tokens' class = 'rich-mode-configured-tokens'>
 								{ enabledRichTokens.value.map((option) =>
 									<div class = 'rich-mode-balance-row' key = { getRichTokenKey(option) }>
 										<button type = 'button' class = 'delete is-small' disabled = { richTokenPending.value } aria-label = { `Remove rich token ${ getRichTokenLabel(option) }` } onClick = { () => { void setRichTokenEnabled(option, false) } } />
 										<span class = 'paragraph checkbox-text'>{ getRichTokenLabel(option) }</span>
-										<input class = 'input is-small' aria-label = { `${ getRichTokenLabel(option) } rich amount` } disabled = { !option.enabled || richTokenPending.value } value = { formatUnits(option.amount, Number(option.decimals)) } onChange = { event => { void setRichTokenAmount(option, event.currentTarget) } } />
+										<div class = 'rich-mode-amount-with-unit'>
+											<input class = 'input is-small' aria-label = { `${ getRichTokenLabel(option) } rich amount` } disabled = { !option.enabled || richTokenPending.value } value = { formatUnits(option.amount, Number(option.decimals)) } onChange = { event => { void setRichTokenAmount(option, event.currentTarget) } } />
+											<span class = 'rich-mode-amount-unit' aria-hidden = 'true'>{ option.symbol }</span>
+										</div>
 									</div>
 								) }
 							</div>
@@ -605,15 +647,15 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 		}
 		{ !showRichTokenPicker.value || selectedRichAccount.value === undefined
 			? <></>
-			: <div class = 'modal is-active' aria-modal = 'true' role = 'dialog' aria-label = { `Add token balance for ${ selectedRichAccount.value.addressBookEntry.name }` }>
-				<div class = 'modal-background' onClick = { () => { if (!richTokenPending.value) showRichTokenPicker.value = false } }/>
+			: <div class = 'modal is-active rich-mode-modal-layer rich-mode-modal-layer--foreground' aria-modal = 'true' role = 'dialog' aria-label = { `Select token for ${ selectedRichAccount.value.addressBookEntry.name }` } onKeyDown = { event => { if (event.key === 'Escape' && !richTokenPending.value) showRichTokenPicker.value = false } }>
+				<div class = 'modal-background rich-mode-stacked-modal-background' onClick = { () => { if (!richTokenPending.value) showRichTokenPicker.value = false } }/>
 				<div class = 'modal-card rich-mode-modal-card'>
 					<header class = 'modal-card-head card-header interceptor-modal-head window-header rich-mode-modal-head'>
 						<div class = 'card-header-icon unset-cursor'>
 							<span class = 'icon'><img src = '../img/address-book.svg' width = '24' height = '24'/></span>
 						</div>
 						<div class = 'card-header-title'>
-							<p class = 'paragraph'>Add token</p>
+							<p class = 'paragraph'>Select token</p>
 							<p class = 'rich-mode-modal-account'>{ selectedRichAccount.value.addressBookEntry.name }</p>
 						</div>
 						<button type = 'button' class = 'card-header-icon' aria-label = 'Close token picker' disabled = { richTokenPending.value } onClick = { () => { showRichTokenPicker.value = false } }><XMarkIcon/></button>
@@ -626,6 +668,7 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 								<input
 									class = 'input'
 									type = 'search'
+									autoFocus = { true }
 									aria-label = 'Search address-book tokens'
 									placeholder = { `Search ${ availableRichTokens.value.length.toString() } address-book token${ availableRichTokens.value.length === 1 ? '' : 's' }…` }
 									disabled = { richTokenPending.value }
@@ -641,7 +684,7 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 										data-rich-token-result = { getRichTokenKey(option) }
 										class = 'btn btn--ghost rich-mode-token-result'
 										disabled = { richTokenPending.value }
-										aria-label = { `Add rich token ${ getRichTokenLabel(option) } ${ addressString(option.tokenAddress) }` }
+										aria-label = { `Select rich token ${ getRichTokenLabel(option) } ${ addressString(option.tokenAddress) }` }
 										onClick = { () => { void addRichToken(option) } }
 										key = { getRichTokenKey(option) }
 									>

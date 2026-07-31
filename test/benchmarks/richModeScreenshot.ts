@@ -127,8 +127,8 @@ try {
 		richHeader.click()
 	})()`)
 	await clickFirstAriaLabelPrefix(popup, 'Edit balances for ')
-	await waitForCondition(popup, 'token picker enabled', `document.querySelector('[aria-label="Choose rich token"]')?.disabled === false`)
-	await clickAriaLabel(popup, 'Choose rich token')
+	await waitForCondition(popup, 'token picker enabled', `document.querySelector('[aria-label="Select token"]')?.disabled === false`)
+	await clickAriaLabel(popup, 'Select token')
 	await waitForText(popup, 'USDC')
 	await waitForText(popup, 'ITEM #42')
 	await searchToken(popup, 'USDC')
@@ -144,7 +144,7 @@ try {
 		'USDC enabled',
 		`document.querySelector(${ JSON.stringify('[aria-label="USDC rich amount"]') }) !== null && document.body?.textContent?.includes('Preparing USDC') === false`,
 	)
-	await clickAriaLabel(popup, 'Choose rich token')
+	await clickAriaLabel(popup, 'Select token')
 	await addToken(popup, 'ITEM #42')
 	await waitForCondition(
 		popup,
@@ -226,8 +226,8 @@ try {
 		richHeader.click()
 	})()`)
 	await clickFirstAriaLabelPrefix(popup, 'Edit balances for ')
-	await waitForCondition(popup, 'large token picker enabled', `document.querySelector('[aria-label="Choose rich token"]')?.disabled === false`)
-	await clickAriaLabel(popup, 'Choose rich token')
+	await waitForCondition(popup, 'large token picker enabled', `document.querySelector('[aria-label="Select token"]')?.disabled === false`)
+	await clickAriaLabel(popup, 'Select token')
 	await waitForCondition(popup, '80-token search', `document.querySelector('[aria-label="Search address-book tokens"]')?.getAttribute('placeholder')?.includes('80 address-book tokens') === true`)
 	await waitForCondition(popup, 'bounded initial token results', `document.querySelectorAll('[data-rich-token-result]').length === 50`)
 	await sleep(250)
