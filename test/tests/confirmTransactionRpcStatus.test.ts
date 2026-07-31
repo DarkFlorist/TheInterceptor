@@ -6,6 +6,26 @@ import { installDomMock } from './domMock.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 
+type TestDomNode = {
+	readonly tagName?: string
+	readonly parentNode?: TestDomNode | null
+	readonly childNodes?: readonly TestDomNode[]
+	readonly textContent?: string | null
+	readonly l?: Record<string, (event: unknown) => unknown>
+}
+
+function collectElements(node: TestDomNode | undefined, tagName: string, results: TestDomNode[] = []) {
+	if (node?.tagName === tagName.toUpperCase()) results.push(node)
+	for (const child of node?.childNodes ?? []) collectElements(child, tagName, results)
+	return results
+}
+
+async function clickElement(element: TestDomNode) {
+	const clickHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Click'))?.[1]
+	if (clickHandler === undefined) throw new Error('Expected click handler')
+	await clickHandler({ currentTarget: element })
+}
+
 function installBrowserMock(sendMessageOverride?: (message: unknown, sentMessages: unknown[]) => unknown) {
 	const listeners: RuntimeMessageListener[] = []
 	const storageState: Record<string, unknown> = {}
@@ -448,6 +468,50 @@ describe('confirm transaction rpc status bootstrap', () => {
 		assert.equal(dom.document.body.textContent?.includes('Failed to decode ABI data'), true)
 		assert.equal(dom.document.body.textContent?.includes('Simulating...'), false)
 		assert.equal(dom.document.body.textContent?.includes('Initializing...'), false)
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
+	test('opens address editing from an execution error preview', async () => {
+		const dom = installDomMock()
+		installBrowserMock((message) => {
+			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
+			const typedMessage = message as { method?: string }
+			if (typedMessage.method === 'popup_readyAndListening') return undefined
+			if (typedMessage.method === 'popup_requestSettings') return undefined
+			return undefined
+		})
+		const [
+			{ browserStorageLocalSet2 },
+			{ ConfirmTransaction },
+		] = await Promise.all([
+			import('../../app/ts/utils/storageUtils.js'),
+			import('../../app/ts/components/pages/ConfirmTransaction.js'),
+		])
+
+		await browserStorageLocalSet2({
+			pendingTransactionsAndMessages: [makeUnexpectedSimulationFailurePendingTransaction('execution reverted')],
+		})
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+		await new Promise((resolve) => setTimeout(resolve, 25))
+
+		assert.equal(dom.document.body.textContent?.includes('Execution error'), true)
+		const toLabel = collectElements(dom.document.body, 'dt').find((term) => term.textContent?.trim() === 'To')
+		if (toLabel === undefined || toLabel.parentNode === null || toLabel.parentNode === undefined) throw new Error('Expected the receiving address row')
+		const toLabelIndex = toLabel.parentNode.childNodes?.indexOf(toLabel) ?? -1
+		const receivingAddress = toLabel.parentNode.childNodes?.[toLabelIndex + 1]
+		if (receivingAddress === undefined) throw new Error('Expected the receiving address details')
+		const editAbiButton = collectElements(receivingAddress, 'button').find((button) => button.textContent?.trim() === 'edit')
+		if (editAbiButton === undefined) throw new Error('Expected the receiving address edit button')
+
+		await act(async () => {
+			await clickElement(editAbiButton)
+		})
+
+		assert.equal(dom.document.body.textContent?.includes('Abi:'), true)
 		await unmountConfirmTransaction(dom)
 		dom.restore()
 	})

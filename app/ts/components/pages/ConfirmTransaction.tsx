@@ -242,6 +242,7 @@ function FailedTransactionPreviewDetails({
 	simulationConductedTimestamp,
 	rpcConnectionStatus,
 	currentBlockNumber,
+	renameAddressCallBack,
 }: {
 	website: Website
 	transactionIdentifier: bigint
@@ -254,6 +255,7 @@ function FailedTransactionPreviewDetails({
 	simulationConductedTimestamp: Date
 	rpcConnectionStatus: Signal<RpcConnectionStatus>
 	currentBlockNumber: Signal<bigint | undefined>
+	renameAddressCallBack: RenameAddressCallBack
 }) {
 	const request = originalRequestParameters.method === 'eth_sendTransaction' ? originalRequestParameters.params[0] : undefined
 	const rawRequest = originalRequestParameters.method === 'eth_sendRawTransaction' ? originalRequestParameters.params[0] : undefined
@@ -281,9 +283,9 @@ function FailedTransactionPreviewDetails({
 					<dt>Transaction type</dt>
 					<dd>{ originalRequestParameters.method }</dd>
 					<dt>From</dt>
-					<dd>{ from === undefined ? 'Unknown' : <SmallAddress addressBookEntry = { from } renameAddressCallBack = { () => undefined } /> }</dd>
+					<dd>{ from === undefined ? 'Unknown' : <SmallAddress addressBookEntry = { from } renameAddressCallBack = { renameAddressCallBack } /> }</dd>
 					<dt>To</dt>
-					<dd>{ to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { to } renameAddressCallBack = { () => undefined } /> }</dd>
+					<dd>{ to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { to } renameAddressCallBack = { renameAddressCallBack } /> }</dd>
 					<dt>Value</dt>
 					<dd>{ request === undefined ? 'Unknown' : `${ bigintToDecimalString(request.value ?? 0n, 18n) } ether` }</dd>
 					<dt>Gas limit </dt>
@@ -295,7 +297,7 @@ function FailedTransactionPreviewDetails({
 			<div style = 'margin-top: 10px;'>
 				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Transaction Input</p>
 				{ rawRequest === undefined
-					? <TransactionInput parsedInputData = { undefined } input = { input } to = { to } addressMetaData = { addressMetaData } renameAddressCallBack = { () => undefined } />
+					? <TransactionInput parsedInputData = { undefined } input = { input } to = { to } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } />
 					: <div class = 'textbox'><pre>{ dataStringWith0xStart(rawRequest) }</pre></div>
 				}
 			</div>
@@ -375,6 +377,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 				simulationConductedTimestamp = { popupVisualisation.data.simulationState.simulationConductedTimestamp }
 				rpcConnectionStatus = { param.rpcConnectionStatus }
 				currentBlockNumber = { param.currentBlockNumber }
+				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		</>
 	}
