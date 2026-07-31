@@ -1,7 +1,7 @@
 import assert from 'node:assert'
 import { describe, test } from 'node:test'
 import type { IEthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { addRichTokenBalanceOverrides, discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, getDefaultRichTokenAmount, getErc1155BalanceStorageKey, getErc20BalanceStorageKey, getRichTokenOptions, MAX_RICH_TOKEN_AMOUNT, verifyErc1155BalanceStorageSlot, verifyErc20BalanceStorageSlot } from '../../app/ts/utils/richTokens.js'
+import { addRichTokenBalanceOverrides, discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, getDefaultRichTokenAmount, getErc1155BalanceStorageKey, getErc20BalanceStorageKey, getRichTokenOptions, MAX_RICH_TOKEN_AMOUNT, parseRichTokenAmountInput, verifyErc1155BalanceStorageSlot, verifyErc20BalanceStorageSlot } from '../../app/ts/utils/richTokens.js'
 import { addressString, bigintToUint8Array, bytes32String } from '../../app/ts/utils/bigint.js'
 
 const owner = 0x1111111111111111111111111111111111111111n
@@ -174,6 +174,13 @@ describe('rich token support', () => {
 			entrySource: 'User',
 			chainId: 1n,
 		}]), [])
+	})
+
+	test('validates rich-token amounts without depending on DOM event registration', () => {
+		assert.deepEqual(parseRichTokenAmountInput('2.5', 6n), { valid: true, amount: 2_500_000n })
+		assert.deepEqual(parseRichTokenAmountInput('0', 6n), { valid: false, reason: 'InvalidAmount' })
+		assert.deepEqual(parseRichTokenAmountInput('1.0000001', 6n), { valid: false, reason: 'InvalidAmount' })
+		assert.deepEqual(parseRichTokenAmountInput((MAX_RICH_TOKEN_AMOUNT + 1n).toString(), 0n), { valid: false, reason: 'ExceedsUint256' })
 	})
 
 	test('finds the first conventional Solidity balance mapping and reverifies it independently', async () => {

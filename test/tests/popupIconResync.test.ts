@@ -8,7 +8,6 @@ import type { Settings } from '../../app/ts/types/interceptor-messages.js'
 import { installDomMock } from './domMock.js'
 import { ICON_SIGNING, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
 import { POPUP_PERFORMANCE_MARKS, clearPerformanceMarks } from '../../app/ts/utils/popupPerformance.js'
-import { MAX_RICH_TOKEN_AMOUNT } from '../../app/ts/utils/richTokens.js'
 
 type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => void
 
@@ -1132,79 +1131,6 @@ describe('popup icon sync', () => {
 			assert.equal(amountInput?.getAttribute?.('value'), '1000000')
 			const erc1155AmountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'ITEM #42 rich amount')
 			assert.equal(erc1155AmountInput?.getAttribute?.('value'), '1000000')
-		} finally {
-			clipboardMock.restore()
-			dom.restore()
-		}
-	})
-
-	test('rejects rich token amounts above uint256 before sending a popup message', async () => {
-		const dom = installDomMock()
-		const clipboardMock = installClipboardMock()
-		const { messageListener, sentMessages } = installBrowserMock((message) => {
-			if (typeof message !== 'object' || message === null || !('method' in message) || message.method !== 'popup_modifyRichToken') return undefined
-			return { method: 'popup_modifyRichToken', result: { success: true } }
-		})
-		try {
-			Object.defineProperty(globalThis, 'window', {
-				value: {
-					document: dom.document,
-					addEventListener: () => undefined,
-					removeEventListener: () => undefined,
-				},
-				configurable: true,
-				writable: true,
-			})
-			await act(() => {
-				render(h(App, {}), dom.document.body)
-			})
-			const listener = messageListener()
-			assert.equal(typeof listener, 'function')
-			await act(() => {
-				listener?.({
-					role: 'all',
-					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 10, {
-						activeAddresses: [loadedAddressBookEntry],
-						settings: { ...defaultSettings, activeSimulationAddress: loadedAddress, simulationMode: true },
-						richTokenOptions: [{
-							chainId: '0x1',
-							tokenAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
-							tokenType: 'ERC20',
-							tokenId: undefined,
-							name: 'USD Coin',
-							symbol: 'USDC',
-							decimals: '0x6',
-							amount: '0xe8d4a51000',
-							balanceSlot: '0x9',
-							erc1155StorageOrder: undefined,
-							enabled: true,
-						}],
-					}),
-				}, undefined, () => undefined)
-			})
-			sentMessages.splice(0)
-			const richHeader = collectElements(dom.document.body, 'header').find((header) => header.textContent?.includes('Make current account rich'))
-			await act(async () => {
-				if (richHeader !== undefined) await clickElement(richHeader)
-			})
-			const amountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'USDC rich amount')
-			if (amountInput === undefined) throw new Error('Expected USDC rich amount input')
-			Object.defineProperty(amountInput, 'value', { configurable: true, value: (MAX_RICH_TOKEN_AMOUNT + 1n).toString(), writable: true })
-			const changeHandler = amountInput.l === undefined
-				? undefined
-				: Object.entries(amountInput.l).find(([key]) => key.startsWith('Change') || key.startsWith('Input'))?.[1]
-			assert.notEqual(changeHandler, undefined)
-			await act(async () => {
-				await changeHandler?.({ currentTarget: amountInput })
-			})
-			assert.equal(dom.document.body.textContent?.includes('Token amount cannot exceed the maximum uint256 value.'), true)
-			assert.equal(sentMessages.length, 0)
-			Object.defineProperty(amountInput, 'value', { configurable: true, value: '2', writable: true })
-			await act(async () => {
-				await changeHandler?.({ currentTarget: amountInput })
-			})
-			assert.equal(dom.document.body.textContent?.includes('Token amount cannot exceed the maximum uint256 value.'), false)
-			assert.equal(sentMessages.length, 1)
 		} finally {
 			clipboardMock.restore()
 			dom.restore()

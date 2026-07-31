@@ -22,8 +22,8 @@ import { bigintSecondsToDate } from '../../utils/bigint.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import type { RichTokenOption } from '../../types/richMode.js'
-import { formatUnits, parseUnits } from '../../utils/ethereumUnits.js'
-import { MAX_RICH_TOKEN_AMOUNT, sameRichTokenIdentity } from '../../utils/richTokens.js'
+import { formatUnits } from '../../utils/ethereumUnits.js'
+import { parseRichTokenAmountInput, sameRichTokenIdentity } from '../../utils/richTokens.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
 import { updateRichListAddress } from '../../utils/richList.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
@@ -385,17 +385,15 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, richTokenOp
 
 	const setRichTokenAmount = async (option: RichTokenOption, input: HTMLInputElement) => {
 		richTokenError.value = undefined
-		const amount = parseUnits(input.value, Number(option.decimals))
-		if (amount === undefined || amount <= 0n) {
-			richTokenError.value = `Enter a positive ${ option.symbol } amount with at most ${ option.decimals.toString() } decimal places.`
+		const parsedAmount = parseRichTokenAmountInput(input.value, option.decimals)
+		if (parsedAmount.valid === false) {
+			richTokenError.value = parsedAmount.reason === 'ExceedsUint256'
+				? 'Token amount cannot exceed the maximum uint256 value.'
+				: `Enter a positive ${ option.symbol } amount with at most ${ option.decimals.toString() } decimal places.`
 			input.value = formatUnits(option.amount, Number(option.decimals))
 			return
 		}
-		if (amount > MAX_RICH_TOKEN_AMOUNT) {
-			richTokenError.value = 'Token amount cannot exceed the maximum uint256 value.'
-			input.value = formatUnits(option.amount, Number(option.decimals))
-			return
-		}
+		const amount = parsedAmount.amount
 		if (richTokenPending.value) {
 			input.value = formatUnits(option.amount, Number(option.decimals))
 			return

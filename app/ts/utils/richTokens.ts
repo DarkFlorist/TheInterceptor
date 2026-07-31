@@ -7,6 +7,7 @@ import { Erc1155ABI, Erc20ABI } from './abi.js'
 import { decodeFunctionOutputSafely, encodeAbiValues, encodeFunctionCall } from './abiRuntime.js'
 import { addressString, bytes32String, stringToUint8Array } from './bigint.js'
 import { keccak256 } from './ethereumPrimitives.js'
+import { parseUnits } from './ethereumUnits.js'
 
 const DEFAULT_RICH_TOKEN_COUNT = 1_000_000n
 export const MAX_RICH_TOKEN_AMOUNT = 2n ** 256n - 1n
@@ -27,6 +28,13 @@ export const getDefaultRichTokenAmount = (decimals: bigint) => {
 }
 
 export const isSupportedRichTokenDecimals = (decimals: bigint) => decimals <= MAX_SUPPORTED_RICH_TOKEN_DECIMALS
+
+export const parseRichTokenAmountInput = (value: string, decimals: bigint) => {
+	const amount = parseUnits(value, Number(decimals))
+	if (amount === undefined || amount <= 0n) return { valid: false as const, reason: 'InvalidAmount' as const }
+	if (amount > MAX_RICH_TOKEN_AMOUNT) return { valid: false as const, reason: 'ExceedsUint256' as const }
+	return { valid: true as const, amount }
+}
 
 export const getErc20BalanceStorageKey = (owner: EthereumAddress, balanceSlot: bigint) => (
 	BigInt(keccak256(encodeAbiValues(['address', 'uint256'], [addressString(owner), balanceSlot])))
