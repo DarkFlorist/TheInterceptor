@@ -347,17 +347,22 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, richTokenOp
 	const showList = useSignal<boolean>(false)
 	const richTokenError = useSignal<string | undefined>(undefined)
 	const richTokenPending = useSignal(false)
+	const richTokenPendingLabel = useSignal<string | undefined>(undefined)
 	const getRichTokenLabel = (option: RichTokenOption) => option.tokenId === undefined ? option.symbol : `${ option.symbol } #${ option.tokenId.toString() }`
 
 	const setRichTokenEnabled = async (option: RichTokenOption, enabled: boolean) => {
 		if (richTokenPending.value) return
 		richTokenPending.value = true
+		richTokenPendingLabel.value = enabled
+			? `Detecting ${ getRichTokenLabel(option) } balance storage…`
+			: `Removing ${ getRichTokenLabel(option) } from rich mode…`
 		richTokenError.value = undefined
 		const reply = await sendPopupMessageWithReply({
 			method: 'popup_modifyRichToken',
 			data: { action: enabled ? 'Add' : 'Remove', tokenAddress: option.tokenAddress, tokenId: option.tokenId },
 		})
 		richTokenPending.value = false
+		richTokenPendingLabel.value = undefined
 		if (reply === undefined) {
 			richTokenError.value = 'The background service did not return a token funding result.'
 			return
@@ -391,7 +396,15 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, richTokenOp
 			input.value = formatUnits(option.amount, Number(option.decimals))
 			return
 		}
+		if (richTokenPending.value) {
+			input.value = formatUnits(option.amount, Number(option.decimals))
+			return
+		}
+		richTokenPending.value = true
+		richTokenPendingLabel.value = `Saving ${ getRichTokenLabel(option) } amount…`
 		const reply = await sendPopupMessageWithReply({ method: 'popup_modifyRichToken', data: { action: 'SetAmount', tokenAddress: option.tokenAddress, tokenId: option.tokenId, amount } })
+		richTokenPending.value = false
+		richTokenPendingLabel.value = undefined
 		if (reply === undefined) {
 			richTokenError.value = 'The background service did not return a token funding result.'
 			return
@@ -447,14 +460,17 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, richTokenOp
 						</label>
 					) }
 					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap; padding-top: 0.75em;'> Token balances</p>
-					{ richTokenOptions.value.map((option) =>
-						<div style = 'display: grid; grid-template-columns: 1em minmax(4em, 1fr) minmax(5em, 8em); gap: 0.75em; align-items: center;' key = { `${ option.tokenAddress.toString() }-${ option.tokenId?.toString() ?? 'erc20' }` }>
-							<input type = 'checkbox' disabled = { richTokenPending.value } checked = { option.enabled } aria-label = { `Toggle rich token ${ getRichTokenLabel(option) }` } onInput = { event => { if (event.target instanceof HTMLInputElement) void setRichTokenEnabled(option, event.target.checked) } } />
-							<span class = 'paragraph checkbox-text'>{ getRichTokenLabel(option) }</span>
-							<input class = 'input is-small' aria-label = { `${ getRichTokenLabel(option) } rich amount` } disabled = { !option.enabled } value = { formatUnits(option.amount, Number(option.decimals)) } onChange = { event => { if (event.target instanceof HTMLInputElement) void setRichTokenAmount(option, event.target) } } />
-						</div>
-					) }
-					{ richTokenOptions.value.length === 0 ? <p class = 'help'>Add ERC-20 tokens or watched ERC-1155 token IDs to the address book to make them available here.</p> : <></> }
+					<div aria-busy = { richTokenPending.value }>
+						{ richTokenOptions.value.map((option) =>
+							<div style = 'display: grid; grid-template-columns: 1em minmax(4em, 1fr) minmax(5em, 8em); gap: 0.75em; align-items: center;' key = { `${ option.tokenAddress.toString() }-${ option.tokenId?.toString() ?? 'erc20' }` }>
+								<input type = 'checkbox' disabled = { richTokenPending.value } checked = { option.enabled } aria-label = { `Toggle rich token ${ getRichTokenLabel(option) }` } onInput = { event => { void setRichTokenEnabled(option, event.currentTarget.checked) } } />
+								<span class = 'paragraph checkbox-text'>{ getRichTokenLabel(option) }</span>
+								<input class = 'input is-small' aria-label = { `${ getRichTokenLabel(option) } rich amount` } disabled = { !option.enabled || richTokenPending.value } value = { formatUnits(option.amount, Number(option.decimals)) } onChange = { event => { void setRichTokenAmount(option, event.currentTarget) } } />
+							</div>
+						) }
+					</div>
+					{ richTokenOptions.value.length === 0 ? <p class = 'help is-light'>Add ERC-20 tokens or watched ERC-1155 token IDs to the address book to make them available here.</p> : <></> }
+					{ richTokenPendingLabel.value === undefined ? <></> : <p class = 'help is-light' role = 'status'>{ richTokenPendingLabel.value }</p> }
 					{ richTokenError.value === undefined ? <></> : <p class = 'help is-danger'>{ richTokenError.value }</p> }
 				</div>
 			</div>

@@ -48,7 +48,7 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerforma
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { updateRichListAddress } from '../utils/richList.js'
 import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply.js'
-import { discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, getDefaultRichTokenAmount, getRichTokenOptions, isSupportedRichTokenDecimals, MAX_RICH_TOKEN_AMOUNT, MAX_SUPPORTED_RICH_TOKEN_DECIMALS, sameRichTokenIdentity } from '../utils/richTokens.js'
+import { discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, getDefaultRichTokenAmount, getRichTokenOptions, isSupportedRichTokenDecimals, MAX_RICH_TOKEN_AMOUNT, MAX_SUPPORTED_RICH_TOKEN_DECIMALS, sameRichTokenIdentity, verifyErc1155BalanceStorageSlot } from '../utils/richTokens.js'
 import { Semaphore } from '../utils/semaphore.js'
 
 type TimestampedPopupVisualisation = {
@@ -286,9 +286,30 @@ export async function modifyRichToken(
 			const existing = current.find((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity))
 			if (existing !== undefined) return { method: 'popup_modifyRichToken' as const, result: { success: true as const, richToken: existing } }
 
-			const discoveredErc1155Storage = addressBookToken.type !== 'ERC1155' || request.data.tokenId === undefined
-				? undefined
-				: await discoverErc1155BalanceStorage(ethereum, requestAbortController, request.data.tokenAddress, request.data.tokenId)
+			const getErc1155Storage = async () => {
+				if (addressBookToken.type !== 'ERC1155' || request.data.tokenId === undefined) return undefined
+				const cachedToken = current.find((token) =>
+					token.chainId === chainId
+					&& token.tokenAddress === request.data.tokenAddress
+					&& token.tokenType === 'ERC1155'
+					&& token.erc1155StorageOrder !== undefined
+				)
+				if (
+					cachedToken?.erc1155StorageOrder !== undefined
+					&& await verifyErc1155BalanceStorageSlot(
+						ethereum,
+						requestAbortController,
+						request.data.tokenAddress,
+						request.data.tokenId,
+						cachedToken.balanceSlot,
+						cachedToken.erc1155StorageOrder,
+					)
+				) {
+					return { balanceSlot: cachedToken.balanceSlot, storageOrder: cachedToken.erc1155StorageOrder }
+				}
+				return await discoverErc1155BalanceStorage(ethereum, requestAbortController, request.data.tokenAddress, request.data.tokenId)
+			}
+			const discoveredErc1155Storage = await getErc1155Storage()
 			const discoveredStorage = addressBookToken.type === 'ERC20'
 				? { balanceSlot: await discoverErc20BalanceStorageSlot(ethereum, requestAbortController, request.data.tokenAddress), erc1155StorageOrder: undefined }
 				: discoveredErc1155Storage === undefined

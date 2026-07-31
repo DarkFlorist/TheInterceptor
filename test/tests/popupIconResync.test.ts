@@ -1141,7 +1141,6 @@ describe('popup icon sync', () => {
 	test('rejects rich token amounts above uint256 before sending a popup message', async () => {
 		const dom = installDomMock()
 		const clipboardMock = installClipboardMock()
-		const previousHTMLInputElement = globalThis.HTMLInputElement
 		const { messageListener, sentMessages } = installBrowserMock((message) => {
 			if (typeof message !== 'object' || message === null || !('method' in message) || message.method !== 'popup_modifyRichToken') return undefined
 			return { method: 'popup_modifyRichToken', result: { success: true } }
@@ -1190,27 +1189,21 @@ describe('popup icon sync', () => {
 			})
 			const amountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'USDC rich amount')
 			if (amountInput === undefined) throw new Error('Expected USDC rich amount input')
-			Object.defineProperty(globalThis, 'HTMLInputElement', { configurable: true, value: amountInput.constructor })
 			Object.defineProperty(amountInput, 'value', { configurable: true, value: (MAX_RICH_TOKEN_AMOUNT + 1n).toString(), writable: true })
 			const changeHandler = amountInput.l === undefined ? undefined : Object.entries(amountInput.l).find(([key]) => key.startsWith('Change'))?.[1]
 			assert.notEqual(changeHandler, undefined)
 			await act(async () => {
-				await changeHandler?.({ target: amountInput })
+				await changeHandler?.({ currentTarget: amountInput })
 			})
 			assert.equal(dom.document.body.textContent?.includes('Token amount cannot exceed the maximum uint256 value.'), true)
 			assert.equal(sentMessages.length, 0)
 			Object.defineProperty(amountInput, 'value', { configurable: true, value: '2', writable: true })
 			await act(async () => {
-				await changeHandler?.({ target: amountInput })
+				await changeHandler?.({ currentTarget: amountInput })
 			})
 			assert.equal(dom.document.body.textContent?.includes('Token amount cannot exceed the maximum uint256 value.'), false)
 			assert.equal(sentMessages.length, 1)
 		} finally {
-			if (previousHTMLInputElement === undefined) {
-				Reflect.deleteProperty(globalThis, 'HTMLInputElement')
-			} else {
-				Object.defineProperty(globalThis, 'HTMLInputElement', { configurable: true, value: previousHTMLInputElement })
-			}
 			clipboardMock.restore()
 			dom.restore()
 		}

@@ -566,6 +566,69 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.equal(reply.result.richToken?.erc1155StorageOrder, 'TokenIdThenOwner')
 	})
 
+	test('verifies and reuses a configured ERC-1155 contract layout for another watched ID', async () => {
+		const storageState = installBrowserMock()
+		const { getRichTokens, modifyRichToken, updateRichTokens } = await loadModules()
+		const tokenAddress = 0x4444444444444444444444444444444444444444n
+		storageState.userAddressBookEntriesV3 = [{
+			type: 'ERC1155',
+			name: 'Game Items',
+			address: '0x4444444444444444444444444444444444444444',
+			symbol: 'ITEM',
+			decimals: undefined,
+			entrySource: 'User',
+			chainId: '0x1',
+			watchedTokenIds: ['0x7', '0x2a'],
+		}]
+		await updateRichTokens(() => [{
+			chainId: 1n,
+			tokenAddress,
+			tokenType: 'ERC1155',
+			tokenId: 7n,
+			name: 'Game Items',
+			symbol: 'ITEM',
+			decimals: 0n,
+			amount: 1_000_000n,
+			balanceSlot: 3n,
+			erc1155StorageOrder: 'TokenIdThenOwner',
+		}])
+		const requestHandler = new MockRequestHandler()
+		const ethereum = new EthereumClientService(
+			requestHandler,
+			async () => undefined,
+			async () => undefined,
+			{
+				name: 'Ethereum',
+				chainId: 1n,
+				httpsRpc: requestHandler.rpcUrl,
+				currencyName: 'Ether',
+				currencyTicker: 'ETH',
+				primary: true,
+				minimized: true,
+			},
+		)
+		let simulationCalls = 0
+		Object.defineProperty(ethereum, 'ethSimulateV1', {
+			value: async (blocks: readonly unknown[]) => {
+				simulationCalls += 1
+				assert.equal(blocks.length, 1)
+				return [successfulBalanceCall(0xfedcba987654321n)]
+			},
+		})
+
+		const reply = await modifyRichToken(ethereum, undefined, {
+			method: 'popup_modifyRichToken',
+			data: { action: 'Add', tokenAddress, tokenId: 42n },
+		})
+
+		assert.equal(reply.result.success, true)
+		if (reply.result.success === false) throw new Error(reply.result.error)
+		assert.equal(simulationCalls, 1)
+		assert.equal(reply.result.richToken?.balanceSlot, 3n)
+		assert.equal(reply.result.richToken?.erc1155StorageOrder, 'TokenIdThenOwner')
+		assert.deepEqual((await getRichTokens()).map((token) => token.tokenId), [7n, 42n])
+	})
+
 	test('reconciles removed ERC-1155 token IDs before applying simulation overrides', async () => {
 		const storageState = installBrowserMock()
 		const { changeSimulationMode, getCurrentSimulationInput, getRichTokens, modifyMakeMeRich, updateRichTokens } = await loadModules()
