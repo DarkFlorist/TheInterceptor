@@ -101,6 +101,7 @@ const WalletPermission = funtypes.ReadonlyObject({
 	caveats: funtypes.ReadonlyArray(funtypes.Unknown),
 	invoker: funtypes.String,
 })
+const WalletCapabilities = funtypes.ReadonlyRecord(funtypes.String, funtypes.ReadonlyRecord(funtypes.String, funtypes.Unknown))
 const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBlockByNumber'), result: GetBlockReturn }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBlockByHash'), result: GetBlockReturn }),
@@ -121,6 +122,7 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts'), result: funtypes.ReadonlyArray(EthereumAddress) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_requestPermissions'), result: funtypes.ReadonlyArray(WalletPermission) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions'), result: funtypes.ReadonlyArray(WalletPermission) }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getCapabilities'), result: WalletCapabilities }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_revokePermissions'), result: funtypes.Null }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_maxPriorityFeePerGas'), result: EthereumQuantity }),

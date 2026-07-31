@@ -8,6 +8,7 @@ const ACCOUNT_ONLY_METHODS = new Set<string>([
 	'eth_requestAccounts',
 	'wallet_requestPermissions',
 	'wallet_getPermissions',
+	'wallet_getCapabilities',
 ])
 
 export function isAccountConnectionMethod(method: string) {

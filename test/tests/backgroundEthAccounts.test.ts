@@ -217,6 +217,76 @@ function createEthereumWithGetBlockCounter(getBlockCalls: { count: number }, ini
 }
 
 describe('background eth_accounts', () => {
+	test('handles wallet_getCapabilities locally and protects capabilities for other accounts', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateTabState } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x1111111111111111111111111111111111111111n
+		const accountString = '0x1111111111111111111111111111111111111111'
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		for (const [requestId, queriedAccount] of [
+			[1, accountString],
+			[2, '0x2222222222222222222222222222222222222222'],
+		] as const) {
+			await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId, requestSocket: socket },
+				method: 'wallet_getCapabilities',
+				params: [queriedAccount, ['0x1', '0x2105']],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		}
+
+		assert.deepEqual(messages.find((message) => message.requestId === 1), {
+			interceptorApproved: true,
+			requestId: 1,
+			bridgeRequestSettled: true,
+			type: 'result',
+			method: 'wallet_getCapabilities',
+			result: {},
+		})
+		assert.deepEqual(messages.find((message) => message.requestId === 2), {
+			interceptorApproved: true,
+			requestId: 2,
+			bridgeRequestSettled: true,
+			type: 'result',
+			method: 'wallet_getCapabilities',
+			error: { code: 4100, message: 'The requested account has not been authorized by the user.' },
+		})
+
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: account, activeSigningAddress: account })
+		await setUseSignersAddressAsActiveAddress(true)
+		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 3, requestSocket: socket },
+			method: 'wallet_getCapabilities',
+			params: [accountString, ['0x2105']],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.deepEqual(messages.find((message) => message.requestId === 3), {
+			interceptorApproved: true,
+			requestId: 3,
+			type: 'forwardToSigner',
+			replyWithSignersReply: true,
+			method: 'wallet_getCapabilities',
+			params: [accountString, ['0x2105']],
+		})
+	})
+
 	test('returns invalid params to the webpage for malformed wallet_watchAsset requests', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
@@ -1154,6 +1224,61 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_requestAccounts'), false)
 		const ethAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 7)
 		assert.deepEqual(ethAccountsReplies.at(-1)?.result, ['0x2222222222222222222222222222222222222222'])
+	})
+
+	test('refreshes an approved signer account before forwarding wallet_getCapabilities', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			websiteSocketToString,
+			sendInternalWindowMessage,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			updateWebsiteAccess,
+			updateTabState,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x2323232323232323232323232323232323232323n
+		const accountString = '0x2323232323232323232323232323232323232323'
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId, (message) => {
+			if (message.method !== 'request_signer_to_eth_accounts') return
+			void (async () => {
+				await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+				sendInternalWindowMessage({
+					method: 'window_signer_accounts_changed',
+					data: { socket, signerStateOwnerGeneration: 1, signerProviderGeneration: 1 },
+				})
+			})()
+		})
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 8, requestSocket: socket },
+			method: 'wallet_getCapabilities',
+			params: [accountString, ['0x2105']],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_accounts').length, 1)
+		assert.deepEqual(messages.find((message) => message.method === 'wallet_getCapabilities'), {
+			interceptorApproved: true,
+			requestId: 8,
+			type: 'forwardToSigner',
+			replyWithSignersReply: true,
+			method: 'wallet_getCapabilities',
+			params: [accountString, ['0x2105']],
+		})
 	})
 
 	test('routes one tab-wide signer refresh while serializing passive and interactive discovery', async () => {
@@ -2629,15 +2754,18 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			code: 4900,
 			message: 'No signer wallet is available to this page. Enable your wallet extension for this site, then try again.',
 		}
+		const account = 0x2424242424242424242424242424242424242424n
+		const accountString = '0x2424242424242424242424242424242424242424'
 		const accountRequests = [
 			{ method: 'eth_requestAccounts', signerRequestMethod: 'request_signer_to_eth_requestAccounts', expectedPublicErrorCode: 4001, requestAccounts: true },
 			{ method: 'wallet_requestPermissions', signerRequestMethod: 'request_signer_to_eth_requestAccounts', expectedPublicErrorCode: 4001, requestAccounts: true },
 			{ method: 'eth_accounts', signerRequestMethod: 'request_signer_to_eth_accounts', expectedPublicErrorCode: 4900, requestAccounts: false },
 			{ method: 'wallet_getPermissions', signerRequestMethod: 'request_signer_to_eth_accounts', expectedPublicErrorCode: 4900, requestAccounts: false },
+			{ method: 'wallet_getCapabilities', signerRequestMethod: 'request_signer_to_eth_accounts', expectedPublicErrorCode: 4100, requestAccounts: false },
 		] as const
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
 
 		const socket = { tabId: 1, connectionName: 0n }
 		let port: browser.runtime.Port
@@ -2669,14 +2797,17 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 				usingInterceptorWithoutSigner: true,
 				uniqueRequestIdentifier: { requestId, requestSocket: socket },
 				method: accountRequest.method,
+				...(accountRequest.method === 'wallet_getCapabilities' ? { params: [accountString] } : {}),
 			}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 			const replies = messages.filter((message) => message.method === accountRequest.method && message.requestId === requestId)
 			assert.equal(replies.length, 1)
-			assert.deepEqual(replies[0]?.error, {
-				...unavailableSignerError,
-				code: accountRequest.expectedPublicErrorCode,
-			})
+			assert.deepEqual(
+				replies[0]?.error,
+				accountRequest.method === 'wallet_getCapabilities'
+					? { code: 4100, message: 'The requested method and/or account has not been authorized by the user.' }
+					: { ...unavailableSignerError, code: accountRequest.expectedPublicErrorCode },
+			)
 			assert.equal(messages.some((message) => (message.method === 'connect' || message.method === 'accountsChanged') && message.requestId === requestId), false)
 		}
 		assert.equal((await getTabState(socket.tabId)).signerAccountError, undefined)
