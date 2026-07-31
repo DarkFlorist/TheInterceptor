@@ -5,10 +5,13 @@ import { ETHEREUM_LOGS_LOGGER_ADDRESS, MAKE_YOU_RICH_TRANSACTION } from '../../a
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import { MockRequestHandler } from '../MockRequestHandler.js'
+import type { ResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
+
+const richAccountAddress = 0x1111111111111111111111111111111111111111n
 
 const defineGlobal = (name: PropertyKey, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
 
-function installBrowserMock(options: { onRuntimeSendMessage?: () => void, onStorageSet?: (items: Record<string, unknown>) => void } = {}) {
+function installBrowserMock(options: { onRuntimeSendMessage?: () => void, onStorageSet?: (items: Record<string, unknown>) => void | Promise<void> } = {}) {
 	const storageState: Record<string, unknown> = {}
 	defineGlobal('browser', {
 		runtime: {
@@ -30,7 +33,7 @@ function installBrowserMock(options: { onRuntimeSendMessage?: () => void, onStor
 					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 				},
 				async set(items: Record<string, unknown>) {
-					options.onStorageSet?.(items)
+					await options.onStorageSet?.(items)
 					Object.assign(storageState, items)
 				},
 				async remove(keys: string | string[]) {
@@ -72,6 +75,7 @@ async function loadModules() {
 		...await import('../../app/ts/background/settings.js'),
 		...await import('../../app/ts/background/simulationUpdating.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/windows/fetchSimulationStack.js'),
 	}
 }
 
@@ -247,10 +251,211 @@ describe('requestMakeMeRichList resilience', () => {
 		const configuredAmount = 12_345_678_000_000_000_000n
 
 		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { add: true, address: richAddress } })
-		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { nativeAmount: configuredAmount } })
+		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { nativeAmount: configuredAmount, address: richAddress } })
 
 		const simulationInput = await getCurrentSimulationInput()
 		assert.deepEqual(simulationInput[0]?.stateOverrides[addressString(richAddress)], { balance: configuredAmount })
+	})
+
+	test('uses the account native amount in legacy simulation stack output', async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getSimulationStack, modifyMakeMeRich } = await loadModules()
+		const configuredAmount = 9_876_543_210_000_000_000n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: richAccountAddress })
+		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { add: true, address: 'CurrentAddress' } })
+		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { nativeAmount: configuredAmount, address: richAccountAddress } })
+		const simulationState: ResolvedSimulationState = {
+			kind: 'simulated',
+			value: {
+				success: true,
+				simulationStateInput: [],
+				simulatedBlocks: [],
+				blockNumber: 1n,
+				blockTimestamp: new Date('2026-01-01T00:00:00.000Z'),
+				baseFeePerGas: 1n,
+				simulationConductedTimestamp: new Date('2026-01-01T00:00:00.000Z'),
+				rpcNetwork: {
+					name: 'Ethereum',
+					chainId: 1n,
+					httpsRpc: 'https://example.invalid',
+					currencyName: 'Ether',
+					currencyTicker: 'ETH',
+					primary: true,
+					minimized: false,
+				},
+			},
+		}
+
+		const stack = await getSimulationStack(simulationState, '1.0.1')
+		assert.equal(stack.payload[0]?.value, configuredAmount)
+		assert.deepEqual(stack.payload[0]?.balanceChanges, [{ address: richAccountAddress, before: 0n, after: configuredAmount }])
+	})
+
+	test('migrates global token balances once without adding them to later rich accounts', async () => {
+		installBrowserMock()
+		const { ensureRichAccountBalances, updateRichTokens } = await loadModules()
+		const tokenAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		await updateRichTokens(() => [{
+			chainId: 1n,
+			tokenAddress,
+			tokenType: 'ERC20',
+			tokenId: undefined,
+			name: 'USD Coin',
+			symbol: 'USDC',
+			decimals: 6n,
+			amount: 1_000_000n,
+			balanceSlot: 9n,
+			erc1155StorageOrder: undefined,
+		}])
+
+		const migrated = await ensureRichAccountBalances(1n, [richAccountAddress])
+		assert.equal(migrated.find((profile) => profile.address === richAccountAddress)?.tokenBalances.length, 1)
+		const laterAddress = 0x2222222222222222222222222222222222222222n
+		const withLaterAccount = await ensureRichAccountBalances(1n, [laterAddress])
+		assert.deepEqual(withLaterAccount.find((profile) => profile.address === laterAddress)?.tokenBalances, [])
+	})
+
+	test('migrates legacy token balances for every configured chain on the first account migration', async () => {
+		installBrowserMock()
+		const { ensureRichAccountBalances, updateRichTokens } = await loadModules()
+		const mainnetTokenAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		const optimismTokenAddress = 0x4200000000000000000000000000000000000042n
+		await updateRichTokens(() => [{
+			chainId: 1n,
+			tokenAddress: mainnetTokenAddress,
+			tokenType: 'ERC20',
+			tokenId: undefined,
+			name: 'Mainnet Token',
+			symbol: 'MAIN',
+			decimals: 18n,
+			amount: 1_000n,
+			balanceSlot: 1n,
+			erc1155StorageOrder: undefined,
+		}, {
+			chainId: 10n,
+			tokenAddress: optimismTokenAddress,
+			tokenType: 'ERC20',
+			tokenId: undefined,
+			name: 'Optimism Token',
+			symbol: 'OP',
+			decimals: 18n,
+			amount: 2_000n,
+			balanceSlot: 2n,
+			erc1155StorageOrder: undefined,
+		}])
+
+		const migrated = await ensureRichAccountBalances(1n, [richAccountAddress, richAccountAddress])
+		assert.equal(migrated.filter((profile) => profile.chainId === 1n && profile.address === richAccountAddress).length, 1)
+		assert.equal(migrated.filter((profile) => profile.chainId === 10n && profile.address === richAccountAddress).length, 1)
+		assert.deepEqual(migrated.find((profile) => profile.chainId === 1n)?.tokenBalances, [{
+			tokenAddress: mainnetTokenAddress,
+			tokenId: undefined,
+			amount: 1_000n,
+		}])
+		assert.deepEqual(migrated.find((profile) => profile.chainId === 10n)?.tokenBalances, [{
+			tokenAddress: optimismTokenAddress,
+			tokenId: undefined,
+			amount: 2_000n,
+		}])
+
+		const laterAddress = 0x2222222222222222222222222222222222222222n
+		const withLaterAccount = await ensureRichAccountBalances(10n, [laterAddress])
+		assert.deepEqual(withLaterAccount.find((profile) => profile.chainId === 10n && profile.address === laterAddress)?.tokenBalances, [])
+	})
+
+	test('preserves pending legacy migration when stale token layouts are reconciled first', async () => {
+		const storageState = installBrowserMock()
+		const { ensureRichAccountBalances, reconcileRichTokensWithAddressBook, updateRichTokens } = await loadModules()
+		const supportedAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		storageState.userAddressBookEntriesV3 = [{
+			type: 'ERC20',
+			name: 'USD Coin',
+			address: addressString(supportedAddress),
+			symbol: 'USDC',
+			decimals: '0x6',
+			entrySource: 'User',
+			chainId: '0x1',
+		}]
+		await updateRichTokens(() => [{
+			chainId: 1n,
+			tokenAddress: supportedAddress,
+			tokenType: 'ERC20',
+			tokenId: undefined,
+			name: 'USD Coin',
+			symbol: 'USDC',
+			decimals: 6n,
+			amount: 1_000_000n,
+			balanceSlot: 9n,
+			erc1155StorageOrder: undefined,
+		}, {
+			chainId: 1n,
+			tokenAddress: 0x3333333333333333333333333333333333333333n,
+			tokenType: 'ERC20',
+			tokenId: undefined,
+			name: 'Removed Token',
+			symbol: 'OLD',
+			decimals: 18n,
+			amount: 1n,
+			balanceSlot: 2n,
+			erc1155StorageOrder: undefined,
+		}])
+
+		await reconcileRichTokensWithAddressBook()
+		assert.equal(Object.hasOwn(storageState, 'richAccountBalances'), false)
+		const profiles = await ensureRichAccountBalances(1n, [richAccountAddress])
+		assert.deepEqual(profiles[0]?.tokenBalances.map((balance) => balance.tokenAddress), [supportedAddress])
+	})
+
+	test('serializes concurrent first-time profile creation so legacy tokens migrate once', async () => {
+		let signalFirstProfileWrite = () => undefined
+		const firstProfileWrite = new Promise<void>((resolve) => { signalFirstProfileWrite = resolve })
+		let releaseFirstProfileWrite = () => undefined
+		const firstProfileWriteGate = new Promise<void>((resolve) => { releaseFirstProfileWrite = resolve })
+		let profileWriteCount = 0
+		installBrowserMock({ onStorageSet: async (items) => {
+			if (!Object.hasOwn(items, 'richAccountBalances')) return
+			profileWriteCount += 1
+			if (profileWriteCount !== 1) return
+			signalFirstProfileWrite()
+			await firstProfileWriteGate
+		} })
+		const { ensureRichAccountBalances, updateRichTokens } = await loadModules()
+		const tokenAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		await updateRichTokens(() => [{
+			chainId: 1n,
+			tokenAddress,
+			tokenType: 'ERC20',
+			tokenId: undefined,
+			name: 'USD Coin',
+			symbol: 'USDC',
+			decimals: 6n,
+			amount: 1_000_000n,
+			balanceSlot: 9n,
+			erc1155StorageOrder: undefined,
+		}])
+		const laterAddress = 0x2222222222222222222222222222222222222222n
+
+		const firstProfilesPromise = ensureRichAccountBalances(1n, [richAccountAddress])
+		await firstProfileWrite
+		const secondProfilesPromise = ensureRichAccountBalances(1n, [laterAddress])
+		releaseFirstProfileWrite()
+		const [firstProfiles, secondProfiles] = await Promise.all([firstProfilesPromise, secondProfilesPromise])
+
+		assert.equal(firstProfiles.find((profile) => profile.address === richAccountAddress)?.tokenBalances.length, 1)
+		assert.deepEqual(secondProfiles.find((profile) => profile.address === laterAddress)?.tokenBalances, [])
+	})
+
+	test('recovers corrupt account-specific rich balances without legacy token migration', async () => {
+		const storageState = installBrowserMock()
+		const { ensureRichAccountBalances } = await loadModules()
+		storageState.richAccountBalances = null
+
+		const profiles = await withSilencedConsole(async () => await ensureRichAccountBalances(1n, [richAccountAddress]))
+
+		assert.equal(profiles.length, 1)
+		assert.equal(profiles[0]?.address, richAccountAddress)
+		assert.deepEqual(profiles[0]?.tokenBalances, [])
+		assert.equal(Array.isArray(storageState.richAccountBalances), true)
 	})
 
 	test('falls back per address and preserves the underlying error message', async () => {
@@ -348,7 +553,7 @@ describe('requestMakeMeRichList resilience', () => {
 
 		const reply = await withSilencedConsole(async () => await modifyRichToken(ethereum, undefined, {
 			method: 'popup_modifyRichToken',
-			data: { action: 'Add', tokenAddress: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n },
+			data: { action: 'Add', address: richAccountAddress, tokenAddress: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n },
 		}))
 
 		assert.equal(reply.result.success, false)
@@ -396,7 +601,7 @@ describe('requestMakeMeRichList resilience', () => {
 
 		const reply = await modifyRichToken(ethereum, undefined, {
 			method: 'popup_modifyRichToken',
-			data: { action: 'Add', tokenAddress: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n },
+			data: { action: 'Add', address: richAccountAddress, tokenAddress: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n },
 		})
 
 		assert.deepEqual(reply, {
@@ -445,7 +650,7 @@ describe('requestMakeMeRichList resilience', () => {
 
 		const reply = await modifyRichToken(ethereum, undefined, {
 			method: 'popup_modifyRichToken',
-			data: { action: 'Add', tokenAddress: 0x3333333333333333333333333333333333333333n },
+			data: { action: 'Add', address: richAccountAddress, tokenAddress: 0x3333333333333333333333333333333333333333n },
 		})
 
 		assert.deepEqual(reply, {
@@ -505,7 +710,7 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.equal(richData.richTokenOptions[0]?.decimals, 6n)
 		const reply = await modifyRichToken(ethereum, undefined, {
 			method: 'popup_modifyRichToken',
-			data: { action: 'Add', tokenAddress },
+			data: { action: 'Add', address: richAccountAddress, tokenAddress },
 		})
 
 		assert.equal(reply.result.success, true)
@@ -567,7 +772,7 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.equal(richData.richTokenOptions.some((option) => option.tokenType === 'ERC1155' && option.tokenId === 42n && option.name === 'Exact Game Items'), true)
 		const reply = await modifyRichToken(ethereum, undefined, {
 			method: 'popup_modifyRichToken',
-			data: { action: 'Add', tokenAddress, tokenId: 42n },
+			data: { action: 'Add', address: richAccountAddress, tokenAddress, tokenId: 42n },
 		})
 
 		assert.equal(reply.result.success, true)
@@ -631,7 +836,7 @@ describe('requestMakeMeRichList resilience', () => {
 
 		const reply = await modifyRichToken(ethereum, undefined, {
 			method: 'popup_modifyRichToken',
-			data: { action: 'Add', tokenAddress, tokenId: 42n },
+			data: { action: 'Add', address: richAccountAddress, tokenAddress, tokenId: 42n },
 		})
 
 		assert.equal(reply.result.success, true)
@@ -720,7 +925,7 @@ describe('requestMakeMeRichList resilience', () => {
 		})
 		const addPromise = modifyRichToken(ethereum, undefined, {
 			method: 'popup_modifyRichToken',
-			data: { action: 'Add', tokenAddress },
+			data: { action: 'Add', address: richAccountAddress, tokenAddress },
 		})
 		await probeStarted
 		const removePromise = removeAddressBookEntry(
@@ -805,30 +1010,6 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.equal((await getRichTokens()).length, 1)
 	})
 
-	test('does not report a successful amount update after a queued removal wins the storage lock', async () => {
-		const storageState = installBrowserMock()
-		const { updateRichTokenAmount, updateRichTokens } = await loadModules()
-		const token = {
-			chainId: 1n,
-			tokenAddress: 0x3333333333333333333333333333333333333333n,
-			tokenType: 'ERC20',
-			tokenId: undefined,
-			name: 'Token',
-			symbol: 'TKN',
-			decimals: 18n,
-			amount: 1n,
-			balanceSlot: 2n,
-			erc1155StorageOrder: undefined,
-		}
-		await updateRichTokens(() => [token])
-
-		const removePromise = updateRichTokens(() => [])
-		const updatePromise = updateRichTokenAmount(token.chainId, token.tokenAddress, token.tokenId, 2n)
-		const [, updated] = await Promise.all([removePromise, updatePromise])
-
-		assert.equal(updated, undefined)
-		assert.deepEqual(storageState.richTokens, [])
-	})
 })
 
 describe('startup storage recovery', () => {

@@ -37,3 +37,20 @@ export const RichTokenOption = funtypes.ReadonlyObject({
 })
 
 export const RichTokenOptions = funtypes.ReadonlyArray(RichTokenOption)
+
+export type RichTokenBalance = funtypes.Static<typeof RichTokenBalance>
+export const RichTokenBalance = funtypes.ReadonlyObject({
+	tokenAddress: EthereumAddress,
+	tokenId: funtypes.Union(EthereumQuantity, funtypes.Undefined),
+	amount: EthereumQuantity,
+})
+
+export type RichAccountBalance = funtypes.Static<typeof RichAccountBalance>
+export const RichAccountBalance = funtypes.ReadonlyObject({
+	chainId: EthereumQuantity,
+	address: EthereumAddress,
+	nativeAmount: EthereumQuantity,
+	tokenBalances: funtypes.ReadonlyArray(RichTokenBalance),
+})
+
+export const RichAccountBalances = funtypes.ReadonlyArray(RichAccountBalance)

@@ -11,7 +11,7 @@ import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUti
 import { DEFAULT_TAB_CONNECTION, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { useSignal } from '@preact/signals'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../../utils/popupPerformance.js'
-import type { RichTokenOption } from '../../types/richMode.js'
+import type { RichAccountBalance, RichTokenOption } from '../../types/richMode.js'
 
 type LiveSimulationHomeDataOptions = {
 	answerMainPopupOpen: boolean
@@ -66,6 +66,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 	const makeCurrentAddressRich = useSignal<boolean>(false)
 	const richNativeAmount = useSignal(MAKE_YOU_RICH_TRANSACTION.transaction.value)
 	const richTokenOptions = useSignal<readonly RichTokenOption[]>([])
+	const richAccountBalances = useSignal<readonly RichAccountBalance[]>([])
 	const simulationMode = useSignal<boolean>(false)
 	const numberOfAddressesMadeRich = useSignal(0)
 
@@ -170,6 +171,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			makeCurrentAddressRich.value = data.makeCurrentAddressRich
 			if (data.richNativeAmount !== undefined) richNativeAmount.value = data.richNativeAmount
 			richTokenOptions.value = data.richTokenOptions ?? []
+			richAccountBalances.value = data.richAccountBalances ?? []
 			fixedAddressRichList.value = data.richList
 			unexpectedError.value = data.latestUnexpectedError
 			if (!wasLoaded) options.onInitialSettings?.(data.settings)
@@ -309,6 +311,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 		makeCurrentAddressRich,
 		richNativeAmount,
 		richTokenOptions,
+		richAccountBalances,
 		simulationMode,
 		numberOfAddressesMadeRich,
 	}

@@ -8,7 +8,7 @@ import { PopupPendingTransactionOrSignableMessage } from './accessRequest.js'
 import { RpcConnectionStatus } from './user-interface-types.js'
 import { SimulateExecutionReply as PopupSimulateExecutionReply } from './simulateExecutionReply.js'
 import { SimulateGnosisSafeTransaction as RequestSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as RequestSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
-import { RichToken, RichTokenOptions } from './richMode.js'
+import { RichAccountBalances, RichToken, RichTokenOptions } from './richMode.js'
 
 export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
 export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
@@ -37,6 +37,7 @@ const RequestMakeMeRichDataReply = funtypes.ReadonlyObject({
 }).And(funtypes.ReadonlyPartial({
 	richTokenOptions: RichTokenOptions,
 	richNativeAmount: EthereumQuantity,
+	richAccountBalances: RichAccountBalances,
 }))
 
 export type ModifyRichTokenRequest = funtypes.Static<typeof ModifyRichTokenRequest>
@@ -46,14 +47,17 @@ export const ModifyRichTokenRequest = funtypes.ReadonlyObject({
 		funtypes.ReadonlyObject({
 			action: funtypes.Literal('Add'),
 			tokenAddress: EthereumAddress,
+			address: EthereumAddress,
 		}).And(funtypes.ReadonlyPartial({ tokenId: EthereumQuantity })),
 		funtypes.ReadonlyObject({
 			action: funtypes.Literal('Remove'),
 			tokenAddress: EthereumAddress,
+			address: EthereumAddress,
 		}).And(funtypes.ReadonlyPartial({ tokenId: EthereumQuantity })),
 		funtypes.ReadonlyObject({
 			action: funtypes.Literal('SetAmount'),
 			tokenAddress: EthereumAddress,
+			address: EthereumAddress,
 			amount: EthereumQuantity,
 		}).And(funtypes.ReadonlyPartial({ tokenId: EthereumQuantity })),
 	),

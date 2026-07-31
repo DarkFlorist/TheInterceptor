@@ -1070,6 +1070,7 @@ describe('popup icon sync', () => {
 		const dom = installDomMock()
 		const clipboardMock = installClipboardMock()
 		const { messageListener } = installBrowserMock()
+		const secondAddress = '0x2000000000000000000000000000000000000002'
 		try {
 			Object.defineProperty(globalThis, 'window', {
 				value: {
@@ -1092,6 +1093,22 @@ describe('popup icon sync', () => {
 						activeAddresses: [loadedAddressBookEntry],
 						settings: { ...defaultSettings, activeSimulationAddress: loadedAddress, simulationMode: true },
 						richNativeAmount: '0xad78ebc5ac620000',
+						makeCurrentAddressRich: true,
+						richList: [{ addressBookEntry: { type: 'contact', name: 'Second Account', address: secondAddress, entrySource: 'User' }, makingRich: true, type: 'UserAdded' }],
+						richAccountBalances: [{
+							chainId: '0x1',
+							address: loadedAddress,
+							nativeAmount: '0xad78ebc5ac620000',
+							tokenBalances: [
+								{ tokenAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', tokenId: undefined, amount: '0xe8d4a51000' },
+								{ tokenAddress: '0x4444444444444444444444444444444444444444', tokenId: '0x2a', amount: '0xf4240' },
+							],
+						}, {
+							chainId: '0x1',
+							address: secondAddress,
+							nativeAmount: '0x6124fee993bc0000',
+							tokenBalances: [{ tokenAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', tokenId: undefined, amount: '0x1d1a94a2000' }],
+						}],
 						richTokenOptions: [{
 							chainId: '0x1',
 							tokenAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
@@ -1142,18 +1159,26 @@ describe('popup icon sync', () => {
 			assert.equal(hasAriaLabel(dom.document.body, 'Remove rich token ITEM #42'), true)
 			assert.equal(hasAriaLabel(dom.document.body, 'Additional rich accounts'), true)
 			assert.equal(hasAriaLabel(dom.document.body, 'Configured rich tokens'), true)
-			const nativeAmountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'ETH? rich amount')
+			const nativeAmountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'ETH? rich amount for Loaded Account')
 			assert.equal(nativeAmountInput?.getAttribute?.('value'), '12.5')
 			const amountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'USDC rich amount')
 			assert.equal(amountInput?.getAttribute?.('value'), '1000000')
 			const erc1155AmountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'ITEM #42 rich amount')
 			assert.equal(erc1155AmountInput?.getAttribute?.('value'), '1000000')
+			const secondAccountButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Edit balances for Second Account')
+			await act(async () => {
+				if (secondAccountButton !== undefined) await clickElement(secondAccountButton)
+			})
+			const secondNativeAmount = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'ETH? rich amount for Second Account')
+			assert.equal(secondNativeAmount?.getAttribute?.('value'), '7')
+			const secondTokenAmount = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'USDC rich amount')
+			assert.equal(secondTokenAmount?.getAttribute?.('value'), '2000000')
 			const chooseTokenButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Choose rich token')
 			await act(async () => {
 				if (chooseTokenButton !== undefined) await clickElement(chooseTokenButton)
 			})
 			const tokenSearch = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')
-			assert.equal(tokenSearch?.getAttribute?.('placeholder'), 'Search 1 token…')
+			assert.equal(tokenSearch?.getAttribute?.('placeholder'), 'Search 2 address-book tokens…')
 			const tokenResult = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label')?.startsWith('Add rich token DAI '))
 			assert.notEqual(tokenResult, undefined)
 			assert.equal(tokenResult?.getAttribute?.('role'), undefined)

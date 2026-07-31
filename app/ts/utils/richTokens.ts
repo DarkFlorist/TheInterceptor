@@ -1,7 +1,7 @@
 import type { IEthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { AddressBookEntry, Erc1155Entry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
-import type { Erc1155StorageOrder, RichToken, RichTokenOption } from '../types/richMode.js'
+import type { Erc1155StorageOrder, RichAccountBalance, RichToken, RichTokenOption } from '../types/richMode.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import { Erc1155ABI, Erc20ABI } from './abi.js'
 import { decodeFunctionOutputSafely, encodeAbiValues, encodeFunctionCall } from './abiRuntime.js'
@@ -260,6 +260,38 @@ export const addRichTokenBalanceOverrides = (
 						...existingOverride?.stateDiff,
 						[bytes32String(storageKey)]: token.amount,
 					},
+				},
+			}
+		}
+	}
+	return result
+}
+
+export const addRichAccountBalanceOverrides = (
+	stateOverrides: StateOverrides,
+	accountBalances: readonly RichAccountBalance[],
+	richTokens: readonly RichToken[],
+): StateOverrides => {
+	let result = stateOverrides
+	for (const account of accountBalances) {
+		const accountKey = addressString(account.address)
+		result = { ...result, [accountKey]: { ...result[accountKey], balance: account.nativeAmount } }
+		for (const balance of account.tokenBalances) {
+			const token = richTokens.find((candidate) => candidate.chainId === account.chainId && sameRichTokenIdentity(candidate, balance))
+			if (token === undefined) continue
+			const storageKey = token.tokenType === 'ERC20'
+				? getErc20BalanceStorageKey(account.address, token.balanceSlot)
+				: token.tokenId === undefined || token.erc1155StorageOrder === undefined
+					? undefined
+					: getErc1155BalanceStorageKey(account.address, token.tokenId, token.balanceSlot, token.erc1155StorageOrder)
+			if (storageKey === undefined) continue
+			const tokenKey = addressString(token.tokenAddress)
+			const existingOverride = result[tokenKey]
+			result = {
+				...result,
+				[tokenKey]: {
+					...existingOverride,
+					stateDiff: { ...existingOverride?.stateDiff, [bytes32String(storageKey)]: balance.amount },
 				},
 			}
 		}

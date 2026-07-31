@@ -13,7 +13,7 @@ import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
-import type { RichToken } from '../types/richMode.js'
+import type { RichAccountBalance, RichToken, RichTokenBalance } from '../types/richMode.js'
 import { filterRichTokensSupportedByAddressBook, sameRichTokenIdentity } from '../utils/richTokens.js'
 
 export const defaultActiveAddresses: AddressBookEntries = [
@@ -84,6 +84,7 @@ type StartupStorageDefaults = {
 	richNativeAmount: bigint
 	fixedAddressRichList: readonly RichListElement[]
 	richTokens: readonly RichToken[]
+	richAccountBalances: readonly RichAccountBalance[]
 }
 
 async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDefaults>(key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
@@ -143,6 +144,48 @@ export async function updateMakeCurrentAddressRich(update: (makeCurrentAddressRi
 export const setFixedMakeMeRichList = async (fixedAddressRichList: readonly RichListElement[]) => await browserStorageLocalSet({ fixedAddressRichList })
 export async function getFixedAddressRichList() { return await getParsedStorageValueOrDefault('fixedAddressRichList', []) }
 export async function getRichTokens() { return await getParsedStorageValueOrDefault('richTokens', []) }
+export async function getRichAccountBalances() { return await getParsedStorageValueOrDefault('richAccountBalances', []) }
+
+export async function updateRichAccountBalances(update: (balances: readonly RichAccountBalance[]) => readonly RichAccountBalance[]) {
+	return await makeMeRichSettingsSemaphore.execute(async () => {
+		const previous = await getRichAccountBalances()
+		const next = update(previous)
+		await browserStorageLocalSet({ richAccountBalances: next })
+		return next
+	})
+}
+
+export async function ensureRichAccountBalances(chainId: bigint, addresses: readonly bigint[]) {
+	return await makeMeRichSettingsSemaphore.execute(async () => {
+		const { richAccountBalances: rawStored } = await browser.storage.local.get('richAccountBalances')
+		const parsedStored = await browserStorageLocalSafeParseGet('richAccountBalances')
+		const storedProfilesWereCorrupt = rawStored !== undefined && parsedStored?.richAccountBalances === undefined
+		if (storedProfilesWereCorrupt) console.warn('richAccountBalances was corrupt; resetting account-specific rich balances.')
+		const existing = parsedStored?.richAccountBalances ?? []
+		const legacyTokens = rawStored === undefined ? await getRichTokens() : []
+		const profileChainIds = rawStored === undefined
+			? [...new Set([chainId, ...legacyTokens.map((token) => token.chainId)])]
+			: [chainId]
+		const missing = [...new Set(addresses)].flatMap((address) => profileChainIds
+			.filter((profileChainId) => !existing.some((profile) => profile.chainId === profileChainId && profile.address === address))
+			.map((profileChainId) => ({ chainId: profileChainId, address })))
+		if (missing.length === 0 && !storedProfilesWereCorrupt) return existing
+		const legacyNativeAmount = await getRichNativeAmount()
+		const next = [
+			...existing,
+			...missing.map((profile): RichAccountBalance => ({
+				chainId: profile.chainId,
+				address: profile.address,
+				nativeAmount: legacyNativeAmount,
+				tokenBalances: legacyTokens
+					.filter((token) => token.chainId === profile.chainId)
+					.map((token): RichTokenBalance => ({ tokenAddress: token.tokenAddress, tokenId: token.tokenId, amount: token.amount })),
+			})),
+		]
+		await browserStorageLocalSet({ richAccountBalances: next })
+		return next
+	})
+}
 
 function toComparableRichListElement(element: RichListElement): RichListElement {
 	return {
@@ -184,22 +227,22 @@ export async function reconcileRichTokensWithAddressBook() {
 	return await makeMeRichSettingsSemaphore.execute(async () => {
 		const previous = await getRichTokens()
 		const supported = filterRichTokensSupportedByAddressBook(previous, await getUserAddressBookEntries())
-		if (supported.length !== previous.length) await browserStorageLocalSet({ richTokens: supported })
+		if (supported.length !== previous.length) {
+			const { richAccountBalances: rawProfiles } = await browser.storage.local.get('richAccountBalances')
+			if (rawProfiles === undefined) {
+				await browserStorageLocalSet({ richTokens: supported })
+				return supported
+			}
+			const parsedProfiles = await browserStorageLocalSafeParseGet('richAccountBalances')
+			await browserStorageLocalSet({
+				richTokens: supported,
+				richAccountBalances: (parsedProfiles?.richAccountBalances ?? []).map((profile) => ({
+					...profile,
+					tokenBalances: profile.tokenBalances.filter((balance) => supported.some((token) => token.chainId === profile.chainId && sameRichTokenIdentity(token, balance))),
+				})),
+			})
+		}
 		return supported
-	})
-}
-
-export async function updateRichTokenAmount(chainId: bigint, tokenAddress: bigint, tokenId: bigint | undefined, amount: bigint) {
-	return await makeMeRichSettingsSemaphore.execute(async () => {
-		const previous = await getRichTokens()
-		const identity = { tokenAddress, tokenId }
-		const existing = previous.find((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity))
-		if (existing === undefined) return undefined
-		const richToken = { ...existing, amount }
-		await browserStorageLocalSet({
-			richTokens: previous.map((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity) ? richToken : token),
-		})
-		return richToken
 	})
 }
 

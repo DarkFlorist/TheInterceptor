@@ -8,6 +8,7 @@ const availableScreenshotPath = path.resolve('docs/screenshots/rich-mode-token-o
 const detectingScreenshotPath = path.resolve('docs/screenshots/rich-mode-detecting-token.png')
 const screenshotPath = path.resolve('docs/screenshots/rich-mode-token-balances.png')
 const manyBalancesScreenshotPath = path.resolve('docs/screenshots/rich-mode-many-balances.png')
+const accountBalancesScreenshotPath = path.resolve('docs/screenshots/rich-mode-account-balances.png')
 const manyTokenPickerScreenshotPath = path.resolve('docs/screenshots/rich-mode-token-search.png')
 const searchableTokenAddress = `0x${ (0x2000n + 73n).toString(16).padStart(40, '0') }`
 const sleep = async (milliseconds: number) => await new Promise<void>((resolve) => globalThis.setTimeout(resolve, milliseconds))
@@ -117,6 +118,7 @@ try {
 		if (!(richHeader instanceof HTMLElement)) throw new Error('Rich-mode header not found')
 		richHeader.click()
 	})()`)
+	await waitForCondition(popup, 'token picker enabled', `document.querySelector('[aria-label="Choose rich token"]')?.disabled === false`)
 	await clickAriaLabel(popup, 'Choose rich token')
 	await waitForText(popup, 'USDC')
 	await waitForText(popup, 'ITEM #42')
@@ -166,6 +168,13 @@ try {
 			userAddressBookEntriesV3: [...contacts, ...tokenEntries],
 			fixedAddressRichList: contacts.map((contact) => ({ address: contact.address, makingRich: true, type: 'UserAdded' })),
 			richTokens,
+			makeCurrentAddressRich: false,
+			richAccountBalances: contacts.map((contact, index) => ({
+				chainId: '0x1',
+				address: contact.address,
+				nativeAmount: '0x' + ((1000n + BigInt(index)) * 10n ** 18n).toString(16),
+				tokenBalances: richTokens.map((token) => ({ tokenAddress: token.tokenAddress, amount: '0x' + (BigInt(index + 1) * 1000n * 10n ** 18n).toString(16) }))
+			})),
 		})
 		return true
 	})()`)
@@ -180,13 +189,23 @@ try {
 	await waitForText(popup, 'TOK14')
 	await sleep(250)
 	await captureScreenshot(popup, manyBalancesScreenshotPath)
+	await clickAriaLabel(popup, 'Edit balances for Rich account 2')
+	await waitForCondition(popup, 'second account balances', `document.querySelector('[aria-label="ETH rich amount for Rich account 2"]')?.value === '1001' && document.querySelector('[aria-label="TOK1 rich amount"]')?.value === '2000'`)
+	await sleep(250)
+	await captureScreenshot(popup, accountBalancesScreenshotPath)
 
 	await popup.evaluate(`(() => {
 		const tokenEntries = Array.from({ length: 80 }, (_, index) => {
 			const address = '0x' + (0x2000n + BigInt(index)).toString(16).padStart(40, '0')
 			return { type: 'ERC20', name: 'Searchable Token ' + (index + 1).toString(), address, symbol: 'TOK' + (index + 1).toString(), decimals: '0x12', entrySource: 'User', chainId: '0x1' }
 		})
-		void chrome.storage.local.set({ userAddressBookEntriesV3: tokenEntries, fixedAddressRichList: [], richTokens: [] })
+		void chrome.storage.local.set({
+			userAddressBookEntriesV3: tokenEntries,
+			fixedAddressRichList: [],
+			richTokens: [],
+			makeCurrentAddressRich: true,
+			richAccountBalances: [{ chainId: '0x1', address: '0x1111111111111111111111111111111111111111', nativeAmount: '0xad78ebc5ac620000', tokenBalances: [] }]
+		})
 		return true
 	})()`)
 	await sleep(250)
@@ -197,8 +216,9 @@ try {
 		if (!(richHeader instanceof HTMLElement)) throw new Error('Rich-mode header not found')
 		richHeader.click()
 	})()`)
+	await waitForCondition(popup, 'large token picker enabled', `document.querySelector('[aria-label="Choose rich token"]')?.disabled === false`)
 	await clickAriaLabel(popup, 'Choose rich token')
-	await waitForCondition(popup, '80-token search', `document.querySelector('[aria-label="Search address-book tokens"]')?.getAttribute('placeholder')?.includes('80 tokens') === true`)
+	await waitForCondition(popup, '80-token search', `document.querySelector('[aria-label="Search address-book tokens"]')?.getAttribute('placeholder')?.includes('80 address-book tokens') === true`)
 	await waitForCondition(popup, 'bounded initial token results', `document.querySelectorAll('[data-rich-token-result]').length === 50`)
 	await sleep(250)
 	await captureScreenshot(popup, manyTokenPickerScreenshotPath)

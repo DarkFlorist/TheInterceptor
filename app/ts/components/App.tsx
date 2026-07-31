@@ -50,6 +50,7 @@ export function App() {
 		makeCurrentAddressRich,
 		richNativeAmount,
 		richTokenOptions,
+		richAccountBalances,
 		simulationMode,
 		numberOfAddressesMadeRich,
 	} = useLiveSimulationHomeData({
@@ -261,6 +262,7 @@ export function App() {
 						makeCurrentAddressRich = { makeCurrentAddressRich }
 						richNativeAmount = { richNativeAmount }
 						richTokenOptions = { richTokenOptions }
+						richAccountBalances = { richAccountBalances }
 						activeAddresses = { activeAddresses }
 						simulationMode = { simulationMode }
 						tabIconDetails = { tabIconDetails }

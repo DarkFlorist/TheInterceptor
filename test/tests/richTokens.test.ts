@@ -1,7 +1,7 @@
 import assert from 'node:assert'
 import { describe, test } from 'node:test'
 import type { IEthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { addRichTokenBalanceOverrides, discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, getDefaultRichTokenAmount, getErc1155BalanceStorageKey, getErc20BalanceStorageKey, getMatchingRichTokenOptions, getRichTokenOptions, MAX_RICH_TOKEN_AMOUNT, parseRichTokenAmountInput, verifyErc1155BalanceStorageSlot, verifyErc20BalanceStorageSlot } from '../../app/ts/utils/richTokens.js'
+import { addRichAccountBalanceOverrides, addRichTokenBalanceOverrides, discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, getDefaultRichTokenAmount, getErc1155BalanceStorageKey, getErc20BalanceStorageKey, getMatchingRichTokenOptions, getRichTokenOptions, MAX_RICH_TOKEN_AMOUNT, parseRichTokenAmountInput, verifyErc1155BalanceStorageSlot, verifyErc20BalanceStorageSlot } from '../../app/ts/utils/richTokens.js'
 import { addressString, bigintToUint8Array, bytes32String } from '../../app/ts/utils/bigint.js'
 
 const owner = 0x1111111111111111111111111111111111111111n
@@ -125,6 +125,32 @@ describe('rich token support', () => {
 		assert.deepEqual(overrides[addressString(erc1155Address)]?.stateDiff, {
 			[bytes32String(getErc1155BalanceStorageKey(owner, 42n, 5n, 'TokenIdThenOwner'))]: 100n,
 			[bytes32String(getErc1155BalanceStorageKey(otherOwner, 42n, 5n, 'TokenIdThenOwner'))]: 100n,
+		})
+	})
+
+	test('applies independent native and token amounts to each rich account', () => {
+		const richToken = {
+			chainId: 1n,
+			tokenAddress,
+			tokenType: 'ERC20' as const,
+			tokenId: undefined,
+			name: 'Token',
+			symbol: 'TKN',
+			decimals: 18n,
+			amount: 1n,
+			balanceSlot: 7n,
+			erc1155StorageOrder: undefined,
+		}
+		const overrides = addRichAccountBalanceOverrides({}, [
+			{ chainId: 1n, address: owner, nativeAmount: 10n, tokenBalances: [{ tokenAddress, tokenId: undefined, amount: 100n }] },
+			{ chainId: 1n, address: otherOwner, nativeAmount: 20n, tokenBalances: [{ tokenAddress, tokenId: undefined, amount: 200n }] },
+		], [richToken])
+
+		assert.equal(overrides[addressString(owner)]?.balance, 10n)
+		assert.equal(overrides[addressString(otherOwner)]?.balance, 20n)
+		assert.deepEqual(overrides[addressString(tokenAddress)]?.stateDiff, {
+			[bytes32String(getErc20BalanceStorageKey(owner, 7n))]: 100n,
+			[bytes32String(getErc20BalanceStorageKey(otherOwner, 7n))]: 200n,
 		})
 	})
 

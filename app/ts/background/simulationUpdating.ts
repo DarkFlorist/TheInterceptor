@@ -12,7 +12,7 @@ import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
-import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getRichNativeAmount, type getRichTokens, getSettings, getWethForChainId, reconcileRichTokensWithAddressBook } from './settings.js'
+import { ensureRichAccountBalances, getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId, reconcileRichTokensWithAddressBook } from './settings.js'
 import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
@@ -28,7 +28,7 @@ import type { Abi } from '../utils/ethereumPrimitives.js'
 import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
-import { addRichTokenBalanceOverrides } from '../utils/richTokens.js'
+import { addRichAccountBalanceOverrides } from '../utils/richTokens.js'
 
 const delegateCallExecuteAbi = [
 	{
@@ -43,15 +43,10 @@ const delegateCallExecuteAbi = [
 	},
 ] as const satisfies Abi
 
-const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: bigint[], nativeAmount: bigint, richTokens: Awaited<ReturnType<typeof getRichTokens>>) => {
+const getMakeCurrentAddressRichStateOverride = async (chainId: bigint, addressesToMakeRich: bigint[], richTokens: Awaited<ReturnType<typeof reconcileRichTokensWithAddressBook>>) => {
 	if (addressesToMakeRich.length === 0) return {}
-	const nativeOverrides = Object.fromEntries(
-		addressesToMakeRich.map(currentAddress => {
-			const addressKey = addressString(currentAddress)
-			return [addressKey, { balance: nativeAmount }]
-		})
-	)
-	return addRichTokenBalanceOverrides(nativeOverrides, addressesToMakeRich, richTokens)
+	const accountBalances = await ensureRichAccountBalances(chainId, addressesToMakeRich)
+	return addRichAccountBalanceOverrides({}, accountBalances.filter((profile) => profile.chainId === chainId && addressesToMakeRich.includes(profile.address)), richTokens)
 }
 
 export const getAddressesbeingMadeRich = async () => {
@@ -61,10 +56,9 @@ export const getAddressesbeingMadeRich = async () => {
 }
 
 export const getCurrentSimulationInput = async (): Promise<SimulationStateInput> => {
-	const [settings, preSimulationBlockTimeManipulation, richNativeAmount, richTokens] = await Promise.all([
+	const [settings, preSimulationBlockTimeManipulation, richTokens] = await Promise.all([
 		getSettings(),
 		getPreSimulationBlockTimeManipulation(),
-		getRichNativeAmount(),
 		reconcileRichTokensWithAddressBook(),
 	])
 	const richListPromise = silenceChromeUnCaughtPromise(getAddressesbeingMadeRich())
@@ -72,9 +66,9 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
-	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(
+	let currentBlockStateOverrides = await getMakeCurrentAddressRichStateOverride(
+		settings.activeRpcNetwork.chainId,
 		await richListPromise,
-		richNativeAmount,
 		richTokens.filter((token) => token.chainId === settings.activeRpcNetwork.chainId),
 	)
 	let previousBlockTimeManipulation = settings.simulationMode ? preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
