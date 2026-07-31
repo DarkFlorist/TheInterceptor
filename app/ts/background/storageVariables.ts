@@ -15,8 +15,9 @@ import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.
 import { isValidEnsName } from '../utils/ens.js'
 import { modifyObject } from '../utils/typescript.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
-import { getLargeStateValue, setLargeStateValue } from '../utils/largeStateStore.js'
+import { getLargeStateValue, prepareLargeStateWrite, setLargeStateValue, setLargeStateValues } from '../utils/largeStateStore.js'
 import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
+import { SafeTransactionStacks } from '../types/safeTypes.js'
 
 export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.idsOfOpenedTabs ?? { settingsView: undefined, addressBook: undefined, websiteAccess: undefined, simulationStack: undefined }
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => await browserStorageLocalSet({ idsOfOpenedTabs: { ...await getIdsOfOpenedTabs(), ...ids } })
@@ -359,15 +360,52 @@ export async function addEnsLabelHash(label: string) {
 	})
 }
 
-const interceptorTransactionStackSemaphore = new Semaphore(1)
+const transactionStateSemaphore = new Semaphore(1)
 export const getInterceptorTransactionStack = async () => await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack) ?? { operations: [] }
 export async function updateInterceptorTransactionStack(updateFunc: (prevStack: InterceptorTransactionStack) => InterceptorTransactionStack): Promise<InterceptorTransactionStack> {
-	return await interceptorTransactionStackSemaphore.execute(async () => {
+	return await transactionStateSemaphore.execute(async () => {
 		const prevStack = await getInterceptorTransactionStack()
 		const interceptorTransactionStack = updateFunc(prevStack)
-		const ids = interceptorTransactionStack.operations.map((x) => x.type === 'Transaction' ? x.preSimulationTransaction.transactionIdentifier : undefined).filter((x): x is bigint => x !== undefined)
-		if (new Set(ids).size !== ids.length) throw new Error('duplicated IDs')
+		assertUniqueInterceptorTransactionIds(interceptorTransactionStack)
 		await setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, interceptorTransactionStack)
 		return interceptorTransactionStack
+	})
+}
+
+export const getSafeTransactionStacks = async () => await getLargeStateValue('safeTransactionStacks', SafeTransactionStacks) ?? []
+export async function updateSafeTransactionStacks(updateFunc: (previousStacks: SafeTransactionStacks) => SafeTransactionStacks): Promise<SafeTransactionStacks> {
+	return await transactionStateSemaphore.execute(async () => {
+		const previousStacks = await getSafeTransactionStacks()
+		const updatedStacks = updateFunc(previousStacks)
+		await setLargeStateValue('safeTransactionStacks', SafeTransactionStacks, updatedStacks)
+		return updatedStacks
+	})
+}
+
+function assertUniqueInterceptorTransactionIds(interceptorTransactionStack: InterceptorTransactionStack) {
+	const ids = interceptorTransactionStack.operations
+		.map((operation) => operation.type === 'Transaction' ? operation.preSimulationTransaction.transactionIdentifier : undefined)
+		.filter((identifier): identifier is bigint => identifier !== undefined)
+	if (new Set(ids).size !== ids.length) throw new Error('duplicated IDs')
+}
+
+type TransactionState = {
+	readonly interceptorTransactionStack: InterceptorTransactionStack
+	readonly safeTransactionStacks: SafeTransactionStacks
+}
+
+export async function updateTransactionState(updateFunc: (previousState: TransactionState) => TransactionState): Promise<TransactionState> {
+	return await transactionStateSemaphore.execute(async () => {
+		const previousState = {
+			interceptorTransactionStack: await getInterceptorTransactionStack(),
+			safeTransactionStacks: await getSafeTransactionStacks(),
+		}
+		const updatedState = updateFunc(previousState)
+		assertUniqueInterceptorTransactionIds(updatedState.interceptorTransactionStack)
+		await setLargeStateValues([
+			prepareLargeStateWrite('interceptorTransactionStack', InterceptorTransactionStack, updatedState.interceptorTransactionStack),
+			prepareLargeStateWrite('safeTransactionStacks', SafeTransactionStacks, updatedState.safeTransactionStacks),
+		])
+		return updatedState
 	})
 }

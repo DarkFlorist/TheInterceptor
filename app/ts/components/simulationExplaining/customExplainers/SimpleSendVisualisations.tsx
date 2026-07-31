@@ -11,6 +11,7 @@ import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../../utils/constants.js'
 import { interleave } from '../../../utils/typed-arrays.js'
 import { extractTokenEvents } from '../../../background/metadataUtils.js'
 import type { TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
+import { getGasFeePaidByTransactionSender } from '../../../utils/transactionGasAccounting.js'
 
 export type BeforeAfterAddress = {
 	address: AddressBookEntry
@@ -125,8 +126,9 @@ export function SimpleTokenTransferVisualisation({ simTx, renameAddressCallBack 
 	if (asset === undefined) throw new Error('asset was undefined')
 	const senderAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.from.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
 	const receiverAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.to.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
-	const senderGasFees = (asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.from.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n)
-	const receiverGasFees = (asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.to.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n)
+	const transactionSenderGasFee = getGasFeePaidByTransactionSender(simTx)
+	const senderGasFees = asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.from.address === simTx.transaction.from.address ? transactionSenderGasFee : 0n
+	const receiverGasFees = asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.to.address === simTx.transaction.from.address ? transactionSenderGasFee : 0n
 	const isDelegatedExecution = simTx.transaction.type === '7702' && simTx.transaction.authorizationList.length > 0 || simTx.transaction.delegationAddress !== undefined
 	const isDelegatedSelfCallSendingElsewhere = isDelegatedExecution
 		&& simTx.transaction.to !== undefined

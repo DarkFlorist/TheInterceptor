@@ -15,6 +15,7 @@ import type { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.j
 import { EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 import type { ReadonlySignal } from '@preact/signals'
 import { DecodedError, ErrorWithCodeAndOptionalData } from './error.js'
+import { SafeStackTransaction } from './safeTypes.js'
 
 export type TokenBalancesAfter = funtypes.Static<typeof TokenBalancesAfter>
 export const TokenBalancesAfter = funtypes.ReadonlyArray(funtypes.ReadonlyObject({
@@ -78,7 +79,9 @@ export const NonSimulatedAndVisualizedTransactionBase = funtypes.ReadonlyObject(
 	originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
 	transactionStatus: funtypes.Literal('Failed To Simulate'),
 	error: DecodedError
-})
+}).And(funtypes.ReadonlyPartial({
+	safeTransaction: SafeStackTransaction,
+}))
 
 export type SimulatedAndVisualizedTransactionBase = funtypes.Static<typeof SimulatedAndVisualizedTransactionBase>
 export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
@@ -96,7 +99,9 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 		quarantine: funtypes.Boolean,
 		quarantineReasons: funtypes.ReadonlyArray(funtypes.String),
 		events: funtypes.ReadonlyArray(EnrichedEthereumEventWithMetadata),
-	}),
+	}).And(funtypes.ReadonlyPartial({
+		safeTransaction: SafeStackTransaction,
+	})),
 	funtypes.Union(
 		funtypes.ReadonlyObject({
 			transactionStatus: funtypes.Literal('Transaction Succeeded'),
@@ -121,7 +126,9 @@ export const PreSimulationTransaction = funtypes.ReadonlyObject({
 	created: EthereumTimestamp,
 	originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
 	transactionIdentifier: EthereumQuantity,
-})
+}).And(funtypes.ReadonlyPartial({
+	safeTransaction: SafeStackTransaction,
+}))
 
 export type SimulatedTransaction = funtypes.Static<typeof SimulatedTransaction>
 export const SimulatedTransaction = funtypes.ReadonlyObject({

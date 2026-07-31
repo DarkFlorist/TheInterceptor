@@ -1,7 +1,7 @@
 import { useEffect } from 'preact/hooks'
 import type { ComponentChildren, RefObject } from 'preact'
 import type { EthereumAddress } from '../types/wire-types.js'
-import type { AddressBookEntry } from '../types/addressBookTypes.js'
+import { getSafeSignerAddresses, type AddressBookEntry } from '../types/addressBookTypes.js'
 import { addressString, bigintSecondsToDate, checksummedAddress } from '../utils/bigint.js'
 import { getFilledInContactEntry } from '../utils/addressBookEntries.js'
 import type { ChainEntry, RpcEntries } from '../types/rpc.js'
@@ -95,10 +95,17 @@ export const addressEditEntry = (entry: AddressBookEntry) => {
 			logoUri: undefined,
 			useAsActiveAddress: false,
 			abi : undefined,
+			safeVersion: undefined,
 			declarativeNetRequestBlockMode: undefined,
 			chainId: entry.chainId || 1n,
 			...entry,
 			address: checksummedAddress(entry.address),
+			safeSignerAddress: entry.type === 'safe' && entry.safeSignerAddress !== undefined
+				? checksummedAddress(entry.safeSignerAddress)
+				: undefined,
+			safeSignerAddresses: entry.type === 'safe'
+				? getSafeSignerAddresses(entry).map(checksummedAddress)
+				: [],
 		}
 	}
 }

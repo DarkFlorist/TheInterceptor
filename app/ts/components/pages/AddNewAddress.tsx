@@ -3,7 +3,7 @@ import { useEffect } from 'preact/hooks'
 import type { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, ErrorText } from '../subcomponents/Error.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
-import { getMissingPopupReplyErrorMessage, requestPopupAbiAndNameFromBlockExplorer, requestPopupIdentifyAddress, sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { getMissingPopupReplyErrorMessage, requestPopupAbiAndNameFromBlockExplorer, requestPopupIdentifyAddress, sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
 import { type ComponentChildren, createRef } from 'preact'
@@ -36,11 +36,27 @@ export function getAddressWindowStateSyncErrorMessage(error: unknown) {
 	return 'Failed to update address window state.'
 }
 
-export async function saveAddressBookEntry(entryToAdd: AddressBookEntry | { type: 'error', error: string }, close: () => void, sendMessage = sendPopupMessageToBackgroundPage,
+export async function saveAddressBookEntry(entryToAdd: AddressBookEntry | { type: 'error', error: string }, close: () => void, sendMessage: (message: { method: 'popup_addOrModifyAddressBookEntry', data: AddressBookEntry }) => Promise<{ readonly ok: boolean, readonly message?: string } | undefined> = sendPopupMessageWithReply,
 ) {
 	if (entryToAdd.type === 'error') return
-	await sendMessage({ method: 'popup_addOrModifyAddressBookEntry', data: entryToAdd })
+	const reply = await sendMessage({ method: 'popup_addOrModifyAddressBookEntry', data: entryToAdd })
+	if (reply === undefined) return 'Interceptor did not reply while validating the address-book entry.'
+	if (reply.ok === false) return reply.message ?? 'Failed to save address-book entry.'
 	close()
+	return undefined
+}
+
+export async function saveAddressBookEntryAndSwitch(
+	entryToAdd: AddressBookEntry | { type: 'error', error: string },
+	close: () => void,
+	setActiveAddressAndInformAboutIt: ((address: bigint) => Promise<void>) | undefined,
+	sendMessage: (message: { method: 'popup_addOrModifyAddressBookEntry', data: AddressBookEntry }) => Promise<{ readonly ok: boolean, readonly message?: string } | undefined> = sendPopupMessageWithReply,
+) {
+	if (entryToAdd.type === 'error') return entryToAdd.error
+	const saveError = await saveAddressBookEntry(entryToAdd, close, sendMessage)
+	if (saveError !== undefined) return saveError
+	await setActiveAddressAndInformAboutIt?.(entryToAdd.address)
+	return undefined
 }
 
 const readableAddressType = {
@@ -50,6 +66,7 @@ const readableAddressType = {
 	ERC721: 'ERC721',
 	ERC1155: 'ERC1155',
 	contract: 'contract',
+	safe: 'Gnosis Safe Wallet',
 }
 
 export const BLOCK_EXPLORER_REPLY_MISSING_ERROR = getMissingPopupReplyErrorMessage('Fetching ABI from the block explorer')
@@ -175,7 +192,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 	const blockExplorerAvailable = useComputed(() => isBlockExplorerAvailableForChain(selectedChainId.value, rpcEntries.value))
 
 	const selectedAddresBookEntryType = useSignal<AddressBookEntryType>(modifyAddressWindowState.value.incompleteAddressBookEntry.type)
-	const addressBookEntryOptions = useSignal<readonly AddressBookEntryType[]>(['contact', 'contract', 'ERC20', 'ERC1155', 'ERC721'])
+	const addressBookEntryOptions = useSignal<readonly AddressBookEntryType[]>(['contact', 'contract', 'safe', 'ERC20', 'ERC1155', 'ERC721'])
 
 	const onTypeChangedCallBack = (type: AddressBookEntryType) => {
 		selectedAddresBookEntryType.value = type
@@ -194,6 +211,29 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 	const setName = async (name: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { name }))
 	const setChain = async (chainEntry: ChainEntry) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { chainId: chainEntry.chainId }))
 	const setAbi = async (abi: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { abi: abi.trim().length === 0 ? undefined : abi }))
+	const setSafeSignerAddress = async (safeSignerAddress: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { safeSignerAddress }))
+	const setSafeSignerAddressAtIndex = async (index: number, safeSignerAddress: string) => updateIncompleteAddressBookEntry(previousEntry => {
+		const safeSignerAddresses = [...(previousEntry.safeSignerAddresses ?? [])]
+		const previousAddress = safeSignerAddresses[index]
+		safeSignerAddresses[index] = safeSignerAddress
+		return modifyObject(previousEntry, {
+			safeSignerAddresses,
+			safeSignerAddress: previousEntry.safeSignerAddress === previousAddress || previousEntry.safeSignerAddress === undefined
+				? safeSignerAddress
+				: previousEntry.safeSignerAddress,
+		})
+	})
+	const addSafeSignerAddress = async () => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, {
+		safeSignerAddresses: [...(previousEntry.safeSignerAddresses ?? []), ''],
+	}))
+	const removeSafeSignerAddress = async (index: number) => updateIncompleteAddressBookEntry(previousEntry => {
+		const removedAddress = previousEntry.safeSignerAddresses?.[index]
+		const safeSignerAddresses = (previousEntry.safeSignerAddresses ?? []).filter((_, signerIndex) => signerIndex !== index)
+		return modifyObject(previousEntry, {
+			safeSignerAddresses,
+			safeSignerAddress: previousEntry.safeSignerAddress === removedAddress ? safeSignerAddresses[0] : previousEntry.safeSignerAddress,
+		})
+	})
 	const setSymbol = async (symbol: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { symbol }))
 	const setDecimals = async (inputEvent: Event) => updateIncompleteAddressBookEntry(previousEntry => {
 		if (!(inputEvent.target instanceof HTMLInputElement) || inputEvent.target === null) return previousEntry
@@ -231,6 +271,28 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 					<CellElement element = { <NameInput nameInput = { modifyAddressWindowState.value.incompleteAddressBookEntry.name } setNameInput = { setName } disabled = { disableDueToSource }/> } />
 					<CellElement element = { <Text text = { 'Address: ' }/> }/>
 					<CellElement element = { <AddressInput disabled = { modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress === false || disableDueToSource } addressInput = { modifyAddressWindowState.value.incompleteAddressBookEntry.address } setAddress = { setAddress } /> } />
+					{ modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'safe' ? <>
+						<div class = 'safe-signer-editor-title'><Text text = 'Gnosis Safe signers (optional)'/></div>
+						{ (modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddresses ?? []).map((safeSignerAddress, index) =>
+							<div class = 'safe-signer-editor-row' key = { index }>
+								<input
+									type = 'radio'
+									name = 'active-safe-signer'
+									aria-label = { `Use Gnosis Safe signer ${ index + 1 } as active signer` }
+									checked = { modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddress === safeSignerAddress }
+									disabled = { disableDueToSource || safeSignerAddress.trim().length === 0 }
+									onInput = { () => { void setSafeSignerAddress(safeSignerAddress) } }
+								/>
+								<div>
+									<AddressInput disabled = { disableDueToSource } addressInput = { safeSignerAddress } setAddress = { (address) => { void setSafeSignerAddressAtIndex(index, address) } } />
+								</div>
+								<button class = 'btn btn--outline is-small' type = 'button' disabled = { disableDueToSource } onClick = { () => { void removeSafeSignerAddress(index) } }>Remove</button>
+							</div>
+						) }
+						<div class = 'safe-signer-editor-add'>
+							<button class = 'btn btn--outline is-small' type = 'button' disabled = { disableDueToSource } onClick = { () => { void addSafeSignerAddress() } }>Add Gnosis Safe signer</button>
+						</div>
+					</> : <></> }
 					{ modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC20' || modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC1155' ? <>
 						<CellElement element = { <Text text = { 'Symbol: ' }/> }/>
 						<CellElement element = { <input disabled = { disableDueToSource } class = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' value = { modifyAddressWindowState.value.incompleteAddressBookEntry.symbol } placeholder = { '...' } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setSymbol(e.target.value) } } } /> } />
@@ -336,6 +398,16 @@ export function AddNewAddress(param: AddAddressParam) {
 		const incompleteAddressBookEntry = param.modifyAddressWindowState.peek().incompleteAddressBookEntry
 		const inputedAddressBigInt = stringToAddress(incompleteAddressBookEntry.address)
 		if (inputedAddressBigInt === undefined) return { type: 'error', error: 'Address is not valid' }
+		const safeSignerAddressStrings = (incompleteAddressBookEntry.safeSignerAddresses ?? [])
+			.map((address) => address.trim())
+			.filter((address) => address.length > 0)
+		const safeSignerAddresses = safeSignerAddressStrings.map(stringToAddress)
+		if (incompleteAddressBookEntry.type === 'safe' && safeSignerAddresses.some((address) => address === undefined)) return { type: 'error', error: 'A Gnosis Safe signer address is not valid' }
+		const parsedSafeSignerAddresses = safeSignerAddresses.filter((address): address is bigint => address !== undefined)
+		const requestedSafeSignerAddress = stringToAddress(incompleteAddressBookEntry.safeSignerAddress)
+		if (incompleteAddressBookEntry.type === 'safe' && incompleteAddressBookEntry.safeSignerAddress !== undefined && requestedSafeSignerAddress === undefined) return { type: 'error', error: 'Active Gnosis Safe signer address is not valid' }
+		const safeSignerAddress = requestedSafeSignerAddress ?? parsedSafeSignerAddresses[0]
+		if (incompleteAddressBookEntry.type === 'safe' && incompleteAddressBookEntry.chainId === 'AllChains') return { type: 'error', error: 'Gnosis Safe wallets must be assigned to a specific chain' }
 		const name = incompleteAddressBookEntry.name ? incompleteAddressBookEntry.name : checksummedAddress(inputedAddressBigInt)
 		if (!isValidAddressBookEntryName(name)) return { type: 'error', error: 'Name is not valid' }
 		if (incompleteAddressBookEntry.abi !== undefined && !isValidAbi(incompleteAddressBookEntry.abi)) return { type: 'error', error: 'Abi is not valid' }
@@ -387,21 +459,40 @@ export function AddNewAddress(param: AddAddressParam) {
 				...base,
 				type: 'contract' as const,
 			}
+			case 'safe': {
+				if (incompleteAddressBookEntry.chainId === 'AllChains') return { type: 'error', error: 'Gnosis Safe wallets must use a specific chain.' }
+				return {
+					...base,
+					type: 'safe' as const,
+					chainId: incompleteAddressBookEntry.chainId,
+					useAsActiveAddress: true,
+					...(safeSignerAddress === undefined ? {} : { safeSignerAddress }),
+					...(parsedSafeSignerAddresses.length === 0 ? {} : { safeSignerAddresses: Array.from(new Set(parsedSafeSignerAddresses)) }),
+					...(incompleteAddressBookEntry.safeVersion === undefined ? {} : { safeVersion: incompleteAddressBookEntry.safeVersion }),
+				}
+			}
 			default: assertUnreachable(incompleteAddressBookEntry.type)
 		}
 	}
 
 	async function modifyOrAddEntry() {
 		const entryToAdd = getCompleteAddressBookEntry()
-		await saveAddressBookEntry(entryToAdd, param.close)
+		const saveError = await saveAddressBookEntry(entryToAdd, param.close)
+		if (saveError !== undefined) {
+			param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, {
+				errorState: { blockEditing: false, message: saveError }
+			})
+		}
 	}
 
 	async function createAndSwitch() {
-		const incompleteAddressBookEntry = param.modifyAddressWindowState.value.incompleteAddressBookEntry
-		const inputedAddressBigInt = stringToAddress(incompleteAddressBookEntry.address)
-		if (inputedAddressBigInt === undefined) return
-		await modifyOrAddEntry()
-		if (param.setActiveAddressAndInformAboutIt !== undefined) await param.setActiveAddressAndInformAboutIt(inputedAddressBigInt)
+		const entryToAdd = getCompleteAddressBookEntry()
+		const saveError = await saveAddressBookEntryAndSwitch(entryToAdd, param.close, param.setActiveAddressAndInformAboutIt)
+		if (saveError !== undefined) {
+			param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, {
+				errorState: { blockEditing: false, message: saveError }
+			})
+		}
 	}
 
 	const completeAddressBookEntryOrError = useComputed(() => {

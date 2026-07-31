@@ -131,10 +131,12 @@ type SmallAddressParams = {
 	readonly renameAddressCallBack: RenameAddressCallBack
 	readonly noCopying?: boolean
 	readonly noEditAddress?: boolean
+	readonly nonInteractive?: boolean
+	readonly copyOnActionOnly?: boolean
 	readonly style?: JSX.CSSProperties
 }
 
-export function SmallAddress({ addressBookEntry, renameAddressCallBack, noCopying, noEditAddress, style }: SmallAddressParams) {
+export function SmallAddress({ addressBookEntry, renameAddressCallBack, noCopying, noEditAddress, nonInteractive, copyOnActionOnly, style }: SmallAddressParams) {
 	const currentAddressBookEntry = resolveSignal(addressBookEntry)
 	if (currentAddressBookEntry === undefined) return <></>
 	const addressString = checksummedAddress(currentAddressBookEntry.address)
@@ -144,7 +146,7 @@ export function SmallAddress({ addressBookEntry, renameAddressCallBack, noCopyin
 		return <Blockie address = { currentAddressBookEntry.address } />
 	}
 
-	return <InlineCard label = { currentAddressBookEntry.name } copyValue = { addressString } icon = { generateIcon } noCopy = { noCopying } onEditClicked = { noEditAddress ? undefined : () => renameAddressCallBack(currentAddressBookEntry) } style = { style } />
+	return <InlineCard label = { currentAddressBookEntry.name } copyValue = { addressString } icon = { generateIcon } noCopy = { noCopying } onEditClicked = { noEditAddress ? undefined : () => renameAddressCallBack(currentAddressBookEntry) } nonInteractive = { nonInteractive } copyOnActionOnly = { copyOnActionOnly } style = { style } />
 }
 
 export function WebsiteOriginText({ website, class: cssClass, style }: {

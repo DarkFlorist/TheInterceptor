@@ -1,8 +1,9 @@
 import type * as funtypes from 'funtypes'
 import { serialize } from '../types/wire-types.js'
+import { Semaphore } from './semaphore.js'
 import { assertNever } from './typescript.js'
 
-export type LargeStateStorageKey = 'interceptorTransactionStack' | 'popupVisualisation'
+export type LargeStateStorageKey = 'interceptorTransactionStack' | 'popupVisualisation' | 'safeTransactionStacks'
 
 const LARGE_STATE_DB_NAME = 'interceptorLargeState'
 const LARGE_STATE_STORE_NAME = 'largeState'
@@ -23,13 +24,21 @@ type LegacyLocalLookup =
 type LargeStateDeleteMarkerKey =
 	| 'interceptorLargeStateDeleted:interceptorTransactionStack'
 	| 'interceptorLargeStateDeleted:popupVisualisation'
+	| 'interceptorLargeStateDeleted:safeTransactionStacks'
 
 type LargeStateMigratedMarkerKey =
 	| 'interceptorLargeStateMigrated:interceptorTransactionStack'
 	| 'interceptorLargeStateMigrated:popupVisualisation'
+	| 'interceptorLargeStateMigrated:safeTransactionStacks'
+
+export type PreparedLargeStateWrite = {
+	readonly key: LargeStateStorageKey
+	readonly serializedValue: unknown
+}
 
 let indexedDbPromise: Promise<IDBDatabase | undefined> | undefined
 let indexedDbSource: IDBFactory | undefined
+const largeStateSemaphore = new Semaphore(1)
 
 function canUseIndexedDb() {
 	return typeof indexedDB !== 'undefined'
@@ -113,6 +122,28 @@ async function setIndexedDbValue(key: LargeStateStorageKey, value: unknown) {
 	}
 }
 
+async function setIndexedDbValues(writes: readonly PreparedLargeStateWrite[]) {
+	const db = await openLargeStateDb()
+	if (db === undefined) return false
+	try {
+		await new Promise<void>((resolve, reject) => {
+			const transaction = db.transaction(LARGE_STATE_STORE_NAME, 'readwrite')
+			const store = transaction.objectStore(LARGE_STATE_STORE_NAME)
+			for (const write of writes) {
+				const request = store.put(write.serializedValue, write.key)
+				request.onerror = () => reject(request.error ?? new Error(`Large state IndexedDB batch write failed for ${ write.key }`))
+			}
+			transaction.oncomplete = () => resolve()
+			transaction.onabort = () => reject(transaction.error ?? new Error('Large state IndexedDB batch transaction aborted'))
+			transaction.onerror = () => reject(transaction.error ?? new Error('Large state IndexedDB batch transaction failed'))
+		})
+		return true
+	} catch (error) {
+		warnIndexedDbRequestFailure('batch write', error)
+		return false
+	}
+}
+
 async function removeIndexedDbValue(key: LargeStateStorageKey) {
 	try {
 		const result = await runIndexedDbRequest('readwrite', (store) => store.delete(key))
@@ -127,6 +158,7 @@ function getLegacyDeleteMarkerKey(key: LargeStateStorageKey): LargeStateDeleteMa
 	switch (key) {
 		case 'interceptorTransactionStack': return `${ LARGE_STATE_DELETE_MARKER_PREFIX }interceptorTransactionStack`
 		case 'popupVisualisation': return `${ LARGE_STATE_DELETE_MARKER_PREFIX }popupVisualisation`
+		case 'safeTransactionStacks': return `${ LARGE_STATE_DELETE_MARKER_PREFIX }safeTransactionStacks`
 		default: return assertNever(key)
 	}
 }
@@ -135,6 +167,7 @@ function getLegacyMigratedMarkerKey(key: LargeStateStorageKey): LargeStateMigrat
 	switch (key) {
 		case 'interceptorTransactionStack': return `${ LARGE_STATE_MIGRATED_MARKER_PREFIX }interceptorTransactionStack`
 		case 'popupVisualisation': return `${ LARGE_STATE_MIGRATED_MARKER_PREFIX }popupVisualisation`
+		case 'safeTransactionStacks': return `${ LARGE_STATE_MIGRATED_MARKER_PREFIX }safeTransactionStacks`
 		default: return assertNever(key)
 	}
 }
@@ -167,12 +200,23 @@ async function setLegacyLocalMigrated(key: LargeStateStorageKey) {
 	})
 }
 
-async function setLegacyLocalValue(key: LargeStateStorageKey, value: unknown) {
-	await browser.storage.local.set({
-		[key]: value,
-		[getLegacyDeleteMarkerKey(key)]: false,
-		[getLegacyMigratedMarkerKey(key)]: false,
-	})
+async function setLegacyLocalValues(writes: readonly PreparedLargeStateWrite[]) {
+	const values: Record<string, unknown> = {}
+	for (const write of writes) {
+		values[write.key] = write.serializedValue
+		values[getLegacyDeleteMarkerKey(write.key)] = false
+		values[getLegacyMigratedMarkerKey(write.key)] = false
+	}
+	await browser.storage.local.set(values)
+}
+
+async function setLegacyLocalValuesMigrated(writes: readonly PreparedLargeStateWrite[]) {
+	const values: Record<string, unknown> = {}
+	for (const write of writes) {
+		values[getLegacyDeleteMarkerKey(write.key)] = false
+		values[getLegacyMigratedMarkerKey(write.key)] = true
+	}
+	await browser.storage.local.set(values)
 }
 
 function parseSerializedValue<T>(codec: funtypes.Codec<T>, value: unknown) {
@@ -180,7 +224,7 @@ function parseSerializedValue<T>(codec: funtypes.Codec<T>, value: unknown) {
 	return parsed.success ? parsed.value : undefined
 }
 
-export async function getLargeStateValue<T>(key: LargeStateStorageKey, codec: funtypes.Codec<T>): Promise<T | undefined> {
+async function getLargeStateValueUnlocked<T>(key: LargeStateStorageKey, codec: funtypes.Codec<T>): Promise<T | undefined> {
 	const legacyLocalValue = await getLegacyLocalLookup(key)
 	if (legacyLocalValue.kind === 'found') {
 		const parsedLegacyValue = parseSerializedValue(codec, legacyLocalValue.value)
@@ -207,19 +251,36 @@ export async function getLargeStateValue<T>(key: LargeStateStorageKey, codec: fu
 	return undefined
 }
 
+export async function getLargeStateValue<T>(key: LargeStateStorageKey, codec: funtypes.Codec<T>): Promise<T | undefined> {
+	return await largeStateSemaphore.execute(async () => await getLargeStateValueUnlocked(key, codec))
+}
+
 export async function setLargeStateValue<T>(key: LargeStateStorageKey, codec: funtypes.Codec<T>, value: T) {
-	const serializedValue = serialize(codec, value)
+	await setLargeStateValues([prepareLargeStateWrite(key, codec, value)])
+}
+
+export function prepareLargeStateWrite<T>(key: LargeStateStorageKey, codec: funtypes.Codec<T>, value: T): PreparedLargeStateWrite {
+	return { key, serializedValue: serialize(codec, value) }
+}
+
+async function setLargeStateValuesUnlocked(writes: readonly PreparedLargeStateWrite[]) {
+	if (writes.length === 0) return
+	if (new Set(writes.map(({ key }) => key)).size !== writes.length) throw new Error('Large state batch contains duplicate keys.')
 	if (canUseIndexedDb()) {
-		const wasStoredInIndexedDb = await setIndexedDbValue(key, serializedValue)
+		const wasStoredInIndexedDb = await setIndexedDbValues(writes)
 		if (wasStoredInIndexedDb) {
-			await setLegacyLocalMigrated(key)
+			await setLegacyLocalValuesMigrated(writes)
 			return
 		}
 	}
-	await setLegacyLocalValue(key, serializedValue)
+	await setLegacyLocalValues(writes)
 }
 
-export async function removeLargeStateValue(key: LargeStateStorageKey) {
+export async function setLargeStateValues(writes: readonly PreparedLargeStateWrite[]) {
+	await largeStateSemaphore.execute(async () => await setLargeStateValuesUnlocked(writes))
+}
+
+async function removeLargeStateValueUnlocked(key: LargeStateStorageKey) {
 	if (!canUseIndexedDb()) {
 		await removeLegacyLocalValue(key)
 		await setLegacyLocalDeleted(key)
@@ -232,6 +293,10 @@ export async function removeLargeStateValue(key: LargeStateStorageKey) {
 	}
 	await removeLegacyLocalValue(key)
 	await setLegacyLocalDeleted(key)
+}
+
+export async function removeLargeStateValue(key: LargeStateStorageKey) {
+	await largeStateSemaphore.execute(async () => await removeLargeStateValueUnlocked(key))
 }
 
 export function estimateSerializedStateBytes<T>(codec: funtypes.Codec<T>, value: T) {

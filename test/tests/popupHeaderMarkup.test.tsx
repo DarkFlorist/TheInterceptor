@@ -228,6 +228,25 @@ describe('popup header markup', () => {
 
 		assert.equal(dom.document.body.textContent?.includes(`Simulate ${ abiFunctionName }!`), true)
 
+		await act(() => {
+			render(h(ConfirmationActionButtons, {
+				identified,
+				signerName: 'MetaMask',
+				simulationMode: false,
+				waitingForSigner: true,
+				reject: () => undefined,
+				rejectButtonState: 'inactive',
+				approve: () => undefined,
+				approveButtonState: 'inactive',
+				confirmDisabled: false,
+			}), dom.document.body)
+		})
+
+		const waitingLabel = findFirstByClass(dom.document.body, 'confirmation-waiting-for-signer')
+		assert.notEqual(waitingLabel, undefined)
+		assert.equal(waitingLabel?.textContent, 'Waiting for MetaMask')
+		assert.notEqual(findFirstByClass(waitingLabel, 'spinner'), undefined)
+
 		dom.restore()
 	})
 

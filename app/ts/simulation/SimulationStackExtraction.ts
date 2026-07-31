@@ -4,6 +4,7 @@ import type { ResolvedSimulationState, SimulatedTransaction } from '../types/vis
 import type { EthereumAddress } from '../types/wire-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { handleERC20TransferLog } from './logHandlers.js'
+import { getGasFeePaidByTransactionSender } from '../utils/transactionGasAccounting.js'
 
 const mergeSimulationOverrides = (stateOverridesArray: StateOverrides[]): StateOverrides => {
 	return stateOverridesArray.reduce((accumulator, next) => ({ ...accumulator, ...next }), {})
@@ -17,7 +18,13 @@ const getETHBalanceChanges = (baseFeePerGas: bigint, transaction: SimulatedTrans
 	const ethBalanceAfter = transaction.tokenBalancesAfter.filter((x) => x.token === ETHEREUM_LOGS_LOGGER_ADDRESS)
 	return ethBalanceAfter.map((balanceAfter) => {
 		const balanceAfterBalance = baseFeePerGas * transaction.ethSimulateV1CallResult.gasUsed
-		const gasFees = balanceAfter.owner === transaction.preSimulationTransaction.signedTransaction.from ? transaction.realizedGasPrice * transaction.ethSimulateV1CallResult.gasUsed : 0n
+		const gasFees = balanceAfter.owner === transaction.preSimulationTransaction.signedTransaction.from
+			? getGasFeePaidByTransactionSender({
+				gasSpent: transaction.ethSimulateV1CallResult.gasUsed,
+				realizedGasPrice: transaction.realizedGasPrice,
+				safeTransaction: transaction.preSimulationTransaction.safeTransaction,
+			})
+			: 0n
 		return {
 			address: balanceAfter.owner,
 			before: ethLogs.reduce((total, event) => {
@@ -64,7 +71,13 @@ export const getSimulatedStackV1 = (simulationState: ResolvedSimulationState, ad
 				const balanceAfterBalance = version === '1.0.0' || balanceAfter.owner !== transaction.preSimulationTransaction.signedTransaction.from
 					? balanceAfter.balance ?? 0n
 					: subtractBaseFeeWithoutUnderflow(balanceAfter.balance ?? 0n, simulationState.value.baseFeePerGas * transaction.ethSimulateV1CallResult.gasUsed)
-				const gasFees = balanceAfter.owner === transaction.preSimulationTransaction.signedTransaction.from ? transaction.realizedGasPrice * transaction.ethSimulateV1CallResult.gasUsed : 0n
+				const gasFees = balanceAfter.owner === transaction.preSimulationTransaction.signedTransaction.from
+					? getGasFeePaidByTransactionSender({
+						gasSpent: transaction.ethSimulateV1CallResult.gasUsed,
+						realizedGasPrice: transaction.realizedGasPrice,
+						safeTransaction: transaction.preSimulationTransaction.safeTransaction,
+					})
+					: 0n
 				return {
 					address: balanceAfter.owner,
 					before: ethLogs.reduce((total, event) => {

@@ -40,6 +40,7 @@ const getTokenEventHandler = (type: AddressBookEntryCategory, logSignature: stri
 		case 'ERC721': return erc721LogHanders.get(logSignature)
 		case 'activeAddress':
 		case 'contact':
+		case 'safe':
 		case 'contract': return undefined
 		default: assertNever(type)
 	}

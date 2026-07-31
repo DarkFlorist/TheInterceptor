@@ -1,16 +1,16 @@
-import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply, WatchAssetSignerRequest } from '../types/interceptor-messages.js'
+import { ConnectedToSigner, SignerReply, type Settings, WalletSwitchEthereumChainReply, WatchAssetSignerRequest } from '../types/interceptor-messages.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { changeActiveAddressAndChain } from './background.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
+import { getRpcNetworkForChain, getUserAddressBookEntriesForChainIdMorePreciseFirst, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { getPendingSignerChainChangeTokenForCallback, isPendingSignerChainChangeReply, resolveSignerChainChange } from './windows/changeChain.js'
 import { type ApprovalState, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { reportUnexpectedError } from '../utils/errors.js'
-import { resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
+import { refreshPendingSafeSignerSelectionErrors, resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { resolveWatchAssetSignerReply } from './windows/watchAsset.js'
 import { modifyObject } from '../utils/typescript.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
@@ -19,6 +19,7 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
+import { isSafeEntryWithSafeSigner } from '../types/addressBookTypes.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
@@ -36,6 +37,12 @@ async function getConnectedToSignerResult() {
 
 function hasSignerCallbackAccess(websiteTabConnections: WebsiteTabConnections, tabId: number, approval: ApprovalState) {
 	return approval === 'hasAccess' || tabHasApprovedWebsiteConnection(websiteTabConnections, tabId)
+}
+
+async function getConfiguredSigningSafe(settings: Settings) {
+	if (settings.simulationMode || settings.useSignersAddressAsActiveAddress || settings.activeSimulationAddress === undefined) return undefined
+	return (await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId))
+		.find((entry) => entry.address === settings.activeSimulationAddress && isSafeEntryWithSafeSigner(entry))
 }
 
 export async function ethAccountsReply(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
@@ -84,6 +91,7 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 			activeSigningAddress,
 		}))
 		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
+		await refreshPendingSafeSignerSelectionErrors(ethereum, tokenPriceService, tabId)
 		await sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: { tabId, activeSigningAddress } })
 		sendInternalWindowMessage({
 			method: 'window_signer_accounts_changed',
@@ -96,8 +104,10 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 		// Update the active address if we are using the signer's address. This remains inside the signer-state
 		// operation so a reconnect cannot interleave with the downstream address and chain mutations.
 		const settings = await getSettings()
-		if ((settings.useSignersAddressAsActiveAddress && settings.activeSimulationAddress !== signerAccounts[0])
-		|| (settings.simulationMode === false && tabStateChange.previousState.activeSigningAddress !== tabStateChange.newState.activeSigningAddress)) {
+		const selectedSafe = await getConfiguredSigningSafe(settings)
+		const configuredActiveAddress = settings.simulationMode ? settings.activeSimulationAddress : tabStateChange.previousState.activeSigningAddress
+		if (selectedSafe === undefined && ((settings.useSignersAddressAsActiveAddress && configuredActiveAddress !== signerAccounts[0])
+			|| (settings.simulationMode === false && tabStateChange.previousState.activeSigningAddress !== tabStateChange.newState.activeSigningAddress))) {
 			const changeActiveAddress = async () => await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 				simulationMode: settings.simulationMode,
 				activeAddress: tabStateChange.newState.activeSigningAddress,
@@ -123,6 +133,14 @@ async function changeSignerChain(ethereum: EthereumClientService, tokenPriceServ
 	const oldSignerChain = tabStateChange.previousState.signerChain
 	// update active address if we are using signers address
 	const settings = await getSettings()
+	const selectedSafe = await getConfiguredSigningSafe(settings)
+	if (selectedSafe !== undefined) {
+		if (oldSignerChain !== signerChain) {
+			await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
+			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
+		}
+		return
+	}
 	if ((settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && settings.activeRpcNetwork.chainId !== signerChain) {
 		const rpcNetwork = await getRpcNetworkForChain(signerChain)
 		return changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {

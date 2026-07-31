@@ -6,6 +6,8 @@ import { signal } from '@preact/signals'
 import { installDomMock } from './domMock.js'
 import { InterceptorSimulationExport, InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
+import { createSafeTx } from '../../app/ts/safe/safeCore.js'
+import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 
 const storageState: Record<string, unknown> = {}
 let runtimeSendMessage = async (_message: unknown) => undefined
@@ -174,6 +176,36 @@ const create7702ExportPayload = () => ({
 	},
 })
 
+function createSafeSimulationExportPayload() {
+	const payload = create7702ExportPayload()
+	const operation = payload.interceptorSimulateStack.operations[0]
+	if (operation === undefined) throw new Error('Expected transaction fixture')
+	const safeTx = createSafeTx(1n, 0x5555555555555555555555555555555555555555n, {
+		to: 0x2222222222222222222222222222222222222222n,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	return {
+		...payload,
+		interceptorSimulateStack: {
+			operations: [{
+				...operation,
+				preSimulationTransaction: {
+					...operation.preSimulationTransaction,
+					safeTransaction: {
+						safeTx,
+						safeTxHash: BigInt(getSafeTxHash(safeTx)),
+						created: new Date('2024-01-01T00:00:00.000Z'),
+						websiteOrigin: 'https://example.com',
+						transactionIdentifier: 78n,
+						signatures: [],
+					},
+				},
+			}],
+		},
+	}
+}
+
 function resetEnvironment() {
 	for (const key of Object.keys(storageState)) delete storageState[key]
 	runtimeSendMessage = async () => undefined
@@ -239,6 +271,35 @@ describe('import simulation stack', () => {
 		assert.equal(reply.ok, false)
 		assert.match(reply.message, /quota/i)
 		assert.match(reply.message, /simulation stack/i)
+	})
+
+	test('rejects Safe operations that must use synchronized Safe stack import', async () => {
+		const modules = await modulesPromise
+		resetEnvironment()
+		const parsedExport = InterceptorSimulationExport.parse(
+			InterceptorSimulationExport.serialize(createSafeSimulationExportPayload())
+		)
+
+		const reply = await modules.importSimulationStack({} as never, {} as never, { method: 'popup_importSimulationStack', data: parsedExport })
+
+		assert.equal(reply.type, 'ImportSimulationStackReply')
+		assert.equal(reply.ok, false)
+		assert.match(reply.message, /Use Import Gnosis Safe/u)
+		assert.equal('interceptorTransactionStack' in storageState, false)
+		assert.equal('safeTransactionStacks' in storageState, false)
+	})
+
+	test('refuses generic simulation export when synchronized Safe proposals are present', async () => {
+		const modules = await modulesPromise
+		resetEnvironment()
+		const safeExport = createSafeSimulationExportPayload()
+		storageState.interceptorTransactionStack = InterceptorTransactionStack.serialize(safeExport.interceptorSimulateStack)
+
+		const reply = await modules.requestInterceptorSimulationInput({} as never)
+
+		assert.equal(reply.ok, false)
+		if (reply.ok) throw new Error('Expected Safe-aware export refusal')
+		assert.match(reply.message, /Use Copy Gnosis Safe transactions/u)
 	})
 
 	test('preserves EIP-7702 authorization signatures when importing an exported stack', async () => {

@@ -84,7 +84,7 @@ type StartupStorageDefaults = {
 
 async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDefaults>(key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
 	const rawValue = (await browser.storage.local.get(key))[key]
-	const parsedValue = await browserStorageLocalSafeParseGet(key)
+	const parsedValue: Readonly<Partial<StartupStorageDefaults>> | undefined = await browserStorageLocalSafeParseGet(key)
 	if (parsedValue !== undefined && key in parsedValue) return parsedValue[key] as StartupStorageDefaults[Key]
 	if (rawValue === undefined) return defaultValue
 	console.warn(`${ key } was corrupt:`)

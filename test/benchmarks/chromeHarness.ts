@@ -387,7 +387,7 @@ export async function waitForRegisteredContentScripts(connection: CdpConnection,
 	}, timeoutMs, `registered content scripts ${ expectedIds.join(', ') }`)
 }
 
-export async function readExtensionLargeStateValue<T = unknown>(connection: CdpConnection, key: 'interceptorTransactionStack' | 'popupVisualisation'): Promise<T | undefined> {
+export async function readExtensionLargeStateValue<T = unknown>(connection: CdpConnection, key: 'interceptorTransactionStack' | 'popupVisualisation' | 'safeTransactionStacks'): Promise<T | undefined> {
 	return await connection.evaluate<T | undefined>(`(async () => {
 		const key = ${ JSON.stringify(key) }
 		if (typeof indexedDB !== 'undefined') {

@@ -14,15 +14,22 @@ type InlineCardProps = {
 	statusMessageDuration?: number
 	warningMessage?: string
 	noExpandButtons?: boolean
+	nonInteractive?: boolean
+	copyOnActionOnly?: boolean
 }
 
 export const InlineCard = (props: InlineCardProps) => {
 	const tooltip = useSignal<TooltipConfig | undefined>(undefined)
 
 	const copyTextToClipboard = async (event: JSX.TargetedMouseEvent<HTMLButtonElement>) => {
+		event.stopPropagation()
 		event.currentTarget.blur()
 		await clipboardCopy(event.currentTarget.value || props.label)
 		tooltip.value = { message: 'Copied!', x: event.clientX, y: event.clientY, duration: props.statusMessageDuration || 1500 }
+	}
+	const edit = (event: JSX.TargetedMouseEvent<HTMLButtonElement>) => {
+		event.stopPropagation()
+		props.onEditClicked?.(event)
 	}
 
 	const Icon = props.icon
@@ -32,8 +39,22 @@ export const InlineCard = (props: InlineCardProps) => {
 			{ props.warningMessage ? <WarningSign /> : <></> }
 			<span role = 'img'><Icon /></span>
 			<data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data>
-			<span role = 'menu' aria-label = { props.noExpandButtons ? undefined : 'Spell-out actions' }>
-				{ !props.noCopy ? (
+			<span role = 'menu' aria-hidden = { props.nonInteractive } aria-label = { props.noExpandButtons || props.nonInteractive ? undefined : 'Spell-out actions' }>
+				{ props.nonInteractive ? <>
+					<span role = 'img'><Icon /></span>
+					<span><data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data></span>
+				</> : !props.noCopy && props.copyOnActionOnly ? <>
+					<span class = 'inline-card-expanded-label'>
+						<span role = 'img'><Icon /></span>
+						<span><data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data></span>
+					</span>
+					<button class = 'inline-card-copy-action' type = 'button' onClick = { copyTextToClipboard } value = { props.copyValue } tabIndex = { 1 } aria-label = { `Copy ${ props.label }` }>
+						<span title = 'Copy'>
+							<CopyIcon />
+							<span>copy</span>
+						</span>
+					</button>
+				</> : !props.noCopy ? (
 					<button type = 'button' onClick = { copyTextToClipboard } value = { props.copyValue } tabIndex = { 1 }>
 						<span role = 'img'><Icon /></span>
 						<span><data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data></span>
@@ -50,7 +71,7 @@ export const InlineCard = (props: InlineCardProps) => {
 				</>
 				}
 				{ props.onEditClicked ? (
-					<button type = 'button' value = { props.copyValue } onClick = { props.onEditClicked } tabIndex = { 1 }>
+					<button type = 'button' value = { props.copyValue } onClick = { edit } tabIndex = { 1 }>
 						<span title = 'Edit'>
 							<EditIcon />
 							<span>edit</span>

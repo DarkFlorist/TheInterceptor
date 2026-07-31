@@ -5,10 +5,10 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { Home } from '../../app/ts/components/pages/Home.js'
 import { installDomMock } from './domMock.js'
-import { ICON_SIMULATING } from '../../app/ts/utils/constants.js'
+import { ICON_SIGNING, ICON_SIMULATING } from '../../app/ts/utils/constants.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-reply-messages.js'
-import type { ContactEntry } from '../../app/ts/types/addressBookTypes.js'
+import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import type { HomeParams, RpcConnectionStatus, TabState } from '../../app/ts/types/user-interface-types.js'
 import { PASSTHROUGH_STATE, toResolvedSimulationResults } from '../../app/ts/types/visualizer-types.js'
@@ -16,6 +16,10 @@ import type { BlockTimeManipulation, PreSimulationTransaction, ResolvedSimulatio
 
 const ACTIVE_ADDRESS = 0x1000000000000000000000000000000000000001n
 const RECIPIENT_ADDRESS = 0x2000000000000000000000000000000000000002n
+const SAFE_ADDRESS = 0x3000000000000000000000000000000000000003n
+const SAFE_SIGNER_ADDRESS = 0x4000000000000000000000000000000000000004n
+const OTHER_SIGNER_ADDRESS = 0x5000000000000000000000000000000000000005n
+const homeSource = await Bun.file(new URL('../../app/ts/components/pages/Home.tsx', import.meta.url)).text()
 
 const activeAddressEntry: ContactEntry = {
 	type: 'contact',
@@ -33,6 +37,17 @@ const recipientEntry: ContactEntry = {
 	entrySource: 'OnChain',
 }
 
+const safeEntry: SafeEntry = {
+	type: 'safe',
+	name: 'Treasury Safe',
+	address: SAFE_ADDRESS,
+	safeSignerAddress: SAFE_SIGNER_ADDRESS,
+	safeSignerAddresses: [SAFE_SIGNER_ADDRESS, OTHER_SIGNER_ADDRESS],
+	chainId: 1n,
+	entrySource: 'User',
+	useAsActiveAddress: true,
+}
+
 const rpcNetwork: RpcEntry = {
 	name: 'Ethereum',
 	chainId: 1n,
@@ -44,6 +59,32 @@ const rpcNetwork: RpcEntry = {
 }
 
 const ZERO_BLOCK_TIME_MANIPULATION: BlockTimeManipulation = { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' }
+
+function installClipboardMock() {
+	const previousNavigator = globalThis.navigator
+	const copiedText: string[] = []
+	Object.defineProperty(globalThis, 'navigator', {
+		configurable: true,
+		writable: true,
+		value: {
+			clipboard: {
+				async writeText(text: string) {
+					copiedText.push(text)
+				},
+			},
+		},
+	})
+	return {
+		copiedText,
+		restore() {
+			Object.defineProperty(globalThis, 'navigator', {
+				configurable: true,
+				writable: true,
+				value: previousNavigator,
+			})
+		},
+	}
+}
 
 const makePreSimulationTransaction = (): PreSimulationTransaction => ({
 	signedTransaction: mockSignTransaction({
@@ -205,6 +246,7 @@ type TestDomNode = {
 	readonly parentNode?: TestDomNode | null
 	readonly childNodes?: readonly TestDomNode[]
 	readonly textContent?: string | null
+	readonly checked?: boolean
 	readonly l?: Record<string, (event: unknown) => unknown>
 	readonly getAttribute?: (name: string) => string | null
 }
@@ -260,7 +302,7 @@ function getButtonInTimePicker(root: TestDomNode, timePickerLabel: string, butto
 	return getButtonByText(timePickerLabelElement.parentNode, buttonText)
 }
 
-function installBrowserMock() {
+function installBrowserMock(replyToMessage?: (message: unknown) => unknown) {
 	const previousBrowser = globalThis.browser
 	const sentMessages: unknown[] = []
 	Object.defineProperty(globalThis, 'browser', {
@@ -271,7 +313,7 @@ function installBrowserMock() {
 				lastError: null,
 				async sendMessage(message: unknown) {
 					sentMessages.push(message)
-					return undefined
+					return replyToMessage?.(message)
 				},
 			},
 		},
@@ -682,5 +724,362 @@ describe('Home popup clear empty state', () => {
 		} finally {
 			dom.restore()
 		}
+	})
+
+	test('shows an unsaved signer address when it is active in simulation mode', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(h(Home, createHomeParams({
+					activeAddresses: new Signal([activeAddressEntry]),
+					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					useSignersAddressAsActiveAddress: new Signal(true),
+				})), dom.document.body)
+			})
+
+			const popupText = dom.document.body.textContent ?? ''
+			assert.equal(popupText.includes('0x4000000000000000000000000000000000000004'), true)
+			assert.equal(popupText.includes('No address found'), false)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('shows the Gnosis Safe and its configured signers as compact addresses in signing mode', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(h(Home, createHomeParams({
+					activeAddresses: new Signal([safeEntry]),
+					tabState: new Signal<TabState | undefined>({
+						tabId: 1,
+						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+						signerConnected: true,
+						signerName: 'MetaMask',
+						signerAccounts: [SAFE_SIGNER_ADDRESS],
+						signerAccountError: undefined,
+						signerChain: 1n,
+						tabIconDetails: { icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' },
+						activeSigningAddress: SAFE_SIGNER_ADDRESS,
+					}),
+					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					simulationMode: new Signal(false),
+					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
+				})), dom.document.body)
+			})
+
+			const popupText = dom.document.body.textContent ?? ''
+			assert.equal(popupText.includes('Treasury Safe'), true)
+			assert.equal(popupText.includes('0x3000000000000000000000000000000000000003'), true)
+			assert.equal(popupText.includes('Gnosis Safe signers'), true)
+			assert.equal(popupText.includes('0x4000000000000000000000000000000000000004'), true)
+			assert.equal(popupText.includes('0x5000000000000000000000000000000000000005'), true)
+			assert.equal(collectElements(dom.document.body, 'input').filter((element) => element.getAttribute?.('name') === 'active-safe-signer').length, 2)
+			const signerOptions = collectElements(dom.document.body, 'label').filter((element) =>
+				element.getAttribute?.('class')?.includes('safe-signer-option') === true
+			)
+			assert.equal(signerOptions.length, 2)
+			assert.equal(signerOptions.every((option) => collectElements(option, 'span').some((element) => element.getAttribute?.('role') === 'img')), true)
+			assert.equal(signerOptions.every((option) => collectElements(option, 'button').length === 2), true)
+			assert.equal(signerOptions.every((option) => collectElements(option, 'button').some((button) => button.textContent?.includes('copy') === true)), true)
+			assert.equal(signerOptions.every((option) => collectElements(option, 'button').some((button) => button.textContent?.includes('edit') === true)), true)
+			assert.equal(signerOptions.every((option) => collectElements(option, 'button').find((button) => button.textContent?.includes('copy') === true)?.getAttribute?.('class') === 'inline-card-copy-action'), true)
+			assert.equal(signerOptions.every((option) => collectElements(option, 'span').some((span) => span.getAttribute?.('class') === 'inline-card-expanded-label')), true)
+			assert.equal(popupText.includes('CONNECTED'), true)
+			assert.equal(popupText.includes('NOT CONNECTED'), false)
+			assert.equal(popupText.includes('The configured Gnosis Safe signer is selected in MetaMask.'), true)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('changes the active Safe signer from the popup', async () => {
+		const dom = installDomMock()
+		let resolveSelection: ((reply: { type: 'SetActiveSafeSignerReply', ok: true }) => void) | undefined
+		const selectionReply = new Promise<{ type: 'SetActiveSafeSignerReply', ok: true }>((resolve) => { resolveSelection = resolve })
+		const browserMock = installBrowserMock((message) =>
+			hasMethod(message, 'popup_setActiveSafeSigner')
+				? selectionReply
+				: undefined
+		)
+		const activeAddresses = new Signal([safeEntry])
+		try {
+			await act(() => {
+				render(h(Home, createHomeParams({
+					activeAddresses,
+					tabState: new Signal<TabState | undefined>({
+						tabId: 1,
+						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+						signerConnected: true,
+						signerName: 'MetaMask',
+						signerAccounts: [SAFE_SIGNER_ADDRESS],
+						signerAccountError: undefined,
+						signerChain: 1n,
+						tabIconDetails: { icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' },
+						activeSigningAddress: SAFE_SIGNER_ADDRESS,
+					}),
+					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					simulationMode: new Signal(false),
+					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
+				})), dom.document.body)
+			})
+
+			const otherSignerOption = collectElements(dom.document.body, 'label').find((element) =>
+				collectElements(element, 'input').some((input) => input.getAttribute?.('aria-label') === 'Use 0x5000000000000000000000000000000000000005 as active Gnosis Safe signer')
+			)
+			if (otherSignerOption === undefined) throw new Error('Missing alternate Safe signer option')
+			const otherSignerIdentity = collectElements(otherSignerOption, 'span').find((element) => element.getAttribute?.('class') === 'safe-signer-option-address')
+			if (otherSignerIdentity?.l === undefined) throw new Error('Missing alternate Safe signer identity')
+			const clickHandler = Object.entries(otherSignerIdentity.l).find(([key]) => key.startsWith('Click'))?.[1]
+			if (clickHandler === undefined) throw new Error('Missing alternate Safe signer identity click handler')
+			let defaultPrevented = false
+			let propagationStopped = false
+			await act(async () => {
+				await clickHandler({
+					currentTarget: otherSignerIdentity,
+					preventDefault() { defaultPrevented = true },
+					stopPropagation() { propagationStopped = true },
+				})
+			})
+			assert.equal(activeAddresses.value[0]?.safeSignerAddress, OTHER_SIGNER_ADDRESS)
+			const optimisticallySelectedRadios = collectElements(dom.document.body, 'input').filter((element) =>
+				element.getAttribute?.('name') === 'active-safe-signer'
+			)
+			assert.equal(optimisticallySelectedRadios[0]?.checked === true || (optimisticallySelectedRadios[0]?.getAttribute?.('checked') ?? null) !== null, false)
+			assert.equal(optimisticallySelectedRadios[1]?.checked === true || (optimisticallySelectedRadios[1]?.getAttribute?.('checked') ?? null) !== null, true)
+			await act(async () => {
+				await clickHandler({
+					currentTarget: otherSignerIdentity,
+					preventDefault() { return undefined },
+					stopPropagation() { return undefined },
+				})
+			})
+			assert.equal(browserMock.sentMessages.filter((message) => hasMethod(message, 'popup_setActiveSafeSigner')).length, 1)
+			if (resolveSelection === undefined) throw new Error('Missing Safe signer selection resolver')
+			resolveSelection({ type: 'SetActiveSafeSignerReply', ok: true })
+			await act(async () => {
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+
+			const updateMessage = getMessageWithMethod(browserMock.sentMessages, 'popup_setActiveSafeSigner')
+			if (typeof updateMessage !== 'object' || updateMessage === null || !('data' in updateMessage)) throw new Error('Missing Safe signer update message')
+			const updatedSafe = updateMessage.data
+			if (typeof updatedSafe !== 'object' || updatedSafe === null || !('safeSignerAddress' in updatedSafe)) throw new Error('Missing active Safe signer')
+			assert.equal(defaultPrevented, true)
+			assert.equal(propagationStopped, true)
+			assert.equal(updatedSafe.safeSignerAddress, OTHER_SIGNER_ADDRESS)
+			assert.equal(updatedSafe.safeAddress, SAFE_ADDRESS)
+			assert.equal(updatedSafe.chainId, 1n)
+			assert.equal(activeAddresses.value[0]?.safeSignerAddress, OTHER_SIGNER_ADDRESS)
+			const signerRadios = collectElements(dom.document.body, 'input').filter((element) =>
+				element.getAttribute?.('name') === 'active-safe-signer'
+			)
+			assert.deepEqual(signerRadios.map((radio) => radio.getAttribute?.('aria-label')), [
+				'Use 0x4000000000000000000000000000000000000004 as active Gnosis Safe signer',
+				'Use 0x5000000000000000000000000000000000000005 as active Gnosis Safe signer',
+			])
+			assert.equal(signerRadios[0]?.checked === true || (signerRadios[0]?.getAttribute?.('checked') ?? null) !== null, false)
+			assert.equal(signerRadios[1]?.checked === true || (signerRadios[1]?.getAttribute?.('checked') ?? null) !== null, true)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+			browserMock.restore()
+		}
+	})
+
+	test('rolls back only the signer when optimistic Safe signer persistence fails', async () => {
+		const dom = installDomMock()
+		let resolveSelection: ((reply: { type: 'SetActiveSafeSignerReply', ok: false, message: string }) => void) | undefined
+		const selectionReply = new Promise<{ type: 'SetActiveSafeSignerReply', ok: false, message: string }>((resolve) => { resolveSelection = resolve })
+		const browserMock = installBrowserMock((message) =>
+			hasMethod(message, 'popup_setActiveSafeSigner')
+				? selectionReply
+				: undefined
+		)
+		const activeAddresses = new Signal([safeEntry])
+		try {
+			await act(() => {
+				render(h(Home, createHomeParams({
+					activeAddresses,
+					tabState: new Signal<TabState | undefined>({
+						tabId: 1,
+						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+						signerConnected: true,
+						signerName: 'MetaMask',
+						signerAccounts: [SAFE_SIGNER_ADDRESS],
+						signerAccountError: undefined,
+						signerChain: 1n,
+						tabIconDetails: { icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' },
+						activeSigningAddress: SAFE_SIGNER_ADDRESS,
+					}),
+					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					simulationMode: new Signal(false),
+					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
+				})), dom.document.body)
+			})
+
+			const alternateSignerOption = collectElements(dom.document.body, 'label').find((element) =>
+				collectElements(element, 'input').some((input) => input.getAttribute?.('aria-label') === 'Use 0x5000000000000000000000000000000000000005 as active Gnosis Safe signer')
+			)
+			const alternateSignerIdentity = alternateSignerOption === undefined
+				? undefined
+				: collectElements(alternateSignerOption, 'span').find((element) => element.getAttribute?.('class') === 'safe-signer-option-address')
+			if (alternateSignerIdentity?.l === undefined) throw new Error('Missing alternate Safe signer identity')
+			const clickHandler = Object.entries(alternateSignerIdentity.l).find(([key]) => key.startsWith('Click'))?.[1]
+			if (clickHandler === undefined) throw new Error('Missing alternate Safe signer identity click handler')
+			await act(async () => {
+				await clickHandler({
+					currentTarget: alternateSignerIdentity,
+					preventDefault() { return undefined },
+					stopPropagation() { return undefined },
+				})
+			})
+			assert.equal(activeAddresses.value[0]?.safeSignerAddress, OTHER_SIGNER_ADDRESS)
+
+			activeAddresses.value = [{ ...safeEntry, name: 'Refreshed Treasury Safe', safeSignerAddress: OTHER_SIGNER_ADDRESS }]
+			if (resolveSelection === undefined) throw new Error('Missing Safe signer selection resolver')
+			resolveSelection({ type: 'SetActiveSafeSignerReply', ok: false, message: 'Signer persistence failed.' })
+			await act(async () => {
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+
+			assert.equal(activeAddresses.value[0]?.safeSignerAddress, SAFE_SIGNER_ADDRESS)
+			assert.equal(activeAddresses.value[0]?.name, 'Refreshed Treasury Safe')
+			assert.equal((dom.document.body.textContent ?? '').includes('Signer persistence failed.'), true)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+			browserMock.restore()
+		}
+	})
+
+	test('copies and edits a Safe signer without changing the active signer', async () => {
+		const dom = installDomMock()
+		const browserMock = installBrowserMock()
+		const clipboardMock = installClipboardMock()
+		let editedSignerAddress: bigint | undefined
+		try {
+			await act(() => {
+				render(h(Home, createHomeParams({
+					activeAddresses: new Signal([safeEntry]),
+					tabState: new Signal<TabState | undefined>({
+						tabId: 1,
+						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+						signerConnected: true,
+						signerName: 'MetaMask',
+						signerAccounts: [SAFE_SIGNER_ADDRESS],
+						signerAccountError: undefined,
+						signerChain: 1n,
+						tabIconDetails: { icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' },
+						activeSigningAddress: SAFE_SIGNER_ADDRESS,
+					}),
+					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					simulationMode: new Signal(false),
+					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
+					renameAddressCallBack: (entry) => { editedSignerAddress = entry.address },
+				})), dom.document.body)
+			})
+
+			const signerOption = collectElements(dom.document.body, 'label').find((element) =>
+				element.getAttribute?.('class')?.includes('safe-signer-option') === true
+			)
+			if (signerOption === undefined) throw new Error('Missing Safe signer option')
+			const signerButtons = collectElements(signerOption, 'button')
+			const copyButton = signerButtons.find((button) => button.textContent?.includes('copy') === true)
+			const editButton = signerButtons.find((button) => button.textContent?.includes('edit') === true)
+			if (copyButton?.l === undefined || editButton?.l === undefined) throw new Error('Missing Safe signer address actions')
+			const copyHandler = Object.entries(copyButton.l).find(([key]) => key.startsWith('Click'))?.[1]
+			const editHandler = Object.entries(editButton.l).find(([key]) => key.startsWith('Click'))?.[1]
+			if (copyHandler === undefined || editHandler === undefined) throw new Error('Missing Safe signer address action handlers')
+
+			let copyPropagationStopped = false
+			await copyHandler({
+				clientX: 0,
+				clientY: 0,
+				currentTarget: copyButton,
+				stopPropagation() { copyPropagationStopped = true },
+			})
+			let editPropagationStopped = false
+			await editHandler({
+				currentTarget: editButton,
+				stopPropagation() { editPropagationStopped = true },
+			})
+
+			assert.equal(copyPropagationStopped, true)
+			assert.deepEqual(clipboardMock.copiedText, ['0x4000000000000000000000000000000000000004'])
+			assert.equal(editPropagationStopped, true)
+			assert.equal(editedSignerAddress, SAFE_SIGNER_ADDRESS)
+			assert.equal(browserMock.sentMessages.some((message) => hasMethod(message, 'popup_setActiveSafeSigner')), false)
+			const signerRadios = collectElements(dom.document.body, 'input').filter((element) => element.getAttribute?.('name') === 'active-safe-signer')
+			assert.equal(signerRadios[0]?.checked === true || (signerRadios[0]?.getAttribute?.('checked') ?? null) !== null, true)
+			assert.equal(signerRadios[1]?.checked === true || (signerRadios[1]?.getAttribute?.('checked') ?? null) !== null, false)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+			browserMock.restore()
+			clipboardMock.restore()
+		}
+	})
+
+	test('shows a disconnected Safe when the connected wallet does not expose its configured signer', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(h(Home, createHomeParams({
+					activeAddresses: new Signal([safeEntry]),
+					tabState: new Signal<TabState | undefined>({
+						tabId: 1,
+						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+						signerConnected: true,
+						signerName: 'MetaMask',
+						signerAccounts: [OTHER_SIGNER_ADDRESS, SAFE_SIGNER_ADDRESS],
+						signerAccountError: undefined,
+						signerChain: 1n,
+						tabIconDetails: { icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' },
+						activeSigningAddress: OTHER_SIGNER_ADDRESS,
+					}),
+					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					activeSigningAddress: new Signal<bigint | undefined>(OTHER_SIGNER_ADDRESS),
+					simulationMode: new Signal(false),
+					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
+				})), dom.document.body)
+			})
+
+			const popupText = dom.document.body.textContent ?? ''
+			assert.equal(popupText.includes('Gnosis Safe signers'), true)
+			assert.equal(popupText.includes('NOT CONNECTED'), true)
+			assert.equal(popupText.includes('MetaMask has 0x5000000000000000000000000000000000000005 selected. Switch to the configured Gnosis Safe signer before signing.'), true)
+			const retrievalStatus = collectElements(dom.document.body, 'p').find((element) =>
+				element.getAttribute?.('class') === 'popup-home-retrieval-status'
+			)
+			if (retrievalStatus === undefined) throw new Error('Missing aligned wallet retrieval status')
+			assert.equal(collectElements(retrievalStatus, 'span').some((element) => element.getAttribute?.('class') === 'popup-home-retrieval-source'), true)
+			assert.equal(collectElements(dom.document.body, 'p').some((element) =>
+				element.getAttribute?.('class')?.includes('safe-signer-connection-message') === true
+			), true)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('places the Gnosis Safe transaction copy action between stack details and clear', () => {
+		const headerStart = homeSource.indexOf('function SimulationResultsHeader(')
+		const headerEnd = homeSource.indexOf('function PopupVisualisation(', headerStart)
+		const headerSource = homeSource.slice(headerStart, headerEnd)
+		const viewPosition = headerSource.indexOf('<OpenSimulationStackButtonContent')
+		const copyPosition = headerSource.indexOf('<CopySafeTransactionsButton')
+		const clearPosition = headerSource.indexOf('<AsyncActionButton')
+
+		assert.notEqual(viewPosition, -1)
+		assert.notEqual(copyPosition, -1)
+		assert.notEqual(clearPosition, -1)
+		assert.equal(viewPosition < copyPosition && copyPosition < clearPosition, true)
 	})
 })

@@ -172,7 +172,7 @@ function isChecked(element: DomElement) {
 async function clickElement(element: DomElement) {
 	const clickHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Click'))?.[1]
 	if (clickHandler === undefined) throw new Error('Expected click handler')
-	await clickHandler({ currentTarget: element })
+	await clickHandler({ currentTarget: element, stopPropagation() { return undefined } })
 }
 
 const websiteAccessEntries: readonly WebsiteAccess[] = [

@@ -6,6 +6,7 @@ import { GasFee, type TransactionGasses } from '../SimulationSummary.js'
 import { TokenOrEth, type TokenOrEtherParams } from '../../subcomponents/coins.js'
 import type { RpcNetwork } from '../../../types/rpc.js'
 import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
+import { getGasFeePaidByTransactionSender } from '../../../utils/transactionGasAccounting.js'
 
 type BeforeAfterAddressWithAmount = BeforeAfterAddress & { amount: bigint }
 
@@ -53,7 +54,8 @@ export function ProxyTokenTransferVisualisation({ simTx, renameAddressCallBack }
 	const asset = getAsset(transfer, renameAddressCallBack)
 	if (asset === undefined) throw new Error('asset was undefined')
 	const senderAfter = simTx.tokenBalancesAfter.find((change) => change.owner === transfer.from.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
-	const senderGasFees = asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.from.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n
+	const transactionSenderGasFee = getGasFeePaidByTransactionSender(simTx)
+	const senderGasFees = asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && transfer.from.address === simTx.transaction.from.address ? transactionSenderGasFee : 0n
 	const displayedReceivedAmount = simTx.transferedTo.reduce((sum, destination) => sum + destination.amountDelta, 0n)
 	const isSingleRecipientWithoutFee = simTx.transferedTo.length === 1 && displayedReceivedAmount === simTx.transferedFrom.amountDelta
 
@@ -62,7 +64,7 @@ export function ProxyTokenTransferVisualisation({ simTx, renameAddressCallBack }
 		const receiver = simTx.transferedTo[0]?.entry
 		if (receiver === undefined) throw new Error('receiver was undefined')
 		const receiverAfter = simTx.tokenBalancesAfter.find((change) => change.owner === receiver.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
-		const receiverGasFees = (asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && receiver.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n)
+		const receiverGasFees = asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && receiver.address === simTx.transaction.from.address ? transactionSenderGasFee : 0n
 		return <SimpleSend
 			viaProxypath = { simTx.transferRoute }
 			transaction = { { ...simTx, rpcNetwork: simTx.transaction.rpcNetwork } }
@@ -88,7 +90,7 @@ export function ProxyTokenTransferVisualisation({ simTx, renameAddressCallBack }
 		} }
 		receivers = { simTx.transferedTo.map((destination) => {
 			const receiverAfter = simTx.tokenBalancesAfter.find((change) => change.owner === destination.entry.address && change.token === asset.tokenEntry.address && change.tokenId === asset.tokenId)?.balance
-			const receiverGasFees = (asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && destination.entry.address === simTx.transaction.from.address ? simTx.gasSpent * simTx.realizedGasPrice : 0n)
+			const receiverGasFees = asset.tokenEntry.address === ETHEREUM_LOGS_LOGGER_ADDRESS && asset.tokenEntry.type === 'ERC20' && destination.entry.address === simTx.transaction.from.address ? transactionSenderGasFee : 0n
 			return {
 				address: destination.entry,
 				amount: destination.amountDelta,

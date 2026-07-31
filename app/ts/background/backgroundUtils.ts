@@ -2,22 +2,45 @@ import { MessageToPopup, type MessageToPopupPayload, PopupMessage, type PopupRea
 import { type WebsiteSocket, checkAndThrowRuntimeLastError } from '../utils/requests.js'
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
-import { getAllTabStates, getTabState } from './storageVariables.js'
+import { getAllTabStates, getTabState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { getActiveAddressEntry } from './metadataUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
-import type { TabState } from '../types/user-interface-types.js'
+import { isSafeEntryWithSafeSigner, type AddressBookEntry } from '../types/addressBookTypes.js'
 
 function isIgnorableExtensionMessagingError(error: Error) {
 	return isIgnorablePortLifecycleError(error)
 		|| error.message?.includes('A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received')
 }
 
-export async function getActiveAddress(settings: Settings, tabId: number) {
-	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) {
-		return settings.activeSimulationAddress !== undefined ? await getActiveAddressEntry(settings.activeSimulationAddress) : undefined
+type ConfiguredActiveAddressResolution =
+	| { readonly useConfiguredAddress: false }
+	| { readonly useConfiguredAddress: true, readonly activeAddress: AddressBookEntry | undefined }
+
+async function resolveConfiguredActiveAddress(settings: Settings): Promise<ConfiguredActiveAddressResolution> {
+	if (settings.useSignersAddressAsActiveAddress || settings.activeSimulationAddress === undefined) {
+		return { useConfiguredAddress: false }
 	}
+	const configuredEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId))
+		.find((entry) => entry.address === settings.activeSimulationAddress)
+	if (!settings.simulationMode) {
+		return isSafeEntryWithSafeSigner(configuredEntry)
+			? { useConfiguredAddress: true, activeAddress: configuredEntry }
+			: { useConfiguredAddress: false }
+	}
+	if (configuredEntry !== undefined) return { useConfiguredAddress: true, activeAddress: configuredEntry }
+	const isSafeOnAnotherChain = (await getUserAddressBookEntries())
+		.some((entry) => entry.type === 'safe' && entry.address === settings.activeSimulationAddress)
+	return {
+		useConfiguredAddress: true,
+		activeAddress: isSafeOnAnotherChain ? undefined : await getActiveAddressEntry(settings.activeSimulationAddress),
+	}
+}
+
+export async function getActiveAddress(settings: Settings, tabId: number) {
+	const configuredAddress = await resolveConfiguredActiveAddress(settings)
+	if (configuredAddress.useConfiguredAddress) return configuredAddress.activeAddress
 	const signingAddr = (await getTabState(tabId)).activeSigningAddress
 	if (signingAddr === undefined) return undefined
 	return await getActiveAddressEntry(signingAddr)
@@ -25,21 +48,18 @@ export async function getActiveAddress(settings: Settings, tabId: number) {
 
 export async function getActiveOrFirstSignerAddress(settings: Settings, tabId: number) {
 	const tabState = await getTabState(tabId)
-	const address = getActiveOrFirstSignerAddressFromTabState(settings, tabState)
+	const configuredAddress = await resolveConfiguredActiveAddress(settings)
+	if (configuredAddress.useConfiguredAddress) return configuredAddress.activeAddress
+	const address = tabState.activeSigningAddress ?? tabState.signerAccounts[0]
 	if (address === undefined) return undefined
 	return await getActiveAddressEntry(address)
 }
 
-export function getActiveOrFirstSignerAddressFromTabState(settings: Settings, tabState: TabState) {
-	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) return settings.activeSimulationAddress
-	return tabState.activeSigningAddress ?? tabState.signerAccounts[0]
-}
-
 export async function getActiveAddressesForAllTabs(settings: Settings) {
 	const tabStates = await getAllTabStates()
-	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress) {
-		const addressEntry = settings.activeSimulationAddress !== undefined ? await getActiveAddressEntry(settings.activeSimulationAddress) : undefined
-		return tabStates.map((state) => ({ tabId: state.tabId, activeAddress: addressEntry }))
+	const configuredAddress = await resolveConfiguredActiveAddress(settings)
+	if (configuredAddress.useConfiguredAddress) {
+		return tabStates.map((state) => ({ tabId: state.tabId, activeAddress: configuredAddress.activeAddress }))
 	}
 	return Promise.all(tabStates.map(async (state) => {
 		const signingAddr = state.activeSigningAddress
