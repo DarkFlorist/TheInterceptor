@@ -7,7 +7,7 @@ import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type Resolved
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED, NEW_BLOCK_ABORT, JSON_RPC_ERROR_CODE_INTERNAL_ERROR } from '../utils/constants.js'
-import { clearWebsiteConnectionIntent, hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, persistWebsiteAccessChange, sendAccountsChangedToPort, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
+import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, persistWebsiteAccessChange, sendAccountsChangedToPort, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
 import { getActiveAddressEntry, identifyAddress } from './metadataUtils.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { assertNever } from '../utils/typescript.js'
@@ -327,6 +327,7 @@ export async function changeActiveAddressAndChain(
 		simulationMode: boolean,
 		activeAddress?: bigint,
 		rpcNetwork?: RpcNetwork,
+		promptForAccessesIfNeeded?: boolean,
 	},
 ) {
 
@@ -348,7 +349,7 @@ export async function changeActiveAddressAndChain(
 	}
 
 	const updatedSettings = await getSettings()
-	const popupRefreshGeneration = await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings, true)
+	const popupRefreshGeneration = await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings, change.promptForAccessesIfNeeded ?? true)
 	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration })
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	await changeActiveAddressAndChainSemaphore.execute(async () => {
@@ -510,8 +511,7 @@ async function revokeWebsitePermissions(
 		}
 	}))
 	clearWebsiteConnectionIntent(websiteTabConnections, websiteOrigin)
-	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), false)
-	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+	await finalizeWebsiteAccessChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), false)
 	return { type: 'result' as const, method: 'wallet_revokePermissions' as const, result: null }
 }
 
@@ -542,16 +542,17 @@ async function discoverAccountRequestAddressContext(
 ) {
 	const settings = await getSettings()
 	const activeAddress = await getActiveAddressForRequest(settings, websiteTabConnections, socket.tabId)
-	if (activeAddress !== undefined) return { settings, activeAddress, requestedSignerAccountsForSiteAccess: false, signerAccountError: undefined }
-	if (!isAccountConnectionMethod(request.method)) return { settings, activeAddress, requestedSignerAccountsForSiteAccess: false, signerAccountError: undefined }
-	if (getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) !== 'hasAccess') return { settings, activeAddress, requestedSignerAccountsForSiteAccess: false, signerAccountError: undefined }
+	if (activeAddress !== undefined) return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
+	if (!isAccountConnectionMethod(request.method)) return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
+	const websiteAccess = getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin)
+	if (websiteAccess === 'noAccess' || websiteAccess === 'interceptorDisabled') return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
 
 	const signerAccountsResult = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
 	const refreshedSettings = await getSettings()
 	const refreshedActiveAddress = await getActiveAddressForRequest(refreshedSettings, websiteTabConnections, socket.tabId)
-	if (refreshedActiveAddress !== undefined) return { settings: refreshedSettings, activeAddress: refreshedActiveAddress, requestedSignerAccountsForSiteAccess: true, signerAccountError: signerAccountsResult.error }
+	if (refreshedActiveAddress !== undefined) return { settings: refreshedSettings, activeAddress: refreshedActiveAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
 	const firstSignerAddress = signerAccountsResult.accounts[0] === undefined ? undefined : await getActiveAddressEntry(signerAccountsResult.accounts[0])
-	return { settings: refreshedSettings, activeAddress: firstSignerAddress, requestedSignerAccountsForSiteAccess: true, signerAccountError: signerAccountsResult.error }
+	return { settings: refreshedSettings, activeAddress: firstSignerAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
 }
 
 const isSignerProviderDisconnectedError = (error: ErrorWithCodeAndOptionalData | undefined): error is ErrorWithCodeAndOptionalData => error?.code === METAMASK_ERROR_PROVIDER_DISCONNECTED
@@ -598,9 +599,9 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
 		return replyToInterceptedRequest(websiteTabConnections, message)
 	}
-	const { settings, activeAddress, requestedSignerAccountsForSiteAccess, signerAccountError } = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin)
+	const { settings, activeAddress, requestedSignerAccountsForAddressConsent, signerAccountError } = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin)
 	if (isTerminalSignerAccountConnectionError(signerAccountError)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountError)
-	if (requestedSignerAccountsForSiteAccess && activeAddress === undefined) {
+	if (requestedSignerAccountsForAddressConsent && activeAddress === undefined) {
 		if (getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
 		return refuseAccess(websiteTabConnections, request)
 	}
@@ -613,13 +614,15 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		websiteOrigin,
 		activeAddress,
 		settings,
-		accountIdentityRequest,
+		{
+			ignoreConnectionApproval: accountIdentityRequest,
+		},
 	)
 	const access = accountConnectionRequest ? withSuppressedUnscopedConnectionEventsForSocket(socket, verifyRequestAccess) : verifyRequestAccess()
 	if (access === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
 	if (access === 'hasAccess' && activeAddress === undefined && accountConnectionRequest) {
 		// user has granted access to the site, but not to this account and the application is requesting accounts
-		if (requestedSignerAccountsForSiteAccess) return refuseAccess(websiteTabConnections, request)
+		if (requestedSignerAccountsForAddressConsent) return refuseAccess(websiteTabConnections, request)
 		const signerAccountsResult = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
 		if (isTerminalSignerAccountConnectionError(signerAccountsResult.error)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountsResult.error)
 		if (signerAccountsResult.accounts.length === 0) return refuseAccess(websiteTabConnections, request)
@@ -646,7 +649,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 			}
 		}
 		if (refreshedActiveAddress === undefined) return replyWithoutActiveAccount(websiteTabConnections, request)
-		const refreshedAccess = verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, refreshedSettings, true)
+		const refreshedAccess = verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, refreshedSettings, { ignoreConnectionApproval: true })
 		if (refreshedAccess !== 'hasAccess') return replyWithoutActiveAccount(websiteTabConnections, request)
 		return await handleContentScriptMessage(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request, await websitePromise, refreshedActiveAddress.address, publishRpcConnectionStatus)
 	}
@@ -667,7 +670,8 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		case 'noAccess': return refuseAccess(websiteTabConnections, request)
 		case 'hasAccess': {
 			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
-			return await handleContentScriptMessage(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request, await websitePromise, activeAddress?.address, publishRpcConnectionStatus)
+			const website = await websitePromise
+			return await handleContentScriptMessage(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request, website, activeAddress.address, publishRpcConnectionStatus)
 		}
 		default: assertNever(access)
 	}

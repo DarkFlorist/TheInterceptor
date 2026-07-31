@@ -55,7 +55,7 @@ function installBrowserMock() {
 		},
 		tabs: {
 			async query() { return [] },
-			async get(tabId: number) { return { id: tabId, active: true } },
+			async get(tabId: number) { return { id: tabId, active: true, status: 'complete', favIconUrl: '' } },
 			async update() { return undefined },
 			onUpdated: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
 			onRemoved: {
@@ -286,5 +286,115 @@ describe('interceptor access close handling', () => {
 		})
 		assert.equal(ethAccountsReplies.length, 1)
 		assert.notEqual(ethAccountsReplies[0]?.error?.code, 4100)
+	})
+
+	test('prompts another connection after releasing the popup resolution semaphore', async () => {
+		installBrowserMock()
+		const {
+			changeSimulationMode,
+			getPendingAccessRequests,
+			requestAccessFromUser,
+			resolveInterceptorAccess,
+			websiteSocketToString,
+		} = await loadModules()
+		const { getActiveAddressEntry } = await import('../../app/ts/background/metadataUtils.js')
+		const account = 0x1234567890123456789012345678901234567890n
+		const firstWebsite = { websiteOrigin: 'https://first.example.test', icon: undefined, title: undefined }
+		const secondWebsite = { websiteOrigin: 'https://second.example.test', icon: undefined, title: undefined }
+		const firstSocket: WebsiteSocket = { tabId: 1, connectionName: 1n }
+		const secondSocket: WebsiteSocket = { tabId: 2, connectionName: 2n }
+		const createPort = (tabId: number) => ({ name: '0x0', sender: { tab: { id: tabId } }, postMessage() { return undefined } }) as unknown as browser.runtime.Port
+		const websiteTabConnections: WebsiteTabConnections = new Map([
+			[firstSocket.tabId, { connections: {
+				[websiteSocketToString(firstSocket)]: {
+					port: createPort(firstSocket.tabId),
+					socket: firstSocket,
+					websiteOrigin: firstWebsite.websiteOrigin,
+					approved: false,
+					wantsToConnect: true,
+				},
+			} }],
+			[secondSocket.tabId, { connections: {
+				[websiteSocketToString(secondSocket)]: {
+					port: createPort(secondSocket.tabId),
+					socket: secondSocket,
+					websiteOrigin: secondWebsite.websiteOrigin,
+					approved: false,
+					wantsToConnect: true,
+				},
+			} }],
+		])
+		const ethereum = {} as never
+		const tokenPriceService = {} as never
+		const resetSimulationServices = (() => undefined) as never
+		const publishRpcConnectionStatus = async () => undefined
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
+		const activeAddress = await getActiveAddressEntry(account)
+		const settings: Settings = {
+			activeSimulationAddress: account,
+			activeSigningAddress: undefined,
+			openedPage: { page: 'Home' },
+			useSignersAddressAsActiveAddress: false,
+			websiteAccess: [],
+			simulationMode: true,
+			activeRpcNetwork: {
+				name: 'Test RPC',
+				chainId: 1n,
+				httpsRpc: 'https://example.invalid',
+				currencyName: 'Ether',
+				currencyTicker: 'ETH',
+				primary: true,
+				minimized: true,
+			},
+		}
+
+		await requestAccessFromUser(
+			ethereum,
+			tokenPriceService,
+			resetSimulationServices,
+			websiteTabConnections,
+			firstSocket,
+			firstWebsite,
+			undefined,
+			activeAddress,
+			settings,
+			account,
+			undefined,
+		)
+		const firstRequest = (await getPendingAccessRequests())[0]
+		if (firstRequest === undefined) throw new Error('Missing first access request')
+
+		await Promise.race([
+			resolveInterceptorAccess(
+				ethereum,
+				tokenPriceService,
+				resetSimulationServices,
+				websiteTabConnections,
+				{
+					userReply: 'Approved',
+					requestAccessToAddress: firstRequest.requestAccessToAddress?.address,
+					originalRequestAccessToAddress: firstRequest.originalRequestAccessToAddress?.address,
+					accessRequestId: firstRequest.accessRequestId,
+				},
+				publishRpcConnectionStatus,
+			),
+			new Promise((_, reject) => setTimeout(() => reject(new Error('Access approval did not resolve')), 250)),
+		])
+
+		const followUpRequest = (await getPendingAccessRequests()).find((request) => request.website.websiteOrigin === secondWebsite.websiteOrigin)
+		if (followUpRequest === undefined) throw new Error('Missing follow-up access request')
+		await resolveInterceptorAccess(
+			ethereum,
+			tokenPriceService,
+			resetSimulationServices,
+			websiteTabConnections,
+			{
+				userReply: 'Rejected',
+				requestAccessToAddress: followUpRequest.requestAccessToAddress?.address,
+				originalRequestAccessToAddress: followUpRequest.originalRequestAccessToAddress?.address,
+				accessRequestId: followUpRequest.accessRequestId,
+			},
+			publishRpcConnectionStatus,
+		)
 	})
 })

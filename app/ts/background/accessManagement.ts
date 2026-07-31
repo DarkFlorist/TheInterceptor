@@ -86,9 +86,13 @@ export async function withSuppressedUnscopedConnectionEventsForSocketAsync<T>(so
 
 export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled'
 
-export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, ignoreConnectionApproval = false) {
+type VerifyAccessOptions = {
+	readonly ignoreConnectionApproval?: boolean
+}
+
+export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, options: VerifyAccessOptions = {}): ApprovalState {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
-	if (connection?.approved && !ignoreConnectionApproval) return 'hasAccess'
+	if (connection?.approved && options.ignoreConnectionApproval !== true) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
 	if (access === 'hasAccess') {
 		const popupRefreshGeneration = bumpPopupRefreshGeneration()
@@ -455,6 +459,26 @@ export async function updateWebsiteApprovalAccesses(
 	return popupRefreshGeneration
 }
 
+export async function finalizeWebsiteAccessChange(
+	ethereum: EthereumClientService | undefined,
+	tokenPriceService: TokenPriceService | undefined,
+	resetSimulationServices: ResetSimulationServices | undefined,
+	websiteTabConnections: WebsiteTabConnections,
+	settings: Settings,
+	promptForAccessesIfNeeded: boolean,
+): Promise<Settings> {
+	await updateWebsiteApprovalAccesses(
+		ethereum,
+		tokenPriceService,
+		resetSimulationServices,
+		websiteTabConnections,
+		settings,
+		promptForAccessesIfNeeded,
+	)
+	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+	return settings
+}
+
 export async function persistWebsiteAccessChange(
 	ethereum: EthereumClientService | undefined,
 	tokenPriceService: TokenPriceService | undefined,
@@ -466,15 +490,12 @@ export async function persistWebsiteAccessChange(
 	promptForAccessesIfNeeded: boolean,
 ): Promise<Settings> {
 	await setAccess(website, access, address)
-	const refreshedSettings = await getSettings()
-	await updateWebsiteApprovalAccesses(
+	return await finalizeWebsiteAccessChange(
 		ethereum,
 		tokenPriceService,
 		resetSimulationServices,
 		websiteTabConnections,
-		refreshedSettings,
+		await getSettings(),
 		promptForAccessesIfNeeded,
 	)
-	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
-	return refreshedSettings
 }
