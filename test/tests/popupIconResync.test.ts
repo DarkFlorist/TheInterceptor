@@ -95,8 +95,11 @@ type TestDomNode = {
 	readonly textContent?: string | null
 	readonly disabled?: boolean
 	readonly l?: Record<string, (event: unknown) => unknown>
+	readonly eventListeners?: ReadonlyMap<string, ReadonlySet<(event: unknown) => void>>
 	readonly blur?: () => void
+	readonly dispatchEvent?: (event: { bubbles?: boolean, type: string }) => boolean
 	readonly getAttribute?: (name: string) => string | null
+	value?: string
 }
 
 function collectElements(node: TestDomNode, tagName: string, results: TestDomNode[] = []) {
@@ -163,9 +166,11 @@ async function inputElementValue(element: TestDomNode, value: string) {
 }
 
 async function changeElementValue(element: TestDomNode, value: string) {
-	const changeHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([eventName]) => eventName.startsWith('Change') || eventName.startsWith('Input'))?.[1]
-	if (changeHandler === undefined) throw new Error('Expected change handler')
-	await changeHandler({ currentTarget: { value } })
+	if (element.dispatchEvent === undefined) throw new Error('Expected event dispatch support')
+	element.value = value
+	const eventType = [...(element.eventListeners?.keys() ?? [])].find((registeredType) => registeredType.toLowerCase() === 'change' || registeredType.toLowerCase() === 'input')
+	if (eventType === undefined) throw new Error('Expected a registered input value event')
+	element.dispatchEvent({ type: eventType, bubbles: true })
 }
 
 function installClipboardMock() {
