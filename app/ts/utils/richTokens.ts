@@ -9,7 +9,7 @@ import { addressString, bytes32String, stringToUint8Array } from './bigint.js'
 import { keccak256 } from './ethereumPrimitives.js'
 import { parseUnits } from './ethereumUnits.js'
 
-const DEFAULT_RICH_TOKEN_COUNT = 1_000_000n
+const DEFAULT_RICH_TOKEN_COUNT = 200_000n
 export const MAX_RICH_TOKEN_AMOUNT = 2n ** 256n - 1n
 export const MAX_SUPPORTED_RICH_TOKEN_DECIMALS = 255n
 const MAX_DECIMALS_BEFORE_DEFAULT_AMOUNT_EXCEEDS_UINT256 = 71n

@@ -1201,7 +1201,11 @@ describe('popup icon sync', () => {
 				if (chooseTokenButton !== undefined) await clickElement(chooseTokenButton)
 			})
 			assert.equal(hasAriaLabel(dom.document.body, 'Select tokens for Second Account'), true)
-			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Second Account'), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Second Account'), true)
+			const recessedBalancePage = collectElements(dom.document.body, 'div').find((element) => hasClass(element, 'rich-mode-balance-page'))
+			assert.equal(recessedBalancePage?.getAttribute?.('aria-hidden'), 'true')
+			assert.equal(recessedBalancePage?.getAttribute?.('inert'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Configured rich tokens'), true)
 			assert.equal(collectElements(dom.document.body, 'div').filter((element) => element.getAttribute?.('aria-modal') === 'true').length, 1)
 			const tokenSearch = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')
 			assert.equal(tokenSearch?.getAttribute?.('placeholder'), 'Search 2 address-book tokens…')
@@ -1274,7 +1278,7 @@ describe('popup icon sync', () => {
 			await act(async () => { await clickElement(chooseTokenButton) })
 			assert.equal(hasAriaLabel(dom.document.body, 'Select tokens for Loaded Account'), true)
 			assert.equal(collectElements(dom.document.body, 'div').filter((element) => element.getAttribute?.('aria-modal') === 'true').length, 1)
-			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Loaded Account'), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Loaded Account'), true)
 
 			await act(() => {
 				listener?.({

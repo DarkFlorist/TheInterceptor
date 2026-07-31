@@ -1,6 +1,7 @@
 import assert from 'node:assert'
 import { describe, test } from 'node:test'
 import type { IEthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import { MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
 import { addRichAccountBalanceOverrides, addRichTokenBalanceOverrides, discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, getDefaultRichTokenAmount, getErc1155BalanceStorageKey, getErc20BalanceStorageKey, getMatchingRichTokenOptions, getRichTokenOptions, MAX_RICH_TOKEN_AMOUNT, parseRichTokenAmountInput, verifyErc1155BalanceStorageSlot, verifyErc20BalanceStorageSlot } from '../../app/ts/utils/richTokens.js'
 import { addressString, bigintToUint8Array, bytes32String } from '../../app/ts/utils/bigint.js'
 
@@ -25,6 +26,13 @@ const successfulBalanceCall = (balance: bigint) => ({
 })
 
 describe('rich token support', () => {
+	test('defaults native and token rich balances to 200,000 whole units', () => {
+		assert.equal(MAKE_YOU_RICH_TRANSACTION.transaction.value, 200_000n * 10n ** 18n)
+		assert.equal(getDefaultRichTokenAmount(18n), 200_000n * 10n ** 18n)
+		assert.equal(getDefaultRichTokenAmount(6n), 200_000n * 10n ** 6n)
+		assert.equal(getDefaultRichTokenAmount(0n), 200_000n)
+	})
+
 	test('searches large address-book token lists and bounds rendered results', () => {
 		const options = Array.from({ length: 75 }, (_, index) => ({
 			chainId: 1n,
@@ -79,7 +87,7 @@ describe('rich token support', () => {
 			symbol: 'USDC',
 			decimals: 6n,
 			logoUri: 'https://example.invalid/usdc.svg',
-			amount: 1_000_000_000_000n,
+			amount: 200_000_000_000n,
 			balanceSlot: undefined,
 			erc1155StorageOrder: undefined,
 			enabled: false,
@@ -169,8 +177,8 @@ describe('rich token support', () => {
 		}])
 
 		assert.deepEqual(options.map(({ tokenType, tokenId, decimals, amount }) => ({ tokenType, tokenId, decimals, amount })), [
-			{ tokenType: 'ERC1155', tokenId: 7n, decimals: 0n, amount: 1_000_000n },
-			{ tokenType: 'ERC1155', tokenId: 42n, decimals: 0n, amount: 1_000_000n },
+			{ tokenType: 'ERC1155', tokenId: 7n, decimals: 0n, amount: 200_000n },
+			{ tokenType: 'ERC1155', tokenId: 42n, decimals: 0n, amount: 200_000n },
 		])
 	})
 

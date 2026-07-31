@@ -224,6 +224,16 @@ try {
 	await clickAriaLabel(popup, 'Select tokens')
 	await waitForCondition(popup, '80-token search', `document.querySelector('[aria-label="Search address-book tokens"]')?.getAttribute('placeholder')?.includes('80 address-book tokens') === true`)
 	await waitForCondition(popup, 'bounded initial token results', `document.querySelectorAll('[data-rich-token-result]').length === 50`)
+	await waitForCondition(popup, 'scrollable token results', `(() => {
+		const results = document.querySelector('[aria-label="Matching address-book tokens"]')
+		if (!(results instanceof HTMLElement) || results.scrollHeight <= results.clientHeight) return false
+		results.scrollTop = results.scrollHeight
+		return results.scrollTop > 0
+	})()`)
+	await popup.evaluate(`(() => {
+		const results = document.querySelector('[aria-label="Matching address-book tokens"]')
+		if (results instanceof HTMLElement) results.scrollTop = 0
+	})()`)
 	await sleep(250)
 	await captureScreenshot(popup, manyTokenPickerScreenshotPath)
 	await searchToken(popup, searchableTokenAddress)

@@ -3256,7 +3256,12 @@ header:has(form[role='search']) h1 {
 
 .rich-mode-modal-card {
 	max-height: calc(100% - 2rem);
+	position: relative;
 	width: calc(100% - 2rem);
+}
+
+.rich-mode-modal-card.is-selecting-tokens {
+	min-height: min(31rem, calc(100% - 2rem));
 }
 
 .rich-mode-modal-back {
@@ -3291,6 +3296,69 @@ header:has(form[role='search']) h1 {
 	display: flex;
 	flex-direction: column;
 	min-height: 0;
+}
+
+.rich-mode-balance-page,
+.rich-mode-modal-footer {
+	transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.rich-mode-balance-page.is-recessed,
+.rich-mode-modal-footer.is-recessed {
+	opacity: 0.28;
+	transform: scale(0.985);
+}
+
+.rich-mode-token-sheet {
+	background-color: var(--card-bg-color);
+	border: 1px solid var(--white-alpha-20);
+	border-radius: 5px;
+	bottom: 0.65rem;
+	box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+	display: grid;
+	grid-template-rows: min-content minmax(0, 1fr) min-content;
+	left: 0.65rem;
+	overflow: hidden;
+	position: absolute;
+	right: 0.65rem;
+	top: 3.45rem;
+	z-index: 5;
+}
+
+.rich-mode-token-sheet-head {
+	align-items: center;
+	background-color: var(--window-header-bg-color);
+	border-bottom: 1px solid var(--white-alpha-20);
+	display: grid;
+	grid-template-columns: 2.5rem minmax(0, 1fr);
+	min-height: 3.25rem;
+	padding: 0 0.5rem;
+}
+
+.rich-mode-token-sheet-head > div {
+	min-width: 0;
+}
+
+.rich-mode-token-sheet-body {
+	background-color: var(--surface-mid-color);
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	overflow: hidden;
+	padding: 0.65rem;
+}
+
+.rich-mode-token-sheet-body .rich-mode-token-results {
+	flex: 1 1 auto;
+	max-height: none;
+}
+
+.rich-mode-token-sheet-footer {
+	align-items: center;
+	background-color: var(--window-header-bg-color);
+	border-top: 1px solid var(--white-alpha-20);
+	display: flex;
+	padding: 0.6rem;
 }
 
 .rich-mode-account-switcher {

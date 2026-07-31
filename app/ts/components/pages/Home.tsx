@@ -641,73 +641,25 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 				class = 'modal is-active rich-mode-modal-layer'
 				aria-modal = 'true'
 				role = 'dialog'
-				aria-label = { showRichTokenPicker.value ? `Select tokens for ${ selectedRichAccount.value.addressBookEntry.name }` : `Balance editor for ${ selectedRichAccount.value.addressBookEntry.name }` }
+				aria-label = { `Balance editor for ${ selectedRichAccount.value.addressBookEntry.name }` }
 				onKeyDown = { event => {
 					if (event.key !== 'Escape' || richTokenPending.value) return
 					showRichTokenPicker.value ? hideRichTokenSelection() : closeRichBalanceDialog()
 				} }
 			>
 				<div class = 'modal-background' onClick = { closeRichBalanceDialog }/>
-				<div class = 'modal-card rich-mode-modal-card'>
+				<div class = { `modal-card rich-mode-modal-card${ showRichTokenPicker.value ? ' is-selecting-tokens' : '' }` }>
 					<header class = 'modal-card-head card-header interceptor-modal-head window-header rich-mode-modal-head'>
-						{ showRichTokenPicker.value
-							? <button type = 'button' class = 'card-header-icon rich-mode-modal-back' aria-label = 'Back to balances' disabled = { richTokenPending.value } onClick = { hideRichTokenSelection }>‹</button>
-							: <div class = 'card-header-icon unset-cursor'><span class = 'icon'><img src = '../img/address-book.svg' width = '24' height = '24'/></span></div>
-						}
+						<div class = 'card-header-icon unset-cursor'><span class = 'icon'><img src = '../img/address-book.svg' width = '24' height = '24'/></span></div>
 						<div class = 'card-header-title'>
-							<p class = 'paragraph'>{ showRichTokenPicker.value ? 'Select tokens' : 'Balances' }</p>
+							<p class = 'paragraph'>Balances</p>
 							<p class = 'rich-mode-modal-account'>{ selectedRichAccount.value.addressBookEntry.name }</p>
 						</div>
 						<button type = 'button' class = 'card-header-icon' aria-label = 'Close balance editor' disabled = { richTokenPending.value } onClick = { closeRichBalanceDialog }><XMarkIcon/></button>
 					</header>
 					<section class = 'modal-card-body'>
 						<div class = 'card rich-mode-modal-content'>
-							<div class = 'card-content'>
-							{ showRichTokenPicker.value ? <>
-								<div class = 'field rich-mode-token-search'>
-									<div class = 'control'>
-										<input
-											class = 'input'
-											type = 'search'
-											autoFocus = { true }
-											aria-label = 'Search address-book tokens'
-											placeholder = { `Search ${ availableRichTokens.value.length.toString() } address-book token${ availableRichTokens.value.length === 1 ? '' : 's' }…` }
-											disabled = { richTokenPending.value }
-											value = { richTokenSearch.value }
-											onInput = { event => { richTokenSearch.value = event.currentTarget.value } }
-										/>
-									</div>
-								</div>
-								<div aria-label = 'Matching address-book tokens' class = 'rich-mode-token-results'>
-									{ matchingAvailableRichTokens.value.map((option) => {
-										const selected = selectedRichTokenKeys.value.includes(getRichTokenKey(option))
-										return <button
-											type = 'button'
-											data-rich-token-result = { getRichTokenKey(option) }
-											class = { `btn btn--ghost rich-mode-token-result${ selected ? ' is-selected' : '' }` }
-											disabled = { richTokenPending.value }
-											aria-label = { `Select rich token ${ getRichTokenLabel(option) } ${ addressString(option.tokenAddress) }` }
-											aria-pressed = { selected }
-											onClick = { () => { toggleRichTokenSelection(option) } }
-											key = { getRichTokenKey(option) }
-										>
-											<RichTokenIcon class = 'rich-mode-token-result-icon' label = { option.symbol } logoUri = { option.logoUri }/>
-											<span class = 'rich-mode-token-result-details'>
-												<strong>{ getRichTokenLabel(option) }</strong>
-												<span>{ option.name }</span>
-												<small>{ addressString(option.tokenAddress) }</small>
-											</span>
-											<span
-												class = { `rich-mode-token-layout-status${ option.balanceSlot === undefined ? '' : ' is-ready' }` }
-												aria-label = { option.balanceSlot === undefined ? 'Storage discovery required' : 'Storage layout ready' }
-												data-tooltip = { option.balanceSlot === undefined ? 'Storage discovery required' : 'Storage layout ready' }
-											>{ option.balanceSlot === undefined ? '?' : '✓' }</span>
-											<span class = 'rich-mode-token-selection-mark' aria-hidden = 'true'>{ selected ? '✓' : '' }</span>
-										</button>
-									}) }
-									{ matchingAvailableRichTokens.value.length === 0 ? <p class = 'help'>No matching tokens in the active-chain address book.</p> : <></> }
-								</div>
-							</> : <>
+							<div class = { `card-content rich-mode-balance-page${ showRichTokenPicker.value ? ' is-recessed' : '' }` } aria-hidden = { showRichTokenPicker.value ? 'true' : undefined } inert = { showRichTokenPicker.value }>
 								{ richAccounts.value.length < 2 ? <></> : <div class = 'rich-mode-account-switcher' aria-label = 'Rich account navigation'>
 									<button type = 'button' class = 'btn btn--ghost is-small' aria-label = 'Previous rich account' disabled = { richTokenPending.value } onClick = { () => { showAdjacentRichAccount(-1) } }>‹</button>
 									<span>{ (selectedRichAccountIndex.value + 1).toString() } of { richAccounts.value.length.toString() }</span>
@@ -744,19 +696,71 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 										</div>) }
 									</div>
 								</> }
-							</> }
-							{ richTokenPendingLabel.value === undefined ? <></> : <p class = 'help is-light' role = 'status'>{ richTokenPendingLabel.value }</p> }
-							{ richTokenError.value === undefined ? <></> : <p class = 'help is-danger'>{ richTokenError.value }</p> }
+							{ showRichTokenPicker.value || richTokenPendingLabel.value === undefined ? <></> : <p class = 'help is-light' role = 'status'>{ richTokenPendingLabel.value }</p> }
+							{ showRichTokenPicker.value || richTokenError.value === undefined ? <></> : <p class = 'help is-danger'>{ richTokenError.value }</p> }
 							</div>
 						</div>
 					</section>
-					<footer class = 'modal-card-foot window-footer rich-mode-modal-footer'>
-						{ showRichTokenPicker.value ? <>
+					<footer class = { `modal-card-foot window-footer rich-mode-modal-footer${ showRichTokenPicker.value ? ' is-recessed' : '' }` } aria-hidden = { showRichTokenPicker.value ? 'true' : undefined } inert = { showRichTokenPicker.value }>
+						<button type = 'button' class = 'btn btn--outline' disabled = { richTokenPending.value } onClick = { closeRichBalanceDialog }>Close</button>
+					</footer>
+					{ !showRichTokenPicker.value ? <></> : <section class = 'rich-mode-token-sheet' role = 'region' aria-label = { `Select tokens for ${ selectedRichAccount.value.addressBookEntry.name }` }>
+						<header class = 'rich-mode-token-sheet-head'>
+							<button type = 'button' class = 'btn btn--ghost rich-mode-modal-back' aria-label = 'Back to balances' disabled = { richTokenPending.value } onClick = { hideRichTokenSelection }>‹</button>
+							<div>
+								<p class = 'paragraph'>Select tokens</p>
+								<p class = 'rich-mode-modal-account'>{ selectedRichAccount.value.addressBookEntry.name }</p>
+							</div>
+						</header>
+						<div class = 'rich-mode-token-sheet-body'>
+							<div class = 'field rich-mode-token-search'>
+								<div class = 'control'>
+									<input
+										class = 'input'
+										type = 'search'
+										autoFocus = { true }
+										aria-label = 'Search address-book tokens'
+										placeholder = { `Search ${ availableRichTokens.value.length.toString() } address-book token${ availableRichTokens.value.length === 1 ? '' : 's' }…` }
+										disabled = { richTokenPending.value }
+										value = { richTokenSearch.value }
+										onInput = { event => { richTokenSearch.value = event.currentTarget.value } }
+									/>
+								</div>
+							</div>
+							<div aria-label = 'Matching address-book tokens' class = 'rich-mode-token-results'>
+								{ matchingAvailableRichTokens.value.map((option) => {
+									const selected = selectedRichTokenKeys.value.includes(getRichTokenKey(option))
+									return <button
+										type = 'button'
+										data-rich-token-result = { getRichTokenKey(option) }
+										class = { `btn btn--ghost rich-mode-token-result${ selected ? ' is-selected' : '' }` }
+										disabled = { richTokenPending.value }
+										aria-label = { `Select rich token ${ getRichTokenLabel(option) } ${ addressString(option.tokenAddress) }` }
+										aria-pressed = { selected }
+										onClick = { () => { toggleRichTokenSelection(option) } }
+										key = { getRichTokenKey(option) }
+									>
+										<RichTokenIcon class = 'rich-mode-token-result-icon' label = { option.symbol } logoUri = { option.logoUri }/>
+										<span class = 'rich-mode-token-result-details'>
+											<strong>{ getRichTokenLabel(option) }</strong>
+											<span>{ option.name }</span>
+											<small>{ addressString(option.tokenAddress) }</small>
+										</span>
+										<span class = { `rich-mode-token-layout-status${ option.balanceSlot === undefined ? '' : ' is-ready' }` } aria-label = { option.balanceSlot === undefined ? 'Storage discovery required' : 'Storage layout ready' } data-tooltip = { option.balanceSlot === undefined ? 'Storage discovery required' : 'Storage layout ready' }>{ option.balanceSlot === undefined ? '?' : '✓' }</span>
+										<span class = 'rich-mode-token-selection-mark' aria-hidden = 'true'>{ selected ? '✓' : '' }</span>
+									</button>
+								}) }
+								{ matchingAvailableRichTokens.value.length === 0 ? <p class = 'help'>No matching tokens in the active-chain address book.</p> : <></> }
+							</div>
+							{ richTokenPendingLabel.value === undefined ? <></> : <p class = 'help is-light' role = 'status'>{ richTokenPendingLabel.value }</p> }
+							{ richTokenError.value === undefined ? <></> : <p class = 'help is-danger'>{ richTokenError.value }</p> }
+						</div>
+						<footer class = 'rich-mode-token-sheet-footer'>
 							<button type = 'button' class = 'btn btn--ghost' disabled = { richTokenPending.value } onClick = { hideRichTokenSelection }>Cancel</button>
 							<span class = 'rich-mode-token-selection-count'>{ selectedAvailableRichTokens.value.length.toString() } selected</span>
 							<button type = 'button' class = 'btn btn--primary' aria-label = 'Add selected tokens' disabled = { richTokenPending.value || selectedAvailableRichTokens.value.length === 0 } onClick = { () => { void addSelectedRichTokens() } }>Add { selectedAvailableRichTokens.value.length === 0 ? '' : selectedAvailableRichTokens.value.length.toString() } token{ selectedAvailableRichTokens.value.length === 1 ? '' : 's' }</button>
-						</> : <button type = 'button' class = 'btn btn--outline' disabled = { richTokenPending.value } onClick = { closeRichBalanceDialog }>Close</button> }
-					</footer>
+						</footer>
+					</section> }
 				</div>
 			</div>
 		}
