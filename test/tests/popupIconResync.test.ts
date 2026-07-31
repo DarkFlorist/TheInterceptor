@@ -163,7 +163,7 @@ async function inputElementValue(element: TestDomNode, value: string) {
 }
 
 async function changeElementValue(element: TestDomNode, value: string) {
-	const changeHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([eventName]) => eventName.startsWith('Change'))?.[1]
+	const changeHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([eventName]) => eventName.startsWith('Change') || eventName.startsWith('Input'))?.[1]
 	if (changeHandler === undefined) throw new Error('Expected change handler')
 	await changeHandler({ currentTarget: { value } })
 }
