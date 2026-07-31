@@ -656,7 +656,10 @@ export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnecti
 
 export async function changeSettings(ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, parsedRequest: ChangeSettings, requestAbortController: AbortController | undefined) {
 	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) await setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
-	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(parsedRequest.data.metamaskCompatibilityMode)
+	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) {
+		await setMetamaskCompatibilityMode(parsedRequest.data.metamaskCompatibilityMode)
+		if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
+	}
 	return await requestNewHomeData(ethereum, new Map(), false, true, requestAbortController, bumpPopupRefreshGeneration())
 }
 
@@ -669,6 +672,7 @@ export async function importSettings(settingsData: ImportSettings): Promise<Impo
 		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }
 	}
 	await importSettingsAndAddressBook(parsed.value)
+	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
 	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
 }
 

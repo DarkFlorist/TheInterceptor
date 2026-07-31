@@ -7,17 +7,23 @@ const documentStartPath = path.join(projectRoot, 'app', 'inpage', 'js', 'documen
 const inpagePath = path.join(projectRoot, 'app', 'inpage', 'js', 'inpage.js')
 const injectedMarkerPattern = /injectScript\((['"])\[\[injected\.ts\]\]\1\)/
 
+export function inlineInpageSourceIntoDocumentStart(documentStartSource: string, inpageSource: string) {
+	if (!injectedMarkerPattern.test(documentStartSource)) throw new Error('Could not find inpage injection marker in document_start.js')
+	return documentStartSource.replace(injectedMarkerPattern, `injectScript(${ JSON.stringify(inpageSource) })`)
+}
+
 async function inlineInpageScript() {
 	const [documentStartSource, inpageSource] = await Promise.all([
 		fs.readFile(documentStartPath, 'utf8'),
 		fs.readFile(inpagePath, 'utf8'),
 	])
-	if (!injectedMarkerPattern.test(documentStartSource)) throw new Error('Could not find inpage injection marker in document_start.js')
-	const updatedDocumentStartSource = documentStartSource.replace(injectedMarkerPattern, `injectScript(${ JSON.stringify(inpageSource) })`)
+	const updatedDocumentStartSource = inlineInpageSourceIntoDocumentStart(documentStartSource, inpageSource)
 	await fs.writeFile(documentStartPath, updatedDocumentStartSource)
 }
 
-inlineInpageScript().catch((error: unknown) => {
-	console.error(error)
-	process.exit(1)
-})
+if (import.meta.main) {
+	inlineInpageScript().catch((error: unknown) => {
+		console.error(error)
+		process.exit(1)
+	})
+}

@@ -9,6 +9,7 @@ type RuntimeMessage = {
 }
 
 type BrowserMockOptions = {
+	readonly metamaskCompatibilityMode?: boolean
 	readonly registerError?: Error
 	readonly executeScriptError?: Error
 	readonly tabUrl?: string
@@ -16,10 +17,18 @@ type BrowserMockOptions = {
 	readonly tabUrlAfterStorageRead?: string
 }
 
-function installBrowserMock({ registerError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead }: BrowserMockOptions = {}) {
-	const storageState: Record<string, unknown> = {}
+type RegisteredContentScript = {
+	readonly id?: string
+	readonly js?: readonly string[]
+}
+
+function installBrowserMock({ metamaskCompatibilityMode, registerError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead }: BrowserMockOptions = {}) {
+	const storageState: Record<string, unknown> = {
+		...(metamaskCompatibilityMode === undefined ? {} : { metamaskCompatibilityMode }),
+	}
 	const sentMessages: RuntimeMessage[] = []
 	const executedScriptFiles: string[] = []
+	const registeredContentScripts: RegisteredContentScript[] = []
 	let executeScriptCalls = 0
 	let currentTabUrl = tabUrl
 	let committedListener: ((details: browser.webNavigation._OnCommittedDetails) => unknown) | undefined
@@ -59,8 +68,9 @@ function installBrowserMock({ registerError, executeScriptError, tabUrl = 'https
 			},
 			scripting: {
 				async unregisterContentScripts() { return undefined },
-				async registerContentScripts() {
+				async registerContentScripts(scripts: readonly RegisteredContentScript[]) {
 					if (registerError !== undefined) throw registerError
+					registeredContentScripts.push(...scripts)
 					return undefined
 				},
 			},
@@ -109,6 +119,7 @@ function installBrowserMock({ registerError, executeScriptError, tabUrl = 'https
 		sentMessages,
 		getExecuteScriptCalls() { return executeScriptCalls },
 		getExecutedScriptFiles() { return [...executedScriptFiles] },
+		getRegisteredContentScripts() { return [...registeredContentScripts] },
 		getCommittedListener() {
 			if (committedListener === undefined) throw new Error('webNavigation listener was not registered')
 			return committedListener
@@ -157,9 +168,44 @@ describe('content script injection strategy', () => {
 		]
 		assert.deepEqual(getExecutedScriptFiles(), injectedFiles)
 		assert.deepEqual(getManifestV2WebAccessibleResources(), [
-			...injectedFiles.map((file) => file.slice(1)),
+			'vendor/webextension-polyfill/dist/browser-polyfill.js',
+			'inpage/js/listenContentScript.js',
+			'inpage/js/metamaskCompatibilityMode.js',
+			'inpage/js/document_start.js',
 			'inpage/js/inpage.js',
 		])
+	})
+
+	test('registers the main-world compatibility prelude only when MetaMask compatibility mode is active', async () => {
+		for (const metamaskCompatibilityMode of [false, true]) {
+			const { getRegisteredContentScripts } = installBrowserMock({ metamaskCompatibilityMode })
+			const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
+
+			await updateContentScriptInjectionStrategyManifestV3()
+
+			const mainWorldRegistration = getRegisteredContentScripts().find((registration) => registration.id === 'inpage')
+			assert.deepEqual(mainWorldRegistration?.js, [
+				...(metamaskCompatibilityMode ? ['/inpage/js/metamaskCompatibilityMode.js'] : []),
+				'/inpage/js/inpage.js',
+			])
+		}
+	})
+
+	test('injects the Firefox compatibility prelude only when MetaMask compatibility mode is active', async () => {
+		for (const metamaskCompatibilityMode of [false, true]) {
+			const { getCommittedListener, getExecutedScriptFiles } = installBrowserMock({ metamaskCompatibilityMode })
+			const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+
+			await updateContentScriptInjectionStrategyManifestV2()
+			await getCommittedListener()(committedDetails)
+
+			assert.deepEqual(getExecutedScriptFiles(), [
+				'/vendor/webextension-polyfill/dist/browser-polyfill.js',
+				'/inpage/js/listenContentScript.js',
+				...(metamaskCompatibilityMode ? ['/inpage/js/metamaskCompatibilityMode.js'] : []),
+				'/inpage/js/document_start.js',
+			])
+		}
 	})
 
 	test('records manifest v3 registration failures as unexpected errors', async () => {
