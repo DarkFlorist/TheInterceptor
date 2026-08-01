@@ -34,12 +34,19 @@ export function createSafeExecutionPreSimulationTransaction(
 	transactionToSimulate: WebsiteCreatedEthereumTransaction,
 	safeSigningRequest: SafeTransactionSigningRequest,
 ): PreSimulationTransaction {
+	const requiredChainId = safeSigningRequest.safeTx.domain.chainId
+	if (requiredChainId === undefined) throw new Error('Gnosis Safe optimistic simulation requires an EIP-712 chain ID.')
+	const signedTransaction = createSafeExecutionSimulationTransaction(transactionToSimulate, safeSigningRequest)
 	return {
-		signedTransaction: createSafeExecutionSimulationTransaction(transactionToSimulate, safeSigningRequest),
+		signedTransaction,
 		website: transactionToSimulate.website,
 		created: transactionToSimulate.created,
 		originalRequestParameters: transactionToSimulate.originalRequestParameters,
 		transactionIdentifier: transactionToSimulate.transactionIdentifier,
+		simulationOptions: {
+			requiredChainId,
+			simulateWithZeroBaseFee: true,
+		},
 		safeTransaction: {
 			safeTx: safeSigningRequest.safeTx,
 			safeTxHash: safeSigningRequest.safeTxHash,

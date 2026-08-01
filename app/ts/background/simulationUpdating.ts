@@ -90,11 +90,12 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 	for (const operation of stack.operations) {
 		switch(operation.type) {
 			case 'Transaction': {
+				const simulationOptions = operation.preSimulationTransaction.simulationOptions
 				if (
-					operation.preSimulationTransaction.safeTransaction?.safeTx.domain.chainId !== undefined
-					&& operation.preSimulationTransaction.safeTransaction.safeTx.domain.chainId !== settings.activeRpcNetwork.chainId
+					simulationOptions?.requiredChainId !== undefined
+					&& simulationOptions.requiredChainId !== settings.activeRpcNetwork.chainId
 				) break
-				const simulateWithZeroBaseFee = operation.preSimulationTransaction.safeTransaction !== undefined
+				const simulateWithZeroBaseFee = simulationOptions?.simulateWithZeroBaseFee ?? false
 				if (currentBlockTransactions.length > 0 && currentBlockSimulateWithZeroBaseFee !== simulateWithZeroBaseFee) {
 					pushBlock({ type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' })
 				}

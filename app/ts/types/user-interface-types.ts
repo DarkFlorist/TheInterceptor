@@ -268,6 +268,7 @@ export type PendingFetchSimulationStackRequestPromise = funtypes.Static<typeof P
 export const PendingFetchSimulationStackRequestPromise = funtypes.ReadonlyObject({
 	website: Website,
 	popupOrTabId: PopupOrTabId,
+	simulationOverlayEnabled: funtypes.Boolean,
 	simulationStackVersion: SimulationStackVersion,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 })

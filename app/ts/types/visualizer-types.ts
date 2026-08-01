@@ -128,6 +128,10 @@ export const PreSimulationTransaction = funtypes.ReadonlyObject({
 	transactionIdentifier: EthereumQuantity,
 }).And(funtypes.ReadonlyPartial({
 	safeTransaction: SafeStackTransaction,
+	simulationOptions: funtypes.ReadonlyObject({
+		requiredChainId: EthereumQuantity,
+		simulateWithZeroBaseFee: funtypes.Boolean,
+	}),
 }))
 
 export type SimulatedTransaction = funtypes.Static<typeof SimulatedTransaction>

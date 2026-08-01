@@ -1234,7 +1234,9 @@ async function buildHomePageUpdate(
 }
 
 export async function fetchSimulationStackRequestConfirmation(ethereumClientService: EthereumClientService, websiteTabConnections: WebsiteTabConnections, confirmation: FetchSimulationStackRequestConfirmation) {
-	const snapshot = await getUpdatedSimulationStackSnapshot(ethereumClientService, (await getSettings()).simulationMode)
+	const pendingRequest = await getFetchSimulationStackRequestPromise()
+	if (pendingRequest === undefined) throw new Error('The pending simulation stack request is unavailable.')
+	const snapshot = await getUpdatedSimulationStackSnapshot(ethereumClientService, pendingRequest.simulationOverlayEnabled)
 	await resolveFetchSimulationStackRequest(snapshot, websiteTabConnections, confirmation)
 }
 

@@ -78,8 +78,9 @@ export async function getUpdatedSimulationState(ethereum: EthereumClientService,
 	return PASSTHROUGH_STATE
 }
 
-export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClientService, simulationMode: boolean) {
-	if (!simulationMode) return { simulationInput: PASSTHROUGH_STATE, simulationState: PASSTHROUGH_STATE }
+/** Builds the simulation-stack overlay used by simulation mode and Gnosis Safe signing mode. */
+export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClientService, simulationOverlayEnabled: boolean) {
+	if (!simulationOverlayEnabled) return { simulationInput: PASSTHROUGH_STATE, simulationState: PASSTHROUGH_STATE }
 	const simulationInput = await getCurrentSimulationInput()
 	return {
 		simulationInput: toResolvedSimulationInput(simulationInput),
@@ -312,7 +313,7 @@ async function handleRPCRequest(
 		eth_requestAccounts: rpcRequestHandler('eth_requestAccounts', async () => await getAccounts(activeAddress)),
 		eth_gasPrice: rpcRequestHandler('eth_gasPrice', async () => await gasPrice(ethereum)),
 		eth_getTransactionCount: rpcRequestHandler('eth_getTransactionCount', async (_context, rpcRequest) => await withSimulationInput((simulationInput) => getTransactionCount(ethereum, simulationInput, rpcRequest))),
-		interceptor_getSimulationStack: rpcRequestHandler('interceptor_getSimulationStack', async (_context, rpcRequest) => await requestInterceptorSimulatorStack(await getUpdatedSimulationStackSnapshot(ethereum, simulationOverlayEnabled), websiteTabConnections, rpcRequest, website, request, socket)),
+		interceptor_getSimulationStack: rpcRequestHandler('interceptor_getSimulationStack', async (_context, rpcRequest) => await requestInterceptorSimulatorStack(await getUpdatedSimulationStackSnapshot(ethereum, simulationOverlayEnabled), simulationOverlayEnabled, websiteTabConnections, rpcRequest, website, request, socket)),
 		eth_simulateV1: rpcRequestHandler('eth_simulateV1', async (_context, rpcRequest) => await withSimulationInput((simulationInput) => ethSimulateV1(ethereum, simulationInput, rpcRequest))),
 		wallet_addEthereumChain: rpcRequestHandler('wallet_addEthereumChain', async (_context, rpcRequest) => {
 			if (forwardToSigner) return getForwardingMessage(rpcRequest)

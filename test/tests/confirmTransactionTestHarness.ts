@@ -176,6 +176,7 @@ export async function loadModules() {
 		providerMessageHandlers,
 		safeExecutionRouting,
 		safeConfirmationResolver,
+		safeSimulation,
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/EthereumClientService.js'),
 		import('../../app/ts/simulation/services/priceEstimator.js'),
@@ -195,6 +196,7 @@ export async function loadModules() {
 		import('../../app/ts/background/providerMessageHandlers.js'),
 		import('../../app/ts/safe/safeExecutionRouting.js'),
 		import('../../app/ts/background/safeConfirmationResolver.js'),
+		import('../../app/ts/safe/safeSimulation.js'),
 	])
 	const flushPendingTerminalRepliesForSocket: typeof flushPendingTerminalRepliesForSocketType = terminalReplyDelivery.flushPendingTerminalRepliesForSocket
 
@@ -209,6 +211,7 @@ export async function loadModules() {
 		importSafeStack: popupMessageHandlers.importSafeStack,
 		requestSafeStackExport: popupMessageHandlers.requestSafeStackExport,
 		setActiveSafeSigner: popupMessageHandlers.setActiveSafeSigner,
+		fetchSimulationStackRequestConfirmation: popupMessageHandlers.fetchSimulationStackRequestConfirmation,
 		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
 		formEthSendTransaction: confirmTransaction.formEthSendTransaction,
 		getSafeExecutionSignerRoute: safeExecutionRouting.getSafeExecutionSignerRoute,
@@ -220,9 +223,11 @@ export async function loadModules() {
 		refreshPendingSafeSignerSelectionErrors: confirmTransaction.refreshPendingSafeSignerSelectionErrors,
 		resolvePendingRequestsForMissingConfirmationWindows: confirmTransaction.resolvePendingRequestsForMissingConfirmationWindows,
 		resolveSafeConfirmation: safeConfirmationResolver.resolveSafeConfirmation,
+		createSafeExecutionPreSimulationTransaction: safeSimulation.createSafeExecutionPreSimulationTransaction,
 		getPendingTransactionsAndMessages: storageVariables.getPendingTransactionsAndMessages,
 		getSafeTransactionStacks: storageVariables.getSafeTransactionStacks,
 		getInterceptorTransactionStack: storageVariables.getInterceptorTransactionStack,
+		setFetchSimulationStackRequestPromise: storageVariables.setFetchSimulationStackRequestPromise,
 		getUserAddressBookEntries: storageVariables.getUserAddressBookEntries,
 		appendPendingTransactionOrMessage: storageVariables.appendPendingTransactionOrMessage,
 		getPendingTerminalReplies: pendingTerminalReplies.getPendingTerminalReplies,

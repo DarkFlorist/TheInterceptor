@@ -300,6 +300,70 @@ test('uses zero-reimbursement Safe semantics in the pre-sign confirmation simula
 	assert.equal(simulatedSafeTransaction?.transaction.gas, 123_456n)
 })
 
+test('returns the current Safe overlay when a simulation-stack request is confirmed', async () => {
+	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
+		simulationMode: false,
+		rpcNetwork: fakeRpcNetwork,
+	})
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	const safeTxHash = BigInt(getSafeTxHash(safeTx))
+	const preSimulationTransaction = modules.createSafeExecutionPreSimulationTransaction(
+		pendingTransaction.transactionToSimulate,
+		{
+			safeAddress: activeAddress,
+			safeSignerAddress: recipientAddress,
+			safeVersion: '1.4.1',
+			threshold: 2n,
+			safeTxHash,
+			safeTx,
+			executionGasLimit: 123_456n,
+		},
+	)
+	await modules.updateInterceptorTransactionStack(() => ({
+		operations: [{ type: 'Transaction', preSimulationTransaction }],
+	}))
+	await modules.setFetchSimulationStackRequestPromise({
+		website: { websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
+		popupOrTabId: { type: 'popup', id: 41 },
+		simulationOverlayEnabled: true,
+		simulationStackVersion: '2.0.0',
+		uniqueRequestIdentifier,
+	})
+	const postedMessages: unknown[] = []
+	const port = createWebsitePort(uniqueRequestIdentifier.requestSocket, 0, postedMessages)
+	const websiteTabConnections = new Map([[uniqueRequestIdentifier.requestSocket.tabId, {
+		connections: {
+			[modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)]: {
+				port,
+				socket: uniqueRequestIdentifier.requestSocket,
+				websiteOrigin: 'https://example.com',
+				approved: true,
+				wantsToConnect: true,
+			},
+		},
+	}]])
+
+	await modules.fetchSimulationStackRequestConfirmation(simulator.ethereum, websiteTabConnections, {
+		method: 'popup_fetchSimulationStackRequestConfirmation',
+		data: {
+			accept: true,
+			simulationStackVersion: '2.0.0',
+			uniqueRequestIdentifier,
+		},
+	})
+
+	const reply = postedMessages.find((message) => isRecord(message) && message.method === 'interceptor_getSimulationStack')
+	if (!isRecord(reply) || !isRecord(reply.result) || !isRecord(reply.result.payload)) throw new Error('Missing simulation stack reply')
+	assert.equal(Array.isArray(reply.result.payload.transactions), true)
+	assert.equal(Array.isArray(reply.result.payload.transactions) ? reply.result.payload.transactions.length : 0, 1)
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+	await modules.setFetchSimulationStackRequestPromise(undefined)
+})
+
 test('prepares Safe transaction intent without charging gas to the Safe', async () => {
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
 	const transactionParams = SendTransactionParams.parse({

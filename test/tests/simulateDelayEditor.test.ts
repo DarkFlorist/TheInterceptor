@@ -185,6 +185,24 @@ describe('simulate delay editor', () => {
 			newDelay,
 		])
 	})
+
+	test('excludes transactions whose simulation options require another chain', async () => {
+		await resetStack()
+		await updateInterceptorTransactionStack(() => ({
+			operations: [{
+				type: 'Transaction',
+				preSimulationTransaction: {
+					...tx1,
+					simulationOptions: {
+						requiredChainId: 2n,
+						simulateWithZeroBaseFee: true,
+					},
+				},
+			}],
+		}))
+
+		assert.deepEqual(await getCurrentSimulationInput(), [])
+	})
 })
 
 await updateInterceptorTransactionStack(() => ({ operations: [] }))
