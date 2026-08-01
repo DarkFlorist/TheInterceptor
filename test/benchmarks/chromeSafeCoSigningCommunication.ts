@@ -178,7 +178,6 @@ const safeCallResults = new Map([
 	[safeStateReadCalls[1], encodeFunctionReturn(SAFE_ABI, 'nonce', [7n])],
 	[safeStateReadCalls[2], encodeFunctionReturn(SAFE_ABI, 'getOwners', [[addressString(OWNER_ADDRESS)]])],
 	[safeStateReadCalls[3], encodeFunctionReturn(SAFE_ABI, 'getThreshold', [2n])],
-	[encodeFunctionCall(SAFE_ABI, 'isOwner', [addressString(OWNER_ADDRESS)]), encodeFunctionReturn(SAFE_ABI, 'isOwner', [true])],
 	[encodeFunctionCall(SAFE_ABI, 'getTransactionHash', [
 		addressString(SAFE_TX.message.to),
 		SAFE_TX.message.value,

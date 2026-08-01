@@ -1,35 +1,18 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { activeAddress, created, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, modules, pendingTransaction, privateKeyToAccount, recipientAddress, resetFakeSafeContractState, safeTxToTypedDataJson, signedTransaction, simulator, } from './confirmTransactionTestHarness.js'
+import { activeAddress, createSafeStackFixture, createSafeStackTransactionFixture, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, modules, pendingTransaction, recipientAddress, resetFakeSafeContractState, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, } from './confirmTransactionTestHarness.js'
+import { ensureHex } from '../../app/ts/utils/ethereumBytes.js'
 
 test('extension Safe stack import merges owner signatures into proposal and optimistic metadata', async () => {
-	resetFakeSafeContractState()
-	const ownerAccount = privateKeyToAccount('0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef')
-	const ownerAddress = BigInt(ownerAccount.address)
+	const ownerAccount = safeTestOwnerAccount
+	const ownerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [ownerAddress]
-	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
-		to: recipientAddress,
-		value: 0n,
-		input: new Uint8Array(),
-	}, 0n)
-	const safeTxHash = BigInt(getSafeTxHash(safeTx))
+	const localTransaction = createSafeStackTransactionFixture()
+	const { safeTx, safeTxHash } = localTransaction
 	const signature = await ownerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
-	const localTransaction = {
-		safeTx,
-		safeTxHash,
-		created,
-		websiteOrigin: 'https://example.com',
-		transactionIdentifier: 70n,
-		signatures: [],
-	}
-	const localStack = {
-		chainId: fakeRpcNetwork.chainId,
-		safeAddress: activeAddress,
-		safeVersion: '1.4.1',
-		baseNonce: 0n,
-		threshold: 2n,
-		transactions: [localTransaction],
-	}
+	const recoveryByte = Number.parseInt(signature.slice(-2), 16)
+	const nonCanonicalSignature = ensureHex(`${ signature.slice(0, -2) }${ (recoveryByte - 27).toString(16).padStart(2, '0') }`, 'test Gnosis Safe signature')
+	const localStack = createSafeStackFixture([localTransaction])
 	await modules.updateSafeTransactionStacks(() => [localStack])
 	await modules.updateInterceptorTransactionStack(() => ({
 		operations: [{
@@ -46,7 +29,7 @@ test('extension Safe stack import merges owner signatures into proposal and opti
 		...localStack,
 		transactions: [{
 			...localTransaction,
-			signatures: [{ signer: ownerAddress, signature }],
+			signatures: [{ signer: ownerAddress, signature: nonCanonicalSignature }],
 		}],
 	}
 
@@ -59,41 +42,29 @@ test('extension Safe stack import merges owner signatures into proposal and opti
 	})
 
 	assert.deepEqual(reply, { type: 'ImportSafeStackReply', ok: true })
-	assert.equal((await modules.getSafeTransactionStacks())[0]?.transactions[0]?.signatures[0]?.signer, ownerAddress)
+	const storedSignature = (await modules.getSafeTransactionStacks())[0]?.transactions[0]?.signatures[0]
+	assert.equal(storedSignature?.signer, ownerAddress)
+	assert.equal(storedSignature?.signature, signature)
 	const optimisticOperation = (await modules.getInterceptorTransactionStack()).operations[0]
 	assert.equal(optimisticOperation?.type, 'Transaction')
 	if (optimisticOperation?.type !== 'Transaction') throw new Error('Missing imported optimistic Safe transaction')
 	assert.equal(optimisticOperation.preSimulationTransaction.safeTransaction?.signatures[0]?.signer, ownerAddress)
+	assert.equal(optimisticOperation.preSimulationTransaction.safeTransaction?.signatures[0]?.signature, signature)
+	const exportReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
+	assert.equal(exportReply.ok, true)
+	if (!exportReply.ok) throw new Error(exportReply.message)
+	assert.equal(exportReply.safeStackJson.includes(`\"signature\": \"${ signature }\"`), true)
+	assert.equal(exportReply.safeStackJson.includes(`\"signature\": \"${ nonCanonicalSignature }\"`), false)
 })
 
 test('Safe stack import preserves a proposal appended while live validation is pending', async () => {
-	resetFakeSafeContractState()
-	const ownerAccount = privateKeyToAccount('0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef')
-	const ownerAddress = BigInt(ownerAccount.address)
+	const ownerAccount = safeTestOwnerAccount
+	const ownerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [ownerAddress]
-	const firstSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
-		to: recipientAddress,
-		value: 0n,
-		input: new Uint8Array(),
-	}, 0n)
-	const firstSafeTxHash = BigInt(getSafeTxHash(firstSafeTx))
+	const firstTransaction = createSafeStackTransactionFixture({ transactionIdentifier: 73n })
+	const { safeTx: firstSafeTx } = firstTransaction
 	const signature = await ownerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(firstSafeTx)))
-	const firstTransaction = {
-		safeTx: firstSafeTx,
-		safeTxHash: firstSafeTxHash,
-		created,
-		websiteOrigin: 'https://example.com',
-		transactionIdentifier: 73n,
-		signatures: [],
-	}
-	const localStack = {
-		chainId: fakeRpcNetwork.chainId,
-		safeAddress: activeAddress,
-		safeVersion: '1.4.1',
-		baseNonce: 0n,
-		threshold: 2n,
-		transactions: [firstTransaction],
-	}
+	const localStack = createSafeStackFixture([firstTransaction])
 	await modules.updateSafeTransactionStacks(() => [localStack])
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 
@@ -155,33 +126,13 @@ test('Safe stack import preserves a proposal appended while live validation is p
 })
 
 test('extension Safe stack import reconciles executed transactions and rejects altered, non-owner, and duplicate-signature exports', async () => {
-	resetFakeSafeContractState()
-	const ownerAccount = privateKeyToAccount('0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef')
-	const ownerAddress = BigInt(ownerAccount.address)
+	const ownerAccount = safeTestOwnerAccount
+	const ownerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [ownerAddress]
-	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
-		to: recipientAddress,
-		value: 0n,
-		input: new Uint8Array(),
-	}, 0n)
-	const safeTxHash = BigInt(getSafeTxHash(safeTx))
+	const localTransaction = createSafeStackTransactionFixture({ transactionIdentifier: 71n })
+	const { safeTx } = localTransaction
 	const signature = await ownerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
-	const localTransaction = {
-		safeTx,
-		safeTxHash,
-		created,
-		websiteOrigin: 'https://example.com',
-		transactionIdentifier: 71n,
-		signatures: [],
-	}
-	const localStack = {
-		chainId: fakeRpcNetwork.chainId,
-		safeAddress: activeAddress,
-		safeVersion: '1.4.1',
-		baseNonce: 0n,
-		threshold: 2n,
-		transactions: [localTransaction],
-	}
+	const localStack = createSafeStackFixture([localTransaction])
 	const importData = (transactions: readonly typeof localTransaction[]) => ({
 		data: {
 			name: 'Interceptor Safe Stack' as const,
@@ -217,7 +168,7 @@ test('extension Safe stack import reconciles executed transactions and rejects a
 	assert.match(alteredReply.message, /transaction list was changed/u)
 
 	await resetLocalStack()
-	fakeSafeContract.ownerIsValid = false
+	fakeSafeContract.owners = []
 	const nonOwnerReply = await modules.importSafeStack(simulator.ethereum, simulator.tokenPriceService, importData([{
 		...localTransaction,
 		signatures: [{ signer: ownerAddress, signature }],
@@ -227,7 +178,7 @@ test('extension Safe stack import reconciles executed transactions and rejects a
 	assert.match(nonOwnerReply.message, /is not an owner of Gnosis Safe/u)
 
 	await resetLocalStack()
-	fakeSafeContract.ownerIsValid = true
+	fakeSafeContract.owners = [ownerAddress]
 	fakeSafeContract.ownerCode = '0x6000'
 	const contractOwnerReply = await modules.importSafeStack(simulator.ethereum, simulator.tokenPriceService, importData([{
 		...localTransaction,
@@ -297,32 +248,17 @@ test('extension Safe stack export rejects an empty selected-chain stack', async 
 })
 
 test('extension Safe stack export revalidates current Safe state before returning JSON', async () => {
-	resetFakeSafeContractState()
-	const ownerAccount = privateKeyToAccount('0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef')
-	const ownerAddress = BigInt(ownerAccount.address)
+	const ownerAccount = safeTestOwnerAccount
+	const ownerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [ownerAddress]
-	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
-		to: recipientAddress,
-		value: 0n,
-		input: new Uint8Array(),
-	}, 0n)
-	const safeTxHash = BigInt(getSafeTxHash(safeTx))
+	const stackTransaction = createSafeStackTransactionFixture({ transactionIdentifier: 73n })
+	const { safeTx } = stackTransaction
 	const signature = await ownerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
-	await modules.updateSafeTransactionStacks(() => [{
-		chainId: fakeRpcNetwork.chainId,
-		safeAddress: activeAddress,
-		safeVersion: '1.4.1',
-		baseNonce: 0n,
-		threshold: 2n,
-		transactions: [{
-			safeTx,
-			safeTxHash,
-			created,
-			websiteOrigin: 'https://example.com',
-			transactionIdentifier: 73n,
-			signatures: [{ signer: ownerAddress, signature }],
-		}],
-	}])
+	const signedStackTransaction = {
+		...stackTransaction,
+		signatures: [{ signer: ownerAddress, signature }],
+	}
+	await modules.updateSafeTransactionStacks(() => [createSafeStackFixture([signedStackTransaction])])
 
 	const validReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
 	assert.equal(validReply.ok, true)
@@ -374,21 +310,7 @@ test('extension Safe stack export revalidates current Safe state before returnin
 	assert.deepEqual(reconciledOperations.map((operation) => operation.type === 'Transaction' ? operation.preSimulationTransaction.transactionIdentifier : undefined), [74n])
 
 	fakeSafeContract.nonce = 0n
-	await modules.updateSafeTransactionStacks(() => [{
-		chainId: fakeRpcNetwork.chainId,
-		safeAddress: activeAddress,
-		safeVersion: '1.4.1',
-		baseNonce: 0n,
-		threshold: 2n,
-		transactions: [{
-			safeTx,
-			safeTxHash,
-			created,
-			websiteOrigin: 'https://example.com',
-			transactionIdentifier: 73n,
-			signatures: [{ signer: ownerAddress, signature }],
-		}],
-	}])
+	await modules.updateSafeTransactionStacks(() => [createSafeStackFixture([signedStackTransaction])])
 	fakeSafeContract.ownerCode = '0x6000'
 	const contractOwnerReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
 	assert.equal(contractOwnerReply.ok, false)

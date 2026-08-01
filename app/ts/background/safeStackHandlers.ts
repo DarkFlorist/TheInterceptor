@@ -1,6 +1,6 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { assertInterceptorSafeTransactionPolicy, assertUniqueSafeTransactionStacks, getSafeContractState, validateSafeOwnerSignature } from '../safe/safeCore.js'
+import { assertInterceptorSafeTransactionPolicy, assertUniqueSafeTransactionStacks, createSafeOwnerValidator, getSafeContractSnapshot } from '../safe/safeCore.js'
 import { reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
 import { SafeStackExport, type SafeTransactionStack } from '../types/safeTypes.js'
 import { checksummedAddress } from '../utils/bigint.js'
@@ -13,7 +13,8 @@ import { reconcileStoredSafeState } from './safeStackState.js'
 
 export async function validateSafeTransactionStackForCurrentContract(ethereum: EthereumClientService, stack: SafeTransactionStack) {
 	if (stack.chainId !== ethereum.getChainId()) throw new Error(`Switch Interceptor to chain ${ stack.chainId.toString() } before validating this Gnosis Safe stack.`)
-	const safeState = await getSafeContractState(ethereum, stack.safeAddress)
+	const { blockNumber, state: safeState } = await getSafeContractSnapshot(ethereum, stack.safeAddress)
+	const ownerValidator = createSafeOwnerValidator(ethereum, stack.safeAddress, { blockNumber, state: safeState })
 	if (safeState.version !== stack.safeVersion) {
 		throw new Error(`Gnosis Safe ${ checksummedAddress(stack.safeAddress) } is now version ${ safeState.version }, but this stack records ${ stack.safeVersion }.`)
 	}
@@ -21,7 +22,7 @@ export async function validateSafeTransactionStackForCurrentContract(ethereum: E
 		throw new Error(`Gnosis Safe ${ checksummedAddress(stack.safeAddress) } now has threshold ${ safeState.threshold.toString() }, but this stack records ${ stack.threshold.toString() }.`)
 	}
 	const reconciledStack = reconcileSafeTransactionStack(stack, safeState.nonce)
-	for (const [index, transaction] of reconciledStack.transactions.entries()) {
+	const normalizedTransactions = await Promise.all(reconciledStack.transactions.map(async (transaction, index) => {
 		assertInterceptorSafeTransactionPolicy(transaction.safeTx)
 		if (transaction.safeTx.domain.verifyingContract !== reconciledStack.safeAddress) throw new Error('Gnosis Safe transaction verifying contract does not match the stack Gnosis Safe.')
 		if (transaction.safeTx.domain.chainId !== reconciledStack.chainId) throw new Error('Gnosis Safe transaction chain ID does not match the stack chain.')
@@ -30,11 +31,12 @@ export async function validateSafeTransactionStackForCurrentContract(ethereum: E
 		if (new Set(transaction.signatures.map((signature) => signature.signer)).size !== transaction.signatures.length) {
 			throw new Error('A Gnosis Safe transaction contains duplicate owner signatures.')
 		}
-		await Promise.all(transaction.signatures.map(async (signature) => {
-			await validateSafeOwnerSignature(ethereum, reconciledStack.safeAddress, transaction.safeTxHash, signature.signature, signature.signer)
-		}))
-	}
-	return { safeState, reconciledStack }
+		const signatures = await Promise.all(transaction.signatures.map(async (signature) =>
+			await ownerValidator.validateSignature(transaction.safeTxHash, signature.signature, signature.signer)
+		))
+		return { ...transaction, signatures }
+	}))
+	return { safeState, reconciledStack: { ...reconciledStack, transactions: normalizedTransactions } }
 }
 
 export async function requestSafeStackExport(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {

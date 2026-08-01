@@ -2,24 +2,18 @@ import * as funtypes from 'funtypes'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
-import type { SafeStackTransaction, SafeTransactionSigningRequest } from '../types/safeTypes.js'
-import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST } from '../utils/constants.js'
+import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import { getErrorMessage } from '../utils/errors.js'
 import { EthereumBytes32 } from '../types/wire-types.js'
 import { getHtmlFile } from './backgroundUtils.js'
 import { getSafeTransactionStacks, updateTransactionState } from './storageVariables.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { openPopupOrTab } from '../utils/popupOrTab.js'
-import { assertSafeContractStateUnchanged, getSafeContractState, validateSafeOwnerSignature } from '../safe/safeCore.js'
+import { assertSafeContractStateUnchanged, createSafeOwnerValidator, getSafeContractSnapshot } from '../safe/safeCore.js'
 import { createSafeExecutionPreSimulationTransaction } from '../safe/safeSimulation.js'
 import { reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
 import { assertReviewedSafeSignerIsStillConfigured, validateSafeMessageCoSignature } from './safeConfirmationResolver.js'
-
-type SafeSignerErrorStatus = {
-	readonly status: 'SignerError'
-	readonly code: number
-	readonly message: string
-}
+import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 
 export type SafeSignerReplyResolution =
 	| { readonly status: 'not-safe' }
@@ -28,11 +22,7 @@ export type SafeSignerReplyResolution =
 
 const signerError = (message: string): SafeSignerReplyResolution => ({
 	status: 'error',
-	approvalStatus: {
-		status: 'SignerError',
-		code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
-		message,
-	},
+	approvalStatus: createSafeSignerErrorStatus(message),
 })
 
 export async function resolveSafeSignerReply(
@@ -72,14 +62,14 @@ async function persistSignedSafeTransaction(
 	safeSigningRequest: SafeTransactionSigningRequest,
 	signerReply: unknown,
 ): Promise<SafeSignerReplyResolution> {
-	let ownerSignature: Awaited<ReturnType<typeof validateSafeOwnerSignature>>
+	let ownerSignature: SafeOwnerSignature
 	let currentSafeNonce: bigint
 	try {
 		if (safeSigningRequest.reviewedSafeState === undefined) {
 			throw new Error('Review this Gnosis Safe proposal again so its current owners, threshold, nonce, and signer can be verified.')
 		}
 		await assertReviewedSafeSignerIsStillConfigured(ethereum, safeSigningRequest)
-		const safeState = await getSafeContractState(ethereum, safeSigningRequest.safeAddress)
+		const { blockNumber, state: safeState } = await getSafeContractSnapshot(ethereum, safeSigningRequest.safeAddress)
 		currentSafeNonce = safeState.nonce
 		assertSafeContractStateUnchanged(safeSigningRequest.reviewedSafeState, safeState)
 		const storedStack = (await getSafeTransactionStacks()).find((stack) =>
@@ -91,9 +81,9 @@ async function persistSignedSafeTransaction(
 		if (!alreadyPersisted && safeSigningRequest.safeTx.message.nonce !== expectedNonce) {
 			throw new Error(`This proposal uses Gnosis Safe nonce ${ safeSigningRequest.safeTx.message.nonce.toString() }, but the next available nonce is ${ expectedNonce.toString() }. Review and sign the rebased proposal again.`)
 		}
-		ownerSignature = await validateSafeOwnerSignature(
-			ethereum,
-			safeSigningRequest.safeAddress,
+		ownerSignature = await createSafeOwnerValidator(
+			ethereum, safeSigningRequest.safeAddress, { blockNumber, state: safeState },
+		).validateSignature(
 			safeSigningRequest.safeTxHash,
 			funtypes.String.parse(signerReply),
 			safeSigningRequest.safeSignerAddress,

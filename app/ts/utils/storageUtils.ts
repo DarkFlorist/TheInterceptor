@@ -54,16 +54,14 @@ export const RichListElement = funtypes.ReadonlyObject({
 // ReadonlyPartial drops a property whose serialized value represents `undefined`. These
 // presence-aware alternatives preserve the distinction between "not stored" and
 // "explicitly cleared", which the settings migration and update paths rely on.
-const OptionalActiveSigningAddressStorageProperty = funtypes.Union(
-	funtypes.ReadonlyObject({ activeSigningAddress: EthereumAddressOrMissing })
-		.withConstraint((item) => hasOwnKey(item, 'activeSigningAddress')),
-	funtypes.ReadonlyObject({}),
+const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSimulationAddress') => funtypes.Union(
+	funtypes.ReadonlyObject({ [propertyName]: EthereumAddressOrMissing })
+		.withConstraint((item) => hasOwnKey(item, propertyName)),
+	funtypes.ReadonlyPartial({ [propertyName]: funtypes.Unknown })
+		.withConstraint((item) => !hasOwnKey(item, propertyName)),
 )
-const OptionalActiveSimulationAddressStorageProperty = funtypes.Union(
-	funtypes.ReadonlyObject({ activeSimulationAddress: EthereumAddressOrMissing })
-		.withConstraint((item) => hasOwnKey(item, 'activeSimulationAddress')),
-	funtypes.ReadonlyObject({}),
-)
+const OptionalActiveSigningAddressStorageProperty = presenceAwareOptionalAddress('activeSigningAddress')
+const OptionalActiveSimulationAddressStorageProperty = presenceAwareOptionalAddress('activeSimulationAddress')
 const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	openedPageV2: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,

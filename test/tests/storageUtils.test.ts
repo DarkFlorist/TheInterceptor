@@ -46,4 +46,14 @@ describe('local storage codecs', () => {
 			activeSimulationAddress: 1n,
 		})
 	})
+
+	test('distinguishes absent, explicitly cleared, and corrupt active-address properties', async () => {
+		assert.deepEqual(await browserStorageLocalGet('activeSigningAddress'), {})
+
+		storedItems.activeSigningAddress = 'missing'
+		assert.deepEqual(await browserStorageLocalGet('activeSigningAddress'), { activeSigningAddress: undefined })
+
+		storedItems.activeSigningAddress = 'not-an-address'
+		await assert.rejects(browserStorageLocalGet('activeSigningAddress'))
+	})
 })

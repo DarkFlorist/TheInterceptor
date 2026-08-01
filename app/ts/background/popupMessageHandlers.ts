@@ -48,7 +48,7 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerforma
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { updateRichListAddress } from '../utils/richList.js'
 import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply.js'
-import { assertSafeEoaOwner, getSafeContractState } from '../safe/safeCore.js'
+import { createSafeOwnerValidator, getSafeContractSnapshot } from '../safe/safeCore.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getPendingSafeSignerAddress } from './safeConfirmationResolver.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
@@ -295,9 +295,10 @@ export async function addOrModifyAddressBookEntry(ethereum: EthereumClientServic
 					message: `Switch Interceptor to chain ${ entry.data.chainId.toString() } before validating this Gnosis Safe.`,
 				}
 			}
-			const safeState = await getSafeContractState(ethereum, entry.data.address)
+			const { blockNumber, state: safeState } = await getSafeContractSnapshot(ethereum, entry.data.address)
+			const ownerValidator = createSafeOwnerValidator(ethereum, entry.data.address, { blockNumber, state: safeState })
 			await Promise.all(getSafeSignerAddresses(entry.data).map(async (safeSignerAddress) =>
-				await assertSafeEoaOwner(ethereum, entry.data.address, safeSignerAddress)
+				await ownerValidator.assertEoaOwner(safeSignerAddress)
 			))
 			entryToStore = { ...entry.data, safeVersion: safeState.version }
 		} catch(error) {

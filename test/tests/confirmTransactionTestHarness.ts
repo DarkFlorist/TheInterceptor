@@ -7,6 +7,8 @@ import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { addressString, bytes32String } from '../../app/ts/utils/bigint.js'
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
+import type { SafeEntry } from '../../app/ts/types/addressBookTypes.js'
+import type { SafeOwnerSignature, SafeStackTransaction, SafeTransactionStack } from '../../app/ts/types/safeTypes.js'
 
 export type RuntimeMessage = {
 	method?: string
@@ -21,6 +23,18 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export const hexToBytes = (hex: string) => Uint8Array.from(Buffer.from(hex.slice(2), 'hex'))
+
+export function createSafeAddressBookEntry(overrides: Partial<SafeEntry> = {}): SafeEntry {
+	return {
+		type: 'safe',
+		name: 'Treasury Safe',
+		address: activeAddress,
+		chainId: fakeRpcNetwork.chainId,
+		entrySource: 'User',
+		useAsActiveAddress: true,
+		...overrides,
+	}
+}
 
 export function createBrowserMock() {
 	const storageState: Record<string, unknown> = {}
@@ -205,6 +219,7 @@ export async function loadModules() {
 		onCloseWindowOrTab: confirmTransaction.onCloseWindowOrTab,
 		refreshPendingSafeSignerSelectionErrors: confirmTransaction.refreshPendingSafeSignerSelectionErrors,
 		resolvePendingRequestsForMissingConfirmationWindows: confirmTransaction.resolvePendingRequestsForMissingConfirmationWindows,
+		resolveSafeConfirmation: safeConfirmationResolver.resolveSafeConfirmation,
 		getPendingTransactionsAndMessages: storageVariables.getPendingTransactionsAndMessages,
 		getSafeTransactionStacks: storageVariables.getSafeTransactionStacks,
 		getInterceptorTransactionStack: storageVariables.getInterceptorTransactionStack,
@@ -308,7 +323,6 @@ export const safeSelectors = {
 	nonce: encodeFunctionCall(SAFE_ABI, 'nonce', []).slice(0, 10),
 	owners: encodeFunctionCall(SAFE_ABI, 'getOwners', []).slice(0, 10),
 	threshold: encodeFunctionCall(SAFE_ABI, 'getThreshold', []).slice(0, 10),
-	isOwner: encodeFunctionCall(SAFE_ABI, 'isOwner', ['0x0000000000000000000000000000000000000001']).slice(0, 10),
 	transactionHash: encodeFunctionCall(SAFE_ABI, 'getTransactionHash', [
 		'0x0000000000000000000000000000000000000001',
 		0n,
@@ -327,9 +341,9 @@ export const fakeSafeContract = {
 	nonce: 0n,
 	threshold: 2n,
 	owners: [] as bigint[],
-	ownerIsValid: true,
 	transactionHash: 0n,
 	ownerCode: '0x',
+	requestedCodeAddresses: [] as bigint[],
 	beforeVersionResponse: undefined as (() => Promise<void>) | undefined,
 	requestedRpcMethods: [] as string[],
 	failEthSimulate: false,
@@ -340,9 +354,9 @@ export function resetFakeSafeContractState() {
 	fakeSafeContract.nonce = 0n
 	fakeSafeContract.threshold = 2n
 	fakeSafeContract.owners = []
-	fakeSafeContract.ownerIsValid = true
 	fakeSafeContract.transactionHash = 0n
 	fakeSafeContract.ownerCode = '0x'
+	fakeSafeContract.requestedCodeAddresses.length = 0
 	fakeSafeContract.beforeVersionResponse = undefined
 	fakeSafeContract.requestedRpcMethods.length = 0
 	fakeSafeContract.failEthSimulate = false
@@ -362,8 +376,13 @@ export const fakeRequestHandler = {
 				return modules.serialize(modules.EthereumQuantity, 0n)
 			case 'eth_blockNumber':
 				return modules.serialize(modules.EthereumQuantity, 123n)
-			case 'eth_getCode':
-				return rpcRequest.params?.[0] === activeAddress ? '0x01' : fakeSafeContract.ownerCode
+		case 'eth_getCode': {
+			const rawAddress = rpcRequest.params?.[0]
+			if (typeof rawAddress !== 'string' && typeof rawAddress !== 'bigint') throw new Error('Malformed eth_getCode test request')
+			const requestedAddress = BigInt(rawAddress)
+			fakeSafeContract.requestedCodeAddresses.push(requestedAddress)
+			return requestedAddress === activeAddress ? '0x01' : fakeSafeContract.ownerCode
+		}
 			case 'eth_gasPrice':
 				return modules.serialize(modules.EthereumQuantity, 1n)
 			case 'eth_call': {
@@ -377,7 +396,6 @@ export const fakeRequestHandler = {
 					case safeSelectors.nonce: return encodeFunctionReturn(SAFE_ABI, 'nonce', [fakeSafeContract.nonce])
 					case safeSelectors.owners: return encodeFunctionReturn(SAFE_ABI, 'getOwners', [fakeSafeContract.owners.map(addressString)])
 					case safeSelectors.threshold: return encodeFunctionReturn(SAFE_ABI, 'getThreshold', [fakeSafeContract.threshold])
-					case safeSelectors.isOwner: return encodeFunctionReturn(SAFE_ABI, 'isOwner', [fakeSafeContract.ownerIsValid])
 					case safeSelectors.transactionHash: return encodeFunctionReturn(SAFE_ABI, 'getTransactionHash', [bytes32String(fakeSafeContract.transactionHash)])
 					default: throw new Error(`Unexpected eth_call selector: ${ selector }`)
 				}
@@ -422,6 +440,42 @@ export const signedTransaction = modules.mockSignTransaction(unsignedTransaction
 export const created = new Date('2024-01-01T00:00:00.000Z')
 export const oldTimestamp = new Date('2024-01-01T00:00:00.000Z')
 export const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }
+export const safeTestOwnerAccount = privateKeyToAccount('0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef')
+export const safeTestOwnerAddress = BigInt(safeTestOwnerAccount.address)
+
+export function createSafeStackTransactionFixture(options: {
+	readonly nonce?: bigint
+	readonly value?: bigint
+	readonly transactionIdentifier?: bigint
+	readonly signatures?: readonly SafeOwnerSignature[]
+} = {}): SafeStackTransaction {
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: options.value ?? 0n,
+		input: new Uint8Array(),
+	}, options.nonce ?? 0n)
+	return {
+		safeTx,
+		safeTxHash: BigInt(getSafeTxHash(safeTx)),
+		created,
+		websiteOrigin: 'https://example.com',
+		transactionIdentifier: options.transactionIdentifier ?? 70n,
+		signatures: options.signatures ?? [],
+	}
+}
+
+export function createSafeStackFixture(
+	transactions: readonly SafeStackTransaction[],
+): SafeTransactionStack {
+	return {
+		chainId: fakeRpcNetwork.chainId,
+		safeAddress: activeAddress,
+		safeVersion: '1.4.1',
+		baseNonce: transactions[0]?.safeTx.message.nonce ?? 0n,
+		threshold: 2n,
+		transactions,
+	}
+}
 export const popupVisualisation = {
 	statusCode: 'success' as const,
 	data: {
@@ -482,9 +536,12 @@ export const pendingTransaction = {
 		transactionToSimulate: popupVisualisation.data.transactionToSimulate,
 	} as const
 
-await modules.browserStorageLocalSet2({
-	pendingTransactionsAndMessages: [pendingTransaction],
-})
+export async function resetConfirmTransactionTestState() {
+	browserMock.reset()
+	resetFakeSafeContractState()
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction] })
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+}
 export function createDisconnectedPort() {
 	let postAttempts = 0
 	const event = {
