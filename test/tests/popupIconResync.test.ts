@@ -1238,6 +1238,8 @@ describe('popup icon sync', () => {
 				if (activeAccountButton !== undefined) await clickElement(activeAccountButton)
 			})
 			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Loaded Account'), true)
+			assert.equal(collectElements(dom.document.body, 'div').some((element) => hasClass(element, 'rich-mode-modal-content')), false)
+			assert.equal(collectElements(dom.document.body, 'p').some((element) => element.textContent === 'Amounts'), false)
 			assert.equal(hasAriaLabel(dom.document.body, 'Remove rich token USDC'), true)
 			assert.equal(hasAriaLabel(dom.document.body, 'Remove rich token ITEM #42'), true)
 			assert.equal(hasAriaLabel(dom.document.body, 'Remove rich token WETH'), true)

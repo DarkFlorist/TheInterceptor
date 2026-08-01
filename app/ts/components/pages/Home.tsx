@@ -701,10 +701,11 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 	})
 	const addingRichTokens = useComputed(() => availableRichTokens.value.filter((option) => addingRichTokenKeys.value.includes(getRichTokenKey(option))))
 	const failedAddedRichToken = useComputed(() => availableRichTokens.value.find((option) => getRichTokenKey(option) === failedAddedRichTokenKey.value))
-	const richBalanceTokenCountLabel = useComputed(() => {
+	const richBalanceAssetStatusLabel = useComputed(() => {
 		if (addingRichTokens.value.length !== 0) return `${ addingRichTokens.value.length.toString() } adding`
 		if (failedAddedRichToken.value !== undefined) return 'Needs attention'
-		return `${ enabledRichTokens.value.length.toString() } token${ enabledRichTokens.value.length === 1 ? '' : 's' }`
+		const assetCount = enabledRichTokens.value.length + 1
+		return `${ assetCount.toString() } asset${ assetCount === 1 ? '' : 's' }`
 	})
 	const richOperationStatus = useComputed(() => {
 		if (richTokenPending.value) return { className: 'is-saving', label: addingRichTokenKeys.value.length === 0 ? 'Saving…' : 'Scanning…' }
@@ -898,10 +899,9 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 						subtitle = { selectedRichAccount.value.addressBookEntry.name }
 					/>
 					<InterceptorDialogBody class = { `rich-mode-dialog-body${ showRichTokenPicker.value ? ' is-token-view' : '' }` }>
-						{ !showRichTokenPicker.value ? <div class = 'card rich-mode-modal-content'>
-							<div class = 'card-content rich-mode-balance-page'>
+						{ !showRichTokenPicker.value ? <div class = 'rich-mode-balance-page'>
 								<div class = 'rich-mode-modal-toolbar'>
-									<div class = 'rich-mode-modal-title-group'><p class = 'paragraph checkbox-text rich-mode-modal-section-title'>Amounts</p><span class = 'rich-mode-count-badge'>{ richBalanceTokenCountLabel.value }</span></div>
+									<span class = 'rich-mode-count-badge'>{ richBalanceAssetStatusLabel.value }</span>
 									<div class = 'actions'>
 										<button type = 'button' class = 'btn btn--ghost is-small' aria-label = 'Open token address book' data-tooltip = 'Open token address book' onClick = { () => { void sendPopupMessageToBackgroundPage({ method: 'popup_openAddressBook' }) } }>
 											<span class = 'icon'><img src = '../img/address-book.svg' width = '18' height = '18'/></span>
@@ -944,7 +944,6 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 								</> }
 							{ richTokenPendingLabel.value === undefined ? <></> : <p class = 'help is-light' role = 'status'>{ richTokenPendingLabel.value }</p> }
 							{ richTokenError.value === undefined || richTokenErrorTarget.value !== undefined ? <></> : <p class = 'help is-danger'>{ richTokenError.value }</p> }
-							</div>
 						</div> : <section class = 'rich-mode-token-view' role = 'region' aria-label = { `Select tokens for ${ selectedRichAccount.value.addressBookEntry.name }` }>
 						<header class = 'rich-mode-token-view-navigation'>
 							<button type = 'button' class = 'btn btn--ghost rich-mode-modal-back' aria-label = 'Back to balances' disabled = { richTokenPending.value } onClick = { hideRichTokenSelection }>‹</button>

@@ -3714,21 +3714,14 @@ header:has(form[role='search']) h1 {
 	white-space: nowrap;
 }
 
-.rich-mode-modal-content {
-	background: transparent;
-	border: 0;
-	margin: 0;
+.rich-mode-dialog-body {
+	padding: 0.75rem;
 }
 
-.rich-mode-modal-content > .card-content {
+.rich-mode-balance-page {
 	display: flex;
 	flex-direction: column;
 	min-height: 0;
-	padding: 0;
-}
-
-.rich-mode-dialog-body {
-	padding: 0.75rem;
 }
 
 .rich-mode-dialog-body.is-token-view {
@@ -3872,17 +3865,8 @@ header:has(form[role='search']) h1 {
 	align-items: center;
 	display: flex;
 	justify-content: space-between;
-	margin-bottom: 0.5rem;
-}
-
-.rich-mode-modal-title-group {
-	align-items: center;
-	display: flex;
-	gap: 0.4rem;
-}
-
-.rich-mode-modal-section-title {
-	font-weight: 600;
+	min-height: 2rem;
+	padding: 0 0.25rem 0.35rem;
 }
 
 .rich-mode-count-badge {
@@ -3907,9 +3891,7 @@ header:has(form[role='search']) h1 {
 }
 
 .rich-mode-balance-row--native {
-	background-color: var(--dialog-panel-color);
-	border-radius: 7px;
-	margin-bottom: 0.5rem;
+	border-bottom: 1px solid var(--alpha-005);
 }
 
 .rich-mode-balance-row.is-adding {
@@ -4082,8 +4064,6 @@ header:has(form[role='search']) h1 {
 }
 
 .rich-mode-configured-tokens {
-	background-color: var(--dialog-panel-color);
-	border-radius: 7px;
 	max-height: min(14em, 45vh);
 	overflow-y: auto;
 }
