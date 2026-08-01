@@ -8,5 +8,5 @@ test('rich-mode interactions disable transitions for reduced motion', async () =
 		assert.match(reducedMotionRules, new RegExp(`\\${ selector }[,\\s]`, 'u'))
 	}
 	assert.match(reducedMotionRules, /transition:\s*none;/u)
-	assert.match(reducedMotionRules, /\.rich-mode-save-status\.is-saving::before\s*\{\s*animation:\s*none;/u)
+	assert.match(reducedMotionRules, /\.rich-mode-save-status\.is-saving::before\s*,[\s\S]*\.rich-mode-save-status\.is-saved\s*\{\s*animation:\s*none;/u)
 })
