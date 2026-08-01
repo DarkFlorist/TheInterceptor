@@ -14,6 +14,16 @@ const changeActiveAddressScreenshotPath = path.resolve('docs/screenshots/dialog-
 const addAddressScreenshotPath = path.resolve('docs/screenshots/dialog-add-address.png')
 const searchableTokenAddress = `0x${ (0x2000n + 73n).toString(16).padStart(40, '0') }`
 const sleep = async (milliseconds: number) => await new Promise<void>((resolve) => globalThis.setTimeout(resolve, milliseconds))
+type DialogRect = { height: number, left: number, top: number, width: number }
+const getRichModeDialogRect = async (connection: CdpConnection) => await connection.evaluate<DialogRect | undefined>(`(() => {
+	const dialog = document.querySelector('.rich-mode-modal-card')
+	if (!(dialog instanceof HTMLElement)) return undefined
+	const rect = dialog.getBoundingClientRect()
+	return { height: rect.height, left: rect.left, top: rect.top, width: rect.width }
+})()`)
+const assertSameRichModeDialogRect = (expected: DialogRect | undefined, actual: DialogRect | undefined) => {
+	if (expected === undefined || actual === undefined || actual.height !== expected.height || actual.left !== expected.left || actual.top !== expected.top || actual.width !== expected.width) throw new Error(`Rich-mode dialog moved or resized between views: ${ JSON.stringify(expected) } -> ${ JSON.stringify(actual) }`)
+}
 const waitForCondition = async (connection: CdpConnection, description: string, expression: string) => {
 	for (let attempt = 0; attempt < 300; attempt += 1) {
 		const ready = await connection.evaluate<boolean>(expression)
@@ -133,17 +143,49 @@ try {
 	})()`)
 	await clickFirstAriaLabelPrefix(popup, 'Edit balances for ')
 	await waitForCondition(popup, 'token picker enabled', `document.querySelector('[aria-label="Select tokens"]')?.disabled === false`)
+	await popup.send('Emulation.setDeviceMetricsOverride', {
+		width: 520,
+		height: 420,
+		deviceScaleFactor: 1,
+		mobile: false,
+	})
+	await sleep(250)
+	const constrainedBalanceDialogRect = await getRichModeDialogRect(popup)
+	if (constrainedBalanceDialogRect === undefined || constrainedBalanceDialogRect.height > 388) throw new Error(`Rich-mode dialog exceeds the constrained viewport: ${ JSON.stringify(constrainedBalanceDialogRect) }`)
+	await clickAriaLabel(popup, 'Select tokens')
+	await waitForText(popup, 'USDC')
+	await sleep(250)
+	assertSameRichModeDialogRect(constrainedBalanceDialogRect, await getRichModeDialogRect(popup))
+	await waitForCondition(popup, 'constrained token results scroll', `(() => {
+		const results = document.querySelector('[aria-label="Matching address-book tokens"]')
+		return results instanceof HTMLElement && results.scrollHeight > results.clientHeight
+	})()`)
+	await clickAriaLabel(popup, 'Back to balances')
+	await sleep(250)
+	assertSameRichModeDialogRect(constrainedBalanceDialogRect, await getRichModeDialogRect(popup))
+	await popup.send('Emulation.setDeviceMetricsOverride', {
+		width: 520,
+		height: 780,
+		deviceScaleFactor: 1,
+		mobile: false,
+	})
+	await sleep(250)
+	const balanceDialogRect = await getRichModeDialogRect(popup)
 	await clickAriaLabel(popup, 'Select tokens')
 	await waitForText(popup, 'USDC')
 	await waitForText(popup, 'ITEM #42')
+	await sleep(250)
+	assertSameRichModeDialogRect(balanceDialogRect, await getRichModeDialogRect(popup))
 	await clickTokenResult(popup, 'USDC')
 	await clickTokenResult(popup, 'ITEM #42')
 	await sleep(250)
+	assertSameRichModeDialogRect(balanceDialogRect, await getRichModeDialogRect(popup))
 	await captureScreenshot(popup, availableScreenshotPath)
 
 	await clickAriaLabel(popup, 'Add selected tokens')
 	await waitForText(popup, 'Preparing USDC')
 	await sleep(150)
+	assertSameRichModeDialogRect(balanceDialogRect, await getRichModeDialogRect(popup))
 	await captureScreenshot(popup, detectingScreenshotPath)
 	await waitForCondition(
 		popup,

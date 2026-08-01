@@ -880,7 +880,7 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 					showRichTokenPicker.value ? hideRichTokenSelection() : closeRichBalanceDialog()
 				} }
 			>
-				<InterceptorDialogSurface ariaLabel = { showRichTokenPicker.value ? `Select tokens for ${ selectedRichAccount.value.addressBookEntry.name }` : `Balance editor for ${ selectedRichAccount.value.addressBookEntry.name }` } class = { `rich-mode-modal-card${ showRichTokenPicker.value ? ' is-selecting-tokens' : '' }` } onBackdropClick = { closeRichBalanceDialog } size = 'large'>
+				<InterceptorDialogSurface ariaLabel = { showRichTokenPicker.value ? `Select tokens for ${ selectedRichAccount.value.addressBookEntry.name }` : `Balance editor for ${ selectedRichAccount.value.addressBookEntry.name }` } class = 'rich-mode-modal-card' onBackdropClick = { closeRichBalanceDialog } size = 'large'>
 					<InterceptorDialogHeader
 						accessory = { <div class = 'rich-mode-header-tools'>
 							{ richOperationStatus.value === undefined ? <></> : <span class = { `rich-mode-save-status ${ richOperationStatus.value.className }` } role = 'status'>{ richOperationStatus.value.label }</span> }

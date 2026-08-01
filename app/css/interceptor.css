@@ -3681,13 +3681,12 @@ header:has(form[role='search']) h1 {
 }
 
 .rich-mode-modal-card {
+	flex-shrink: 0;
+	height: min(31rem, calc(100% - 2rem));
 	max-height: calc(100% - 2rem);
+	min-height: 0;
 	position: relative;
 	width: calc(100% - 2rem);
-}
-
-.rich-mode-modal-card.is-selecting-tokens {
-	min-height: min(31rem, calc(100% - 2rem));
 }
 
 .rich-mode-modal-back {
