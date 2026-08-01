@@ -3681,10 +3681,11 @@ header:has(form[role='search']) h1 {
 }
 
 .rich-mode-modal-card {
+	--rich-mode-dialog-height: min(31rem, calc(100% - 2rem));
 	flex-shrink: 0;
-	height: min(31rem, calc(100% - 2rem));
-	max-height: calc(100% - 2rem);
-	min-height: 0;
+	height: var(--rich-mode-dialog-height);
+	max-height: var(--rich-mode-dialog-height);
+	min-height: var(--rich-mode-dialog-height);
 	position: relative;
 	width: calc(100% - 2rem);
 }
@@ -3714,13 +3715,18 @@ header:has(form[role='search']) h1 {
 }
 
 .rich-mode-dialog-body {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
 	padding: 0.75rem;
 }
 
 .rich-mode-balance-page {
 	display: flex;
+	flex: 1 1 auto;
 	flex-direction: column;
 	min-height: 0;
+	overflow: hidden;
 }
 
 .rich-mode-dialog-body.is-token-view {
@@ -4063,7 +4069,8 @@ header:has(form[role='search']) h1 {
 }
 
 .rich-mode-configured-tokens {
-	max-height: min(14em, 45vh);
+	flex: 1 1 0;
+	min-height: 0;
 	overflow-y: auto;
 }
 

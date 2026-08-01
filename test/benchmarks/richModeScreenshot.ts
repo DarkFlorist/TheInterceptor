@@ -24,6 +24,10 @@ const getRichModeDialogRect = async (connection: CdpConnection) => await connect
 const assertSameRichModeDialogRect = (expected: DialogRect | undefined, actual: DialogRect | undefined) => {
 	if (expected === undefined || actual === undefined || actual.height !== expected.height || actual.left !== expected.left || actual.top !== expected.top || actual.width !== expected.width) throw new Error(`Rich-mode dialog moved or resized between views: ${ JSON.stringify(expected) } -> ${ JSON.stringify(actual) }`)
 }
+const getConfiguredTokenListSize = async (connection: CdpConnection) => await connection.evaluate<{ clientHeight: number, scrollHeight: number } | undefined>(`(() => {
+	const list = document.querySelector('.rich-mode-configured-tokens')
+	return list instanceof HTMLElement ? { clientHeight: list.clientHeight, scrollHeight: list.scrollHeight } : undefined
+})()`)
 const waitForCondition = async (connection: CdpConnection, description: string, expression: string) => {
 	for (let attempt = 0; attempt < 300; attempt += 1) {
 		const ready = await connection.evaluate<boolean>(expression)
@@ -198,6 +202,7 @@ try {
 		`document.querySelector(${ JSON.stringify('[aria-label="ITEM #42 rich amount"]') }) !== null && document.body?.textContent?.includes('Preparing ITEM #42') === false`,
 	)
 	await sleep(250)
+	assertSameRichModeDialogRect(balanceDialogRect, await getRichModeDialogRect(popup))
 	await captureScreenshot(popup, screenshotPath)
 
 	await popup.evaluate(`(() => {
@@ -228,7 +233,7 @@ try {
 				chainId: '0x1',
 				address: contact.address,
 				nativeAmount: '0x' + ((1000n + BigInt(index)) * 10n ** 18n).toString(16),
-				tokenBalances: richTokens.map((token) => ({ tokenAddress: token.tokenAddress, amount: '0x' + (BigInt(index + 1) * 1000n * 10n ** 18n).toString(16) }))
+				tokenBalances: (index === 0 ? [] : index === 1 ? richTokens : richTokens.slice(0, index % 4 + 1)).map((token) => ({ tokenAddress: token.tokenAddress, amount: '0x' + (BigInt(index + 1) * 1000n * 10n ** 18n).toString(16) }))
 			})),
 		})
 		return true
@@ -261,6 +266,26 @@ try {
 	await captureScreenshot(popup, manyBalancesScreenshotPath)
 	await clickAriaLabel(popup, 'Edit balances for Rich account 2')
 	await waitForCondition(popup, 'second account balances', `document.querySelector('[aria-label="ETH rich amount for Rich account 2"]')?.value === '1,001' && document.querySelector('[aria-label="TOK1 rich amount"]')?.value === '2,000'`)
+	await sleep(250)
+	const denseAccountDialogRect = await getRichModeDialogRect(popup)
+	const denseTokenListSize = await getConfiguredTokenListSize(popup)
+	if (denseTokenListSize === undefined || denseTokenListSize.scrollHeight <= denseTokenListSize.clientHeight) throw new Error(`Dense rich-token list does not scroll internally: ${ JSON.stringify(denseTokenListSize) }`)
+	await clickAriaLabel(popup, 'Previous rich account')
+	await waitForCondition(popup, 'empty first account balances', `document.querySelector('[aria-label="ETH rich amount for Rich account 1"]')?.value === '1,000' && document.querySelector('[aria-label="TOK1 rich amount"]') === null`)
+	await sleep(250)
+	assertSameRichModeDialogRect(denseAccountDialogRect, await getRichModeDialogRect(popup))
+	const emptyTokenListSize = await getConfiguredTokenListSize(popup)
+	if (emptyTokenListSize?.clientHeight !== denseTokenListSize.clientHeight) throw new Error(`Rich-token list viewport resized between dense and empty accounts: ${ JSON.stringify(denseTokenListSize) } -> ${ JSON.stringify(emptyTokenListSize) }`)
+	await clickAriaLabel(popup, 'Next rich account')
+	await waitForCondition(popup, 'restored dense second account balances', `document.querySelector('[aria-label="ETH rich amount for Rich account 2"]')?.value === '1,001' && document.querySelector('[aria-label="TOK14 rich amount"]')?.value === '2,000'`)
+	await sleep(250)
+	assertSameRichModeDialogRect(denseAccountDialogRect, await getRichModeDialogRect(popup))
+	await clickAriaLabel(popup, 'Next rich account')
+	await waitForCondition(popup, 'smaller third account balances', `document.querySelector('[aria-label="ETH rich amount for Rich account 3"]')?.value === '1,002' && document.querySelector('[aria-label="TOK3 rich amount"]')?.value === '3,000' && document.querySelector('[aria-label="TOK4 rich amount"]') === null`)
+	await sleep(250)
+	assertSameRichModeDialogRect(denseAccountDialogRect, await getRichModeDialogRect(popup))
+	await clickAriaLabel(popup, 'Previous rich account')
+	await waitForCondition(popup, 'second account balances for screenshot', `document.querySelector('[aria-label="TOK14 rich amount"]')?.value === '2,000'`)
 	await sleep(250)
 	await captureScreenshot(popup, accountBalancesScreenshotPath)
 
