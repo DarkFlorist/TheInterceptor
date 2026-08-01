@@ -99,6 +99,7 @@ type TestDomNode = {
 	readonly blur?: () => void
 	readonly dispatchEvent?: (event: { bubbles?: boolean, type: string }) => boolean
 	readonly getAttribute?: (name: string) => string | null
+	scrollTop?: number
 	value?: string
 }
 
@@ -1095,9 +1096,14 @@ describe('popup icon sync', () => {
 		const dom = installDomMock()
 		const clipboardMock = installClipboardMock()
 		let resolveNativeAmountReply = (_reply: unknown) => undefined
+		let tokenAddRequestCount = 0
 		const nativeAmountReply = new Promise<unknown>((resolve) => { resolveNativeAmountReply = resolve })
 		const { messageListener } = installBrowserMock(async (message) => {
 			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_modifyMakeMeRich' && 'data' in message && typeof message.data === 'object' && message.data !== null && 'nativeAmount' in message.data) return await nativeAmountReply
+			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_modifyRichToken') {
+				tokenAddRequestCount += 1
+				return tokenAddRequestCount === 1 ? { method: 'popup_modifyRichToken', result: { success: true, richToken: undefined } } : undefined
+			}
 			return undefined
 		})
 		const secondAddress = '0x2000000000000000000000000000000000000002'
@@ -1244,7 +1250,7 @@ describe('popup icon sync', () => {
 			if (nativeAmountInput === undefined) throw new Error('Expected native amount input')
 			await act(async () => { await changeElementValue(nativeAmountInput, '25') })
 			assert.equal(collectElements(dom.document.body, 'span').some((span) => hasClass(span, 'rich-mode-save-status') && span.textContent === 'Saving…'), true)
-			const pendingCloseButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Close balance editor')
+			const pendingCloseButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Close balance manager')
 			assert.equal(isButtonDisabled(pendingCloseButton), true)
 			await act(async () => {
 				resolveNativeAmountReply({ method: 'popup_modifyMakeMeRich', result: { success: false, error: 'Unable to persist native amount.' } })
@@ -1267,7 +1273,7 @@ describe('popup icon sync', () => {
 			assert.deepEqual(amountUnits, ['ETH?', 'USDC', 'ITEM', 'WETH'])
 			assert.equal(hasAriaLabel(dom.document.body, 'Reset USDC rich amount to 200,000'), true)
 			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent === 'Close'), false)
-			const closeBalanceEditor = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Close balance editor')
+			const closeBalanceEditor = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Close balance manager')
 			await act(async () => {
 				if (closeBalanceEditor !== undefined) await clickElement(closeBalanceEditor)
 			})
@@ -1286,11 +1292,10 @@ describe('popup icon sync', () => {
 				if (chooseTokenButton !== undefined) await clickElement(chooseTokenButton)
 			})
 			assert.equal(hasAriaLabel(dom.document.body, 'Select tokens for Second Account'), true)
-			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Second Account'), true)
-			const recessedBalancePage = collectElements(dom.document.body, 'div').find((element) => hasClass(element, 'rich-mode-balance-page'))
-			assert.equal(recessedBalancePage?.getAttribute?.('aria-hidden'), 'true')
-			assert.equal(recessedBalancePage?.getAttribute?.('inert'), true)
-			assert.equal(hasAriaLabel(dom.document.body, 'Configured rich tokens'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Second Account'), false)
+			assert.equal(collectElements(dom.document.body, 'section').some((element) => hasClass(element, 'rich-mode-token-view')), true)
+			assert.equal(collectElements(dom.document.body, 'div').some((element) => hasClass(element, 'rich-mode-balance-page')), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'Configured rich tokens'), false)
 			assert.equal(collectElements(dom.document.body, 'div').filter((element) => element.getAttribute?.('aria-modal') === 'true').length, 1)
 			const tokenSearch = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')
 			assert.equal(tokenSearch?.getAttribute?.('placeholder'), 'Search 2 address-book tokens…')
@@ -1330,14 +1335,57 @@ describe('popup icon sync', () => {
 			assert.equal(selectedTokenResult?.getAttribute?.('aria-selected'), true)
 			assert.equal(hasAriaLabel(dom.document.body, 'Selected tokens'), true)
 			assert.equal(hasAriaLabel(dom.document.body, 'Remove DAI from selection'), true)
+			const richBalanceDialog = collectElements(dom.document.body, 'div').find((element) => hasClass(element, 'interceptor-dialog'))
+			await act(() => { richBalanceDialog?.dispatchEvent?.({ type: 'keydown', key: 'Escape', bubbles: true }) })
+			assert.equal(hasAriaLabel(dom.document.body, 'Select tokens for Second Account'), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Second Account'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Configured rich tokens'), true)
+			const reopenTokenButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Select tokens')
+			assert.equal(dom.document.activeElement, reopenTokenButton)
+			await act(async () => { if (reopenTokenButton !== undefined) await clickElement(reopenTokenButton) })
+			const restoredTokenSearch = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')
+			assert.equal(restoredTokenSearch?.getAttribute?.('value'), 'DAI')
+			assert.equal(collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label')?.startsWith('Select rich token DAI '))?.getAttribute?.('aria-selected'), true)
 			const clearSelectionButton = collectElements(dom.document.body, 'button').find((button) => hasClass(button, 'rich-mode-clear-token-selection'))
 			await act(async () => { if (clearSelectionButton !== undefined) await clickElement(clearSelectionButton) })
 			assert.equal(hasAriaLabel(dom.document.body, 'Selected tokens'), false)
 			const tokenSearchAfterClear = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')
 			await act(async () => { if (tokenSearchAfterClear !== undefined) await pressElementKey(tokenSearchAfterClear, 'Enter') })
+			const needsScanFilterBeforeAdd = collectElements(dom.document.body, 'button').find((button) => button.textContent === 'Needs scan')
+			await act(async () => { if (needsScanFilterBeforeAdd !== undefined) await clickElement(needsScanFilterBeforeAdd) })
+			const tokenResultsBeforeAdd = collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('id') === 'rich-token-search-results')
+			if (tokenResultsBeforeAdd !== undefined) {
+				tokenResultsBeforeAdd.scrollTop = 41
+				tokenResultsBeforeAdd.dispatchEvent?.({ type: 'scroll' })
+			}
 			const addSelectedTokensButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Add selected tokens')
 			assert.equal(addSelectedTokensButton?.textContent, 'Add 1 token')
-			assert.equal(hasAriaLabel(dom.document.body, 'DAI rich amount'), false)
+			await act(async () => {
+				if (addSelectedTokensButton !== undefined) await clickElement(addSelectedTokensButton)
+				await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
+			})
+			assert.equal(hasAriaLabel(dom.document.body, 'Select tokens for Second Account'), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Second Account'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'DAI rich amount'), true)
+			const reopenAfterAddButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Select tokens')
+			await act(async () => { if (reopenAfterAddButton !== undefined) await clickElement(reopenAfterAddButton) })
+			assert.equal(collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')?.getAttribute?.('value'), 'DAI')
+			assert.equal(collectElements(dom.document.body, 'button').find((button) => button.textContent === 'Needs scan')?.getAttribute?.('aria-pressed'), true)
+			assert.equal(collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('id') === 'rich-token-search-results')?.scrollTop, 41)
+			assert.equal(hasAriaLabel(dom.document.body, 'Selected tokens'), false)
+			const searchAfterSuccessfulAdd = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')
+			await act(async () => { if (searchAfterSuccessfulAdd !== undefined) await inputElementValue(searchAfterSuccessfulAdd, '') })
+			const allFilterAfterSuccessfulAdd = collectElements(dom.document.body, 'button').find((button) => button.textContent === 'All' && button.getAttribute?.('aria-pressed') !== null)
+			await act(async () => { if (allFilterAfterSuccessfulAdd !== undefined) await clickElement(allFilterAfterSuccessfulAdd) })
+			const itemTokenResult = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label')?.startsWith('Select rich token ITEM #42 '))
+			await act(async () => { if (itemTokenResult !== undefined) await clickElement(itemTokenResult) })
+			const addItemButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Add selected tokens')
+			await act(async () => {
+				if (addItemButton !== undefined) await clickElement(addItemButton)
+				await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
+			})
+			assert.equal(hasAriaLabel(dom.document.body, 'Remove failed rich token ITEM #42'), true)
+			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent === 'Retry'), true)
 		} finally {
 			clipboardMock.restore()
 			dom.restore()
@@ -1363,6 +1411,12 @@ describe('popup icon sync', () => {
 			erc1155StorageOrder: undefined,
 			enabled: false,
 		}
+		const secondTokenOption = {
+			...tokenOption,
+			tokenAddress: '0x6b175474e89094c44da98b954eedeac495271d0f',
+			name: 'Dai Stablecoin',
+			symbol: 'DAI',
+		}
 		const emptyProfiles = [{ chainId: '0x1', address: loadedAddress, nativeAmount: '0xad78ebc5ac620000', tokenBalances: [] }, { chainId: '0x1', address: secondAddress, nativeAmount: '0x6124fee993bc0000', tokenBalances: [] }]
 		try {
 			Object.defineProperty(globalThis, 'window', {
@@ -1380,7 +1434,7 @@ describe('popup icon sync', () => {
 						settings: { ...defaultSettings, activeSimulationAddress: loadedAddress, simulationMode: true },
 						makeCurrentAddressRich: true,
 						richAccountBalances: emptyProfiles,
-						richTokenOptions: [tokenOption],
+						richTokenOptions: [tokenOption, secondTokenOption],
 					}),
 				}, undefined, () => undefined)
 			})
@@ -1395,7 +1449,26 @@ describe('popup icon sync', () => {
 			await act(async () => { await clickElement(chooseTokenButton) })
 			assert.equal(hasAriaLabel(dom.document.body, 'Select tokens for Loaded Account'), true)
 			assert.equal(collectElements(dom.document.body, 'div').filter((element) => element.getAttribute?.('aria-modal') === 'true').length, 1)
-			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Loaded Account'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Loaded Account'), false)
+			const needsScanFilter = collectElements(dom.document.body, 'button').find((button) => button.textContent === 'Needs scan')
+			await act(async () => { if (needsScanFilter !== undefined) await clickElement(needsScanFilter) })
+			const tokenSearch = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')
+			await act(async () => {
+				if (tokenSearch !== undefined) {
+					await pressElementKey(tokenSearch, 'ArrowDown')
+					await pressElementKey(tokenSearch, 'Enter')
+				}
+			})
+			const addSelectedTokensButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Add selected tokens')
+			await act(async () => {
+				if (addSelectedTokensButton !== undefined) await clickElement(addSelectedTokensButton)
+				await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
+			})
+			assert.equal(dom.document.body.textContent?.includes('Needs attention'), true)
+			const reopenFailedSelectionButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Select tokens')
+			await act(async () => { if (reopenFailedSelectionButton !== undefined) await clickElement(reopenFailedSelectionButton) })
+			assert.equal(collectElements(dom.document.body, 'button').find((button) => button.textContent === 'Needs scan')?.getAttribute?.('aria-pressed'), true)
+			assert.equal(collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')?.getAttribute?.('aria-activedescendant'), 'rich-token-option-1')
 
 			await act(() => {
 				listener?.({
@@ -1406,14 +1479,21 @@ describe('popup icon sync', () => {
 						makeCurrentAddressRich: true,
 						richList: [{ addressBookEntry: loadedAddressBookEntry, makingRich: false, type: 'UserAdded' }, { addressBookEntry: secondAddressBookEntry, makingRich: true, type: 'UserAdded' }],
 						richAccountBalances: emptyProfiles,
-						richTokenOptions: [tokenOption],
+						richTokenOptions: [tokenOption, secondTokenOption],
 					}),
 				}, undefined, () => undefined)
 			})
 			await act(async () => { await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) }) })
 			assert.equal(hasAriaLabel(dom.document.body, 'Select tokens for Loaded Account'), false)
 			assert.equal(collectElements(dom.document.body, 'div').filter((element) => element.getAttribute?.('aria-modal') === 'true').length, 0)
-			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_modifyRichToken'), false)
+			assert.equal(sentMessages.filter((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_modifyRichToken').length, 1)
+			const secondAccountButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Edit balances for Second Account')
+			await act(async () => { if (secondAccountButton !== undefined) await clickElement(secondAccountButton) })
+			const selectTokensForSecondAccount = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Select tokens')
+			await act(async () => { if (selectTokensForSecondAccount !== undefined) await clickElement(selectTokensForSecondAccount) })
+			assert.equal(collectElements(dom.document.body, 'button').find((button) => button.textContent === 'All' && button.getAttribute?.('aria-pressed') !== null)?.getAttribute?.('aria-pressed'), true)
+			assert.equal(collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')?.getAttribute?.('aria-activedescendant'), 'rich-token-option-0')
+			assert.equal(dom.document.body.textContent?.includes('Needs attention'), false)
 		} finally {
 			clipboardMock.restore()
 			dom.restore()
@@ -1486,6 +1566,9 @@ describe('popup icon sync', () => {
 			const addSelectedTokensButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Add selected tokens')
 			if (addSelectedTokensButton === undefined) throw new Error('Expected add-selected-tokens button')
 			await act(async () => { await clickElement(addSelectedTokensButton) })
+			assert.equal(hasAriaLabel(dom.document.body, 'Select tokens for Loaded Account'), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Loaded Account'), true)
+			assert.equal(dom.document.body.textContent?.includes('Scanning storage…'), true)
 			const modifyTokenRequest = sentMessages.find((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_modifyRichToken')
 			assert.equal(typeof modifyTokenRequest === 'object' && modifyTokenRequest !== null && 'data' in modifyTokenRequest && typeof modifyTokenRequest.data === 'object' && modifyTokenRequest.data !== null && 'address' in modifyTokenRequest.data && modifyTokenRequest.data.address, loadedAddress)
 

@@ -15,7 +15,7 @@ import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon, ChevronIcon, OpenInNewIcon, SearchIcon, TrashIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { type Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
-import { useEffect, useId } from 'preact/hooks'
+import { useEffect, useId, useRef } from 'preact/hooks'
 import { type DeltaUnit, TimePicker, type TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
 import { assertNever } from '../../utils/typescript.js'
 import { addressString, bigintSecondsToDate } from '../../utils/bigint.js'
@@ -31,7 +31,7 @@ import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import type { ComponentChildren, JSX } from 'preact'
 import { DropDownMenuButtonContent } from '../subcomponents/DropDownMenu.js'
-import { InterceptorDialogBody, InterceptorDialogHeader, InterceptorDialogSurface } from '../subcomponents/InterceptorDialog.js'
+import { InterceptorDialogBody, InterceptorDialogFooter, InterceptorDialogHeader, InterceptorDialogSurface } from '../subcomponents/InterceptorDialog.js'
 
 function scheduleAfterPaint(callback: () => void) {
 	if (typeof globalThis.requestAnimationFrame === 'function' && typeof globalThis.cancelAnimationFrame === 'function') {
@@ -421,6 +421,7 @@ function RichBalanceSummary({ profile, tokenOptions, nativeCurrencyTicker }: {
 }
 
 function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTicker, activeAddress, richList, richTokenOptions, richAccountBalances, chainId, renameAddressCallBack, isInitialHomeDataLoaded }: RichListParams) {
+	const selectRichTokensButtonRef = useRef<HTMLButtonElement>(null)
 	async function enableMakeCurrentAddressRich(enabled: boolean) {
 		if (!isInitialHomeDataLoaded.value) return
 		sendPopupMessageToBackgroundPage( { method: 'popup_modifyMakeMeRich', data: { add: enabled, address: 'CurrentAddress'} } )
@@ -456,11 +457,14 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 	const richTokenSearch = useSignal('')
 	const richTokenFilter = useSignal<'All' | 'ERC20' | 'ERC1155' | 'Ready' | 'NeedsScan'>('All')
 	const highlightedRichTokenIndex = useSignal(0)
+	const richTokenResultsScrollTop = useSignal(0)
 	const recentRichTokenKeys = useSignal<readonly string[]>([])
 	const showRichBalanceDialog = useSignal(false)
 	const showRichTokenPicker = useSignal(false)
 	const selectedRichTokenKeys = useSignal<readonly string[]>([])
-	const newlyAddedRichTokenKey = useSignal<string | undefined>(undefined)
+	const addingRichTokenKeys = useSignal<readonly string[]>([])
+	const failedAddedRichTokenKey = useSignal<string | undefined>(undefined)
+	const newlyAddedRichTokenKeys = useSignal<readonly string[]>([])
 	const selectedRichAddress = useSignal<bigint | undefined>(undefined)
 	const getRichTokenLabel = (option: RichTokenOption) => option.tokenId === undefined ? option.symbol : `${ option.symbol } #${ option.tokenId.toString() }`
 	const getRichTokenKey = (option: RichTokenOption) => `${ option.tokenAddress.toString() }:${ option.tokenId?.toString() ?? 'erc20' }`
@@ -472,6 +476,23 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 		const timeout = globalThis.setTimeout(() => { richTokenSaveConfirmedAddress.value = undefined }, 1600)
 		return () => { globalThis.clearTimeout(timeout) }
 	})
+	useSignalEffect(() => {
+		if (newlyAddedRichTokenKeys.value.length === 0) return
+		const timeout = globalThis.setTimeout(() => { newlyAddedRichTokenKeys.value = [] }, 1800)
+		return () => { globalThis.clearTimeout(timeout) }
+	})
+	const resetRichDialogViewState = () => {
+		richTokenSearch.value = ''
+		richTokenFilter.value = 'All'
+		highlightedRichTokenIndex.value = 0
+		richTokenResultsScrollTop.value = 0
+		selectedRichTokenKeys.value = []
+		addingRichTokenKeys.value = []
+		failedAddedRichTokenKey.value = undefined
+		newlyAddedRichTokenKeys.value = []
+		richTokenError.value = undefined
+		richTokenErrorTarget.value = undefined
+	}
 
 	const setRichTokenEnabled = async (option: RichTokenOption, enabled: boolean, targetAddress?: bigint) => {
 		const address = targetAddress ?? selectedRichAccount.value?.addressBookEntry.address
@@ -521,16 +542,23 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 		if (address === undefined || richTokenPending.value) return
 		const options = availableRichTokens.value.filter((option) => selectedRichTokenKeys.value.includes(getRichTokenKey(option)))
 		if (options.length === 0) return
+		showRichTokenPicker.value = false
+		addingRichTokenKeys.value = options.map(getRichTokenKey)
+		failedAddedRichTokenKey.value = undefined
 		const addedKeys: string[] = []
 		for (const option of options) {
-			if (!await setRichTokenEnabled(option, true, address)) break
-			addedKeys.push(getRichTokenKey(option))
+			const tokenKey = getRichTokenKey(option)
+			if (!await setRichTokenEnabled(option, true, address)) {
+				failedAddedRichTokenKey.value = tokenKey
+				break
+			}
+			addedKeys.push(tokenKey)
+			addingRichTokenKeys.value = addingRichTokenKeys.value.filter((key) => key !== tokenKey)
 		}
+		addingRichTokenKeys.value = []
 		selectedRichTokenKeys.value = selectedRichTokenKeys.value.filter((key) => !addedKeys.includes(key))
 		if (addedKeys.length !== options.length) return
-		newlyAddedRichTokenKey.value = addedKeys[0]
-		richTokenSearch.value = ''
-		showRichTokenPicker.value = false
+		newlyAddedRichTokenKeys.value = addedKeys
 	}
 
 	const saveNativeAmount = async (amount: bigint) => {
@@ -653,8 +681,7 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 		if (selectedAddress === undefined || richAccounts.value.some((account) => account.addressBookEntry.address === selectedAddress)) return
 		showRichBalanceDialog.value = false
 		showRichTokenPicker.value = false
-		richTokenSearch.value = ''
-		selectedRichTokenKeys.value = []
+		resetRichDialogViewState()
 		selectedRichAddress.value = undefined
 	})
 	const selectedRichProfile = useComputed(() => {
@@ -671,6 +698,19 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 	const availableRichTokens = useComputed(() => {
 		const balances = selectedRichProfile.value?.tokenBalances ?? []
 		return richTokenOptions.value.filter((option) => !balances.some((balance) => sameRichTokenIdentity(balance, option)))
+	})
+	const addingRichTokens = useComputed(() => availableRichTokens.value.filter((option) => addingRichTokenKeys.value.includes(getRichTokenKey(option))))
+	const failedAddedRichToken = useComputed(() => availableRichTokens.value.find((option) => getRichTokenKey(option) === failedAddedRichTokenKey.value))
+	const richBalanceTokenCountLabel = useComputed(() => {
+		if (addingRichTokens.value.length !== 0) return `${ addingRichTokens.value.length.toString() } adding`
+		if (failedAddedRichToken.value !== undefined) return 'Needs attention'
+		return `${ enabledRichTokens.value.length.toString() } token${ enabledRichTokens.value.length === 1 ? '' : 's' }`
+	})
+	const richOperationStatus = useComputed(() => {
+		if (richTokenPending.value) return { className: 'is-saving', label: addingRichTokenKeys.value.length === 0 ? 'Saving…' : 'Scanning…' }
+		if (richTokenError.value !== undefined) return { className: 'is-error', label: 'Needs attention' }
+		if (richTokenSaveConfirmedAddress.value === selectedRichAddress.value) return { className: 'is-saved', label: '✓ Saved' }
+		return undefined
 	})
 	const matchingAvailableRichTokens = useComputed(() => {
 		const filteredByType = availableRichTokens.value.filter((option) => {
@@ -710,41 +750,32 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 		if (nextAccount === undefined) return
 		selectedRichAddress.value = nextAccount.addressBookEntry.address
 		showRichTokenPicker.value = false
-		richTokenSearch.value = ''
-		richTokenFilter.value = 'All'
-		selectedRichTokenKeys.value = []
-		newlyAddedRichTokenKey.value = undefined
-		richTokenError.value = undefined
-		richTokenErrorTarget.value = undefined
+		resetRichDialogViewState()
 	}
 	const closeRichBalanceDialog = () => {
 		if (richTokenPending.value) return
 		showRichBalanceDialog.value = false
 		showRichTokenPicker.value = false
-		richTokenSearch.value = ''
-		richTokenFilter.value = 'All'
-		selectedRichTokenKeys.value = []
-		newlyAddedRichTokenKey.value = undefined
-		richTokenError.value = undefined
-		richTokenErrorTarget.value = undefined
+		resetRichDialogViewState()
 	}
 	const showRichTokenSelection = () => {
-		richTokenSearch.value = ''
-		richTokenFilter.value = 'All'
-		highlightedRichTokenIndex.value = 0
-		selectedRichTokenKeys.value = []
-		newlyAddedRichTokenKey.value = undefined
-		richTokenError.value = undefined
-		richTokenErrorTarget.value = undefined
 		showRichTokenPicker.value = true
 	}
 	const hideRichTokenSelection = () => {
 		if (richTokenPending.value) return
 		showRichTokenPicker.value = false
-		richTokenSearch.value = ''
-		richTokenFilter.value = 'All'
-		highlightedRichTokenIndex.value = 0
-		selectedRichTokenKeys.value = []
+		globalThis.queueMicrotask(() => { selectRichTokensButtonRef.current?.focus() })
+	}
+	const retryFailedRichTokenSelection = () => {
+		if (failedAddedRichTokenKey.value === undefined || richTokenPending.value) return
+		failedAddedRichTokenKey.value = undefined
+		void addSelectedRichTokens()
+	}
+	const removeFailedRichTokenSelection = () => {
+		const failedKey = failedAddedRichTokenKey.value
+		if (failedKey === undefined || richTokenPending.value) return
+		selectedRichTokenKeys.value = selectedRichTokenKeys.value.filter((key) => key !== failedKey)
+		failedAddedRichTokenKey.value = undefined
 		richTokenError.value = undefined
 		richTokenErrorTarget.value = undefined
 	}
@@ -848,11 +879,11 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 					showRichTokenPicker.value ? hideRichTokenSelection() : closeRichBalanceDialog()
 				} }
 			>
-				<InterceptorDialogSurface ariaLabel = { `Balance editor for ${ selectedRichAccount.value.addressBookEntry.name }` } class = { `rich-mode-modal-card${ showRichTokenPicker.value ? ' is-selecting-tokens' : '' }` } onBackdropClick = { closeRichBalanceDialog } size = 'large'>
+				<InterceptorDialogSurface ariaLabel = { showRichTokenPicker.value ? `Select tokens for ${ selectedRichAccount.value.addressBookEntry.name }` : `Balance editor for ${ selectedRichAccount.value.addressBookEntry.name }` } class = { `rich-mode-modal-card${ showRichTokenPicker.value ? ' is-selecting-tokens' : '' }` } onBackdropClick = { closeRichBalanceDialog } size = 'large'>
 					<InterceptorDialogHeader
 						accessory = { <div class = 'rich-mode-header-tools'>
-							{ !richTokenPending.value && richTokenError.value === undefined && richTokenSaveConfirmedAddress.value !== selectedRichAddress.value ? <></> : <span class = { `rich-mode-save-status${ richTokenPending.value ? ' is-saving' : richTokenError.value === undefined ? ' is-saved' : ' is-error' }` } role = 'status'>{ richTokenPending.value ? 'Saving…' : richTokenError.value === undefined ? '✓ Saved' : 'Needs attention' }</span> }
-							{ richAccounts.value.length < 2 ? <></> : <div class = 'rich-mode-header-account-switcher' aria-label = 'Rich account navigation'>
+							{ richOperationStatus.value === undefined ? <></> : <span class = { `rich-mode-save-status ${ richOperationStatus.value.className }` } role = 'status'>{ richOperationStatus.value.label }</span> }
+							{ showRichTokenPicker.value || richAccounts.value.length < 2 ? <></> : <div class = 'rich-mode-header-account-switcher' aria-label = 'Rich account navigation'>
 								<button type = 'button' class = 'btn btn--ghost is-small' aria-label = 'Previous rich account' disabled = { richTokenPending.value } onClick = { () => { showAdjacentRichAccount(-1) } }>‹</button>
 								<span>{ (selectedRichAccountIndex.value + 1).toString() } / { richAccounts.value.length.toString() }</span>
 								<button type = 'button' class = 'btn btn--ghost is-small' aria-label = 'Next rich account' disabled = { richTokenPending.value } onClick = { () => { showAdjacentRichAccount(1) } }>›</button>
@@ -860,22 +891,22 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 						</div> }
 						close = { closeRichBalanceDialog }
 						closeDisabled = { richTokenPending.value }
-						closeLabel = 'Close balance editor'
+						closeLabel = 'Close balance manager'
 						icon = '../img/address-book.svg'
 						iconContent = { <AddressIcon address = { selectedRichAccount.value.addressBookEntry.address } logoUri = { 'logoUri' in selectedRichAccount.value.addressBookEntry ? selectedRichAccount.value.addressBookEntry.logoUri : undefined } isBig = { false } backgroundColor = 'var(--surface-dark-color)'/> }
 						title = 'Balances'
 						subtitle = { selectedRichAccount.value.addressBookEntry.name }
 					/>
-					<InterceptorDialogBody class = 'rich-mode-dialog-body'>
-						<div class = 'card rich-mode-modal-content'>
-							<div class = { `card-content rich-mode-balance-page${ showRichTokenPicker.value ? ' is-recessed' : '' }` } aria-hidden = { showRichTokenPicker.value ? 'true' : undefined } inert = { showRichTokenPicker.value }>
+					<InterceptorDialogBody class = { `rich-mode-dialog-body${ showRichTokenPicker.value ? ' is-token-view' : '' }` }>
+						{ !showRichTokenPicker.value ? <div class = 'card rich-mode-modal-content'>
+							<div class = 'card-content rich-mode-balance-page'>
 								<div class = 'rich-mode-modal-toolbar'>
-									<div class = 'rich-mode-modal-title-group'><p class = 'paragraph checkbox-text rich-mode-modal-section-title'>Amounts</p><span class = 'rich-mode-count-badge'>{ enabledRichTokens.value.length.toString() } token{ enabledRichTokens.value.length === 1 ? '' : 's' }</span></div>
+									<div class = 'rich-mode-modal-title-group'><p class = 'paragraph checkbox-text rich-mode-modal-section-title'>Amounts</p><span class = 'rich-mode-count-badge'>{ richBalanceTokenCountLabel.value }</span></div>
 									<div class = 'actions'>
 										<button type = 'button' class = 'btn btn--ghost is-small' aria-label = 'Open token address book' data-tooltip = 'Open token address book' onClick = { () => { void sendPopupMessageToBackgroundPage({ method: 'popup_openAddressBook' }) } }>
 											<span class = 'icon'><img src = '../img/address-book.svg' width = '18' height = '18'/></span>
 										</button>
-										<button type = 'button' class = 'btn btn--outline is-small' aria-label = 'Select tokens' disabled = { richTokenPending.value || selectedRichProfile.value === undefined || availableRichTokens.value.length === 0 } onClick = { showRichTokenSelection }>Select tokens</button>
+									<button type = 'button' class = 'btn btn--outline is-small' aria-label = 'Select tokens' ref = { selectRichTokensButtonRef } disabled = { richTokenPending.value || selectedRichProfile.value === undefined || availableRichTokens.value.length === 0 } onClick = { showRichTokenSelection }>Select tokens</button>
 									</div>
 								</div>
 								{ selectedRichProfile.value === undefined ? <p class = 'help'>This account has no balance profile.</p> : <>
@@ -886,33 +917,43 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 										<span/>
 									</div>
 									<div aria-busy = { richTokenPending.value } aria-label = 'Configured rich tokens' class = 'rich-mode-configured-tokens'>
-										{ enabledRichTokens.value.length !== 0 ? <></> : <div class = 'rich-mode-empty-state'>
+										{ enabledRichTokens.value.length !== 0 || addingRichTokens.value.length !== 0 || failedAddedRichToken.value !== undefined ? <></> : <div class = 'rich-mode-empty-state'>
 											<span class = 'rich-mode-empty-state-icon' aria-hidden = 'true'>+</span>
 											<span><strong>Only { nativeCurrencyTicker }</strong><small>Add an address-book token.</small></span>
 											<button type = 'button' class = 'btn btn--ghost is-small' disabled = { richTokenPending.value || availableRichTokens.value.length === 0 } onClick = { showRichTokenSelection }>Select token</button>
 										</div> }
-										{ enabledRichTokens.value.map((option) => <div class = 'rich-mode-balance-row' key = { getRichTokenKey(option) }>
+										{ addingRichTokens.value.map((option) => <div class = 'rich-mode-balance-row is-adding' key = { `adding:${ getRichTokenKey(option) }` }>
 											<RichTokenIcon class = 'rich-mode-balance-token-icon' label = { option.symbol } logoUri = { option.logoUri }/>
 											<span class = 'rich-mode-balance-token-name'><strong>{ getRichTokenLabel(option) }</strong><small>{ option.name }</small></span>
-											<RichAmountEditor amount = { option.amount } autoFocus = { newlyAddedRichTokenKey.value === getRichTokenKey(option) } defaultAmount = { getDefaultRichTokenAmount(option.decimals) } decimals = { Number(option.decimals) } disabled = { !option.enabled || richTokenPending.value } error = { richTokenErrorTarget.value === getRichTokenKey(option) ? richTokenError.value : undefined } label = { `${ getRichTokenLabel(option) } rich amount` } unit = { option.symbol } onCommit = { input => { void setRichTokenAmount(option, input) } } onReset = { () => { richTokenError.value = undefined; richTokenErrorTarget.value = undefined; void saveRichTokenAmount(option, getDefaultRichTokenAmount(option.decimals)) } }/>
+											<span class = 'rich-mode-balance-progress' role = 'status'>{ richTokenPendingKey.value === getRichTokenKey(option) ? 'Scanning storage…' : 'Queued' }</span>
+											<span/>
+										</div>) }
+										{ failedAddedRichToken.value === undefined ? <></> : <div class = 'rich-mode-balance-row is-failed' key = { `failed:${ getRichTokenKey(failedAddedRichToken.value) }` }>
+											<RichTokenIcon class = 'rich-mode-balance-token-icon' label = { failedAddedRichToken.value.symbol } logoUri = { failedAddedRichToken.value.logoUri }/>
+											<span class = 'rich-mode-balance-token-name'><strong>{ getRichTokenLabel(failedAddedRichToken.value) }</strong><small>{ richTokenError.value ?? 'Storage scan failed.' }</small></span>
+											<button type = 'button' class = 'btn btn--outline is-small' disabled = { richTokenPending.value } onClick = { retryFailedRichTokenSelection }>Retry</button>
+											<button type = 'button' class = 'btn btn--ghost is-small rich-mode-remove-token' disabled = { richTokenPending.value } aria-label = { `Remove failed rich token ${ getRichTokenLabel(failedAddedRichToken.value) }` } data-tooltip = 'Remove token' onClick = { removeFailedRichTokenSelection }><TrashIcon/></button>
+										</div> }
+										{ enabledRichTokens.value.map((option) => <div class = { `rich-mode-balance-row${ newlyAddedRichTokenKeys.value.includes(getRichTokenKey(option)) ? ' is-new' : '' }` } key = { getRichTokenKey(option) }>
+											<RichTokenIcon class = 'rich-mode-balance-token-icon' label = { option.symbol } logoUri = { option.logoUri }/>
+											<span class = 'rich-mode-balance-token-name'><strong>{ getRichTokenLabel(option) }</strong><small>{ option.name }</small></span>
+											<RichAmountEditor amount = { option.amount } autoFocus = { newlyAddedRichTokenKeys.value[0] === getRichTokenKey(option) } defaultAmount = { getDefaultRichTokenAmount(option.decimals) } decimals = { Number(option.decimals) } disabled = { !option.enabled || richTokenPending.value } error = { richTokenErrorTarget.value === getRichTokenKey(option) ? richTokenError.value : undefined } label = { `${ getRichTokenLabel(option) } rich amount` } unit = { option.symbol } onCommit = { input => { void setRichTokenAmount(option, input) } } onReset = { () => { richTokenError.value = undefined; richTokenErrorTarget.value = undefined; void saveRichTokenAmount(option, getDefaultRichTokenAmount(option.decimals)) } }/>
 											<button type = 'button' class = 'btn btn--ghost is-small rich-mode-remove-token' disabled = { richTokenPending.value } aria-label = { `Remove rich token ${ getRichTokenLabel(option) }` } data-tooltip = 'Remove token' onClick = { () => { void setRichTokenEnabled(option, false) } }><TrashIcon/></button>
 										</div>) }
 									</div>
 								</> }
-							{ showRichTokenPicker.value || richTokenPendingLabel.value === undefined ? <></> : <p class = 'help is-light' role = 'status'>{ richTokenPendingLabel.value }</p> }
-							{ showRichTokenPicker.value || richTokenError.value === undefined || richTokenErrorTarget.value !== undefined ? <></> : <p class = 'help is-danger'>{ richTokenError.value }</p> }
+							{ richTokenPendingLabel.value === undefined ? <></> : <p class = 'help is-light' role = 'status'>{ richTokenPendingLabel.value }</p> }
+							{ richTokenError.value === undefined || richTokenErrorTarget.value !== undefined ? <></> : <p class = 'help is-danger'>{ richTokenError.value }</p> }
 							</div>
-						</div>
-					</InterceptorDialogBody>
-					{ !showRichTokenPicker.value ? <></> : <section class = 'rich-mode-token-sheet' role = 'region' aria-label = { `Select tokens for ${ selectedRichAccount.value.addressBookEntry.name }` }>
-						<header class = 'rich-mode-token-sheet-head'>
+						</div> : <section class = 'rich-mode-token-view' role = 'region' aria-label = { `Select tokens for ${ selectedRichAccount.value.addressBookEntry.name }` }>
+						<header class = 'rich-mode-token-view-navigation'>
 							<button type = 'button' class = 'btn btn--ghost rich-mode-modal-back' aria-label = 'Back to balances' disabled = { richTokenPending.value } onClick = { hideRichTokenSelection }>‹</button>
-							<div class = 'rich-mode-token-sheet-heading'>
-								<div><p class = 'paragraph'>Select tokens</p><p class = 'rich-mode-modal-account'>{ selectedRichAccount.value.addressBookEntry.name }</p></div>
+							<div class = 'rich-mode-token-view-heading'>
+								<nav aria-label = 'Rich balance navigation'><span>Balances</span><span aria-hidden = 'true'>/</span><strong>Select tokens</strong></nav>
 								<span class = 'rich-mode-count-badge'>{ availableRichTokens.value.length.toString() } available</span>
 							</div>
 						</header>
-						<div class = 'rich-mode-token-sheet-body'>
+						<div class = 'rich-mode-token-view-content'>
 							<div class = 'field rich-mode-token-search'>
 								<div class = 'control'>
 									<input
@@ -947,7 +988,15 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 								</button>) }
 							</div><button type = 'button' class = 'btn btn--ghost is-small rich-mode-clear-token-selection' disabled = { richTokenPending.value } onClick = { () => { selectedRichTokenKeys.value = [] } }>Clear</button>
 							</div> }
-							<div id = 'rich-token-search-results' aria-label = 'Matching address-book tokens' aria-multiselectable = 'true' class = 'rich-mode-token-results' role = 'listbox'>
+							<div
+								id = 'rich-token-search-results'
+								aria-label = 'Matching address-book tokens'
+								aria-multiselectable = 'true'
+								class = 'rich-mode-token-results'
+								role = 'listbox'
+								ref = { element => { if (element !== null) element.scrollTop = richTokenResultsScrollTop.peek() } }
+								onScroll = { event => { richTokenResultsScrollTop.value = event.currentTarget.scrollTop } }
+							>
 								{ matchingAvailableRichTokens.value.map((option, index) => {
 									const selected = selectedRichTokenKeys.value.includes(getRichTokenKey(option))
 									const pending = richTokenPendingKey.value === getRichTokenKey(option)
@@ -977,15 +1026,15 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 								}) }
 								{ matchingAvailableRichTokens.value.length === 0 ? <div class = 'rich-mode-empty-state rich-mode-token-empty-state'><span class = 'rich-mode-empty-state-icon' aria-hidden = 'true'>⌕</span><span><strong>No matching tokens</strong><small>Try a symbol, name, or address.</small></span>{ richTokenSearch.value === '' ? <></> : <button type = 'button' class = 'btn btn--ghost is-small' onClick = { () => { richTokenSearch.value = '' } }>Clear</button> }</div> : <></> }
 							</div>
-							{ richTokenPendingLabel.value === undefined ? <></> : <p class = 'help is-light' role = 'status'>{ richTokenPendingLabel.value }</p> }
-							{ richTokenError.value === undefined ? <></> : <p class = 'help is-danger'>{ richTokenError.value }</p> }
+							{ richTokenError.value === undefined || failedAddedRichToken.value === undefined ? <></> : <p class = 'help is-danger'>{ richTokenError.value }</p> }
 						</div>
-						<footer class = 'rich-mode-token-sheet-footer'>
-							<button type = 'button' class = 'btn btn--ghost' disabled = { richTokenPending.value } onClick = { hideRichTokenSelection }>Cancel</button>
-							<span class = 'rich-mode-token-selection-count rich-mode-count-badge'>{ selectedAvailableRichTokens.value.length.toString() } selected</span>
-							<button type = 'button' class = 'btn btn--primary' aria-label = 'Add selected tokens' disabled = { richTokenPending.value || selectedAvailableRichTokens.value.length === 0 } onClick = { () => { void addSelectedRichTokens() } }>Add { selectedAvailableRichTokens.value.length === 0 ? '' : selectedAvailableRichTokens.value.length.toString() } token{ selectedAvailableRichTokens.value.length === 1 ? '' : 's' }</button>
-						</footer>
 					</section> }
+					</InterceptorDialogBody>
+					{ !showRichTokenPicker.value ? <></> : <InterceptorDialogFooter class = 'rich-mode-token-view-footer'>
+						<button type = 'button' class = 'btn btn--ghost' disabled = { richTokenPending.value } onClick = { hideRichTokenSelection }>Back</button>
+						<span class = 'rich-mode-token-selection-count rich-mode-count-badge'>{ selectedAvailableRichTokens.value.length.toString() } selected</span>
+						<button type = 'button' class = 'btn btn--primary' aria-label = 'Add selected tokens' disabled = { richTokenPending.value || selectedAvailableRichTokens.value.length === 0 } onClick = { () => { void addSelectedRichTokens() } }>Add { selectedAvailableRichTokens.value.length === 0 ? '' : selectedAvailableRichTokens.value.length.toString() } token{ selectedAvailableRichTokens.value.length === 1 ? '' : 's' }</button>
+					</InterceptorDialogFooter> }
 				</InterceptorDialogSurface>
 			</div>
 		}

@@ -265,7 +265,7 @@ try {
 	await waitForCondition(popup, 'full-address token search', `document.querySelectorAll('[data-rich-token-result]').length === 1 && document.body?.textContent?.includes('TOK74') === true`)
 
 	await clickAriaLabel(popup, 'Back to balances')
-	await clickAriaLabel(popup, 'Close balance editor')
+	await clickAriaLabel(popup, 'Close balance manager')
 	await clickButtonText(popup, 'Change')
 	await waitForCondition(popup, 'change active address dialog', `document.querySelector('[aria-label="Change active address"]') !== null`)
 	await sleep(250)
