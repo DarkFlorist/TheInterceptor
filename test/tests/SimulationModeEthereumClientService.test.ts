@@ -6,7 +6,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { addressString, bytes32String, dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { EthereumAddress, EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction, serialize } from '../../app/ts/types/wire-types.js'
-import { createExecutionSimulationState, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCode, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGas, simulateEstimateGasFromInput, simulatePersonalSign, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalanceFromInput, getSimulatedBlock, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCode, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGas, simulateEstimateGasFromInput, simulatePersonalSign, simulatedCall, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthTransactionReceiptResponse, EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { RPCReply } from '../../app/ts/types/interceptor-messages.js'
 import type { EthSimulateV1BlockTag, EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
@@ -360,6 +360,67 @@ describe('SimulationModeEthereumClientService', () => {
 	const createDappEthSimulateV1Request = (blockTag: EthSimulateV1BlockTag | undefined = 'latest', validation = false): EthSimulateV1Params => ({
 		method: 'eth_simulateV1',
 		params: blockTag === undefined ? [createDappEthSimulateV1Payload(validation)] : [createDappEthSimulateV1Payload(validation), blockTag],
+	})
+
+	test('forwards safe and earliest block tags instead of applying the simulation overlay', async () => {
+		const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput())
+		if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+		const forwardedTags: { method: string, blockTag: unknown }[] = []
+		const forwardingEthereum = new Proxy(ethereum, {
+			get(target, property, receiver) {
+				switch(property) {
+					case 'getTransactionCount': return async (_address: bigint, blockTag: unknown) => {
+						forwardedTags.push({ method: property, blockTag })
+						return 0n
+					}
+					case 'getCode': return async (_address: bigint, blockTag: unknown) => {
+						forwardedTags.push({ method: property, blockTag })
+						return new Uint8Array()
+					}
+					case 'getBlock': return async (requestAbortController: AbortController | undefined, blockTag: Parameters<typeof target.getBlock>[1], fullObjects: boolean) => {
+						if (blockTag === 'safe' || blockTag === 'earliest') {
+							forwardedTags.push({ method: property, blockTag })
+							return null
+						}
+						return await target.getBlock(requestAbortController, blockTag, fullObjects)
+					}
+					case 'getLogs': return async (filter: { fromBlock?: unknown }) => {
+						forwardedTags.push({ method: property, blockTag: filter.fromBlock })
+						return []
+					}
+					case 'call': return async (_transaction: unknown, blockTag: unknown) => {
+						forwardedTags.push({ method: property, blockTag })
+						return new Uint8Array()
+					}
+					default: return Reflect.get(target, property, receiver)
+				}
+			}
+		})
+		const resolvedState = toResolvedSimulationState(simulationState)
+
+		await getSimulatedTransactionCount(forwardingEthereum, undefined, resolvedState, exampleTransaction.from, 'safe')
+		await getSimulatedCode(forwardingEthereum, undefined, resolvedState, exampleTransaction.to, 'earliest')
+		await getSimulatedBlock(forwardingEthereum, undefined, resolvedState, 'safe', false)
+		await getSimulatedLogs(forwardingEthereum, undefined, toResolvedExecutionSimulationState(simulationState), { fromBlock: 'earliest' })
+		const callParams = {
+			from: exampleTransaction.from,
+			to: exampleTransaction.to,
+			value: exampleTransaction.value,
+			input: exampleTransaction.input,
+			maxFeePerGas: exampleTransaction.maxFeePerGas,
+			maxPriorityFeePerGas: exampleTransaction.maxPriorityFeePerGas,
+		}
+		await simulatedCallFromInput(forwardingEthereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), callParams, 'safe')
+		await simulatedCall(forwardingEthereum, undefined, resolvedState, callParams, 'earliest')
+
+		assert.deepEqual(forwardedTags, [
+			{ method: 'getTransactionCount', blockTag: 'safe' },
+			{ method: 'getCode', blockTag: 'earliest' },
+			{ method: 'getBlock', blockTag: 'safe' },
+			{ method: 'getLogs', blockTag: 'earliest' },
+			{ method: 'call', blockTag: 'safe' },
+			{ method: 'call', blockTag: 'earliest' },
+		])
 	})
 
 		test('prepareEthSimulateV1Input strips the local transaction hash from RPC calls', async () => {

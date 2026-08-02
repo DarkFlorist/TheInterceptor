@@ -222,9 +222,10 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 }
 
 export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings) {
-	if (exportedSetings.version === '1.3') {
+	if (exportedSetings.version === '1.3' || exportedSetings.version === '1.4') {
 		await setPage(exportedSetings.settings.openedPage)
-	} else if (exportedSetings.version === '1.0') {
+	}
+	if (exportedSetings.version === '1.0') {
 		await changeSimulationMode({
 			simulationMode: exportedSetings.settings.simulationMode,
 			rpcNetwork: defaultRpcs[0],

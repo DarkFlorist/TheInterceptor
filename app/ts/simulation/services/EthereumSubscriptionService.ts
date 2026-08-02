@@ -139,7 +139,7 @@ export async function getEthFilterChanges(filterId: string, ethereumClientServic
 	const filtersAndSubscriptions = await getEthereumSubscriptionsAndFilters()
 	const filter = filtersAndSubscriptions.find((subscriptionOrfilter) => subscriptionOrfilter.subscriptionOrFilterId === filterId)
 	if (filter === undefined || filter.type !== 'eth_newFilter') return undefined
-	if (filter.params.params[0].blockhash !== undefined) throw new Error('blockhash not supported for this method')
+	if (filter.params.params[0].blockHash !== undefined) throw new Error('blockHash not supported for this method')
 	const calledInlastBlock = await getSimulatedBlockNumber(ethereumClientService, requestAbortController, simulationState)
 	const logs = calledInlastBlock > filter.calledInlastBlock
 		? await getSimulatedLogs(ethereumClientService, requestAbortController, simulationState, { ...filter.params.params[0], fromBlock: filter.calledInlastBlock + 1n, toBlock: calledInlastBlock })
@@ -154,6 +154,6 @@ export async function getEthFilterLogs(filterId: string, ethereumClientService: 
 	const filtersAndSubscriptions = await getEthereumSubscriptionsAndFilters()
 	const filter = filtersAndSubscriptions.find((filter) => filter.subscriptionOrFilterId === filterId)
 	if (filter === undefined || filter.type !== 'eth_newFilter') return undefined
-	if (filter.params.params[0].blockhash !== undefined) throw new Error('blockhash not supported for this method')
+	if (filter.params.params[0].blockHash !== undefined) throw new Error('blockHash not supported for this method')
 	return await getSimulatedLogs(ethereumClientService, requestAbortController, simulationState, filter.params.params[0])
 }

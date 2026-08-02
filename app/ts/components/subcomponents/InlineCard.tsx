@@ -36,7 +36,7 @@ export const InlineCard = (props: InlineCardProps) => {
 
 	return (
 		<span class = 'inline-card' role = 'figure' style = { props.style } title = { props.label }>
-			{ props.warningMessage ? <WarningSign /> : <></> }
+			{ props.warningMessage ? <WarningSign message = { props.warningMessage } /> : <></> }
 			<span role = 'img'><Icon /></span>
 			<data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data>
 			<span role = 'menu' aria-hidden = { props.nonInteractive } aria-label = { props.noExpandButtons || props.nonInteractive ? undefined : 'Spell-out actions' }>
@@ -79,7 +79,7 @@ export const InlineCard = (props: InlineCardProps) => {
 					</button>
 				) : <></> }
 			</span>
-			{ props.warningMessage ? <WarningSign /> : <></> }
+			{ props.warningMessage ? <WarningSign message = { props.warningMessage } /> : <></> }
 			<Tooltip config = { tooltip } />
 		</span>
 	)

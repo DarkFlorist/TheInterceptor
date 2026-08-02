@@ -11,6 +11,8 @@ const timePickerDeltaOptions = ['Seconds', 'Minutes', 'Hours', 'Days', 'Weeks', 
 export type DeltaUnit = typeof timePickerDeltaOptions[number]
 export type TimePickerMode = typeof timePickerModeDownOptions[number]
 
+export const parseTimePickerDeltaValue = (value: string) => /^[0-9]+$/.test(value) ? BigInt(value) : undefined
+
 export const getTimeManipulatorFromSignals = (timeSelectorMode: TimePickerMode, timeSelectorAbsoluteTime: Date | undefined, timeSelectorDeltaValue: bigint, timeSelectorDeltaUnit: DeltaUnit) => {
 	switch(timeSelectorMode) {
 		case 'No Delay': return { type: 'No Delay' } as const
@@ -49,7 +51,7 @@ const TimePickerModeViews = ({ mode, absoluteTime, timePickerDeltaOptionsSignal,
 		case 'No Delay': return <></>
 		case 'Until': return <input type = 'datetime-local' disabled = { disabled } class = 'timepicker-datetime-local' value = { formatDateToLocalDateTimeValue(absoluteTime.value) } onInput = { absoluteTimeChanged } />
 		case 'For': return <div>
-			<input class = 'input' disabled = { disabled } style = 'width: 50px; margin-right: 10px; vertical-align: unset; text-align: center;' type = 'number' value = { Number(deltaValue.value) } onInput = { changeDeltaValue } />
+			<input class = 'input' disabled = { disabled } style = 'width: 50px; margin-right: 10px; vertical-align: unset; text-align: center;' type = 'number' value = { deltaValue.value?.toString() ?? '' } onInput = { changeDeltaValue } />
 			<DropDownMenu selected = { deltaUnit } dropDownOptions = { timePickerDeltaOptionsSignal } onChangedCallBack = { changeDeltaUnit } buttonClassses = { 'btn btn--outline is-small' } disabled = { disabled }/>
 		</div>
 		default: assertNever(mode.value)
@@ -110,14 +112,14 @@ export const TimePicker = ({ mode, absoluteTime, deltaValue, deltaUnit, onChange
 	const changeDeltaValue = (event: JSX.TargetedInputEvent<HTMLInputElement>) => {
 		if (disabled) return
 		event.preventDefault()
-		const sanitized = event.currentTarget.value.replace(/[^0-9.]/g, '')
-		if (sanitized.length === 0 || Number.isNaN(parseInt(sanitized))) {
+		const parsedValue = parseTimePickerDeltaValue(event.currentTarget.value)
+		if (parsedValue === undefined) {
 			temporaryDeltaValue.value = undefined
 			event.currentTarget.value = ''
 			return
 		}
-		temporaryDeltaValue.value = BigInt(parseInt(sanitized))
-		event.currentTarget.value = temporaryDeltaValue.value.toString()
+		temporaryDeltaValue.value = parsedValue
+		event.currentTarget.value = parsedValue.toString()
 	}
 
 	const hasValuesChanged = useComputed(() => {

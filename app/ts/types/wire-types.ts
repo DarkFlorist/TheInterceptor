@@ -40,16 +40,19 @@ const SmallIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = 
 	},
 }
 
+function serializeFixedWidthBigInt(value: unknown, hexadecimalDigits: number, typeName: string) {
+	if (typeof value !== 'bigint') return { success: false as const, message: `${ typeof value } is not a bigint.` }
+	if (value < 0n) return { success: false as const, message: `${ value } is not a non-negative bigint.` }
+	if (value >= 1n << BigInt(hexadecimalDigits * 4)) return { success: false as const, message: `${ value } does not fit in ${ typeName }.` }
+	return { success: true as const, value: `0x${ value.toString(16).padStart(hexadecimalDigits, '0') }` }
+}
+
 const AddressParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{40})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded address.` }
 		return { success: true, value: BigInt(value) }
 	},
-	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
-		if (value < 0n) return { success: false, message: `${typeof value} is not a non negative bigint.`}
-		return { success: true, value: `0x${value.toString(16).padStart(40, '0')}` }
-	},
+	serialize: value => serializeFixedWidthBigInt(value, 40, 'an Ethereum address'),
 }
 
 const Bytes32Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
@@ -57,11 +60,7 @@ const Bytes32Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 		if (!/^0x([a-fA-F0-9]{64})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded 32 byte value.` }
 		return { success: true, value: BigInt(value) }
 	},
-	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
-		if (value < 0n) return { success: false, message: `${typeof value} is not a non negative bigint.`}
-		return { success: true, value: `0x${value.toString(16).padStart(64, '0')}` }
-	},
+	serialize: value => serializeFixedWidthBigInt(value, 64, 'a 32-byte value'),
 }
 
 const Bytes256Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
@@ -69,22 +68,14 @@ const Bytes256Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = 
 		if (!/^0x([a-fA-F0-9]{512})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded 256 byte value.` }
 		return { success: true, value: BigInt(value) }
 	},
-	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
-		if (value < 0n) return { success: false, message: `${typeof value} is not a non negative bigint.`}
-		return { success: true, value: `0x${value.toString(16).padStart(512, '0')}` }
-	},
+	serialize: value => serializeFixedWidthBigInt(value, 512, 'a 256-byte value'),
 }
 const Bytes16Parser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{16})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded 256 byte value.` }
 		return { success: true, value: BigInt(value) }
 	},
-	serialize: value => {
-		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
-		if (value < 0n) return { success: false, message: `${typeof value} is not a non negative bigint.`}
-		return { success: true, value: `0x${value.toString(16).padStart(16, '0')}` }
-	},
+	serialize: value => serializeFixedWidthBigInt(value, 16, 'an 8-byte value'),
 }
 
 export const BytesParser: funtypes.ParsedValue<funtypes.String, Uint8Array>['config'] = {
@@ -225,7 +216,7 @@ export type EthereumBytes16 = funtypes.Static<typeof EthereumBytes16>
 export const EthereumTimestamp = funtypes.String.withParser(TimestampParser)
 export type EthereumTimestamp = funtypes.Static<typeof EthereumTimestamp>
 
-export const EthereumBlockTag = funtypes.Union(EthereumQuantitySmall, EthereumBytes32, funtypes.Literal('latest'), funtypes.Literal('pending'), funtypes.Literal('finalized'))
+export const EthereumBlockTag = funtypes.Union(EthereumQuantitySmall, EthereumBytes32, funtypes.Literal('earliest'), funtypes.Literal('safe'), funtypes.Literal('latest'), funtypes.Literal('pending'), funtypes.Literal('finalized'))
 export type EthereumBlockTag = funtypes.Static<typeof EthereumBlockTag>
 
 export const EthereumInput = funtypes.Union(funtypes.String, funtypes.Undefined).withParser(OptionalBytesParser)
