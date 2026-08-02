@@ -105,12 +105,16 @@ export const BytesParser: funtypes.ParsedValue<funtypes.String, Uint8Array>['con
 
 const TimestampParser: funtypes.ParsedValue<funtypes.String, Date>['config'] = {
 	parse: value => {
-		if (!/^0x([a-fA-F0-9]*)$/.test(value)) return { success: false, message: `${value} is not a hex string encoded timestamp.` }
-		return { success: true, value: new Date(Number.parseInt(value, 16) * 1000) }
+		if (!/^0x[a-fA-F0-9]+$/.test(value)) return { success: false, message: `${ value } is not a hex string encoded timestamp.` }
+		const seconds = BigInt(value)
+		if (seconds > 8_640_000_000_000n) return { success: false, message: `${ value } is outside the supported timestamp range.` }
+		return { success: true, value: new Date(Number(seconds) * 1000) }
 	},
 	serialize: value => {
-		if (!(value instanceof Date)) return { success: false, message: `${typeof value} is not a Date.`}
-		return { success: true, value: `0x${Math.floor(value.valueOf() / 1000).toString(16)}` }
+		if (!(value instanceof Date) || !Number.isFinite(value.valueOf())) return { success: false, message: `${ typeof value } is not a valid Date.`}
+		const seconds = Math.floor(value.valueOf() / 1000)
+		if (seconds < 0) return { success: false, message: `${ value.toISOString() } is before the Unix epoch.` }
+		return { success: true, value: `0x${ seconds.toString(16) }` }
 	},
 }
 

@@ -113,29 +113,14 @@ export function calculateWeightedPercentile(data: readonly { dataPoint: bigint, 
 	if (data.length === 0) return 0n
 	if (percentile < 0 || percentile > 100 || data.map((point) => point.weight).some((weight) => weight < 0)) throw new Error('Invalid input')
 	const sortedData = [...data].sort((a, b) => a.dataPoint < b.dataPoint ? -1 : a.dataPoint > b.dataPoint ? 1 : 0)
-	const cumulativeWeights = sortedData.map((point) => point.weight).reduce((acc, w, i) => [...acc, (acc[i] ?? 0n) + w], [0n])
-	const totalWeight = cumulativeWeights[cumulativeWeights.length - 1]
-	if (totalWeight === undefined) throw new Error('Invalid input')
-
-	const targetIndex = percentile * totalWeight / 100n
-
-	const index = cumulativeWeights.findIndex(w => w >= targetIndex)
-
-	if (index === -1) throw new Error('Invalid input')
-
-	const lowerIndex = index === 0 ? 0 : index - 1
-	const upperIndex = index
-
-	const lowerValue = sortedData[lowerIndex]
-	const upperValue = sortedData[upperIndex]
-	const lowerWeight = cumulativeWeights[lowerIndex]
-	const upperWeight = cumulativeWeights[upperIndex]
-
-	if (lowerWeight === undefined || upperWeight === undefined || lowerValue === undefined || upperValue === undefined) throw new Error('weights were undefined')
-	if (lowerIndex === upperIndex) return lowerValue.dataPoint
-
-	const interpolation = (targetIndex - lowerWeight) / (upperWeight - lowerWeight)
-	return lowerValue.dataPoint + (upperValue.dataPoint - lowerValue.dataPoint) * interpolation
+	const totalWeight = sortedData.reduce((total, point) => total + point.weight, 0n)
+	const targetWeight = percentile * totalWeight
+	let cumulativeWeight = 0n
+	for (const point of sortedData) {
+		cumulativeWeight += point.weight * 100n
+		if (cumulativeWeight >= targetWeight) return point.dataPoint
+	}
+	return sortedData[sortedData.length - 1]?.dataPoint ?? 0n
 }
 
 export const bigintSecondsToDate = (seconds: bigint) => {

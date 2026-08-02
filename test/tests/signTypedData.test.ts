@@ -5,7 +5,8 @@ import * as assert from 'assert'
 import { stringifyJSONWithBigInts } from '../../app/ts/utils/bigint.js'
 import { MockRequestHandler } from '../MockRequestHandler.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { EIP712Message } from '../../app/ts/types/eip721.js'
+import { EIP712Message, EnrichedEIP712 } from '../../app/ts/types/eip721.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
 import { getMessageAndDomainHash, verifyEip712Message } from '../../app/ts/utils/eip712.js'
 import { canVerifyStructArray, chainIdIsNotDefined, chainIdOverFlow, d2Array, d2ArrayFixed, d3ArrayFixed, duplicateType, eip712Example, eip721DomainMissing, extraType, fixedArrayOverload, hasArray, hasFixedArray, hasTooLongFixedArray, missingChainId, openSeaWithTotalOriginalConsiderationItems, permit2Message, permit2MessageHexChainId, permit2MessageNumberChainId, primarytypeIsWrong, safeTx, smallOverFlow, structNotDefined, tupleSupport, typeMissmatch, unknownExtraField, unknownExtraField2 } from './data/eip712Data.js'
 import { jsonParserWithNumbersAsStringsConverter } from '../../app/ts/utils/json.js'
@@ -85,9 +86,9 @@ describe('EIP712', () => {
 		const verification = verifyEip712Message(JSON.parse(extraType))
 		assert.equal(verification.valid, true)
 	})
-	test('can verify missingChainId message', () => {
+	test('rejects a domain missing a field declared in its type', () => {
 		const verification = verifyEip712Message(JSON.parse(missingChainId))
-		assert.equal(verification.valid, true)
+		assert.equal(verification.valid, false)
 	})
 	test('can verify hasArray message', () => {
 		const verification = verifyEip712Message(JSON.parse(hasArray))
@@ -105,9 +106,9 @@ describe('EIP712', () => {
 		const verification = verifyEip712Message(JSON.parse(chainIdOverFlow))
 		assert.deepEqual(verification, { valid: false, reason: 'EIP712Domain.chainId is in wrong type' })
 	})
-	test('can not verify hasTooLongFixedArray message', () => {
+	test('rejects fixed arrays that are shorter than their declared length', () => {
 		const verification = verifyEip712Message(JSON.parse(hasTooLongFixedArray))
-		assert.equal(verification.valid, true)
+		assert.equal(verification.valid, false)
 	})
 	test('can not verify fixedArrayOverload message', () => {
 		const verification = verifyEip712Message(JSON.parse(fixedArrayOverload))
@@ -141,13 +142,36 @@ describe('EIP712', () => {
 		const parsed = EIP712Message.parse(d2Array)
 		assert.deepEqual(verifyEip712Message(parsed), { valid: true })
 	})
-	test('can verify d2ArrayFixed message', () => {
+	test('rejects multidimensional fixed arrays with undersized inner arrays', () => {
 		const parsed = EIP712Message.parse(d2ArrayFixed)
-		assert.deepEqual(verifyEip712Message(parsed), { valid: true })
+		assert.equal(verifyEip712Message(parsed).valid, false)
 	})
 	test('can verify d3ArrayFixed message', () => {
 		const parsed = EIP712Message.parse(d3ArrayFixed)
 		assert.deepEqual(verifyEip712Message(parsed), { valid: true })
+	})
+	test('validates multidimensional fixed arrays from the outermost dimension', () => {
+		const parsed = JSON.parse(hasFixedArray)
+		parsed.types.Mail[2].type = 'string[2][1]'
+		parsed.message.contents = [['first', 'second']]
+		assert.deepEqual(verifyEip712Message(parsed), { valid: true })
+	})
+	test('rejects messages missing a required nested field', () => {
+		const parsed = JSON.parse(hasFixedArray)
+		delete parsed.message.from.wallet
+		assert.equal(verifyEip712Message(parsed).valid, false)
+	})
+	test('rejects messages missing a required top-level field', () => {
+		const parsed = JSON.parse(hasFixedArray)
+		delete parsed.message.contents
+		assert.equal(verifyEip712Message(parsed).valid, false)
+	})
+	test('reports invalid domain field order as a validation failure', () => {
+		const parsed = JSON.parse(hasFixedArray)
+		const firstDomainField = parsed.types.EIP712Domain[0]
+		parsed.types.EIP712Domain[0] = parsed.types.EIP712Domain[1]
+		parsed.types.EIP712Domain[1] = firstDomainField
+		assert.deepEqual(verifyEip712Message(parsed), { valid: false, reason: 'EIP712Domain types are in the wrong order' })
 	})
 	test('can validate safeTx message', () => {
 		const parsed = EIP712Message.parse(safeTx)
@@ -160,6 +184,40 @@ describe('EIP712', () => {
 	test('can validate openSea message', () => {
 		const parsed = EIP712Message.parse(openSeaWithTotalOriginalConsiderationItems)
 		assert.equal(validateEIP712Types(parsed), true)
+	})
+	test('can validate a fixed-size primitive array for visualization', () => {
+		const parsed = EIP712Message.parse(hasFixedArray)
+		assert.equal(validateEIP712Types(parsed), true)
+	})
+	test('can validate a multidimensional dynamic array for visualization', () => {
+		const parsed = EIP712Message.parse(d2Array)
+		assert.equal(validateEIP712Types(parsed), true)
+	})
+	test('validates every dimension of a multidimensional fixed array for visualization', () => {
+		assert.equal(validateEIP712Types(EIP712Message.parse(d2ArrayFixed)), false)
+		assert.equal(validateEIP712Types(EIP712Message.parse(d3ArrayFixed)), true)
+	})
+	test('rejects malformed fixed array dimensions for visualization', () => {
+		const parsed = JSON.parse(d2Array)
+		parsed.message.contents = []
+		for (const invalidType of ['string[0]', 'string[00]', 'string[01]', 'string[1][0]', 'string[1][00]', 'string[1][01]']) {
+			parsed.types.Mail[2].type = invalidType
+			assert.equal(validateEIP712Types(EIP712Message.parse(JSON.stringify(parsed))), false)
+		}
+
+		parsed.types.Mail[2].type = 'string[]'
+		assert.equal(validateEIP712Types(EIP712Message.parse(JSON.stringify(parsed))), true)
+	})
+	test('does not treat malformed array suffixes as struct names for visualization', () => {
+		const parsed = JSON.parse(d2Array)
+		parsed.types['Person[abc]'] = parsed.types.Person
+		parsed.message.contents = parsed.message.from
+		parsed.types.Mail[2].type = 'Person[abc]'
+		assert.equal(validateEIP712Types(EIP712Message.parse(JSON.stringify(parsed))), false)
+
+		parsed.message.contents = [parsed.message.from]
+		parsed.types.Mail[2].type = 'Person[abc][]'
+		assert.equal(validateEIP712Types(EIP712Message.parse(JSON.stringify(parsed))), false)
 	})
 
 	test('can extract safeTx message', async () => {
@@ -183,6 +241,19 @@ describe('EIP712', () => {
 		const parsed = EIP712Message.parse(permit2MessageNumberChainId)
 		const enrichedMessage = stringifyJSONWithBigInts(await extractEIP712Message(ethereum, undefined, parsed, false))
 		assert.equal(enrichedMessage, expectedPermit2)
+	})
+	test('can extract a multidimensional dynamic array', async () => {
+		const parsed = EIP712Message.parse(d2Array)
+		const enrichedMessage = await extractEIP712Message(ethereum, undefined, parsed, false)
+		const serializedMessage = serialize(EnrichedEIP712, enrichedMessage)
+		assert.deepEqual(EnrichedEIP712.parse(serializedMessage), enrichedMessage)
+		assert.deepEqual(enrichedMessage.message.contents, {
+			type: 'nestedArray',
+			value: [
+				{ type: 'string[]', value: ['Hello, Bob!'] },
+				{ type: 'string[]', value: ['Hello'] },
+			],
+		})
 	})
 	test('can extract openSea message', async () => {
 		const parsed = EIP712Message.parse(openSeaWithTotalOriginalConsiderationItems)
