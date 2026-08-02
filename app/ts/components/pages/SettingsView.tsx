@@ -7,7 +7,7 @@ import { ErrorComponent } from '../subcomponents/Error.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { ConfigureRpcConnection } from '../subcomponents/ConfigureRpcConnection.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
-import { defaultRpcs } from '../../background/settings.js'
+import { DEFAULT_RPCS } from '../../config/defaults.js'
 import { getChainName } from '../../utils/constants.js'
 import { getRpcList } from '../../background/storageVariables.js'
 import { useComputed, useSignal } from '@preact/signals'
@@ -209,7 +209,7 @@ export function SettingsView() {
 const RpcListings = () => {
 	const rpcEntries = useRpcConnectionsList()
 	const { value: resetRpcListState, waitFor: waitForResetDefaultRpcs } = useAsyncState<void>()
-	const loadDefaultRpcs = () => void waitForResetDefaultRpcs(() => sendPopupMessageToBackgroundPage({ method: 'popup_set_rpc_list', data: defaultRpcs }))
+	const loadDefaultRpcs = () => void waitForResetDefaultRpcs(() => sendPopupMessageToBackgroundPage({ method: 'popup_set_rpc_list', data: DEFAULT_RPCS }))
 
 	if (shouldOfferBundledRpcReset(rpcEntries.value)) {
 		return (

@@ -9,7 +9,7 @@ import { ensureHex } from '../utils/ethereumBytes.js'
 import { recoverAddress } from '../utils/ethereumPrimitives.js'
 import { getSafeTxHash } from '../utils/eip712.js'
 
-export const SUPPORTED_SAFE_VERSIONS = ['1.3.0', '1.4.0', '1.4.1'] as const
+const SUPPORTED_SAFE_VERSIONS = ['1.3.0', '1.4.0', '1.4.1'] as const
 
 export const SAFE_TRANSACTION_CORE_FIELDS = [
 	{ name: 'to', type: 'address' },

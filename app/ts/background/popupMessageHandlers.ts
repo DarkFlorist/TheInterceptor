@@ -1,4 +1,6 @@
-import { changeActiveAddressAndChain, changeActiveRpc, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState, refreshConfirmTransactionSimulation } from './background.js'
+import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
+import { changeActiveAddressAndChain, changeActiveRpc } from './activeSettings.js'
+import { getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, exportSettingsAndAddressBook, importSettingsAndAddressBook, getMakeCurrentAddressRich, getUseTabsInsteadOfPopup, getMetamaskCompatibilityMode, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getCurrentTabId, getTabState, saveCurrentTabId, setRpcList, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
@@ -9,7 +11,7 @@ import { resolveChainChange } from './windows/changeChain.js'
 import { setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
-import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './medataSearch.js'
+import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
 import { getActiveAddressEntry, getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -1043,7 +1045,7 @@ export async function removeWebsiteAddressAccess(ethereum: EthereumClientService
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
 
-async function setAdressAccessForWebsite(websiteOrigin: string, address: EthereumAddress, allowAccess: boolean) {
+async function setAddressAccessForWebsite(websiteOrigin: string, address: EthereumAddress, allowAccess: boolean) {
 	await updateWebsiteAccess((previousAccessList) => {
 		return previousAccessList.map((access) => {
 			if (access.website.websiteOrigin !== websiteOrigin || access.addressAccess === undefined) return access
@@ -1055,7 +1057,7 @@ async function setAdressAccessForWebsite(websiteOrigin: string, address: Ethereu
 
 export async function allowOrPreventAddressAccessForWebsite(websiteTabConnections: WebsiteTabConnections, parsedRequest: AllowOrPreventAddressAccessForWebsite) {
 	const { website, address, allowAccess } = parsedRequest.data
-	await setAdressAccessForWebsite(website.websiteOrigin, address, allowAccess)
+	await setAddressAccessForWebsite(website.websiteOrigin, address, allowAccess)
 	await reloadConnectedTabs(websiteTabConnections)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }

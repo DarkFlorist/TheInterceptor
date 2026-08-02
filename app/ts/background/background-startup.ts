@@ -1,6 +1,9 @@
 import 'webextension-polyfill'
-import { defaultRpcs, getSettings, updateKnownWebsiteMetadata } from './settings.js'
-import { getUpdatedSimulationState, handleInterceptedRequest, popupMessageHandler } from './background.js'
+import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
+import { DEFAULT_RPCS } from '../config/defaults.js'
+import { handleInterceptedRequest } from './background.js'
+import { getUpdatedSimulationState } from './simulationUpdating.js'
+import { popupMessageHandler } from './popupMessageRouting.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { clearTabStates, getPrimaryRpcForChain, getRpcConnectionStatus, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
 import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -258,7 +261,7 @@ async function startup() {
 	bumpPopupRefreshGeneration()
 	const settings = await getSettings()
 	const userSpecifiedSimulatorNetwork = settings.activeRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.activeRpcNetwork
-	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? defaultRpcs[0] : userSpecifiedSimulatorNetwork
+	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? DEFAULT_RPCS[0] : userSpecifiedSimulatorNetwork
 	simulationServices = createSimulationServices(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
 	resetActiveRpcNetwork = (rpcNetwork) => {
 		simulationServices = resetSimulationServices(getSimulationServices(), rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)

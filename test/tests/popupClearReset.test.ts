@@ -176,9 +176,12 @@ async function loadModules() {
 	const storageUtils = await import('../../app/ts/utils/storageUtils.js')
 	const settings = await import('../../app/ts/background/settings.js')
 	const background = await import('../../app/ts/background/background.js')
+	const activeSettings = await import('../../app/ts/background/activeSettings.js')
+	const popupMessageRouting = await import('../../app/ts/background/popupMessageRouting.js')
 	const storageVariables = await import('../../app/ts/background/storageVariables.js')
 	const simulationUpdating = await import('../../app/ts/background/simulationUpdating.js')
 	const simulationMode = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
+	const defaults = await import('../../app/ts/config/defaults.js')
 	return {
 		...popupVisualisationUpdater,
 		...popupSimulationFingerprint,
@@ -186,10 +189,13 @@ async function loadModules() {
 		...storageUtils,
 		...settings,
 		...background,
+		...activeSettings,
+		...popupMessageRouting,
 		updateTransactionState: storageVariables.updateTransactionState,
 		getSafeTransactionStacks: storageVariables.getSafeTransactionStacks,
 		...simulationUpdating,
 		...simulationMode,
+		...defaults,
 	}
 }
 
