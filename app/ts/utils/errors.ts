@@ -172,7 +172,7 @@ function createErrorReport(error: unknown, metadata: ErrorReportMetadata, policy
 	}
 }
 
-function formatLocalRecoveryConsoleMessage(report: InterceptorErrorReport) {
+function formatErrorReportConsoleMetadata(report: InterceptorErrorReport) {
 	const parts = [
 		`code=${ report.code }`,
 		`message=${ JSON.stringify(report.message) }`,
@@ -182,7 +182,17 @@ function formatLocalRecoveryConsoleMessage(report: InterceptorErrorReport) {
 		`severity=${ report.severity }`,
 	]
 	if (report.cause !== undefined) parts.push(`cause=${ JSON.stringify(report.cause) }`)
-	return `Local Interceptor recovery: ${ parts.join(' ') }`
+	return parts.join(' ')
+}
+
+function formatLocalRecoveryConsoleMessage(report: InterceptorErrorReport) {
+	return `Local Interceptor recovery: ${ formatErrorReportConsoleMetadata(report) }`
+}
+
+function logUnexpectedError(error: unknown, report: InterceptorErrorReport) {
+	console.error(`Unexpected Interceptor error: ${ formatErrorReportConsoleMetadata(report) }`)
+	if (report.details !== undefined) console.error(`Unexpected Interceptor error details: ${ report.details }`)
+	printError(error)
 }
 
 async function appendErrorDiagnostic(report: InterceptorErrorReport) {
@@ -198,6 +208,7 @@ export async function reportUnexpectedError(error: unknown, metadata: ErrorRepor
 	if ((metadata.suppressExpectedInfrastructure ?? true) && isExpectedInfrastructureError(error)) return
 	const defaultCode = isWrappedNewBlockAbort(error) ? 'wrapped_new_block_abort' : 'unexpected_error'
 	const report = createErrorReport(error, metadata, ERROR_REPORTING_POLICY.unexpected, defaultCode, metadata.displayMessage ?? normalizeUnexpectedError(error).message)
+	logUnexpectedError(error, report)
 	await appendErrorDiagnostic(report)
 	const errorMessage = createUnexpectedErrorPopupMessage(report)
 	let messageToBroadcast = errorMessage

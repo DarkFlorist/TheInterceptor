@@ -161,6 +161,7 @@ export function formSimulatedAndVisualizedTransactions(simulatedTransactions: re
 			transactionIdentifier: simulatedTx.preSimulationTransaction.transactionIdentifier,
 			parsedInputData: singleParsedInputData,
 			originalRequestParameters: simulatedTx.preSimulationTransaction.originalRequestParameters,
+			...(simulatedTx.preSimulationTransaction.safeTransaction === undefined ? {} : { safeTransaction: simulatedTx.preSimulationTransaction.safeTransaction }),
 		}
 	})
 }

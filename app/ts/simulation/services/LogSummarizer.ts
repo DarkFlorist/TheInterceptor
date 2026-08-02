@@ -5,6 +5,7 @@ import { ETHEREUM_LOGS_LOGGER_ADDRESS } from '../../utils/constants.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import type { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
 import { getFilledInContactEntry } from '../../utils/addressBookEntries.js'
+import { getGasFeePaidByTransactionSender } from '../../utils/transactionGasAccounting.js'
 
 type BalanceChangeSummary = {
 	erc20TokenBalanceChanges: Map<string, bigint>, // token address, amount
@@ -241,12 +242,13 @@ const applyTokenChange = (state: SummaryState, change: TokenVisualizerResultWith
 }
 
 const applyGasFee = (state: SummaryState, result: SimulatedAndVisualizedTransaction): SummaryState => {
+	const gasFee = getGasFeePaidByTransactionSender(result)
+	if (gasFee === 0n) return state
 	const transactionSender = addressString(result.transaction.from.address)
 	const { nextState, preparedSummaries } = prepareSummaries(state, [transactionSender])
 	const senderSummary = preparedSummaries.get(transactionSender)
 	if (senderSummary === undefined) throw new Error('sender summary is missing?')
 	const ethAddress = addressString(ETHEREUM_LOGS_LOGGER_ADDRESS)
-	const gasFee = result.gasSpent * result.realizedGasPrice
 	const oldFromData = senderSummary.erc20TokenBalanceChanges.get(ethAddress)
 	senderSummary.erc20TokenBalanceChanges.set(ethAddress, oldFromData === undefined ? -gasFee : oldFromData - gasFee)
 	cleanupErc20BalanceChange(senderSummary, ethAddress)

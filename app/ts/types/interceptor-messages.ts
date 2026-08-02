@@ -101,7 +101,17 @@ const WalletPermission = funtypes.ReadonlyObject({
 	caveats: funtypes.ReadonlyArray(funtypes.Unknown),
 	invoker: funtypes.String,
 })
-const WalletCapabilities = funtypes.ReadonlyRecord(funtypes.String, funtypes.ReadonlyRecord(funtypes.String, funtypes.Unknown))
+const WalletCapabilities = funtypes.ReadonlyRecord(
+	funtypes.String,
+	funtypes.ReadonlyRecord(funtypes.String, funtypes.Unknown),
+)
+// Keep the discriminant in a separate intersection member. Combining this method with
+// the nested capability record makes funtypes inspect typed arrays as records while
+// formatting parse failures, masking the useful validation error.
+const WalletCapabilitiesReply = funtypes.Intersect(
+	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getCapabilities') }),
+	funtypes.ReadonlyObject({ result: WalletCapabilities }),
+)
 const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBlockByNumber'), result: GetBlockReturn }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBlockByHash'), result: GetBlockReturn }),
@@ -122,7 +132,7 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts'), result: funtypes.ReadonlyArray(EthereumAddress) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_requestPermissions'), result: funtypes.ReadonlyArray(WalletPermission) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions'), result: funtypes.ReadonlyArray(WalletPermission) }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getCapabilities'), result: WalletCapabilities }),
+	WalletCapabilitiesReply,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_revokePermissions'), result: funtypes.Null }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_maxPriorityFeePerGas'), result: EthereumQuantity }),
@@ -294,6 +304,7 @@ export const ModifyMakeMeRich = funtypes.ReadonlyObject({
 export type AddressBookCategory = funtypes.Static<typeof AddressBookCategory>
 export const AddressBookCategory = funtypes.Union(
 	funtypes.Literal('My Active Addresses'),
+	funtypes.Literal('My Safes'),
 	funtypes.Literal('My Contacts'),
 	funtypes.Literal('ERC20 Tokens'),
 	funtypes.Literal('ERC1155 Tokens'),

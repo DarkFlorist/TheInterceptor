@@ -1,6 +1,6 @@
 import { type InpageScriptRequest, PopupMessage, type RPCReply, type Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
-import { getTabState, promoteRpcAsPrimary, updateInterceptorTransactionStack } from './storageVariables.js'
+import { getTabState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, promoteRpcAsPrimary, updateTransactionState } from './storageVariables.js'
 import { changeSimulationMode, getSettings, trackPreviousActiveAddressForMakeMeRichList, updateWebsiteAccess } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleIterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHanders.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, type SimulationStateInput, type WebsiteCreatedEthereumTransactionOrFailed, toResolvedExecutionSimulationState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
@@ -38,9 +38,14 @@ import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { handleWatchAssetRequest, initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
+import { getConfiguredSafeSigningEntry, isSafeEntryWithSafeSigner } from '../types/addressBookTypes.js'
+import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
+import { createSafeExecutionPreSimulationTransaction } from '../safe/safeSimulation.js'
+import { getSafeModeRpcPolicyReply } from '../safe/safeRequestPolicy.js'
 import { dispatchPopupMessage } from './popupMessageDispatcher.js'
 import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
 import { createMethodHandlerFor, hasOwnKey } from '../utils/methodHandlers.js'
+import { getWalletCapabilities } from './walletCapabilities.js'
 import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
 
 if (initializeWatchAssetWindowListeners()) {
@@ -73,8 +78,9 @@ export async function getUpdatedSimulationState(ethereum: EthereumClientService,
 	return PASSTHROUGH_STATE
 }
 
-export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClientService, simulationMode: boolean) {
-	if (!simulationMode) return { simulationInput: PASSTHROUGH_STATE, simulationState: PASSTHROUGH_STATE }
+/** Builds the simulation-stack overlay used by simulation mode and Gnosis Safe signing mode. */
+export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClientService, simulationOverlayEnabled: boolean) {
+	if (!simulationOverlayEnabled) return { simulationInput: PASSTHROUGH_STATE, simulationState: PASSTHROUGH_STATE }
 	const simulationInput = await getCurrentSimulationInput()
 	return {
 		simulationInput: toResolvedSimulationInput(simulationInput),
@@ -90,6 +96,7 @@ export async function refreshConfirmTransactionSimulation(
 	simulationMode: boolean,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
+	safeSigningRequest?: SafeTransactionSigningRequest,
 ): Promise<ConfirmTransactionTransactionSingleVisualization | undefined> {
 	const info = {
 		uniqueRequestIdentifier,
@@ -106,14 +113,21 @@ export async function refreshConfirmTransactionSimulation(
 	const simulationStartedTimestamp = new Date()
 	const simulationInput = await getCurrentSimulationInput()
 	try {
-			const getNewVisualizedSimulationState = async () => {
-				const simulationStateWithNewTransaction = transactionToSimulate.success ? appendTransactionsToInput(simulationInput, [{
-				signedTransaction: getSignedTransactionForSimulation(transactionToSimulate),
-				website: transactionToSimulate.website,
-				created: transactionToSimulate.created,
-					originalRequestParameters: transactionToSimulate.originalRequestParameters,
-					transactionIdentifier: transactionToSimulate.transactionIdentifier
-				}]) : simulationInput
+		const getNewVisualizedSimulationState = async () => {
+			const preSimulationTransaction = transactionToSimulate.success
+				? safeSigningRequest === undefined
+					? {
+						signedTransaction: getSignedTransactionForSimulation(transactionToSimulate),
+						website: transactionToSimulate.website,
+						created: transactionToSimulate.created,
+						originalRequestParameters: transactionToSimulate.originalRequestParameters,
+						transactionIdentifier: transactionToSimulate.transactionIdentifier
+					}
+					: createSafeExecutionPreSimulationTransaction(transactionToSimulate, safeSigningRequest)
+				: undefined
+			const simulationStateWithNewTransaction = preSimulationTransaction === undefined
+				? simulationInput
+				: appendTransactionsToInput(simulationInput, [preSimulationTransaction], undefined, {}, safeSigningRequest !== undefined)
 				const updatedSimulationState = await createSimulationStateWithNonceAndBaseFeeFixing(simulationStateWithNewTransaction, ethereum)
 				return await visualizeSimulatorState(updatedSimulationState, ethereum, tokenPriceService, thisConfirmTransactionAbortController)
 		}
@@ -195,6 +209,9 @@ async function handleRPCRequest(
 	settings: Settings,
 	activeAddress: bigint | undefined,
 	publishRpcConnectionStatus: PublishRpcConnectionStatus,
+	simulationOverlayEnabled: boolean,
+	safeSigningMode: boolean,
+	activeSafeSigner: bigint | undefined,
 ): Promise<RPCReply> {
 	const maybeParsedRequest = EthereumJsonRpcRequest.safeParse(request)
 	const forwardToSigner = !settings.simulationMode && !request.usingInterceptorWithoutSigner
@@ -204,13 +221,23 @@ async function handleRPCRequest(
 	}
 
 	if (maybeParsedRequest.success === false) {
-		console.warn({ request })
-		console.warn(maybeParsedRequest.fullError)
-		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
 		for (const getMethodSpecificReply of RPC_PARSE_FAILURE_HANDLERS) {
 			const methodSpecificReply = getMethodSpecificReply(request)
 			if (methodSpecificReply !== undefined) return methodSpecificReply
 		}
+		const safePolicyReply = getSafeModeRpcPolicyReply({
+			rawRequest: request,
+			parsedRequest: undefined,
+			safeSigningMode,
+			forwardToSigner,
+			activeAddress,
+			chainId: settings.activeRpcNetwork.chainId,
+			hasRpcConnection: settings.activeRpcNetwork.httpsRpc !== undefined,
+		})
+		if (safePolicyReply !== undefined) return safePolicyReply
+		console.warn({ request })
+		console.warn(maybeParsedRequest.fullError)
+		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
 		// the method is some method that we are not supporting, forward it to the wallet if signer is available
 		if (maybePartiallyParsedRequest.success === false && forwardToSigner) return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
 		return {
@@ -223,6 +250,16 @@ async function handleRPCRequest(
 		}
 	}
 	const parsedRequest = maybeParsedRequest.value
+	const safePolicyReply = getSafeModeRpcPolicyReply({
+		rawRequest: request,
+		parsedRequest,
+		safeSigningMode,
+		forwardToSigner,
+		activeAddress,
+		chainId: settings.activeRpcNetwork.chainId,
+		hasRpcConnection: settings.activeRpcNetwork.httpsRpc !== undefined,
+	})
+	if (safePolicyReply !== undefined) return safePolicyReply
 	const accountOnlyMethod = isAccountOnlyMethod(parsedRequest.method)
 	if (settings.activeRpcNetwork.httpsRpc === undefined && forwardToSigner && !accountOnlyMethod) {
 		// we are using network that is not supported by us
@@ -265,23 +302,18 @@ async function handleRPCRequest(
 		wallet_getPermissions: rpcRequestHandler('wallet_getPermissions', async () => await getPermissions(activeAddress, website)),
 		wallet_getCapabilities: rpcRequestHandler('wallet_getCapabilities', async (_context, rpcRequest) => {
 			if (rpcRequest.params[0] !== activeAddress) {
-				return {
-					type: 'result' as const,
-					method: rpcRequest.method,
-					error: {
-						code: METAMASK_ERROR_NOT_AUTHORIZED,
-						message: 'The requested account has not been authorized by the user.',
-					},
-				}
+				return getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, activeSafeSigner)
 			}
-			if (forwardToSigner) return { type: 'forwardToSigner' as const, replyWithSignersReply: true as const, ...request }
-			return { type: 'result' as const, method: rpcRequest.method, result: {} }
+			if (activeSafeSigner === undefined && forwardToSigner) {
+				return { type: 'forwardToSigner', replyWithSignersReply: true, ...request }
+			}
+			return getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, activeSafeSigner)
 		}),
 		eth_accounts: rpcRequestHandler('eth_accounts', async () => await getAccounts(activeAddress)),
 		eth_requestAccounts: rpcRequestHandler('eth_requestAccounts', async () => await getAccounts(activeAddress)),
 		eth_gasPrice: rpcRequestHandler('eth_gasPrice', async () => await gasPrice(ethereum)),
 		eth_getTransactionCount: rpcRequestHandler('eth_getTransactionCount', async (_context, rpcRequest) => await withSimulationInput((simulationInput) => getTransactionCount(ethereum, simulationInput, rpcRequest))),
-		interceptor_getSimulationStack: rpcRequestHandler('interceptor_getSimulationStack', async (_context, rpcRequest) => await requestInterceptorSimulatorStack(await getUpdatedSimulationStackSnapshot(ethereum, settings.simulationMode), websiteTabConnections, rpcRequest, website, request, socket)),
+		interceptor_getSimulationStack: rpcRequestHandler('interceptor_getSimulationStack', async (_context, rpcRequest) => await requestInterceptorSimulatorStack(await getUpdatedSimulationStackSnapshot(ethereum, simulationOverlayEnabled), simulationOverlayEnabled, websiteTabConnections, rpcRequest, website, request, socket)),
 		eth_simulateV1: rpcRequestHandler('eth_simulateV1', async (_context, rpcRequest) => await withSimulationInput((simulationInput) => ethSimulateV1(ethereum, simulationInput, rpcRequest))),
 		wallet_addEthereumChain: rpcRequestHandler('wallet_addEthereumChain', async (_context, rpcRequest) => {
 			if (forwardToSigner) return getForwardingMessage(rpcRequest)
@@ -308,7 +340,10 @@ async function handleRPCRequest(
 }
 
 export async function resetSimulationStateFromConfig(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
-	await updateInterceptorTransactionStack(() => ({ operations: [] }))
+	await updateTransactionState(() => ({
+		interceptorTransactionStack: { operations: [] },
+		safeTransactionStacks: [],
+	}))
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
 }
 
@@ -341,9 +376,22 @@ export async function changeActiveAddressAndChain(
 			...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
 		})
 	} else {
+		const activeChainId = change.rpcNetwork?.chainId ?? (await getSettings()).activeRpcNetwork.chainId
+		const [allEntries, activeChainEntries] = await Promise.all([
+			getUserAddressBookEntries(),
+			getUserAddressBookEntriesForChainIdMorePreciseFirst(activeChainId),
+		])
+		const selectedSafe = change.activeAddress === undefined
+			? undefined
+			: allEntries.find((entry) => entry.type === 'safe' && entry.address === change.activeAddress)
+		const safeEntryWithSafeSigner = change.activeAddress === undefined
+			? undefined
+			: activeChainEntries.find((entry) => entry.address === change.activeAddress && isSafeEntryWithSafeSigner(entry))
 		await changeSimulationMode({
 			simulationMode: change.simulationMode,
-			...('activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
+			...(selectedSafe === undefined && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
+			...(selectedSafe !== undefined && safeEntryWithSafeSigner === undefined ? { activeSigningAddress: undefined } : {}),
+			...('activeAddress' in change ? { activeSimulationAddress: safeEntryWithSafeSigner?.address } : {}),
 			...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
 		})
 	}
@@ -681,15 +729,29 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		const settings = await getSettings()
+		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
+		const activeAddressBookEntry = activeAddress === undefined
+			? undefined
+			: currentChainEntries.find((entry) => entry.address === activeAddress)
+		const simulationOverlayEnabled = settings.simulationMode || activeAddressBookEntry?.type === 'safe'
+		const configuredSafe = getConfiguredSafeSigningEntry(currentChainEntries, {
+			...settings,
+			// The request's active address is captured before async handling begins. Do not
+			// reroute an in-flight request if the popup selects another account meanwhile.
+			activeSimulationAddress: activeAddress,
+			chainId: settings.activeRpcNetwork.chainId,
+		})
+		const safeSigningMode = configuredSafe !== undefined
+		const activeSafeSigner = configuredSafe?.safeSignerAddress
 		let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
 		let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
 		const getSimulationInput = async () => {
-			if (!settings.simulationMode) return PASSTHROUGH_STATE
+			if (!simulationOverlayEnabled) return PASSTHROUGH_STATE
 			if (simulationInputPromise === undefined) simulationInputPromise = (async () => toResolvedSimulationInput(await prepareSimulationInputForRpc(await getCurrentSimulationInput(), ethereum)))()
 			return await simulationInputPromise
 		}
 		const getExecutionSimulationState = async () => {
-			if (!settings.simulationMode) return PASSTHROUGH_STATE
+			if (!simulationOverlayEnabled) return PASSTHROUGH_STATE
 			if (executionSimulationStatePromise === undefined) executionSimulationStatePromise = (async () => {
 				const simulationInput = await getSimulationInput()
 				if (simulationInput.kind === 'passthrough') return PASSTHROUGH_STATE
@@ -697,7 +759,7 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 			})()
 			return await executionSimulationStatePromise
 		}
-		const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress, publishRpcConnectionStatus)
+		const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, activeSafeSigner)
 		await persistApprovedAccountsForAccountRequest(
 			ethereum,
 			tokenPriceService,

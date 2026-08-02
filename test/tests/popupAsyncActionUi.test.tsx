@@ -784,25 +784,14 @@ describe('popup async action UI', () => {
 			}), dom.document.body)
 		})
 
-		const buttons = collectElements(dom.document.body, 'button')
-		const simulateButton = buttons.find((button) => button.textContent?.includes('Simulate outcome'))
-		if (simulateButton === undefined) throw new Error('Expected Gnosis simulation button to render')
 		const outcomePanel = findFirstByClass(dom.document.body, 'safe-outcome-panel')
-		assert.equal(collectTextSegments(outcomePanel).join(' '), 'Outcome if approved Simulate outcome')
-
-		await act(async () => {
-			await clickElement(simulateButton)
-		})
+		assert.equal(collectTextSegments(outcomePanel).join(' '), 'Outcome if approved Simulating Gnosis Safe transaction…')
 
 		const loadingState = findFirstByClass(dom.document.body, 'safe-outcome-panel__loading')
 		assert.equal(loadingState?.attributes?.role, 'status')
-		assert.equal(loadingState?.attributes?.['aria-label'], 'Simulating outcome')
-		assert.equal(loadingState?.textContent?.trim(), '')
+		assert.equal(loadingState?.attributes?.['aria-label'], 'Simulating Gnosis Safe transaction')
+		assert.equal(loadingState?.textContent?.trim(), 'Simulating Gnosis Safe transaction…')
 		assert.notEqual(findFirstByClass(dom.document.body, 'spinner'), undefined)
-
-		await act(async () => {
-			await clickElement(simulateButton)
-		})
 		assert.equal(simulationRequestCount, 1)
 
 		await act(async () => {
@@ -836,11 +825,7 @@ describe('popup async action UI', () => {
 			}), dom.document.body)
 		})
 
-		const simulateButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate outcome'))
-		if (simulateButton === undefined) throw new Error('Expected Gnosis simulation button to render')
-
 		await act(async () => {
-			await clickElement(simulateButton)
 			initialDeferredReply.resolve(initialReply)
 			await initialDeferredReply.promise
 			await settleAsyncUpdates()
@@ -853,7 +838,7 @@ describe('popup async action UI', () => {
 			await clickElement(refreshButton)
 		})
 
-		assert.equal(findFirstByClass(dom.document.body, 'safe-outcome-panel__loading')?.textContent?.trim(), '')
+		assert.equal(findFirstByClass(dom.document.body, 'safe-outcome-panel__loading')?.textContent?.trim(), 'Simulating Gnosis Safe transaction…')
 		assert.notEqual(findFirstByClass(dom.document.body, 'spinner'), undefined)
 		assert.equal(dom.document.body.textContent?.includes('Initial Gnosis result'), false)
 
@@ -881,13 +866,6 @@ describe('popup async action UI', () => {
 				renameAddressCallBack: () => undefined,
 				editEnsNamedHashCallBack: () => undefined,
 			}), dom.document.body)
-		})
-
-		const simulateButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate outcome'))
-		if (simulateButton === undefined) throw new Error('Expected Gnosis simulation button to render')
-
-		await act(async () => {
-			await clickElement(simulateButton)
 		})
 
 		await act(async () => {
@@ -932,13 +910,6 @@ describe('popup async action UI', () => {
 			}), dom.document.body)
 		})
 
-		const originalSimulateButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate outcome'))
-		if (originalSimulateButton === undefined) throw new Error('Expected Gnosis simulation button to render')
-
-		await act(async () => {
-			await clickElement(originalSimulateButton)
-		})
-
 		await act(() => {
 			render(h(modules.GnosisSafeVisualizer, {
 				gnosisSafeMessage: createGnosisSafeMessageFixture(8n),
@@ -946,12 +917,6 @@ describe('popup async action UI', () => {
 				renameAddressCallBack: () => undefined,
 				editEnsNamedHashCallBack: () => undefined,
 			}), dom.document.body)
-		})
-
-		const currentSimulateButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulate outcome'))
-		if (currentSimulateButton === undefined) throw new Error('Expected current Gnosis simulation button to render')
-		await act(async () => {
-			await clickElement(currentSimulateButton)
 		})
 
 		await act(async () => {

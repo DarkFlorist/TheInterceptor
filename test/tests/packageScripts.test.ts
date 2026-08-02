@@ -83,6 +83,12 @@ describe('package scripts', () => {
 		}
 	})
 
+	test('provides the browser-level Safe co-signer handoff check', () => {
+		const scripts = getPackageScripts()
+
+		assert.equal(getScript(scripts, 'test:chrome-safe-cosigning-communication'), 'bun ./test/benchmarks/chromeSafeCoSigningCommunication.ts')
+	})
+
 	test('typescript is new enough for micro-eth-signer declarations', () => {
 		const packageJson = getPackageJson()
 		assert.equal(getDependencyVersion(packageJson, 'micro-eth-signer'), '0.19.0')

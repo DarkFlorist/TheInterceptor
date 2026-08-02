@@ -1,8 +1,9 @@
 import * as assert from 'assert'
 import { afterEach, describe, test } from 'bun:test'
-import { estimateSerializedStateBytes, formatEstimatedBytes, getLargeStateValue, removeLargeStateValue, setLargeStateValue } from '../../app/ts/utils/largeStateStore.js'
+import { estimateSerializedStateBytes, formatEstimatedBytes, getLargeStateValue, prepareLargeStateWrite, removeLargeStateValue, setLargeStateValue, setLargeStateValues } from '../../app/ts/utils/largeStateStore.js'
 import { InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
+import { SafeTransactionStacks } from '../../app/ts/types/safeTypes.js'
 
 const stack: InterceptorTransactionStack = {
 	operations: [{
@@ -95,7 +96,7 @@ function createStorageGetResult(keys: StorageGetKeys, storageState: Record<strin
 	return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 }
 
-function installBrowserStorage(storageState: Record<string, unknown>) {
+function installBrowserStorage(storageState: Record<string, unknown>, beforeSet?: (items: Record<string, unknown>) => Promise<void>) {
 	Object.defineProperty(globalThis, 'browser', {
 		value: {
 			storage: {
@@ -104,6 +105,7 @@ function installBrowserStorage(storageState: Record<string, unknown>) {
 						return createStorageGetResult(keys, storageState)
 					},
 					async set(items: Record<string, unknown>) {
+						await beforeSet?.(items)
 						Object.assign(storageState, items)
 					},
 					async remove(keys: string | string[]) {
@@ -177,10 +179,10 @@ function installFakeIndexedDb(indexedDbState: Map<string, unknown>, options: Fak
 	return fakeIndexedDb
 }
 
-function installLargeStateEnvironment(options: FakeIndexedDbOptions = {}) {
+function installLargeStateEnvironment(options: FakeIndexedDbOptions = {}, beforeStorageSet?: (items: Record<string, unknown>) => Promise<void>) {
 	const storageState: Record<string, unknown> = {}
 	const indexedDbState = new Map<string, unknown>()
-	installBrowserStorage(storageState)
+	installBrowserStorage(storageState, beforeStorageSet)
 	const fakeIndexedDb = installFakeIndexedDb(indexedDbState, options)
 	return { fakeIndexedDb, indexedDbState, storageState }
 }
@@ -217,6 +219,61 @@ describe('large state store helpers', () => {
 		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
 
 		assert.deepEqual(await getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack), stack)
+	})
+
+	test('stores transaction and Safe stacks in one IndexedDB batch', async () => {
+		const { indexedDbState, storageState } = installLargeStateEnvironment()
+
+		await setLargeStateValues([
+			prepareLargeStateWrite('interceptorTransactionStack', InterceptorTransactionStack, stack),
+			prepareLargeStateWrite('safeTransactionStacks', SafeTransactionStacks, []),
+		])
+
+		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
+		assert.deepEqual(indexedDbState.get('safeTransactionStacks'), [])
+		assert.equal(storageState[transactionStackMigratedMarkerKey], true)
+		assert.equal(storageState['interceptorLargeStateMigrated:safeTransactionStacks'], true)
+	})
+
+	test('does not let a fallback read overwrite a newly committed IndexedDB batch', async () => {
+		let releaseMarkerWrite = () => undefined
+		const markerWriteReleased = new Promise<void>((resolve) => {
+			releaseMarkerWrite = () => resolve()
+		})
+		let markMarkerWriteStarted = () => undefined
+		const markerWriteStarted = new Promise<void>((resolve) => {
+			markMarkerWriteStarted = () => resolve()
+		})
+		const { indexedDbState, storageState } = installLargeStateEnvironment({}, async (items) => {
+			if (items[transactionStackMigratedMarkerKey] !== true) return
+			markMarkerWriteStarted()
+			await markerWriteReleased
+		})
+		storageState.interceptorTransactionStack = serializedStack(staleStack)
+		storageState[transactionStackMigratedMarkerKey] = false
+
+		const write = setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, stack)
+		await markerWriteStarted
+		const concurrentRead = getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack)
+		releaseMarkerWrite()
+
+		await write
+		assert.deepEqual(await concurrentRead, stack)
+		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
+	})
+
+	test('falls back with both transaction-state records when an IndexedDB batch fails', async () => {
+		const { indexedDbState, storageState } = installLargeStateEnvironment({ putError: new Error('put failed') })
+
+		await setLargeStateValues([
+			prepareLargeStateWrite('interceptorTransactionStack', InterceptorTransactionStack, stack),
+			prepareLargeStateWrite('safeTransactionStacks', SafeTransactionStacks, []),
+		])
+
+		assert.equal(indexedDbState.has('interceptorTransactionStack'), false)
+		assert.equal(indexedDbState.has('safeTransactionStacks'), false)
+		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack())
+		assert.deepEqual(storageState.safeTransactionStacks, [])
 	})
 
 	test('falls back to storage.local when IndexedDB writes fail', async () => {

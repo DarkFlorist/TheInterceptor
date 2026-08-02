@@ -323,6 +323,11 @@ export const WalletRevokePermissions = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(WalletRevokePermissionsParams)
 }).asReadonly()
 
+// EIP-5792 standardizes capability discovery; this versioned capability defines
+// Interceptor's experimental contract until equivalent semantics have their own ERC.
+export const GNOSIS_SAFE_EXECUTION_CAPABILITY = 'gnosisSafeExecution'
+export const GNOSIS_SAFE_EXECUTION_CAPABILITY_VERSION = '1.0.0'
+
 export type WalletGetCapabilities = funtypes.Static<typeof WalletGetCapabilities>
 export const WalletGetCapabilities = funtypes.ReadonlyObject({
 	method: funtypes.Literal('wallet_getCapabilities'),
