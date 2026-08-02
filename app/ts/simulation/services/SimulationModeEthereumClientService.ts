@@ -257,12 +257,14 @@ const resolveSimulationBlockTag = (
 	return blockTag
 }
 
+const isNodeOnlyBlockTag = (blockTag: EthereumBlockTag): blockTag is 'earliest' | 'safe' | 'finalized' => blockTag === 'earliest' || blockTag === 'safe' || blockTag === 'finalized'
+
 const canQueryNodeDirectlyFromInput = (
 	baseBlockNumber: bigint,
 	executionBlockCount: number,
 	blockTag: EthereumBlockTag = 'latest',
 ) => {
-	if (blockTag === 'finalized') return true
+	if (isNodeOnlyBlockTag(blockTag)) return true
 	if (executionBlockCount === 0) return true
 	if (typeof blockTag === 'bigint' && blockTag <= baseBlockNumber) return true
 	return false
@@ -306,7 +308,7 @@ export function getInputFieldFromDataOrInput(request: { input?: Uint8Array} | { 
 }
 
 export const getSimulatedTransactionCount = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, address: bigint, blockTag: EthereumBlockTag = 'latest') => {
-	if (blockTag === 'finalized' || simulationState.kind === 'passthrough') return await ethereumClientService.getTransactionCount(address, blockTag, requestAbortController)
+	if (isNodeOnlyBlockTag(blockTag) || simulationState.kind === 'passthrough') return await ethereumClientService.getTransactionCount(address, blockTag, requestAbortController)
 	const currentState = simulationState.value
 	if (currentState.success === false) throw new JsonRpcResponseError(currentState.jsonRpcError)
 	const blockNumToUseForSim = blockTag === 'latest' || blockTag === 'pending' ? currentState.blockNumber + BigInt(currentState.simulatedBlocks.length) : blockTag
@@ -935,7 +937,7 @@ export const getBaseFeeAdjustedTransactions = (
 }
 
 const canQueryNodeDirectly = async (simulationState: SimulationState, blockTag: EthereumBlockTag = 'latest') => {
-	if (blockTag === 'finalized'
+	if (isNodeOnlyBlockTag(blockTag)
 		|| (simulationState.success && simulationState.simulatedBlocks.length === 0)
 		|| (simulationState.success && typeof blockTag === 'bigint' && blockTag <= simulationState.blockNumber)
 	){
@@ -1349,9 +1351,9 @@ const simulatedCallWithPreparedInputContext = async (
 	blockTag: EthereumBlockTag = 'latest',
 	extraOverrides: StateOverrides = {},
 ) => {
-	if (blockTag === 'finalized') {
+	if (isNodeOnlyBlockTag(blockTag)) {
 		try {
-			return { result: await ethereumClientService.call(params, 'finalized', requestAbortController) }
+			return { result: await ethereumClientService.call(params, blockTag, requestAbortController) }
 		} catch(error: unknown) {
 			if (error instanceof JsonRpcResponseError) {
 				const safeParsedData = EthereumData.safeParse(error.data)
@@ -1618,7 +1620,7 @@ export async function getSimulatedBlock(ethereumClientService: EthereumClientSer
 export async function getSimulatedBlock(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>
 export async function getSimulatedBlock(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
 export async function getSimulatedBlock(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, blockTag: EthereumBlockTag = 'latest', fullObjects = true): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>  {
-	if (simulationState.kind === 'passthrough' || blockTag === 'finalized' || await canQueryNodeDirectly(simulationState.value, blockTag)) {
+	if (simulationState.kind === 'passthrough' || isNodeOnlyBlockTag(blockTag) || await canQueryNodeDirectly(simulationState.value, blockTag)) {
 		return await ethereumClientService.getBlock(requestAbortController, blockTag, fullObjects)
 	}
 	const currentState = simulationState.value
@@ -1683,9 +1685,9 @@ export const getSimulatedLogs = async (ethereumClientService: EthereumClientServ
 	const toBlock = 'toBlock' in logFilter && logFilter.toBlock !== undefined ? logFilter.toBlock : 'latest'
 	const fromBlock = 'fromBlock' in logFilter && logFilter.fromBlock !== undefined ? logFilter.fromBlock : 'latest'
 	if (toBlock === 'pending' || fromBlock === 'pending') return await ethereumClientService.getLogs(logFilter, requestAbortController)
+	if (isNodeOnlyBlockTag(toBlock) || isNodeOnlyBlockTag(fromBlock)) return await ethereumClientService.getLogs(logFilter, requestAbortController)
 	if ((fromBlock === 'latest' && toBlock !== 'latest') || (fromBlock !== 'latest' && toBlock !== 'latest' && fromBlock > toBlock )) throw new Error(`From block '${ fromBlock }' is later than to block '${ toBlock }' `)
 
-	if (toBlock === 'finalized' || fromBlock === 'finalized') return await ethereumClientService.getLogs(logFilter, requestAbortController)
 	const simulatedHead = currentState.blockNumber + BigInt(executionBlocks.length)
 	if ('blockHash' in logFilter) {
 		const executionBlock = executionBlocks.find((block) => logFilter.blockHash === block.blockHash)
@@ -1757,10 +1759,10 @@ export const getSimulatedTransactionByHash = async (ethereumClientService: Ether
 	return await ethereumClientService.getTransactionByHash(hash, requestAbortController)
 }
 
-const simulatedCall = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, params: Pick<IUnsignedTransaction1559, 'to' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'input' | 'value'> & Partial<Pick<IUnsignedTransaction1559, 'from' | 'gasLimit'>>, blockTag: EthereumBlockTag = 'latest', extraOverrides: StateOverrides = {}) => {
-	if (blockTag === 'finalized') {
+export const simulatedCall = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, params: Pick<IUnsignedTransaction1559, 'to' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'input' | 'value'> & Partial<Pick<IUnsignedTransaction1559, 'from' | 'gasLimit'>>, blockTag: EthereumBlockTag = 'latest', extraOverrides: StateOverrides = {}) => {
+	if (isNodeOnlyBlockTag(blockTag)) {
 		try {
-			return { result: await ethereumClientService.call(params, 'finalized', requestAbortController) }
+			return { result: await ethereumClientService.call(params, blockTag, requestAbortController) }
 		} catch(error: unknown) {
 			if (error instanceof JsonRpcResponseError) {
 				const safeParsedData = EthereumData.safeParse(error.data)

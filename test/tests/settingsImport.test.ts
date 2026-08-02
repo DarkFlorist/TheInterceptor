@@ -89,6 +89,24 @@ const buildVersion12Import = (useTabsInsteadOfPopup: boolean, metamaskCompatibil
 	},
 })
 
+const buildVersion13Import = (): ExportedSettings => ({
+	name: 'InterceptorSettingsAndAddressBook',
+	version: '1.3',
+	exportedDate: '2026-05-21',
+	settings: {
+		activeSimulationAddress: 0x3333333333333333333333333333333333333333n,
+		rpcNetwork: testRpcNetwork,
+		openedPage: { page: 'Settings' },
+		useSignersAddressAsActiveAddress: false,
+		websiteAccess: [],
+		simulationMode: false,
+		addressInfos: [],
+		contacts: undefined,
+		useTabsInsteadOfPopup: false,
+		metamaskCompatibilityMode: false,
+	},
+})
+
 const buildVersion14Import = (useTabsInsteadOfPopup: boolean, metamaskCompatibilityMode: boolean, websiteAccess: ExportedSettings['settings']['websiteAccess'] = []): ExportedSettings => ({
 	name: 'InterceptorSettingsAndAddressBook',
 	version: '1.4',
@@ -96,7 +114,7 @@ const buildVersion14Import = (useTabsInsteadOfPopup: boolean, metamaskCompatibil
 	settings: {
 		activeSimulationAddress: 0x2222222222222222222222222222222222222222n,
 		rpcNetwork: testRpcNetwork,
-		openedPage: { page: 'Home' },
+		openedPage: { page: 'Settings' },
 		useSignersAddressAsActiveAddress: false,
 		websiteAccess,
 		simulationMode: true,
@@ -109,6 +127,26 @@ const buildVersion14Import = (useTabsInsteadOfPopup: boolean, metamaskCompatibil
 describe('settings import', () => {
 	beforeEach(() => {
 		browserMock.reset()
+	})
+
+	test('restores simulation settings and the opened page from version 1.3 exports', async () => {
+		const { getPage, getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+
+		await importSettingsAndAddressBook(buildVersion13Import())
+
+		const settings = await getSettings()
+		assert.equal(settings.simulationMode, false)
+		assert.equal(settings.activeSimulationAddress, 0x3333333333333333333333333333333333333333n)
+		assert.deepEqual(settings.activeRpcNetwork, testRpcNetwork)
+		assert.deepEqual(await getPage(), { page: 'Settings' })
+	})
+
+	test('restores the opened page from version 1.4 exports', async () => {
+		const { getPage, importSettingsAndAddressBook } = await settingsModulePromise
+
+		await importSettingsAndAddressBook(buildVersion14Import(false, false))
+
+		assert.deepEqual(await getPage(), { page: 'Settings' })
 	})
 
 	test('restores metamask compatibility mode from version 1.4 exports', async () => {

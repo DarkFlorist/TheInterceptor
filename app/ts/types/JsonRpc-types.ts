@@ -23,16 +23,14 @@ export const EthGetStorageAtResponse = funtypes.Union(
 )
 
 export type EthGetLogsRequest = funtypes.Static<typeof EthGetLogsRequest>
-export const EthGetLogsRequest = funtypes.Intersect(
-	funtypes.Union(
-		funtypes.ReadonlyObject({ blockHash: EthereumBytes32 }).asReadonly(),
-		funtypes.Partial({ fromBlock: EthereumBlockTag, toBlock: EthereumBlockTag }).asReadonly(),
-	),
-	funtypes.Partial({
-		address: funtypes.Union(EthereumAddress, funtypes.ReadonlyArray(EthereumAddress), funtypes.Null),
-		topics: funtypes.ReadonlyArray(funtypes.Union(EthereumBytes32, funtypes.ReadonlyArray(EthereumBytes32), funtypes.Null)),
-	}).asReadonly()
-)
+export const EthGetLogsRequest = funtypes.ReadonlyPartial({
+	blockHash: EthereumBytes32,
+	blockhash: funtypes.Never,
+	fromBlock: EthereumBlockTag,
+	toBlock: EthereumBlockTag,
+	address: funtypes.Union(EthereumAddress, funtypes.ReadonlyArray(EthereumAddress), funtypes.Null),
+	topics: funtypes.ReadonlyArray(funtypes.Union(EthereumBytes32, funtypes.ReadonlyArray(EthereumBytes32), funtypes.Null)),
+}).withConstraint((logFilter) => logFilter.blockHash === undefined || (logFilter.fromBlock === undefined && logFilter.toBlock === undefined))
 
 export type EthGetLogsResponse = funtypes.Static<typeof EthGetLogsResponse>
 export const EthGetLogsResponse = funtypes.ReadonlyArray(
@@ -432,16 +430,19 @@ export const FeeHistory = funtypes.ReadonlyObject({
 	)
 })
 
+const EthNewFilterOptions = funtypes.ReadonlyPartial({
+	fromBlock: EthereumBlockTag,
+	toBlock: EthereumBlockTag,
+	address: EthereumAddress,
+	topics: funtypes.ReadonlyArray(funtypes.Union(EthereumBytes32, funtypes.ReadonlyArray(EthereumBytes32), funtypes.Null)),
+	blockHash: EthereumBytes32,
+	blockhash: funtypes.Never,
+}).withConstraint((logFilter) => logFilter.blockHash === undefined || (logFilter.fromBlock === undefined && logFilter.toBlock === undefined))
+
 export type EthNewFilter = funtypes.Static<typeof EthNewFilter>
 export const EthNewFilter = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_newFilter'),
-	params: funtypes.ReadonlyTuple(funtypes.ReadonlyPartial({
-		fromBlock: EthereumBlockTag,
-		toBlock: EthereumBlockTag,
-		address: EthereumAddress,
-		topics: funtypes.ReadonlyArray(funtypes.Union(EthereumBytes32, funtypes.ReadonlyArray(EthereumBytes32), funtypes.Null)),
-		blockhash: EthereumBytes32,
-	}))
+	params: funtypes.ReadonlyTuple(EthNewFilterOptions)
 })
 
 export type UninstallFilter = funtypes.Static<typeof UninstallFilter>

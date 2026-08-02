@@ -3,7 +3,7 @@ import { useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useContext, useRef } from 'preact/hooks'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { TextInput } from './TextField.js'
-import { RpcEntry } from '../../types/rpc.js'
+import type { RpcEntry } from '../../types/rpc.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { getSettings } from '../../background/settings.js'
 import { getChainName } from '../../utils/constants.js'
@@ -14,6 +14,7 @@ import { JsonRpcResponseError } from '../../utils/errors.js'
 import { EthereumQuantity } from '../../types/wire-types.js'
 import { isBrowserFetchTransportError } from '../../utils/caughtErrors.js'
 import { AsyncStatusIcon } from './AsyncAction.js'
+import { parseRpcFormData } from '../../utils/rpcFormData.js'
 
 type RpcProbeResult = {
 	chainId: bigint
@@ -198,24 +199,6 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 					}
 			}
 		}
-	}
-
-	const parseRpcFormData = (formData: FormData) => {
-		const chainIdFromForm = formData.get('chainId')?.toString().trim()
-		const blockExplorerUrlForm = formData.get('blockExplorerUrl')?.toString().trim()
-		const blockExplorerApiKeyForm = formData.get('blockExplorerApiKey')?.toString().trim()
-		const isBlockExplorerDefined = blockExplorerUrlForm !== undefined && blockExplorerApiKeyForm !== undefined && blockExplorerUrlForm.length > 0 && blockExplorerApiKeyForm.length > 0
-		const newRpcEntry = {
-			name: formData.get('name')?.toString().trim() || '',
-			chainId: chainIdFromForm ? `0x${ BigInt(chainIdFromForm).toString(16) }` : '',
-			httpsRpc: formData.get('httpsRpc')?.toString().trim() || '',
-			currencyName: formData.get('currencyName')?.toString().trim() || '',
-			currencyTicker: formData.get('currencyTicker')?.toString().trim() || '',
-			...isBlockExplorerDefined ? { blockExplorer: { apiUrl: blockExplorerUrlForm || '', apiKey: blockExplorerApiKeyForm } } : {},
-			minimized: true,
-			primary: false,
-		}
-		return RpcEntry.safeParse(newRpcEntry)
 	}
 
 	const chainIdDefault = useComputed(() => {

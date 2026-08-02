@@ -29,13 +29,17 @@ interface ChainSelectorParams {
 	buttonClassses: string
 }
 
+export function findChainEntryByName(chains: readonly ChainEntry[], chainName: string) {
+	return chains.find((chainEntry) => chainEntry.name === chainName)
+}
+
 export function ChainSelector(params: ChainSelectorParams) {
 	const chains = useComputed(() => rpcEntriesToChainEntriesWithAllChainsEntry(params.rpcEntries.value))
 	const options = useComputed(() => chains.value.map((entry) => entry.name))
 	const selected = useComputed(() => chains.value.find((chainEntry) => chainEntry.chainId === params.chainId.value)?.name || 'No Chain Selected')
-	const onChangedCallBack = (rpcName: string) => {
-		const newEntry = params.rpcEntries.value.find((rpcEntry) => rpcEntry.name === rpcName)
-		if (newEntry === undefined) throw new Error(`Tried to change chain that does not exist: ${ rpcName }`)
+	const onChangedCallBack = (chainName: string) => {
+		const newEntry = findChainEntryByName(chains.value, chainName)
+		if (newEntry === undefined) throw new Error(`Tried to change chain that does not exist: ${ chainName }`)
 		params.changeChain(newEntry)
 	}
 	return <DropDownMenu selected = { selected } dropDownOptions = { options } onChangedCallBack = { onChangedCallBack } buttonClassses = { params.buttonClassses }/>

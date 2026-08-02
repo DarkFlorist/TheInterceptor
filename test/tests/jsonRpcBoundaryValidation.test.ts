@@ -1,0 +1,46 @@
+import * as assert from 'assert'
+import { describe, test } from 'bun:test'
+import { EthereumJsonRpcRequest, EthGetLogsRequest, EthNewFilter } from '../../app/ts/types/JsonRpc-types.js'
+import { EthereumAddress, EthereumBlockTag, EthereumBytes16, EthereumBytes256, EthereumBytes32, serialize } from '../../app/ts/types/wire-types.js'
+
+const blockHash = `0x${ '12'.repeat(32) }`
+
+describe('JSON-RPC boundary validation', () => {
+	test('accepts safe and earliest block tags', () => {
+		assert.equal(EthereumBlockTag.parse('safe'), 'safe')
+		assert.equal(EthereumBlockTag.parse('earliest'), 'earliest')
+	})
+
+	test('preserves the standard blockHash field on new filters', () => {
+		const parsed = EthNewFilter.safeParse({ method: 'eth_newFilter', params: [{ blockHash }] })
+
+		assert.equal(parsed.success, true)
+		if (!parsed.success) throw new Error(parsed.message)
+		assert.equal(parsed.value.params[0].blockHash, BigInt(blockHash))
+	})
+
+	test('rejects the non-standard lowercase blockhash field instead of stripping it', () => {
+		assert.equal(EthereumJsonRpcRequest.safeParse({ method: 'eth_getLogs', params: [{ blockhash: blockHash }] }).success, false)
+		assert.equal(EthereumJsonRpcRequest.safeParse({ method: 'eth_newFilter', params: [{ blockhash: blockHash }] }).success, false)
+	})
+
+	test('rejects blockHash combined with block range fields', () => {
+		assert.equal(EthGetLogsRequest.safeParse({ blockHash, fromBlock: 'latest' }).success, false)
+		assert.equal(EthGetLogsRequest.safeParse({ blockHash, toBlock: 'latest' }).success, false)
+		assert.equal(EthNewFilter.safeParse({ method: 'eth_newFilter', params: [{ blockHash, fromBlock: 'latest' }] }).success, false)
+	})
+
+	test('rejects values that exceed fixed-width wire types', () => {
+		assert.throws(() => serialize(EthereumAddress, 1n << 160n))
+		assert.throws(() => serialize(EthereumBytes32, 1n << 256n))
+		assert.throws(() => serialize(EthereumBytes256, 1n << 2048n))
+		assert.throws(() => serialize(EthereumBytes16, 1n << 64n))
+	})
+
+	test('continues to serialize the largest fixed-width values', () => {
+		assert.equal(serialize(EthereumAddress, (1n << 160n) - 1n).length, 42)
+		assert.equal(serialize(EthereumBytes32, (1n << 256n) - 1n).length, 66)
+		assert.equal(serialize(EthereumBytes256, (1n << 2048n) - 1n).length, 514)
+		assert.equal(serialize(EthereumBytes16, (1n << 64n) - 1n).length, 18)
+	})
+})
