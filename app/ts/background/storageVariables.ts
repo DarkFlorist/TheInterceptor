@@ -6,7 +6,7 @@ import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, Int
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
-import type { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
+import { doAddressBookChainIdsMatch, type AddressBookEntries, type AddressBookEntry, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
@@ -296,7 +296,7 @@ export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: 
 export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry) {
 	await userAddressBookEntriesSemaphore.execute(async () => {
 		const entries = await getUserAddressBookEntries()
-		const existingEntry = entries.find((entry) => entry.address === newEntry.address && (entry.chainId || 1n) === (newEntry.chainId || 1n) )
+		const existingEntry = entries.find((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))
 		if (existingEntry !== undefined) return
 		return await browserStorageLocalSet({ userAddressBookEntriesV3: entries.concat(newEntry) })
 	})

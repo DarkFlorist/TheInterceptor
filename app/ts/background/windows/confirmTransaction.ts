@@ -480,7 +480,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		to: transactionDetails.to === undefined ? null : transactionDetails.to,
 		value,
 		input: getInputFieldFromDataOrInput(transactionDetails),
-		accessList: [],
+		accessList: transactionDetails.accessList ?? [],
 	}
 	const transactionWithoutGas = await createEip1559Or7702Transaction(transactionWithoutGasBase, transactionDetails)
 	const extraParams = {

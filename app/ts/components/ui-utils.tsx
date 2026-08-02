@@ -97,7 +97,7 @@ export const addressEditEntry = (entry: AddressBookEntry) => {
 			abi : undefined,
 			safeVersion: undefined,
 			declarativeNetRequestBlockMode: undefined,
-			chainId: entry.chainId || 1n,
+			chainId: entry.chainId ?? 1n,
 			...entry,
 			address: checksummedAddress(entry.address),
 			safeSignerAddress: entry.type === 'safe' && entry.safeSignerAddress !== undefined

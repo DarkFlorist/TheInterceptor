@@ -18,7 +18,7 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import { CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState } from '../types/visualizer-types.js'
 import { ExportedSettings } from '../types/exportedSettingsTypes.js'
 import { isJSON } from '../utils/json.js'
-import { getConfiguredSafeSigningEntry, getSafeSignerAddresses, isSafeEntryWithSafeSigner, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
+import { doAddressBookChainIdsMatch, getConfiguredSafeSigningEntry, getSafeSignerAddresses, isSafeEntryWithSafeSigner, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
 import { checksummedAddress, generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
@@ -312,8 +312,8 @@ export async function addOrModifyAddressBookEntry(ethereum: EthereumClientServic
 		}
 	}
 	await updateUserAddressBookEntries((previousContacts) => {
-		if (previousContacts.find((previous) => previous.address === entryToStore.address && (previous.chainId || 1n) === (entryToStore.chainId || 1n)) ) {
-			return previousContacts.map((previous) => previous.address === entryToStore.address && (previous.chainId || 1n) === (entryToStore.chainId || 1n) ? entryToStore : previous)
+		if (previousContacts.find((previous) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId)) ) {
+			return previousContacts.map((previous) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId) ? entryToStore : previous)
 		}
 		return previousContacts.concat([entryToStore])
 	})
