@@ -190,23 +190,30 @@ type EIP712Entry = {
 }
 
 function EIP712Table({ enrichedEIP712Message, renameAddressCallBack, isSubTable }: EIP712Table) {
-	function EIP712Entry({ name, entry }: EIP712Entry) {
-		if (entry === undefined) return <></>
+	function EIP712Value({ entry }: { entry: TypeEnrichedEIP712MessageRecord }) {
+		if (entry.type === 'nestedArray') {
+			return <span style = 'display: inline-flex; flex-wrap: wrap;'>
+				[{
+					entry.value.map((nestedEntry, index) => <span key = { index } style = 'display: inline-flex;'>
+						{ index === 0 ? '' : ', ' }
+						<EIP712Value entry = { nestedEntry }/>
+					</span>)
+				}]
+			</span>
+		}
 		if (entry.type === 'record[]') {
-			return <>
-				<CellElement text = { `${ name }: ` }/>
-				<CellElement text = { entry.value.map((value, index) => <EIP712Table key = { index } enrichedEIP712Message = { value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>) } />
-			</>
+			return <>{ entry.value.map((value, index) => <EIP712Table key = { index } enrichedEIP712Message = { value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>) }</>
 		}
 		if (entry.type === 'record') {
-			return <>
-				<CellElement text = { `${ name }: ` }/>
-				<CellElement text = { <EIP712Table enrichedEIP712Message = { entry.value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/> }/>
-			</>
+			return <EIP712Table enrichedEIP712Message = { entry.value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>
 		}
+		return <EnrichedSolidityTypeComponent valueType = { entry } renameAddressCallBack = { renameAddressCallBack }/>
+	}
+	function EIP712Entry({ name, entry }: EIP712Entry) {
+		if (entry === undefined) return <></>
 		return <>
 			<CellElement text = { `${ name }: ` }/>
-			<CellElement text = { <EnrichedSolidityTypeComponent valueType = { entry } renameAddressCallBack = { renameAddressCallBack }/> }/>
+			<CellElement text = { <EIP712Value entry = { entry }/> }/>
 		</>
 	}
 	return <span class = 'eip-712-table' style = { isSubTable ? 'justify-content: space-between;' : '' }>
