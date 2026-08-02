@@ -37,7 +37,7 @@ const websiteMetaData: WebsiteMetaData = {
 		name: 'Octant',
 		externalRpc: true,
 	},
-	'app.aave.com/': {
+	'app.aave.com': {
 		name: 'Aave',
 		externalRpc: true,
 	},
