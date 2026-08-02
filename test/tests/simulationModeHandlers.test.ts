@@ -12,7 +12,7 @@ Object.defineProperty(globalThis, 'chrome', {
 	writable: true,
 })
 
-const { getStorageAt } = await import('../../app/ts/background/simulationModeHanders.js')
+const { getStorageAt } = await import('../../app/ts/background/simulationModeHandlers.js')
 
 const rpcEntry = {
 	name: 'Handler test RPC',

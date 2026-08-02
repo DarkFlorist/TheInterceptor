@@ -10,7 +10,7 @@ import { assertNever } from '../utils/typescript.js'
 import { addEnsLabelHash, addEnsNodeHash, addUserAddressBookEntryIfItDoesNotExist, getEnsLabelHashes, getEnsNodeHashes, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { getEnsReverseNodeHash, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
-import { defaultActiveAddresses } from './settings.js'
+import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { EthereumBytes32 } from '../types/wire-types.js'
 import type { ENSNameHashes } from '../types/ens.js'
@@ -38,7 +38,7 @@ export async function getActiveAddressEntry(address: bigint): Promise<AddressBoo
 
 export async function getActiveAddresses() : Promise<AddressBookEntries> {
 	const activeAddresses = (await getUserAddressBookEntries()).filter((entry) => entry.useAsActiveAddress)
-	return activeAddresses === undefined || activeAddresses.length === 0 ? defaultActiveAddresses : activeAddresses
+	return activeAddresses === undefined || activeAddresses.length === 0 ? DEFAULT_ACTIVE_ADDRESSES : activeAddresses
 }
 
 export function getNativeTokenErc20(rpcEntry: RpcNetwork | undefined): Erc20TokenEntry {

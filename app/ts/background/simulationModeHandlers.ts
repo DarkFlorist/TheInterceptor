@@ -221,7 +221,7 @@ export async function getFilterLogs(request: GetFilterLogs, ethereumClientServic
 	return { type: 'result' as const, method: request.method, result }
 }
 
-export async function handleIterceptorError(request: InterceptorError) {
+export async function handleInterceptorError(request: InterceptorError) {
 	console.error('Ignoring page-originated InterceptorError for popup display.')
 	printError(request)
 	return { type: 'doNotReply' as const }

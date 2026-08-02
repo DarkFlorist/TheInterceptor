@@ -216,7 +216,6 @@ export async function loadModules() {
 		formEthSendTransaction: confirmTransaction.formEthSendTransaction,
 		getSafeExecutionSignerRoute: safeExecutionRouting.getSafeExecutionSignerRoute,
 		prepareSafeExecutionSignerRoute: safeExecutionRouting.prepareSafeExecutionSignerRoute,
-		isSafeExecutionRequestForActiveSafe: safeExecutionRouting.isSafeExecutionRequestForActiveSafe,
 		openConfirmTransactionDialogForMessage: confirmTransaction.openConfirmTransactionDialogForMessage,
 		openConfirmTransactionDialogForTransaction: confirmTransaction.openConfirmTransactionDialogForTransaction,
 		onCloseWindowOrTab: confirmTransaction.onCloseWindowOrTab,

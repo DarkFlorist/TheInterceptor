@@ -22,7 +22,7 @@ import { isValidAddressBookEntryName, MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH } from 
 
 export const MAX_PENDING_WATCH_ASSET_REQUESTS = 20
 export const MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN = 3
-export const MAX_WATCH_ASSET_IMAGE_SIZE_BYTES = 262_144
+const MAX_WATCH_ASSET_IMAGE_SIZE_BYTES = 262_144
 
 const downloadWatchAssetImage = async (url: string) => await imageToUri(url, MAX_WATCH_ASSET_IMAGE_SIZE_BYTES, { redirect: 'error' })
 

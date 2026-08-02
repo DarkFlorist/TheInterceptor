@@ -361,7 +361,6 @@ test('recognizes only execTransaction calls to the active Safe for direct signer
 		}],
 	})
 
-	assert.equal(modules.isSafeExecutionRequestForActiveSafe(transaction, safeEntry), true)
 	assert.deepEqual(modules.getSafeExecutionSignerRoute(transaction, safeEntry), {
 		executor: safeSignerAddress,
 		transactionParams: {
@@ -372,31 +371,31 @@ test('recognizes only execTransaction calls to the active Safe for direct signer
 			}],
 		},
 	})
-	assert.equal(modules.isSafeExecutionRequestForActiveSafe(SendTransactionParams.parse({
+	assert.equal(modules.getSafeExecutionSignerRoute(SendTransactionParams.parse({
 		method: 'eth_sendTransaction',
 		params: [{
 			from: addressString(recipientAddress),
 			to: addressString(activeAddress),
 			data: '0x6a76120200',
 		}],
-	}), safeEntry), false)
-	assert.equal(modules.isSafeExecutionRequestForActiveSafe(SendTransactionParams.parse({
+	}), safeEntry), undefined)
+	assert.equal(modules.getSafeExecutionSignerRoute(SendTransactionParams.parse({
 		method: 'eth_sendTransaction',
 		params: [{
 			from: addressString(activeAddress),
 			to: addressString(recipientAddress),
 			data: '0x6a76120200',
 		}],
-	}), safeEntry), false)
-	assert.equal(modules.isSafeExecutionRequestForActiveSafe(SendTransactionParams.parse({
+	}), safeEntry), undefined)
+	assert.equal(modules.getSafeExecutionSignerRoute(SendTransactionParams.parse({
 		method: 'eth_sendTransaction',
 		params: [{
 			from: addressString(activeAddress),
 			to: addressString(activeAddress),
 			data: '0xa9059cbb',
 		}],
-	}), safeEntry), false)
-	assert.equal(modules.isSafeExecutionRequestForActiveSafe(transaction, { ...safeEntry, safeSignerAddress: undefined }), false)
+	}), safeEntry), undefined)
+	assert.equal(modules.getSafeExecutionSignerRoute(transaction, { ...safeEntry, safeSignerAddress: undefined }), undefined)
 	const nonzeroOuterValue = SendTransactionParams.parse({
 		method: 'eth_sendTransaction',
 		params: [{
