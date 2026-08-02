@@ -5,7 +5,7 @@ import { handleInterceptedRequest } from './background.js'
 import { getUpdatedSimulationState } from './simulationUpdating.js'
 import { popupMessageHandler } from './popupMessageRouting.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
-import { clearTabStates, getPrimaryRpcForChain, getRpcConnectionStatus, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
+import { getPrimaryRpcForChain, getRpcConnectionStatus, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
 import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumBlockHeader } from '../types/wire-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -29,7 +29,7 @@ import { createSimulationServices, resetSimulationServices, type ResetSimulation
 import { addWindowTabListeners } from '../utils/popupOrTab.js'
 import { migrateAddressBook } from './addressBookMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'
-import { isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'
+import { initializeContentScriptConnectionAfterBackgroundStartup, isIgnorablePortLifecycleError, tryRegisterContentScriptPortListeners } from './contentScriptPortLifecycle.js'
 import { bumpPopupRefreshGeneration, initializePopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { flushPendingTerminalRepliesForConnectedPortWithRetry } from './terminalReplyDelivery.js'
 import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalRepliesForTab } from './pendingTerminalReplies.js'
@@ -37,6 +37,7 @@ import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
+import { initializeTabStateStorage } from './tabStateLifecycle.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
 let simulationServices: SimulationServices | undefined
@@ -119,9 +120,12 @@ browser.tabs.onRemoved.addListener(async (tabId: number) => await catchAllErrors
 	await removePendingTerminalRepliesForTab(tabId)
 }))
 
-if (browser.runtime.getManifest().manifest_version === 2) {
+const manifestVersion = browser.runtime.getManifest().manifest_version
+const isManifestV2 = manifestVersion === 2
+const tabStateInitializationPromise = initializeTabStateStorage(manifestVersion)
+
+if (isManifestV2) {
 	updateContentScriptInjectionStrategyManifestV2()
-	clearTabStates()
 }
 
 const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
@@ -143,11 +147,17 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 
 	const newConnection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
 	const isTopFrame = port.sender.frameId === undefined || port.sender.frameId === 0
+	let connectionInitializationPromise: ReturnType<typeof waitForStartup> | undefined
+	const getConnectionInitializationPromise = () => {
+		if (connectionInitializationPromise === undefined) throw new Error('Content script connection initialization did not start')
+		return connectionInitializationPromise
+	}
 
 	const listenersRegistered = tryRegisterContentScriptPortListeners(
 		port,
 		() => {
 			catchAllErrorsAndCall(async () => {
+				await getConnectionInitializationPromise()
 				await removeWebsiteTabConnection(websiteTabConnections, socket, port)
 			})
 		},
@@ -168,8 +178,8 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 					checkAndThrowRuntimeLastError()
 				})
 				if (!shouldHandleRequest) return
+				const { resetActiveRpcNetwork, simulationServices } = await getConnectionInitializationPromise()
 				await pendingRequestLimiter.execute(async () => {
-					const { resetActiveRpcNetwork, simulationServices } = await waitForStartup()
 					const request = {
 						method: rawMessage.method,
 						...'params' in rawMessage ? { params: rawMessage.params } : {},
@@ -186,19 +196,22 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 	)
 	if (!listenersRegistered) return
 
-	const registration = await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, newConnection, isTopFrame)
-	if (registration.createdTabConnection) {
-		await updateTabState(socket.tabId, (previousState: TabState) => {
-			return modifyObject(previousState, {
-				website: { websiteOrigin, icon: undefined, title: undefined },
-				tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
+	connectionInitializationPromise = initializeContentScriptConnectionAfterBackgroundStartup(waitForStartup, async () => {
+		const registration = await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, newConnection, isTopFrame)
+		if (registration.createdTabConnection) {
+			await updateTabState(socket.tabId, (previousState: TabState) => {
+				return modifyObject(previousState, {
+					website: { websiteOrigin, icon: undefined, title: undefined },
+					tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
+				})
 			})
-		})
-		void catchAllErrorsAndCall(async () => updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration()))
-	}
-	if (registration.provisionallyClaimedSignerState) {
-		sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_connection_status', result: [] })
-	}
+			void catchAllErrorsAndCall(async () => updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration()))
+		}
+		if (registration.provisionallyClaimedSignerState) {
+			sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_connection_status', result: [] })
+		}
+	})
+	await connectionInitializationPromise
 	await flushPendingTerminalRepliesForConnectedPortWithRetry(websiteTabConnections, socket, port)
 	try {
 		const website = await websitePromise
@@ -255,6 +268,7 @@ async function onErrorBlockCallback(ethereumClientService: EthereumClientService
 }
 
 async function startup() {
+	await tabStateInitializationPromise
 	await migrateAddressBook()
 	await migrateWebsiteAccess()
 	await initializePopupRefreshGeneration()
