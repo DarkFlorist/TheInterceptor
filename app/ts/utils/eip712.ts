@@ -90,22 +90,15 @@ const validateTypeValue = (typeStr: string, value: typeJSONEncodeable, solidityT
 	if (typeStr.startsWith('tuple(')) return { valid: false, reason: 'tuples are not supported'}
 
 	// Check for array types (non-tuple arrays)
-	const arrayMatch = typeStr.match(/^([^\[]+)(\[(?!0\])[0-9]*\](\[(?!0\])[0-9]*\])*)$/)
+	const arrayMatch = typeStr.match(/^(.*)\[(\d*)\]$/)
 	if (arrayMatch) {
-		const base = arrayMatch[1] // "array"
-		const brackets = arrayMatch[2] // "[][][]"
-		if (base === undefined || brackets === undefined) return { valid: false, reason: 'base or brackets were undefined'}
-		const remaining = brackets.replace(/^(\[(?!0\])[0-9]*\])/, '')
-		const innerType = base + remaining
-		const arrayLength = (brackets: string | undefined) => {
-			if (brackets === undefined) return undefined
-			const lengthMatch = brackets.match(/\[(\d*)\]$/)
-			return lengthMatch && lengthMatch[1] !== '' && lengthMatch[1] !== undefined ? parseInt(lengthMatch[1]) : undefined
-		}
-		const expectedLength = arrayLength(arrayMatch[2])
+		const innerType = arrayMatch[1]
+		const lengthText = arrayMatch[2]
+		if (innerType === undefined || lengthText === undefined) return { valid: false, reason: 'array type was incomplete'}
+		const expectedLength = lengthText === '' ? undefined : Number.parseInt(lengthText, 10)
 		if (!Array.isArray(value)) return { valid: false, reason: `invalid array: ${ JSON.stringify(value) }` }
 
-		if (expectedLength !== undefined && value.length > expectedLength) return { valid: false, reason: `expected array of length ${ expectedLength }, got ${ value.length }` }
+		if (expectedLength !== undefined && value.length !== expectedLength) return { valid: false, reason: `expected array of length ${ expectedLength }, got ${ value.length }` }
 		for (const elem of value) {
 			const valid = validateTypeValue(innerType, elem, solidityTypeTree)
 			if (valid.valid === false) return valid
@@ -182,6 +175,8 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 	if (typeTree !== undefined) {
 		if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
 			const entries = Object.entries(value)
+			const missingTypeDefinition = typeTree.find((typeDefinition) => !Object.prototype.hasOwnProperty.call(value, typeDefinition.name))
+			if (missingTypeDefinition !== undefined) return { valid: false, reason: `missing value for: ${ missingTypeDefinition.name }` }
 			for (const [entryName, entryValue] of entries) {
 				if (entryValue === undefined) return { valid: false, reason: 'entry is invalid' }
 				const typeDefinition = typeTree.find((leaf) => leaf.name === entryName)
@@ -305,7 +300,7 @@ export const verifyEip712Message = (maybeEip712Message: EIP712Message): { valid:
 	if ('name' in maybeEip712Message.domain && !String.safeParse(name).success) return { valid: false, reason: 'EIP712Domain.name is in wrong type' }
 	if ('salt' in maybeEip712Message.domain && !EthereumData.safeParse(salt).success) return { valid: false, reason: 'EIP712Domain.salt is in wrong type' }
 
-	if (!isValidEIP712DomainOrder(validEIP712DomainEntries.map((entry) => entry.name), eip712Domain.map((entry) => entry.name))) throw new Error('domain types are in wrong order')
+	if (!isValidEIP712DomainOrder(validEIP712DomainEntries.map((entry) => entry.name), eip712Domain.map((entry) => entry.name))) return { valid: false, reason: 'EIP712Domain types are in the wrong order' }
 
 	// domain fields exist in valid in types
 	const domainArray = Object.entries(maybeEip712Message.domain)
@@ -316,6 +311,8 @@ export const verifyEip712Message = (maybeEip712Message: EIP712Message): { valid:
 		if (extractedTypes.valid === false) return extractedTypes
 		const extractedPrimary = extractedTypes.tree[primaryType]
 		if (extractedPrimary === undefined) return { valid: false, reason: 'Failed to extract primary type' }
+		const missingTypeDefinition = extractedPrimary.find((typeDefinition) => !Object.prototype.hasOwnProperty.call(message, typeDefinition.name))
+		if (missingTypeDefinition !== undefined) return { valid: false, reason: `Missing value for ${ missingTypeDefinition.name }` }
 		const fieldsArray = Object.entries(message)
 		for (const field of fieldsArray) {
 			if (field[0] === undefined) return { valid: false, reason: 'Field was invalid' }

@@ -10,9 +10,12 @@ function findType(name: string, types: readonly { readonly name: string, readonl
 }
 
 function separateArraySuffix(typeWithMaybeArraySuffix: string) {
-	const splitted = typeWithMaybeArraySuffix.split('[]')
-	if (splitted.length === 1) return { arraylessType: typeWithMaybeArraySuffix, isArray: false }
-	return { arraylessType: splitted[0], isArray: true }
+	const arrayMatch = /^(.*)\[(\d*)\]$/.exec(typeWithMaybeArraySuffix)
+	if (arrayMatch === null) return { arraylessType: typeWithMaybeArraySuffix, isArray: false, expectedLength: undefined }
+	const arraylessType = arrayMatch[1]
+	const lengthText = arrayMatch[2]
+	if (arraylessType === undefined || lengthText === undefined) return { arraylessType: typeWithMaybeArraySuffix, isArray: false, expectedLength: undefined }
+	return { arraylessType, isArray: true, expectedLength: lengthText === '' ? undefined : Number.parseInt(lengthText, 10) }
 }
 
 function validateEIP712TypesSubset(depth: number, message: JSONEncodeableObject, currentType: string, types: { [x: string]: readonly { readonly name: string, readonly type: string}[] | undefined }): boolean {
@@ -27,6 +30,7 @@ function validateEIP712TypesSubset(depth: number, message: JSONEncodeableObject,
 		if (subMessage === undefined) return false
 		const arraylessType = separateArraySuffix(fullType)
 		if (arraylessType.isArray !== Array.isArray(subMessage)) return false
+		if (Array.isArray(subMessage) && arraylessType.expectedLength !== undefined && subMessage.length !== arraylessType.expectedLength) return false
 		const currentType = arraylessType.arraylessType
 		if (SolidityType.test(currentType)) continue
 		if (currentType === undefined) return false
