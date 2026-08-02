@@ -8,6 +8,7 @@ import { PopupPendingTransactionOrSignableMessage } from './accessRequest.js'
 import { RpcConnectionStatus } from './user-interface-types.js'
 import { SimulateExecutionReply as PopupSimulateExecutionReply } from './simulateExecutionReply.js'
 import { SimulateGnosisSafeTransaction as RequestSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as RequestSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
+import { RichAccountBalances, RichToken, RichTokenOptions } from './richMode.js'
 import { SafeStackExport } from './safeTypes.js'
 
 export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
@@ -34,6 +35,69 @@ const RequestMakeMeRichDataReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestMakeMeRichData'),
 	richList: funtypes.ReadonlyArray(EnrichedRichListElement),
 	makeCurrentAddressRich: funtypes.Boolean,
+}).And(funtypes.ReadonlyPartial({
+	richTokenOptions: RichTokenOptions,
+	richNativeAmount: EthereumQuantity,
+	richAccountBalances: RichAccountBalances,
+}))
+
+export type ModifyRichTokenRequest = funtypes.Static<typeof ModifyRichTokenRequest>
+export const ModifyRichTokenRequest = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_modifyRichToken'),
+	data: funtypes.Union(
+		funtypes.ReadonlyObject({
+			action: funtypes.Literal('Add'),
+			tokenAddress: EthereumAddress,
+			address: EthereumAddress,
+		}).And(funtypes.ReadonlyPartial({ tokenId: EthereumQuantity })),
+		funtypes.ReadonlyObject({
+			action: funtypes.Literal('Remove'),
+			tokenAddress: EthereumAddress,
+			address: EthereumAddress,
+		}).And(funtypes.ReadonlyPartial({ tokenId: EthereumQuantity })),
+		funtypes.ReadonlyObject({
+			action: funtypes.Literal('SetAmount'),
+			tokenAddress: EthereumAddress,
+			address: EthereumAddress,
+			amount: EthereumQuantity,
+		}).And(funtypes.ReadonlyPartial({ tokenId: EthereumQuantity })),
+	),
+}).asReadonly()
+
+const ModifyRichTokenReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_modifyRichToken'),
+	result: funtypes.Union(
+		funtypes.ReadonlyObject({
+			success: funtypes.Literal(true),
+			richToken: funtypes.Union(RichToken, funtypes.Undefined),
+		}),
+		funtypes.ReadonlyObject({
+			success: funtypes.Literal(false),
+			error: funtypes.String,
+		}),
+	),
+})
+
+const ModifyMakeMeRichRequest = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_modifyMakeMeRich'),
+	data: funtypes.Union(
+		funtypes.ReadonlyObject({
+			add: funtypes.Boolean,
+			address: funtypes.Union(funtypes.Literal('CurrentAddress'), EthereumAddress),
+		}),
+		funtypes.ReadonlyObject({
+			nativeAmount: EthereumQuantity,
+			address: EthereumAddress,
+		}),
+	),
+}).asReadonly()
+
+const ModifyMakeMeRichReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_modifyMakeMeRich'),
+	result: funtypes.Union(
+		funtypes.ReadonlyObject({ success: funtypes.Literal(true) }),
+		funtypes.ReadonlyObject({ success: funtypes.Literal(false), error: funtypes.String }),
+	),
 })
 
 type RequestActiveAddressesReply = funtypes.Static<typeof RequestActiveAddressesReply>
@@ -239,6 +303,8 @@ const PopupReadyAndListeningReply = funtypes.ReadonlyObject({
 
 type PopupRequestsRepliesMap = {
 	popup_requestMakeMeRichData: typeof RequestMakeMeRichDataReply
+	popup_modifyMakeMeRich: typeof ModifyMakeMeRichReply
+	popup_modifyRichToken: typeof ModifyRichTokenReply
 	popup_requestActiveAddresses: typeof RequestActiveAddressesReply
 	popup_requestSimulationMode: typeof RequestSimulationModeReply
 	popup_requestLatestUnexpectedError: typeof RequestLatestUnexpectedErrorReply
@@ -261,6 +327,8 @@ type PopupRequestsRepliesMap = {
 
 export const PopupRequestsReplies: PopupRequestsRepliesMap = {
 	popup_requestMakeMeRichData: RequestMakeMeRichDataReply,
+	popup_modifyMakeMeRich: ModifyMakeMeRichReply,
+	popup_modifyRichToken: ModifyRichTokenReply,
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
 	popup_requestSimulationMode: RequestSimulationModeReply,
 	popup_requestLatestUnexpectedError: RequestLatestUnexpectedErrorReply,
@@ -296,6 +364,8 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	RequestIdentifyAddress,
 	RequestSimulateGovernanceContractExecution,
 	RequestSimulateGnosisSafeTransaction,
+	ModifyRichTokenRequest,
+	ModifyMakeMeRichRequest,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestMakeMeRichData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestActiveAddresses') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMode') }),
@@ -329,6 +399,8 @@ export type PopupRequestsReplyReturn<Request extends PopupRequests> = Request['m
 
 export type PopupReplyOption =
 	| RequestMakeMeRichDataReply
+	| funtypes.Static<typeof ModifyMakeMeRichReply>
+	| funtypes.Static<typeof ModifyRichTokenReply>
 	| RequestActiveAddressesReply
 	| RequestSimulationModeReply
 	| RequestLatestUnexpectedErrorReply
@@ -350,6 +422,8 @@ export type PopupReplyOption =
 
 export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union(
 	RequestMakeMeRichDataReply,
+	ModifyMakeMeRichReply,
+	ModifyRichTokenReply,
 	RequestActiveAddressesReply,
 	RequestSimulationModeReply,
 	RequestLatestUnexpectedErrorReply,

@@ -1,8 +1,8 @@
 
 import type { ChangeActiveAddressParam } from '../../types/user-interface-types.js'
 import { BigAddress } from '../subcomponents/address.js'
-import { XMarkIcon } from '../subcomponents/icons.js'
 import { getSignerLogo, getPrettySignerName, SignerLogoText } from '../subcomponents/signers.js'
+import { InterceptorDialogBody, InterceptorDialogFooter, InterceptorDialogHeader, InterceptorDialogSurface } from '../subcomponents/InterceptorDialog.js'
 
 export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 	function changeAndStoreActiveAddress(activeAddress: bigint | 'signer') {
@@ -28,29 +28,13 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 	const activeAddresses = param.activeAddresses.value
 	const signerAddressName = activeAddresses.find((x) => x.address === getSignerAccount() )?.name
 
-	return ( <>
-		<div class = 'modal-background'> </div>
-		<div class = 'modal-card' style = 'height: 100%;'>
-			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
-				<div class = 'card-header-icon unset-cursor'>
-					<span class = 'icon'>
-						<img src = '../img/address-book.svg' width = '24' height = '24'/>
-					</span>
-				</div>
-				<div class = 'card-header-title'>
-					<p class = 'paragraph'>
-					Change Active Address
-					</p>
-				</div>
-				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
-					<XMarkIcon />
-				</button>
-			</header>
-			<section class = 'modal-card-body'>
-				<ul>
+	return <InterceptorDialogSurface ariaLabel = 'Change active address' onClose = { param.close } size = 'large' fill = { true }>
+		<InterceptorDialogHeader close = { param.close } closeLabel = 'Close address selection' icon = '../img/address-book.svg' title = 'Change active address' subtitle = 'Choose which account Interceptor uses for simulation'/>
+		<InterceptorDialogBody>
+				<ul class = 'interceptor-dialog-list'>
 					<li>
-						<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress('signer') } }>
-							<div class = 'card-content hoverable' style = 'cursor: pointer;'>
+						<button type = 'button' class = 'card hoverable interceptor-dialog-choice' onClick = { () => { changeAndStoreActiveAddress('signer') } }>
+							<div class = 'card-content'>
 								<div class = 'media'>
 									<div class = 'media-left'>
 										<figure class = 'image'>
@@ -69,17 +53,18 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 									</div>
 								</div>
 							</div>
-						</div>
+						</button>
 					</li>
 
 					{ activeAddresses.map((activeAddress) => (
 						<li key = { activeAddress.address.toString() }>
-							<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress(activeAddress.address) } }>
-								<div class = 'card-content hoverable ' style = 'cursor: pointer;'>
+							<button type = 'button' class = 'card hoverable interceptor-dialog-choice' onClick = { () => { changeAndStoreActiveAddress(activeAddress.address) } }>
+								<div class = 'card-content'>
 									<BigAddress
 										addressBookEntry = { activeAddress }
 										noCopying = { true }
 										noEditAddress = { true }
+										presentationOnly = { true }
 										renameAddressCallBack = { param.renameAddressCallBack }
 									/>
 									{ isSignerConnected(activeAddress.address) ?
@@ -88,17 +73,16 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 										</div> : <></>
 									}
 								</div>
-							</div>
+							</button>
 						</li>
 					) ) }
 
 				</ul>
-			</section>
-			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				<button class = 'button is-primary is-success' onClick = { param.close }> Close </button>
-				<button class = 'button is-primary' onClick = { changePageToAddAddress }> Add New Address </button>
-			</footer>
-		</div>
-	</> )
+		</InterceptorDialogBody>
+		<InterceptorDialogFooter>
+			<button type = 'button' class = 'btn btn--ghost' onClick = { param.close }>Close</button>
+			<button type = 'button' class = 'btn btn--primary' onClick = { changePageToAddAddress }>Add new address</button>
+		</InterceptorDialogFooter>
+	</InterceptorDialogSurface>
 
 }

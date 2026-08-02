@@ -1,11 +1,17 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { addressString, checksummedAddress } from '../../app/ts/utils/bigint.js'
+import { addressString, bigintToUint8Array, checksummedAddress } from '../../app/ts/utils/bigint.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
+import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
+import { MockRequestHandler } from '../MockRequestHandler.js'
+import type { ResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
+
+const richAccountAddress = 0x1111111111111111111111111111111111111111n
 
 const defineGlobal = (name: PropertyKey, value: unknown) => Object.defineProperty(globalThis, name, { value, configurable: true, writable: true })
 
-function installBrowserMock(options: { onRuntimeSendMessage?: () => void, onStorageSet?: (items: Record<string, unknown>) => void } = {}) {
+function installBrowserMock(options: { onRuntimeSendMessage?: () => void, onStorageSet?: (items: Record<string, unknown>) => void | Promise<void> } = {}) {
 	const storageState: Record<string, unknown> = {}
 	defineGlobal('browser', {
 		runtime: {
@@ -27,7 +33,7 @@ function installBrowserMock(options: { onRuntimeSendMessage?: () => void, onStor
 					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 				},
 				async set(items: Record<string, unknown>) {
-					options.onStorageSet?.(items)
+					await options.onStorageSet?.(items)
 					Object.assign(storageState, items)
 				},
 				async remove(keys: string | string[]) {
@@ -69,6 +75,7 @@ async function loadModules() {
 		...await import('../../app/ts/background/settings.js'),
 		...await import('../../app/ts/background/simulationUpdating.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/windows/fetchSimulationStack.js'),
 	}
 }
 
@@ -89,6 +96,21 @@ async function withSilencedConsole<T>(runWithConsoleSilenced: () => Promise<T>) 
 		console.warn = originalConsole.warn
 	}
 }
+
+const successfulBalanceCall = (balance: bigint) => ({
+	number: 1n,
+	hash: 1n,
+	timestamp: 1n,
+	gasLimit: 30_000_000n,
+	gasUsed: 10_000n,
+	baseFeePerGas: 1n,
+	calls: [{
+		status: 'success' as const,
+		returnData: bigintToUint8Array(balance, 32),
+		gasUsed: 10_000n,
+		logs: [],
+	}],
+})
 
 describe('requestMakeMeRichList resilience', () => {
 	test('writes fixed rich-list storage only when content or ordering changes', async () => {
@@ -222,6 +244,220 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.equal(runtimeSendMessageCount, 0)
 	})
 
+	test('uses the configured native rich amount in the next simulation input', async () => {
+		installBrowserMock()
+		const { modifyMakeMeRich, getCurrentSimulationInput } = await loadModules()
+		const richAddress = 0x9000000000000000000000000000000000000009n
+		const configuredAmount = 12_345_678_000_000_000_000n
+
+		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { add: true, address: richAddress } })
+		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { nativeAmount: configuredAmount, address: richAddress } })
+
+		const simulationInput = await getCurrentSimulationInput()
+		assert.deepEqual(simulationInput[0]?.stateOverrides[addressString(richAddress)], { balance: configuredAmount })
+	})
+
+	test('uses the account native amount in legacy simulation stack output', async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getSimulationStack, modifyMakeMeRich } = await loadModules()
+		const configuredAmount = 9_876_543_210_000_000_000n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: richAccountAddress })
+		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { add: true, address: 'CurrentAddress' } })
+		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { nativeAmount: configuredAmount, address: richAccountAddress } })
+		const simulationState: ResolvedSimulationState = {
+			kind: 'simulated',
+			value: {
+				success: true,
+				simulationStateInput: [],
+				simulatedBlocks: [],
+				blockNumber: 1n,
+				blockTimestamp: new Date('2026-01-01T00:00:00.000Z'),
+				baseFeePerGas: 1n,
+				simulationConductedTimestamp: new Date('2026-01-01T00:00:00.000Z'),
+				rpcNetwork: {
+					name: 'Ethereum',
+					chainId: 1n,
+					httpsRpc: 'https://example.invalid',
+					currencyName: 'Ether',
+					currencyTicker: 'ETH',
+					primary: true,
+					minimized: false,
+				},
+			},
+		}
+
+		const stack = await getSimulationStack(simulationState, '1.0.1')
+		assert.equal(stack.payload[0]?.value, configuredAmount)
+		assert.deepEqual(stack.payload[0]?.balanceChanges, [{ address: richAccountAddress, before: 0n, after: configuredAmount }])
+	})
+
+	test('migrates global token balances once without adding them to later rich accounts', async () => {
+		installBrowserMock()
+		const { ensureRichAccountBalances, updateRichTokens } = await loadModules()
+		const tokenAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		await updateRichTokens(() => [{
+			chainId: 1n,
+			tokenAddress,
+			tokenType: 'ERC20',
+			tokenId: undefined,
+			name: 'USD Coin',
+			symbol: 'USDC',
+			decimals: 6n,
+			amount: 1_000_000n,
+			balanceSlot: 9n,
+			erc1155StorageOrder: undefined,
+		}])
+
+		const migrated = await ensureRichAccountBalances(1n, [richAccountAddress])
+		assert.equal(migrated.find((profile) => profile.address === richAccountAddress)?.tokenBalances.length, 1)
+		const laterAddress = 0x2222222222222222222222222222222222222222n
+		const withLaterAccount = await ensureRichAccountBalances(1n, [laterAddress])
+		assert.deepEqual(withLaterAccount.find((profile) => profile.address === laterAddress)?.tokenBalances, [])
+	})
+
+	test('migrates legacy token balances for every configured chain on the first account migration', async () => {
+		installBrowserMock()
+		const { ensureRichAccountBalances, updateRichTokens } = await loadModules()
+		const mainnetTokenAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		const optimismTokenAddress = 0x4200000000000000000000000000000000000042n
+		await updateRichTokens(() => [{
+			chainId: 1n,
+			tokenAddress: mainnetTokenAddress,
+			tokenType: 'ERC20',
+			tokenId: undefined,
+			name: 'Mainnet Token',
+			symbol: 'MAIN',
+			decimals: 18n,
+			amount: 1_000n,
+			balanceSlot: 1n,
+			erc1155StorageOrder: undefined,
+		}, {
+			chainId: 10n,
+			tokenAddress: optimismTokenAddress,
+			tokenType: 'ERC20',
+			tokenId: undefined,
+			name: 'Optimism Token',
+			symbol: 'OP',
+			decimals: 18n,
+			amount: 2_000n,
+			balanceSlot: 2n,
+			erc1155StorageOrder: undefined,
+		}])
+
+		const migrated = await ensureRichAccountBalances(1n, [richAccountAddress, richAccountAddress])
+		assert.equal(migrated.filter((profile) => profile.chainId === 1n && profile.address === richAccountAddress).length, 1)
+		assert.equal(migrated.filter((profile) => profile.chainId === 10n && profile.address === richAccountAddress).length, 1)
+		assert.deepEqual(migrated.find((profile) => profile.chainId === 1n)?.tokenBalances, [{
+			tokenAddress: mainnetTokenAddress,
+			tokenId: undefined,
+			amount: 1_000n,
+		}])
+		assert.deepEqual(migrated.find((profile) => profile.chainId === 10n)?.tokenBalances, [{
+			tokenAddress: optimismTokenAddress,
+			tokenId: undefined,
+			amount: 2_000n,
+		}])
+
+		const laterAddress = 0x2222222222222222222222222222222222222222n
+		const withLaterAccount = await ensureRichAccountBalances(10n, [laterAddress])
+		assert.deepEqual(withLaterAccount.find((profile) => profile.chainId === 10n && profile.address === laterAddress)?.tokenBalances, [])
+	})
+
+	test('preserves pending legacy migration when stale token layouts are reconciled first', async () => {
+		const storageState = installBrowserMock()
+		const { ensureRichAccountBalances, reconcileRichTokensWithAddressBook, updateRichTokens } = await loadModules()
+		const supportedAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		storageState.userAddressBookEntriesV3 = [{
+			type: 'ERC20',
+			name: 'USD Coin',
+			address: addressString(supportedAddress),
+			symbol: 'USDC',
+			decimals: '0x6',
+			entrySource: 'User',
+			chainId: '0x1',
+		}]
+		await updateRichTokens(() => [{
+			chainId: 1n,
+			tokenAddress: supportedAddress,
+			tokenType: 'ERC20',
+			tokenId: undefined,
+			name: 'USD Coin',
+			symbol: 'USDC',
+			decimals: 6n,
+			amount: 1_000_000n,
+			balanceSlot: 9n,
+			erc1155StorageOrder: undefined,
+		}, {
+			chainId: 1n,
+			tokenAddress: 0x3333333333333333333333333333333333333333n,
+			tokenType: 'ERC20',
+			tokenId: undefined,
+			name: 'Removed Token',
+			symbol: 'OLD',
+			decimals: 18n,
+			amount: 1n,
+			balanceSlot: 2n,
+			erc1155StorageOrder: undefined,
+		}])
+
+		await reconcileRichTokensWithAddressBook()
+		assert.equal(Object.hasOwn(storageState, 'richAccountBalances'), false)
+		const profiles = await ensureRichAccountBalances(1n, [richAccountAddress])
+		assert.deepEqual(profiles[0]?.tokenBalances.map((balance) => balance.tokenAddress), [supportedAddress])
+	})
+
+	test('serializes concurrent first-time profile creation so legacy tokens migrate once', async () => {
+		let signalFirstProfileWrite = () => undefined
+		const firstProfileWrite = new Promise<void>((resolve) => { signalFirstProfileWrite = resolve })
+		let releaseFirstProfileWrite = () => undefined
+		const firstProfileWriteGate = new Promise<void>((resolve) => { releaseFirstProfileWrite = resolve })
+		let profileWriteCount = 0
+		installBrowserMock({ onStorageSet: async (items) => {
+			if (!Object.hasOwn(items, 'richAccountBalances')) return
+			profileWriteCount += 1
+			if (profileWriteCount !== 1) return
+			signalFirstProfileWrite()
+			await firstProfileWriteGate
+		} })
+		const { ensureRichAccountBalances, updateRichTokens } = await loadModules()
+		const tokenAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		await updateRichTokens(() => [{
+			chainId: 1n,
+			tokenAddress,
+			tokenType: 'ERC20',
+			tokenId: undefined,
+			name: 'USD Coin',
+			symbol: 'USDC',
+			decimals: 6n,
+			amount: 1_000_000n,
+			balanceSlot: 9n,
+			erc1155StorageOrder: undefined,
+		}])
+		const laterAddress = 0x2222222222222222222222222222222222222222n
+
+		const firstProfilesPromise = ensureRichAccountBalances(1n, [richAccountAddress])
+		await firstProfileWrite
+		const secondProfilesPromise = ensureRichAccountBalances(1n, [laterAddress])
+		releaseFirstProfileWrite()
+		const [firstProfiles, secondProfiles] = await Promise.all([firstProfilesPromise, secondProfilesPromise])
+
+		assert.equal(firstProfiles.find((profile) => profile.address === richAccountAddress)?.tokenBalances.length, 1)
+		assert.deepEqual(secondProfiles.find((profile) => profile.address === laterAddress)?.tokenBalances, [])
+	})
+
+	test('recovers corrupt account-specific rich balances without legacy token migration', async () => {
+		const storageState = installBrowserMock()
+		const { ensureRichAccountBalances } = await loadModules()
+		storageState.richAccountBalances = null
+
+		const profiles = await withSilencedConsole(async () => await ensureRichAccountBalances(1n, [richAccountAddress]))
+
+		assert.equal(profiles.length, 1)
+		assert.equal(profiles[0]?.address, richAccountAddress)
+		assert.deepEqual(profiles[0]?.tokenBalances, [])
+		assert.equal(Array.isArray(storageState.richAccountBalances), true)
+	})
+
 	test('falls back per address and preserves the underlying error message', async () => {
 		const storageState = installBrowserMock()
 		const { requestMakeMeRichList, setFixedMakeMeRichList, setMakeCurrentAddressRich, getInterceptorErrorDiagnostics, getLatestUnexpectedError } = await loadModules()
@@ -280,6 +516,500 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.equal(reply.makeCurrentAddressRich, false)
 		assert.equal(storageState.makeCurrentAddressRich, false)
 	})
+
+	test('reports unexpected rich-token configuration failures before returning a user-facing error', async () => {
+		const storageState = installBrowserMock()
+		const { modifyRichToken, getLatestUnexpectedError, getUserAddressBookEntriesForChainId } = await loadModules()
+		storageState.userAddressBookEntriesV3 = [{
+			type: 'ERC20',
+			name: 'USD Coin',
+			address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+			symbol: 'USDC',
+			decimals: '0x6',
+			entrySource: 'User',
+			chainId: '0x1',
+		}]
+		assert.equal((await getUserAddressBookEntriesForChainId(1n))[0]?.type, 'ERC20')
+		const requestHandler = new MockRequestHandler()
+		const ethereum = new EthereumClientService(
+			requestHandler,
+			async () => undefined,
+			async () => undefined,
+			{
+				name: 'Ethereum',
+				chainId: 1n,
+				httpsRpc: requestHandler.rpcUrl,
+				currencyName: 'Ether',
+				currencyTicker: 'ETH',
+				primary: true,
+				minimized: true,
+			},
+		)
+		Object.defineProperty(ethereum, 'ethSimulateV1', {
+			value: async () => {
+				throw new Error('probe exploded')
+			},
+		})
+
+		const reply = await withSilencedConsole(async () => await modifyRichToken(ethereum, undefined, {
+			method: 'popup_modifyRichToken',
+			data: { action: 'Add', address: richAccountAddress, tokenAddress: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n },
+		}))
+
+		assert.equal(reply.result.success, false)
+		assert.equal((await getLatestUnexpectedError())?.data.code, 'rich_token_config_failed')
+		assert.ok((await getLatestUnexpectedError())?.data.message.includes('probe exploded'))
+	})
+
+	test('requires rich tokens to come from the active-chain address book', async () => {
+		installBrowserMock()
+		const { modifyRichToken, getLatestUnexpectedError, getRichTokens, updateRichTokens } = await loadModules()
+		await updateRichTokens(() => [{
+			chainId: 1n,
+			tokenAddress: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n,
+			tokenType: 'ERC20',
+			tokenId: undefined,
+			name: 'Stale USD Coin',
+			symbol: 'USDC',
+			decimals: 6n,
+			amount: 1n,
+			balanceSlot: 9n,
+			erc1155StorageOrder: undefined,
+		}])
+		const requestHandler = new MockRequestHandler()
+		const ethereum = new EthereumClientService(
+			requestHandler,
+			async () => undefined,
+			async () => undefined,
+			{
+				name: 'Ethereum',
+				chainId: 1n,
+				httpsRpc: requestHandler.rpcUrl,
+				currencyName: 'Ether',
+				currencyTicker: 'ETH',
+				primary: true,
+				minimized: true,
+			},
+		)
+		let probeCount = 0
+		Object.defineProperty(ethereum, 'ethSimulateV1', {
+			value: async () => {
+				probeCount += 1
+				return []
+			},
+		})
+
+		const reply = await modifyRichToken(ethereum, undefined, {
+			method: 'popup_modifyRichToken',
+			data: { action: 'Add', address: richAccountAddress, tokenAddress: 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n },
+		})
+
+		assert.deepEqual(reply, {
+			method: 'popup_modifyRichToken',
+			result: { success: false, error: 'Choose an ERC-20 token or watched ERC-1155 token ID from the address book for the active chain.' },
+		})
+		assert.equal(probeCount, 0)
+		assert.equal(await getLatestUnexpectedError(), undefined)
+		assert.deepEqual(await getRichTokens(), [])
+	})
+
+	test('rejects ERC-20 decimals above uint8 before storage discovery', async () => {
+		const storageState = installBrowserMock()
+		const { modifyRichToken } = await loadModules()
+		storageState.userAddressBookEntriesV3 = [{
+			type: 'ERC20',
+			name: 'Hostile token',
+			address: '0x3333333333333333333333333333333333333333',
+			symbol: 'BAD',
+			decimals: '0x100',
+			entrySource: 'User',
+			chainId: '0x1',
+		}]
+		const requestHandler = new MockRequestHandler()
+		const ethereum = new EthereumClientService(
+			requestHandler,
+			async () => undefined,
+			async () => undefined,
+			{
+				name: 'Ethereum',
+				chainId: 1n,
+				httpsRpc: requestHandler.rpcUrl,
+				currencyName: 'Ether',
+				currencyTicker: 'ETH',
+				primary: true,
+				minimized: true,
+			},
+		)
+		let probeCount = 0
+		Object.defineProperty(ethereum, 'ethSimulateV1', {
+			value: async () => {
+				probeCount += 1
+				return []
+			},
+		})
+
+		const reply = await modifyRichToken(ethereum, undefined, {
+			method: 'popup_modifyRichToken',
+			data: { action: 'Add', address: richAccountAddress, tokenAddress: 0x3333333333333333333333333333333333333333n },
+		})
+
+		assert.deepEqual(reply, {
+			method: 'popup_modifyRichToken',
+			result: { success: false, error: 'ERC-20 decimals cannot exceed 255 in rich mode.' },
+		})
+		assert.equal(probeCount, 0)
+	})
+
+	test('uses exact-chain address-book metadata over an AllChains duplicate', async () => {
+		const storageState = installBrowserMock()
+		const { modifyRichToken, requestMakeMeRichList } = await loadModules()
+		const tokenAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		storageState.userAddressBookEntriesV3 = [
+			{
+				type: 'ERC20',
+				name: 'Global token',
+				address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+				symbol: 'GLOBAL',
+				decimals: '0x12',
+				entrySource: 'User',
+				chainId: 'AllChains',
+			},
+			{
+				type: 'ERC20',
+				name: 'USD Coin',
+				address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+				symbol: 'USDC',
+				decimals: '0x6',
+				entrySource: 'User',
+				chainId: '0x1',
+			},
+		]
+		const requestHandler = new MockRequestHandler()
+		const ethereum = new EthereumClientService(
+			requestHandler,
+			async () => undefined,
+			async () => undefined,
+			{
+				name: 'Ethereum',
+				chainId: 1n,
+				httpsRpc: requestHandler.rpcUrl,
+				currencyName: 'Ether',
+				currencyTicker: 'ETH',
+				primary: true,
+				minimized: true,
+			},
+		)
+		Object.defineProperty(ethereum, 'ethSimulateV1', {
+			value: async (blocks: readonly unknown[]) => blocks.length === 1
+				? [successfulBalanceCall(0xfedcba987654321n)]
+				: blocks.map((_block, index) => successfulBalanceCall(index === 9 ? 0x123456789abcdefn : 0n)),
+		})
+
+		const richData = await requestMakeMeRichList(ethereum, undefined)
+		assert.equal(richData.richTokenOptions[0]?.symbol, 'USDC')
+		assert.equal(richData.richTokenOptions[0]?.decimals, 6n)
+		const reply = await modifyRichToken(ethereum, undefined, {
+			method: 'popup_modifyRichToken',
+			data: { action: 'Add', address: richAccountAddress, tokenAddress },
+		})
+
+		assert.equal(reply.result.success, true)
+		if (reply.result.success === false) throw new Error(reply.result.error)
+		assert.equal(reply.result.richToken?.name, 'USD Coin')
+		assert.equal(reply.result.richToken?.symbol, 'USDC')
+		assert.equal(reply.result.richToken?.decimals, 6n)
+		assert.equal(reply.result.richToken?.balanceSlot, 9n)
+	})
+
+	test('configures a watched ERC-1155 token ID through nested balance discovery', async () => {
+		const storageState = installBrowserMock()
+		const { modifyRichToken, requestMakeMeRichList } = await loadModules()
+		const tokenAddress = 0x4444444444444444444444444444444444444444n
+		storageState.userAddressBookEntriesV3 = [
+			{
+				type: 'ERC1155',
+				name: 'Exact Game Items',
+				address: '0x4444444444444444444444444444444444444444',
+				symbol: 'ITEM',
+				decimals: undefined,
+				entrySource: 'User',
+				chainId: '0x1',
+				watchedTokenIds: ['0x7'],
+			},
+			{
+				type: 'ERC1155',
+				name: 'Global Game Items',
+				address: '0x4444444444444444444444444444444444444444',
+				symbol: 'GLOBAL',
+				decimals: undefined,
+				entrySource: 'User',
+				chainId: 'AllChains',
+				watchedTokenIds: ['0x2a'],
+			},
+		]
+		const requestHandler = new MockRequestHandler()
+		const ethereum = new EthereumClientService(
+			requestHandler,
+			async () => undefined,
+			async () => undefined,
+			{
+				name: 'Ethereum',
+				chainId: 1n,
+				httpsRpc: requestHandler.rpcUrl,
+				currencyName: 'Ether',
+				currencyTicker: 'ETH',
+				primary: true,
+				minimized: true,
+			},
+		)
+		Object.defineProperty(ethereum, 'ethSimulateV1', {
+			value: async (blocks: readonly unknown[]) => blocks.length === 1
+				? [successfulBalanceCall(0xfedcba987654321n)]
+				: blocks.map((_block, index) => successfulBalanceCall(index === 6 ? 0x123456789abcdefn : 0n)),
+		})
+
+		const richData = await requestMakeMeRichList(ethereum, undefined)
+		assert.equal(richData.richTokenOptions.some((option) => option.tokenType === 'ERC1155' && option.tokenId === 42n && option.name === 'Exact Game Items'), true)
+		const reply = await modifyRichToken(ethereum, undefined, {
+			method: 'popup_modifyRichToken',
+			data: { action: 'Add', address: richAccountAddress, tokenAddress, tokenId: 42n },
+		})
+
+		assert.equal(reply.result.success, true)
+		if (reply.result.success === false) throw new Error(reply.result.error)
+		assert.equal(reply.result.richToken?.tokenType, 'ERC1155')
+		assert.equal(reply.result.richToken?.tokenId, 42n)
+		assert.equal(reply.result.richToken?.name, 'Exact Game Items')
+		assert.equal(reply.result.richToken?.balanceSlot, 3n)
+		assert.equal(reply.result.richToken?.erc1155StorageOrder, 'TokenIdThenOwner')
+	})
+
+	test('verifies and reuses a configured ERC-1155 contract layout for another watched ID', async () => {
+		const storageState = installBrowserMock()
+		const { getRichTokens, modifyRichToken, updateRichTokens } = await loadModules()
+		const tokenAddress = 0x4444444444444444444444444444444444444444n
+		storageState.userAddressBookEntriesV3 = [{
+			type: 'ERC1155',
+			name: 'Game Items',
+			address: '0x4444444444444444444444444444444444444444',
+			symbol: 'ITEM',
+			decimals: undefined,
+			entrySource: 'User',
+			chainId: '0x1',
+			watchedTokenIds: ['0x7', '0x2a'],
+		}]
+		await updateRichTokens(() => [{
+			chainId: 1n,
+			tokenAddress,
+			tokenType: 'ERC1155',
+			tokenId: 7n,
+			name: 'Game Items',
+			symbol: 'ITEM',
+			decimals: 0n,
+			amount: 1_000_000n,
+			balanceSlot: 3n,
+			erc1155StorageOrder: 'TokenIdThenOwner',
+		}])
+		const requestHandler = new MockRequestHandler()
+		const ethereum = new EthereumClientService(
+			requestHandler,
+			async () => undefined,
+			async () => undefined,
+			{
+				name: 'Ethereum',
+				chainId: 1n,
+				httpsRpc: requestHandler.rpcUrl,
+				currencyName: 'Ether',
+				currencyTicker: 'ETH',
+				primary: true,
+				minimized: true,
+			},
+		)
+		let simulationCalls = 0
+		Object.defineProperty(ethereum, 'ethSimulateV1', {
+			value: async (blocks: readonly unknown[]) => {
+				simulationCalls += 1
+				assert.equal(blocks.length, 1)
+				return [successfulBalanceCall(0xfedcba987654321n)]
+			},
+		})
+
+		const reply = await modifyRichToken(ethereum, undefined, {
+			method: 'popup_modifyRichToken',
+			data: { action: 'Add', address: richAccountAddress, tokenAddress, tokenId: 42n },
+		})
+
+		assert.equal(reply.result.success, true)
+		if (reply.result.success === false) throw new Error(reply.result.error)
+		assert.equal(simulationCalls, 1)
+		assert.equal(reply.result.richToken?.balanceSlot, 3n)
+		assert.equal(reply.result.richToken?.erc1155StorageOrder, 'TokenIdThenOwner')
+		assert.deepEqual((await getRichTokens()).map((token) => token.tokenId), [7n, 42n])
+	})
+
+	test('reconciles removed ERC-1155 token IDs before applying simulation overrides', async () => {
+		const storageState = installBrowserMock()
+		const { changeSimulationMode, getCurrentSimulationInput, getRichTokens, modifyMakeMeRich, updateRichTokens } = await loadModules()
+		const activeAddress = 0x8000000000000000000000000000000000000008n
+		const tokenAddress = 0x4444444444444444444444444444444444444444n
+		storageState.userAddressBookEntriesV3 = [{
+			type: 'ERC1155',
+			name: 'Game Items',
+			address: '0x4444444444444444444444444444444444444444',
+			symbol: 'ITEM',
+			decimals: undefined,
+			entrySource: 'User',
+			chainId: '0x1',
+			watchedTokenIds: ['0x7'],
+		}]
+		await updateRichTokens(() => [{
+			chainId: 1n,
+			tokenAddress,
+			tokenType: 'ERC1155',
+			tokenId: 42n,
+			name: 'Game Items',
+			symbol: 'ITEM',
+			decimals: 0n,
+			amount: 100n,
+			balanceSlot: 0n,
+			erc1155StorageOrder: 'OwnerThenTokenId',
+		}])
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress })
+		await modifyMakeMeRich({ method: 'popup_modifyMakeMeRich', data: { add: true, address: 'CurrentAddress' } })
+
+		const simulationInput = await getCurrentSimulationInput()
+
+		assert.deepEqual(await getRichTokens(), [])
+		assert.equal(simulationInput[0]?.stateOverrides[addressString(tokenAddress)], undefined)
+	})
+
+	test('address-book removal wins against an in-flight token storage scan', async () => {
+		const storageState = installBrowserMock()
+		const { modifyRichToken, removeAddressBookEntry, getRichTokens } = await loadModules()
+		const tokenAddress = 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48n
+		storageState.userAddressBookEntriesV3 = [{
+			type: 'ERC20',
+			name: 'USD Coin',
+			address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+			symbol: 'USDC',
+			decimals: '0x6',
+			entrySource: 'User',
+			chainId: '0x1',
+		}]
+		const requestHandler = new MockRequestHandler()
+		const ethereum = new EthereumClientService(
+			requestHandler,
+			async () => undefined,
+			async () => undefined,
+			{
+				name: 'Ethereum',
+				chainId: 1n,
+				httpsRpc: requestHandler.rpcUrl,
+				currencyName: 'Ether',
+				currencyTicker: 'ETH',
+				primary: true,
+				minimized: true,
+			},
+		)
+		let signalProbeStarted = () => undefined
+		const probeStarted = new Promise<void>((resolve) => { signalProbeStarted = resolve })
+		let releaseProbe = () => undefined
+		const probeGate = new Promise<void>((resolve) => { releaseProbe = resolve })
+		Object.defineProperty(ethereum, 'ethSimulateV1', {
+			value: async (blocks: readonly unknown[]) => {
+				if (blocks.length === 1) return [successfulBalanceCall(0xfedcba987654321n)]
+				signalProbeStarted()
+				await probeGate
+				return blocks.map((_block, index) => successfulBalanceCall(index === 9 ? 0x123456789abcdefn : 0n))
+			},
+		})
+		const addPromise = modifyRichToken(ethereum, undefined, {
+			method: 'popup_modifyRichToken',
+			data: { action: 'Add', address: richAccountAddress, tokenAddress },
+		})
+		await probeStarted
+		const removePromise = removeAddressBookEntry(
+			ethereum,
+			new TokenPriceService(ethereum, 60_000),
+			() => undefined,
+			new Map(),
+			{
+				method: 'popup_removeAddressBookEntry',
+				data: { address: tokenAddress, addressBookCategory: 'ERC20 Tokens', chainId: 1n },
+			},
+		)
+		releaseProbe()
+		await Promise.all([addPromise, removePromise])
+
+		assert.deepEqual(await getRichTokens(), [])
+	})
+
+	test('removing an AllChains duplicate preserves exact-chain token funding', async () => {
+		const storageState = installBrowserMock()
+		const { getRichTokens, removeAddressBookEntry, updateRichTokens } = await loadModules()
+		const tokenAddress = 0x3333333333333333333333333333333333333333n
+		storageState.userAddressBookEntriesV3 = [
+			{
+				type: 'ERC20',
+				name: 'Global token',
+				address: '0x3333333333333333333333333333333333333333',
+				symbol: 'GLOBAL',
+				decimals: '0x12',
+				entrySource: 'User',
+				chainId: 'AllChains',
+			},
+			{
+				type: 'ERC20',
+				name: 'Exact token',
+				address: '0x3333333333333333333333333333333333333333',
+				symbol: 'EXACT',
+				decimals: '0x12',
+				entrySource: 'User',
+				chainId: '0x1',
+			},
+		]
+		await updateRichTokens(() => [{
+			chainId: 1n,
+			tokenAddress,
+			tokenType: 'ERC20',
+			tokenId: undefined,
+			name: 'Exact token',
+			symbol: 'EXACT',
+			decimals: 18n,
+			amount: 100n,
+			balanceSlot: 2n,
+			erc1155StorageOrder: undefined,
+		}])
+		const requestHandler = new MockRequestHandler()
+		const ethereum = new EthereumClientService(
+			requestHandler,
+			async () => undefined,
+			async () => undefined,
+			{
+				name: 'Ethereum',
+				chainId: 1n,
+				httpsRpc: requestHandler.rpcUrl,
+				currencyName: 'Ether',
+				currencyTicker: 'ETH',
+				primary: true,
+				minimized: true,
+			},
+		)
+
+		await removeAddressBookEntry(
+			ethereum,
+			new TokenPriceService(ethereum, 60_000),
+			() => undefined,
+			new Map(),
+			{
+				method: 'popup_removeAddressBookEntry',
+				data: { address: tokenAddress, addressBookCategory: 'ERC20 Tokens', chainId: 'AllChains' },
+			},
+		)
+
+		assert.equal((await getRichTokens()).length, 1)
+	})
+
 })
 
 describe('startup storage recovery', () => {

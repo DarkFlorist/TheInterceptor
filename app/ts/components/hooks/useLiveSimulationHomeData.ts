@@ -8,9 +8,10 @@ import type { WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import type { EnrichedRichListElement, UnexpectedErrorOccured } from '../../types/interceptor-reply-messages.js'
 import { PopupMessageReplyRequests } from '../../types/interceptor-reply-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
-import { DEFAULT_TAB_CONNECTION } from '../../utils/constants.js'
+import { DEFAULT_TAB_CONNECTION, MAKE_YOU_RICH_TRANSACTION } from '../../utils/constants.js'
 import { useSignal } from '@preact/signals'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../../utils/popupPerformance.js'
+import type { RichAccountBalance, RichTokenOption } from '../../types/richMode.js'
 
 type LiveSimulationHomeDataOptions = {
 	answerMainPopupOpen: boolean
@@ -63,6 +64,9 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 	const popupIconRefreshGeneration = useSignal(0)
 	const fixedAddressRichList = useSignal<readonly EnrichedRichListElement[]>([])
 	const makeCurrentAddressRich = useSignal<boolean>(false)
+	const richNativeAmount = useSignal(MAKE_YOU_RICH_TRANSACTION.transaction.value)
+	const richTokenOptions = useSignal<readonly RichTokenOption[]>([])
+	const richAccountBalances = useSignal<readonly RichAccountBalance[]>([])
 	const simulationMode = useSignal<boolean>(false)
 	const numberOfAddressesMadeRich = useSignal(0)
 
@@ -165,6 +169,9 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			activeAddresses.value = data.activeAddresses
 			interceptorDisabled.value = data.interceptorDisabled
 			makeCurrentAddressRich.value = data.makeCurrentAddressRich
+			if (data.richNativeAmount !== undefined) richNativeAmount.value = data.richNativeAmount
+			richTokenOptions.value = data.richTokenOptions ?? []
+			richAccountBalances.value = data.richAccountBalances ?? []
 			fixedAddressRichList.value = data.richList
 			unexpectedError.value = data.latestUnexpectedError
 			if (!wasLoaded) options.onInitialSettings?.(data.settings)
@@ -302,6 +309,9 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 		popupRefreshAppliedGeneration,
 		fixedAddressRichList,
 		makeCurrentAddressRich,
+		richNativeAmount,
+		richTokenOptions,
+		richAccountBalances,
 		simulationMode,
 		numberOfAddressesMadeRich,
 	}

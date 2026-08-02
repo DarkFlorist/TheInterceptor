@@ -2,6 +2,8 @@ import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
+import type { RichAccountBalance, RichToken } from '../../app/ts/types/richMode.js'
+import type { RichListElement } from '../../app/ts/utils/storageUtils.js'
 
 type StorageKeyInput = string | string[] | Record<string, unknown> | undefined | null
 
@@ -149,5 +151,112 @@ describe('settings import', () => {
 		const websiteAccess = await getWebsiteAccess()
 		assert.equal(websiteAccess[0]?.website.icon, undefined)
 		assert.equal(websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
+	})
+
+	test('clears rich-mode state when importing backups that predate rich-mode exports', async () => {
+		const {
+			getFixedAddressRichList,
+			getMakeCurrentAddressRich,
+			getRichAccountBalances,
+			getRichNativeAmount,
+			getRichTokens,
+			importSettingsAndAddressBook,
+		} = await settingsModulePromise
+		await browser.storage.local.set({
+			makeCurrentAddressRich: true,
+			richNativeAmount: 123n,
+			fixedAddressRichList: [{ address: 0x1111111111111111111111111111111111111111n, makingRich: true, type: 'UserAdded' }],
+			richTokens: [{ stale: true }],
+			richAccountBalances: [{ stale: true }],
+		})
+
+		await importSettingsAndAddressBook(buildVersion14Import(false, false))
+
+		assert.equal(await getMakeCurrentAddressRich(), false)
+		assert.equal(await getRichNativeAmount(), 200_000n * 10n ** 18n)
+		assert.deepEqual(await getFixedAddressRichList(), [])
+		assert.deepEqual(await getRichTokens(), [])
+		assert.deepEqual(await getRichAccountBalances(), [])
+	})
+
+	test('round-trips rich-mode account and token settings in version 1.5 exports', async () => {
+		const {
+			exportSettingsAndAddressBook,
+			getFixedAddressRichList,
+			getMakeCurrentAddressRich,
+			getRichAccountBalances,
+			getRichNativeAmount,
+			getRichTokens,
+			importSettingsAndAddressBook,
+			setFixedMakeMeRichList,
+			setMakeCurrentAddressRich,
+			setRichNativeAmount,
+			updateRichAccountBalances,
+			updateRichTokens,
+		} = await settingsModulePromise
+		const { updateUserAddressBookEntries } = await import('../../app/ts/background/storageVariables.js')
+		const accountAddress = 0x1111111111111111111111111111111111111111n
+		const tokenAddress = 0x2222222222222222222222222222222222222222n
+		const richToken: RichToken = {
+			chainId: 1n,
+			tokenAddress,
+			tokenType: 'ERC20',
+			tokenId: undefined,
+			name: 'Test Token',
+			symbol: 'TST',
+			decimals: 6n,
+			amount: 200_000n * 10n ** 6n,
+			balanceSlot: 9n,
+			erc1155StorageOrder: undefined,
+		}
+		const richAccountBalance: RichAccountBalance = {
+			chainId: 1n,
+			address: accountAddress,
+			nativeAmount: 200_000n * 10n ** 18n,
+			tokenBalances: [{ tokenAddress, tokenId: undefined, amount: 123_456n * 10n ** 6n }],
+		}
+		const fixedAddressRichList: readonly RichListElement[] = [{ address: accountAddress, makingRich: true, type: 'UserAdded' }]
+
+		await updateUserAddressBookEntries(() => [{
+			type: 'ERC20',
+			name: richToken.name,
+			address: tokenAddress,
+			symbol: richToken.symbol,
+			decimals: richToken.decimals,
+			chainId: richToken.chainId,
+			entrySource: 'User',
+		}])
+		await setMakeCurrentAddressRich(true)
+		await setRichNativeAmount(richAccountBalance.nativeAmount)
+		await setFixedMakeMeRichList(fixedAddressRichList)
+		await updateRichTokens(() => [richToken])
+		await updateRichAccountBalances(() => [richAccountBalance])
+
+		const exported = await exportSettingsAndAddressBook()
+		assert.equal(exported.version, '1.5')
+		if (exported.version !== '1.5') throw new Error('Expected a version 1.5 settings export')
+		assert.deepEqual(exported.settings.richTokens, [richToken])
+		assert.deepEqual(exported.settings.richAccountBalances, [richAccountBalance])
+
+		browserMock.reset()
+		await importSettingsAndAddressBook(exported)
+
+		assert.equal(await getMakeCurrentAddressRich(), true)
+		assert.equal(await getRichNativeAmount(), richAccountBalance.nativeAmount)
+		assert.deepEqual(await getFixedAddressRichList(), fixedAddressRichList)
+		assert.deepEqual(await getRichTokens(), [richToken])
+		assert.deepEqual(await getRichAccountBalances(), [richAccountBalance])
+
+		const duplicateProfile = {
+			...richAccountBalance,
+			nativeAmount: richAccountBalance.nativeAmount + 1n,
+			tokenBalances: [{ tokenAddress, tokenId: undefined, amount: 999n }],
+		}
+		await importSettingsAndAddressBook({
+			...exported,
+			settings: { ...exported.settings, richAccountBalances: [richAccountBalance, duplicateProfile] },
+		})
+
+		assert.deepEqual(await getRichAccountBalances(), [duplicateProfile])
 	})
 })

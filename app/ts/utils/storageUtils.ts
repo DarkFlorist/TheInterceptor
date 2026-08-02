@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
+import { EthereumAddress, EthereumAddressOrMissing, EthereumQuantity, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
 import { BlockTimeManipulation, CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'
 import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addressBookTypes.js'
@@ -12,6 +12,7 @@ import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
 import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { InterceptedRequestForward } from '../types/interceptor-messages.js'
+import { RichAccountBalances, RichToken } from '../types/richMode.js'
 import { ICON_ACCESS_DENIED } from './constants.js'
 import { hasOwnKey } from './methodHandlers.js'
 
@@ -70,6 +71,7 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	simulationMode: funtypes.Boolean,
 	pendingInterceptorAccessRequests: PendingAccessRequests,
 	makeCurrentAddressRich: funtypes.Boolean,
+	richNativeAmount: EthereumQuantity,
 	chainChangeConfirmationPromise: funtypes.Union(funtypes.Undefined, PendingChainChangeConfirmationPromise),
 	interceptorTransactionStack: funtypes.Union(funtypes.Undefined, InterceptorTransactionStack),
 	popupVisualisation: funtypes.Union(funtypes.Undefined, CompleteVisualizedSimulation),
@@ -92,6 +94,8 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	ensLabelHashes: ENSLabelHashes,
 	preSimulationBlockTimeManipulation: BlockTimeManipulation,
 	fixedAddressRichList: funtypes.ReadonlyArray(RichListElement),
+	richTokens: funtypes.ReadonlyArray(RichToken),
+	richAccountBalances: RichAccountBalances,
 	fetchSimulationStackRequestPromise: funtypes.Union(funtypes.Undefined, PendingFetchSimulationStackRequestPromise),
 	pendingWatchAssetRequests: funtypes.ReadonlyArray(StoredWatchAssetRequest),
 	popupRefreshGeneration: funtypes.Number,
@@ -111,6 +115,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('simulationMode'),
 	funtypes.Literal('pendingInterceptorAccessRequests'),
 	funtypes.Literal('makeCurrentAddressRich'),
+	funtypes.Literal('richNativeAmount'),
 	funtypes.Literal('chainChangeConfirmationPromise'),
 	funtypes.Literal('interceptorTransactionStack'),
 	funtypes.Literal('popupVisualisation'),
@@ -132,6 +137,8 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('ensLabelHashes'),
 	funtypes.Literal('preSimulationBlockTimeManipulation'),
 	funtypes.Literal('fixedAddressRichList'),
+	funtypes.Literal('richTokens'),
+	funtypes.Literal('richAccountBalances'),
 	funtypes.Literal('fetchSimulationStackRequestPromise'),
 	funtypes.Literal('pendingWatchAssetRequests'),
 	funtypes.Literal('popupRefreshGeneration'),

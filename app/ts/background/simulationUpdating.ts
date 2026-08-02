@@ -9,10 +9,10 @@ import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookType
 import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
 import { type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type SimulationState, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
-import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
+import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
-import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
+import { ensureRichAccountBalances, getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId, reconcileRichTokensWithAddressBook } from './settings.js'
 import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
@@ -28,6 +28,7 @@ import type { Abi } from '../utils/ethereumPrimitives.js'
 import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
+import { addRichAccountBalanceOverrides } from '../utils/richTokens.js'
 
 const delegateCallExecuteAbi = [
 	{
@@ -42,14 +43,10 @@ const delegateCallExecuteAbi = [
 	},
 ] as const satisfies Abi
 
-const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: bigint[]) => {
+const getMakeCurrentAddressRichStateOverride = async (chainId: bigint, addressesToMakeRich: bigint[], richTokens: Awaited<ReturnType<typeof reconcileRichTokensWithAddressBook>>) => {
 	if (addressesToMakeRich.length === 0) return {}
-	return Object.fromEntries(
-		addressesToMakeRich.map(currentAddress => {
-			const addressKey = addressString(currentAddress)
-			return [addressKey, { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value }]
-		})
-	)
+	const accountBalances = await ensureRichAccountBalances(chainId, addressesToMakeRich)
+	return addRichAccountBalanceOverrides({}, accountBalances.filter((profile) => profile.chainId === chainId && addressesToMakeRich.includes(profile.address)), richTokens)
 }
 
 export const getAddressesbeingMadeRich = async () => {
@@ -59,16 +56,21 @@ export const getAddressesbeingMadeRich = async () => {
 }
 
 export const getCurrentSimulationInput = async (): Promise<SimulationStateInput> => {
-	const [settings, preSimulationBlockTimeManipulation] = await Promise.all([
+	const [settings, preSimulationBlockTimeManipulation, richTokens] = await Promise.all([
 		getSettings(),
-		getPreSimulationBlockTimeManipulation()
+		getPreSimulationBlockTimeManipulation(),
+		reconcileRichTokensWithAddressBook(),
 	])
 	const richListPromise = silenceChromeUnCaughtPromise(getAddressesbeingMadeRich())
 	const stack = await getInterceptorTransactionStack()
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
-	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(await richListPromise)
+	let currentBlockStateOverrides = await getMakeCurrentAddressRichStateOverride(
+		settings.activeRpcNetwork.chainId,
+		await richListPromise,
+		richTokens.filter((token) => token.chainId === settings.activeRpcNetwork.chainId),
+	)
 	let previousBlockTimeManipulation = settings.simulationMode ? preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
 	let currentBlockSimulateWithZeroBaseFee = false
 

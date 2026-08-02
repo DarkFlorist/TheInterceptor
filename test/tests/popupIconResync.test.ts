@@ -11,7 +11,7 @@ import { POPUP_PERFORMANCE_MARKS, clearPerformanceMarks } from '../../app/ts/uti
 
 type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => void
 
-function installBrowserMock() {
+function installBrowserMock(replyForMessage: (message: unknown) => unknown | Promise<unknown> = () => undefined) {
 	const sentMessages: unknown[] = []
 	let messageListener: RuntimeMessageListener | undefined
 
@@ -20,7 +20,7 @@ function installBrowserMock() {
 			lastError: null,
 			async sendMessage(message: unknown) {
 				sentMessages.push(message)
-				return undefined
+				return await replyForMessage(message)
 			},
 			getManifest: () => ({ manifest_version: 3 }),
 			onMessage: {
@@ -95,8 +95,12 @@ type TestDomNode = {
 	readonly textContent?: string | null
 	readonly disabled?: boolean
 	readonly l?: Record<string, (event: unknown) => unknown>
+	readonly eventListeners?: ReadonlyMap<string, ReadonlySet<(event: unknown) => void>>
 	readonly blur?: () => void
+	readonly dispatchEvent?: (event: { bubbles?: boolean, type: string }) => boolean
 	readonly getAttribute?: (name: string) => string | null
+	scrollTop?: number
+	value?: string
 }
 
 function collectElements(node: TestDomNode, tagName: string, results: TestDomNode[] = []) {
@@ -148,6 +152,28 @@ async function clickElement(element: TestDomNode) {
 		clientY: 0,
 		stopPropagation() { return undefined },
 	})
+}
+
+async function pressElementKey(element: TestDomNode, key: string) {
+	const keyDownHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([eventName]) => eventName.startsWith('KeyDown'))?.[1]
+	if (keyDownHandler === undefined) throw new Error('Expected keydown handler')
+	await keyDownHandler({ currentTarget: element, key, preventDefault() { return undefined } })
+}
+
+async function dispatchElementValueEvent(element: TestDomNode, value: string, acceptedEventTypes: readonly string[]) {
+	if (element.dispatchEvent === undefined) throw new Error('Expected event dispatch support')
+	element.value = value
+	const eventType = [...(element.eventListeners?.keys() ?? [])].find((registeredType) => acceptedEventTypes.includes(registeredType.toLowerCase()))
+	if (eventType === undefined) throw new Error('Expected a registered input value event')
+	element.dispatchEvent({ type: eventType, bubbles: true })
+}
+
+async function inputElementValue(element: TestDomNode, value: string) {
+	await dispatchElementValueEvent(element, value, ['input'])
+}
+
+async function changeElementValue(element: TestDomNode, value: string) {
+	await dispatchElementValueEvent(element, value, ['change', 'input'])
 }
 
 function installClipboardMock() {
@@ -1065,4 +1091,531 @@ describe('popup icon sync', () => {
 			dom.restore()
 		}
 	})
+
+	test('renders configured balances and keeps unselected address-book tokens in the picker', async () => {
+		const dom = installDomMock()
+		const clipboardMock = installClipboardMock()
+		let resolveNativeAmountReply = (_reply: unknown) => undefined
+		let tokenAddRequestCount = 0
+		const nativeAmountReply = new Promise<unknown>((resolve) => { resolveNativeAmountReply = resolve })
+		const { messageListener } = installBrowserMock(async (message) => {
+			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_modifyMakeMeRich' && 'data' in message && typeof message.data === 'object' && message.data !== null && 'nativeAmount' in message.data) return await nativeAmountReply
+			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_modifyRichToken') {
+				tokenAddRequestCount += 1
+				return tokenAddRequestCount === 1 ? { method: 'popup_modifyRichToken', result: { success: true, richToken: undefined } } : undefined
+			}
+			return undefined
+		})
+		const secondAddress = '0x2000000000000000000000000000000000000002'
+		try {
+			Object.defineProperty(globalThis, 'window', {
+				value: {
+					document: dom.document,
+					addEventListener: () => undefined,
+					removeEventListener: () => undefined,
+				},
+				configurable: true,
+				writable: true,
+			})
+			await act(() => {
+				render(h(App, {}), dom.document.body)
+			})
+			const listener = messageListener()
+			assert.equal(typeof listener, 'function')
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 10, {
+						activeAddresses: [loadedAddressBookEntry],
+						settings: { ...defaultSettings, activeSimulationAddress: loadedAddress, simulationMode: true },
+						richNativeAmount: '0xad78ebc5ac620000',
+						makeCurrentAddressRich: true,
+						richList: [{ addressBookEntry: { type: 'contact', name: 'Second Account', address: secondAddress, entrySource: 'User' }, makingRich: true, type: 'UserAdded' }],
+						richAccountBalances: [{
+							chainId: '0x1',
+							address: loadedAddress,
+							nativeAmount: '0xad78ebc5ac620000',
+							tokenBalances: [
+								{ tokenAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', tokenId: undefined, amount: '0xe8d4a51000' },
+								{ tokenAddress: '0x4444444444444444444444444444444444444444', tokenId: '0x2a', amount: '0xf4240' },
+								{ tokenAddress: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', tokenId: undefined, amount: '0xde0b6b3a7640000' },
+							],
+						}, {
+							chainId: '0x1',
+							address: secondAddress,
+							nativeAmount: '0x6124fee993bc0000',
+							tokenBalances: [
+								{ tokenAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', tokenId: undefined, amount: '0x1d1a94a2000' },
+								{ tokenAddress: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', tokenId: undefined, amount: '0xde0b6b3a7640000' },
+							],
+						}],
+						richTokenOptions: [{
+							chainId: '0x1',
+							tokenAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+							tokenType: 'ERC20',
+							tokenId: undefined,
+							name: 'USD Coin',
+							symbol: 'USDC',
+							decimals: '0x6',
+							amount: '0xe8d4a51000',
+							balanceSlot: '0x9',
+							erc1155StorageOrder: undefined,
+							enabled: true,
+						}, {
+							chainId: '0x1',
+							tokenAddress: '0x4444444444444444444444444444444444444444',
+							tokenType: 'ERC1155',
+							tokenId: '0x2a',
+							name: 'Game Items',
+							symbol: 'ITEM',
+							decimals: '0x0',
+							amount: '0xf4240',
+							balanceSlot: '0x3',
+							erc1155StorageOrder: 'TokenIdThenOwner',
+							enabled: true,
+						}, {
+							chainId: '0x1',
+							tokenAddress: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+							tokenType: 'ERC20',
+							tokenId: undefined,
+							name: 'Wrapped Ether',
+							symbol: 'WETH',
+							decimals: '0x12',
+							amount: '0xad78ebc5ac620000',
+							balanceSlot: '0x3',
+							erc1155StorageOrder: undefined,
+							enabled: true,
+						}, {
+							chainId: '0x1',
+							tokenAddress: '0x6b175474e89094c44da98b954eedeac495271d0f',
+							tokenType: 'ERC20',
+							tokenId: undefined,
+							name: 'Dai Stablecoin',
+							symbol: 'DAI',
+							decimals: '0x12',
+							amount: '0x56bc75e2d63100000',
+							balanceSlot: undefined,
+							erc1155StorageOrder: undefined,
+							enabled: false,
+						}],
+					}),
+				}, undefined, () => undefined)
+			})
+
+			const richHeader = collectElements(dom.document.body, 'header').find((header) => header.textContent?.includes('Make current account rich'))
+			assert.notEqual(richHeader, undefined)
+			const richAccountExpander = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Show rich accounts')
+			assert.equal(richAccountExpander?.getAttribute?.('aria-expanded'), false)
+			assert.equal(richAccountExpander?.getAttribute?.('aria-controls'), 'rich-mode-account-manager')
+			await act(async () => {
+				if (richAccountExpander !== undefined) await clickElement(richAccountExpander)
+			})
+			const collapseRichAccounts = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Hide rich accounts')
+			assert.equal(collapseRichAccounts?.getAttribute?.('aria-expanded'), true)
+			assert.notEqual(collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('id') === 'rich-mode-account-manager'), undefined)
+			const balanceSummaries = collectElements(dom.document.body, 'span').filter((element) => hasClass(element, 'rich-mode-balance-summary'))
+			assert.equal(balanceSummaries.length, 2)
+			assert.equal(richHeader?.textContent?.includes('2 accounts · 4 assets'), true)
+			const loadedAccountSummary = balanceSummaries.find((summary) => summary.textContent?.includes('ITEM #42'))
+			assert.notEqual(loadedAccountSummary, undefined)
+			assert.equal(loadedAccountSummary?.textContent?.includes('ETH?'), true)
+			assert.equal(loadedAccountSummary?.textContent?.includes('USDC'), true)
+			assert.equal(loadedAccountSummary === undefined ? 0 : collectElements(loadedAccountSummary, 'span').filter((span) => hasClass(span, 'rich-mode-balance-summary-item')).length, 3)
+			assert.equal(loadedAccountSummary?.textContent?.includes('+1'), true)
+			assert.equal(loadedAccountSummary?.getAttribute?.('aria-hidden'), 'true')
+			assert.equal(loadedAccountSummary?.textContent?.includes('WETH'), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'Current account'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Other rich accounts'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Remove rich token USDC'), false)
+			const activeAccountButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Edit balances for Loaded Account')
+			const activeAccountAddressId = activeAccountButton?.getAttribute?.('aria-describedby')
+			const activeAccountAddress = collectElements(dom.document.body, 'small').find((element) => element.getAttribute?.('id') === activeAccountAddressId)
+			assert.equal(activeAccountAddress?.textContent, '0x1000…0001')
+			assert.equal(activeAccountAddress?.getAttribute?.('aria-label'), loadedAddress)
+			assert.equal(hasAriaLabel(dom.document.body, `Toggle rich mode for Loaded Account (${ loadedAddress })`), true)
+			assert.equal(hasAriaLabel(dom.document.body, `Toggle rich mode for Second Account (${ secondAddress })`), true)
+			await act(async () => {
+				if (activeAccountButton !== undefined) await clickElement(activeAccountButton)
+			})
+			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Loaded Account'), true)
+			assert.equal(collectElements(dom.document.body, 'div').some((element) => hasClass(element, 'rich-mode-modal-content')), false)
+			assert.equal(collectElements(dom.document.body, 'p').some((element) => element.textContent === 'Amounts'), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'Remove rich token USDC'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Remove rich token ITEM #42'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Remove rich token WETH'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Rich accounts'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Configured rich tokens'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Next rich account'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Previous rich account'), true)
+			const nativeAmountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'ETH? rich amount for Loaded Account')
+			assert.equal(nativeAmountInput?.getAttribute?.('value'), '12.5')
+			if (nativeAmountInput === undefined) throw new Error('Expected native amount input')
+			await act(async () => { await changeElementValue(nativeAmountInput, '25') })
+			assert.equal(collectElements(dom.document.body, 'span').some((span) => hasClass(span, 'rich-mode-save-status') && span.textContent === 'Saving…'), true)
+			const pendingCloseButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Close balance manager')
+			assert.equal(isButtonDisabled(pendingCloseButton), true)
+			await act(async () => {
+				resolveNativeAmountReply({ method: 'popup_modifyMakeMeRich', result: { success: false, error: 'Unable to persist native amount.' } })
+				await nativeAmountReply
+				await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
+			})
+			const revertedNativeAmountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'ETH? rich amount for Loaded Account')
+			assert.equal(revertedNativeAmountInput?.getAttribute?.('value'), '12.5')
+			assert.equal(revertedNativeAmountInput?.getAttribute?.('aria-invalid'), 'true')
+			const nativeAmountErrorId = revertedNativeAmountInput?.getAttribute?.('aria-describedby')
+			assert.notEqual(nativeAmountErrorId, null)
+			assert.equal(collectElements(dom.document.body, 'small').some((error) => error.getAttribute?.('id') === nativeAmountErrorId && error.getAttribute?.('role') === 'alert' && error.textContent === 'Unable to persist native amount.'), true)
+			assert.equal(dom.document.body.textContent?.includes('Unable to persist native amount.'), true)
+			assert.equal(collectElements(dom.document.body, 'span').some((span) => hasClass(span, 'rich-mode-save-status') && span.textContent === 'Needs attention'), true)
+			const amountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'USDC rich amount')
+			assert.equal(amountInput?.getAttribute?.('value'), '1,000,000')
+			const erc1155AmountInput = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'ITEM #42 rich amount')
+			assert.equal(erc1155AmountInput?.getAttribute?.('value'), '1,000,000')
+			const amountUnits = collectElements(dom.document.body, 'span').filter((span) => hasClass(span, 'rich-mode-amount-unit')).map((span) => span.textContent)
+			assert.deepEqual(amountUnits, ['ETH?', 'USDC', 'ITEM', 'WETH'])
+			assert.equal(hasAriaLabel(dom.document.body, 'Reset USDC rich amount to 200,000'), true)
+			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent === 'Close'), false)
+			const closeBalanceEditor = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Close balance manager')
+			await act(async () => {
+				if (closeBalanceEditor !== undefined) await clickElement(closeBalanceEditor)
+			})
+			assert.equal(hasAriaLabel(dom.document.body, 'Configured rich tokens'), false)
+			const secondAccountButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Edit balances for Second Account')
+			await act(async () => {
+				if (secondAccountButton !== undefined) await clickElement(secondAccountButton)
+			})
+			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Second Account'), true)
+			const secondNativeAmount = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'ETH? rich amount for Second Account')
+			assert.equal(secondNativeAmount?.getAttribute?.('value'), '7')
+			const secondTokenAmount = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'USDC rich amount')
+			assert.equal(secondTokenAmount?.getAttribute?.('value'), '2,000,000')
+			const chooseTokenButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Select tokens')
+			await act(async () => {
+				if (chooseTokenButton !== undefined) await clickElement(chooseTokenButton)
+			})
+			assert.equal(hasAriaLabel(dom.document.body, 'Select tokens for Second Account'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Second Account'), false)
+			assert.equal(collectElements(dom.document.body, 'section').some((element) => hasClass(element, 'rich-mode-token-view')), true)
+			assert.equal(collectElements(dom.document.body, 'div').some((element) => hasClass(element, 'rich-mode-balance-page')), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'Configured rich tokens'), false)
+			assert.equal(collectElements(dom.document.body, 'div').filter((element) => element.getAttribute?.('aria-modal') === 'true').length, 1)
+			const tokenSearch = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')
+			assert.equal(tokenSearch?.getAttribute?.('placeholder'), 'Search 2 address-book tokens…')
+			assert.equal(tokenSearch?.getAttribute?.('aria-controls'), 'rich-token-search-results')
+			assert.equal(tokenSearch?.getAttribute?.('role'), 'combobox')
+			assert.equal(tokenSearch?.getAttribute?.('aria-autocomplete'), 'list')
+			assert.equal(tokenSearch?.getAttribute?.('aria-expanded'), 'true')
+			assert.equal(tokenSearch?.getAttribute?.('aria-activedescendant'), 'rich-token-option-0')
+			const tokenResults = collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('id') === 'rich-token-search-results')
+			assert.equal(tokenResults?.getAttribute?.('role'), 'listbox')
+			assert.equal(tokenResults?.getAttribute?.('aria-multiselectable'), 'true')
+			const erc1155Filter = collectElements(dom.document.body, 'button').find((button) => button.textContent === 'ERC1155')
+			await act(async () => { if (erc1155Filter !== undefined) await clickElement(erc1155Filter) })
+			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.getAttribute?.('aria-label')?.startsWith('Select rich token ITEM #42 ')), true)
+			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.getAttribute?.('aria-label')?.startsWith('Select rich token DAI ')), false)
+			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent === 'Needs scan' || button.textContent === 'Ready'), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'Storage scan required'), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'Storage layout ready'), false)
+			const allTokenFilter = collectElements(dom.document.body, 'button').find((button) => button.textContent === 'All' && button.getAttribute?.('aria-pressed') !== null)
+			await act(async () => { if (allTokenFilter !== undefined) await clickElement(allTokenFilter) })
+			await act(async () => {
+				if (tokenSearch !== undefined) await pressElementKey(tokenSearch, 'ArrowDown')
+			})
+			const movedTokenSearch = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')
+			assert.equal(movedTokenSearch?.getAttribute?.('aria-activedescendant'), 'rich-token-option-1')
+			await act(async () => {
+				if (movedTokenSearch !== undefined) await inputElementValue(movedTokenSearch, 'DAI')
+			})
+			const tokenResult = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label')?.startsWith('Select rich token DAI '))
+			assert.notEqual(tokenResult, undefined)
+			assert.equal(tokenResult?.getAttribute?.('aria-label')?.includes('0x6b175474e89094c44da98b954eedeac495271d0f'), true)
+			assert.equal(tokenResult?.getAttribute?.('role'), 'option')
+			assert.equal(tokenResult?.getAttribute?.('aria-selected'), false)
+			const filteredTokenSearch = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')
+			await act(async () => { if (filteredTokenSearch !== undefined) await pressElementKey(filteredTokenSearch, 'Enter') })
+			const selectedTokenResult = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label')?.startsWith('Select rich token DAI '))
+			assert.equal(selectedTokenResult?.getAttribute?.('aria-selected'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Selected tokens'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Remove DAI from selection'), true)
+			const richBalanceDialog = collectElements(dom.document.body, 'div').find((element) => hasClass(element, 'interceptor-dialog'))
+			await act(() => { richBalanceDialog?.dispatchEvent?.({ type: 'keydown', key: 'Escape', bubbles: true }) })
+			assert.equal(hasAriaLabel(dom.document.body, 'Select tokens for Second Account'), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Second Account'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'Configured rich tokens'), true)
+			const reopenTokenButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Select tokens')
+			assert.equal(dom.document.activeElement, reopenTokenButton)
+			await act(async () => { if (reopenTokenButton !== undefined) await clickElement(reopenTokenButton) })
+			const restoredTokenSearch = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')
+			assert.equal(restoredTokenSearch?.getAttribute?.('value'), 'DAI')
+			assert.equal(collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label')?.startsWith('Select rich token DAI '))?.getAttribute?.('aria-selected'), true)
+			const clearSelectionButton = collectElements(dom.document.body, 'button').find((button) => hasClass(button, 'rich-mode-clear-token-selection'))
+			await act(async () => { if (clearSelectionButton !== undefined) await clickElement(clearSelectionButton) })
+			assert.equal(hasAriaLabel(dom.document.body, 'Selected tokens'), false)
+			const tokenSearchAfterClear = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')
+			await act(async () => { if (tokenSearchAfterClear !== undefined) await pressElementKey(tokenSearchAfterClear, 'Enter') })
+			const tokenResultsBeforeAdd = collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('id') === 'rich-token-search-results')
+			if (tokenResultsBeforeAdd !== undefined) {
+				tokenResultsBeforeAdd.scrollTop = 41
+				tokenResultsBeforeAdd.dispatchEvent?.({ type: 'scroll' })
+			}
+			const addSelectedTokensButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Add selected tokens')
+			assert.equal(addSelectedTokensButton?.textContent, 'Add 1 token')
+			await act(async () => {
+				if (addSelectedTokensButton !== undefined) await clickElement(addSelectedTokensButton)
+				await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
+			})
+			assert.equal(hasAriaLabel(dom.document.body, 'Select tokens for Second Account'), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Second Account'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'DAI rich amount'), true)
+			const reopenAfterAddButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Select tokens')
+			await act(async () => { if (reopenAfterAddButton !== undefined) await clickElement(reopenAfterAddButton) })
+			assert.equal(collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')?.getAttribute?.('value'), 'DAI')
+			assert.equal(collectElements(dom.document.body, 'button').find((button) => button.textContent === 'All' && button.getAttribute?.('aria-pressed') !== null)?.getAttribute?.('aria-pressed'), true)
+			assert.equal(collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('id') === 'rich-token-search-results')?.scrollTop, 41)
+			assert.equal(hasAriaLabel(dom.document.body, 'Selected tokens'), false)
+			const searchAfterSuccessfulAdd = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')
+			await act(async () => { if (searchAfterSuccessfulAdd !== undefined) await inputElementValue(searchAfterSuccessfulAdd, '') })
+			const allFilterAfterSuccessfulAdd = collectElements(dom.document.body, 'button').find((button) => button.textContent === 'All' && button.getAttribute?.('aria-pressed') !== null)
+			await act(async () => { if (allFilterAfterSuccessfulAdd !== undefined) await clickElement(allFilterAfterSuccessfulAdd) })
+			const itemTokenResult = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label')?.startsWith('Select rich token ITEM #42 '))
+			await act(async () => { if (itemTokenResult !== undefined) await clickElement(itemTokenResult) })
+			const addItemButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Add selected tokens')
+			await act(async () => {
+				if (addItemButton !== undefined) await clickElement(addItemButton)
+				await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
+			})
+			assert.equal(hasAriaLabel(dom.document.body, 'Remove failed rich token ITEM #42'), true)
+			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent === 'Retry'), true)
+		} finally {
+			clipboardMock.restore()
+			dom.restore()
+		}
+	})
+
+	test('closes the token picker when its rich account is removed by live data', async () => {
+		const dom = installDomMock()
+		const clipboardMock = installClipboardMock()
+		const { messageListener, sentMessages } = installBrowserMock()
+		const secondAddress = '0x2000000000000000000000000000000000000002'
+		const secondAddressBookEntry = { type: 'contact', name: 'Second Account', address: secondAddress, entrySource: 'User', useAsActiveAddress: true }
+		const tokenOption = {
+			chainId: '0x1',
+			tokenAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+			tokenType: 'ERC20',
+			tokenId: undefined,
+			name: 'USD Coin',
+			symbol: 'USDC',
+			decimals: '0x6',
+			amount: '0xf4240',
+			balanceSlot: undefined,
+			erc1155StorageOrder: undefined,
+			enabled: false,
+		}
+		const secondTokenOption = {
+			...tokenOption,
+			tokenAddress: '0x6b175474e89094c44da98b954eedeac495271d0f',
+			name: 'Dai Stablecoin',
+			symbol: 'DAI',
+		}
+		const emptyProfiles = [{ chainId: '0x1', address: loadedAddress, nativeAmount: '0xad78ebc5ac620000', tokenBalances: [] }, { chainId: '0x1', address: secondAddress, nativeAmount: '0x6124fee993bc0000', tokenBalances: [] }]
+		try {
+			Object.defineProperty(globalThis, 'window', {
+				value: { document: dom.document, addEventListener: () => undefined, removeEventListener: () => undefined },
+				configurable: true,
+				writable: true,
+			})
+			await act(() => { render(h(App, {}), dom.document.body) })
+			const listener = messageListener()
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 10, {
+						activeAddresses: [loadedAddressBookEntry],
+						settings: { ...defaultSettings, activeSimulationAddress: loadedAddress, simulationMode: true },
+						makeCurrentAddressRich: true,
+						richAccountBalances: emptyProfiles,
+						richTokenOptions: [tokenOption, secondTokenOption],
+					}),
+				}, undefined, () => undefined)
+			})
+			const richAccountExpander = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Show rich accounts')
+			if (richAccountExpander === undefined) throw new Error('Expected rich-account expander')
+			await act(async () => { await clickElement(richAccountExpander) })
+			const activeAccountButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Edit balances for Loaded Account')
+			if (activeAccountButton === undefined) throw new Error('Expected active-account balance button')
+			await act(async () => { await clickElement(activeAccountButton) })
+			const chooseTokenButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Select tokens')
+			if (chooseTokenButton === undefined) throw new Error('Expected token picker button')
+			await act(async () => { await clickElement(chooseTokenButton) })
+			assert.equal(hasAriaLabel(dom.document.body, 'Select tokens for Loaded Account'), true)
+			assert.equal(collectElements(dom.document.body, 'div').filter((element) => element.getAttribute?.('aria-modal') === 'true').length, 1)
+			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Loaded Account'), false)
+			const tokenSearch = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')
+			await act(async () => {
+				if (tokenSearch !== undefined) {
+					await pressElementKey(tokenSearch, 'ArrowDown')
+					await pressElementKey(tokenSearch, 'Enter')
+				}
+			})
+			const addSelectedTokensButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Add selected tokens')
+			await act(async () => {
+				if (addSelectedTokensButton !== undefined) await clickElement(addSelectedTokensButton)
+				await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
+			})
+			assert.equal(dom.document.body.textContent?.includes('Needs attention'), true)
+			const reopenFailedSelectionButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Select tokens')
+			await act(async () => { if (reopenFailedSelectionButton !== undefined) await clickElement(reopenFailedSelectionButton) })
+			assert.equal(collectElements(dom.document.body, 'button').find((button) => button.textContent === 'All' && button.getAttribute?.('aria-pressed') !== null)?.getAttribute?.('aria-pressed'), true)
+			assert.equal(collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')?.getAttribute?.('aria-activedescendant'), 'rich-token-option-1')
+
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 11, {
+						activeAddresses: [secondAddressBookEntry],
+						settings: { ...defaultSettings, activeSimulationAddress: secondAddress, simulationMode: true },
+						makeCurrentAddressRich: true,
+						richList: [{ addressBookEntry: loadedAddressBookEntry, makingRich: false, type: 'UserAdded' }, { addressBookEntry: secondAddressBookEntry, makingRich: true, type: 'UserAdded' }],
+						richAccountBalances: emptyProfiles,
+						richTokenOptions: [tokenOption, secondTokenOption],
+					}),
+				}, undefined, () => undefined)
+			})
+			await act(async () => { await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) }) })
+			assert.equal(hasAriaLabel(dom.document.body, 'Select tokens for Loaded Account'), false)
+			assert.equal(collectElements(dom.document.body, 'div').filter((element) => element.getAttribute?.('aria-modal') === 'true').length, 0)
+			assert.equal(sentMessages.filter((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_modifyRichToken').length, 1)
+			const secondAccountButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Edit balances for Second Account')
+			await act(async () => { if (secondAccountButton !== undefined) await clickElement(secondAccountButton) })
+			const selectTokensForSecondAccount = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Select tokens')
+			await act(async () => { if (selectTokensForSecondAccount !== undefined) await clickElement(selectTokensForSecondAccount) })
+			assert.equal(collectElements(dom.document.body, 'button').find((button) => button.textContent === 'All' && button.getAttribute?.('aria-pressed') !== null)?.getAttribute?.('aria-pressed'), true)
+			assert.equal(collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')?.getAttribute?.('aria-activedescendant'), 'rich-token-option-0')
+			assert.equal(dom.document.body.textContent?.includes('Needs attention'), false)
+		} finally {
+			clipboardMock.restore()
+			dom.restore()
+		}
+	})
+
+	test('applies a delayed token reply to the account that initiated it', async () => {
+		const dom = installDomMock()
+		const clipboardMock = installClipboardMock()
+		let resolveTokenReply = (_reply: unknown) => undefined
+		const tokenReply = new Promise<unknown>((resolve) => { resolveTokenReply = resolve })
+		const { messageListener, sentMessages } = installBrowserMock(async (message) => {
+			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_modifyRichToken') return await tokenReply
+			return undefined
+		})
+		const secondAddress = '0x2000000000000000000000000000000000000002'
+		const secondAddressBookEntry = { type: 'contact', name: 'Second Account', address: secondAddress, entrySource: 'User', useAsActiveAddress: true }
+		const tokenAddress = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+		const tokenOption = {
+			chainId: '0x1',
+			tokenAddress,
+			tokenType: 'ERC20',
+			tokenId: undefined,
+			name: 'USD Coin',
+			symbol: 'USDC',
+			decimals: '0x6',
+			amount: '0xf4240',
+			balanceSlot: undefined,
+			erc1155StorageOrder: undefined,
+			enabled: false,
+		}
+		const emptyProfiles = [{ chainId: '0x1', address: loadedAddress, nativeAmount: '0xad78ebc5ac620000', tokenBalances: [] }, { chainId: '0x1', address: secondAddress, nativeAmount: '0x6124fee993bc0000', tokenBalances: [] }]
+		try {
+			Object.defineProperty(globalThis, 'window', {
+				value: {
+					document: dom.document,
+					addEventListener: () => undefined,
+					removeEventListener: () => undefined,
+				},
+				configurable: true,
+				writable: true,
+			})
+			await act(() => { render(h(App, {}), dom.document.body) })
+			const listener = messageListener()
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 10, {
+						activeAddresses: [loadedAddressBookEntry],
+						settings: { ...defaultSettings, activeSimulationAddress: loadedAddress, simulationMode: true },
+						makeCurrentAddressRich: true,
+						richAccountBalances: emptyProfiles,
+						richTokenOptions: [tokenOption],
+					}),
+				}, undefined, () => undefined)
+			})
+			const richAccountExpander = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Show rich accounts')
+			if (richAccountExpander === undefined) throw new Error('Expected rich-account expander')
+			await act(async () => { await clickElement(richAccountExpander) })
+			const activeAccountButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Edit balances for Loaded Account')
+			if (activeAccountButton === undefined) throw new Error('Expected active-account balance button')
+			await act(async () => { await clickElement(activeAccountButton) })
+			const chooseTokenButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Select tokens')
+			if (chooseTokenButton === undefined) throw new Error('Expected token picker button')
+			await act(async () => { await clickElement(chooseTokenButton) })
+			assert.equal(hasAriaLabel(dom.document.body, 'Select tokens for Loaded Account'), true)
+			const tokenResult = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label')?.startsWith('Select rich token USDC '))
+			if (tokenResult === undefined) throw new Error('Expected USDC token result')
+			await act(async () => { await clickElement(tokenResult) })
+			const addSelectedTokensButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Add selected tokens')
+			if (addSelectedTokensButton === undefined) throw new Error('Expected add-selected-tokens button')
+			await act(async () => { await clickElement(addSelectedTokensButton) })
+			assert.equal(hasAriaLabel(dom.document.body, 'Select tokens for Loaded Account'), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Loaded Account'), true)
+			assert.equal(dom.document.body.textContent?.includes('Scanning storage…'), true)
+			const modifyTokenRequest = sentMessages.find((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_modifyRichToken')
+			assert.equal(typeof modifyTokenRequest === 'object' && modifyTokenRequest !== null && 'data' in modifyTokenRequest && typeof modifyTokenRequest.data === 'object' && modifyTokenRequest.data !== null && 'address' in modifyTokenRequest.data && modifyTokenRequest.data.address, loadedAddress)
+
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 11, {
+						activeAddresses: [secondAddressBookEntry],
+						settings: { ...defaultSettings, activeSimulationAddress: secondAddress, simulationMode: true },
+						makeCurrentAddressRich: true,
+						richList: [{ addressBookEntry: loadedAddressBookEntry, makingRich: false, type: 'UserAdded' }, { addressBookEntry: secondAddressBookEntry, makingRich: true, type: 'UserAdded' }],
+						richAccountBalances: emptyProfiles,
+						richTokenOptions: [tokenOption],
+					}),
+				}, undefined, () => undefined)
+			})
+			await act(async () => { await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) }) })
+			assert.equal(hasAriaLabel(dom.document.body, 'Select tokens for Loaded Account'), false)
+			let secondAccountButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Edit balances for Second Account')
+			if (secondAccountButton === undefined) {
+				const updatedRichAccountExpander = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Show rich accounts')
+				if (updatedRichAccountExpander !== undefined) await act(async () => { await clickElement(updatedRichAccountExpander) })
+				secondAccountButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Edit balances for Second Account')
+			}
+			if (secondAccountButton === undefined) throw new Error('Expected second-account balance button')
+			await act(async () => { await clickElement(secondAccountButton) })
+			await act(async () => {
+				resolveTokenReply({ method: 'popup_modifyRichToken', result: { success: true, richToken: {
+					chainId: tokenOption.chainId,
+					tokenAddress: tokenOption.tokenAddress,
+					tokenType: tokenOption.tokenType,
+					tokenId: tokenOption.tokenId,
+					name: tokenOption.name,
+					symbol: tokenOption.symbol,
+					decimals: tokenOption.decimals,
+					amount: tokenOption.amount,
+					balanceSlot: '0x9',
+					erc1155StorageOrder: tokenOption.erc1155StorageOrder,
+				} } })
+				await tokenReply
+				await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
+			})
+			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Second Account'), true)
+			assert.equal(hasAriaLabel(dom.document.body, 'USDC rich amount'), false)
+			assert.equal(collectElements(dom.document.body, 'span').some((span) => hasClass(span, 'rich-mode-save-status')), false)
+		} finally {
+			clipboardMock.restore()
+			dom.restore()
+		}
+	})
+
 })

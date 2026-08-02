@@ -1,4 +1,4 @@
-import { ETHEREUM_COIN_ICON, MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
+import { ETHEREUM_COIN_ICON, MAKE_YOU_RICH_TRANSACTION, MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
 import type { ActiveAddress, ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -13,6 +13,8 @@ import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
+import type { RichAccountBalance, RichToken, RichTokenBalance } from '../types/richMode.js'
+import { filterRichTokensSupportedByAddressBook, normalizeRichAccountBalances, sameRichTokenIdentity } from '../utils/richTokens.js'
 
 export const defaultActiveAddresses: AddressBookEntries = [
 	{
@@ -79,7 +81,10 @@ type StartupStorageDefaults = {
 	simulationMode: boolean
 	activeRpcNetwork: RpcNetwork
 	makeCurrentAddressRich: boolean
+	richNativeAmount: bigint
 	fixedAddressRichList: readonly RichListElement[]
+	richTokens: readonly RichToken[]
+	richAccountBalances: readonly RichAccountBalance[]
 }
 
 async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDefaults>(key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
@@ -121,6 +126,8 @@ export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))
 
 export const setMakeCurrentAddressRich = async (makeCurrentAddressRich: boolean) => await browserStorageLocalSet({ makeCurrentAddressRich })
 export const getMakeCurrentAddressRich = async() => await getParsedStorageValueOrDefault('makeCurrentAddressRich', false)
+export const setRichNativeAmount = async (richNativeAmount: bigint) => await browserStorageLocalSet({ richNativeAmount })
+export const getRichNativeAmount = async() => await getParsedStorageValueOrDefault('richNativeAmount', MAKE_YOU_RICH_TRANSACTION.transaction.value)
 
 const makeMeRichSettingsSemaphore = new Semaphore(1)
 
@@ -136,6 +143,49 @@ export async function updateMakeCurrentAddressRich(update: (makeCurrentAddressRi
 
 export const setFixedMakeMeRichList = async (fixedAddressRichList: readonly RichListElement[]) => await browserStorageLocalSet({ fixedAddressRichList })
 export async function getFixedAddressRichList() { return await getParsedStorageValueOrDefault('fixedAddressRichList', []) }
+export async function getRichTokens() { return await getParsedStorageValueOrDefault('richTokens', []) }
+export async function getRichAccountBalances() { return await getParsedStorageValueOrDefault('richAccountBalances', []) }
+
+export async function updateRichAccountBalances(update: (balances: readonly RichAccountBalance[]) => readonly RichAccountBalance[]) {
+	return await makeMeRichSettingsSemaphore.execute(async () => {
+		const previous = await getRichAccountBalances()
+		const next = update(previous)
+		await browserStorageLocalSet({ richAccountBalances: next })
+		return next
+	})
+}
+
+export async function ensureRichAccountBalances(chainId: bigint, addresses: readonly bigint[]) {
+	return await makeMeRichSettingsSemaphore.execute(async () => {
+		const { richAccountBalances: rawStored } = await browser.storage.local.get('richAccountBalances')
+		const parsedStored = await browserStorageLocalSafeParseGet('richAccountBalances')
+		const storedProfilesWereCorrupt = rawStored !== undefined && parsedStored?.richAccountBalances === undefined
+		if (storedProfilesWereCorrupt) console.warn('richAccountBalances was corrupt; resetting account-specific rich balances.')
+		const existing = parsedStored?.richAccountBalances ?? []
+		const legacyTokens = rawStored === undefined ? await getRichTokens() : []
+		const profileChainIds = rawStored === undefined
+			? [...new Set([chainId, ...legacyTokens.map((token) => token.chainId)])]
+			: [chainId]
+		const missing = [...new Set(addresses)].flatMap((address) => profileChainIds
+			.filter((profileChainId) => !existing.some((profile) => profile.chainId === profileChainId && profile.address === address))
+			.map((profileChainId) => ({ chainId: profileChainId, address })))
+		if (missing.length === 0 && !storedProfilesWereCorrupt) return existing
+		const legacyNativeAmount = await getRichNativeAmount()
+		const next = [
+			...existing,
+			...missing.map((profile): RichAccountBalance => ({
+				chainId: profile.chainId,
+				address: profile.address,
+				nativeAmount: legacyNativeAmount,
+				tokenBalances: legacyTokens
+					.filter((token) => token.chainId === profile.chainId)
+					.map((token): RichTokenBalance => ({ tokenAddress: token.tokenAddress, tokenId: token.tokenId, amount: token.amount })),
+			})),
+		]
+		await browserStorageLocalSet({ richAccountBalances: next })
+		return next
+	})
+}
 
 function toComparableRichListElement(element: RichListElement): RichListElement {
 	return {
@@ -161,6 +211,38 @@ export async function updateFixedMakeMeRichList(update: (fixedAddressRichList: r
 		})) return false
 		await setFixedMakeMeRichList(next)
 		return true
+	})
+}
+
+export async function updateRichTokens(update: (richTokens: readonly RichToken[]) => readonly RichToken[]) {
+	return await makeMeRichSettingsSemaphore.execute(async () => {
+		const previous = await getRichTokens()
+		const next = update(previous)
+		await browserStorageLocalSet({ richTokens: next })
+		return next
+	})
+}
+
+export async function reconcileRichTokensWithAddressBook() {
+	return await makeMeRichSettingsSemaphore.execute(async () => {
+		const previous = await getRichTokens()
+		const supported = filterRichTokensSupportedByAddressBook(previous, await getUserAddressBookEntries())
+		if (supported.length !== previous.length) {
+			const { richAccountBalances: rawProfiles } = await browser.storage.local.get('richAccountBalances')
+			if (rawProfiles === undefined) {
+				await browserStorageLocalSet({ richTokens: supported })
+				return supported
+			}
+			const parsedProfiles = await browserStorageLocalSafeParseGet('richAccountBalances')
+			await browserStorageLocalSet({
+				richTokens: supported,
+				richAccountBalances: (parsedProfiles?.richAccountBalances ?? []).map((profile) => ({
+					...profile,
+					tokenBalances: profile.tokenBalances.filter((balance) => supported.some((token) => token.chainId === profile.chainId && sameRichTokenIdentity(token, balance))),
+				})),
+			})
+		}
+		return supported
 	})
 }
 
@@ -236,7 +318,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 	const settings = await getSettings()
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
-		version: '1.4' as const,
+		version: '1.5' as const,
 		exportedDate: exportDate,
 		settings: {
 			activeSimulationAddress: settings.activeSimulationAddress,
@@ -248,6 +330,11 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 			addressBookEntries: await getUserAddressBookEntries(),
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
 			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
+			makeCurrentAddressRich: await getMakeCurrentAddressRich(),
+			richNativeAmount: await getRichNativeAmount(),
+			fixedAddressRichList: await getFixedAddressRichList(),
+			richTokens: await getRichTokens(),
+			richAccountBalances: await getRichAccountBalances(),
 		}
 	}
 }
@@ -276,7 +363,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') {
 		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
 	}
-	if (exportedSetings.version === '1.4') {
+	if (exportedSetings.version === '1.4' || exportedSetings.version === '1.5') {
 		await updateUserAddressBookEntries(() => exportedSetings.settings.addressBookEntries)
 	} else {
 		await updateUserAddressBookEntries((previousEntries) => {
@@ -284,6 +371,22 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])
 		})
 	}
+	await browserStorageLocalSet(exportedSetings.version === '1.5'
+		? {
+			makeCurrentAddressRich: exportedSetings.settings.makeCurrentAddressRich,
+			richNativeAmount: exportedSetings.settings.richNativeAmount,
+			fixedAddressRichList: exportedSetings.settings.fixedAddressRichList,
+			richTokens: exportedSetings.settings.richTokens,
+			richAccountBalances: normalizeRichAccountBalances(exportedSetings.settings.richAccountBalances),
+		}
+		: {
+			makeCurrentAddressRich: false,
+			richNativeAmount: MAKE_YOU_RICH_TRANSACTION.transaction.value,
+			fixedAddressRichList: [],
+			richTokens: [],
+			richAccountBalances: [],
+		})
+	await reconcileRichTokensWithAddressBook()
 }
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })

@@ -13,6 +13,7 @@ import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
 import { EnrichedRichListElement, PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
+import { RichAccountBalances, RichTokenOptions } from './richMode.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
 import { SimulateExecutionReply as SharedSimulateExecutionReply, SimulateExecutionReplyData as SharedSimulateExecutionReplyData } from './simulateExecutionReply.js'
 import { SimulateGnosisSafeTransaction as SharedSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as SharedSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
@@ -295,10 +296,16 @@ export const ChangeActiveAddress = funtypes.ReadonlyObject({
 export type ModifyMakeMeRich = funtypes.Static<typeof ModifyMakeMeRich>
 export const ModifyMakeMeRich = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_modifyMakeMeRich'),
-	data: funtypes.ReadonlyObject({
-		add: funtypes.Boolean,
-		address: funtypes.Union(funtypes.Literal('CurrentAddress'), EthereumAddress),
-	})
+	data: funtypes.Union(
+		funtypes.ReadonlyObject({
+			add: funtypes.Boolean,
+			address: funtypes.Union(funtypes.Literal('CurrentAddress'), EthereumAddress),
+		}),
+		funtypes.ReadonlyObject({
+			nativeAmount: EthereumQuantity,
+			address: EthereumAddress,
+		}),
+	)
 }).asReadonly()
 
 export type AddressBookCategory = funtypes.Static<typeof AddressBookCategory>
@@ -639,7 +646,11 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		rpcEntries: RpcEntries,
 		interceptorDisabled: funtypes.Boolean,
 		preSimulationBlockTimeManipulation: BlockTimeManipulation,
-	})
+	}).And(funtypes.ReadonlyPartial({
+		richTokenOptions: RichTokenOptions,
+		richNativeAmount: EthereumQuantity,
+		richAccountBalances: RichAccountBalances,
+	}))
 })
 
 export type HomePageBootstrap = funtypes.Static<typeof HomePageBootstrap>
