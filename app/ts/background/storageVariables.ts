@@ -136,7 +136,7 @@ export const removeTabState = async(tabId: number) => await removeTabStateFromSt
 
 const getTabAllStateKeys = async () => {
 	const allStorage = Object.keys(await browser.storage.local.get())
-	return allStorage.filter((entry) => entry.match(/^tabState_[0-9]+/) !== null)
+	return allStorage.filter((entry) => /^tabState_[0-9]+$/.test(entry))
 }
 
 export const clearTabStates = async () => await browser.storage.local.remove(await getTabAllStateKeys())
