@@ -1,7 +1,7 @@
 import type { IEthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { AddressBookEntry, Erc1155Entry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
-import type { Erc1155StorageOrder, RichAccountBalance, RichToken, RichTokenOption } from '../types/richMode.js'
+import type { Erc1155StorageOrder, RichAccountBalance, RichToken, RichTokenBalance, RichTokenOption } from '../types/richMode.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import { Erc1155ABI, Erc20ABI } from './abi.js'
 import { decodeFunctionOutputSafely, encodeAbiValues, encodeFunctionCall } from './abiRuntime.js'
@@ -170,6 +170,33 @@ export const sameRichTokenIdentity = (
 	second: Pick<RichToken, 'tokenAddress' | 'tokenId'>,
 ) => first.tokenAddress === second.tokenAddress && first.tokenId === second.tokenId
 
+export const getRichTokenIdentityKey = (token: Pick<RichToken, 'tokenAddress' | 'tokenId'>) => (
+	`${ token.tokenAddress.toString() }:${ token.tokenId?.toString() ?? 'erc20' }`
+)
+
+export const getRichTokenLabel = (token: Pick<RichToken, 'symbol' | 'tokenId'>) => (
+	token.tokenId === undefined ? token.symbol : `${ token.symbol } #${ token.tokenId.toString() }`
+)
+
+const normalizeRichTokenBalances = (balances: readonly RichTokenBalance[]) => {
+	const normalized = new Map<string, RichTokenBalance>()
+	for (const balance of balances) normalized.set(getRichTokenIdentityKey(balance), balance)
+	return [...normalized.values()]
+}
+
+export const normalizeRichAccountBalances = (profiles: readonly RichAccountBalance[]) => {
+	const normalized = new Map<string, RichAccountBalance>()
+	for (const profile of profiles) {
+		const profileKey = `${ profile.chainId.toString() }:${ profile.address.toString() }`
+		const previous = normalized.get(profileKey)
+		normalized.set(profileKey, {
+			...profile,
+			tokenBalances: normalizeRichTokenBalances([...(previous?.tokenBalances ?? []), ...profile.tokenBalances]),
+		})
+	}
+	return [...normalized.values()]
+}
+
 export const isRichTokenSupportedByAddressBook = (token: RichToken, addressBookEntries: readonly AddressBookEntry[]) => addressBookEntries.some((entry) => {
 	const appliesToChain = entry.chainId === token.chainId
 		|| (entry.chainId === undefined && token.chainId === 1n)
@@ -188,32 +215,37 @@ type AddressBookRichTokenCandidate =
 	| { metadataEntry: Erc1155Entry, tokenId: bigint }
 
 const getAddressBookRichTokenCandidates = (addressBookEntries: readonly AddressBookEntry[]): AddressBookRichTokenCandidate[] => {
-	const tokenEntries = addressBookEntries.filter((entry): entry is Erc20TokenEntry | Erc1155Entry =>
-		entry.type === 'ERC1155' || (entry.type === 'ERC20' && isSupportedRichTokenDecimals(entry.decimals))
-	)
-	const uniqueContracts = tokenEntries.filter((entry, index) =>
-		tokenEntries.findIndex((candidate) => candidate.address === entry.address && candidate.type === entry.type) === index
-	)
-	const erc20Candidates = uniqueContracts
-		.filter((entry): entry is Erc20TokenEntry => entry.type === 'ERC20')
-		.map((metadataEntry): AddressBookRichTokenCandidate => ({ metadataEntry, tokenId: undefined }))
-	const erc1155Candidates = uniqueContracts
-		.filter((entry): entry is Erc1155Entry => entry.type === 'ERC1155')
-		.flatMap((metadataEntry): AddressBookRichTokenCandidate[] => {
-			const watchedTokenIds = tokenEntries
-			.filter((entry): entry is Erc1155Entry => entry.type === 'ERC1155' && entry.address === metadataEntry.address)
-			.flatMap((entry) => entry.watchedTokenIds ?? [])
-			.filter((tokenId, index, tokenIds) => tokenIds.indexOf(tokenId) === index)
-			return watchedTokenIds.map((tokenId) => ({ metadataEntry, tokenId }))
-		})
+	const erc20Entries = new Map<bigint, Erc20TokenEntry>()
+	const erc1155Entries = new Map<bigint, { metadataEntry: Erc1155Entry, watchedTokenIds: Set<bigint> }>()
+	for (const entry of addressBookEntries) {
+		if (entry.type === 'ERC20' && isSupportedRichTokenDecimals(entry.decimals)) {
+			if (!erc20Entries.has(entry.address)) erc20Entries.set(entry.address, entry)
+			continue
+		}
+		if (entry.type !== 'ERC1155') continue
+		const configured = erc1155Entries.get(entry.address)
+		if (configured === undefined) {
+			erc1155Entries.set(entry.address, { metadataEntry: entry, watchedTokenIds: new Set(entry.watchedTokenIds ?? []) })
+			continue
+		}
+		for (const tokenId of entry.watchedTokenIds ?? []) configured.watchedTokenIds.add(tokenId)
+	}
+	const erc20Candidates = [...erc20Entries.values()].map((metadataEntry): AddressBookRichTokenCandidate => ({ metadataEntry, tokenId: undefined }))
+	const erc1155Candidates = [...erc1155Entries.values()].flatMap(({ metadataEntry, watchedTokenIds }): AddressBookRichTokenCandidate[] => (
+		[...watchedTokenIds].map((tokenId) => ({ metadataEntry, tokenId }))
+	))
 	return [...erc20Candidates, ...erc1155Candidates]
 }
 
 export const getRichTokenOptions = (chainId: bigint, configuredTokens: readonly RichToken[], addressBookEntries: readonly AddressBookEntry[]): RichTokenOption[] => {
-	const configuredOnChain = configuredTokens.filter((token) => token.chainId === chainId)
+	const configuredOnChain = new Map<string, RichToken>()
+	for (const token of configuredTokens) {
+		const tokenKey = getRichTokenIdentityKey(token)
+		if (token.chainId === chainId && !configuredOnChain.has(tokenKey)) configuredOnChain.set(tokenKey, token)
+	}
 	return getAddressBookRichTokenCandidates(addressBookEntries).map(({ metadataEntry, tokenId }): RichTokenOption => {
 			const identity = { tokenAddress: metadataEntry.address, tokenId }
-			const configured = configuredOnChain.find((entry) => sameRichTokenIdentity(entry, identity))
+			const configured = configuredOnChain.get(getRichTokenIdentityKey(identity))
 			const decimals = metadataEntry.type === 'ERC20' ? metadataEntry.decimals : 0n
 			const base = {
 				chainId,

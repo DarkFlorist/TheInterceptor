@@ -246,5 +246,17 @@ describe('settings import', () => {
 		assert.deepEqual(await getFixedAddressRichList(), fixedAddressRichList)
 		assert.deepEqual(await getRichTokens(), [richToken])
 		assert.deepEqual(await getRichAccountBalances(), [richAccountBalance])
+
+		const duplicateProfile = {
+			...richAccountBalance,
+			nativeAmount: richAccountBalance.nativeAmount + 1n,
+			tokenBalances: [{ tokenAddress, tokenId: undefined, amount: 999n }],
+		}
+		await importSettingsAndAddressBook({
+			...exported,
+			settings: { ...exported.settings, richAccountBalances: [richAccountBalance, duplicateProfile] },
+		})
+
+		assert.deepEqual(await getRichAccountBalances(), [duplicateProfile])
 	})
 })

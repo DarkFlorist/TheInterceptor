@@ -14,7 +14,7 @@ import { DEFAULT_BLOCK_MANIPULATION } from '../simulation/services/SimulationMod
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { RichAccountBalance, RichToken, RichTokenBalance } from '../types/richMode.js'
-import { filterRichTokensSupportedByAddressBook, sameRichTokenIdentity } from '../utils/richTokens.js'
+import { filterRichTokensSupportedByAddressBook, normalizeRichAccountBalances, sameRichTokenIdentity } from '../utils/richTokens.js'
 
 export const defaultActiveAddresses: AddressBookEntries = [
 	{
@@ -377,7 +377,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 			richNativeAmount: exportedSetings.settings.richNativeAmount,
 			fixedAddressRichList: exportedSetings.settings.fixedAddressRichList,
 			richTokens: exportedSetings.settings.richTokens,
-			richAccountBalances: exportedSetings.settings.richAccountBalances,
+			richAccountBalances: normalizeRichAccountBalances(exportedSetings.settings.richAccountBalances),
 		}
 		: {
 			makeCurrentAddressRich: false,
