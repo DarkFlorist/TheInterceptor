@@ -26,6 +26,7 @@ import { createAsyncActionRunner, useAsyncState } from '../../utils/preact-utili
 import { useOptionalSignal } from '../../utils/OptionalSignal.js'
 import { type ReadonlySignal, type Signal, useComputed, useSignal } from '@preact/signals'
 import type { SignalOrValue } from '../../utils/signals.js'
+import { getGasFeePaidByTransactionSender, type TransactionGasAccounting } from '../../utils/transactionGasAccounting.js'
 import type { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { identifySignature } from './identifySignature.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
@@ -559,19 +560,16 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 	</div>
 }
 
-export type TransactionGasses = {
-	gasSpent: bigint
-	realizedGasPrice: bigint
-}
+export type TransactionGasses = TransactionGasAccounting
 
 export function GasFee({ tx, rpcNetwork }: { tx: TransactionGasses, rpcNetwork: SignalOrValue<RpcNetwork> } ) {
 	return <>
 		<div class = 'log-cell'>
-			<p class = 'ellipsis' style = { 'color: var(--subtitle-text-color); margin-bottom: 0px' }> Gas fee:</p>
+			<p class = 'ellipsis' style = { 'color: var(--subtitle-text-color); margin-bottom: 0px' }> { tx.safeTransaction === undefined ? 'Gas fee:' : 'Gnosis Safe gas reimbursement:' }</p>
 		</div>
 		<div class = 'log-cell'>
 			<EtherAmount
-				amount = { tx.gasSpent * tx.realizedGasPrice  }
+				amount = { getGasFeePaidByTransactionSender(tx) }
 				style = { { color: 'var(--subtitle-text-color)' } }
 				fontSize = 'normal'
 			/>

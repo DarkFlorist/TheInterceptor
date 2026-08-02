@@ -20,6 +20,40 @@ describe('narrow text layout CSS', () => {
 		const checkboxText = expectRule(css, '.form-control .checkbox-text')
 		assert.match(checkboxText, /overflow-wrap\s*:\s*anywhere\s*;/)
 
+		const safeSignerOption = expectRule(css, '.safe-signer-option')
+		assert.match(safeSignerOption, /align-items\s*:\s*center\s*;/)
+		assert.match(safeSignerOption, /width\s*:\s*100%\s*;/)
+		assert.match(css, /\.safe-signer-option:has\(\[type=radio\]:not\(:disabled\)\)\s*\{[\s\S]*?cursor\s*:\s*pointer\s*;/)
+		assert.match(css, /\.safe-signer-option \[type=radio\]:not\(:disabled\)\s*\{[\s\S]*?cursor\s*:\s*pointer\s*;/)
+		assert.match(css, /\.safe-signer-option:has\(\[type=radio\]:checked\):before\s*\{[\s\S]*?background\s*:\s*var\(--white-color\)\s*;/)
+
+		const safeSignerAddress = expectRule(css, '.safe-signer-option-address')
+		assert.match(safeSignerAddress, /grid-column\s*:\s*2\s*;/)
+		assert.match(safeSignerAddress, /display\s*:\s*flex\s*;/)
+		assert.match(safeSignerAddress, /overflow\s*:\s*hidden\s*;/)
+
+		const safeSignerAddressText = expectRule(css, '.safe-signer-option-address > code')
+		assert.match(safeSignerAddressText, /text-overflow\s*:\s*ellipsis\s*;/)
+		assert.match(safeSignerAddressText, /white-space\s*:\s*nowrap\s*;/)
+
+		const retrievalStatus = expectRule(css, '.popup-home-retrieval-status')
+		assert.match(retrievalStatus, /align-items\s*:\s*center\s*;/)
+		assert.match(retrievalStatus, /grid-template-columns\s*:\s*minmax\(0,\s*1fr\) max-content\s*;/)
+
+		const retrievalSource = expectRule(css, '.popup-home-retrieval-source')
+		assert.match(retrievalSource, /align-items\s*:\s*center\s*;/)
+		assert.match(retrievalSource, /display\s*:\s*inline-flex\s*;/)
+
+		const safeSignerConnectionMessage = expectRule(css, '.safe-signer-connection-message')
+		assert.match(safeSignerConnectionMessage, /max-width\s*:\s*100%\s*;/)
+		assert.match(safeSignerConnectionMessage, /overflow-wrap\s*:\s*anywhere\s*;/)
+
+		const safeSignerEditorRow = expectRule(css, '.safe-signer-editor-row')
+		assert.match(safeSignerEditorRow, /display\s*:\s*grid\s*;/)
+		assert.match(safeSignerEditorRow, /grid-template-columns\s*:\s*1em minmax\(0,\s*1fr\) auto\s*;/)
+
+		assert.match(css, /\.safe-signer-editor-title,\s*\.safe-signer-editor-row,\s*\.safe-signer-editor-add\s*\{[\s\S]*?grid-column\s*:\s*1 \/ -1\s*;/)
+
 		const dropdownText = expectRule(css, '.dropdown button > .truncate')
 		assert.match(dropdownText, /min-width\s*:\s*0\s*;/)
 		assert.match(dropdownText, /max-width\s*:\s*100%\s*;/)

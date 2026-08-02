@@ -23,7 +23,7 @@ function collectElements(node: TestDomNode | undefined, tagName: string, results
 async function clickElement(element: TestDomNode) {
 	const clickHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Click'))?.[1]
 	if (clickHandler === undefined) throw new Error('Expected click handler')
-	await clickHandler({ currentTarget: element })
+	await clickHandler({ currentTarget: element, stopPropagation() { return undefined } })
 }
 
 function installBrowserMock(sendMessageOverride?: (message: unknown, sentMessages: unknown[]) => unknown) {

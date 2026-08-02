@@ -7,4 +7,6 @@ node_modules/
 /app/manifest.json
 /app/ts/generated/ethereumByteCodes.ts
 /build/*.mjs
+/safe-app/dist/
+/docs/screenshots/
 /**/output*/*

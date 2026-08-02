@@ -9,7 +9,7 @@ import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import type { EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
-import type { AddressBookEntry } from '../types/addressBookTypes.js'
+import { getConfiguredSafeSigningEntry, isSafeEntryWithSafeSigner, type AddressBookEntry } from '../types/addressBookTypes.js'
 import type { RpcEntry } from '../types/rpc.js'
 import { UnexpectedError } from './subcomponents/Error.js'
 import { addressEditEntry } from './ui-utils.js'
@@ -81,8 +81,16 @@ export function App() {
 			return
 		}
 		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: address, simulationMode: simulationMode.value } })
-		if (simulationMode.value) {
+		const selectedAddress = activeAddresses.value.find((entry) =>
+			entry.address === address && (entry.type !== 'safe' || entry.chainId === rpcNetwork.value?.chainId)
+		)
+		const selectedSafeOnAnyChain = activeAddresses.value.some((entry) => entry.type === 'safe' && entry.address === address)
+		if (simulationMode.value || isSafeEntryWithSafeSigner(selectedAddress)) {
 			activeSimulationAddress.value = address
+			return
+		}
+		if (selectedSafeOnAnyChain) {
+			activeSigningAddress.value = tabState.value?.signerAccounts[0]
 			return
 		}
 		activeSigningAddress.value = address
@@ -225,7 +233,23 @@ export function App() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_clearUnexpectedError' })
 	}
 
-	const activeAddress = useComputed(() => simulationMode.value ? activeSimulationAddress.value : activeSigningAddress.value)
+	const activeSafe = useComputed(() => getConfiguredSafeSigningEntry(activeAddresses.value, {
+		simulationMode: simulationMode.value,
+		useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress.value,
+		activeSimulationAddress: activeSimulationAddress.value,
+		chainId: rpcNetwork.value?.chainId,
+	}))
+	const safeSigningMode = useComputed(() => activeSafe.value !== undefined)
+	const activeAddress = useComputed(() =>
+		simulationMode.value || safeSigningMode.value ? activeSimulationAddress.value : activeSigningAddress.value
+	)
+	const selectableActiveAddresses = useComputed(() =>
+		simulationMode.value
+			? activeAddresses.value.filter((entry) => entry.type !== 'safe' || entry.chainId === rpcNetwork.value?.chainId)
+			: activeAddresses.value.filter((entry) =>
+				entry.chainId === rpcNetwork.value?.chainId && isSafeEntryWithSafeSigner(entry)
+			)
+	)
 
 	return (
 		<main>
@@ -292,7 +316,7 @@ export function App() {
 							renameAddressCallBack = { renameAddressCallBack }
 							setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
 							signerAccounts = { tabState.value?.signerAccounts ?? [] }
-							activeAddresses = { activeAddresses }
+							activeAddresses = { selectableActiveAddresses }
 							signerName = { tabState.value?.signerName ?? 'NoSignerDetected' }
 							addNewAddress = { addNewAddress }
 							activeAddress = { activeAddress.value }

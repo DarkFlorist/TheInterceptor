@@ -14,6 +14,7 @@ import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { RichAccountBalances, RichToken } from '../types/richMode.js'
 import { ICON_ACCESS_DENIED } from './constants.js'
+import { hasOwnKey } from './methodHandlers.js'
 
 type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
 const IdsOfOpenedTabs = funtypes.Intersect(
@@ -51,9 +52,18 @@ export const RichListElement = funtypes.ReadonlyObject({
 	type: funtypes.Union(funtypes.Literal('CurrentActiveAddress'), funtypes.Literal('PreviousActiveAddress'), funtypes.Literal('UserAdded')),
 })
 
-const LocalStorageItemsRuntype = funtypes.ReadonlyPartial({
-	activeSigningAddress: EthereumAddressOrMissing,
-	activeSimulationAddress: EthereumAddressOrMissing,
+// ReadonlyPartial drops a property whose serialized value represents `undefined`. These
+// presence-aware alternatives preserve the distinction between "not stored" and
+// "explicitly cleared", which the settings migration and update paths rely on.
+const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSimulationAddress') => funtypes.Union(
+	funtypes.ReadonlyObject({ [propertyName]: EthereumAddressOrMissing })
+		.withConstraint((item) => hasOwnKey(item, propertyName)),
+	funtypes.ReadonlyPartial({ [propertyName]: funtypes.Unknown })
+		.withConstraint((item) => !hasOwnKey(item, propertyName)),
+)
+const OptionalActiveSigningAddressStorageProperty = presenceAwareOptionalAddress('activeSigningAddress')
+const OptionalActiveSimulationAddressStorageProperty = presenceAwareOptionalAddress('activeSimulationAddress')
+const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	openedPageV2: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
 	websiteAccess: WebsiteAccessArray,
@@ -90,7 +100,7 @@ const LocalStorageItemsRuntype = funtypes.ReadonlyPartial({
 	pendingWatchAssetRequests: funtypes.ReadonlyArray(StoredWatchAssetRequest),
 	popupRefreshGeneration: funtypes.Number,
 	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
-})
+}), OptionalActiveSigningAddressStorageProperty, OptionalActiveSimulationAddressStorageProperty)
 type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
 

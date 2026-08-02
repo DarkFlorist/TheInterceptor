@@ -39,7 +39,7 @@ import { bigintToDecimalString, dataStringWith0xStart } from '../../utils/bigint
 import { browserStorageLocalGet2 } from '../../utils/storageUtils.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
-import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
+import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
 import type { SignerName } from '../../types/signerTypes.js'
 
 type UnderTransactionsParams = {
@@ -619,7 +619,11 @@ export function ConfirmationActionButtons({ identified, signerName, simulationMo
 			class = 'button is-primary button-overflow dialog-action-button'
 			state = { approveButtonState }
 			text = { waitingForSigner
-				? <><span> <Spinner height = '1em' color = 'var(--text-color)' /> Waiting for <SignersLogoName signerName = { signerName } /> </span></>
+				? <span class = 'confirmation-waiting-for-signer'>
+					<AsyncStatusIcon state = 'pending'/>
+					<span>Waiting for{ ' ' }</span>
+					<SignersLogoName signerName = { signerName }/>
+				</span>
 				: simulationMode
 					? `${ identified.simulationAction }!`
 					: <SignerLogoText signerName = { signerName } text = { identified.signingAction } />
@@ -854,6 +858,7 @@ export function ConfirmTransaction() {
 	const isConfirmDisabled = useComputed(() => {
 		if (currentPendingTransactionOrSignableMessage.value === undefined) return true
 		if (currentPendingTransactionOrSignableMessage.value.transactionOrMessageCreationStatus !== 'Simulated') return true
+		if (currentPendingTransactionOrSignableMessage.value.approvalStatus.status !== 'WaitingForUser') return true
 		if (currentPendingTransactionOrSignableMessage.value.type !== 'Transaction') {
 			return shouldDisableSignableMessageConfirm({
 				isValidMessage: currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.isValidMessage === true,
@@ -865,7 +870,6 @@ export function ConfirmTransaction() {
 		if (forceSend.value) return false
 		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation === undefined) return true
 		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation.statusCode !== 'success') return true
-		if (currentPendingTransactionOrSignableMessage.value.approvalStatus.status === 'WaitingForSigner') return true
 		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation.data.visualizedSimulationState.success === false) return true
 		const lastTx = getResultsForTransaction(currentPendingTransactionOrSignableMessage.value.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.value.transactionIdentifier)
 		if (lastTx === undefined) return true
@@ -937,6 +941,13 @@ export function ConfirmTransaction() {
 									'network' :
 									currentPendingTransactionOrSignableMessage.value.popupVisualisation.data.simulationState.rpcNetwork.name }.` }
 									close = { () => { pendingTransactionAddedNotification.value = false } }
+								/>
+								: <></>
+							}
+							{ currentPendingTransactionOrSignableMessage.value.type === 'Transaction' && currentPendingTransactionOrSignableMessage.value.safeTransaction !== undefined
+								? <DinoSaysNotification
+									text = { `This transaction will be wrapped as Gnosis Safe transaction nonce ${ currentPendingTransactionOrSignableMessage.value.safeTransaction.safeTx.message.nonce.toString() } and signed by the configured Gnosis Safe signer. It will be added to the local optimistic Gnosis Safe stack, not broadcast automatically.` }
+									close = { () => undefined }
 								/>
 								: <></>
 							}

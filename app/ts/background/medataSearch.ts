@@ -109,6 +109,15 @@ async function filterAddressBookDataByCategoryAndSearchString(addressBookCategor
 			})
 			return search(entries, searchFunction)
 		}
+		case 'My Safes': {
+			const entries = userEntries.filter((entry) => entry.type === 'safe')
+			if (searchingDisabled) return entries
+			const searchFunction = (entry: AddressBookEntry) => ({
+				comparison: fuzzyCompare(searchPattern, trimmedSearch, entry.name, addressString(entry.address)),
+				entry,
+			})
+			return search(entries, searchFunction)
+		}
 		case 'ERC1155 Tokens': {
 			const filteredUserEntries = userEntries.filter((entry): entry is Erc1155Entry => entry.type === 'ERC1155')
 			const entries = chainId === 1n ? concatArraysUniqueByAddress(filteredUserEntries, Array.from(erc1155Metadata).map(convertErc1155DefinitionToAddressBookEntry)) : filteredUserEntries

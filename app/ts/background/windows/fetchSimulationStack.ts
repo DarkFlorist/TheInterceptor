@@ -114,6 +114,7 @@ const getRejectedDialogResult = (snapshot: SimulationStackSnapshot): FetchSimula
 
 export const openFetchSimulationStackDialog = async (
 	initialSnapshot: SimulationStackSnapshot,
+	simulationOverlayEnabled: boolean,
 	websiteTabConnections: WebsiteTabConnections,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 	params: GetSimulationStack,
@@ -151,6 +152,7 @@ export const openFetchSimulationStackDialog = async (
 			await setFetchSimulationStackRequestPromise({
 				website: website,
 				popupOrTabId: openedDialog,
+				simulationOverlayEnabled,
 				simulationStackVersion: params.params[0],
 				uniqueRequestIdentifier: uniqueRequestIdentifier,
 			})
@@ -180,7 +182,7 @@ export const getSimulationStackHash = (simulationState: ResolvedSimulationInput)
 	return getSimulationInputHash(simulationState.value)
 }
 
-export async function openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot: SimulationStackSnapshot, websiteTabConnections: WebsiteTabConnections, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket): Promise<FetchSimulationStackRequestResult> {
+export async function openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot: SimulationStackSnapshot, simulationOverlayEnabled: boolean, websiteTabConnections: WebsiteTabConnections, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket): Promise<FetchSimulationStackRequestResult> {
 	const identifier = websiteSocketToString(socket)
 	const newHash = getSimulationStackHash(initialSnapshot.simulationInput)
 	const previousDecision = simulationStackDecisions.find((x) => x.identifier === identifier)
@@ -188,7 +190,7 @@ export async function openFetchSimulationStackDialogOrGetCachedResult(initialSna
 		if (previousDecision.accept) return { type: 'result', method: params.method, result: await getSimulationStack(initialSnapshot.simulationState, params.params[0]) }
 		return { type: 'result', method: params.method, error: userDeniedChange.error }
 	}
-	const result = await openFetchSimulationStackDialog(initialSnapshot, websiteTabConnections, request.uniqueRequestIdentifier, params, website)
+	const result = await openFetchSimulationStackDialog(initialSnapshot, simulationOverlayEnabled, websiteTabConnections, request.uniqueRequestIdentifier, params, website)
 	simulationStackDecisions = simulationStackDecisions.filter((x) => x.identifier !== identifier)
 	simulationStackDecisions.push({ identifier, hash: result.simulationStackHash, accept: result.outcome === 'accepted' })
 	if (simulationStackDecisions.length > MAX_DECISION_CACHE) simulationStackDecisions.shift()

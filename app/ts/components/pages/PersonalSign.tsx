@@ -311,7 +311,7 @@ function GnosisSafeExtraDetails({ visualizedPersonalSignRequestSafeTx, renameAdd
 				</>
 				: <></>
 			}
-			<CellElement text = 'Safe Transaction Gas: '/>
+			<CellElement text = 'Gnosis Safe Transaction Gas: '/>
 			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.safeTxGas }/>
 			<CellElement text = 'To: '/>
 			<CellElement text = { <SmallAddress addressBookEntry = { visualizedPersonalSignRequestSafeTx.to } renameAddressCallBack = { renameAddressCallBack } /> }/>
@@ -321,7 +321,7 @@ function GnosisSafeExtraDetails({ visualizedPersonalSignRequestSafeTx, renameAdd
 			<code><CellElement text = { visualizedPersonalSignRequestSafeTx.domainHash }/></code>
 			<CellElement text = 'Message Hash: '/>
 			<code><CellElement text = { visualizedPersonalSignRequestSafeTx.messageHash }/></code>
-			<CellElement text = 'Safe Transaction Hash: '/>
+			<CellElement text = 'Gnosis Safe Transaction Hash: '/>
 			<code><CellElement text = { visualizedPersonalSignRequestSafeTx.safeTxHash }/></code>
 		</span>
 		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Gnosis Safe meta transaction input: </p>

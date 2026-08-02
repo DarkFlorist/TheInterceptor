@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { Signal } from '@preact/signals'
-import { mergeAddressWindowErrorState, saveAddressBookEntry, updateModifyAddressWindowState } from '../../app/ts/components/pages/AddNewAddress.js'
+import { mergeAddressWindowErrorState, saveAddressBookEntry, saveAddressBookEntryAndSwitch, updateModifyAddressWindowState } from '../../app/ts/components/pages/AddNewAddress.js'
 import type { ModifyAddressWindowState } from '../../app/ts/types/visualizer-types.js'
 
 const sampleAddressBookEntry = {
@@ -10,6 +10,7 @@ const sampleAddressBookEntry = {
 	address: 1n,
 	entrySource: 'User',
 } as const
+const addNewAddressSource = await Bun.file(new URL('../../app/ts/components/pages/AddNewAddress.tsx', import.meta.url)).text()
 
 describe('add new address save flow', () => {
 	test('waits for the save message to finish before closing the popup', async () => {
@@ -20,6 +21,7 @@ describe('add new address save flow', () => {
 			calls.push('send:start')
 			await Promise.resolve()
 			calls.push('send:end')
+			return { ok: true }
 		})
 
 		assert.deepEqual(calls, ['send:start', 'send:end', 'close'])
@@ -37,6 +39,48 @@ describe('add new address save flow', () => {
 
 		assert.equal(sent, false)
 		assert.equal(closed, false)
+	})
+
+	test('shows backend Safe validation errors without closing the popup', async () => {
+		let closed = false
+		const message = await saveAddressBookEntry(sampleAddressBookEntry, () => {
+			closed = true
+		}, async () => ({
+			ok: false,
+			message: 'The configured address is not an owner of this Safe.',
+		}))
+
+		assert.equal(closed, false)
+		assert.equal(message, 'The configured address is not an owner of this Safe.')
+	})
+
+	test('does not close when the background validation reply is missing', async () => {
+		let closed = false
+		const message = await saveAddressBookEntry(sampleAddressBookEntry, () => {
+			closed = true
+		}, async () => undefined)
+
+		assert.equal(closed, false)
+		assert.equal(message, 'Interceptor did not reply while validating the address-book entry.')
+	})
+
+	test('does not switch accounts when backend validation rejects the entry', async () => {
+		let closed = false
+		let switchedTo: bigint | undefined
+
+		const message = await saveAddressBookEntryAndSwitch(
+			sampleAddressBookEntry,
+			() => { closed = true },
+			async (address) => { switchedTo = address },
+			async () => ({
+				ok: false,
+				message: 'The configured address is not an owner of this Safe.',
+			}),
+		)
+
+		assert.equal(closed, false)
+		assert.equal(switchedTo, undefined)
+		assert.equal(message, 'The configured address is not an owner of this Safe.')
 	})
 
 	test('keeps non-blocking block explorer errors when validation has no error', () => {
@@ -84,5 +128,12 @@ describe('add new address save flow', () => {
 			blockEditing: false,
 			message: 'Failed to update address window state: background unavailable',
 		})
+	})
+
+	test('renders Gnosis Safe signer controls as full-width editor rows', () => {
+		assert.match(addNewAddressSource, /class = 'safe-signer-editor-title'><Text text = 'Gnosis Safe signers \(optional\)'\/>/)
+		assert.match(addNewAddressSource, /class = 'safe-signer-editor-row'/)
+		assert.match(addNewAddressSource, /type = 'radio'\s+name = 'active-safe-signer'/)
+		assert.match(addNewAddressSource, /class = 'safe-signer-editor-add'/)
 	})
 })

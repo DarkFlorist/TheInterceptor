@@ -72,6 +72,7 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 		richTokens.filter((token) => token.chainId === settings.activeRpcNetwork.chainId),
 	)
 	let previousBlockTimeManipulation = settings.simulationMode ? preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
+	let currentBlockSimulateWithZeroBaseFee = false
 
 	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
 		inputBlocks.push({
@@ -79,17 +80,28 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
 			blockTimeManipulation: previousBlockTimeManipulation,
-			simulateWithZeroBaseFee: false,
+			simulateWithZeroBaseFee: currentBlockSimulateWithZeroBaseFee,
 		})
 		previousBlockTimeManipulation = blockTimeManipulation
 		currentBlockSignedMessages = []
 		currentBlockStateOverrides = {}
 		currentBlockTransactions = []
+		currentBlockSimulateWithZeroBaseFee = false
 	}
 
 	for (const operation of stack.operations) {
 		switch(operation.type) {
 			case 'Transaction': {
+				const simulationOptions = operation.preSimulationTransaction.simulationOptions
+				if (
+					simulationOptions?.requiredChainId !== undefined
+					&& simulationOptions.requiredChainId !== settings.activeRpcNetwork.chainId
+				) break
+				const simulateWithZeroBaseFee = simulationOptions?.simulateWithZeroBaseFee ?? false
+				if (currentBlockTransactions.length > 0 && currentBlockSimulateWithZeroBaseFee !== simulateWithZeroBaseFee) {
+					pushBlock({ type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' })
+				}
+				currentBlockSimulateWithZeroBaseFee = simulateWithZeroBaseFee
 				currentBlockTransactions.push(operation.preSimulationTransaction)
 				break
 			}
@@ -117,7 +129,7 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
 			blockTimeManipulation: previousBlockTimeManipulation,
-			simulateWithZeroBaseFee: false,
+			simulateWithZeroBaseFee: currentBlockSimulateWithZeroBaseFee,
 		})
 	}
 	return inputBlocks

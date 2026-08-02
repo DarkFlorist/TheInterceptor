@@ -67,4 +67,30 @@ describe('wallet_getCapabilities', () => {
 		}
 		expect(RPCReply.parse(reply)).toEqual(reply)
 	})
+
+	test('rejects capability replies that do not contain nested capability objects', () => {
+		expect(RPCReply.safeParse({
+			type: 'result',
+			method: 'wallet_getCapabilities',
+			result: [],
+		}).success).toBeFalse()
+		expect(RPCReply.safeParse({
+			type: 'result',
+			method: 'wallet_getCapabilities',
+			result: { '0x1': [] },
+		}).success).toBeFalse()
+	})
+
+	test('does not interfere with typed-array replies from unrelated RPC methods', () => {
+		const reply = {
+			type: 'result' as const,
+			method: 'eth_call' as const,
+			result: new Uint8Array([0x12, 0x34]),
+		}
+		expect(serialize(RPCReply, reply)).toEqual({
+			type: 'result',
+			method: 'eth_call',
+			result: '0x1234',
+		})
+	})
 })

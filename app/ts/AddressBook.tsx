@@ -24,6 +24,7 @@ type Modals =  { page: 'noModal' }
 
 const filterDefs = {
 	'My Active Addresses': 'Active Address',
+	'My Safes': 'Gnosis Safe Wallet',
 	'My Contacts': 'Contact',
 	'ERC20 Tokens': 'ERC20 Token',
 	'ERC1155 Tokens': 'ERC1155 Token',
@@ -32,11 +33,15 @@ const filterDefs = {
 }
 type FilterKey = keyof typeof filterDefs
 
+export function getAddressBookFilterDisplayName(filter: FilterKey) {
+	return filter === 'My Safes' ? 'My Gnosis Safes' : filter
+}
+
 function FilterLink(param: { name: FilterKey, currentFilter: FilterKey, setActiveFilter: (activeFilter: FilterKey) => void }) {
 	return <a
 		class = { param.currentFilter === param.name ? 'is-active' : '' }
 		onClick = { () => param.setActiveFilter(param.name) }>
-		{ param.name }
+		{ getAddressBookFilterDisplayName(param.name) }
 	</a>
 }
 
@@ -268,9 +273,10 @@ export function AddressBook() {
 	}
 
 	function GetNoResultsError() {
+		const activeFilterName = getAddressBookFilterDisplayName(viewFilter.value.activeFilter)
 		const errorMessage = (viewFilter.value.searchString && viewFilter.value.searchString.trim().length > 0 )
-			? `No entries found for "${ viewFilter.value.searchString }" in ${ viewFilter.value.activeFilter } on ${ viewFilter.value.chain?.name }`
-			: `No cute dinosaurs in ${ viewFilter.value.activeFilter } on ${ viewFilter.value.chain?.name }`
+			? `No entries found for "${ viewFilter.value.searchString }" in ${ activeFilterName } on ${ viewFilter.value.chain?.name }`
+			: `No cute dinosaurs in ${ activeFilterName } on ${ viewFilter.value.chain?.name }`
 		return <div class = 'address-book-empty-state'>{ errorMessage }</div>
 	}
 
@@ -278,6 +284,7 @@ export function AddressBook() {
 		const getTypeFromFilter = (filter: FilterKey) => {
 			switch(filter) {
 				case 'My Active Addresses': return 'contact'
+				case 'My Safes': return 'safe'
 				case 'My Contacts': return 'contact'
 				case 'ERC20 Tokens': return 'ERC20'
 				case 'ERC1155 Tokens': return 'ERC1155'
@@ -301,7 +308,10 @@ export function AddressBook() {
 				askForAddressAccess: true,
 				entrySource: 'FilledIn',
 				abi: undefined,
-				useAsActiveAddress: filter === 'My Active Addresses',
+				safeSignerAddress: undefined,
+				safeSignerAddresses: [],
+				safeVersion: undefined,
+				useAsActiveAddress: filter === 'My Active Addresses' || filter === 'My Safes',
 				declarativeNetRequestBlockMode: undefined,
 				chainId: activeChain.peek()?.chainId || 1n,
 			}
@@ -336,6 +346,7 @@ export function AddressBook() {
 								<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> My Addresses </p>
 								<ul>
 									<li> <FilterLink name = 'My Active Addresses' currentFilter = { viewFilter.value.activeFilter } setActiveFilter = { changeFilter }/> </li>
+									<li> <FilterLink name = 'My Safes' currentFilter = { viewFilter.value.activeFilter } setActiveFilter = { changeFilter }/> </li>
 									<li> <FilterLink name = 'My Contacts' currentFilter = { viewFilter.value.activeFilter } setActiveFilter = { changeFilter }/> </li>
 								</ul>
 							</ul>

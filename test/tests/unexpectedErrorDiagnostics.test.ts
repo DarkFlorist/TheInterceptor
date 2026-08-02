@@ -294,14 +294,24 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(typeof diagnostic?.debugId, 'string')
 	})
 
-	test('does not log user-facing unexpected errors to the extension console', async () => {
+	test('logs user-facing unexpected errors to the extension console with their diagnostic metadata and cause', async () => {
 		browserMock.reset()
 		const { reportUnexpectedError } = await modulesPromise
 
 		const { consoleErrors, consoleTraces } = await captureConsoleCalls(async () => await reportUnexpectedError(new Error('plain error')))
 
-		assert.equal(consoleErrors.length, 0)
+		assert.equal(consoleErrors.some((args) =>
+			typeof args[0] === 'string'
+			&& args[0].startsWith('Unexpected Interceptor error: ')
+			&& args[0].includes('code=unexpected_error')
+			&& args[0].includes('source=internal')
+			&& args[0].includes('debugId=')
+			&& args[0].includes('cause=\"plain error\"')
+		), true)
+		assert.equal(consoleErrors.some((args) => args[0] instanceof Error && args[0].message === 'plain error'), true)
 		assert.equal(consoleTraces.length, 0)
+		assert.equal(browserMock.sentMessages.length, 1)
+		assert.equal(browserMock.sentMessages[0]?.method, 'popup_UnexpectedErrorOccured')
 	})
 
 	test('still logs reporting pipeline failures to the extension console', async () => {
