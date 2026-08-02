@@ -27,6 +27,7 @@ import { createEip1559Or7702Transaction, hasEip7702AuthorizationSignature, hasPa
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
 import { parseTransactionIfPossible } from '../../utils/calldata.js'
+import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 
 type SuccessfulExecutionSimulationState = Extract<ExecutionSimulationState, { success: true }>
 
@@ -106,8 +107,6 @@ const getCodeAbi = [
 const getCodeStateOverrides = (): StateOverrides => ({
 	[addressString(GET_CODE_CONTRACT)]: { code: getCodeByteCode() },
 })
-
-export const DEFAULT_BLOCK_MANIPULATION = { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' } as const
 
 type GroupedEthSimulateV1BlockResult = {
 	inputBlock: SimulationStateInputMinimalDataBlock

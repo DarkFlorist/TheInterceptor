@@ -1,6 +1,6 @@
 import type { WebsiteAccessArray, WebsiteAccess, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { addressString } from '../utils/bigint.js'
-import { bestMatch } from './medataSearch.js'
+import { bestMatch } from './metadataSearch.js'
 
 type SearchMatch = {
 	length: number

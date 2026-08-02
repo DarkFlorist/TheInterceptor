@@ -23,7 +23,7 @@ export function areSafeExecutionSignerRequestsEqual(first: SendTransactionParams
 		&& areEqualUint8Arrays(firstTransaction.input, secondTransaction.input)
 }
 
-export function isSafeExecutionRequestForActiveSafe(transactionParams: SendTransactionParams, safeEntry: SafeEntry | undefined) {
+function isSafeExecutionRequestForActiveSafe(transactionParams: SendTransactionParams, safeEntry: SafeEntry | undefined) {
 	if (!isSafeEntryWithSafeSigner(safeEntry)) return false
 	const transaction = transactionParams.params[0]
 	if (transaction.from !== safeEntry.address || transaction.to !== safeEntry.address) return false

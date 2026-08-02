@@ -1,7 +1,7 @@
 import { ConnectedToSigner, SignerReply, type Settings, WalletSwitchEthereumChainReply, WatchAssetSignerRequest } from '../types/interceptor-messages.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
-import { changeActiveAddressAndChain } from './background.js'
+import { changeActiveAddressAndChain } from './activeSettings.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, getUserAddressBookEntriesForChainIdMorePreciseFirst, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'

@@ -8,7 +8,7 @@ import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchEr
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { modifyObject } from '../utils/typescript.js'
-import { getUpdatedSimulationState } from './background.js'
+import { getUpdatedSimulationState } from './simulationUpdating.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { getAddressesbeingMadeRich, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'

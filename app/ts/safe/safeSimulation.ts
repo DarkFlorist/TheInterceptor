@@ -3,7 +3,7 @@ import type { EthereumSendableSignedTransaction } from '../types/wire-types.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import { getSignedTransactionForSimulation } from '../simulation/services/SimulationModeEthereumClientService.js'
 
-export function createSafeExecutionSimulationTransaction(
+function createSafeExecutionSimulationTransaction(
 	transactionToSimulate: WebsiteCreatedEthereumTransaction,
 	safeSigningRequest: SafeTransactionSigningRequest,
 ): EthereumSendableSignedTransaction {

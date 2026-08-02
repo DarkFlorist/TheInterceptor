@@ -1,4 +1,3 @@
-import { ETHEREUM_COIN_ICON, MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
 import type { ActiveAddress, ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -8,32 +7,13 @@ import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
 import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
-import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
+import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
-import { DEFAULT_BLOCK_MANIPULATION } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 
-export const defaultActiveAddresses: AddressBookEntries = [
-	{
-		type: 'contact' as const,
-		entrySource: 'User' as const,
-		name: 'vitalik.eth',
-		address: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
-		askForAddressAccess: false,
-		useAsActiveAddress: true,
-		chainId: 'AllChains',
-	},
-	{
-		type: 'contact' as const,
-		entrySource: 'User' as const,
-		name: 'Public private key',
-		address: MOCK_PRIVATE_KEYS_ADDRESS,
-		askForAddressAccess: false,
-		useAsActiveAddress: true,
-		chainId: 'AllChains',
-	}
-]
+export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
 export const networkPriceSources = {
 	uniswapV2Like: [
@@ -44,18 +24,7 @@ export const networkPriceSources = {
 	]
 } as const
 
-export const defaultRpcs = [
-	{
-		name: 'Ethereum Mainnet',
-		chainId: 1n,
-		httpsRpc: 'https://ethereum.dark.florist',
-		currencyName: 'Ether',
-		currencyTicker: 'ETH',
-		currencyLogoUri: ETHEREUM_COIN_ICON,
-		primary: true,
-		minimized: true,
-	},
-] as const
+export const defaultRpcs = DEFAULT_RPCS
 
 export const defaultSimulationMode = true
 
