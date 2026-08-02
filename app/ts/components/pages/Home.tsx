@@ -455,7 +455,7 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 	const richTokenPendingLabel = useSignal<string | undefined>(undefined)
 	const richTokenSaveConfirmedAddress = useSignal<bigint | undefined>(undefined)
 	const richTokenSearch = useSignal('')
-	const richTokenFilter = useSignal<'All' | 'ERC20' | 'ERC1155' | 'Ready' | 'NeedsScan'>('All')
+	const richTokenFilter = useSignal<'All' | 'ERC20' | 'ERC1155'>('All')
 	const highlightedRichTokenIndex = useSignal(0)
 	const richTokenResultsScrollTop = useSignal(0)
 	const recentRichTokenKeys = useSignal<readonly string[]>([])
@@ -719,8 +719,6 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 				case 'All': return true
 				case 'ERC20': return option.tokenType === 'ERC20'
 				case 'ERC1155': return option.tokenType === 'ERC1155'
-				case 'Ready': return option.balanceSlot !== undefined
-				case 'NeedsScan': return option.balanceSlot === undefined
 				default: return assertNever(richTokenFilter.value)
 			}
 		})
@@ -977,8 +975,6 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 								<button type = 'button' disabled = { richTokenPending.value } aria-pressed = { richTokenFilter.value === 'All' } onClick = { () => { richTokenFilter.value = 'All'; highlightedRichTokenIndex.value = 0 } }>All</button>
 								<button type = 'button' disabled = { richTokenPending.value } aria-pressed = { richTokenFilter.value === 'ERC20' } onClick = { () => { richTokenFilter.value = 'ERC20'; highlightedRichTokenIndex.value = 0 } }>ERC20</button>
 								<button type = 'button' disabled = { richTokenPending.value } aria-pressed = { richTokenFilter.value === 'ERC1155' } onClick = { () => { richTokenFilter.value = 'ERC1155'; highlightedRichTokenIndex.value = 0 } }>ERC1155</button>
-								<button type = 'button' disabled = { richTokenPending.value } aria-pressed = { richTokenFilter.value === 'Ready' } onClick = { () => { richTokenFilter.value = 'Ready'; highlightedRichTokenIndex.value = 0 } }>Ready</button>
-								<button type = 'button' disabled = { richTokenPending.value } aria-pressed = { richTokenFilter.value === 'NeedsScan' } onClick = { () => { richTokenFilter.value = 'NeedsScan'; highlightedRichTokenIndex.value = 0 } }>Needs scan</button>
 							</div>
 							{ selectedAvailableRichTokens.value.length === 0 ? <></> : <div class = 'rich-mode-selected-token-bar'><div class = 'rich-mode-selected-token-chips' aria-label = 'Selected tokens'>
 								{ selectedAvailableRichTokens.value.map((option) => <button type = 'button' class = { `rich-mode-selected-token-chip${ richTokenPendingKey.value === getRichTokenKey(option) ? ' is-pending' : '' }` } aria-label = { `Remove ${ getRichTokenLabel(option) } from selection` } disabled = { richTokenPending.value } onClick = { () => { toggleRichTokenSelection(option) } } key = { getRichTokenKey(option) }>
@@ -998,13 +994,12 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 							>
 								{ matchingAvailableRichTokens.value.map((option, index) => {
 									const selected = selectedRichTokenKeys.value.includes(getRichTokenKey(option))
-									const pending = richTokenPendingKey.value === getRichTokenKey(option)
 									const recent = recentRichTokenKeys.value.includes(getRichTokenKey(option))
 									return <button
 										type = 'button'
 										id = { `rich-token-option-${ index.toString() }` }
 										data-rich-token-result = { getRichTokenKey(option) }
-										class = { `btn btn--ghost rich-mode-token-result${ selected ? ' is-selected' : '' }${ activeRichTokenIndex.value === index ? ' is-highlighted' : '' }${ pending ? ' is-pending' : '' }` }
+										class = { `btn btn--ghost rich-mode-token-result${ selected ? ' is-selected' : '' }${ activeRichTokenIndex.value === index ? ' is-highlighted' : '' }` }
 										disabled = { richTokenPending.value }
 										aria-label = { `Select rich token ${ getRichTokenLabel(option) } ${ addressString(option.tokenAddress) }` }
 										aria-selected = { selected }
@@ -1019,7 +1014,6 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 											<span class = 'rich-mode-token-result-meta'><span><HighlightedRichTokenText query = { richTokenSearch.value } text = { option.name }/></span><em>{ recent && richTokenSearch.value.trim() === '' ? `Recent · ${ option.tokenType }` : option.tokenType }</em></span>
 											<small><HighlightedRichTokenText query = { richTokenSearch.value } text = { addressString(option.tokenAddress) }/></small>
 										</span>
-										<span class = { `rich-mode-token-layout-status${ pending ? ' is-pending' : option.balanceSlot === undefined ? '' : ' is-ready' }` } aria-label = { pending ? `Preparing ${ getRichTokenLabel(option) }` : option.balanceSlot === undefined ? 'Storage scan required' : 'Storage layout ready' }>{ pending ? 'Scanning…' : option.balanceSlot === undefined ? 'Scan' : 'Ready' }</span>
 										<span class = 'rich-mode-token-selection-mark' aria-hidden = 'true'>{ selected ? '✓' : '' }</span>
 									</button>
 								}) }

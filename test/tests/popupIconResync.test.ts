@@ -1313,9 +1313,9 @@ describe('popup icon sync', () => {
 			await act(async () => { if (erc1155Filter !== undefined) await clickElement(erc1155Filter) })
 			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.getAttribute?.('aria-label')?.startsWith('Select rich token ITEM #42 ')), true)
 			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.getAttribute?.('aria-label')?.startsWith('Select rich token DAI ')), false)
-			const needsScanFilter = collectElements(dom.document.body, 'button').find((button) => button.textContent === 'Needs scan')
-			await act(async () => { if (needsScanFilter !== undefined) await clickElement(needsScanFilter) })
-			assert.equal(hasAriaLabel(dom.document.body, 'Storage scan required'), true)
+			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent === 'Needs scan' || button.textContent === 'Ready'), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'Storage scan required'), false)
+			assert.equal(hasAriaLabel(dom.document.body, 'Storage layout ready'), false)
 			const allTokenFilter = collectElements(dom.document.body, 'button').find((button) => button.textContent === 'All' && button.getAttribute?.('aria-pressed') !== null)
 			await act(async () => { if (allTokenFilter !== undefined) await clickElement(allTokenFilter) })
 			await act(async () => {
@@ -1353,8 +1353,6 @@ describe('popup icon sync', () => {
 			assert.equal(hasAriaLabel(dom.document.body, 'Selected tokens'), false)
 			const tokenSearchAfterClear = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')
 			await act(async () => { if (tokenSearchAfterClear !== undefined) await pressElementKey(tokenSearchAfterClear, 'Enter') })
-			const needsScanFilterBeforeAdd = collectElements(dom.document.body, 'button').find((button) => button.textContent === 'Needs scan')
-			await act(async () => { if (needsScanFilterBeforeAdd !== undefined) await clickElement(needsScanFilterBeforeAdd) })
 			const tokenResultsBeforeAdd = collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('id') === 'rich-token-search-results')
 			if (tokenResultsBeforeAdd !== undefined) {
 				tokenResultsBeforeAdd.scrollTop = 41
@@ -1372,7 +1370,7 @@ describe('popup icon sync', () => {
 			const reopenAfterAddButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Select tokens')
 			await act(async () => { if (reopenAfterAddButton !== undefined) await clickElement(reopenAfterAddButton) })
 			assert.equal(collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')?.getAttribute?.('value'), 'DAI')
-			assert.equal(collectElements(dom.document.body, 'button').find((button) => button.textContent === 'Needs scan')?.getAttribute?.('aria-pressed'), true)
+			assert.equal(collectElements(dom.document.body, 'button').find((button) => button.textContent === 'All' && button.getAttribute?.('aria-pressed') !== null)?.getAttribute?.('aria-pressed'), true)
 			assert.equal(collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('id') === 'rich-token-search-results')?.scrollTop, 41)
 			assert.equal(hasAriaLabel(dom.document.body, 'Selected tokens'), false)
 			const searchAfterSuccessfulAdd = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')
@@ -1452,8 +1450,6 @@ describe('popup icon sync', () => {
 			assert.equal(hasAriaLabel(dom.document.body, 'Select tokens for Loaded Account'), true)
 			assert.equal(collectElements(dom.document.body, 'div').filter((element) => element.getAttribute?.('aria-modal') === 'true').length, 1)
 			assert.equal(hasAriaLabel(dom.document.body, 'Balance editor for Loaded Account'), false)
-			const needsScanFilter = collectElements(dom.document.body, 'button').find((button) => button.textContent === 'Needs scan')
-			await act(async () => { if (needsScanFilter !== undefined) await clickElement(needsScanFilter) })
 			const tokenSearch = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')
 			await act(async () => {
 				if (tokenSearch !== undefined) {
@@ -1469,7 +1465,7 @@ describe('popup icon sync', () => {
 			assert.equal(dom.document.body.textContent?.includes('Needs attention'), true)
 			const reopenFailedSelectionButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Select tokens')
 			await act(async () => { if (reopenFailedSelectionButton !== undefined) await clickElement(reopenFailedSelectionButton) })
-			assert.equal(collectElements(dom.document.body, 'button').find((button) => button.textContent === 'Needs scan')?.getAttribute?.('aria-pressed'), true)
+			assert.equal(collectElements(dom.document.body, 'button').find((button) => button.textContent === 'All' && button.getAttribute?.('aria-pressed') !== null)?.getAttribute?.('aria-pressed'), true)
 			assert.equal(collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('aria-label') === 'Search address-book tokens')?.getAttribute?.('aria-activedescendant'), 'rich-token-option-1')
 
 			await act(() => {

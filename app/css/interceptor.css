@@ -4149,7 +4149,7 @@ header:has(form[role='search']) h1 {
 	border-radius: 5px;
 	display: grid;
 	gap: 0.6rem;
-	grid-template-columns: 1.5rem minmax(0, 1fr) auto 1.25rem;
+	grid-template-columns: 1.5rem minmax(0, 1fr) 1.25rem;
 	height: auto;
 	min-height: 3.6rem;
 	padding: 0.6rem 0.5rem 0.6rem 0.45rem;
@@ -4165,10 +4165,6 @@ header:has(form[role='search']) h1 {
 
 .rich-mode-token-result.is-highlighted:not(.is-selected) {
 	background-color: var(--white-alpha-08);
-}
-
-.rich-mode-token-result.is-pending {
-	background-color: color-mix(in srgb, var(--warning-color) 9%, transparent);
 }
 
 .rich-mode-token-result:hover:not(:disabled),
@@ -4226,29 +4222,6 @@ header:has(form[role='search']) h1 {
 	font-style: normal;
 	line-height: 1;
 	padding: 0.15rem 0.25rem;
-}
-
-.rich-mode-token-layout-status {
-	align-items: center;
-	border: 1px solid var(--white-alpha-20);
-	border-radius: 999px;
-	color: var(--subtitle-text-color);
-	display: inline-flex;
-	font-size: 0.6rem;
-	height: 1.25rem;
-	justify-content: center;
-	min-width: 2.4rem;
-	padding: 0 0.3rem;
-}
-
-.rich-mode-token-layout-status.is-ready {
-	border-color: var(--positive-color);
-	color: var(--positive-color);
-}
-
-.rich-mode-token-layout-status.is-pending {
-	border-color: var(--warning-color);
-	color: var(--warning-color);
 }
 
 .rich-mode-token-selection-mark {
