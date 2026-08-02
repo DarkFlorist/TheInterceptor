@@ -24,9 +24,16 @@ const getRichModeDialogRect = async (connection: CdpConnection) => await connect
 const assertSameRichModeDialogRect = (expected: DialogRect | undefined, actual: DialogRect | undefined) => {
 	if (expected === undefined || actual === undefined || actual.height !== expected.height || actual.left !== expected.left || actual.top !== expected.top || actual.width !== expected.width) throw new Error(`Rich-mode dialog moved or resized between views: ${ JSON.stringify(expected) } -> ${ JSON.stringify(actual) }`)
 }
-const getConfiguredTokenListSize = async (connection: CdpConnection) => await connection.evaluate<{ clientHeight: number, scrollHeight: number } | undefined>(`(() => {
-	const list = document.querySelector('.rich-mode-configured-tokens')
+const getBalanceRowsViewportSize = async (connection: CdpConnection) => await connection.evaluate<{ clientHeight: number, scrollHeight: number } | undefined>(`(() => {
+	const list = document.querySelector('.rich-mode-balance-rows')
 	return list instanceof HTMLElement ? { clientHeight: list.clientHeight, scrollHeight: list.scrollHeight } : undefined
+})()`)
+const getAmountEditorRect = async (connection: CdpConnection, ariaLabel: string) => await connection.evaluate<{ left: number, right: number } | undefined>(`(() => {
+	const input = document.querySelector(${ JSON.stringify(`[aria-label="${ ariaLabel }"]`) })
+	const editor = input?.closest('.rich-mode-amount-with-unit')
+	if (!(editor instanceof HTMLElement)) return undefined
+	const rect = editor.getBoundingClientRect()
+	return { left: rect.left, right: rect.right }
 })()`)
 const waitForCondition = async (connection: CdpConnection, description: string, expression: string) => {
 	for (let attempt = 0; attempt < 300; attempt += 1) {
@@ -203,6 +210,9 @@ try {
 	)
 	await sleep(250)
 	assertSameRichModeDialogRect(balanceDialogRect, await getRichModeDialogRect(popup))
+	const nativeAmountRect = await getAmountEditorRect(popup, 'ETH rich amount for 0x1111111111111111111111111111111111111111')
+	const usdcAmountRect = await getAmountEditorRect(popup, 'USDC rich amount')
+	if (nativeAmountRect === undefined || usdcAmountRect === undefined || nativeAmountRect.left !== usdcAmountRect.left || nativeAmountRect.right !== usdcAmountRect.right) throw new Error(`Native and token amount editors are not aligned: ${ JSON.stringify(nativeAmountRect) } -> ${ JSON.stringify(usdcAmountRect) }`)
 	await captureScreenshot(popup, screenshotPath)
 
 	await popup.evaluate(`(() => {
@@ -268,13 +278,13 @@ try {
 	await waitForCondition(popup, 'second account balances', `document.querySelector('[aria-label="ETH rich amount for Rich account 2"]')?.value === '1,001' && document.querySelector('[aria-label="TOK1 rich amount"]')?.value === '2,000'`)
 	await sleep(250)
 	const denseAccountDialogRect = await getRichModeDialogRect(popup)
-	const denseTokenListSize = await getConfiguredTokenListSize(popup)
+	const denseTokenListSize = await getBalanceRowsViewportSize(popup)
 	if (denseTokenListSize === undefined || denseTokenListSize.scrollHeight <= denseTokenListSize.clientHeight) throw new Error(`Dense rich-token list does not scroll internally: ${ JSON.stringify(denseTokenListSize) }`)
 	await clickAriaLabel(popup, 'Previous rich account')
 	await waitForCondition(popup, 'empty first account balances', `document.querySelector('[aria-label="ETH rich amount for Rich account 1"]')?.value === '1,000' && document.querySelector('[aria-label="TOK1 rich amount"]') === null`)
 	await sleep(250)
 	assertSameRichModeDialogRect(denseAccountDialogRect, await getRichModeDialogRect(popup))
-	const emptyTokenListSize = await getConfiguredTokenListSize(popup)
+	const emptyTokenListSize = await getBalanceRowsViewportSize(popup)
 	if (emptyTokenListSize?.clientHeight !== denseTokenListSize.clientHeight) throw new Error(`Rich-token list viewport resized between dense and empty accounts: ${ JSON.stringify(denseTokenListSize) } -> ${ JSON.stringify(emptyTokenListSize) }`)
 	await clickAriaLabel(popup, 'Next rich account')
 	await waitForCondition(popup, 'restored dense second account balances', `document.querySelector('[aria-label="ETH rich amount for Rich account 2"]')?.value === '1,001' && document.querySelector('[aria-label="TOK14 rich amount"]')?.value === '2,000'`)

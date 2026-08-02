@@ -908,36 +908,38 @@ function RichList({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTick
 									</div>
 								</div>
 								{ selectedRichProfile.value === undefined ? <p class = 'help'>This account has no balance profile.</p> : <>
-									<div class = 'rich-mode-balance-row rich-mode-balance-row--native'>
-										<RichTokenIcon class = 'rich-mode-balance-token-icon' label = { nativeCurrencyTicker } logoUri = { nativeCurrencyTicker === 'ETH' ? '../img/coins/ethereum.png' : undefined }/>
-										<span class = 'rich-mode-balance-token-name'><strong>{ nativeCurrencyTicker }</strong><small>Native currency</small></span>
-										<RichAmountEditor amount = { selectedRichProfile.value.nativeAmount } defaultAmount = { richNativeAmount.value } decimals = { 18 } disabled = { richTokenPending.value } error = { richTokenErrorTarget.value === 'native' ? richTokenError.value : undefined } label = { `${ nativeCurrencyTicker } rich amount for ${ selectedRichAccount.value.addressBookEntry.name }` } unit = { nativeCurrencyTicker } onCommit = { setNativeAmount } onReset = { () => { richTokenError.value = undefined; richTokenErrorTarget.value = undefined; void saveNativeAmount(richNativeAmount.value) } }/>
-										<span/>
-									</div>
-									<div aria-busy = { richTokenPending.value } aria-label = 'Configured rich tokens' class = 'rich-mode-configured-tokens'>
-										{ enabledRichTokens.value.length !== 0 || addingRichTokens.value.length !== 0 || failedAddedRichToken.value !== undefined ? <></> : <div class = 'rich-mode-empty-state'>
-											<span class = 'rich-mode-empty-state-icon' aria-hidden = 'true'>+</span>
-											<span><strong>Only { nativeCurrencyTicker }</strong><small>Add an address-book token.</small></span>
-											<button type = 'button' class = 'btn btn--ghost is-small' disabled = { richTokenPending.value || availableRichTokens.value.length === 0 } onClick = { showRichTokenSelection }>Select token</button>
-										</div> }
-										{ addingRichTokens.value.map((option) => <div class = 'rich-mode-balance-row is-adding' key = { `adding:${ getRichTokenKey(option) }` }>
-											<RichTokenIcon class = 'rich-mode-balance-token-icon' label = { option.symbol } logoUri = { option.logoUri }/>
-											<span class = 'rich-mode-balance-token-name'><strong>{ getRichTokenLabel(option) }</strong><small>{ option.name }</small></span>
-											<span class = 'rich-mode-balance-progress' role = 'status'>{ richTokenPendingKey.value === getRichTokenKey(option) ? 'Scanning storage…' : 'Queued' }</span>
+									<div class = 'rich-mode-balance-rows'>
+										<div class = 'rich-mode-balance-row rich-mode-balance-row--native'>
+											<RichTokenIcon class = 'rich-mode-balance-token-icon' label = { nativeCurrencyTicker } logoUri = { nativeCurrencyTicker === 'ETH' ? '../img/coins/ethereum.png' : undefined }/>
+											<span class = 'rich-mode-balance-token-name'><strong>{ nativeCurrencyTicker }</strong><small>Native currency</small></span>
+											<RichAmountEditor amount = { selectedRichProfile.value.nativeAmount } defaultAmount = { richNativeAmount.value } decimals = { 18 } disabled = { richTokenPending.value } error = { richTokenErrorTarget.value === 'native' ? richTokenError.value : undefined } label = { `${ nativeCurrencyTicker } rich amount for ${ selectedRichAccount.value.addressBookEntry.name }` } unit = { nativeCurrencyTicker } onCommit = { setNativeAmount } onReset = { () => { richTokenError.value = undefined; richTokenErrorTarget.value = undefined; void saveNativeAmount(richNativeAmount.value) } }/>
 											<span/>
-										</div>) }
-										{ failedAddedRichToken.value === undefined ? <></> : <div class = 'rich-mode-balance-row is-failed' key = { `failed:${ getRichTokenKey(failedAddedRichToken.value) }` }>
-											<RichTokenIcon class = 'rich-mode-balance-token-icon' label = { failedAddedRichToken.value.symbol } logoUri = { failedAddedRichToken.value.logoUri }/>
-											<span class = 'rich-mode-balance-token-name'><strong>{ getRichTokenLabel(failedAddedRichToken.value) }</strong><small>{ richTokenError.value ?? 'Storage scan failed.' }</small></span>
-											<button type = 'button' class = 'btn btn--outline is-small' disabled = { richTokenPending.value } onClick = { retryFailedRichTokenSelection }>Retry</button>
-											<button type = 'button' class = 'btn btn--ghost is-small rich-mode-remove-token' disabled = { richTokenPending.value } aria-label = { `Remove failed rich token ${ getRichTokenLabel(failedAddedRichToken.value) }` } data-tooltip = 'Remove token' onClick = { removeFailedRichTokenSelection }><TrashIcon/></button>
-										</div> }
-										{ enabledRichTokens.value.map((option) => <div class = { `rich-mode-balance-row${ newlyAddedRichTokenKeys.value.includes(getRichTokenKey(option)) ? ' is-new' : '' }` } key = { getRichTokenKey(option) }>
-											<RichTokenIcon class = 'rich-mode-balance-token-icon' label = { option.symbol } logoUri = { option.logoUri }/>
-											<span class = 'rich-mode-balance-token-name'><strong>{ getRichTokenLabel(option) }</strong><small>{ option.name }</small></span>
-											<RichAmountEditor amount = { option.amount } autoFocus = { newlyAddedRichTokenKeys.value[0] === getRichTokenKey(option) } defaultAmount = { getDefaultRichTokenAmount(option.decimals) } decimals = { Number(option.decimals) } disabled = { !option.enabled || richTokenPending.value } error = { richTokenErrorTarget.value === getRichTokenKey(option) ? richTokenError.value : undefined } label = { `${ getRichTokenLabel(option) } rich amount` } unit = { option.symbol } onCommit = { input => { void setRichTokenAmount(option, input) } } onReset = { () => { richTokenError.value = undefined; richTokenErrorTarget.value = undefined; void saveRichTokenAmount(option, getDefaultRichTokenAmount(option.decimals)) } }/>
-											<button type = 'button' class = 'btn btn--ghost is-small rich-mode-remove-token' disabled = { richTokenPending.value } aria-label = { `Remove rich token ${ getRichTokenLabel(option) }` } data-tooltip = 'Remove token' onClick = { () => { void setRichTokenEnabled(option, false) } }><TrashIcon/></button>
-										</div>) }
+										</div>
+										<div aria-busy = { richTokenPending.value } aria-label = 'Configured rich tokens' class = 'rich-mode-configured-tokens'>
+											{ enabledRichTokens.value.length !== 0 || addingRichTokens.value.length !== 0 || failedAddedRichToken.value !== undefined ? <></> : <div class = 'rich-mode-empty-state'>
+												<span class = 'rich-mode-empty-state-icon' aria-hidden = 'true'>+</span>
+												<span><strong>Only { nativeCurrencyTicker }</strong><small>Add an address-book token.</small></span>
+												<button type = 'button' class = 'btn btn--ghost is-small' disabled = { richTokenPending.value || availableRichTokens.value.length === 0 } onClick = { showRichTokenSelection }>Select token</button>
+											</div> }
+											{ addingRichTokens.value.map((option) => <div class = 'rich-mode-balance-row is-adding' key = { `adding:${ getRichTokenKey(option) }` }>
+												<RichTokenIcon class = 'rich-mode-balance-token-icon' label = { option.symbol } logoUri = { option.logoUri }/>
+												<span class = 'rich-mode-balance-token-name'><strong>{ getRichTokenLabel(option) }</strong><small>{ option.name }</small></span>
+												<span class = 'rich-mode-balance-progress' role = 'status'>{ richTokenPendingKey.value === getRichTokenKey(option) ? 'Scanning storage…' : 'Queued' }</span>
+												<span/>
+											</div>) }
+											{ failedAddedRichToken.value === undefined ? <></> : <div class = 'rich-mode-balance-row is-failed' key = { `failed:${ getRichTokenKey(failedAddedRichToken.value) }` }>
+												<RichTokenIcon class = 'rich-mode-balance-token-icon' label = { failedAddedRichToken.value.symbol } logoUri = { failedAddedRichToken.value.logoUri }/>
+												<span class = 'rich-mode-balance-token-name'><strong>{ getRichTokenLabel(failedAddedRichToken.value) }</strong><small>{ richTokenError.value ?? 'Storage scan failed.' }</small></span>
+												<button type = 'button' class = 'btn btn--outline is-small' disabled = { richTokenPending.value } onClick = { retryFailedRichTokenSelection }>Retry</button>
+												<button type = 'button' class = 'btn btn--ghost is-small rich-mode-remove-token' disabled = { richTokenPending.value } aria-label = { `Remove failed rich token ${ getRichTokenLabel(failedAddedRichToken.value) }` } data-tooltip = 'Remove token' onClick = { removeFailedRichTokenSelection }><TrashIcon/></button>
+											</div> }
+											{ enabledRichTokens.value.map((option) => <div class = { `rich-mode-balance-row${ newlyAddedRichTokenKeys.value.includes(getRichTokenKey(option)) ? ' is-new' : '' }` } key = { getRichTokenKey(option) }>
+												<RichTokenIcon class = 'rich-mode-balance-token-icon' label = { option.symbol } logoUri = { option.logoUri }/>
+												<span class = 'rich-mode-balance-token-name'><strong>{ getRichTokenLabel(option) }</strong><small>{ option.name }</small></span>
+												<RichAmountEditor amount = { option.amount } autoFocus = { newlyAddedRichTokenKeys.value[0] === getRichTokenKey(option) } defaultAmount = { getDefaultRichTokenAmount(option.decimals) } decimals = { Number(option.decimals) } disabled = { !option.enabled || richTokenPending.value } error = { richTokenErrorTarget.value === getRichTokenKey(option) ? richTokenError.value : undefined } label = { `${ getRichTokenLabel(option) } rich amount` } unit = { option.symbol } onCommit = { input => { void setRichTokenAmount(option, input) } } onReset = { () => { richTokenError.value = undefined; richTokenErrorTarget.value = undefined; void saveRichTokenAmount(option, getDefaultRichTokenAmount(option.decimals)) } }/>
+												<button type = 'button' class = 'btn btn--ghost is-small rich-mode-remove-token' disabled = { richTokenPending.value } aria-label = { `Remove rich token ${ getRichTokenLabel(option) }` } data-tooltip = 'Remove token' onClick = { () => { void setRichTokenEnabled(option, false) } }><TrashIcon/></button>
+											</div>) }
+										</div>
 									</div>
 								</> }
 							{ richTokenPendingLabel.value === undefined ? <></> : <p class = 'help is-light' role = 'status'>{ richTokenPendingLabel.value }</p> }

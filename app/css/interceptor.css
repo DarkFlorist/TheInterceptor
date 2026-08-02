@@ -3896,7 +3896,11 @@ header:has(form[role='search']) h1 {
 }
 
 .rich-mode-balance-row--native {
+	background-color: var(--dialog-body-color);
 	border-bottom: 1px solid var(--alpha-005);
+	position: sticky;
+	top: 0;
+	z-index: 1;
 }
 
 .rich-mode-balance-row.is-adding {
@@ -4068,7 +4072,7 @@ header:has(form[role='search']) h1 {
 	text-align: right;
 }
 
-.rich-mode-configured-tokens {
+.rich-mode-balance-rows {
 	flex: 1 1 0;
 	min-height: 0;
 	overflow-y: auto;
