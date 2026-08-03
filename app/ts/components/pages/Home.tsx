@@ -44,6 +44,10 @@ function scheduleAfterPaint(callback: () => void) {
 	return () => globalThis.clearTimeout(timeout)
 }
 
+async function waitForNextPaint() {
+	await new Promise<void>((resolve) => { scheduleAfterPaint(resolve) })
+}
+
 type LoadingControlProps = {
 	class: string
 	children: ComponentChildren
@@ -425,7 +429,10 @@ function FirstCard(param: FirstCardParams) {
 
 	const connectToSigner = () => {
 		if (!param.isInitialHomeDataLoaded.value) return
-		void waitForConnectToSigner(() => sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true }))
+		void waitForConnectToSigner(async () => {
+			await waitForNextPaint()
+			await sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true })
+		})
 	}
 
 	const selectSafeSigner = (safeSignerAddress: bigint) => {
