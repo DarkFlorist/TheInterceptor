@@ -62,7 +62,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 	}
 
 	if (simulateExecutionReply.value === undefined) {
-		return <div style = 'display: grid; row-gap: 10px;'>
+		return <div class = 'safe-outcome-panel__result'>
 			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 			<div class = 'safe-outcome-panel__empty'>
 				<button class = 'btn btn--primary' type = 'button' onClick = { requestToSimulate }>
@@ -73,20 +73,20 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 	}
 
 	if (simulateExecutionReply.value.data.success === false) {
-		return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
+		return <div class = 'safe-outcome-panel__result'>
 			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 			<ErrorComponent text = { errorText }/>
 		</div>
 	}
 	if (simulateExecutionReply.value.data.result.visualizedSimulationState.success === false) {
-		return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
+		return <div class = 'safe-outcome-panel__result'>
 			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 			<ErrorComponent text = { rpcErrorText }/>
 		</div>
 	}
 	if (simTx.value === undefined || activeAddress.value === undefined) return <></>
 
-	return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
+	return <div class = 'safe-outcome-panel__result'>
 		{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 		<Transaction
 			simTx = { simTx.value }

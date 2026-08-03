@@ -2087,8 +2087,29 @@ svg.spinner > circle {
 }
 
 .safe-outcome-panel__content {
+	max-width: 100%;
 	min-width: 0;
 	padding: 14px;
+}
+
+.safe-outcome-panel__result {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	grid-template-rows: max-content;
+	max-width: 100%;
+	min-width: 0;
+	row-gap: 10px;
+}
+
+.safe-outcome-panel__result > .card {
+	min-width: 0;
+	width: 100%;
+}
+
+.safe-outcome-panel__result .transaction-importance-box {
+	box-sizing: border-box;
+	max-width: 100%;
+	width: 100%;
 }
 
 .safe-outcome-panel__empty,
