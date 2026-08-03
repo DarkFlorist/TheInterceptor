@@ -176,7 +176,18 @@ export async function waitForPortMessageCount(messages: readonly PortMessage[], 
 	}
 }
 
-export function createEthereumWithGetBlockCounter(getBlockCalls: { count: number }, initialBlockPolling = true) {
+export function createEthereumWithGetBlockCounter(
+	getBlockCalls: { count: number },
+	{
+		initialBlockPolling = true,
+		getCodeResult,
+		getStorageAtResult,
+	}: {
+		readonly initialBlockPolling?: boolean
+		readonly getCodeResult?: Uint8Array
+		readonly getStorageAtResult?: bigint
+	} = {},
+) {
 	const rpcEntry: RpcEntry = {
 		name: 'Test RPC',
 		chainId: 1n,
@@ -206,6 +217,8 @@ export function createEthereumWithGetBlockCounter(getBlockCalls: { count: number
 						return null
 					}
 				}
+				if (property === 'getCode' && getCodeResult !== undefined) return async () => getCodeResult
+				if (property === 'getStorageAt' && getStorageAtResult !== undefined) return async () => getStorageAtResult
 				return Reflect.get(target, property, receiver)
 			},
 		},

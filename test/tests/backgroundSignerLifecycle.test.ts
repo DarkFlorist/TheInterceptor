@@ -19,7 +19,7 @@ describe('background eth_accounts', () => {
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 }, false)
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 }, { initialBlockPolling: false })
 		const rpcNetwork = ethereum.getRpcEntry()
 		await setRpcConnectionStatus({
 			isConnected: false,
@@ -65,7 +65,7 @@ describe('background eth_accounts', () => {
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 }, false)
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 }, { initialBlockPolling: false })
 		await setRpcConnectionStatus({
 			isConnected: false,
 			lastConnnectionAttempt: new Date('2024-01-01T00:00:00.000Z'),

@@ -6,18 +6,29 @@ import { SAFE_ABI, createSafeTx, safeTxToTypedDataJson } from '../../app/ts/safe
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { SafeStackExport, SafeTransactionStacks } from '../../app/ts/types/safeTypes.js'
+import { InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
 import { EthereumBlockHeader, EthereumQuantity, serialize } from '../../app/ts/types/wire-types.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
-import { addressString, bytes32String } from '../../app/ts/utils/bigint.js'
+import { addressString, bytes32String, dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
-import { closeTarget, connectTarget, createTargetPage, launchChromeSession, readExtensionLargeStateValue, waitForAnyExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
+import { encodeStorageReaderCall, STORAGE_READER_ABI } from '../../app/ts/simulation/storageReader.js'
+import { closeTarget, connectTarget, createTargetPage, launchChromeSession, readExtensionLargeStateValue, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
 import type { CdpConnection } from './chromeHarness.js'
 
 const ACCESS_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.is-primary:not(.is-danger)'
 const CONFIRM_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.dialog-action-button.is-primary:not(.is-danger)'
 const SAFE_ADDRESS = 0x1234567890123456789012345678901234567890n
+const SAFE_SINGLETON_ADDRESS = 0x41675c099f32341bf84bfc5382af534df5c7461an
 const DESTINATION_ADDRESS = 0x9876543210987654321098765432109876543210n
+const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
+const GET_CODE_ABI = [{
+	type: 'function',
+	name: 'at',
+	stateMutability: 'view',
+	inputs: [{ name: 'target', type: 'address' }],
+	outputs: [{ name: 'code', type: 'bytes' }],
+}] as const
 const OWNER_ACCOUNT = privateKeyToAccount('0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd')
 const OWNER_ADDRESS = BigInt(OWNER_ACCOUNT.address)
 const SAFE_TX = createSafeTx(1n, SAFE_ADDRESS, {
@@ -49,6 +60,28 @@ const UNSIGNED_STACK_EXPORT = {
 	stacks: [UNSIGNED_STACK],
 }
 const UNSIGNED_STACK_JSON = JSON.stringify(SafeStackExport.serialize(UNSIGNED_STACK_EXPORT), undefined, '\t')
+const SIGNED_MESSAGE_STACK = {
+	operations: [{
+		type: 'Message' as const,
+		signedMessageTransaction: {
+			website: { websiteOrigin: 'https://signed-message.example', icon: undefined, title: 'Signed message' },
+			created: new Date('2026-07-28T00:00:00.000Z'),
+			fakeSignedFor: SAFE_ADDRESS,
+			originalRequestParameters: { method: 'personal_sign' as const, params: ['0x68656c6c6f', SAFE_ADDRESS] },
+			request: {
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 999, requestSocket: { tabId: 1, connectionName: 0n } },
+				method: 'personal_sign' as const,
+				params: ['0x68656c6c6f', addressString(SAFE_ADDRESS)],
+			},
+			simulationMode: true,
+			messageIdentifier: 999n,
+		},
+	}],
+}
+const STORAGE_READER_CALL = dataStringWith0xStart(encodeStorageReaderCall(0n))
+const STORAGE_READER_RESULT = encodeFunctionReturn(STORAGE_READER_ABI, 'readSlot', [bytes32String(SAFE_SINGLETON_ADDRESS)])
 
 function sleep(ms: number) {
 	return new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -153,7 +186,11 @@ function makeFakeEthSimulateResult(calls: readonly unknown[]) {
 		calls: calls.map((call) => {
 			const input = isRecord(call) && typeof call.input === 'string' ? call.input : undefined
 			const to = isRecord(call) && typeof call.to === 'string' ? call.to : undefined
-			const safeResult = input !== undefined && to !== undefined && BigInt(to) === SAFE_ADDRESS
+			const safeResult = to !== undefined && BigInt(to) === GET_CODE_CONTRACT
+				? encodeFunctionReturn(GET_CODE_ABI, 'at', ['0x01'])
+				: input === STORAGE_READER_CALL && to !== undefined && BigInt(to) === SAFE_ADDRESS
+				? STORAGE_READER_RESULT
+				: input !== undefined && to !== undefined && BigInt(to) === SAFE_ADDRESS
 				? safeCallResults.get(input)
 				: undefined
 			const returnData = safeResult ?? aggregate3Result
@@ -212,8 +249,8 @@ async function handleRpcRequest(request: JsonRpcRequest) {
 		case 'eth_maxPriorityFeePerGas': return serialize(EthereumQuantity, 0n)
 		case 'eth_getCode': {
 			const [address] = request.params ?? []
-			const isSafeAddress = typeof address === 'string' && BigInt(address) === SAFE_ADDRESS
-			return isSafeAddress ? '0x01' : '0x'
+			const isSafeContract = typeof address === 'string' && (BigInt(address) === SAFE_ADDRESS || BigInt(address) === SAFE_SINGLETON_ADDRESS)
+			return isSafeContract ? '0x01' : '0x'
 		}
 		case 'eth_call': {
 			const [call] = request.params ?? []
@@ -236,6 +273,8 @@ const communicationPageHtml = await readFile(new URL('./chromeCommunicationPage.
 const sealwortFixtureDirectory = path.resolve('test/fixtures/sealwort')
 const sealwortExpectedSafeState = {
 	chainId: '0x1',
+	singletonAddress: addressString(SAFE_SINGLETON_ADDRESS),
+	singletonStorage: bytes32String(SAFE_SINGLETON_ADDRESS),
 	calls: safeStateReadCalls.map((data) => {
 		const result = safeCallResults.get(data)
 		if (result === undefined) throw new Error(`Missing Safe test response for ${ data }`)
@@ -345,7 +384,7 @@ async function main() {
 	let accessTargetId: string | undefined
 	let confirmTargetId: string | undefined
 	try {
-		const workerTarget = await waitForAnyExtensionServiceWorker(chrome.browserDebugPort, 30_000)
+		const workerTarget = await waitForInterceptorExtensionServiceWorker(chrome.browserDebugPort, 30_000)
 		const extensionId = extractExtensionId(workerTarget.url)
 		const workerConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
 		try {
@@ -492,6 +531,7 @@ async function main() {
 			try {
 				await stackSeedConnection.evaluate(`browser.storage.local.set({
 					safeTransactionStacks: ${ JSON.stringify(serialize(SafeTransactionStacks, [UNSIGNED_STACK])) },
+					interceptorTransactionStack: ${ JSON.stringify(serialize(InterceptorTransactionStack, SIGNED_MESSAGE_STACK)) },
 				})`)
 			} finally {
 				stackSeedConnection.close()
@@ -509,9 +549,11 @@ async function main() {
 				10_000,
 				'Safe co-signer fixture API',
 			)
+			const sealwortInspectionRpcStart = rpcRequests.length
 			await pageConnection.evaluate('globalThis.__sealwortFixture.connect()')
 			try {
 				await waitForText(pageConnection, addressString(SAFE_ADDRESS))
+				await waitForText(pageConnection, 'Safe account inspection complete.')
 			} catch (error) {
 				const fixtureDiagnostics = await pageConnection.evaluate(`(async () => ({
 					text: document.body.textContent,
@@ -520,8 +562,27 @@ async function main() {
 					resources: performance.getEntriesByType('resource').map(({ name }) => name),
 					script: await fetch('./main.js').then(async (response) => ({ status: response.status, type: response.headers.get('content-type'), text: await response.text() })),
 				}))()`)
-				throw new Error(`Safe co-signer fixture did not connect. Page: ${ JSON.stringify(fixtureDiagnostics) }`, { cause: error })
+				const failureDiagnosticsConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
+				const extensionDiagnostics = await failureDiagnosticsConnection.evaluate(`browser.storage.local.get(['latestUnexpectedError', 'interceptorErrorDiagnostics'])`)
+				failureDiagnosticsConnection.close()
+				throw new Error(`Safe co-signer fixture did not connect. Page: ${ JSON.stringify(fixtureDiagnostics) }. Extension: ${ JSON.stringify(extensionDiagnostics) }. RPC: ${ JSON.stringify(rpcRequests.slice(sealwortInspectionRpcStart)) }`, { cause: error })
 			}
+			const sealwortInspectionRpcRequests = rpcRequests.slice(sealwortInspectionRpcStart)
+			const sealwortSimulationRequests = sealwortInspectionRpcRequests.filter((rpcRequest) => rpcRequest.method === 'eth_simulateV1')
+			const hasTransactionPreparationSimulation = sealwortSimulationRequests.some((rpcRequest) => {
+				const [payload] = rpcRequest.params ?? []
+				if (!isRecord(payload) || !Array.isArray(payload.blockStateCalls)) return false
+				return payload.blockStateCalls.every((blockStateCall) => isRecord(blockStateCall) && Array.isArray(blockStateCall.calls) && blockStateCall.calls.length === 0)
+			})
+			if (hasTransactionPreparationSimulation) throw new Error('Sealwort Safe inspection ran transaction preparation for a transaction-free overlay')
+			const simulatedStorageLookup = sealwortSimulationRequests.some((rpcRequest) => {
+				const [payload] = rpcRequest.params ?? []
+				if (!isRecord(payload) || !Array.isArray(payload.blockStateCalls)) return false
+				return payload.blockStateCalls.some((blockStateCall) => isRecord(blockStateCall)
+					&& Array.isArray(blockStateCall.calls)
+					&& blockStateCall.calls.some((call) => isRecord(call) && call.input === STORAGE_READER_CALL))
+			})
+			if (!simulatedStorageLookup) throw new Error('Sealwort Safe inspection bypassed the simulated storage overlay')
 			const sealwortSignerStateConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
 			try {
 				await sealwortSignerStateConnection.evaluate(`(async () => {
