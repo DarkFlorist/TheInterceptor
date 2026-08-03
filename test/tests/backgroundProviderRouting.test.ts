@@ -73,6 +73,62 @@ describe('background eth_accounts', () => {
 		})
 	})
 
+	test('answers Sealwort Safe account inspection without preparing an empty simulation overlay', async () => {
+		installBrowserMock()
+		const {
+			handleInterceptedRequest,
+			websiteSocketToString,
+			updateWebsiteAccess,
+			changeSimulationMode,
+			setUseSignersAddressAsActiveAddress,
+			updateUserAddressBookEntries,
+		} = await loadModules()
+		const websiteOrigin = 'https://darkflorist.github.io'
+		const website = { websiteOrigin, icon: undefined, title: 'Sealwort' }
+		const safeAddress = 0x1111111111111111111111111111111111111111n
+		const safeSignerAddress = 0x2222222222222222222222222222222222222222n
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: safeAddress, activeSigningAddress: safeSignerAddress })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateUserAddressBookEntries(() => [{
+			type: 'safe',
+			name: 'Treasury Safe',
+			address: safeAddress,
+			chainId: 1n,
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			safeSignerAddress,
+			safeVersion: '1.4.1',
+		}])
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: safeAddress, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const getBlockCalls = { count: 0 }
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter(getBlockCalls, { getCodeResult: new Uint8Array([0x60]) })
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
+			method: 'eth_getCode',
+			params: [addressString(safeAddress), 'latest'],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.equal(getBlockCalls.count, 0)
+		assert.deepEqual(messages.at(-1), {
+			interceptorApproved: true,
+			requestId: 1,
+			bridgeRequestSettled: true,
+			type: 'result',
+			method: 'eth_getCode',
+			result: '0x60',
+		})
+	})
+
 	test('returns invalid params to the webpage for malformed wallet_watchAsset requests', async () => {
 		installBrowserMock()
 		const { defaultActiveAddresses, handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
