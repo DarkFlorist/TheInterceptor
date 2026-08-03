@@ -3,10 +3,10 @@ import * as assert from 'assert'
 import { authorization as eip7702Authorization } from 'micro-eth-signer'
 import { isAbiDataDecodeError, keccak256, recoverAddress } from '../../app/ts/utils/ethereumPrimitives.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
-import { addressString, bytes32String, dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
+import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, rlpEncode, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
+import { addressString, bigintToUint8Array, bytes32String, dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { EthereumAddress, EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction, serialize } from '../../app/ts/types/wire-types.js'
-import { createExecutionSimulationState, createSimulationCallParams, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalanceFromInput, getSimulatedBlock, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCode, getSimulatedCodeFromInput, getSimulatedFeeHistory, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGas, simulateEstimateGasFromInput, simulatePersonalSign, simulatedCall, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, createSimulationCallParams, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getDeployedContractAddress, getSimulatedBalanceFromInput, getSimulatedBlock, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCode, getSimulatedCodeFromInput, getSimulatedFeeHistory, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGas, simulateEstimateGasFromInput, simulatePersonalSign, simulatedCall, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthTransactionReceiptResponse, EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { RPCReply } from '../../app/ts/types/interceptor-messages.js'
 import type { EthSimulateV1BlockTag, EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
@@ -106,6 +106,7 @@ class MockEthereumJSONRpcRequestHandler {
 	public balance = 0n
 	public storageResponse = testBytes32('beef')
 	public maxPriorityFeePerGasResponse = '0x3b9aca00'
+	public ethFeeHistoryCalls: EthereumJsonRpcRequest[] = []
 	public ethGetBalanceCalls: EthereumJsonRpcRequest[] = []
 	public ethGetStorageAtCalls: EthereumJsonRpcRequest[] = []
 	public ethGetBlockByHashErrorsByHash = new Map<bigint, Error>()
@@ -127,6 +128,19 @@ class MockEthereumJSONRpcRequestHandler {
 				this.ethGetStorageAtCalls.push(rpcRequest)
 				return this.storageResponse
 			case 'eth_maxPriorityFeePerGas': return this.maxPriorityFeePerGasResponse
+			case 'eth_feeHistory': {
+				this.ethFeeHistoryCalls.push(rpcRequest)
+				const blockCount = Number(rpcRequest.params[0])
+				const rewardPercentiles = rpcRequest.params[2]
+				return {
+					baseFeePerGas: Array.from({ length: blockCount + 1 }, (_, index) => `0x${ (index + 1).toString(16) }`),
+					gasUsedRatio: Array.from({ length: blockCount }, () => 0.5),
+					oldestBlock: `0x${ (blockNumber - BigInt(blockCount) + 1n).toString(16) }`,
+					...rewardPercentiles === undefined ? {} : {
+						reward: Array.from({ length: blockCount }, () => rewardPercentiles.map((_percentile, index) => `0x${ (index + 1).toString(16) }`)),
+					},
+				}
+			}
 			case 'eth_getBlockByNumber': {
 				if (rpcRequest.params[0] !== blockNumber && rpcRequest.params[0] !== 'latest') throw new Error('Unsupported block number')
 				if (rpcRequest.params[1] === true) return parseRequest(eth_getBlockByNumber_goerli_8443561_true)
@@ -286,6 +300,12 @@ describe('SimulationModeEthereumClientService', () => {
 		authorizationList: [],
 	} as const
 
+	test('preserves the 20-byte sender width when deriving contract addresses', () => {
+		const senderWithLeadingZeroBytes = 1n
+		const expectedAddress = BigInt(`0x${ keccak256(rlpEncode([bigintToUint8Array(senderWithLeadingZeroBytes, 20), new Uint8Array()])).slice(26) }`)
+		assert.equal(getDeployedContractAddress(senderWithLeadingZeroBytes, 0n), expectedAddress)
+	})
+
 	const createSimulationStateInput = () => [{
 		stateOverrides: {},
 		transactions: [{
@@ -401,7 +421,6 @@ describe('SimulationModeEthereumClientService', () => {
 		await getSimulatedTransactionCount(forwardingEthereum, undefined, resolvedState, exampleTransaction.from, 'safe')
 		await getSimulatedCode(forwardingEthereum, undefined, resolvedState, exampleTransaction.to, 'earliest')
 		await getSimulatedBlock(forwardingEthereum, undefined, resolvedState, 'safe', false)
-		await getSimulatedLogs(forwardingEthereum, undefined, toResolvedExecutionSimulationState(simulationState), { fromBlock: 'earliest' })
 		const callParams = {
 			from: exampleTransaction.from,
 			to: exampleTransaction.to,
@@ -417,7 +436,6 @@ describe('SimulationModeEthereumClientService', () => {
 			{ method: 'getTransactionCount', blockTag: 'safe' },
 			{ method: 'getCode', blockTag: 'earliest' },
 			{ method: 'getBlock', blockTag: 'safe' },
-			{ method: 'getLogs', blockTag: 'earliest' },
 			{ method: 'call', blockTag: 'safe' },
 			{ method: 'call', blockTag: 'earliest' },
 		])
@@ -1641,6 +1659,19 @@ describe('SimulationModeEthereumClientService', () => {
 			assert.equal(feeHistory.reward?.[0]?.length, 3)
 		})
 
+		test('getSimulatedFeeHistory returns the requested block range from the node', async () => {
+			requestHandler.ethFeeHistoryCalls.length = 0
+			const feeHistory = await getSimulatedFeeHistory(ethereum, undefined, {
+				method: 'eth_feeHistory',
+				params: [5n, 'latest', [25, 75]],
+			})
+
+			assert.equal(feeHistory.gasUsedRatio.length, 5)
+			assert.equal(feeHistory.baseFeePerGas.length, 6)
+			assert.equal(feeHistory.reward?.length, 5)
+			assert.deepEqual(requestHandler.ethFeeHistoryCalls.at(-1), { method: 'eth_feeHistory', params: [5n, 'latest', [25, 75]] })
+		})
+
 		test('simulateEstimateGasFromInput surfaces RPC errors when omitted gas is rejected', async () => {
 			requestHandler.ethSimulateV1Calls.length = 0
 			requestHandler.rejectOmittedGas = true
@@ -2188,6 +2219,33 @@ describe('SimulationModeEthereumClientService', () => {
 				assert.equal(logs.length, 1)
 				assert.equal(logs[0]?.blockHash, firstBlock.hash)
 				assert.equal(logs[0]?.blockNumber, blockNumber + 1n)
+			})
+
+			test('state-based logs merge simulated events into an earliest-to-latest range', async () => {
+				const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput())
+				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+				const nodeLogFilters: Parameters<typeof ethereum.getLogs>[0][] = []
+				const overlayEthereum = new Proxy(ethereum, {
+					get(target, property, receiver) {
+						switch (property) {
+							case 'getBlock': return async (requestAbortController: AbortController | undefined, blockTag: Parameters<typeof target.getBlock>[1], fullObjects: boolean) => {
+								if (blockTag === 'earliest') return await target.getBlock(requestAbortController, blockNumber, fullObjects)
+								return await target.getBlock(requestAbortController, blockTag, fullObjects)
+							}
+							case 'getLogs': return async (filter: Parameters<typeof target.getLogs>[0]) => {
+								nodeLogFilters.push(filter)
+								return []
+							}
+							default: return Reflect.get(target, property, receiver)
+						}
+					}
+				})
+
+				const logs = await getSimulatedLogs(overlayEthereum, undefined, toResolvedExecutionSimulationState(simulationState), { fromBlock: 'earliest', toBlock: 'latest' })
+
+				assert.equal(logs.length, 1)
+				assert.equal(logs[0]?.blockNumber, blockNumber + 1n)
+				assert.deepEqual(nodeLogFilters, [{ fromBlock: blockNumber, toBlock: blockNumber }])
 			})
 			test('execution-only simulation skips token balance follow-up simulation', async () => {
 				const simulationStateInput = [{

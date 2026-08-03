@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { EthereumJsonRpcRequest, EthGetLogsRequest, EthNewFilter } from '../../app/ts/types/JsonRpc-types.js'
+import { EthereumJsonRpcRequest, FeeHistory, EthGetLogsRequest, EthNewFilter } from '../../app/ts/types/JsonRpc-types.js'
 import { EthereumAddress, EthereumBlockTag, EthereumBytes16, EthereumBytes256, EthereumBytes32, serialize } from '../../app/ts/types/wire-types.js'
 
 const blockHash = `0x${ '12'.repeat(32) }`
@@ -42,5 +42,15 @@ describe('JSON-RPC boundary validation', () => {
 		assert.equal(serialize(EthereumBytes32, (1n << 256n) - 1n).length, 66)
 		assert.equal(serialize(EthereumBytes256, (1n << 2048n) - 1n).length, 514)
 		assert.equal(serialize(EthereumBytes16, (1n << 64n) - 1n).length, 18)
+	})
+
+	test('accepts valid fee history reward percentiles', () => {
+		assert.equal(FeeHistory.safeParse({ method: 'eth_feeHistory', params: ['0x5', 'latest', [0, 25.5, 25.5, 100]] }).success, true)
+	})
+
+	test('rejects out-of-range and decreasing fee history reward percentiles', () => {
+		assert.equal(FeeHistory.safeParse({ method: 'eth_feeHistory', params: ['0x5', 'latest', [-1]] }).success, false)
+		assert.equal(FeeHistory.safeParse({ method: 'eth_feeHistory', params: ['0x5', 'latest', [101]] }).success, false)
+		assert.equal(FeeHistory.safeParse({ method: 'eth_feeHistory', params: ['0x5', 'latest', [75, 25]] }).success, false)
 	})
 })

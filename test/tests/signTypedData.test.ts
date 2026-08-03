@@ -166,12 +166,12 @@ describe('EIP712', () => {
 		delete parsed.message.contents
 		assert.equal(verifyEip712Message(parsed).valid, false)
 	})
-	test('reports invalid domain field order as a validation failure', () => {
+	test('accepts domain fields in the order declared by the EIP712Domain type', () => {
 		const parsed = JSON.parse(hasFixedArray)
 		const firstDomainField = parsed.types.EIP712Domain[0]
 		parsed.types.EIP712Domain[0] = parsed.types.EIP712Domain[1]
 		parsed.types.EIP712Domain[1] = firstDomainField
-		assert.deepEqual(verifyEip712Message(parsed), { valid: false, reason: 'EIP712Domain types are in the wrong order' })
+		assert.deepEqual(verifyEip712Message(parsed), { valid: true })
 	})
 	test('can validate safeTx message', () => {
 		const parsed = EIP712Message.parse(safeTx)

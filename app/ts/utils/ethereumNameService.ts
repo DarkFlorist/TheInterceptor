@@ -55,7 +55,7 @@ export const getEthereumNameServiceNameFromTokenId = async (ethereumMainnet: Eth
 	const name = encodeEthereumNameServiceString(nameString)
 	if (name === undefined) return undefined
 	const normalizedName = normalizeEnsNameOrUndefined(name)
-	if (normalizedName === undefined) return name
+	if (normalizedName === undefined) return undefined
 	if (tokenId !== BigInt(namehash(normalizedName))) {
 		console.error(`Querying RPC ${ ethereumMainnet.getRpcEntry().httpsRpc } returned invalid name for hash: ${ tokenId }.`)
 		return undefined

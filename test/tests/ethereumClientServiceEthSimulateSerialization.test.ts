@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
+import { type EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { EthSimulateV1Params } from '../../app/ts/types/ethSimulate-types.js'
 import { serialize, type EthereumSendableSignedTransaction } from '../../app/ts/types/wire-types.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
@@ -211,5 +211,49 @@ describe('EthereumClientService eth_simulateV1 serialization', () => {
 			const serialized = JSON.stringify(serializedRequest)
 			assert.doesNotMatch(serialized, /"hash":/, `serialized ${ variant.name } call still contains internal hash`)
 		}
+	})
+})
+
+describe('EthereumClientService eth_call serialization', () => {
+	let capturedRequest: EthereumJsonRpcRequest | undefined
+	const service = new EthereumClientService(
+		{
+			rpcUrl: rpcEntry.httpsRpc,
+			clearCache: () => undefined,
+			async getChainId() { return rpcEntry.chainId },
+			async jsonRpcRequest(request) {
+				capturedRequest = request
+				if (request.method !== 'eth_call') throw new Error(`Unexpected RPC method: ${ request.method }`)
+				return '0x'
+			},
+		},
+		async () => undefined,
+		async () => undefined,
+		rpcEntry,
+	)
+
+	test('forwards null recipients for contract creation calls', async () => {
+		await service.call({ to: null, input: new Uint8Array([0x60, 0x00]) }, 'latest', undefined)
+
+		if (capturedRequest?.method !== 'eth_call') throw new Error('eth_call request was not captured')
+		assert.deepEqual(capturedRequest.params, [{ to: null, data: new Uint8Array([0x60, 0x00]) }, 'latest'])
+	})
+
+	test('preserves EIP-1559 fee fields and access lists', async () => {
+		await service.call({
+			to: toAddress,
+			maxFeePerGas: 100n,
+			maxPriorityFeePerGas: 3n,
+			accessList,
+		}, 'safe', undefined)
+
+		if (capturedRequest?.method !== 'eth_call') throw new Error('eth_call request was not captured')
+		assert.deepEqual(capturedRequest.params, [{
+			to: toAddress,
+			maxFeePerGas: 100n,
+			maxPriorityFeePerGas: 3n,
+			accessList,
+		}, 'safe'])
+		assert.equal('gasPrice' in capturedRequest.params[0], false)
 	})
 })
