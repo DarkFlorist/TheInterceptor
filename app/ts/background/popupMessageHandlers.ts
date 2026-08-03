@@ -1376,5 +1376,9 @@ export async function requestSimulationMetadata(ethereumClientService: EthereumC
 }
 
 export async function requestIdentifyAddress(ethereumClientService: EthereumClientService, parsedRequest: RequestIdentifyAddress) {
-	return { method: 'popup_requestIdentifyAddress' as const, data: { addressBookEntry: await identifyAddress(ethereumClientService, undefined, parsedRequest.data.address) } }
+	const requestedChainId = parsedRequest.data.chainId
+	const addressBookEntry = requestedChainId === 'AllChains' || requestedChainId !== ethereumClientService.getChainId()
+		? undefined
+		: await identifyAddress(ethereumClientService, undefined, parsedRequest.data.address)
+	return { method: 'popup_requestIdentifyAddress' as const, data: { chainId: requestedChainId, addressBookEntry } }
 }

@@ -19,6 +19,7 @@ import { imageToUri, type ImageToUriResult } from '../../utils/imageToUri.js'
 import { loadErc1046Metadata, loadLegacyErc20Metadata, loadNftMetadataAndVerifyOwnership, normalizeWatchAssetImageUrl } from '../watchAssetMetadata.js'
 import { invalidWatchAssetRequest, watchAssetRequestError } from '../watchAssetRpc.js'
 import { isValidAddressBookEntryName, MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH } from '../../utils/addressBookValidation.js'
+import { isValidErc20Decimals } from '../../utils/erc20.js'
 
 export const MAX_PENDING_WATCH_ASSET_REQUESTS = 20
 export const MAX_PENDING_WATCH_ASSET_REQUESTS_PER_ORIGIN = 3
@@ -74,7 +75,7 @@ export function validateWatchAssetParameters(params: WalletWatchAsset, currentCh
 	if (type === 'ERC20') {
 		if (options.name !== undefined && !isValidAddressBookEntryName(options.name)) return `The asset name must contain from 1 to ${ MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH } characters.`
 		if (options.symbol !== undefined && (options.symbol.length === 0 || options.symbol.length > 11)) return 'The asset symbol must contain from 1 to 11 characters.'
-		if (options.decimals !== undefined && (!Number.isSafeInteger(options.decimals) || options.decimals < 0 || options.decimals > 36)) return 'The asset decimals must be an integer from 0 to 36.'
+		if (options.decimals !== undefined && (!Number.isSafeInteger(options.decimals) || !isValidErc20Decimals(BigInt(options.decimals)))) return 'The asset decimals must be an integer from 0 to 255.'
 		if (options.image !== undefined) {
 			const imageUrl = normalizeWatchAssetImageUrl(options.image)
 			if (imageUrl === undefined || imageUrl.startsWith('data:')) return 'The asset image must be a public HTTPS URL using the default port.'
@@ -533,6 +534,7 @@ export async function handleWatchAssetRequest(
 		const decimals = legacyMetadata.metadata.decimals ?? (requestedAsset.options.decimals === undefined ? undefined : BigInt(requestedAsset.options.decimals))
 		if (symbol === undefined || symbol.length === 0 || symbol.length > 11) return invalidWatchAssetRequest('The ERC20 symbol is unavailable from the contract and must be supplied with 1 to 11 characters.')
 		if (decimals === undefined) return invalidWatchAssetRequest('The ERC20 decimals are unavailable from the contract and must be supplied.')
+		if (!isValidErc20Decimals(decimals)) return invalidWatchAssetRequest('The ERC20 contract decimals must be between 0 and 255.')
 		identifiedToken = {
 			type: 'ERC20',
 			address: requestedAsset.options.address,
@@ -550,16 +552,18 @@ export async function handleWatchAssetRequest(
 			? { success: true as const, metadata: { name: identified.name, symbol: identified.symbol, decimals: identified.decimals } }
 			: await (dependencies.loadErc20 ?? loadLegacyErc20Metadata)(ethereumClientService, requestedAsset.options.address)
 		if (!contractMetadata.success) return invalidWatchAssetRequest('The requested address is not an ERC1046 ERC20 token contract on the active chain.')
-		if (loaded.metadata.decimals !== undefined && (!Number.isSafeInteger(loaded.metadata.decimals) || loaded.metadata.decimals < 0)) return invalidWatchAssetRequest('The ERC1046 metadata decimals must be a non-negative safe integer.')
+		if (loaded.metadata.decimals !== undefined && (!Number.isSafeInteger(loaded.metadata.decimals) || !isValidErc20Decimals(BigInt(loaded.metadata.decimals)))) return invalidWatchAssetRequest('The ERC1046 metadata decimals must be an integer between 0 and 255.')
 		if (loaded.metadata.name !== undefined && contractMetadata.metadata.name !== undefined && contractMetadata.metadata.name !== '' && loaded.metadata.name !== contractMetadata.metadata.name) return invalidWatchAssetRequest('The ERC1046 metadata name does not match the contract name.')
 		if (loaded.metadata.symbol !== undefined && contractMetadata.metadata.symbol !== undefined && contractMetadata.metadata.symbol !== '' && loaded.metadata.symbol.toLowerCase() !== contractMetadata.metadata.symbol.toLowerCase()) return invalidWatchAssetRequest('The ERC1046 metadata symbol does not match the contract symbol.')
 		if (loaded.metadata.decimals !== undefined && contractMetadata.metadata.decimals !== undefined && BigInt(loaded.metadata.decimals) !== contractMetadata.metadata.decimals) return invalidWatchAssetRequest('The ERC1046 metadata decimals do not match the contract decimals.')
+		const decimals = loaded.metadata.decimals === undefined ? contractMetadata.metadata.decimals ?? 18n : BigInt(loaded.metadata.decimals)
+		if (!isValidErc20Decimals(decimals)) return invalidWatchAssetRequest('The ERC1046 token decimals must be between 0 and 255.')
 		identifiedToken = {
 			type: 'ERC20',
 			address: requestedAsset.options.address,
 			name: loaded.metadata.name ?? contractMetadata.metadata.name ?? checksummedAddress(requestedAsset.options.address),
 			symbol: loaded.metadata.symbol ?? contractMetadata.metadata.symbol ?? '???',
-			decimals: loaded.metadata.decimals === undefined ? contractMetadata.metadata.decimals ?? 18n : BigInt(loaded.metadata.decimals),
+			decimals,
 			entrySource: 'OnChain',
 			chainId,
 		}

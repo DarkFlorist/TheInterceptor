@@ -53,6 +53,15 @@ function shouldCacheResponse(response: ResolvedResponse) {
 	return !isNonCacheableJsonRpcError(response.response)
 }
 
+function assertMatchingJsonRpcResponseId(response: ResolvedResponse, requestId: number) {
+	const rawResponse = response.response
+	if (typeof rawResponse !== 'object' || rawResponse === null || !('id' in rawResponse) || rawResponse.id === requestId) return
+	throw new ErrorWithData(`RPC response ID ${ String(rawResponse.id) } did not match request ID ${ requestId }.`, {
+		requestId,
+		responseId: rawResponse.id,
+	})
+}
+
 const DEFAULT_RPC_QUERY_EXPECTED_DURATION_MS = TIME_BETWEEN_BLOCKS * 1000
 
 export type IEthereumJSONRpcRequestHandler = Pick<EthereumJSONRpcRequestHandler, keyof EthereumJSONRpcRequestHandler>
@@ -142,7 +151,9 @@ export class EthereumJSONRpcRequestHandler {
 			const startedAt = performance.now()
 			try {
 				const response = await this.fetchWithSlowRequestWarning(request, requestId, payload, timeoutMs, requestAbortController)
-				return await this.resolveResponse(response)
+				const responseObject = await this.resolveResponse(response)
+				assertMatchingJsonRpcResponseId(responseObject, requestId)
+				return responseObject
 			} finally {
 				recordBenchmarkRpcRequest(request.method, performance.now() - startedAt)
 			}
@@ -161,6 +172,7 @@ export class EthereumJSONRpcRequestHandler {
 		try {
 			const response = await this.fetchWithSlowRequestWarning(request, requestId, payload, timeoutMs, requestAbortController)
 			const responseObject = await this.resolveResponse(response)
+			assertMatchingJsonRpcResponseId(responseObject, requestId)
 			if (shouldCacheResponse(responseObject)) this.cache.set(hash, responseObject)
 			future.resolve(responseObject)
 		} catch(error: unknown) {

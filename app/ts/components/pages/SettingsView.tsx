@@ -16,7 +16,8 @@ import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/bro
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
-import { shouldOfferBundledRpcReset } from '../../utils/rpcConnectionUi.js'
+import { shouldApplyInitialRpcEntries, shouldOfferBundledRpcReset } from '../../utils/rpcConnectionUi.js'
+import { reportUnexpectedError } from '../../utils/errors.js'
 
 type CheckBoxSettingParam = {
 	text: string
@@ -259,19 +260,38 @@ const RpcSummary = ({ info }: { info: SignalOrValue<RpcEntry | undefined> }) => 
 export function useRpcConnectionsList() {
 	const entries = useSignal<RpcEntries>([])
 
-	const trackRpcListChanges = (message: unknown): false => {
-		const parsedMessage = MessageToPopup.safeParse(message)
-		if (parsedMessage.success === false) return false
-		if (parsedMessage.value.method === 'popup_update_rpc_list') { entries.value = parsedMessage.value.data }
-		return false
-	}
-
-	const initiallyLoadEntriesFromStorage = async () => { entries.value = await getRpcList() }
-
 	useEffect(() => {
-		initiallyLoadEntriesFromStorage()
+		let disposed = false
+		let updateVersion = 0
+		const trackRpcListChanges = (message: unknown): false => {
+			const parsedMessage = MessageToPopup.safeParse(message)
+			if (parsedMessage.success === false) return false
+			if (parsedMessage.value.method === 'popup_update_rpc_list') {
+				updateVersion += 1
+				entries.value = parsedMessage.value.data
+			}
+			return false
+		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(trackRpcListChanges)
-		return () => browser.runtime.onMessage.removeListener(trackRpcListChanges)
+		const initialUpdateVersion = updateVersion
+		const initiallyLoadEntriesFromStorage = async () => {
+			try {
+				const initialEntries = await getRpcList()
+				if (shouldApplyInitialRpcEntries(disposed, initialUpdateVersion, updateVersion)) entries.value = initialEntries
+			} catch(error: unknown) {
+				await reportUnexpectedError(error, {
+					source: 'settingsView',
+					code: 'rpc_list_initial_load_failed',
+					displayMessage: 'Failed to load RPC connections.',
+					suppressExpectedInfrastructure: false,
+				})
+			}
+		}
+		void initiallyLoadEntriesFromStorage()
+		return () => {
+			disposed = true
+			browser.runtime.onMessage.removeListener(trackRpcListChanges)
+		}
 	}, [])
 
 	return entries

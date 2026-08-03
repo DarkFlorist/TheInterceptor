@@ -40,6 +40,11 @@ type Erc20BalanceChangeParams = {
 	renameAddressCallBack: RenameAddressCallBack
 }
 
+export function getGasUsageText(gasSpent: bigint, gasLimit: bigint) {
+	if (gasLimit === 0n) return `${ gasSpent.toString(10) } / 0 gas (percentage unavailable)`
+	return `${ gasSpent.toString(10) } / ${ gasLimit.toString(10) } gas (${ Number(gasSpent * 10000n / gasLimit) / 100 }%)`
+}
+
 function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 	if ( param.erc20TokenBalanceChanges.length === 0 ) return <></>
 	return <>
@@ -998,7 +1003,7 @@ export function RawTransactionDetailsCard({ isRawTransaction, transaction, renam
 						<dd>{ <Ether amount = { transaction.value } useFullTokenName = { true } rpcNetwork = { transaction.rpcNetwork } fontSize = 'normal'/> }</dd>
 						{ gasSpent === undefined ? <></> : <>
 							<dt>Gas used</dt>
-							<dd>{ `${ gasSpent.toString(10) } / ${ transaction.gas.toString(10) } gas (${ Number(gasSpent * 10000n / transaction.gas) / 100 }%)` }</dd>
+							<dd>{ getGasUsageText(gasSpent, transaction.gas) }</dd>
 						</> }
 						<dt>Gas limit </dt>
 						<dd style = 'display: flex; align-items: center; justify-content: center;'>

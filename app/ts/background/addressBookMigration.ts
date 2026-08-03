@@ -1,17 +1,19 @@
-import * as funtypes from 'funtypes'
-import { type AddressBookEntries, type AddressBookEntry, AddressBookEntries as AddressBookEntriesRuntype, AddressBookEntry as AddressBookEntryRuntype } from '../types/addressBookTypes.js'
+import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { type OldActiveAddressEntry, OldActiveAddressEntry as OldActiveAddressEntryRuntype, browserStorageLocalRemove } from '../utils/storageUtils.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
-import { updateUserAddressBookEntries, updateUserAddressBookEntriesV2Old } from './storageVariables.js'
-
-const LegacyAddressBookEntriesV1 = funtypes.ReadonlyArray(funtypes.Union(AddressBookEntryRuntype, OldActiveAddressEntryRuntype))
+import { repairLegacyAddressBookEntries, repairLegacyAddressBookEntry, updateUserAddressBookEntries, updateUserAddressBookEntriesV2Old } from './storageVariables.js'
 
 async function getLegacyAddressBookEntriesV1ForMigration(): Promise<readonly (AddressBookEntry | OldActiveAddressEntry)[] | undefined> {
 	const storageEntries: Partial<Record<'userAddressBookEntries', unknown>> = await browser.storage.local.get('userAddressBookEntries')
 	const rawEntries = storageEntries.userAddressBookEntries
 	if (rawEntries === undefined) return undefined
-	const parsedEntries = LegacyAddressBookEntriesV1.safeParse(rawEntries)
-	if (parsedEntries.success) return parsedEntries.value
+	if (Array.isArray(rawEntries)) {
+		const parsedEntries = rawEntries.map((rawEntry) => {
+			const oldActiveAddress = OldActiveAddressEntryRuntype.safeParse(rawEntry)
+			return oldActiveAddress.success ? oldActiveAddress.value : repairLegacyAddressBookEntry(rawEntry)
+		})
+		if (parsedEntries.every((entry) => entry !== undefined)) return parsedEntries.filter((entry): entry is AddressBookEntry | OldActiveAddressEntry => entry !== undefined)
+	}
 	console.warn('userAddressBookEntries was corrupt during migration:')
 	console.warn(rawEntries)
 	await browserStorageLocalRemove(['userAddressBookEntries'])
@@ -22,8 +24,8 @@ async function getLegacyAddressBookEntriesV2ForMigration(): Promise<AddressBookE
 	const storageEntries: Partial<Record<'userAddressBookEntriesV2', unknown>> = await browser.storage.local.get('userAddressBookEntriesV2')
 	const rawEntries = storageEntries.userAddressBookEntriesV2
 	if (rawEntries === undefined) return undefined
-	const parsedEntries = AddressBookEntriesRuntype.safeParse(rawEntries)
-	if (parsedEntries.success) return parsedEntries.value
+	const parsedEntries = repairLegacyAddressBookEntries(rawEntries)
+	if (parsedEntries !== undefined) return parsedEntries
 	console.warn('userAddressBookEntriesV2 was corrupt during migration:')
 	console.warn(rawEntries)
 	await browserStorageLocalRemove(['userAddressBookEntriesV2'])

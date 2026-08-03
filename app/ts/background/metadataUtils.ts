@@ -21,6 +21,7 @@ import { promiseAllMapAbortSafe } from '../utils/requests.js'
 import { getFilledInContactEntry } from '../utils/addressBookEntries.js'
 import { JsonRpcResponseError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { getDeployedContractAddress } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { isValidErc20Decimals } from '../utils/erc20.js'
 
 const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
 
@@ -152,7 +153,13 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	}
 	const getEntry = (tokenIdentification: IdentifiedAddress): AddressBookEntry => {
 		switch (tokenIdentification.type) {
-			case 'ERC20': return {
+			case 'ERC20': return !isValidErc20Decimals(tokenIdentification.decimals) ? {
+				name: tokenIdentification.name,
+				address,
+				type: 'contract',
+				entrySource: 'OnChain',
+				chainId,
+			} : {
 				name: tokenIdentification.name,
 				address,
 				symbol: tokenIdentification.symbol,

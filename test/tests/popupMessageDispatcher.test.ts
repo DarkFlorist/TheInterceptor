@@ -145,6 +145,19 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(await dispatchPopupMessage(context, { method: 'popup_isSimulationVisualizerOpen' }), undefined)
 	})
 
+	test('does not identify an address using a different active chain', async () => {
+		const context = createDispatcherContext(async () => undefined)
+		Object.defineProperty(context.ethereum, 'getChainId', { value: () => 1n })
+
+		assert.deepEqual(await dispatchPopupMessage(context, {
+			method: 'popup_requestIdentifyAddress',
+			data: { address: 1n, chainId: 10n },
+		}), {
+			method: 'popup_requestIdentifyAddress',
+			data: { chainId: 10n, addressBookEntry: undefined },
+		})
+	})
+
 	test('broadcasts an import failure without refreshing settings', async () => {
 		storageState.websiteAccess = [{
 			website: { websiteOrigin: 'failure-refresh.test', icon: undefined, title: 'Failure refresh sentinel' },

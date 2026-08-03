@@ -1,6 +1,7 @@
 import * as funtypes from 'funtypes'
 import type { UnionToIntersection } from '../utils/typescript.js'
 import { isHexEncodedNumber } from '../utils/bigint.js'
+import { isValidErc20Decimals } from '../utils/erc20.js'
 
 const BigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
@@ -184,6 +185,9 @@ export type NonHexBigInt = funtypes.Static<typeof NonHexBigInt>
 
 export const EthereumQuantity = funtypes.String.withParser(BigIntParser)
 export type EthereumQuantity = funtypes.Static<typeof EthereumQuantity>
+
+export const EthereumQuantityUint8 = EthereumQuantity.withConstraint(isValidErc20Decimals)
+export type EthereumQuantityUint8 = funtypes.Static<typeof EthereumQuantityUint8>
 
 export const CanonicalEthereumQuantity = funtypes.String.withParser(CanonicalBigIntParser)
 export type CanonicalEthereumQuantity = funtypes.Static<typeof CanonicalEthereumQuantity>

@@ -185,6 +185,24 @@ function createAbiLookupFailureReply(error: string) {
 	})
 }
 
+function createIdentifyAddressReply(address: bigint, name: string) {
+	return PopupRequestsReplies.popup_requestIdentifyAddress.serialize({
+		method: 'popup_requestIdentifyAddress',
+		data: {
+			chainId: 1n,
+			addressBookEntry: {
+				type: 'ERC20',
+				name,
+				address,
+				symbol: 'TEST',
+				decimals: 18n,
+				entrySource: 'OnChain',
+				chainId: 1n,
+			},
+		},
+	})
+}
+
 async function emitRuntimeMessage(message: unknown) {
 	for (const listener of [...runtimeMessageListeners]) {
 		await listener(message)
@@ -617,6 +635,90 @@ describe('popup async action UI', () => {
 
 		assert.equal(dom.document.body.textContent?.includes('stale block explorer failure'), false)
 		assert.equal(dom.document.body.textContent?.includes('Fetch from Block Explorer'), true)
+		dom.restore()
+	})
+
+	test('retries address identification after returning to a state whose earlier reply became stale', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const firstAddress = 1n
+		const secondAddress = 2n
+		const staleFirstReply = createDeferred<ReturnType<typeof createIdentifyAddressReply>>()
+		let identifyRequestCount = 0
+		runtimeSendMessage = async (message) => {
+			if (getRuntimeMethod(message) !== 'popup_requestIdentifyAddress') return undefined
+			identifyRequestCount += 1
+			if (identifyRequestCount === 1) return await staleFirstReply.promise
+			if (identifyRequestCount === 2) return undefined
+			return createIdentifyAddressReply(firstAddress, 'Retried token')
+		}
+
+		const modifyAddressWindowState = signal({
+			windowStateId: 'window-1',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: true,
+				type: 'ERC20' as const,
+				address: '0x0000000000000000000000000000000000000001',
+				askForAddressAccess: true,
+				name: undefined,
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				entrySource: 'User' as const,
+				abi: undefined,
+				useAsActiveAddress: undefined,
+				declarativeNetRequestBlockMode: undefined,
+				chainId: 1n,
+			},
+		})
+
+		await act(async () => {
+			render(h(modules.AddNewAddress, {
+				close: () => undefined,
+				setActiveAddressAndInformAboutIt: undefined,
+				modifyAddressWindowState,
+				activeAddress: undefined,
+				rpcEntries: signal([]),
+			}), dom.document.body)
+			await settleAsyncUpdates()
+		})
+		assert.equal(identifyRequestCount, 1)
+
+		await act(async () => {
+			modifyAddressWindowState.value = {
+				...modifyAddressWindowState.value,
+				incompleteAddressBookEntry: {
+					...modifyAddressWindowState.value.incompleteAddressBookEntry,
+					address: '0x0000000000000000000000000000000000000002',
+				},
+			}
+			await settleAsyncUpdates()
+		})
+		assert.equal(identifyRequestCount, 2)
+
+		await act(async () => {
+			staleFirstReply.resolve(createIdentifyAddressReply(firstAddress, 'Stale token'))
+			await staleFirstReply.promise
+			await settleAsyncUpdates()
+		})
+		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.address, `0x${ secondAddress.toString(16).padStart(40, '0') }`)
+		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.name, undefined)
+
+		await act(async () => {
+			modifyAddressWindowState.value = {
+				...modifyAddressWindowState.value,
+				incompleteAddressBookEntry: {
+					...modifyAddressWindowState.value.incompleteAddressBookEntry,
+					address: '0x0000000000000000000000000000000000000001',
+				},
+			}
+			await settleAsyncUpdates()
+		})
+
+		assert.equal(identifyRequestCount, 3)
+		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.name, 'Retried token')
+		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.decimals, 18n)
 		dom.restore()
 	})
 
