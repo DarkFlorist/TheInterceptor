@@ -796,6 +796,79 @@ describe('Home popup clear empty state', () => {
 		}
 	})
 
+	test('disables the Gnosis Safe signer connect button and shows progress while MetaMask is opening', async () => {
+		const dom = installDomMock()
+		const immediateRequestAnimationFrame = globalThis.requestAnimationFrame
+		const animationFrames: FrameRequestCallback[] = []
+		let resolveConnectRequest: (() => void) | undefined
+		const connectRequest = new Promise<void>((resolve) => { resolveConnectRequest = resolve })
+		const browserMock = installBrowserMock((message) =>
+			hasMethod(message, 'popup_requestAccountsFromSigner')
+				? connectRequest
+				: undefined
+		)
+		try {
+			await act(() => {
+				render(h(Home, createHomeParams({
+					activeAddresses: new Signal([safeEntry]),
+					tabState: new Signal<TabState | undefined>({
+						tabId: 1,
+						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+						signerConnected: true,
+						signerName: 'MetaMask',
+						signerAccounts: [],
+						signerAccountError: undefined,
+						signerChain: 1n,
+						tabIconDetails: { icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' },
+						activeSigningAddress: undefined,
+					}),
+					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					activeSigningAddress: new Signal<bigint | undefined>(undefined),
+					simulationMode: new Signal(false),
+					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
+				})), dom.document.body)
+			})
+
+			globalThis.requestAnimationFrame = (callback) => {
+				animationFrames.push(callback)
+				return animationFrames.length
+			}
+			const connectButton = getButtonByText(dom.document.body, 'Connect to MetaMask')
+			await act(async () => {
+				await clickElement(connectButton)
+			})
+
+			const pendingButton = getButtonByText(dom.document.body, 'Connecting to MetaMask')
+			assert.notEqual(pendingButton.getAttribute?.('disabled'), null)
+			assert.equal(pendingButton.getAttribute?.('aria-busy'), true)
+			assert.notEqual(collectElements(pendingButton, 'svg').find((element) => element.getAttribute?.('class') === 'spinner'), undefined)
+			assert.equal(browserMock.sentMessages.some((message) => hasMethod(message, 'popup_requestAccountsFromSigner')), false)
+
+			await act(async () => {
+				for (const callback of animationFrames.splice(0)) callback(0)
+				await Promise.resolve()
+			})
+			assert.equal(browserMock.sentMessages.some((message) => hasMethod(message, 'popup_requestAccountsFromSigner')), false)
+			await act(async () => {
+				for (const callback of animationFrames.splice(0)) callback(0)
+				await Promise.resolve()
+			})
+			assert.equal(browserMock.sentMessages.filter((message) => hasMethod(message, 'popup_requestAccountsFromSigner')).length, 1)
+
+			if (resolveConnectRequest === undefined) throw new Error('Missing MetaMask connect resolver')
+			resolveConnectRequest()
+			await act(async () => {
+				await connectRequest
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+		} finally {
+			render(null, dom.document.body)
+			globalThis.requestAnimationFrame = immediateRequestAnimationFrame
+			dom.restore()
+			browserMock.restore()
+		}
+	})
+
 	test('changes the active Safe signer from the popup', async () => {
 		const dom = installDomMock()
 		let resolveSelection: ((reply: { type: 'SetActiveSafeSignerReply', ok: true }) => void) | undefined
