@@ -335,6 +335,18 @@ export const getSimulatedTransactionCount = async (ethereumClientService: Ethere
 type Simulated1559BlockCall = Pick<IUnsignedTransaction1559, 'type' | 'from' | 'chainId' | 'nonce' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'to' | 'value' | 'input'> & Partial<Pick<IUnsignedTransaction1559, 'gasLimit' | 'accessList'>>
 type Simulated7702BlockCall = Pick<IUnsignedTransaction7702, 'type' | 'from' | 'chainId' | 'nonce' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'to' | 'value' | 'input' | 'authorizationList'> & Partial<Pick<IUnsignedTransaction7702, 'gasLimit' | 'accessList'>>
 type SimulatedBlockCall = Simulated1559BlockCall | Simulated7702BlockCall
+type SimulatedCallParams = Pick<IUnsignedTransaction1559, 'to' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'input' | 'value'> & Partial<Pick<IUnsignedTransaction1559, 'from' | 'gasLimit' | 'accessList'>>
+
+export const createSimulationCallParams = (callParams: PartialEthereumTransaction, from: bigint): SimulatedCallParams => ({
+	from,
+	maxFeePerGas: callParams.gasPrice ?? callParams.maxFeePerGas ?? 0n,
+	maxPriorityFeePerGas: callParams.gasPrice === undefined ? callParams.maxPriorityFeePerGas ?? 0n : 0n,
+	...(callParams.gas === undefined ? {} : { gasLimit: callParams.gas }),
+	to: callParams.to === undefined ? null : callParams.to,
+	value: callParams.value ?? 0n,
+	input: getInputFieldFromDataOrInput(callParams),
+	accessList: callParams.accessList ?? [],
+})
 
 type SimulateBlockCallOptions = {
 	extraOverrides?: StateOverrides
@@ -460,7 +472,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		to: data.to === undefined ? null : data.to,
 		value: data.value === undefined ? 0n : data.value,
 		input: getInputFieldFromDataOrInput(data),
-		accessList: []
+		accessList: data.accessList ?? []
 	}
 	const estimateGasTransaction = await createEip1559Or7702Transaction(estimateGasTransactionBase, data)
 	try {
@@ -1347,7 +1359,7 @@ const simulatedCallWithPreparedInputContext = async (
 	ethereumClientService: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 	context: PreparedSimulationExecutionContext | undefined,
-	params: Pick<IUnsignedTransaction1559, 'to' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'input' | 'value'> & Partial<Pick<IUnsignedTransaction1559, 'from' | 'gasLimit'>>,
+	params: SimulatedCallParams,
 	blockTag: EthereumBlockTag = 'latest',
 	extraOverrides: StateOverrides = {},
 ) => {
@@ -1389,7 +1401,7 @@ export const simulatedCallFromInput = async (
 	ethereumClientService: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 	simulationStateInput: ResolvedSimulationInput,
-	params: Pick<IUnsignedTransaction1559, 'to' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'input' | 'value'> & Partial<Pick<IUnsignedTransaction1559, 'from' | 'gasLimit'>>,
+	params: SimulatedCallParams,
 	blockTag: EthereumBlockTag = 'latest',
 ) => {
 	return await simulatedCallWithPreparedInputContext(
@@ -1556,7 +1568,7 @@ export const simulateEstimateGasFromInput = async (
 		to: data.to === undefined ? null : data.to,
 		value: data.value === undefined ? 0n : data.value,
 		input: getInputFieldFromDataOrInput(data),
-		accessList: []
+		accessList: data.accessList ?? []
 	}
 	const estimateGasTransaction = await createEip1559Or7702Transaction(estimateGasTransactionBase, data)
 	try {
@@ -1664,6 +1676,7 @@ const getLogsOfPreparedSimulatedExecutionBlock = (executionBlock: PreparedSimula
 
 	return events.filter((x) =>
 		(logFilter.address === undefined
+			|| logFilter.address === null
 			|| x.address === logFilter.address
 			|| (Array.isArray(logFilter.address) && logFilter.address.includes(x.address))
 		)
@@ -2095,7 +2108,7 @@ export const getSimulatedFeeHistory = async (ethereumClientService: EthereumClie
 
 				// we can have negative values here, as The Interceptor creates maxFeePerGas = 0 transactions that are intended to have zero base fee, which is not possible in reality
 				const zeroOutNegativeValues = effectivePriorityAndGasWeights.map((point) => modifyObject(point, { dataPoint: max(0n, point.dataPoint) }))
-				return calculateWeightedPercentile(zeroOutNegativeValues, BigInt(percentile))
+				return calculateWeightedPercentile(zeroOutNegativeValues, percentile)
 			})]
 		}
 	}

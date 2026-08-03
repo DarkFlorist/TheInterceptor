@@ -190,8 +190,8 @@ async function handleRPCRequest(
 		eth_maxPriorityFeePerGas: rpcRequestHandler('eth_maxPriorityFeePerGas', async () => await maxPriorityFeePerGas(ethereum)),
 		eth_newFilter: rpcRequestHandler('eth_newFilter', async (_context, rpcRequest) => await withSimulationInput((simulationInput) => installNewFilter(socket, rpcRequest, ethereum, simulationInput))),
 		eth_uninstallFilter: rpcRequestHandler('eth_uninstallFilter', async (_context, rpcRequest) => await uninstallNewFilter(socket, rpcRequest)),
-		eth_getFilterChanges: rpcRequestHandler('eth_getFilterChanges', async (_context, rpcRequest) => await withExecutionSimulationState((simulationState) => getFilterChanges(rpcRequest, ethereum, simulationState))),
-		eth_getFilterLogs: rpcRequestHandler('eth_getFilterLogs', async (_context, rpcRequest) => await withExecutionSimulationState((simulationState) => getFilterLogs(rpcRequest, ethereum, simulationState))),
+		eth_getFilterChanges: rpcRequestHandler('eth_getFilterChanges', async (_context, rpcRequest) => await withExecutionSimulationState((simulationState) => getFilterChanges(socket, rpcRequest, ethereum, simulationState))),
+		eth_getFilterLogs: rpcRequestHandler('eth_getFilterLogs', async (_context, rpcRequest) => await withExecutionSimulationState((simulationState) => getFilterLogs(socket, rpcRequest, ethereum, simulationState))),
 		InterceptorError: rpcRequestHandler('InterceptorError', async (_context, rpcRequest) => await handleInterceptorError(rpcRequest)),
 	} as const satisfies Record<ParsedRpcRequest['method'], RpcRequestHandler>
 	return await rpcRequestHandlers[parsedRequest.method](undefined, parsedRequest)

@@ -155,7 +155,7 @@ type SubscriptionReturnValue = funtypes.Static<typeof SubscriptionReturnValue>
 const SubscriptionReturnValue = funtypes.ReadonlyObject({
 	method: funtypes.Literal('newHeads'),
 	result: funtypes.ReadonlyObject({
-		subscription: funtypes.Literal('newHeads'),
+		subscription: funtypes.String,
 		result: EthereumBlockHeaderWithTransactionHashes
 	})
 })

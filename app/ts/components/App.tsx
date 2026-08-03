@@ -160,7 +160,7 @@ export function App() {
 				abi: undefined,
 				useAsActiveAddress: true,
 				declarativeNetRequestBlockMode: undefined,
-				chainId: rpcConnectionStatus.peek()?.rpcNetwork.chainId || 1n,
+				chainId: rpcConnectionStatus.peek()?.rpcNetwork.chainId ?? 1n,
 			}
 		} } as const
 		appPage.value = { page: 'AddNewAddress', state: new Signal(newPage.state) }
@@ -190,7 +190,7 @@ export function App() {
 				abi: undefined,
 				useAsActiveAddress: true,
 				declarativeNetRequestBlockMode: undefined,
-				chainId: rpcConnectionStatus.peek()?.rpcNetwork.chainId || 1n,
+				chainId: rpcConnectionStatus.peek()?.rpcNetwork.chainId ?? 1n,
 			} }
 		} as const
 		appPage.value = { page: 'AddNewAddress', state: new Signal(newPage.state) }

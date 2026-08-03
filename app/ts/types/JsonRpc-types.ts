@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { CanonicalEthereumQuantity, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignatureParity, LiteralConverterParserFactory } from './wire-types.js'
+import { CanonicalEthereumQuantity, EthereumAccessList, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignatureParity, LiteralConverterParserFactory } from './wire-types.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { EthSimulateV1Params } from './ethSimulate-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
@@ -86,6 +86,7 @@ export const PartialEthereumTransaction = funtypes.ReadonlyPartial({
 	maxFeePerGas: funtypes.Union(EthereumQuantity, funtypes.Null), // etherscan sets this field to null, remove this if etherscan fixes this
 	data: EthereumData,
 	input: EthereumData,
+	accessList: EthereumAccessList,
 	authorizationList: funtypes.ReadonlyArray(funtypes.ReadonlyObject({
 		chainId: EthereumQuantity,
 		address: EthereumAddress,
@@ -246,9 +247,9 @@ export const EstimateGasParams = funtypes.ReadonlyObject({
 export type EthCallParams = funtypes.Static<typeof EthCallParams>
 export const EthCallParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_call'),
-	params: funtypes.ReadonlyTuple(
-		PartialEthereumTransaction,
-		EthereumBlockTag
+	params: funtypes.Union(
+		funtypes.ReadonlyTuple(PartialEthereumTransaction),
+		funtypes.ReadonlyTuple(PartialEthereumTransaction, EthereumBlockTag),
 	)
 }).asReadonly()
 
@@ -433,7 +434,7 @@ export const FeeHistory = funtypes.ReadonlyObject({
 const EthNewFilterOptions = funtypes.ReadonlyPartial({
 	fromBlock: EthereumBlockTag,
 	toBlock: EthereumBlockTag,
-	address: EthereumAddress,
+	address: funtypes.Union(EthereumAddress, funtypes.ReadonlyArray(EthereumAddress), funtypes.Null),
 	topics: funtypes.ReadonlyArray(funtypes.Union(EthereumBytes32, funtypes.ReadonlyArray(EthereumBytes32), funtypes.Null)),
 	blockHash: EthereumBytes32,
 	blockhash: funtypes.Never,

@@ -4,6 +4,8 @@ import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from
 export type ChainIdWithUniversal = funtypes.Static<typeof ChainIdWithUniversal>
 export const ChainIdWithUniversal = funtypes.Union(EthereumQuantity, funtypes.Literal('AllChains'))
 
+export const doAddressBookChainIdsMatch = (left: ChainIdWithUniversal | undefined, right: ChainIdWithUniversal | undefined) => (left ?? 1n) === (right ?? 1n)
+
 export type EntrySource = funtypes.Static<typeof EntrySource>
 export const EntrySource = funtypes.Union(
 	funtypes.Literal('DarkFloristMetadata'),

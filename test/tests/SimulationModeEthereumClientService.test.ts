@@ -6,7 +6,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { addressString, bytes32String, dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { EthereumAddress, EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction, serialize } from '../../app/ts/types/wire-types.js'
-import { createExecutionSimulationState, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalanceFromInput, getSimulatedBlock, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCode, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGas, simulateEstimateGasFromInput, simulatePersonalSign, simulatedCall, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, createSimulationCallParams, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getSimulatedBalanceFromInput, getSimulatedBlock, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCode, getSimulatedCodeFromInput, getSimulatedFeeHistory, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGas, simulateEstimateGasFromInput, simulatePersonalSign, simulatedCall, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthTransactionReceiptResponse, EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { RPCReply } from '../../app/ts/types/interceptor-messages.js'
 import type { EthSimulateV1BlockTag, EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
@@ -1290,6 +1290,45 @@ describe('SimulationModeEthereumClientService', () => {
 			assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.lastCallGas, explicitGas)
 		})
 
+		test('eth_call simulation parameters preserve gas, fee, and access-list fields', () => {
+			const accessList = [{ address: 0x2n, storageKeys: [0x42n] }] as const
+			const params = createSimulationCallParams({
+				to: 0x2n,
+				gas: 54_321n,
+				maxFeePerGas: 99n,
+				maxPriorityFeePerGas: 3n,
+				accessList,
+			}, 0x1n)
+
+			assert.equal(params.gasLimit, 54_321n)
+			assert.equal(params.maxFeePerGas, 99n)
+			assert.equal(params.maxPriorityFeePerGas, 3n)
+			assert.deepEqual(params.accessList, accessList)
+		})
+
+		test('gas estimation preserves access lists in both simulation-state paths', async () => {
+			const accessList = [{ address: 0x2n, storageKeys: [0x42n] }] as const
+			const transaction = {
+				from: exampleTransaction.from,
+				to: exampleTransaction.to,
+				value: exampleTransaction.value,
+				input: exampleTransaction.input,
+				accessList,
+			}
+
+			const fromInputEstimate = await simulateEstimateGasFromInput(ethereum, undefined, [], transaction)
+			if ('error' in fromInputEstimate) throw new Error(`estimate gas unexpectedly failed: ${ fromInputEstimate.message }`)
+			const fromInputRequest = requestHandler.ethSimulateV1Requests.at(-1)
+			assert.deepEqual(fromInputRequest?.params[0].blockStateCalls.at(-1)?.calls[0]?.accessList, accessList)
+
+			const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput())
+			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+			const fromStateEstimate = await simulateEstimateGas(ethereum, undefined, toResolvedSimulationState(simulationState), transaction)
+			if ('error' in fromStateEstimate) throw new Error(`estimate gas unexpectedly failed: ${ fromStateEstimate.message }`)
+			const fromStateRequest = requestHandler.ethSimulateV1Requests.at(-1)
+			assert.deepEqual(fromStateRequest?.params[0].blockStateCalls.at(-1)?.calls[0]?.accessList, accessList)
+		})
+
 		test('simulateEstimateGasFromInput validates and projects signed 7702 authorizations', async () => {
 			requestHandler.ethSimulateV1Calls.length = 0
 			const clearDelegationAuthorization = eip7702Authorization.sign({
@@ -1591,6 +1630,15 @@ describe('SimulationModeEthereumClientService', () => {
 			} finally {
 				requestHandler.maxPriorityFeePerGasResponse = '0x3b9aca00'
 			}
+		})
+
+		test('getSimulatedFeeHistory calculates fractional reward percentiles', async () => {
+			const feeHistory = await getSimulatedFeeHistory(ethereum, undefined, {
+				method: 'eth_feeHistory',
+				params: [1n, 'latest', [0.5, 25.25, 99.999]],
+			})
+
+			assert.equal(feeHistory.reward?.[0]?.length, 3)
 		})
 
 		test('simulateEstimateGasFromInput surfaces RPC errors when omitted gas is rejected', async () => {

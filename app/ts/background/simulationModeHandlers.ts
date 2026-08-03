@@ -1,6 +1,6 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { createEthereumSubscription, createNewFilter, getEthFilterChanges, getEthFilterLogs, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
-import { getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, simulatedCallFromInput, simulateEstimateGasFromInput, getInputFieldFromDataOrInput, getSimulatedFeeHistory, getSimulatedTransactionCountFromInput, ethSimulateV1FromInput } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { createSimulationCallParams, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, simulatedCallFromInput, simulateEstimateGasFromInput, getSimulatedFeeHistory, getSimulatedTransactionCountFromInput, ethSimulateV1FromInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GET_CODE_FAILED } from '../utils/constants.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { ResolvedExecutionSimulationState, ResolvedSimulationInput } from '../types/visualizer-types.js'
@@ -56,22 +56,7 @@ export async function sendTransaction(
 async function singleCallWithFromOverride(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EthCallParams, from: bigint) {
 	const callParams = request.params[0]
 	const blockTag = request.params.length > 1 ? request.params[1] : 'latest' as const
-	const gasPrice = callParams.gasPrice !== undefined ? callParams.gasPrice : 0n
-	const value = callParams.value !== undefined ? callParams.value : 0n
-
-	const callTransaction = {
-		type: '1559' as const,
-		from,
-		chainId: ethereumClientService.getChainId(),
-		maxFeePerGas: gasPrice,
-		maxPriorityFeePerGas: 0n,
-		to: callParams.to === undefined ? null : callParams.to,
-		value,
-		input: getInputFieldFromDataOrInput(callParams),
-		accessList: [],
-	}
-
-	return await simulatedCallFromInput(ethereumClientService, undefined, simulationInput, callTransaction, blockTag)
+	return await simulatedCallFromInput(ethereumClientService, undefined, simulationInput, createSimulationCallParams(callParams, from), blockTag)
 }
 
 export async function call(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EthCallParams) {
@@ -208,15 +193,15 @@ export async function uninstallNewFilter(socket: WebsiteSocket, request: Uninsta
 	return { type: 'result' as const, method: request.method, result: await removeEthereumSubscription(socket, request.params[0]) }
 }
 
-export async function getFilterChanges(request: GetFilterChanges, ethereumClientService: EthereumClientService, simulationState: ResolvedExecutionSimulationState) {
-	const result = await getEthFilterChanges(request.params[0], ethereumClientService, undefined, simulationState)
+export async function getFilterChanges(socket: WebsiteSocket, request: GetFilterChanges, ethereumClientService: EthereumClientService, simulationState: ResolvedExecutionSimulationState) {
+	const result = await getEthFilterChanges(socket, request.params[0], ethereumClientService, undefined, simulationState)
 	if (result === undefined) return { type: 'result' as const, method: request.method, error: { code: METAMASK_ERROR_BLANKET_ERROR, message: 'No filter found for identifier' } }
 
 	return { type: 'result' as const, method: request.method, result }
 }
 
-export async function getFilterLogs(request: GetFilterLogs, ethereumClientService: EthereumClientService, simulationState: ResolvedExecutionSimulationState) {
-	const result = await getEthFilterLogs(request.params[0], ethereumClientService, undefined, simulationState)
+export async function getFilterLogs(socket: WebsiteSocket, request: GetFilterLogs, ethereumClientService: EthereumClientService, simulationState: ResolvedExecutionSimulationState) {
+	const result = await getEthFilterLogs(socket, request.params[0], ethereumClientService, undefined, simulationState)
 	if (result === undefined) return { type: 'result' as const, method: request.method, error: { code: METAMASK_ERROR_BLANKET_ERROR, message: 'No filter found for identifier' } }
 	return { type: 'result' as const, method: request.method, result }
 }

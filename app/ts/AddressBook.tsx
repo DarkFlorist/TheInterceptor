@@ -204,7 +204,7 @@ export function AddressBook() {
 	const addressBookEntriesWithFilter = useSignal<AddressBookEntriesWithFilter>({ addressBookEntries: [], activeFilter: 'My Active Addresses' })
 	const addressBookEntries = useComputed(() => addressBookEntriesWithFilter.value.addressBookEntries || [])
 	const activeChain = useSignal<ChainEntry | undefined>(undefined)
-	const activeChainId = useComputed(() => activeChain.value?.chainId || 1n)
+	const activeChainId = useComputed(() => activeChain.value?.chainId ?? 1n)
 	const rpcEntries = useSignal<RpcEntries>([])
 	const viewFilter = useSignal<ViewFilter>({ activeFilter: 'My Active Addresses', searchString: '', chain: undefined })
 	const modalState = useSignal<Modals>({ page: 'noModal' })
@@ -313,7 +313,7 @@ export function AddressBook() {
 				safeVersion: undefined,
 				useAsActiveAddress: filter === 'My Active Addresses' || filter === 'My Safes',
 				declarativeNetRequestBlockMode: undefined,
-				chainId: activeChain.peek()?.chainId || 1n,
+				chainId: activeChain.peek()?.chainId ?? 1n,
 			}
 		}) }
 		return
@@ -329,7 +329,7 @@ export function AddressBook() {
 			data: {
 				address: entry.address,
 				addressBookCategory: viewFilter.value.activeFilter,
-				chainId: entry.chainId || 1n,
+				chainId: entry.chainId ?? 1n,
 			}
 		})
 	}
