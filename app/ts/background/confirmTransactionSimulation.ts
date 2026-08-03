@@ -1,5 +1,6 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransactionsToInput, getSignedTransactionForSimulation } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { appendTransactionsToInput } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { createSafeExecutionPreSimulationTransaction } from '../safe/safeSimulation.js'
 import type { ConfirmTransactionTransactionSingleVisualization } from '../types/accessRequest.js'
