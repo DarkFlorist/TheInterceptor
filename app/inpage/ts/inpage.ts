@@ -242,7 +242,7 @@ interface ProviderMessage {
 }
 
 type JsonRpcResponse = IJsonRpcSuccess<unknown> | IJsonRpcError
-type LegacyJsonRpcCallback = (error: IJsonRpcError | null, response: JsonRpcResponse | JsonRpcResponse[] | null) => void
+type LegacyJsonRpcCallback = (error: Error | null, response: JsonRpcResponse | JsonRpcResponse[] | null) => void
 
 type SignerAccountsReply =
 	| { readonly type: 'success', readonly accounts: readonly string[], readonly requestAccounts: boolean }
@@ -976,23 +976,18 @@ class InterceptorMessageListener {
 					}
 				}
 			}
-			return {
-				jsonrpc: '2.0',
-				id: param.id,
-				error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR }
-			}
+			throw error
 		}
 	}
 
 	private readonly WindowEthereumSendAsync = async (payload: SingleSendAsyncParam | SingleSendAsyncParam[], callback: LegacyJsonRpcCallback) => {
-		if (Array.isArray(payload)) {
-			const responses = await Promise.all(payload.map((param) => this.getWindowEthereumSendAsyncResponse(param)))
-			callback(null, responses)
-			return
-		}
-		const response = await this.getWindowEthereumSendAsyncResponse(payload)
-		if ('error' in response) {
-			callback(response, null)
+		let response: JsonRpcResponse | JsonRpcResponse[]
+		try {
+			response = Array.isArray(payload)
+				? await Promise.all(payload.map((param) => this.getWindowEthereumSendAsyncResponse(param)))
+				: await this.getWindowEthereumSendAsyncResponse(payload)
+		} catch (error: unknown) {
+			callback(error instanceof Error ? error : new Error(`Unexpected sendAsync failure: ${ String(error) }`), null)
 			return
 		}
 		callback(null, response)

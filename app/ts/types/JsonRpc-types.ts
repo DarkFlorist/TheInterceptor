@@ -421,13 +421,21 @@ export const EthMaxPriorityFeePerGasParams = funtypes.ReadonlyObject({
 
 //https://docs.infura.io/networks/ethereum/json-rpc-methods/eth_feehistory
 const EthereumQuantityBetween1And1024 = EthereumQuantity.withConstraint((x) => x >= 1n && x <= 1024n)
+const FeeHistoryRewardPercentiles = funtypes.ReadonlyArray(funtypes.Number).withConstraint((percentiles) => {
+	let previousPercentile = 0
+	for (const percentile of percentiles) {
+		if (!Number.isFinite(percentile) || percentile < 0 || percentile > 100 || percentile < previousPercentile) return false
+		previousPercentile = percentile
+	}
+	return true
+})
 
 export type FeeHistory = funtypes.Static<typeof FeeHistory>
 export const FeeHistory = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_feeHistory'),
 	params: funtypes.Union(
 		funtypes.ReadonlyTuple(EthereumQuantityBetween1And1024, EthereumBlockTag),
-		funtypes.ReadonlyTuple(EthereumQuantityBetween1And1024, EthereumBlockTag, funtypes.ReadonlyArray(funtypes.Number))
+		funtypes.ReadonlyTuple(EthereumQuantityBetween1And1024, EthereumBlockTag, FeeHistoryRewardPercentiles)
 	)
 })
 

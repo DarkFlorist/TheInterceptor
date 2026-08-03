@@ -286,6 +286,94 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 }
 
 describe('inpage signer bridge', () => {
+	test('returns JSON-RPC failures through the sendAsync response argument', async () => {
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method !== 'eth_chainId' || request.internal === true) return false
+				sendBackgroundMessage({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: request.method,
+					error: { code: -32000, message: 'RPC failed' },
+				})
+				return true
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?send-async-json-rpc-error', async () => {
+			const sendAsync = Reflect.get(fakeWindow.ethereum, 'sendAsync')
+			if (typeof sendAsync !== 'function') throw new Error('sendAsync is unavailable')
+			const callbackArguments = await new Promise<readonly [unknown, unknown]>((resolve) => {
+				void sendAsync({ id: 71, method: 'eth_chainId', params: [] }, (error: unknown, response: unknown) => resolve([error, response]))
+			})
+
+			assert.equal(callbackArguments[0], null)
+			const response = callbackArguments[1]
+			if (!isRecord(response) || !isRecord(response.error)) throw new Error('Malformed JSON-RPC error response')
+			assert.equal(response.id, 71)
+			assert.equal(response.error.code, -32000)
+			assert.equal(response.error.message, 'RPC failed')
+		})
+	})
+
+	test('returns bridge transport failures through the sendAsync error argument', async () => {
+		const { fakeWindow, signerRequests } = createFakeWindow()
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?send-async-transport-error', async () => {
+			await waitFor(() => signerRequests.includes('eth_chainId'))
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			const sendAsync = Reflect.get(fakeWindow.ethereum, 'sendAsync')
+			if (typeof sendAsync !== 'function') throw new Error('sendAsync is unavailable')
+			const postMessageDescriptor = Object.getOwnPropertyDescriptor(MessagePort.prototype, 'postMessage')
+			if (postMessageDescriptor === undefined) throw new Error('MessagePort.postMessage descriptor is unavailable')
+			Object.defineProperty(MessagePort.prototype, 'postMessage', {
+				...postMessageDescriptor,
+				value: () => { throw new Error('bridge transport failed') },
+			})
+			let callbackArguments: readonly [unknown, unknown]
+			try {
+				callbackArguments = await new Promise<readonly [unknown, unknown]>((resolve) => {
+					void sendAsync({ id: 72, method: 'eth_chainId', params: [] }, (error: unknown, response: unknown) => resolve([error, response]))
+				})
+			} finally {
+				Object.defineProperty(MessagePort.prototype, 'postMessage', postMessageDescriptor)
+			}
+
+			assert.equal(callbackArguments[0] instanceof Error, true)
+			if (!(callbackArguments[0] instanceof Error)) throw new Error('Expected a transport Error')
+			assert.equal(callbackArguments[0].message, 'bridge transport failed')
+			assert.equal(callbackArguments[1], null)
+		})
+	})
+
+	test('does not invoke a sendAsync callback twice when the dapp callback throws', async () => {
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method !== 'eth_chainId' || request.internal === true) return false
+				sendBackgroundMessage({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: request.method,
+					error: { code: -32000, message: 'RPC failed' },
+				})
+				return true
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?send-async-callback-error', async () => {
+			const sendAsync = Reflect.get(fakeWindow.ethereum, 'sendAsync')
+			if (typeof sendAsync !== 'function') throw new Error('sendAsync is unavailable')
+			let callbackCount = 0
+			await assert.rejects(async () => await sendAsync({ id: 73, method: 'eth_chainId', params: [] }, () => {
+				callbackCount += 1
+				throw new Error('dapp callback failed')
+			}), /dapp callback failed/)
+			assert.equal(callbackCount, 1)
+		})
+	})
+
 	test('annotates only public eth_requestAccounts requests for replay after disconnect', async () => {
 		const bridgeRequests: InpageRequest[] = []
 		const account = '0x1111111111111111111111111111111111111111'

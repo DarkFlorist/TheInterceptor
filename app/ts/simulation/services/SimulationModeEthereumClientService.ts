@@ -1,7 +1,7 @@
 import { type EthereumClientService, getNextBlockTimeStampOverride } from './EthereumClientService.js'
 import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
-import { type EthereumUnsignedTransaction, type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction, type EthereumBlockHeaderTransaction } from '../../types/wire-types.js'
-import { addressString, bigintSecondsToDate, bigintToUint8Array, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
+import { type EthereumUnsignedTransaction, type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
+import { addressString, bigintSecondsToDate, bigintToUint8Array, bytes32String, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
 import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock, BlockTimeManipulationDeltaUnit, ExecutionSimulatedTransaction, ExecutionSimulationState, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState, WebsiteCreatedEthereumTransaction } from '../../types/visualizer-types.js'
 import type { Abi } from '../../utils/ethereumPrimitives.js'
@@ -959,7 +959,7 @@ const canQueryNodeDirectly = async (simulationState: SimulationState, blockTag: 
 }
 
 export const getDeployedContractAddress = (from: EthereumAddress, nonce: EthereumQuantity): EthereumAddress => {
-	return BigInt(`0x${ keccak256(rlpEncode([stripLeadingZeros(bigintToUint8Array(from, 20)), stripLeadingZeros(bigintToUint8Array(nonce, 32))])).slice(26) }`)
+	return BigInt(`0x${ keccak256(rlpEncode([bigintToUint8Array(from, 20), stripLeadingZeros(bigintToUint8Array(nonce, 32))])).slice(26) }`)
 }
 
 export const getSimulatedTransactionReceipt = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedExecutionSimulationState, hash: bigint): Promise<EthTransactionReceiptResponse> => {
@@ -1684,8 +1684,13 @@ const getLogsOfPreparedSimulatedExecutionBlock = (executionBlock: PreparedSimula
 	)
 }
 
-const resolveLogsBlockTag = (blockTag: EthereumBlockTag, latestBlockNumber: bigint) => {
+const resolveLogsBlockTag = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, blockTag: EthereumBlockTag, latestBlockNumber: bigint) => {
 	if (blockTag === 'latest' || blockTag === 'pending') return latestBlockNumber
+	if (isNodeOnlyBlockTag(blockTag)) {
+		const block = await ethereumClientService.getBlock(requestAbortController, blockTag, false)
+		if (block === null) throw new Error(`Block '${ blockTag }' was not found`)
+		return block.number
+	}
 	return blockTag
 }
 
@@ -1698,7 +1703,6 @@ export const getSimulatedLogs = async (ethereumClientService: EthereumClientServ
 	const toBlock = 'toBlock' in logFilter && logFilter.toBlock !== undefined ? logFilter.toBlock : 'latest'
 	const fromBlock = 'fromBlock' in logFilter && logFilter.fromBlock !== undefined ? logFilter.fromBlock : 'latest'
 	if (toBlock === 'pending' || fromBlock === 'pending') return await ethereumClientService.getLogs(logFilter, requestAbortController)
-	if (isNodeOnlyBlockTag(toBlock) || isNodeOnlyBlockTag(fromBlock)) return await ethereumClientService.getLogs(logFilter, requestAbortController)
 	if ((fromBlock === 'latest' && toBlock !== 'latest') || (fromBlock !== 'latest' && toBlock !== 'latest' && fromBlock > toBlock )) throw new Error(`From block '${ fromBlock }' is later than to block '${ toBlock }' `)
 
 	const simulatedHead = currentState.blockNumber + BigInt(executionBlocks.length)
@@ -1707,9 +1711,8 @@ export const getSimulatedLogs = async (ethereumClientService: EthereumClientServ
 		if (executionBlock !== undefined) return getLogsOfPreparedSimulatedExecutionBlock(executionBlock, logFilter)
 		return await ethereumClientService.getLogs(logFilter, requestAbortController)
 	}
-	const fromBlockNum = resolveLogsBlockTag(fromBlock, simulatedHead)
-	const toBlockNum = resolveLogsBlockTag(toBlock, simulatedHead)
-	if (typeof fromBlockNum !== 'bigint' || typeof toBlockNum !== 'bigint') return await ethereumClientService.getLogs(logFilter, requestAbortController)
+	const fromBlockNum = await resolveLogsBlockTag(ethereumClientService, requestAbortController, fromBlock, simulatedHead)
+	const toBlockNum = await resolveLogsBlockTag(ethereumClientService, requestAbortController, toBlock, simulatedHead)
 	if (fromBlockNum > toBlockNum) return []
 	const nodeLogs = fromBlockNum <= currentState.blockNumber
 		? await ethereumClientService.getLogs({
@@ -2080,36 +2083,12 @@ const getTokenBalancesAfter = async (
 	}
 }
 
-// takes the most recent block that the application is querying and does the calculation based on that
 export const getSimulatedFeeHistory = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, request: FeeHistory): Promise<EthGetFeeHistoryResponse> => {
-	//const numberOfBlocks = Number(request.params[0]) // number of blocks, not used atm as we just return one block
 	const blockTag = request.params[1]
-	const rewardPercentiles = request.params[2]
 	const currentRealBlockNumber = await ethereumClientService.getBlockNumber(requestAbortController)
 	const clampedBlockTag = typeof blockTag === 'bigint' && blockTag > currentRealBlockNumber ? currentRealBlockNumber : blockTag
-	const newestBlock = await ethereumClientService.getBlock(requestAbortController, clampedBlockTag, true)
-	if (newestBlock === null) throw new Error('The latest block is null')
-	const newestBlockBaseFeePerGas = newestBlock.baseFeePerGas
-	if (newestBlockBaseFeePerGas === undefined) throw new Error(`base fee per gas is missing for the block (it's too old)`)
-	return {
-		baseFeePerGas: [newestBlockBaseFeePerGas, getNextBaseFeePerGas(newestBlock.gasUsed, newestBlock.gasLimit, newestBlockBaseFeePerGas)],
-		gasUsedRatio: [Number(newestBlock.gasUsed) / Number(newestBlock.gasLimit)],
-		oldestBlock: newestBlock.number,
-		...rewardPercentiles === undefined ? {} : {
-			reward: [rewardPercentiles.map((percentile) => {
-				// we are using transaction.gas as a weighting factor while this should be `gasUsed`. Getting `gasUsed` requires getting transaction receipts, which we don't want to be doing
-				const getDataPoint = (tx: EthereumBlockHeaderTransaction) => {
-					if ('maxPriorityFeePerGas' in tx && 'maxFeePerGas' in tx && 'gas' in tx) return { dataPoint: min(tx.maxPriorityFeePerGas, tx.maxFeePerGas - (newestBlockBaseFeePerGas ?? 0n)), weight: tx.gas }
-					if ('gasPrice' in tx && 'gas' in tx) return { dataPoint: tx.gasPrice - (newestBlockBaseFeePerGas ?? 0n), weight: tx.gas }
-					return { dataPoint: 0n, weight: 0n }
-				}
-
-				const effectivePriorityAndGasWeights = newestBlock.transactions.map((tx) => getDataPoint(tx))
-
-				// we can have negative values here, as The Interceptor creates maxFeePerGas = 0 transactions that are intended to have zero base fee, which is not possible in reality
-				const zeroOutNegativeValues = effectivePriorityAndGasWeights.map((point) => modifyObject(point, { dataPoint: max(0n, point.dataPoint) }))
-				return calculateWeightedPercentile(zeroOutNegativeValues, percentile)
-			})]
-		}
-	}
+	const clampedRequest: FeeHistory = request.params.length === 2
+		? { ...request, params: [request.params[0], clampedBlockTag] }
+		: { ...request, params: [request.params[0], clampedBlockTag, request.params[2]] }
+	return await ethereumClientService.getFeeHistory(clampedRequest, requestAbortController)
 }

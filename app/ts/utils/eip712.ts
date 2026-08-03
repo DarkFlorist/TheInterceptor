@@ -246,32 +246,6 @@ const simplifyTypesToSolidityTypesOnly = (root: string, nonExtractedTypes: EIP71
 	return { valid: true, tree: extracted }
 }
 
-const isValidEIP712DomainOrder = (expected: readonly string[], test: readonly string[]): boolean => {
-	const matched = test.filter(t => expected.includes(t))
-	const expectedIndex = (field: string) => expected.indexOf(field)
-	const isOrdered = matched.every((field, idx, arr) => {
-		if (idx === 0) return true
-		const previous = arr[idx - 1]
-		if (previous === undefined) throw new Error('array underflow')
-		return expectedIndex(previous) <= expectedIndex(field)
-	})
-	if (!isOrdered) return false
-	// Find the index in test where matched expected fields end
-	const lastMatchedIndex = test.findIndex((t, i) => {
-		if (i === 0) return false
-		const previous = test[i - 1]
-		if (previous === undefined) throw new Error('array underflow')
-		return expected.includes(previous) && !expected.includes(t)
-	})
-	const extras = lastMatchedIndex === -1 ? [] : test.slice(lastMatchedIndex).filter(t => !expected.includes(t))
-	return extras.every((field, i, arr) => {
-		if (i === 0) return true
-		const previous = arr[i - 1]
-		if (previous === undefined) throw new Error('array underflow')
-		return previous <= field
-	})
-}
-
 export const verifyEip712Message = (maybeEip712Message: EIP712Message): { valid: true } | { valid: false, reason: string } => {
 	if (Object.values(maybeEip712Message).length !== 4) return { valid: false, reason: 'EIP712 message should only have 4 fields' }
 
@@ -299,8 +273,6 @@ export const verifyEip712Message = (maybeEip712Message: EIP712Message): { valid:
 	if ('verifyingContract' in maybeEip712Message.domain && !EthereumAddress.safeParse(verifyingContract).success) return { valid: false, reason: 'EIP712Domain.verifyingContract is in wrong type' }
 	if ('name' in maybeEip712Message.domain && !String.safeParse(name).success) return { valid: false, reason: 'EIP712Domain.name is in wrong type' }
 	if ('salt' in maybeEip712Message.domain && !EthereumData.safeParse(salt).success) return { valid: false, reason: 'EIP712Domain.salt is in wrong type' }
-
-	if (!isValidEIP712DomainOrder(validEIP712DomainEntries.map((entry) => entry.name), eip712Domain.map((entry) => entry.name))) return { valid: false, reason: 'EIP712Domain types are in the wrong order' }
 
 	// domain fields exist in valid in types
 	const domainArray = Object.entries(maybeEip712Message.domain)
