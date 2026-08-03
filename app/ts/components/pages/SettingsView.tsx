@@ -1,5 +1,5 @@
 
-import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport } from '../../background/backgroundUtils.js'
 import { MessageToPopup, type ImportSettingsReply } from '../../types/interceptor-messages.js'
 import { type RpcEntries, RpcEntry } from '../../types/rpc.js'
 import { useEffect } from 'preact/hooks'
@@ -38,10 +38,46 @@ function CheckBoxSetting(param: CheckBoxSettingParam) {
 	)
 }
 
+type DownloadUrlApi = Pick<typeof URL, 'createObjectURL' | 'revokeObjectURL'>
+type ScheduleObjectUrlCleanup = (cleanup: () => void) => void
+const OBJECT_URL_CLEANUP_DELAY_MS = 1000
+const scheduleObjectUrlCleanup: ScheduleObjectUrlCleanup = (cleanup) => { setTimeout(cleanup, OBJECT_URL_CLEANUP_DELAY_MS) }
+
+export function withObjectUrl<T>(blob: Blob, useObjectUrl: (objectUrl: string) => T, urlApi: DownloadUrlApi = URL, scheduleCleanup: ScheduleObjectUrlCleanup = scheduleObjectUrlCleanup) {
+	const objectUrl = urlApi.createObjectURL(blob)
+	try {
+		return useObjectUrl(objectUrl)
+	} finally {
+		scheduleCleanup(() => urlApi.revokeObjectURL(objectUrl))
+	}
+}
+
+function downloadFile(filename: string, fileContents: string) {
+	const blobData = new Blob([fileContents], { type: 'text/json; charset=utf-8' })
+	withObjectUrl(blobData, (objectUrl) => {
+		const anchor = document.createElement('a')
+		anchor.href = objectUrl
+		anchor.download = filename
+		anchor.style.display = 'none'
+		document.body.appendChild(anchor)
+		try {
+			anchor.click()
+		} finally {
+			document.body.removeChild(anchor)
+		}
+	})
+}
+
+export async function readAndImportSettingsFile(file: Pick<File, 'text'>, importFileContents: (fileContents: string) => Promise<void>) {
+	const fileContents = await file.text()
+	await importFileContents(fileContents)
+}
+
 function ImportExport() {
 	const settingsReply = useSignal<ImportSettingsReply | undefined>(undefined)
 	const dismissedNotification = useSignal<boolean>(false)
 	const errorText = useComputed(() => settingsReply.value?.data.success === false ? settingsReply.value.data.errorMessage : undefined)
+	const { value: importSettingsState, waitFor: waitForImportSettings } = useAsyncState<void>()
 
 	useEffect(() => {
 		function popupMessageListener(msg: unknown): false {
@@ -62,39 +98,23 @@ function ImportExport() {
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
 
-	const downloadFile = (filename: string, fileContents: string) => {
-		window.URL = window.webkitURL || window.URL
-		const blobData = new Blob([fileContents], { type: 'text/json; charset = utf-8' })
-		const a = document.createElement('a')
-		a.href = window.URL.createObjectURL(blobData)
-		a.download = filename
-		a.style.display = 'none'
-		document.body.appendChild(a)
-		a.click()
-		document.body.removeChild(a)
-	}
-
-	const importSettings = async (inputElement: { target: EventTarget | EventTarget & { files: FileList } | null }) => {
-		if (inputElement.target === null) return
-		if (!('files' in inputElement.target)) throw new Error('Did not select one file.')
-		if (inputElement.target.files.length !== 1) throw new Error('Did not select one file.')
-		const reader = new FileReader()
-		const firstFile = inputElement.target.files[0]
-		if (firstFile === undefined) throw new Error('File was undefined')
-		reader.readAsText(firstFile)
-		reader.onloadend = async () => {
-			if (reader.result === null) throw new Error('failed to load file')
-			await sendPopupMessageToBackgroundPage({ method: 'popup_import_settings', data: { fileContents: reader.result as string } })
-		}
-		reader.onerror = () => {
-			console.error(reader.error)
-			throw new Error('error on importing settings')
-		}
+	const importSettings = (inputElement: { target: EventTarget | EventTarget & { files: FileList } | null }) => {
+		const inputTarget = inputElement.target
+		void waitForImportSettings(async () => {
+			if (inputTarget === null || !('files' in inputTarget)) throw new Error('Did not select one file.')
+			if (inputTarget.files.length !== 1) throw new Error('Did not select one file.')
+			const firstFile = inputTarget.files[0]
+			if (firstFile === undefined) throw new Error('File was undefined')
+			await readAndImportSettingsFile(firstFile, async (fileContents) => {
+				await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_import_settings', data: { fileContents } })
+			})
+		})
 	}
 	const { value: exportSettingsState, waitFor: waitForExportSettings } = useAsyncState<void>()
 	const exportSettings = () => void waitForExportSettings(async () => { await sendPopupMessageToBackgroundPage({ method: 'popup_get_export_settings' }) })
 
 	return <>
+		{ importSettingsState.value.state === 'rejected' ? <ErrorComponent text = { importSettingsState.value.error.message } /> : <></> }
 		{ settingsReply.value !== undefined && settingsReply.value.data.success === false ?
 			<ErrorComponent warning = { true } text = { errorText } />
 			: <></> }
@@ -106,9 +126,9 @@ function ImportExport() {
 			: <></> }
 		<div class = 'popup-button-row'>
 			<div class = 'settings-import-export-actions'>
-				<label class = 'button is-primary is-danger settings-import-export-button'>
-					Import settings
-					<input type = 'file' accept = '.json' onInput = { importSettings } style = 'position: absolute; width: 100%; height: 100%; opacity: 0;' />
+				<label class = { `button is-primary is-danger settings-import-export-button ${ importSettingsState.value.state === 'pending' ? 'is-loading' : '' }` }>
+					{ importSettingsState.value.state === 'pending' ? 'Importing settings...' : 'Import settings' }
+					<input type = 'file' accept = '.json' onInput = { importSettings } disabled = { importSettingsState.value.state === 'pending' } style = 'position: absolute; width: 100%; height: 100%; opacity: 0;' />
 				</label>
 				<AsyncActionButton
 					class = 'button is-primary settings-import-export-button'

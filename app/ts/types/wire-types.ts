@@ -2,6 +2,8 @@ import * as funtypes from 'funtypes'
 import type { UnionToIntersection } from '../utils/typescript.js'
 import { isHexEncodedNumber } from '../utils/bigint.js'
 
+const MAX_ETHEREUM_QUANTITY = 1n << 256n
+
 const BigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	parse: value => {
 		if (!/^0x([a-fA-F0-9]{1,64})$/.test(value)) return { success: false, message: `${value} is not a hex string encoded number.` }
@@ -10,6 +12,7 @@ const BigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['config'] = {
 	serialize: value => {
 		if (typeof value !== 'bigint') return { success: false, message: `${typeof value} is not a bigint.`}
 		if (value < 0n) return { success: false, message: `${typeof value} is not a non negative bigint.`}
+		if (value >= MAX_ETHEREUM_QUANTITY) return { success: false, message: `${ value } must be smaller than 2^256.` }
 		return { success: true, value: `0x${value.toString(16)}` }
 	},
 }
@@ -22,6 +25,7 @@ const CanonicalBigIntParser: funtypes.ParsedValue<funtypes.String, bigint>['conf
 	serialize: value => {
 		if (typeof value !== 'bigint') return { success: false, message: `${ typeof value } is not a bigint.` }
 		if (value < 0n) return { success: false, message: `${ value } is not a non-negative bigint.` }
+		if (value >= MAX_ETHEREUM_QUANTITY) return { success: false, message: `${ value } must be smaller than 2^256.` }
 		return { success: true, value: `0x${ value.toString(16) }` }
 	},
 }

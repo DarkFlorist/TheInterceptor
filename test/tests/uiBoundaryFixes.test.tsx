@@ -9,6 +9,10 @@ import { InlineCard } from '../../app/ts/components/subcomponents/InlineCard.js'
 import { parseTimePickerDeltaValue, TimePicker } from '../../app/ts/components/subcomponents/TimePicker.js'
 import { rpcEntriesToChainEntriesWithAllChainsEntry } from '../../app/ts/components/ui-utils.js'
 import { parseRpcFormData } from '../../app/ts/utils/rpcFormData.js'
+import { removeAddressBookEntryAndClose } from '../../app/ts/AddressBook.js'
+import { completeRpcFormMutation, removeRpcEntryAndKeepActiveRpcConsistent, saveRpcEntryAndKeepActiveRpcConsistent } from '../../app/ts/components/subcomponents/ConfigureRpcConnection.js'
+import { readAndImportSettingsFile, withObjectUrl } from '../../app/ts/components/pages/SettingsView.js'
+import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import { installDomMock } from './domMock.js'
 
 type TestNode = {
@@ -65,6 +69,131 @@ describe('UI boundary fixes', () => {
 			render(null, dom.document.body)
 			dom.restore()
 		}
+	})
+
+	test('gives each dropdown its own menu id and matching accessibility target', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(<div>
+					<DropDownMenu selected = { signal('One') } dropDownOptions = { signal<readonly string[]>(['One']) } onChangedCallBack = { () => undefined } buttonClassses = 'first-dropdown' />
+					<DropDownMenu selected = { signal('Two') } dropDownOptions = { signal<readonly string[]>(['Two']) } onChangedCallBack = { () => undefined } buttonClassses = 'second-dropdown' />
+				</div>, dom.document.body)
+			})
+
+			const menuIds = collectElements(dom.document.body, 'div')
+				.filter((element) => element.getAttribute?.('role') === 'menu')
+				.map((element) => element.getAttribute?.('id'))
+			const controlledIds = collectElements(dom.document.body, 'button')
+				.filter((element) => element.getAttribute?.('aria-haspopup') === 'true')
+				.map((element) => element.getAttribute?.('aria-controls'))
+			assert.equal(menuIds.length, 2)
+			assert.equal(new Set(menuIds).size, 2)
+			assert.deepEqual(controlledIds, menuIds)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('closes address removal only after the background mutation succeeds', async () => {
+		const entry: AddressBookEntry = { type: 'contact', name: 'Test', address: 1n, entrySource: 'User', chainId: 1n, useAsActiveAddress: false, askForAddressAccess: true }
+		let resolveRemoval = () => undefined
+		const removal = new Promise<void>((resolve) => { resolveRemoval = resolve })
+		let closeCount = 0
+		const action = removeAddressBookEntryAndClose(async () => await removal, entry, () => { closeCount += 1 })
+
+		await Promise.resolve()
+		assert.equal(closeCount, 0)
+		resolveRemoval()
+		await action
+		assert.equal(closeCount, 1)
+
+		await assert.rejects(removeAddressBookEntryAndClose(async () => { throw new Error('remove failed') }, entry, () => { closeCount += 1 }), /remove failed/)
+		assert.equal(closeCount, 1)
+	})
+
+	test('runs RPC dialog success cleanup only after a successful mutation', async () => {
+		let cleanupCount = 0
+		await completeRpcFormMutation(async () => undefined, () => { cleanupCount += 1 })
+		assert.equal(cleanupCount, 1)
+		await assert.rejects(completeRpcFormMutation(async () => { throw new Error('save failed') }, () => { cleanupCount += 1 }), /save failed/)
+		assert.equal(cleanupCount, 1)
+	})
+
+	test('does not broadcast an active RPC edit before its active-network update succeeds', async () => {
+		const activeRpc = { name: 'Active', chainId: 1n, httpsRpc: 'https://active.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+		const editedRpc = { ...activeRpc, name: 'Edited active RPC' }
+		const operations: string[] = []
+
+		await assert.rejects(saveRpcEntryAndKeepActiveRpcConsistent(editedRpc, [activeRpc], activeRpc,
+			async () => { operations.push('persist-list') },
+			async () => {
+				operations.push('change-active')
+				throw new Error('active update failed')
+			}
+		), /active update failed/)
+		assert.deepEqual(operations, ['change-active'])
+	})
+
+	test('does not treat an active RPC cross-chain edit as a completed signer switch', async () => {
+		const activeRpc = { name: 'Active', chainId: 1n, httpsRpc: 'https://active.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+		const crossChainEdit = { ...activeRpc, chainId: 2n }
+		const operations: string[] = []
+
+		await assert.rejects(saveRpcEntryAndKeepActiveRpcConsistent(crossChainEdit, [activeRpc], activeRpc,
+			async () => { operations.push('persist-list') },
+			async () => { operations.push('change-active') }
+		), /Switch to another RPC before changing/)
+		assert.deepEqual(operations, [])
+	})
+
+	test('does not remove an active RPC before switching to its fallback succeeds', async () => {
+		const activeRpc = { name: 'Active', chainId: 1n, httpsRpc: 'https://active.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+		const fallbackRpc = { ...activeRpc, name: 'Fallback', httpsRpc: 'https://fallback.example', primary: false }
+		const operations: string[] = []
+
+		await assert.rejects(removeRpcEntryAndKeepActiveRpcConsistent(activeRpc.httpsRpc, [activeRpc, fallbackRpc], activeRpc,
+			async () => { operations.push('persist-list') },
+			async (entry) => {
+				operations.push(`change-active:${ entry.httpsRpc }`)
+				throw new Error('fallback switch failed')
+			}
+		), /fallback switch failed/)
+		assert.deepEqual(operations, [`change-active:${ fallbackRpc.httpsRpc }`])
+	})
+
+	test('requires a confirmed same-chain fallback before removing an active RPC', async () => {
+		const activeRpc = { name: 'Active', chainId: 1n, httpsRpc: 'https://active.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+		const crossChainRpc = { ...activeRpc, name: 'Other chain', chainId: 2n, httpsRpc: 'https://other-chain.example', primary: false }
+		const operations: string[] = []
+
+		await assert.rejects(removeRpcEntryAndKeepActiveRpcConsistent(activeRpc.httpsRpc, [activeRpc, crossChainRpc], activeRpc,
+			async () => { operations.push('persist-list') },
+			async () => { operations.push('change-active') }
+		), /Switch to another RPC on this chain/)
+		assert.deepEqual(operations, [])
+	})
+
+	test('awaits settings file reads and propagates import failures', async () => {
+		let importedContents: string | undefined
+		await readAndImportSettingsFile({ text: async () => '{"version": 1}' }, async (contents) => { importedContents = contents })
+		assert.equal(importedContents, '{"version": 1}')
+		await assert.rejects(readAndImportSettingsFile({ text: async () => { throw new Error('read failed') } }, async () => undefined), /read failed/)
+	})
+
+	test('revokes settings download object URLs after the click task', () => {
+		const revokedUrls: string[] = []
+		let cleanup = () => undefined
+		const urlApi = {
+			createObjectURL: () => 'blob:test-settings',
+			revokeObjectURL: (url: string) => { revokedUrls.push(url) },
+		}
+		const usedUrl = withObjectUrl(new Blob(['settings']), (url) => url, urlApi, (scheduledCleanup) => { cleanup = scheduledCleanup })
+		assert.equal(usedUrl, 'blob:test-settings')
+		assert.deepEqual(revokedUrls, [])
+		cleanup()
+		assert.deepEqual(revokedUrls, ['blob:test-settings'])
 	})
 
 	test('renders warning details supplied by InlineCard callers', async () => {

@@ -420,6 +420,47 @@ describe('popup async action UI', () => {
 		dom.restore()
 	})
 
+	test('does not transfer pending access state when the first request is removed', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const deferredReply = createDeferred<void>()
+		const firstRequest = { ...createAccessRequestFixture(), accessRequestId: 'first-request' }
+		const secondRequest = { ...createAccessRequestFixture(), accessRequestId: 'second-request', website: { websiteOrigin: 'https://second.test', icon: undefined, title: 'Second' } }
+		const props = {
+			pendingAccessRequests: [firstRequest, secondRequest],
+			renameAddressCallBack: () => undefined,
+			changeActiveAddress: () => undefined,
+			refreshActiveAddress: async () => undefined,
+			approve: async (accessRequestId: string) => {
+				if (accessRequestId === firstRequest.accessRequestId) await deferredReply.promise
+			},
+			reject: async () => undefined,
+			informationChangedRecently: signal(false),
+		}
+
+		await act(() => {
+			render(h(modules.AccessRequests, props), dom.document.body)
+		})
+		const firstApproveButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Grant Access'))
+		if (firstApproveButton === undefined) throw new Error('Expected the first access approval button to render')
+
+		await act(async () => {
+			await clickElement(firstApproveButton)
+			await settleAsyncUpdates()
+			render(h(modules.AccessRequests, { ...props, pendingAccessRequests: [secondRequest] }), dom.document.body)
+		})
+
+		const remainingApproveButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Grant Access'))
+		if (remainingApproveButton === undefined) throw new Error('Expected the remaining access approval button to render')
+		assert.equal(isDisabled(remainingApproveButton), false)
+		assert.equal(remainingApproveButton.textContent?.includes('Granting access...'), false)
+
+		deferredReply.resolve()
+		await deferredReply.promise
+		render(null, dom.document.body)
+		dom.restore()
+	})
+
 	test('sends the change-chain request and resolves once a background reply arrives', async () => {
 		const modules = await modulesPromise
 		const dom = installDomMock()
