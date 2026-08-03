@@ -41,6 +41,25 @@ async function connect() {
 	try {
 		const [account] = await globalThis.ethereum.request({ method: 'eth_requestAccounts' })
 		accountOutput.textContent = account
+		const expectedState = await fetch('./expected-safe-state.json').then((response) => response.json())
+		const chainId = await globalThis.ethereum.request({ method: 'eth_chainId' })
+		await globalThis.ethereum.request({ method: 'wallet_getCapabilities', params: [account, [chainId]] })
+		const code = await globalThis.ethereum.request({ method: 'eth_getCode', params: [account, 'latest'] })
+		if (code === '0x') throw new Error('The connected account is not a contract')
+		const [singletonStorage, ...safeCallResults] = await Promise.all([
+			globalThis.ethereum.request({ method: 'eth_getStorageAt', params: [account, '0x0', 'latest'] }),
+			...expectedState.calls.map(({ data }) => globalThis.ethereum.request({
+				method: 'eth_call',
+				params: [{ to: account, data }, 'latest'],
+			})),
+		])
+		if (singletonStorage !== expectedState.singletonStorage) throw new Error('Unexpected Safe singleton storage')
+		for (const [index, result] of safeCallResults.entries()) {
+			if (result !== expectedState.calls[index]?.result) throw new Error('Unexpected Safe state response')
+		}
+		const singletonCode = await globalThis.ethereum.request({ method: 'eth_getCode', params: [expectedState.singletonAddress, 'latest'] })
+		if (singletonCode === '0x') throw new Error('The Safe singleton has no code')
+		statusOutput.textContent = 'Safe account inspection complete.'
 	} catch (error) {
 		statusOutput.textContent = error instanceof Error ? error.message : String(error)
 	}

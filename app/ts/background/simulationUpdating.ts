@@ -433,7 +433,10 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 }
 
 export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
-	if (simulationInput.length === 0) return simulationInput
+	// Base-fee and nonce repair only rewrite transactions. Signed-message and state-
+	// override blocks must still reach the RPC handler, but inspecting them here would
+	// run an extra eth_simulateV1 request without any transaction nonce to repair.
+	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
 	const parentBlock = await ethereum.getBlock(undefined)
 	const getBaseFeeFixedInputStateBlocks = async () => {
 		if (parentBlock === undefined) return simulationInput

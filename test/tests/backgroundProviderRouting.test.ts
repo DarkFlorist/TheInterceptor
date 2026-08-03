@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
 import { addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createSafeTx, EthereumJsonRpcRequest, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, safeTxToTypedDataJson, } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
@@ -73,7 +74,7 @@ describe('background eth_accounts', () => {
 		})
 	})
 
-	test('answers Sealwort Safe account inspection without preparing an empty simulation overlay', async () => {
+	test('answers Sealwort Safe code and storage inspection without forwarding storage to the signer', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -108,7 +109,11 @@ describe('background eth_accounts', () => {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const getBlockCalls = { count: 0 }
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter(getBlockCalls, { getCodeResult: new Uint8Array([0x60]) })
+		const singletonAddress = 0x41675c099f32341bf84bfc5382af534df5c7461an
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter(getBlockCalls, {
+			getCodeResult: new Uint8Array([0x60]),
+			getStorageAtResult: singletonAddress,
+		})
 
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
 			interceptorRequest: true,
@@ -127,6 +132,63 @@ describe('background eth_accounts', () => {
 			method: 'eth_getCode',
 			result: '0x60',
 		})
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 2, requestSocket: socket },
+			method: 'eth_getStorageAt',
+			params: [addressString(safeAddress), '0x0', 'latest'],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.equal(getBlockCalls.count, 0)
+		assert.deepEqual(messages.at(-1), {
+			interceptorApproved: true,
+			requestId: 2,
+			bridgeRequestSettled: true,
+			type: 'result',
+			method: 'eth_getStorageAt',
+			result: `0x${ singletonAddress.toString(16).padStart(64, '0') }`,
+		})
+	})
+
+	test('preserves transaction-free overlays without running transaction preparation', async () => {
+		installBrowserMock()
+		const { prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
+		const address = 0x1111111111111111111111111111111111111111n
+		const socket = { tabId: 1, connectionName: 0n }
+		const website = { websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' }
+		const originalRequestParameters = { method: 'personal_sign' as const, params: ['0x68656c6c6f', address] }
+		const simulationInput = [{
+			stateOverrides: { [addressString(address)]: { balance: 123n } },
+			transactions: [],
+			signedMessages: [{
+				website,
+				created: new Date('2026-08-03T00:00:00.000Z'),
+				fakeSignedFor: address,
+				originalRequestParameters,
+				request: {
+					...originalRequestParameters,
+					interceptorRequest: true,
+					usingInterceptorWithoutSigner: false,
+					uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
+				},
+				simulationMode: true,
+				messageIdentifier: 1n,
+			}],
+			blockTimeManipulation: { type: 'AddToTimestamp' as const, deltaToAdd: 30n, deltaUnit: 'Seconds' as const },
+			simulateWithZeroBaseFee: true,
+		}] satisfies SimulationStateInput
+		const getBlockCalls = { count: 0 }
+		const { ethereum } = createEthereumWithGetBlockCounter(getBlockCalls)
+
+		const prepared = await prepareSimulationInputForRpc(simulationInput, ethereum)
+
+		assert.strictEqual(prepared, simulationInput)
+		assert.equal(getBlockCalls.count, 0)
+		assert.deepEqual(prepared[0]?.signedMessages, simulationInput[0].signedMessages)
+		assert.deepEqual(prepared[0]?.stateOverrides, simulationInput[0].stateOverrides)
+		assert.deepEqual(prepared[0]?.blockTimeManipulation, simulationInput[0].blockTimeManipulation)
 	})
 
 	test('returns invalid params to the webpage for malformed wallet_watchAsset requests', async () => {
