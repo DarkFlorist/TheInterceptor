@@ -6,7 +6,7 @@ import { PendingTransactionOrSignableMessage } from '../app/ts/types/accessReque
 import { serialize } from '../app/ts/types/wire-types.js'
 import { getSafeTxHash } from '../app/ts/utils/eip712.js'
 import { privateKeyToAccount } from '../app/ts/utils/ethereumPrimitives.js'
-import { connectTarget, createTargetPage, launchChromeSession, waitForAnyExtensionServiceWorker, waitForTargetByUrl } from '../test/benchmarks/chromeHarness.js'
+import { connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForTargetByUrl } from '../test/benchmarks/chromeHarness.js'
 
 const outputDirectory = path.resolve(process.env.SAFE_UI_SCREENSHOT_OUTPUT_DIRECTORY ?? path.join(tmpdir(), 'interceptor-safe-wallet-screenshots'))
 
@@ -46,7 +46,7 @@ console.info('Launching Chromium')
 const session = await launchChromeSession()
 try {
 	console.info('Waiting for extension worker')
-	const workerTarget = await waitForAnyExtensionServiceWorker(session.browserDebugPort)
+	const workerTarget = await waitForInterceptorExtensionServiceWorker(session.browserDebugPort)
 	const extensionId = new URL(workerTarget.url).host
 
 	const addressBookUrl = `chrome-extension://${ extensionId }/html3/addressBookV3.html`
