@@ -277,13 +277,15 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 				<span>Name</span>
 				<NameInput nameInput = { modifyAddressWindowState.value.incompleteAddressBookEntry.name } setNameInput = { setName } disabled = { disableDueToSource }/>
 			</label>
-			<div class = 'address-editor-field'>
-				<span>Address type</span>
-				<DropDownMenu selected = { selectedAddresBookEntryType } dropDownOptions = { addressBookEntryOptions } onChangedCallBack = { onTypeChangedCallBack } buttonClassses = { 'btn btn--outline is-small' } ariaLabel = 'Address type'/>
-			</div>
-			<div class = 'address-editor-field'>
-				<span>Chain</span>
-				<ChainSelector rpcEntries = { rpcEntries } chainId = { selectedChainId } changeChain = { setChain } buttonClassses = { 'btn btn--outline is-small' } ariaLabel = 'Chain'/>
+			<div class = 'address-editor-identity-selectors'>
+				<div class = 'address-editor-field'>
+					<span>Address type:</span>
+					<DropDownMenu selected = { selectedAddresBookEntryType } dropDownOptions = { addressBookEntryOptions } onChangedCallBack = { onTypeChangedCallBack } buttonClassses = { 'btn btn--outline is-small' } ariaLabel = 'Address type'/>
+				</div>
+				<div class = 'address-editor-field'>
+					<span>Chain:</span>
+					<ChainSelector rpcEntries = { rpcEntries } chainId = { selectedChainId } changeChain = { setChain } buttonClassses = { 'btn btn--outline is-small' } ariaLabel = 'Chain'/>
+				</div>
 			</div>
 			<label class = { `address-editor-field address-editor-field--wide ${ modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? '' : 'address-editor-field--compact-address' }` }>
 				<span>Address</span>
