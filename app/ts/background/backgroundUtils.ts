@@ -78,8 +78,7 @@ export async function sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport(
 	} catch (error) {
 		if (error instanceof Error) {
 			if (error?.message?.includes('Could not establish connection.')) {
-				// ignore this error, this error is thrown when a popup is not open to receive the message
-				// we are ignoring this error because the popup messaging is used to update a popups UI, and if a popup is not open, we don't need to update the UI
+				// ignore this error, this error is thrown when a popup is not open to receive the message we are ignoring this error because the popup messaging is used to update a popups UI, and if a popup is not open, we don't need to update the UI
 				return
 			}
 			if (isIgnorableExtensionMessagingError(error)) return

@@ -1574,9 +1574,7 @@ class InterceptorMessageListener {
 			this.enableMetamaskCompatibilityMode(connection.metamaskCompatibilityMode)
 			if (signerName !== 'NoSigner') await this.requestChainIdFromSigner()
 		}
-		// A fresh status report must not wait behind an older bridge request whose reply may have been lost
-		// during a background-worker or content-port replacement. The generation checks on both sides make
-		// late replies from superseded reports harmless.
+		// A fresh status report must not wait behind an older bridge request whose reply may have been lost during a background-worker or content-port replacement. The generation checks on both sides make late replies from superseded reports harmless.
 		const transition = completeTransition().catch((error: unknown) => {
 			this.reportSignerDiscoveryError('report signer connection status', error)
 		})

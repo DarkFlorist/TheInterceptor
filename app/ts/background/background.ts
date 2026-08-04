@@ -367,8 +367,7 @@ const isTerminalSignerAccountConnectionError = (error: ErrorWithCodeAndOptionalD
 }
 
 function replyWithSignerAccountError(websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, error: ErrorWithCodeAndOptionalData) {
-	// Injected-wallet connection UIs commonly treat 4001 as the only terminal account-access failure.
-	// Keep the more precise 4900 internally, but expose unavailable page-level wallet access as a rejected interactive connection.
+	// Injected-wallet connection UIs commonly treat 4001 as the only terminal account-access failure. Keep the more precise 4900 internally, but expose unavailable page-level wallet access as a rejected interactive connection.
 	const publicError = isAccountConnectionMethod(request.method) && isSignerProviderDisconnectedError(error)
 		? { ...error, code: METAMASK_ERROR_USER_REJECTED_REQUEST }
 		: error
@@ -493,8 +492,7 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 		const simulationOverlayEnabled = settings.simulationMode || activeAddressBookEntry?.type === 'safe'
 		const configuredSafe = getConfiguredSafeSigningEntry(currentChainEntries, {
 			...settings,
-			// The request's active address is captured before async handling begins. Do not
-			// reroute an in-flight request if the popup selects another account meanwhile.
+			// The request's active address is captured before async handling begins. Do not reroute an in-flight request if the popup selects another account meanwhile.
 			activeSimulationAddress: activeAddress,
 			chainId: settings.activeRpcNetwork.chainId,
 		})

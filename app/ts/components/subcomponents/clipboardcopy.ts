@@ -6,8 +6,7 @@ function makeError () {
 }
 
 async function copyClipboardApi (text: string) {
-	// Use the Async Clipboard API when available. Requires a secure browsing
-	// context (i.e. HTTPS)
+	// Use the Async Clipboard API when available. Requires a secure browsing context (i.e. HTTPS)
 	if (!navigator.clipboard) {
 		throw makeError()
 	}

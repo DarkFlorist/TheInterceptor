@@ -214,8 +214,7 @@ export async function setAccess(website: Website, access: boolean, address: bigi
 	})
 }
 
-// gets active address if the website has been give access for it, otherwise returns undefined
-// this is to guard websites from seeing addresses without access
+// gets active address if the website has been give access for it, otherwise returns undefined this is to guard websites from seeing addresses without access
 async function getActiveAddressForDomain(websiteTabConnections: WebsiteTabConnections, websiteOrigin: string, settings: Settings, socket: WebsiteSocket) {
 	const activeAddress = await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, socket.tabId, async () => await getActiveAddress(settings, socket.tabId))
 	if (activeAddress === undefined) return undefined
@@ -261,8 +260,7 @@ function disconnectFromPort(
 	socket: WebsiteSocket,
 ): false {
 	setWebsitePortApproval(websiteTabConnections, socket, false)
-	// Account access can be revoked without the provider losing chain connectivity.
-	// Notify account listeners before the legacy disconnect event so dapps clear stale account state.
+	// Account access can be revoked without the provider losing chain connectivity. Notify account listeners before the legacy disconnect event so dapps clear stale account state.
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: [] })
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'disconnect', result: [] })
 	return false

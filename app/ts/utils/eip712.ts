@@ -50,8 +50,7 @@ const isValidSolidityType = (type: string, validStructNames: readonly string[]):
 	// Reject reserved-but-invalid type names, e.g. uint3, bytes33, fixed129x19, etc.
 	if (isInvalidReservedType(type)) return false
 
-	// If the type starts with a reserved built-in prefix,
-	// then it is a built-in type and is valid
+	// If the type starts with a reserved built-in prefix, then it is a built-in type and is valid
 	if (/^(u?int|bytes|u?fixed|address|bool|string|function)/.test(type)) return true
 	// Otherwise, it is a custom type; check if it is in the valid struct names list
 	return validStructNames.includes(type)
@@ -125,8 +124,7 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 		const bitWidth = parseInt(intMatch[2])
 		if (bitWidth < 8 || bitWidth > 256) return { valid: false, reason: `${ typeStr } is not a valid type, number widths must be in range [8,256]` }
 		if (!Number.isInteger(bitWidth / 8)) return { valid: false, reason: `${ typeStr } is not a valid type, number widths must be divisible by 8.` }
-		// For unsigned: range is 0 to 2^width - 1
-		// For signed: range is -2^(width-1) to 2^(width-1) - 1
+		// For unsigned: range is 0 to 2^width - 1 For signed: range is -2^(width-1) to 2^(width-1) - 1
 		const min = isUnsigned ? 0n : -(2n ** BigInt(bitWidth - 1))
 		const max = isUnsigned ? (2n ** BigInt(bitWidth)) - 1n : (2n ** BigInt(bitWidth - 1)) - 1n
 
