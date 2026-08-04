@@ -173,7 +173,13 @@ try {
 				data: {
 					chainId: '0x1',
 					addressBookEntry: undefined,
-					safeContractState: {
+				},
+			}
+			if (message?.method === 'popup_requestSafeContractState') return {
+				method: 'popup_requestSafeContractState',
+				data: {
+					chainId: '0x1',
+					result: {
 						ok: true,
 						owners: ['0xabcdefabcdefabcdefabcdefabcdefabcdefabcd', '0xfedcbafedcbafedcbafedcbafedcbafedcbafedc'],
 						ownerAddressBookEntries: [
@@ -228,7 +234,8 @@ try {
 	await waitForText(refreshEditor, 'Refresh signers')
 	await refreshEditor.evaluate(`(() => {
 		browser.runtime.sendMessage = async (message) => {
-			if (message?.method === 'popup_requestIdentifyAddress') return await new Promise(() => undefined)
+			if (message?.method === 'popup_requestIdentifyAddress') return { method: 'popup_requestIdentifyAddress', data: { chainId: '0x1', addressBookEntry: undefined } }
+			if (message?.method === 'popup_requestSafeContractState') return await new Promise(() => undefined)
 			return undefined
 		}
 		const refreshButton = [...document.querySelectorAll('.modal.is-active button')].find((element) => element.textContent?.includes('Refresh signers'))

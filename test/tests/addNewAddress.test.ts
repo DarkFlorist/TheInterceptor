@@ -13,6 +13,11 @@ const sampleAddressBookEntry = {
 	entrySource: 'User',
 } as const
 const addNewAddressSource = await Bun.file(new URL('../../app/ts/components/pages/AddNewAddress.tsx', import.meta.url)).text()
+const safeContractStateSource = await Bun.file(new URL('../../app/ts/background/safeContractState.ts', import.meta.url)).text()
+const metadataUtilsSource = await Bun.file(new URL('../../app/ts/background/metadataUtils.ts', import.meta.url)).text()
+const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
+const replyMessagesSource = await Bun.file(new URL('../../app/ts/types/interceptor-reply-messages.ts', import.meta.url)).text()
+const screenshotScriptSource = await Bun.file(new URL('../../scripts/capture-safe-ui-screenshots.mts', import.meta.url)).text()
 
 describe('add new address save flow', () => {
 	test('waits for the save message to finish before closing the popup', async () => {
@@ -254,6 +259,19 @@ describe('add new address save flow', () => {
 		assert.match(addNewAddressSource, /if \(!safeContractState\.ok\) \{[\s\S]*?setSafeContractStateError\(safeContractState\.message\)/)
 		assert.match(addNewAddressSource, /const setAddress = async[\s\S]*?safeSignerAddresses: \[\],[\s\S]*?safeSignerAddress: undefined,[\s\S]*?safeVersion: undefined/)
 		assert.match(addNewAddressSource, /const setChain = async[\s\S]*?safeSignerAddresses: \[\],[\s\S]*?safeSignerAddress: undefined,[\s\S]*?safeVersion: undefined/)
-		assert.match(addNewAddressSource, /requestedIdentification\.chainId === 'AllChains'[\s\S]*?'Gnosis Safe wallets must use a specific chain to load their signers\.'/)
+		assert.match(safeContractStateSource, /chainId === 'AllChains'[\s\S]*?'Gnosis Safe wallets must use a specific chain to load their signers\.'/)
+		assert.match(addNewAddressSource, /requestPopupSafeContractState/)
+		assert.doesNotMatch(addNewAddressSource, /includeSafeContractState/)
+	})
+
+	test('keeps Safe contract retrieval separate from generic address identification', () => {
+		assert.doesNotMatch(metadataUtilsSource, /export async function identifyAddressWithoutNode/)
+		assert.doesNotMatch(popupMessageHandlersSource, /safeContractState|includeSafeContractState/)
+		assert.match(replyMessagesSource, /method: funtypes\.Literal\('popup_requestSafeContractState'\)/)
+		assert.doesNotMatch(replyMessagesSource, /RequestIdentifyAddress[\s\S]{0,500}includeSafeContractState/)
+		assert.match(safeContractStateSource, /getUserAddressBookEntriesForChainIdMorePreciseFirst/)
+		assert.match(safeContractStateSource, /if \(!safeSnapshot\.ok\) return[\s\S]*?const localEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst/)
+		assert.doesNotMatch(safeContractStateSource, /try \{[\s\S]*?getUserAddressBookEntriesForChainIdMorePreciseFirst/)
+		assert.match(screenshotScriptSource, /message\?\.method === 'popup_requestSafeContractState'\) return await new Promise/)
 	})
 })

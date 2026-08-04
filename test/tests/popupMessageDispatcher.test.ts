@@ -158,6 +158,20 @@ describe('popup message dispatcher seams', () => {
 		})
 	})
 
+	test('routes Safe contract state through its dedicated protocol', async () => {
+		const context = createDispatcherContext(async () => undefined)
+		assert.deepEqual(await dispatchPopupMessage(context, {
+			method: 'popup_requestSafeContractState',
+			data: { address: 1n, chainId: 'AllChains' },
+		}), {
+			method: 'popup_requestSafeContractState',
+			data: {
+				chainId: 'AllChains',
+				result: { ok: false, message: 'Gnosis Safe wallets must use a specific chain to load their signers.' },
+			},
+		})
+	})
+
 	test('broadcasts an import failure without refreshing settings', async () => {
 		storageState.websiteAccess = [{
 			website: { websiteOrigin: 'failure-refresh.test', icon: undefined, title: 'Failure refresh sentinel' },

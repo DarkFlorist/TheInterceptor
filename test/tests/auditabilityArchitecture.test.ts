@@ -10,6 +10,7 @@ const popupHandlerRegistrySources = [
 	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/addressBook.ts', import.meta.url)),
 	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/settings.ts', import.meta.url)),
 	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/websiteAccess.ts', import.meta.url)),
+	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/safe.ts', import.meta.url)),
 ]
 
 const getDeclaredPopupHandlerMethods = async (source: Bun.BunFile) => {
@@ -29,6 +30,7 @@ test('popup handler registries agree with the protocol domain inventory', () => 
 		{ source: popupHandlerRegistrySources[1], domains: new Set(['address-book', 'navigation']) },
 		{ source: popupHandlerRegistrySources[2], domains: new Set(['settings', 'navigation']) },
 		{ source: popupHandlerRegistrySources[3], domains: new Set(['website-access', 'navigation']) },
+		{ source: popupHandlerRegistrySources[4], domains: new Set(['safe']) },
 	]
 	return Promise.all(expectedRegistryDomains.map(async ({ source, domains }) => {
 		if (source === undefined) throw new Error('Popup handler registry source is missing')

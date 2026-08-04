@@ -189,6 +189,11 @@ export async function requestPopupIdentifyAddress(data: PopupRequestByMethod<'po
 	return reply?.method === 'popup_requestIdentifyAddress' ? reply : undefined
 }
 
+export async function requestPopupSafeContractState(data: PopupRequestByMethod<'popup_requestSafeContractState'>['data']) {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_requestSafeContractState', data })
+	return reply?.method === 'popup_requestSafeContractState' ? reply : undefined
+}
+
 export async function requestPopupSimulateGovernanceContractExecution(data: PopupRequestByMethod<'popup_simulateGovernanceContractExecution'>['data']) {
 	const reply = await sendPopupMessageWithReply({ method: 'popup_simulateGovernanceContractExecution', data })
 	return reply?.method === 'popup_simulateExecutionReply' ? reply : undefined

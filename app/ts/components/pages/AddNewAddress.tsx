@@ -3,7 +3,7 @@ import { useEffect } from 'preact/hooks'
 import type { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, ErrorText } from '../subcomponents/Error.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
-import { getMissingPopupReplyErrorMessage, requestPopupAbiAndNameFromBlockExplorer, requestPopupIdentifyAddress, sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
+import { getMissingPopupReplyErrorMessage, requestPopupAbiAndNameFromBlockExplorer, requestPopupIdentifyAddress, requestPopupSafeContractState, sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { AddressIcon, getActiveAddressEntry, SmallAddress } from '../subcomponents/address.js'
 import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
 import { createRef } from 'preact'
@@ -60,18 +60,18 @@ export type AddressIdentificationKey = {
 	address: bigint
 	chainId: ChainIdWithUniversal
 	windowStateId: string
-	includeSafeContractState: boolean
+	requestSafeContractState: boolean
 }
 
 export function getAddressIdentificationKey(state: ModifyAddressWindowState): AddressIdentificationKey | undefined {
 	if (!state.incompleteAddressBookEntry.addingAddress && state.incompleteAddressBookEntry.type !== 'safe') return undefined
 	const address = stringToAddress(state.incompleteAddressBookEntry.address)
 	if (address === undefined) return undefined
-	return { address, chainId: state.incompleteAddressBookEntry.chainId, windowStateId: state.windowStateId, includeSafeContractState: state.incompleteAddressBookEntry.type === 'safe' }
+	return { address, chainId: state.incompleteAddressBookEntry.chainId, windowStateId: state.windowStateId, requestSafeContractState: state.incompleteAddressBookEntry.type === 'safe' }
 }
 
 export function areAddressIdentificationKeysEqual(left: AddressIdentificationKey | undefined, right: AddressIdentificationKey | undefined) {
-	return left?.address === right?.address && left?.chainId === right?.chainId && left?.windowStateId === right?.windowStateId && left?.includeSafeContractState === right?.includeSafeContractState
+	return left?.address === right?.address && left?.chainId === right?.chainId && left?.windowStateId === right?.windowStateId && left?.requestSafeContractState === right?.requestSafeContractState
 }
 
 export function isIdentificationRequestCurrent(state: ModifyAddressWindowState, requestedIdentification: AddressIdentificationKey) {
@@ -396,25 +396,19 @@ export function AddNewAddress(param: AddAddressParam) {
 		const identifyAddress = async (requestedIdentification: AddressIdentificationKey) => {
 			inFlightIdentifications.value = [...inFlightIdentifications.peek(), requestedIdentification]
 			try {
-				const identifiedAddress = await requestPopupIdentifyAddress({
-					address: requestedIdentification.address,
-					chainId: requestedIdentification.chainId,
-					includeSafeContractState: requestedIdentification.includeSafeContractState,
-				})
+				const [identifiedAddress, safeContractStateReply] = await Promise.all([
+					requestPopupIdentifyAddress({ address: requestedIdentification.address, chainId: requestedIdentification.chainId }),
+					requestedIdentification.requestSafeContractState
+						? requestPopupSafeContractState({ address: requestedIdentification.address, chainId: requestedIdentification.chainId })
+						: Promise.resolve(undefined),
+				])
 				if (!isIdentificationRequestCurrent(param.modifyAddressWindowState.peek(), requestedIdentification)) return
 				lastCompletedIdentification.value = requestedIdentification
-				if (identifiedAddress === undefined || identifiedAddress.data.chainId !== requestedIdentification.chainId) {
-					if (requestedIdentification.includeSafeContractState) setSafeContractStateError('Interceptor did not return the current Gnosis Safe signers.')
-					return
-				}
-				const identifiedAddressBookEntry = identifiedAddress.data.addressBookEntry
-				const safeContractState = identifiedAddress.data.safeContractState
-				if (requestedIdentification.includeSafeContractState && safeContractState === undefined) {
-					const message = requestedIdentification.chainId === 'AllChains'
-						? 'Gnosis Safe wallets must use a specific chain to load their signers.'
-						: `Switch Interceptor to chain ${ requestedIdentification.chainId.toString() } to load this Gnosis Safe's signers.`
-					setSafeContractStateError(message)
-				} else if (requestedIdentification.includeSafeContractState && safeContractState !== undefined) {
+				const identifiedAddressBookEntry = identifiedAddress?.data.chainId === requestedIdentification.chainId ? identifiedAddress.data.addressBookEntry : undefined
+				if (requestedIdentification.requestSafeContractState && (safeContractStateReply === undefined || safeContractStateReply.data.chainId !== requestedIdentification.chainId)) {
+					setSafeContractStateError('Interceptor did not return the current Gnosis Safe signers.')
+				} else if (requestedIdentification.requestSafeContractState && safeContractStateReply !== undefined) {
+					const safeContractState = safeContractStateReply.data.result
 					if (!safeContractState.ok) {
 						setSafeContractStateError(safeContractState.message)
 						return
@@ -450,7 +444,7 @@ export function AddNewAddress(param: AddAddressParam) {
 		const currentIdentification = getAddressIdentificationKey(param.modifyAddressWindowState.value)
 		if (currentIdentification === undefined || areAddressIdentificationKeysEqual(lastCompletedIdentification.value, currentIdentification)) return
 		if (inFlightIdentifications.value.some((identification) => areAddressIdentificationKeysEqual(identification, currentIdentification))) return
-		if (currentIdentification.includeSafeContractState) {
+		if (currentIdentification.requestSafeContractState) {
 			void waitForSafeSignerLookup(async () => await identifyAddress(currentIdentification))
 			return
 		}

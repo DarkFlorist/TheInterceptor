@@ -12,7 +12,7 @@ import { updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
-import { getActiveAddressEntry, getActiveAddresses, identifyAddress, identifyAddressWithoutNode } from './metadataUtils.js'
+import { getActiveAddressEntry, getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState } from '../types/visualizer-types.js'
@@ -1204,13 +1204,5 @@ export async function requestIdentifyAddress(ethereumClientService: EthereumClie
 	const addressBookEntry = requestedChainId === 'AllChains' || requestedChainId !== ethereumClientService.getChainId()
 		? undefined
 		: await identifyAddress(ethereumClientService, undefined, parsedRequest.data.address)
-	const safeContractState = !parsedRequest.data.includeSafeContractState || requestedChainId === 'AllChains' || requestedChainId !== ethereumClientService.getChainId()
-		? undefined
-		: await getSafeContractSnapshot(ethereumClientService, parsedRequest.data.address).then(async ({ state }) => {
-			const identifiedOwners = await Promise.all(state.owners.map(async (owner) => await identifyAddressWithoutNode(owner, ethereumClientService.getRpcEntry())))
-			return { ok: true as const, owners: state.owners, ownerAddressBookEntries: identifiedOwners.flatMap((entry) => entry === undefined ? [] : [entry]), version: state.version }
-		},
-			(error: unknown) => ({ ok: false as const, message: getErrorMessage(error) ?? 'Failed to retrieve Gnosis Safe signers.' }),
-		)
-	return { method: 'popup_requestIdentifyAddress' as const, data: { chainId: requestedChainId, addressBookEntry, safeContractState } }
+	return { method: 'popup_requestIdentifyAddress' as const, data: { chainId: requestedChainId, addressBookEntry } }
 }

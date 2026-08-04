@@ -203,13 +203,12 @@ function createIdentifyAddressReply(address: bigint, name: string) {
 	})
 }
 
-function createSafeIdentifyAddressReply(owners: readonly bigint[]) {
-	return PopupRequestsReplies.popup_requestIdentifyAddress.serialize({
-		method: 'popup_requestIdentifyAddress',
+function createSafeContractStateReply(owners: readonly bigint[]) {
+	return PopupRequestsReplies.popup_requestSafeContractState.serialize({
+		method: 'popup_requestSafeContractState',
 		data: {
 			chainId: 1n,
-			addressBookEntry: undefined,
-			safeContractState: {
+			result: {
 				ok: true,
 				owners,
 				ownerAddressBookEntries: owners.map((address, index) => ({ type: 'contact', name: `Safe Owner ${ index + 1 }`, address, entrySource: 'User', askForAddressAccess: true, useAsActiveAddress: true, chainId: 1n })),
@@ -846,11 +845,12 @@ describe('popup async action UI', () => {
 		const firstOwner = 0x1111111111111111111111111111111111111111n
 		const alternateOwner = 0x3333333333333333333333333333333333333333n
 		const refreshedOwner = 0x2222222222222222222222222222222222222222n
-		const firstReply = createDeferred<ReturnType<typeof createSafeIdentifyAddressReply>>()
-		const refreshReply = createDeferred<ReturnType<typeof createSafeIdentifyAddressReply>>()
+		const firstReply = createDeferred<ReturnType<typeof createSafeContractStateReply>>()
+		const refreshReply = createDeferred<ReturnType<typeof createSafeContractStateReply>>()
 		let requestCount = 0
 		runtimeSendMessage = async (message) => {
-			if (getRuntimeMethod(message) !== 'popup_requestIdentifyAddress') return undefined
+			if (getRuntimeMethod(message) === 'popup_requestIdentifyAddress') return createIdentifyAddressReply(0x3000000000000000000000000000000000000003n, 'Treasury Safe')
+			if (getRuntimeMethod(message) !== 'popup_requestSafeContractState') return undefined
 			requestCount += 1
 			return requestCount === 1 ? await firstReply.promise : await refreshReply.promise
 		}
@@ -900,7 +900,7 @@ describe('popup async action UI', () => {
 		assert.equal(isDisabled(retrieveButton), true)
 		assert.equal(requestCount, 1)
 		await act(async () => {
-			firstReply.resolve(createSafeIdentifyAddressReply([firstOwner, alternateOwner]))
+			firstReply.resolve(createSafeContractStateReply([firstOwner, alternateOwner]))
 			await firstReply.promise
 			await settleAsyncUpdates()
 		})
@@ -922,7 +922,7 @@ describe('popup async action UI', () => {
 		assert.equal(isDisabled(refreshButton), true)
 
 		await act(async () => {
-			refreshReply.resolve(createSafeIdentifyAddressReply([refreshedOwner]))
+			refreshReply.resolve(createSafeContractStateReply([refreshedOwner]))
 			await refreshReply.promise
 			await settleAsyncUpdates()
 		})

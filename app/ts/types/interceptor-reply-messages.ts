@@ -194,7 +194,7 @@ export const RequestIdentifyAddress = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		address: EthereumAddress,
 		chainId: ChainIdWithUniversal,
-	}).And(funtypes.ReadonlyPartial({ includeSafeContractState: funtypes.Boolean }))
+	})
 }).asReadonly()
 
 type RequestIdentifyAddressReply = funtypes.Static<typeof RequestIdentifyAddressReply>
@@ -203,12 +203,25 @@ const RequestIdentifyAddressReply = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		chainId: ChainIdWithUniversal,
 		addressBookEntry: funtypes.Union(AddressBookEntry, funtypes.Undefined),
-	}).And(funtypes.ReadonlyPartial({
-		safeContractState: funtypes.Union(
+	})
+}).asReadonly()
+
+export type RequestSafeContractState = funtypes.Static<typeof RequestSafeContractState>
+export const RequestSafeContractState = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_requestSafeContractState'),
+	data: funtypes.ReadonlyObject({ address: EthereumAddress, chainId: ChainIdWithUniversal }),
+}).asReadonly()
+
+type RequestSafeContractStateReply = funtypes.Static<typeof RequestSafeContractStateReply>
+const RequestSafeContractStateReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_requestSafeContractState'),
+	data: funtypes.ReadonlyObject({
+		chainId: ChainIdWithUniversal,
+		result: funtypes.Union(
 			funtypes.ReadonlyObject({ ok: funtypes.Literal(true), owners: funtypes.ReadonlyArray(EthereumAddress), ownerAddressBookEntries: funtypes.ReadonlyArray(AddressBookEntry), version: funtypes.String }),
 			funtypes.ReadonlyObject({ ok: funtypes.Literal(false), message: funtypes.String }),
 		),
-	}))
+	}),
 }).asReadonly()
 
 type RequestIsMainWindowOpen = funtypes.Static<typeof RequestIsMainWindowOpen>
@@ -259,6 +272,7 @@ type PopupRequestsRepliesMap = {
 	popup_requestSimulationMetadata: typeof RequestSimulationMetadataReply
 	popup_requestAbiAndNameFromBlockExplorer: typeof RequestAbiAndNameFromBlockExplorerReply
 	popup_requestIdentifyAddress: typeof RequestIdentifyAddressReply
+	popup_requestSafeContractState: typeof RequestSafeContractStateReply
 	popup_simulateGovernanceContractExecution: typeof PopupSimulateExecutionReply
 	popup_simulateGnosisSafeTransaction: typeof PopupSimulateExecutionReply
 	popup_isMainPopupWindowOpen: typeof RequestIsMainWindowOpen
@@ -281,6 +295,7 @@ export const PopupRequestsReplies: PopupRequestsRepliesMap = {
 	popup_requestSimulationMetadata: RequestSimulationMetadataReply,
 	popup_requestAbiAndNameFromBlockExplorer: RequestAbiAndNameFromBlockExplorerReply,
 	popup_requestIdentifyAddress: RequestIdentifyAddressReply,
+	popup_requestSafeContractState: RequestSafeContractStateReply,
 	popup_simulateGovernanceContractExecution: PopupSimulateExecutionReply,
 	popup_simulateGnosisSafeTransaction: PopupSimulateExecutionReply,
 	popup_isMainPopupWindowOpen: RequestIsMainWindowOpen,
@@ -301,6 +316,7 @@ export const RequestAbiAndNameFromBlockExplorer = funtypes.ReadonlyObject({
 export const PopupMessageReplyRequests = funtypes.Union(
 	RequestAbiAndNameFromBlockExplorer,
 	RequestIdentifyAddress,
+	RequestSafeContractState,
 	RequestSimulateGovernanceContractExecution,
 	RequestSimulateGnosisSafeTransaction,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestMakeMeRichData') }),
@@ -349,6 +365,7 @@ export type PopupReplyOption =
 	| RequestSimulationMetadataReply
 	| RequestAbiAndNameFromBlockExplorerReply
 	| RequestIdentifyAddressReply
+	| RequestSafeContractStateReply
 	| funtypes.Static<typeof PopupSimulateExecutionReply>
 	| RequestIsMainWindowOpen
 	| RequestIsSimulationVisualizerOpen
@@ -370,6 +387,7 @@ export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union
 	RequestSimulationMetadataReply,
 	RequestAbiAndNameFromBlockExplorerReply,
 	RequestIdentifyAddressReply,
+	RequestSafeContractStateReply,
 	PopupSimulateExecutionReply,
 	RequestIsMainWindowOpen,
 	RequestIsSimulationVisualizerOpen,
