@@ -273,7 +273,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 	return <div class = 'address-editor'>
 		<div class = 'address-editor-fields'>
 			<label class = 'address-editor-field address-editor-name-field'>
-				<AddressIcon address = { stringToAddress(modifyAddressWindowState.value.incompleteAddressBookEntry.address) } logoUri = { logoUri } isBig = { false } backgroundColor = 'var(--text-color)'/>
+				<AddressIcon address = { stringToAddress(modifyAddressWindowState.value.incompleteAddressBookEntry.address) } logoUri = { logoUri } isBig = { true } backgroundColor = 'var(--text-color)'/>
 				<span>Name</span>
 				<NameInput nameInput = { modifyAddressWindowState.value.incompleteAddressBookEntry.name } setNameInput = { setName } disabled = { disableDueToSource }/>
 			</label>

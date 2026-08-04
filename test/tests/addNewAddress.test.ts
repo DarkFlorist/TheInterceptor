@@ -224,7 +224,7 @@ describe('add new address save flow', () => {
 		assert.match(addNewAddressSource, /class = 'address-editor-readonly-address'/)
 		assert.ok(addNewAddressSource.indexOf('<span>Name</span>') < addNewAddressSource.indexOf('<span>Address type</span>'))
 		assert.ok(addNewAddressSource.indexOf('<span>Address type</span>') < addNewAddressSource.indexOf('<span>Chain</span>'))
-		assert.match(addNewAddressSource, /<AddressIcon address = \{ stringToAddress/)
+		assert.match(addNewAddressSource, /<AddressIcon address = \{ stringToAddress[^\n]+isBig = \{ true \}/)
 		assert.match(addNewAddressSource, /ariaLabel = 'Address type'/)
 		assert.match(addNewAddressSource, /ariaLabel = 'Chain'/)
 		assert.match(addNewAddressSource, /class = 'address-editor-heading'>Safe signer<\/p>/)
