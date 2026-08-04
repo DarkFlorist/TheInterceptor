@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { readInterceptorAppCss } from './cssTestUtils.js'
 
 function expectRule(css: string, selector: string) {
 	const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -10,13 +11,13 @@ function expectRule(css: string, selector: string) {
 
 describe('Safe outcome panel CSS', () => {
 	test('uses the primary color for the loading spinner', async () => {
-		const css = await Bun.file('app/css/interceptor.css').text()
+		const css = await readInterceptorAppCss()
 		const loadingRules = [...css.matchAll(/\.safe-outcome-panel__loading\s*\{([^}]*)\}/g)]
 		assert.equal(loadingRules.some((rule) => rule[1]?.includes('color: var(--primary-color);')), true)
 	})
 
 	test('constrains nested simulation cards to the available panel width', async () => {
-		const css = await Bun.file('app/css/interceptor.css').text()
+		const css = await readInterceptorAppCss()
 		const content = expectRule(css, '.safe-outcome-panel__content')
 		const result = expectRule(css, '.safe-outcome-panel__result')
 		const resultCard = expectRule(css, '.safe-outcome-panel__result > .card')

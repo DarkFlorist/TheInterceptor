@@ -4,7 +4,7 @@ import { GetAddressBookDataReply, MessageToPopup } from './types/interceptor-mes
 import { AddNewAddress } from './components/pages/AddNewAddress.js'
 import { BigAddress } from './components/subcomponents/address.js'
 import Hint from './components/subcomponents/Hint.js'
-import { sendPopupMessageToBackgroundPage } from './background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport } from './background/backgroundUtils.js'
 import { assertNever } from './utils/typescript.js'
 import type { AddressBookEntries, AddressBookEntry } from './types/addressBookTypes.js'
 import type { ModifyAddressWindowState } from './types/visualizer-types.js'
@@ -17,6 +17,7 @@ import { noReplyExpectingBrowserRuntimeOnMessageListener } from './utils/browser
 import { addressEditEntry } from './components/ui-utils.js'
 import { createAsyncActionRunner, useAsyncState } from './utils/preact-utilities.js'
 import { AsyncActionButton } from './components/subcomponents/AsyncAction.js'
+import { ErrorComponent } from './components/subcomponents/Error.js'
 
 type Modals =  { page: 'noModal' }
 	| { page: 'addNewAddress', state: Signal<ModifyAddressWindowState> }
@@ -48,20 +49,23 @@ function FilterLink(param: { name: FilterKey, currentFilter: FilterKey, setActiv
 type ConfirmaddressBookEntryToBeRemovedParams = {
 	category: FilterKey,
 	addressBookEntry: AddressBookEntry,
-	removeEntry: (entry: AddressBookEntry) => void,
+	removeEntry: (entry: AddressBookEntry) => Promise<void>,
 	close: () => void,
 	renameAddressCallBack: RenameAddressCallBack,
+}
+
+export async function removeAddressBookEntryAndClose(removeEntry: (entry: AddressBookEntry) => Promise<void>, entry: AddressBookEntry, close: () => void) {
+	await removeEntry(entry)
+	close()
 }
 
 function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRemovedParams) {
 	const { value: removeAddressState, waitFor: waitForRemoveAddress, reset: resetRemoveAddress } = useAsyncState<void>()
 	const remove = createAsyncActionRunner(
 		{ value: removeAddressState, waitFor: waitForRemoveAddress, reset: resetRemoveAddress },
-		async () => {
-			param.removeEntry(param.addressBookEntry)
-			param.close()
-		}
+		async () => await removeAddressBookEntryAndClose(param.removeEntry, param.addressBookEntry, param.close)
 	)
+	const removePending = removeAddressState.value.state === 'pending'
 
 	return <>
 		<div class = 'modal-background'> </div>
@@ -75,11 +79,12 @@ function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRe
 				<div class = 'card-header-title'>
 					<p class = 'paragraph'> { `Remove ${ filterDefs[param.category] }` } </p>
 				</div>
-				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
+				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close } disabled = { removePending }>
 					<XMarkIcon />
 				</button>
 			</header>
 			<section class = 'modal-card-body'>
+				{ removeAddressState.value.state === 'rejected' ? <ErrorComponent text = { removeAddressState.value.error.message } /> : <></> }
 				<div class = 'card' style = 'margin: 10px;'>
 					<div class = 'card-content'>
 						<BigAddress
@@ -97,7 +102,7 @@ function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRe
 					text = 'Remove'
 					pendingText = 'Removing...'
 				/>
-				<button class = 'button is-warning is-danger' onClick = { param.close }>Cancel</button>
+				<button class = 'button is-warning is-danger' onClick = { param.close } disabled = { removePending }>Cancel</button>
 			</footer>
 		</div>
 	</>
@@ -323,8 +328,8 @@ export function AddressBook() {
 		modalState.value = { page: 'addNewAddress', state: new Signal(addressEditEntry(entry)) }
 	}
 
-	function removeAddressBookEntry(entry: AddressBookEntry) {
-		sendPopupMessageToBackgroundPage({
+	async function removeAddressBookEntry(entry: AddressBookEntry) {
+		await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({
 			method: 'popup_removeAddressBookEntry',
 			data: {
 				address: entry.address,

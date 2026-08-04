@@ -185,6 +185,24 @@ describe('EIP712', () => {
 		const parsed = EIP712Message.parse(openSeaWithTotalOriginalConsiderationItems)
 		assert.equal(validateEIP712Types(parsed), true)
 	})
+	test('can validate and extract structs nested beyond two levels', async () => {
+		const parsed = EIP712Message.parse(JSON.stringify({
+			types: {
+				EIP712Domain: [],
+				Root: [{ name: 'one', type: 'LevelOne' }],
+				LevelOne: [{ name: 'two', type: 'LevelTwo' }],
+				LevelTwo: [{ name: 'three', type: 'LevelThree' }],
+				LevelThree: [{ name: 'value', type: 'string' }],
+			},
+			primaryType: 'Root',
+			domain: {},
+			message: { one: { two: { three: { value: 'nested value' } } } },
+		}))
+
+		assert.equal(validateEIP712Types(parsed), true)
+		const enrichedMessage = stringifyJSONWithBigInts(await extractEIP712Message(ethereum, undefined, parsed, false))
+		assert.equal(enrichedMessage.includes('nested value'), true)
+	})
 	test('can validate a fixed-size primitive array for visualization', () => {
 		const parsed = EIP712Message.parse(hasFixedArray)
 		assert.equal(validateEIP712Types(parsed), true)

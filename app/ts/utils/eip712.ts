@@ -8,6 +8,8 @@ import type { SignMessageParams, SignTypedDataParams } from '../types/jsonRpc-si
 import { addressString } from './bigint.js'
 import { assertNever, modifyObject } from './typescript.js'
 
+export const MAX_EIP712_STRUCT_DEPTH = 10
+
 type TypeDefinition = ({ name: string, type: string, primaryType: true } | { name: string, typeName: string, baseType: string, type: TypeDefinition[], primaryType: false })
 type SolidityTypeTree = Record<string, TypeDefinition[]>
 const eip712DomainFieldTypes = {
@@ -212,7 +214,7 @@ const simplifyTypesToSolidityTypesOnly = (root: string, nonExtractedTypes: EIP71
 	const structNames = Object.keys(nonExtractedTypes)
 	const extracted: SolidityTypeTree = {}
 	const subSimplifyTypesToSolidityTypes = (root: string, nonExtractedTypes: EIP712Types, depth: number): { valid: true, TypeDefinitionArray: TypeDefinition[] } | { valid: false, reason: string } => {
-		if (depth > 10) return { valid: false, reason: 'stack too deep' }
+		if (depth > MAX_EIP712_STRUCT_DEPTH) return { valid: false, reason: 'stack too deep' }
 		const rootType = nonExtractedTypes[root]
 		const nonExtractedTypesArray = Object.entries(nonExtractedTypes)
 		if (rootType === undefined) return { valid: false, reason: 'stack too deep' }
