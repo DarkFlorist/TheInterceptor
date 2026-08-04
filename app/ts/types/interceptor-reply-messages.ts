@@ -194,7 +194,7 @@ export const RequestIdentifyAddress = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		address: EthereumAddress,
 		chainId: ChainIdWithUniversal,
-	})
+	}).And(funtypes.ReadonlyPartial({ includeSafeContractState: funtypes.Boolean }))
 }).asReadonly()
 
 type RequestIdentifyAddressReply = funtypes.Static<typeof RequestIdentifyAddressReply>
@@ -203,7 +203,12 @@ const RequestIdentifyAddressReply = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		chainId: ChainIdWithUniversal,
 		addressBookEntry: funtypes.Union(AddressBookEntry, funtypes.Undefined),
-	})
+	}).And(funtypes.ReadonlyPartial({
+		safeContractState: funtypes.Union(
+			funtypes.ReadonlyObject({ ok: funtypes.Literal(true), owners: funtypes.ReadonlyArray(EthereumAddress), version: funtypes.String }),
+			funtypes.ReadonlyObject({ ok: funtypes.Literal(false), message: funtypes.String }),
+		),
+	}))
 }).asReadonly()
 
 type RequestIsMainWindowOpen = funtypes.Static<typeof RequestIsMainWindowOpen>

@@ -216,10 +216,27 @@ describe('add new address save flow', () => {
 		})
 	})
 
-	test('renders Gnosis Safe signer controls as full-width editor rows', () => {
-		assert.match(addNewAddressSource, /class = 'safe-signer-editor-title'><Text text = 'Gnosis Safe signers \(optional\)'\/>/)
+	test('renders on-chain Gnosis Safe owners as signer choices', () => {
+		assert.match(addNewAddressSource, /class = 'safe-signer-editor-title'><Text text = 'Choose a Gnosis Safe signer'\/>/)
 		assert.match(addNewAddressSource, /class = 'safe-signer-editor-row'/)
 		assert.match(addNewAddressSource, /type = 'radio'\s+name = 'active-safe-signer'/)
-		assert.match(addNewAddressSource, /class = 'safe-signer-editor-add'/)
+		assert.doesNotMatch(addNewAddressSource, /Add Gnosis Safe signer/)
+		assert.match(addNewAddressSource, /safeContractState\.owners\.map\(checksummedAddress\)/)
+		assert.match(addNewAddressSource, /address\.toLowerCase\(\) === currentSafeSignerAddress\.toLowerCase\(\)/)
+	})
+
+	test('shows pending feedback while an address-book modification is saved', () => {
+		assert.match(addNewAddressSource, /state = \{ saveEntryState\.value\.state \}/)
+		assert.match(addNewAddressSource, /pendingText = \{ param\.modifyAddressWindowState\.value\.incompleteAddressBookEntry\.addingAddress \? 'Creating\.\.\.' : 'Modifying\.\.\.' \}/)
+		assert.match(addNewAddressSource, /await waitForSaveEntry\(async \(\) => \{[\s\S]*?saveAddressBookEntryAndSwitch/)
+		assert.match(addNewAddressSource, /'Modifying and switching\.\.\.'/)
+		assert.match(addNewAddressSource, /saveEntryState\.value\.state === 'pending' \|\| isAddressBookSubmissionDisabled/)
+	})
+
+	test('clears stale Safe owners when refreshing contract state fails', () => {
+		assert.match(addNewAddressSource, /const clearSafeContractState = \(message: string\)/)
+		assert.match(addNewAddressSource, /safeSignerAddresses: \[\],[\s\S]*?safeSignerAddress: undefined,[\s\S]*?safeVersion: undefined/)
+		assert.match(addNewAddressSource, /if \(!safeContractState\.ok\) \{[\s\S]*?clearSafeContractState\(safeContractState\.message\)/)
+		assert.match(addNewAddressSource, /requestedIdentification\.chainId === 'AllChains'[\s\S]*?'Gnosis Safe wallets must use a specific chain to load their signers\.'/)
 	})
 })

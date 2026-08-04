@@ -1,7 +1,7 @@
 import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { requestPopupInterceptorSimulationInput, sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
-import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
+import { getConfiguredSafeSigningEntry, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { EditEnsNamedHashWindowState, ModifyAddressWindowState, SimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { addressEditEntry } from '../ui-utils.js'
 import { ErrorBoundary, ErrorComponent, UnexpectedError } from '../subcomponents/Error.js'
@@ -49,11 +49,12 @@ function getMadeRichAddressBookEntries(
 	return [...entries, getActiveAddressEntry(activeSimulationAddress, activeAddresses)]
 }
 
-function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSimulation, disableReset }: {
+function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSimulation, disableReset, showSafeActions }: {
 	openImportSimulation: () => void
 	openImportSafe: () => void
 	resetSimulation: () => Promise<void>
 	disableReset: Signal<boolean>
+	showSafeActions: boolean
 }) {
 	const { value: exportSimulationStackState, waitFor: waitForExportSimulationStack } = useAsyncState<void>()
 	const { value: clearSimulationStackState, waitFor: waitForClearSimulationStack } = useAsyncState<void>()
@@ -107,7 +108,8 @@ function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSim
 				</> }
 				pendingText = 'Exporting simulation stack...'
 			/>
-			<button class = 'btn btn--outline' type = 'button' onClick = { openImportSafe }>Import Gnosis Safe</button>
+			{ showSafeActions ? <>
+			<button class = 'btn btn--outline' type = 'button' onClick = { openImportSafe }>Import Gnosis Safe transactions</button>
 			<CopySafeTransactionsButton
 				class = 'btn btn--outline'
 				onCopyStart = { () => {
@@ -116,6 +118,7 @@ function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSim
 				} }
 				onCopyError = { (message) => { safeCopyError.value = message } }
 			/>
+			</> : <></> }
 			<AsyncActionButton
 				class = 'btn btn--destructive'
 				type = 'button'
@@ -255,6 +258,8 @@ export function SimulationStackPage() {
 		fixedAddressRichList,
 		makeCurrentAddressRich,
 		numberOfAddressesMadeRich,
+		simulationMode,
+		useSignersAddressAsActiveAddress,
 	} = useLiveSimulationHomeData({
 		answerMainPopupOpen: false,
 		answerSimulationDataConsumerOpen: true,
@@ -280,6 +285,12 @@ export function SimulationStackPage() {
 		if (simVisResults.value.kind === 'passthrough') return true
 		return isEmptySimulation(simVisResults.value.value)
 	})
+	const showSafeActions = useComputed(() => getConfiguredSafeSigningEntry(activeAddresses.value, {
+		simulationMode: simulationMode.value,
+		useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress.value,
+		activeSimulationAddress: activeSimulationAddress.value,
+		chainId: rpcNetwork.value?.chainId,
+	}) !== undefined)
 
 	useSignalEffect(() => {
 		simVisResults.value
@@ -376,6 +387,7 @@ export function SimulationStackPage() {
 					openImportSafe = { () => { modalState.value = { page: 'importSafe', state: new Signal('') } } }
 					resetSimulation = { resetSimulation }
 					disableReset = { disableReset }
+					showSafeActions = { showSafeActions.value }
 				/>
 				<div class = 'simulation-stack-page-body'>
 					<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>

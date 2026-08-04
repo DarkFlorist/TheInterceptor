@@ -199,7 +199,8 @@ svg[role="img"] {
 
 .safe-signer-editor-title,
 .safe-signer-editor-row,
-.safe-signer-editor-add {
+.safe-signer-editor-add,
+.safe-signer-editor-empty {
 	grid-column: 1 / -1;
 	min-width: 0;
 }
@@ -211,7 +212,7 @@ svg[role="img"] {
 
 .safe-signer-editor-row {
 	display: grid;
-	grid-template-columns: 1em minmax(0, 1fr) auto;
+	grid-template-columns: 1em minmax(0, 1fr);
 	align-items: center;
 	gap: 0.4em;
 }

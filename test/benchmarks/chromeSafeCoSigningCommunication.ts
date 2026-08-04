@@ -681,7 +681,7 @@ async function main() {
 			const simulationStackConnection = await connectTarget(chrome.browserDebugPort, simulationStackTargetId)
 			try {
 				await waitForText(simulationStackConnection, 'Simulation Stack')
-				await clickButtonWithText(simulationStackConnection, 'Import Gnosis Safe')
+				await clickButtonWithText(simulationStackConnection, 'Import Gnosis Safe transactions')
 				await waitForText(simulationStackConnection, 'Import Interceptor Gnosis Safe Stack')
 				await simulationStackConnection.evaluate(`(() => {
 					const input = document.querySelector('.simulation-stack-import-input')

@@ -60,17 +60,18 @@ export type AddressIdentificationKey = {
 	address: bigint
 	chainId: ChainIdWithUniversal
 	windowStateId: string
+	includeSafeContractState: boolean
 }
 
 export function getAddressIdentificationKey(state: ModifyAddressWindowState): AddressIdentificationKey | undefined {
-	if (!state.incompleteAddressBookEntry.addingAddress) return undefined
+	if (!state.incompleteAddressBookEntry.addingAddress && state.incompleteAddressBookEntry.type !== 'safe') return undefined
 	const address = stringToAddress(state.incompleteAddressBookEntry.address)
 	if (address === undefined) return undefined
-	return { address, chainId: state.incompleteAddressBookEntry.chainId, windowStateId: state.windowStateId }
+	return { address, chainId: state.incompleteAddressBookEntry.chainId, windowStateId: state.windowStateId, includeSafeContractState: state.incompleteAddressBookEntry.type === 'safe' }
 }
 
 export function areAddressIdentificationKeysEqual(left: AddressIdentificationKey | undefined, right: AddressIdentificationKey | undefined) {
-	return left?.address === right?.address && left?.chainId === right?.chainId && left?.windowStateId === right?.windowStateId
+	return left?.address === right?.address && left?.chainId === right?.chainId && left?.windowStateId === right?.windowStateId && left?.includeSafeContractState === right?.includeSafeContractState
 }
 
 export function isIdentificationRequestCurrent(state: ModifyAddressWindowState, requestedIdentification: AddressIdentificationKey) {
@@ -253,28 +254,6 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 	const setChain = async (chainEntry: ChainEntry) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { chainId: chainEntry.chainId }))
 	const setAbi = async (abi: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { abi: abi.trim().length === 0 ? undefined : abi }))
 	const setSafeSignerAddress = async (safeSignerAddress: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { safeSignerAddress }))
-	const setSafeSignerAddressAtIndex = async (index: number, safeSignerAddress: string) => updateIncompleteAddressBookEntry(previousEntry => {
-		const safeSignerAddresses = [...(previousEntry.safeSignerAddresses ?? [])]
-		const previousAddress = safeSignerAddresses[index]
-		safeSignerAddresses[index] = safeSignerAddress
-		return modifyObject(previousEntry, {
-			safeSignerAddresses,
-			safeSignerAddress: previousEntry.safeSignerAddress === previousAddress || previousEntry.safeSignerAddress === undefined
-				? safeSignerAddress
-				: previousEntry.safeSignerAddress,
-		})
-	})
-	const addSafeSignerAddress = async () => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, {
-		safeSignerAddresses: [...(previousEntry.safeSignerAddresses ?? []), ''],
-	}))
-	const removeSafeSignerAddress = async (index: number) => updateIncompleteAddressBookEntry(previousEntry => {
-		const removedAddress = previousEntry.safeSignerAddresses?.[index]
-		const safeSignerAddresses = (previousEntry.safeSignerAddresses ?? []).filter((_, signerIndex) => signerIndex !== index)
-		return modifyObject(previousEntry, {
-			safeSignerAddresses,
-			safeSignerAddress: previousEntry.safeSignerAddress === removedAddress ? safeSignerAddresses[0] : previousEntry.safeSignerAddress,
-		})
-	})
 	const setSymbol = async (symbol: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { symbol }))
 	const setDecimals = async (inputEvent: Event) => updateIncompleteAddressBookEntry(previousEntry => {
 		if (!(inputEvent.target instanceof HTMLInputElement) || inputEvent.target === null) return previousEntry
@@ -313,7 +292,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 					<CellElement element = { <Text text = { 'Address: ' }/> }/>
 					<CellElement element = { <AddressInput disabled = { modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress === false || disableDueToSource } addressInput = { modifyAddressWindowState.value.incompleteAddressBookEntry.address } setAddress = { setAddress } /> } />
 					{ modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'safe' ? <>
-						<div class = 'safe-signer-editor-title'><Text text = 'Gnosis Safe signers (optional)'/></div>
+						<div class = 'safe-signer-editor-title'><Text text = 'Choose a Gnosis Safe signer'/></div>
 						{ (modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddresses ?? []).map((safeSignerAddress, index) =>
 							<div class = 'safe-signer-editor-row' key = { index }>
 								<input
@@ -321,18 +300,13 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 									name = 'active-safe-signer'
 									aria-label = { `Use Gnosis Safe signer ${ index + 1 } as active signer` }
 									checked = { modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddress === safeSignerAddress }
-									disabled = { disableDueToSource || safeSignerAddress.trim().length === 0 }
+									disabled = { disableDueToSource }
 									onInput = { () => { void setSafeSignerAddress(safeSignerAddress) } }
 								/>
-								<div>
-									<AddressInput disabled = { disableDueToSource } addressInput = { safeSignerAddress } setAddress = { (address) => { void setSafeSignerAddressAtIndex(index, address) } } />
-								</div>
-								<button class = 'btn btn--outline is-small' type = 'button' disabled = { disableDueToSource } onClick = { () => { void removeSafeSignerAddress(index) } }>Remove</button>
+								<span>{ safeSignerAddress }</span>
 							</div>
 						) }
-						<div class = 'safe-signer-editor-add'>
-							<button class = 'btn btn--outline is-small' type = 'button' disabled = { disableDueToSource } onClick = { () => { void addSafeSignerAddress() } }>Add Gnosis Safe signer</button>
-						</div>
+						{ (modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddresses ?? []).length === 0 ? <p class = 'paragraph safe-signer-editor-empty'>Enter a deployed Gnosis Safe address on the selected chain to load its signers.</p> : <></> }
 					</> : <></> }
 					{ modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC20' || modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC1155' ? <>
 						<CellElement element = { <Text text = { 'Symbol: ' }/> }/>
@@ -380,6 +354,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	const lastCompletedIdentification = useSignal<AddressIdentificationKey | undefined>(undefined)
 	const inFlightIdentifications = useSignal<readonly AddressIdentificationKey[]>([])
 	const { value: blockExplorerLookup, waitFor: waitForBlockExplorerLookup, reset: resetBlockExplorerLookup } = useAsyncState<void>()
+	const { value: saveEntryState, waitFor: waitForSaveEntry } = useAsyncState<void>()
 	const isBlockExplorerLookupPending = useComputed(() => blockExplorerLookup.value.state === 'pending')
 
 	useEffect(() => {
@@ -400,15 +375,58 @@ export function AddNewAddress(param: AddAddressParam) {
 	}, [])
 
 	useSignalEffect(() => {
-		// if user is adding a new address, fetch decimals and name from contract everytime that address changes we do not need to do that in case user is editing an address, as this data should have been fetched already
+		const clearSafeContractState = (message: string) => {
+			const currentState = param.modifyAddressWindowState.peek()
+			param.modifyAddressWindowState.value = modifyObject(currentState, {
+				incompleteAddressBookEntry: modifyObject(currentState.incompleteAddressBookEntry, {
+					safeSignerAddresses: [],
+					safeSignerAddress: undefined,
+					safeVersion: undefined,
+				}),
+				errorState: { blockEditing: false, message },
+			})
+		}
 		const identifyAddress = async (requestedIdentification: AddressIdentificationKey) => {
 			inFlightIdentifications.value = [...inFlightIdentifications.peek(), requestedIdentification]
 			try {
-				const identifiedAddress = await requestPopupIdentifyAddress({ address: requestedIdentification.address, chainId: requestedIdentification.chainId })
+				const identifiedAddress = await requestPopupIdentifyAddress({
+					address: requestedIdentification.address,
+					chainId: requestedIdentification.chainId,
+					includeSafeContractState: requestedIdentification.includeSafeContractState,
+				})
 				if (!isIdentificationRequestCurrent(param.modifyAddressWindowState.peek(), requestedIdentification)) return
 				lastCompletedIdentification.value = requestedIdentification
-				if (identifiedAddress === undefined || identifiedAddress.data.chainId !== requestedIdentification.chainId) return
+				if (identifiedAddress === undefined || identifiedAddress.data.chainId !== requestedIdentification.chainId) {
+					if (requestedIdentification.includeSafeContractState) clearSafeContractState('Interceptor did not return the current Gnosis Safe signers.')
+					return
+				}
 				const identifiedAddressBookEntry = identifiedAddress.data.addressBookEntry
+				const safeContractState = identifiedAddress.data.safeContractState
+				if (requestedIdentification.includeSafeContractState && safeContractState === undefined) {
+					const message = requestedIdentification.chainId === 'AllChains'
+						? 'Gnosis Safe wallets must use a specific chain to load their signers.'
+						: `Switch Interceptor to chain ${ requestedIdentification.chainId.toString() } to load this Gnosis Safe's signers.`
+					clearSafeContractState(message)
+				} else if (requestedIdentification.includeSafeContractState && safeContractState !== undefined) {
+					if (!safeContractState.ok) {
+						clearSafeContractState(safeContractState.message)
+						return
+					}
+					const currentState = param.modifyAddressWindowState.peek()
+					const safeSignerAddresses = safeContractState.owners.map(checksummedAddress)
+					const currentSafeSignerAddress = currentState.incompleteAddressBookEntry.safeSignerAddress
+					const safeSignerAddress = currentSafeSignerAddress === undefined
+						? safeSignerAddresses[0]
+						: safeSignerAddresses.find((address) => address.toLowerCase() === currentSafeSignerAddress.toLowerCase()) ?? safeSignerAddresses[0]
+					param.modifyAddressWindowState.value = modifyObject(currentState, {
+						incompleteAddressBookEntry: modifyObject(currentState.incompleteAddressBookEntry, {
+							safeSignerAddresses,
+							safeSignerAddress,
+							safeVersion: safeContractState.version,
+						}),
+						errorState: undefined,
+					})
+				}
 				if (identifiedAddressBookEntry?.type === 'ERC20') {
 					const currentState = param.modifyAddressWindowState.peek()
 					param.modifyAddressWindowState.value = modifyObject(currentState, { incompleteAddressBookEntry: {
@@ -524,24 +542,22 @@ export function AddNewAddress(param: AddAddressParam) {
 
 	async function modifyOrAddEntry() {
 		if (isSubmitButtonDisabled.peek()) return
-		const entryToAdd = getCompleteAddressBookEntry()
-		const saveError = await saveAddressBookEntry(entryToAdd, param.close)
-		if (saveError !== undefined) {
-			param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, {
-				errorState: { blockEditing: false, message: saveError }
-			})
-		}
+		await waitForSaveEntry(async () => {
+			const entryToAdd = getCompleteAddressBookEntry()
+			const saveError = await saveAddressBookEntry(entryToAdd, param.close)
+			if (saveError === undefined) return
+			param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, { errorState: { blockEditing: false, message: saveError } })
+		})
 	}
 
 	async function createAndSwitch() {
 		if (isSubmitButtonDisabled.peek()) return
-		const entryToAdd = getCompleteAddressBookEntry()
-		const saveError = await saveAddressBookEntryAndSwitch(entryToAdd, param.close, param.setActiveAddressAndInformAboutIt)
-		if (saveError !== undefined) {
-			param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, {
-				errorState: { blockEditing: false, message: saveError }
-			})
-		}
+		await waitForSaveEntry(async () => {
+			const entryToAdd = getCompleteAddressBookEntry()
+			const saveError = await saveAddressBookEntryAndSwitch(entryToAdd, param.close, param.setActiveAddressAndInformAboutIt)
+			if (saveError === undefined) return
+			param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, { errorState: { blockEditing: false, message: saveError } })
+		})
 	}
 
 	const completeAddressBookEntryOrError = useComputed(() => {
@@ -600,7 +616,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	})
 
 	const isSubmitButtonDisabled = useComputed(() => {
-		return isAddressBookSubmissionDisabled({
+		return saveEntryState.value.state === 'pending' || isAddressBookSubmissionDisabled({
 			areInputsValid: areInputsValid.value,
 			blockEditing: param.modifyAddressWindowState.value.errorState?.blockEditing === true,
 			requiresOnChainVerification: showOnChainVerificationErrorBox.value,
@@ -651,6 +667,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					{ completeAddressBookEntryOrError.value.type !== 'error' ? <></> : <ErrorText text = { completeAddressBookEntryOrError.value.error } /> }
 
 					{ param.modifyAddressWindowState.value.errorState === undefined ? <></> : <ErrorText text = { param.modifyAddressWindowState.value.errorState.message } /> }
+					{ saveEntryState.value.state === 'rejected' ? <ErrorText text = { saveEntryState.value.error.message } /> : <></> }
 					{ !showOnChainVerificationErrorBox.value ? <></> :
 						<ErrorCheckBox
 							text = { `The name and symbol for this token was provided by the token itself and we have not validated its legitimacy. A token may claim to have a name/symbol that is the same as another popular token (e.g., USDC or DAI) in an attempt to trick you. If you recognize this token's name, please verify elsewhere that this is the correct address for it.` }
@@ -660,10 +677,8 @@ export function AddNewAddress(param: AddAddressParam) {
 				</div>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value.incompleteAddressBookEntry === undefined || activeAddress.value === stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { isSubmitButtonDisabled.value }>
-					{ param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' }
-				</button> }
-				<button class = 'button is-success is-primary' onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled.value }> { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
+				{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value.incompleteAddressBookEntry === undefined || activeAddress.value === stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) ? <></> : <AsyncActionButton class = 'button is-success is-primary' state = { saveEntryState.value.state } onClick = { createAndSwitch } disabled = { isSubmitButtonDisabled.value } text = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } pendingText = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Creating and switching...' : 'Modifying and switching...' } /> }
+				<AsyncActionButton class = 'button is-success is-primary' state = { saveEntryState.value.state } onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled.value } text = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } pendingText = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Creating...' : 'Modifying...' } />
 				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close } disabled = { isBlockExplorerLookupPending.value }>Cancel</button>
 			</footer>
 		</div>

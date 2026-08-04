@@ -1204,5 +1204,11 @@ export async function requestIdentifyAddress(ethereumClientService: EthereumClie
 	const addressBookEntry = requestedChainId === 'AllChains' || requestedChainId !== ethereumClientService.getChainId()
 		? undefined
 		: await identifyAddress(ethereumClientService, undefined, parsedRequest.data.address)
-	return { method: 'popup_requestIdentifyAddress' as const, data: { chainId: requestedChainId, addressBookEntry } }
+	const safeContractState = !parsedRequest.data.includeSafeContractState || requestedChainId === 'AllChains' || requestedChainId !== ethereumClientService.getChainId()
+		? undefined
+		: await getSafeContractSnapshot(ethereumClientService, parsedRequest.data.address).then(
+			({ state }) => ({ ok: true as const, owners: state.owners, version: state.version }),
+			(error: unknown) => ({ ok: false as const, message: getErrorMessage(error) ?? 'Failed to retrieve Gnosis Safe signers.' }),
+		)
+	return { method: 'popup_requestIdentifyAddress' as const, data: { chainId: requestedChainId, addressBookEntry, safeContractState } }
 }

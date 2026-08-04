@@ -368,11 +368,13 @@ function createSimulatedCompleteVisualizedSimulation(serializableSettings: Setti
 
 function createStackHomePageUpdate(tabId: number, popupRefreshGeneration: number, iconReason: string, transactionIdentifiers: readonly bigint[] = [1n], numberOfAddressesMadeRich = 0, richList: readonly EnrichedRichListElement[] = []): UpdateHomePage {
 	const update = createHomePageUpdate(tabId, popupRefreshGeneration, iconReason, numberOfAddressesMadeRich, richList)
-	const serializableSettings = createSerializableSettings()
+	const safeAddress = 0x3000000000000000000000000000000000000003n
+	const serializableSettings = { ...createSerializableSettings(), activeSimulationAddress: safeAddress, simulationMode: false }
 	return {
 		...update,
 		data: {
 			...update.data,
+			activeAddresses: [{ type: 'safe', name: 'Test Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSignerAddress: 0x1000000000000000000000000000000000000001n }],
 			visualizedSimulatorState: createSimulatedCompleteVisualizedSimulation(serializableSettings, transactionIdentifiers, numberOfAddressesMadeRich),
 			settings: serializableSettings,
 			rpcEntries: [serializableSettings.activeRpcNetwork],
@@ -882,6 +884,30 @@ describe('simulation visualizer open replies', () => {
 			})
 
 			assert.equal(dom.document.body.textContent?.includes(exportError), true)
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('stack visualizer hides Safe actions when the active Safe has no configured signer', async () => {
+		const dom = installDomMock()
+		const { listeners } = installBrowserMock(() => undefined)
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+			const update = createStackHomePageUpdate(23, 1, 'Stack tab')
+			const activeSafe = update.data.activeAddresses[0]
+			if (activeSafe?.type !== 'safe') throw new Error('Expected a Safe fixture')
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, data: { ...update.data, activeAddresses: [{ ...activeSafe, safeSignerAddress: undefined }] } }) }, {}, () => undefined)
+			})
+
+			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), false)
+			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), false)
 		} finally {
 			dom.restore()
 		}

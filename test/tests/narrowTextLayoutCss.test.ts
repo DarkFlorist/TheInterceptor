@@ -51,9 +51,9 @@ describe('narrow text layout CSS', () => {
 
 		const safeSignerEditorRow = expectRule(css, '.safe-signer-editor-row')
 		assert.match(safeSignerEditorRow, /display\s*:\s*grid\s*;/)
-		assert.match(safeSignerEditorRow, /grid-template-columns\s*:\s*1em minmax\(0,\s*1fr\) auto\s*;/)
+		assert.match(safeSignerEditorRow, /grid-template-columns\s*:\s*1em minmax\(0,\s*1fr\)\s*;/)
 
-		assert.match(css, /\.safe-signer-editor-title,\s*\.safe-signer-editor-row,\s*\.safe-signer-editor-add\s*\{[\s\S]*?grid-column\s*:\s*1 \/ -1\s*;/)
+		assert.match(css, /\.safe-signer-editor-title,\s*\.safe-signer-editor-row,\s*\.safe-signer-editor-add,\s*\.safe-signer-editor-empty\s*\{[\s\S]*?grid-column\s*:\s*1 \/ -1\s*;/)
 
 		const dropdownText = expectRule(css, '.dropdown button > .truncate')
 		assert.match(dropdownText, /min-width\s*:\s*0\s*;/)

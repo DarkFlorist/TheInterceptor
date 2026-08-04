@@ -104,8 +104,7 @@ const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
 const REQUEST_SCOPED_PROVIDER_EVENT_METHODS = new Set(['accountsChanged', 'connect', 'disconnect', 'chainChanged'])
 
 export function normalizeSignerChainId(chainId: string) {
-	// Coinbase historically emitted decimal chain IDs. Only normalize the entire
-	// value so malformed IDs are not silently truncated by Number.parseInt.
+	// Coinbase historically emitted decimal chain IDs. Only normalize the entire value so malformed IDs are not silently truncated by Number.parseInt.
 	return /^[0-9]+$/.test(chainId) ? `0x${ BigInt(chainId).toString(16) }` : chainId
 }
 
