@@ -6,11 +6,21 @@ import { PendingTransactionOrSignableMessage } from '../app/ts/types/accessReque
 import { serialize } from '../app/ts/types/wire-types.js'
 import { getSafeTxHash } from '../app/ts/utils/eip712.js'
 import { privateKeyToAccount } from '../app/ts/utils/ethereumPrimitives.js'
-import { connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForTargetByUrl } from '../test/benchmarks/chromeHarness.js'
+import { launchSafeUiScreenshotBrowser, SafeUiScreenshotPage } from '../test/benchmarks/safeUiScreenshotHarness.js'
 
 const outputDirectory = path.resolve(process.env.SAFE_UI_SCREENSHOT_OUTPUT_DIRECTORY ?? path.join(tmpdir(), 'interceptor-safe-wallet-screenshots'))
 
-async function waitForSelector(connection: Awaited<ReturnType<typeof connectTarget>>, selector: string) {
+const viewports = [
+	{ name: 'ultra-narrow', width: 220, height: 700 },
+	{ name: 'narrow', width: 320, height: 700 },
+	{ name: 'popup', width: 520, height: 700 },
+	{ name: 'medium', width: 800, height: 900 },
+	{ name: 'wide', width: 1280, height: 900 },
+] as const
+
+let capturedScenarioCount = 0
+
+async function waitForSelector(connection: SafeUiScreenshotPage, selector: string) {
 	for (let attempt = 0; attempt < 200; attempt += 1) {
 		const found = await connection.evaluate<boolean>(`document.querySelector(${ JSON.stringify(selector) }) !== null`)
 		if (found) return
@@ -19,41 +29,52 @@ async function waitForSelector(connection: Awaited<ReturnType<typeof connectTarg
 	throw new Error(`Timed out waiting for ${ selector }`)
 }
 
-async function waitForText(connection: Awaited<ReturnType<typeof connectTarget>>, expectedText: string) {
+async function waitForText(connection: SafeUiScreenshotPage, expectedText: string) {
 	for (let attempt = 0; attempt < 200; attempt += 1) {
 		const found = await connection.evaluate<boolean>(`document.body.textContent?.includes(${ JSON.stringify(expectedText) }) === true`)
 		if (found) return
 		await Bun.sleep(50)
 	}
-	throw new Error(`Timed out waiting for text: ${ expectedText }`)
+	const bodyText = await connection.evaluate<string>('document.body.textContent ?? ""')
+	throw new Error(`Timed out waiting for text: ${ expectedText }. Page text: ${ bodyText ?? '' }`)
 }
 
-async function capture(connection: Awaited<ReturnType<typeof connectTarget>>, filename: string, width: number, height: number) {
-	await connection.send('Page.enable')
-	await connection.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false })
+async function prepareForDeterministicCapture(connection: SafeUiScreenshotPage) {
+	await connection.evaluate(`(async () => {
+		await document.fonts.ready
+		let style = document.querySelector('#css-visual-regression-overrides')
+		if (!(style instanceof HTMLStyleElement)) {
+			style = document.createElement('style')
+			style.id = 'css-visual-regression-overrides'
+			style.textContent = '* { animation: none !important; caret-color: transparent !important; transition: none !important; }'
+			document.head.append(style)
+		}
+	})()`)
+}
+
+async function capture(connection: SafeUiScreenshotPage, filename: string, width: number, height: number) {
+	await connection.setViewport(width, height)
+	await prepareForDeterministicCapture(connection)
 	await Bun.sleep(250)
-	const screenshot = await connection.send<{ data: string }>('Page.captureScreenshot', {
-		format: 'png',
-		captureBeyondViewport: true,
-		fromSurface: true,
-	})
-	await writeFile(path.join(outputDirectory, filename), Buffer.from(screenshot.data, 'base64'))
+	const screenshot = await connection.captureScreenshot()
+	await writeFile(path.join(outputDirectory, filename), Buffer.from(screenshot, 'base64'))
+}
+
+async function captureScenario(connection: SafeUiScreenshotPage, scenarioName: string) {
+	capturedScenarioCount += 1
+	const scenarioNumber = capturedScenarioCount.toString().padStart(2, '0')
+	for (const viewport of viewports) {
+		await capture(connection, `${ scenarioNumber }-${ scenarioName}--${ viewport.name }.png`, viewport.width, viewport.height)
+	}
 }
 
 await mkdir(outputDirectory, { recursive: true })
 console.info(`Writing screenshots outside the repository to ${ outputDirectory }`)
-console.info('Launching Chromium')
-const session = await launchChromeSession()
+const browser = await launchSafeUiScreenshotBrowser()
+console.info(`Launched ${ browser.name }${ browser.version === undefined ? '' : ` ${ browser.version }` }`)
 try {
-	console.info('Waiting for extension worker')
-	const workerTarget = await waitForInterceptorExtensionServiceWorker(session.browserDebugPort)
-	const extensionId = new URL(workerTarget.url).host
-
-	const addressBookUrl = `chrome-extension://${ extensionId }/html3/addressBookV3.html`
 	console.info('Opening address book')
-	const addressBookTargetId = await createTargetPage(session.browserConnection, addressBookUrl)
-	const addressBookTarget = await waitForTargetByUrl(session.browserDebugPort, addressBookUrl)
-	const addressBook = await connectTarget(session.browserDebugPort, addressBookTarget.id)
+	const addressBook = await browser.openPage('addressBook')
 	await waitForSelector(addressBook, '.address-book-page')
 	await addressBook.evaluate(`(() => {
 		const safeLink = [...document.querySelectorAll('a')].find((element) => element.textContent?.includes('My Gnosis Safes'))
@@ -61,19 +82,21 @@ try {
 		safeLink.click()
 	})()`)
 	await Bun.sleep(400)
-	await capture(addressBook, 'safe-address-book.png', 1280, 800)
+	await captureScenario(addressBook, 'safe-address-book')
 	await addressBook.evaluate(`(() => {
 		const addButton = [...document.querySelectorAll('button')].find((element) => element.textContent?.includes('Add New Gnosis Safe Wallet'))
 		if (!(addButton instanceof HTMLElement)) throw new Error('Add New Gnosis Safe Wallet button was not found')
 		addButton.click()
 	})()`)
 	await waitForSelector(addressBook, '.modal.is-active')
+	await captureScenario(addressBook, 'safe-address-form-empty')
 	await addressBook.evaluate(`(() => {
 		const addSignerButton = [...document.querySelectorAll('.modal.is-active button')].find((element) => element.textContent?.includes('Add Gnosis Safe signer'))
 		if (!(addSignerButton instanceof HTMLElement)) throw new Error('Add Gnosis Safe signer button was not found')
 		addSignerButton.click()
 	})()`)
 	await Bun.sleep(100)
+	await captureScenario(addressBook, 'safe-address-form-with-signer')
 	await addressBook.evaluate(`(() => {
 		const inputs = [...document.querySelectorAll('.modal.is-active input[type="text"]')]
 		const values = ['Treasury Safe', '0x1234567890123456789012345678901234567890', '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd']
@@ -84,9 +107,8 @@ try {
 			input.dispatchEvent(new InputEvent('input', { bubbles: true, data: value }))
 		}
 	})()`)
-	await capture(addressBook, 'safe-address-form.png', 1280, 900)
-	await addressBook.evaluate(`new Promise((resolve, reject) => {
-		chrome.storage.local.set({
+	await captureScenario(addressBook, 'safe-address-form-filled')
+	const setSafeAddressFixture = `browser.storage.local.set({
 			activeSimulationAddress: '0x1234567890123456789012345678901234567890',
 			simulationMode: false,
 			useSignersAddressAsActiveAddress: false,
@@ -106,18 +128,17 @@ try {
 				],
 				safeVersion: '1.4.1',
 			}],
-		}, () => chrome.runtime.lastError === undefined ? resolve(true) : reject(chrome.runtime.lastError))
-	})`)
-	await session.browserConnection.send('Target.closeTarget', { targetId: addressBookTargetId })
+		})`
+	await addressBook.evaluate(setSafeAddressFixture)
+	await addressBook.close()
 
 	console.info('Opening Gnosis Safe signing-mode popup')
-	const popupUrl = `chrome-extension://${ extensionId }/html3/popupV3.html`
-	const popupTargetId = await createTargetPage(session.browserConnection, popupUrl)
-	const popupTarget = await waitForTargetByUrl(session.browserDebugPort, popupUrl)
-	const popup = await connectTarget(session.browserDebugPort, popupTarget.id)
+	const popup = await browser.openPage('popup')
 	await waitForSelector(popup, '.popup-home-card')
+	await waitForText(popup, 'Treasury Safe')
+	await waitForText(popup, 'Gnosis Safe signers')
 	await Bun.sleep(500)
-	await capture(popup, 'safe-signing-mode.png', 520, 650)
+	await captureScenario(popup, 'safe-signing-mode')
 
 	console.info('Opening Gnosis Safe transaction confirmation')
 	const safeAddress = 0x1234567890123456789012345678901234567890n
@@ -194,36 +215,51 @@ try {
 		},
 	}
 	const serializedPendingTransactions = serialize(PendingTransactionOrSignableMessage, pendingSafeTransaction)
-	await popup.evaluate(`new Promise((resolve, reject) => {
-		chrome.storage.local.set({
+	const setPendingTransactionFixture = `browser.storage.local.set({
 			pendingTransactionsAndMessages: [${ JSON.stringify(serializedPendingTransactions) }],
-		}, () => chrome.runtime.lastError === undefined ? resolve(true) : reject(chrome.runtime.lastError))
-	})`)
-	await session.browserConnection.send('Target.closeTarget', { targetId: popupTargetId })
-	const confirmUrl = `chrome-extension://${ extensionId }/html3/confirmTransactionV3.html`
-	const confirmTargetId = await createTargetPage(session.browserConnection, confirmUrl)
-	const confirmTarget = await waitForTargetByUrl(session.browserDebugPort, confirmUrl)
-	const confirm = await connectTarget(session.browserDebugPort, confirmTarget.id)
+		})`
+	await popup.evaluate(setPendingTransactionFixture)
+	await popup.close()
+	const confirm = await browser.openPage('confirmTransaction', `(async () => {
+		await ${ setSafeAddressFixture }
+		await ${ setPendingTransactionFixture }
+	})()`)
 	await waitForText(confirm, 'wrapped as Gnosis Safe transaction nonce 7')
-	await capture(confirm, 'safe-confirm-transaction.png', 800, 900)
-	await session.browserConnection.send('Target.closeTarget', { targetId: confirmTargetId })
+	await waitForText(confirm, 'Gas estimation error')
+	await captureScenario(confirm, 'safe-confirm-transaction')
+	await confirm.close()
 
-	const stackUrl = `chrome-extension://${ extensionId }/html3/simulationStackV3.html`
 	console.info('Opening simulation stack')
-	const stackTargetId = await createTargetPage(session.browserConnection, stackUrl)
-	const stackTarget = await waitForTargetByUrl(session.browserDebugPort, stackUrl)
-	const stack = await connectTarget(session.browserDebugPort, stackTarget.id)
+	const stack = await browser.openPage('simulationStack')
 	await waitForSelector(stack, '.simulation-stack-page-header')
-	await capture(stack, 'safe-simulation-stack.png', 1280, 800)
+	await captureScenario(stack, 'safe-simulation-stack')
 	await stack.evaluate(`(() => {
 		const importButton = [...document.querySelectorAll('button')].find((element) => element.textContent?.includes('Import Gnosis Safe'))
 		if (!(importButton instanceof HTMLElement)) throw new Error('Import Gnosis Safe button was not found')
 		importButton.click()
 	})()`)
 	await waitForSelector(stack, '.modal.is-active')
-	await capture(stack, 'safe-stack-import.png', 1280, 800)
-	await session.browserConnection.send('Target.closeTarget', { targetId: stackTargetId })
+	await captureScenario(stack, 'safe-stack-import-empty')
+	await stack.evaluate(`(() => {
+		const textarea = document.querySelector('.modal.is-active textarea')
+		if (!(textarea instanceof HTMLTextAreaElement)) throw new Error('Gnosis Safe stack textarea was not found')
+		textarea.value = '{ "version": "1", "transactions": [] }'
+		textarea.dispatchEvent(new InputEvent('input', { bubbles: true, data: textarea.value }))
+	})()`)
+	await captureScenario(stack, 'safe-stack-import-filled')
+	await stack.close()
+
+	console.info('Opening settings import and export page')
+	const settings = await browser.openPage('settingsView')
+	await waitForSelector(settings, '.window-header')
+	await captureScenario(settings, 'settings-import-export')
+	await settings.close()
+
+	const expectedScreenshotCount = 50
+	const screenshotCount = capturedScenarioCount * viewports.length
+	if (screenshotCount !== expectedScreenshotCount) throw new Error(`Expected ${ expectedScreenshotCount } screenshots, captured ${ screenshotCount }`)
+	console.info(`Captured ${ screenshotCount } deterministic screenshots`)
 } finally {
-	console.info('Closing Chromium')
-	await session.close()
+	console.info(`Closing ${ browser.name }`)
+	await browser.close()
 }
