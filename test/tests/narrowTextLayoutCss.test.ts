@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { readInterceptorAppCss } from './cssTestUtils.js'
 
 function expectRule(css: string, selector: string) {
 	const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -10,7 +11,7 @@ function expectRule(css: string, selector: string) {
 
 describe('narrow text layout CSS', () => {
 	test('keeps checkbox labels and dropdown text constrained inside narrow containers', async () => {
-		const css = await Bun.file('app/css/interceptor.css').text()
+		const css = await readInterceptorAppCss()
 
 		const formControl = expectRule(css, '.form-control')
 		assert.match(formControl, /grid-template-columns\s*:\s*1em minmax\(0,\s*1fr\)\s*;/)
@@ -125,7 +126,7 @@ describe('narrow text layout CSS', () => {
 	})
 
 	test('lets simulation stack rows use the available page width', async () => {
-		const css = await Bun.file('app/css/interceptor.css').text()
+		const css = await readInterceptorAppCss()
 
 		const simulationStackPage = expectRule(css, '.simulation-stack-page')
 		assert.match(simulationStackPage, /--grid-column\s*:\s*1 \/ -1\s*;/)
@@ -168,7 +169,7 @@ describe('narrow text layout CSS', () => {
 	})
 
 	test('uses flexible button height and stacks address book card actions at ultra-narrow widths', async () => {
-		const css = await Bun.file('app/css/interceptor.css').text()
+		const css = await readInterceptorAppCss()
 
 		const button = expectRule(css, ':where(.btn)')
 		assert.match(button, /box-sizing\s*:\s*border-box\s*;/)

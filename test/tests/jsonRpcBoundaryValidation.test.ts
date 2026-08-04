@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { EthereumJsonRpcRequest, FeeHistory, EthGetLogsRequest, EthNewFilter } from '../../app/ts/types/JsonRpc-types.js'
-import { EthereumAddress, EthereumBlockTag, EthereumBytes16, EthereumBytes256, EthereumBytes32, serialize } from '../../app/ts/types/wire-types.js'
+import { CanonicalEthereumQuantity, EthereumAddress, EthereumBlockTag, EthereumBytes16, EthereumBytes256, EthereumBytes32, EthereumQuantity, serialize } from '../../app/ts/types/wire-types.js'
 
 const blockHash = `0x${ '12'.repeat(32) }`
 
@@ -42,6 +42,14 @@ describe('JSON-RPC boundary validation', () => {
 		assert.equal(serialize(EthereumBytes32, (1n << 256n) - 1n).length, 66)
 		assert.equal(serialize(EthereumBytes256, (1n << 2048n) - 1n).length, 514)
 		assert.equal(serialize(EthereumBytes16, (1n << 64n) - 1n).length, 18)
+	})
+
+	test('keeps Ethereum quantity serialization within the 256-bit parser boundary', () => {
+		const largestQuantity = (1n << 256n) - 1n
+		assert.equal(EthereumQuantity.parse(serialize(EthereumQuantity, largestQuantity)), largestQuantity)
+		assert.equal(CanonicalEthereumQuantity.parse(serialize(CanonicalEthereumQuantity, largestQuantity)), largestQuantity)
+		assert.throws(() => serialize(EthereumQuantity, 1n << 256n))
+		assert.throws(() => serialize(CanonicalEthereumQuantity, 1n << 256n))
 	})
 
 	test('accepts valid fee history reward percentiles', () => {

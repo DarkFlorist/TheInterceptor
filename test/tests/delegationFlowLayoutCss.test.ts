@@ -1,9 +1,10 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { readInterceptorAppCss } from './cssTestUtils.js'
 
 describe('delegation flow layout CSS', () => {
 	async function getDelegationFlowCss() {
-		const css = await Bun.file('app/css/interceptor.css').text()
+		const css = await readInterceptorAppCss()
 		const rowMatch = css.match(/\.delegation-flow-row\s*\{([\s\S]*?)\n\}/)
 		const connectorMatch = css.match(/\.delegation-flow-connector\s*\{([\s\S]*?)\n\}/)
 		const targetsMatch = css.match(/\.delegation-flow-targets\s*\{([\s\S]*?)\n\}/)

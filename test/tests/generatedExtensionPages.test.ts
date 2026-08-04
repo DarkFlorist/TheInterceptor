@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { pageDefinitions, renderExtensionPage } from '../../scripts/generate-extension-pages.mts'
+import { pageDefinitions, renderExtensionPage, stylesheetFilenames } from '../../scripts/generate-extension-pages.mts'
 
 function getPageDefinition(name: string) {
 	const definition = pageDefinitions.find((pageDefinition) => pageDefinition.name === name)
@@ -26,12 +26,17 @@ describe('extension page rendering', () => {
 		const popup = renderExtensionPage(getPageDefinition('popup'), 3)
 		assert.match(popup, /<title>The Interceptor<\/title>/)
 		assert.match(popup, /<main>Loading\.\.\.<\/main>/)
-		assert.match(popup, /bulma-badge\.css/)
+		assert.doesNotMatch(popup, /bulma-(?:badge|divider)\.css/)
+		assert.doesNotMatch(popup, /(?:bulma|interceptor)\.css/)
+		assert.deepEqual(
+			[...popup.matchAll(/href = '\.\.\/css\/([^']+\.css)'/g)].map((match) => match[1]),
+			stylesheetFilenames,
+		)
 		assert.match(popup, /src = '\.\.\/js\/popup\.js'/)
 
 		const addressBook = renderExtensionPage(getPageDefinition('addressBook'), 3)
 		assert.match(addressBook, /src = '\.\.\/js\/addressBookRender\.js'/)
-		assert.doesNotMatch(addressBook, /bulma-badge\.css/)
+		assert.doesNotMatch(addressBook, /bulma-(?:badge|divider)\.css/)
 
 		const simulationStack = renderExtensionPage(getPageDefinition('simulationStack'), 3)
 		assert.match(simulationStack, /<div id = 'simulation-stack-root'>Loading\.\.\.<\/div>/)
@@ -39,7 +44,7 @@ describe('extension page rendering', () => {
 		const watchAsset = renderExtensionPage(getPageDefinition('watchAsset'), 3)
 		assert.match(watchAsset, /<title>Watch Asset - The Interceptor<\/title>/)
 		assert.match(watchAsset, /src = '\.\.\/js\/watchAsset\.js'/)
-		assert.doesNotMatch(watchAsset, /bulma-divider\.css/)
+		assert.doesNotMatch(watchAsset, /bulma-(?:badge|divider)\.css/)
 	})
 
 	test('preserves the intentional manifest-specific differences', () => {

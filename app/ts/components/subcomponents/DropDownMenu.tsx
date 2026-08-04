@@ -1,5 +1,5 @@
 import { type Signal, useSignal } from '@preact/signals'
-import { useRef } from 'preact/hooks'
+import { useId, useRef } from 'preact/hooks'
 import { clickOutsideAlerter } from '../ui-utils.js'
 import { ChevronIcon } from './icons.js'
 
@@ -22,6 +22,7 @@ export function DropDownMenuButtonContent({ label }: { label: string }) {
 export const DropDownMenu = <OptionType extends string,>({ selected, dropDownOptions, onChangedCallBack, buttonClassses, disabled = false, getOptionLabel = (option) => option }: DropDownMenuParams<OptionType>) => {
 	const isOpen = useSignal(false)
 	const ref = useRef<HTMLDivElement>(null)
+	const menuId = useId()
 	clickOutsideAlerter(ref, () => { isOpen.value = false })
 
 	const toggle = () => {
@@ -37,17 +38,17 @@ export const DropDownMenu = <OptionType extends string,>({ selected, dropDownOpt
 
 	return <div ref = { ref } class = { `dropdown ${ isOpen.value ? 'is-active' : '' }` }>
 		<div class = 'dropdown-trigger' style = { { maxWidth: '100%' } }>
-			<button type = 'button' class = { buttonClassses } disabled = { disabled } aria-haspopup = 'true' aria-controls = 'dropdown-menu' onClick = { toggle } title = { getOptionLabel(selected.value) } style = { { width: '100%' } }>
+			<button type = 'button' class = { buttonClassses } disabled = { disabled } aria-haspopup = 'true' aria-expanded = { isOpen.value } aria-controls = { menuId } onClick = { toggle } title = { getOptionLabel(selected.value) } style = { { width: '100%' } }>
 				<DropDownMenuButtonContent label = { getOptionLabel(selected.value) }/>
 			</button>
 		</div>
-		<div class = 'dropdown-menu' id = 'dropdown-menu' role = 'menu' style = { { right: '0' } }>
+		<div class = 'dropdown-menu' id = { menuId } role = 'menu' style = { { right: '0' } }>
 			<div class = 'dropdown-content' style = { { right: '0' } }> {
-				dropDownOptions.value.map((option) => <>
-					<button type = 'button' class = { `dropdown-item ${ option === selected.value ? 'is-active' : '' }` } onClick = { () => onChanged(option) } >
+				dropDownOptions.value.map((option, index) =>
+					<button key = { `${ option }-${ index }` } type = 'button' class = { `dropdown-item ${ option === selected.value ? 'is-active' : '' }` } onClick = { () => onChanged(option) } >
 						{ getOptionLabel(option) }
 					</button>
-				</>)
+				)
 			} </div>
 		</div>
 	</div>

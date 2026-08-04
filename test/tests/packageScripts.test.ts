@@ -83,6 +83,28 @@ describe('package scripts', () => {
 		}
 	})
 
+	test('keeps checked-in framework CSS independent from Bulma build tooling', () => {
+		const packageJson = getPackageJson()
+		for (const dependencyGroup of ['dependencies', 'devDependencies'] as const) {
+			const dependencies = packageJson[dependencyGroup]
+			assert.ok(isRecord(dependencies))
+			assert.equal(dependencies.bulma, undefined)
+			assert.equal(dependencies.purgecss, undefined)
+		}
+		const removedCssToolingPattern = /(?:bulma|purgecss|generate-interceptor-framework|check-interceptor-framework)/u
+		assert.doesNotMatch(JSON.stringify(getPackageScripts()), removedCssToolingPattern)
+		assert.doesNotMatch(fs.readFileSync(path.join(repositoryRoot, 'bun.lock'), 'utf8'), removedCssToolingPattern)
+		assert.doesNotMatch(fs.readFileSync(path.join(repositoryRoot, 'scripts', 'setup-chrome.mts'), 'utf8'), removedCssToolingPattern)
+		assert.equal(fs.existsSync(path.join(repositoryRoot, 'scripts', 'generate-interceptor-framework.mts')), false)
+	})
+
+	test('uses Bun for the Firefox installer', () => {
+		const scripts = getPackageScripts()
+		assert.equal(getScript(scripts, 'install-firefox'), 'bun ./scripts/install-firefox.mts')
+		assert.equal(fs.existsSync(path.join(repositoryRoot, 'scripts', 'install-firefox.mts')), true)
+		assert.equal(fs.existsSync(path.join(repositoryRoot, 'scripts', 'install-firefox.sh')), false)
+	})
+
 	test('provides the browser-level Safe co-signer handoff check', () => {
 		const scripts = getPackageScripts()
 

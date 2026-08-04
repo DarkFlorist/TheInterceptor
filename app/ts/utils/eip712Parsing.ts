@@ -4,6 +4,7 @@ import type { EIP712Message, EnrichedEIP712, EnrichedEIP712Message, EnrichedEIP7
 import { parseSolidityValueByTypeEnriched } from './solidityTypes.js'
 import { SolidityType } from '../types/solidityType.js'
 import { promiseAllMapAbortSafe } from './requests.js'
+import { MAX_EIP712_STRUCT_DEPTH } from './eip712.js'
 
 function findType(name: string, types: readonly { readonly name: string, readonly type: string}[]) {
 	return types.find((x) => x.name === name)?.type
@@ -44,7 +45,7 @@ function validateEIP712Value(depth: number, value: unknown, parsedType: ParsedEI
 }
 
 function validateEIP712TypesSubset(depth: number, message: JSONEncodeableObject, currentType: string, types: { [x: string]: readonly { readonly name: string, readonly type: string}[] | undefined }): boolean {
-	if (depth > 2) return false // do not allow too deep messages
+	if (depth > MAX_EIP712_STRUCT_DEPTH) return false
 	const currentTypes = types[currentType]
 	if (currentTypes === undefined) return false
 	const keys = Object.keys(message)
@@ -91,7 +92,7 @@ async function extractEIP712Value(ethereumClientService: EthereumClientService, 
 }
 
 async function extractEIP712MessageSubset(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, depth: number, message: JSONEncodeableObject, currentType: string, types: { [x: string]: readonly { readonly name: string, readonly type: string}[] | undefined }, useLocalStorage = true): Promise<EnrichedEIP712Message> {
-	if (depth > 2) throw new Error('Too deep EIP712 message')
+	if (depth > MAX_EIP712_STRUCT_DEPTH) throw new Error('Too deep EIP712 message')
 	const currentTypes = types[currentType]
 	if (currentTypes === undefined) throw new Error(`Types not found: ${ currentType }`)
 	const messageEntries = Object.entries(message)
