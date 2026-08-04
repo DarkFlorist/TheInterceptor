@@ -393,8 +393,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		from: sendAddress,
 		chainId: ethereumClientService.getChainId(),
 		nonce: await transactionCount,
-		// Ideally, we would estimate using the correct base fee and priority fee values.
-		// However, doing so would require the account to hold enough ETH to cover the gas cost of an entire block, which is not a reasonable expectation.
+		// Ideally, we would estimate using the correct base fee and priority fee values. However, doing so would require the account to hold enough ETH to cover the gas cost of an entire block, which is not a reasonable expectation.
 		maxFeePerGas: 0n,
 		maxPriorityFeePerGas: 0n ,
 		...(data.gas === undefined ? {} : { gasLimit: data.gas }),
@@ -1365,10 +1364,7 @@ export const getSimulatedStorageAtFromInput = async (
 		},
 	)
 
-	// Precompile availability varies by chain and fork. Relocation asks the node
-	// whether a reserved address is active and prevents precompile dispatch from
-	// taking precedence over the injected storage-reader code. Inactive reserved
-	// addresses are retried without relocation.
+	// Precompile availability varies by chain and fork. Relocation asks the node whether a reserved address is active and prevents precompile dispatch from taking precedence over the injected storage-reader code. Inactive reserved addresses are retried without relocation.
 	let result
 	if (address >= 0n && address <= PRECOMPILE_RESERVED_ADDRESS_MAX) {
 		try {

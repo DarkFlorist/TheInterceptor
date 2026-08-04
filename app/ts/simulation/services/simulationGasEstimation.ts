@@ -22,9 +22,7 @@ const failedSimulationToGasEstimate = (result: Extract<EthSimulateV1CallResult, 
 	error: { ...result.error, data: dataStringWith0xStart(result.returnData) },
 })
 
-// This is a wallet policy buffer, not an Ethereum protocol gas cost. The node-provided
-// peak is increased by 25% so small state changes between estimation and mining do not
-// make the submitted transaction run out of gas.
+// This is a wallet policy buffer, not an Ethereum protocol gas cost. The node-provided peak is increased by 25% so small state changes between estimation and mining do not make the submitted transaction run out of gas.
 const addGasEstimateSafetyBuffer = (gas: bigint) => (gas * 125n + 99n) / 100n
 
 export const getGasEstimateFromSimulation = async (
@@ -41,10 +39,7 @@ export const getGasEstimateFromSimulation = async (
 		return { gas: min(addGasEstimateSafetyBuffer(nodeReportedPeakGas), maxGas) }
 	}
 
-	// maxUsedGas is a widely implemented eth_simulateV1 extension, but it is not yet
-	// required by the RPC specification. For nodes that omit it, discover a working
-	// limit by rerunning the exact call. This delegates fork-specific gas rules to the
-	// execution client instead of duplicating mutable protocol constants here.
+	// maxUsedGas is a widely implemented eth_simulateV1 extension, but it is not yet required by the RPC specification. For nodes that omit it, discover a working limit by rerunning the exact call. This delegates fork-specific gas rules to the execution client instead of duplicating mutable protocol constants here.
 	let candidate = min(addGasEstimateSafetyBuffer(initialResult.gasUsed), maxGas)
 	while (true) {
 		try {

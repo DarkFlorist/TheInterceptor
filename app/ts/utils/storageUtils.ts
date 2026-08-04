@@ -51,9 +51,7 @@ export const RichListElement = funtypes.ReadonlyObject({
 	type: funtypes.Union(funtypes.Literal('CurrentActiveAddress'), funtypes.Literal('PreviousActiveAddress'), funtypes.Literal('UserAdded')),
 })
 
-// ReadonlyPartial drops a property whose serialized value represents `undefined`. These
-// presence-aware alternatives preserve the distinction between "not stored" and
-// "explicitly cleared", which the settings migration and update paths rely on.
+// ReadonlyPartial drops a property whose serialized value represents `undefined`. These presence-aware alternatives preserve the distinction between "not stored" and "explicitly cleared", which the settings migration and update paths rely on.
 const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSimulationAddress') => funtypes.Union(
 	funtypes.ReadonlyObject({ [propertyName]: EthereumAddressOrMissing })
 		.withConstraint((item) => hasOwnKey(item, propertyName)),

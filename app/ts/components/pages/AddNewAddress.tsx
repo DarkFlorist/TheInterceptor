@@ -400,8 +400,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	}, [])
 
 	useSignalEffect(() => {
-		// if user is adding a new address, fetch decimals and name from contract everytime that address changes
-		// we do not need to do that in case user is editing an address, as this data should have been fetched already
+		// if user is adding a new address, fetch decimals and name from contract everytime that address changes we do not need to do that in case user is editing an address, as this data should have been fetched already
 		const identifyAddress = async (requestedIdentification: AddressIdentificationKey) => {
 			inFlightIdentifications.value = [...inFlightIdentifications.peek(), requestedIdentification]
 			try {

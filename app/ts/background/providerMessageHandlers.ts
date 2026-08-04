@@ -65,8 +65,7 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 				message: error.message,
 				...(stringifiedData !== undefined ? { data: stringifiedData } : {}),
 			}
-			// Signer discovery reports local absence through this request-scoped error so account requests can settle.
-			// The connected_to_signer message owns the persistent NoSigner state; only actual wallet errors belong in the popup.
+			// Signer discovery reports local absence through this request-scoped error so account requests can settle. The connected_to_signer message owns the persistent NoSigner state; only actual wallet errors belong in the popup.
 			if (signerAccountsReply.signerUnavailable !== true) {
 				await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { signerAccountError }))
 			}
@@ -102,8 +101,7 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 				signerProviderGeneration: signerStateToken.signerProviderGeneration,
 			},
 		})
-		// Update the active address if we are using the signer's address. This remains inside the signer-state
-		// operation so a reconnect cannot interleave with the downstream address and chain mutations.
+		// Update the active address if we are using the signer's address. This remains inside the signer-state operation so a reconnect cannot interleave with the downstream address and chain mutations.
 		const settings = await getSettings()
 		const selectedSafe = await getConfiguredSigningSafe(settings)
 		const configuredActiveAddress = settings.simulationMode ? settings.activeSimulationAddress : tabStateChange.previousState.activeSigningAddress
@@ -180,8 +178,7 @@ export async function walletSwitchEthereumChainReply(ethereum: EthereumClientSer
 			?? (currentSignerStateToken.signerProviderGeneration === params.signerProviderGeneration ? currentSignerStateToken : undefined)
 		if (callbackSignerStateToken === undefined) return returnValue
 		const solicitedReply = isPendingSignerChainChangeReply(callbackSignerStateToken, params.chainId)
-		// A solicited wallet reply retains the tab authorization captured when its command was dispatched.
-		// Unsolicited chainChanged-style updates still require a currently approved frame.
+		// A solicited wallet reply retains the tab authorization captured when its command was dispatched. Unsolicited chainChanged-style updates still require a currently approved frame.
 		if (!solicitedReply && !hasSignerCallbackAccess(websiteTabConnections, socket.tabId, approval)) return returnValue
 		if (currentSignerStateToken.signerProviderGeneration !== params.signerProviderGeneration) {
 			resolveSignerChainChange(callbackSignerStateToken, {
@@ -201,8 +198,7 @@ export async function walletSwitchEthereumChainReply(ethereum: EthereumClientSer
 
 export async function connectedToSigner(_ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const [signerConnected, signerName, signerProviderGeneration] = ConnectedToSigner.parse(request).params
-	// MV2 and test ports may omit frameId. Treat those as the top frame, while preventing an
-	// unapproved MV3 child frame from taking ownership of tab-wide signer state.
+	// MV2 and test ports may omit frameId. Treat those as the top frame, while preventing an unapproved MV3 child frame from taking ownership of tab-wide signer state.
 	const isTopFrame = port.sender?.frameId === undefined || port.sender.frameId === 0
 	if (approval !== 'hasAccess' && !isTopFrame) {
 		return await getConnectedToSignerResult()
@@ -274,9 +270,7 @@ export async function signerReply(ethereum: EthereumClientService, tokenPriceSer
 		const requestSocket = request.uniqueRequestIdentifier.requestSocket
 		const uniqueRequestIdentifier = { requestId: params.forwardRequest.requestId, requestSocket }
 		const tabConnection = websiteTabConnections.get(socket.tabId)
-		// Signing is routed back through the frame that originated the request, which may be a child frame.
-		// Unlike tab-wide account and chain cache updates, this reply is scoped by its request id and exact port;
-		// the inpage bridge converts a provider-generation change into a terminal disconnected error.
+		// Signing is routed back through the frame that originated the request, which may be a child frame. Unlike tab-wide account and chain cache updates, this reply is scoped by its request id and exact port; the inpage bridge converts a provider-generation change into a terminal disconnected error.
 		if (!isCurrentWebsiteConnection(tabConnection, socket, port)
 			|| requestSocket.tabId !== socket.tabId
 			|| requestSocket.connectionName !== socket.connectionName) {

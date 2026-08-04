@@ -33,8 +33,7 @@ type OpenedDialogWithListeners = {
 let openedDialog: OpenedDialogWithListeners 
 
 const pendingInterceptorAccessSemaphore = new Semaphore(1)
-// Signer account replies identify the tab-wide signer owner but not the originating request. Keep one round trip
-// active per tab so requests from sibling frames cannot settle each other.
+// Signer account replies identify the tab-wide signer owner but not the originating request. Keep one round trip active per tab so requests from sibling frames cannot settle each other.
 const serializeSignerAccountRequest = createScopedKeyedSerialExecutor<WebsiteTabConnections, number>()
 const SIGNER_ACCOUNT_REPLY_TIMEOUT_MS = 5_000
 

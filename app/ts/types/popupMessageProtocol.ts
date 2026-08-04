@@ -8,8 +8,7 @@ type PopupMessageProtocolEntry = {
 	readonly legacyWireName?: true
 }
 
-// Wire names cannot be normalized without coordinating already-open extension pages.
-// Mark historical spellings explicitly so new handlers do not copy those conventions.
+// Wire names cannot be normalized without coordinating already-open extension pages. Mark historical spellings explicitly so new handlers do not copy those conventions.
 export const popupMessageProtocol = {
 	popup_confirmDialog: { domain: 'confirmation' },
 	popup_changeActiveAddress: { domain: 'home' },

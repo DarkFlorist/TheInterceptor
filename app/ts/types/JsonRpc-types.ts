@@ -7,8 +7,7 @@ import { ErrorWithCodeAndOptionalData } from './error.js'
 import { checksummedAddress } from '../utils/bigint.js'
 
 export type EthGetStorageAtResponse = funtypes.Static<typeof EthGetStorageAtResponse>
-// Some clients return bare `0x` for an empty storage slot. Accept it as zero;
-// RPC replies still serialize through EthereumBytes32's canonical 32-byte form.
+// Some clients return bare `0x` for an empty storage slot. Accept it as zero; RPC replies still serialize through EthereumBytes32's canonical 32-byte form.
 const EmptyEthGetStorageAtResponse = funtypes.String.withParser({
 	parse: value => value === '0x'
 		? { success: true, value: 0n }
@@ -322,8 +321,7 @@ export const WalletRevokePermissions = funtypes.ReadonlyObject({
 	params: funtypes.ReadonlyTuple(WalletRevokePermissionsParams)
 }).asReadonly()
 
-// EIP-5792 standardizes capability discovery; this versioned capability defines
-// Interceptor's experimental contract until equivalent semantics have their own ERC.
+// EIP-5792 standardizes capability discovery; this versioned capability defines Interceptor's experimental contract until equivalent semantics have their own ERC.
 export const GNOSIS_SAFE_EXECUTION_CAPABILITY = 'gnosisSafeExecution'
 export const GNOSIS_SAFE_EXECUTION_CAPABILITY_VERSION = '1.0.0'
 
@@ -523,8 +521,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	InterceptorError,
 )
 
-// Methods accepted by the provider. This mirrors EthereumJsonRpcRequest, plus
-// methods handled before normal RPC dispatch such as wallet_revokePermissions.
+// Methods accepted by the provider. This mirrors EthereumJsonRpcRequest, plus methods handled before normal RPC dispatch such as wallet_revokePermissions.
 export type SupportedEthereumJsonRpcRequestMethods = funtypes.Static<typeof SupportedEthereumJsonRpcRequestMethods>
 export const SupportedEthereumJsonRpcRequestMethods = funtypes.ReadonlyObject({
 	method: funtypes.Union(WalletRevokePermissions.fields.method, EthereumJsonRpcRequest.alternatives[0].fields.method, ...EthereumJsonRpcRequest.alternatives.map(x => x.fields.method)),

@@ -282,8 +282,7 @@ export function installDomMock() {
 	return {
 		document,
 		restore() {
-			// Bun runs test files concurrently. Do not remove another test's active DOM
-			// or leave Preact cleanup with an undefined global document.
+			// Bun runs test files concurrently. Do not remove another test's active DOM or leave Preact cleanup with an undefined global document.
 			state.restored = true
 			restoreOwnedGlobal('document', globalThis.document === document, previousDocument, fallbackDocument, (owner) => owner.previousDocument)
 			restoreOwnedGlobal('window', globalThis.window === window || globalThis.window?.document === document, previousWindow, fallbackWindow, (owner) => owner.previousWindow)

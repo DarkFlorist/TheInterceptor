@@ -56,8 +56,7 @@ function generateIdenticon(options: { address: bigint; size?: number }) {
 		for (let y = 0; y < height; y++) {
 			let row = []
 			for (let x = 0; x < dataWidth; x++) {
-				// this makes foreground and background color to have a 43% (1/2.3) probability
-				// spot color has 13% chance
+				// this makes foreground and background color to have a 43% (1/2.3) probability spot color has 13% chance
 				row[x] = Math.floor(rand() * 2.3)
 			}
 			const r = row.slice(0, mirrorWidth)

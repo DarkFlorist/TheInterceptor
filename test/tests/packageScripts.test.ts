@@ -71,6 +71,13 @@ describe('package scripts', () => {
 		assert.ok(getScript(scripts, 'lint').split(' && ').includes('bun run lint:imports'))
 	})
 
+	test('lint enforces single-line prose comments and provides a fixer', () => {
+		const scripts = getPackageScripts()
+		assert.equal(getScript(scripts, 'lint:comments'), 'bun ./scripts/check-single-line-comments.mts')
+		assert.equal(getScript(scripts, 'lint:comments:fix'), 'bun ./scripts/check-single-line-comments.mts --write')
+		assert.ok(getScript(scripts, 'lint').split(' && ').includes('bun run lint:comments'))
+	})
+
 	test('browser builds generate pages and compile app scripts before writing their manifests', () => {
 		const scripts = getPackageScripts()
 		for (const browserName of ['firefox', 'chrome'] as const) {
