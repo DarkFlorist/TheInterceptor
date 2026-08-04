@@ -209,7 +209,12 @@ function createSafeIdentifyAddressReply(owners: readonly bigint[]) {
 		data: {
 			chainId: 1n,
 			addressBookEntry: undefined,
-			safeContractState: { ok: true, owners, version: '1.4.1' },
+			safeContractState: {
+				ok: true,
+				owners,
+				ownerAddressBookEntries: owners.map((address, index) => ({ type: 'contact', name: `Safe Owner ${ index + 1 }`, address, entrySource: 'User', askForAddressAccess: true, useAsActiveAddress: true, chainId: 1n })),
+				version: '1.4.1',
+			},
 		},
 	})
 }
@@ -899,11 +904,11 @@ describe('popup async action UI', () => {
 			await firstReply.promise
 			await settleAsyncUpdates()
 		})
-		assert.equal(dom.document.body.textContent?.includes('0x1111111111111111111111111111111111111111'), true)
+		assert.equal(dom.document.body.textContent?.includes('Safe Owner 1'), true)
 		const signerDropdown = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label')?.startsWith('Safe signer owner:'))
 		if (signerDropdown === undefined) throw new Error('Expected Safe signer owner dropdown')
 		await act(async () => { await clickElement(signerDropdown) })
-		const alternateOwnerOption = collectElements(dom.document.body, 'button').find((button) => button.textContent?.trim() === '0x3333333333333333333333333333333333333333')
+		const alternateOwnerOption = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Safe Owner 2'))
 		if (alternateOwnerOption === undefined) throw new Error('Expected alternate Safe owner option')
 		await act(async () => { await clickElement(alternateOwnerOption) })
 		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddress, '0x3333333333333333333333333333333333333333')
@@ -922,7 +927,7 @@ describe('popup async action UI', () => {
 			await settleAsyncUpdates()
 		})
 		assert.equal(requestCount, 2)
-		assert.equal(dom.document.body.textContent?.includes('0x2222222222222222222222222222222222222222'), true)
+		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddress, '0x2222222222222222222222222222222222222222')
 		render(null, dom.document.body)
 		dom.restore()
 	})

@@ -90,6 +90,57 @@ try {
 	})()`)
 	await waitForSelector(addressBook, '.modal.is-active')
 	await captureScenario(addressBook, 'safe-address-form-empty')
+	await addressBook.evaluate(`(() => {
+		const originalSendMessage = browser.runtime.sendMessage.bind(browser.runtime)
+		browser.runtime.sendMessage = async (message) => message?.method === 'popup_requestIdentifyAddress'
+			? { method: 'popup_requestIdentifyAddress', data: { chainId: message.data.chainId, addressBookEntry: undefined } }
+			: await originalSendMessage(message)
+	})()`)
+	const addressTypes = [
+		{ type: 'contact', address: '0x1111111111111111111111111111111111111111' },
+		{ type: 'contract', address: '0x2222222222222222222222222222222222222222' },
+		{ type: 'ERC20', address: '0x3333333333333333333333333333333333333333' },
+		{ type: 'ERC721', address: '0x4444444444444444444444444444444444444444' },
+		{ type: 'ERC1155', address: '0x5555555555555555555555555555555555555555' },
+	] as const
+	for (const { type: addressType, address } of addressTypes) {
+		await addressBook.evaluate(`(() => {
+			const typeButton = [...document.querySelectorAll('.modal.is-active button')].find((element) => element.getAttribute('aria-label')?.startsWith('Address type:'))
+			if (!(typeButton instanceof HTMLElement)) throw new Error('Address type dropdown was not found')
+			typeButton.click()
+		})()`)
+		await Bun.sleep(50)
+		await addressBook.evaluate(`(() => {
+			const typeOption = [...document.querySelectorAll('.modal.is-active .dropdown-item')].find((element) => element.textContent?.trim() === ${ JSON.stringify(addressType) })
+			if (!(typeOption instanceof HTMLElement)) throw new Error(${ JSON.stringify(`${ addressType } option was not found`) })
+			typeOption.click()
+		})()`)
+		await Bun.sleep(100)
+		await addressBook.evaluate(`(() => {
+			const nameInput = document.querySelector('.modal.is-active .address-editor-name-field input')
+			const addressInput = document.querySelector('.modal.is-active label.address-editor-field--wide input')
+			if (nameInput instanceof HTMLInputElement) {
+				nameInput.value = 'Example ${ addressType }'
+				nameInput.dispatchEvent(new InputEvent('input', { bubbles: true, data: nameInput.value }))
+			}
+			if (addressInput instanceof HTMLInputElement) {
+				addressInput.value = ${ JSON.stringify(address) }
+				addressInput.dispatchEvent(new InputEvent('input', { bubbles: true, data: addressInput.value }))
+			}
+			const fields = [...document.querySelectorAll('.modal.is-active .address-editor-field')]
+			const setField = (label, value) => {
+				const field = fields.find((candidate) => candidate.querySelector(':scope > span')?.textContent?.trim() === label)
+				const input = field?.querySelector('input')
+				if (!(input instanceof HTMLInputElement)) return
+				input.value = value
+				input.dispatchEvent(new InputEvent('input', { bubbles: true, data: value }))
+			}
+			setField('Symbol', ${ JSON.stringify(addressType) }.toUpperCase())
+			setField('Decimals', '18')
+		})()`)
+		await Bun.sleep(100)
+		await captureScenario(addressBook, `address-form-${ addressType.toLowerCase() }`)
+	}
 	const setSafeAddressFixture = `browser.storage.local.set({
 			activeSimulationAddress: '0x1234567890123456789012345678901234567890',
 			simulationMode: false,
@@ -122,7 +173,15 @@ try {
 				data: {
 					chainId: '0x1',
 					addressBookEntry: undefined,
-					safeContractState: { ok: true, owners: ['0xabcdefabcdefabcdefabcdefabcdefabcdefabcd', '0xfedcbafedcbafedcbafedcbafedcbafedcbafedc'], version: '1.4.1' },
+					safeContractState: {
+						ok: true,
+						owners: ['0xabcdefabcdefabcdefabcdefabcdefabcdefabcd', '0xfedcbafedcbafedcbafedcbafedcbafedcbafedc'],
+						ownerAddressBookEntries: [
+							{ type: 'contact', name: 'Alice Hardware Wallet', address: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd', entrySource: 'User', askForAddressAccess: true, useAsActiveAddress: true, chainId: '0x1' },
+							{ type: 'contact', name: 'Operations Signer', address: '0xfedcbafedcbafedcbafedcbafedcbafedcbafedc', entrySource: 'User', askForAddressAccess: true, useAsActiveAddress: true, chainId: '0x1' },
+						],
+						version: '1.4.1',
+					},
 				},
 			}
 			return await originalSendMessage(message)
@@ -303,7 +362,7 @@ try {
 	await captureScenario(settings, 'settings-import-export')
 	await settings.close()
 
-	const expectedScreenshotCount = 55
+	const expectedScreenshotCount = 80
 	const screenshotCount = capturedScenarioCount * viewports.length
 	if (screenshotCount !== expectedScreenshotCount) throw new Error(`Expected ${ expectedScreenshotCount } screenshots, captured ${ screenshotCount }`)
 	console.info(`Captured ${ screenshotCount } deterministic screenshots`)

@@ -169,6 +169,10 @@ describe('add new address save flow', () => {
 		assert.equal(EthereumQuantityUint8.safeSerialize(256n).success, false)
 	})
 
+	test('shows the required symbol field for every token address type', () => {
+		assert.match(addNewAddressSource, /type === 'ERC20' \|\| modifyAddressWindowState\.value\.incompleteAddressBookEntry\.type === 'ERC721' \|\| modifyAddressWindowState\.value\.incompleteAddressBookEntry\.type === 'ERC1155'/)
+	})
+
 	test('keeps non-blocking block explorer errors when validation has no error', () => {
 		const blockExplorerError = { blockEditing: false, message: 'No ABI available for this contract.' }
 
@@ -218,11 +222,16 @@ describe('add new address save flow', () => {
 
 	test('renders on-chain Gnosis Safe owners as signer choices', () => {
 		assert.match(addNewAddressSource, /class = 'address-editor-readonly-address'/)
+		assert.ok(addNewAddressSource.indexOf('<span>Name</span>') < addNewAddressSource.indexOf('<span>Address type</span>'))
+		assert.ok(addNewAddressSource.indexOf('<span>Address type</span>') < addNewAddressSource.indexOf('<span>Chain</span>'))
+		assert.match(addNewAddressSource, /<AddressIcon address = \{ stringToAddress/)
 		assert.match(addNewAddressSource, /ariaLabel = 'Address type'/)
 		assert.match(addNewAddressSource, /ariaLabel = 'Chain'/)
 		assert.match(addNewAddressSource, /class = 'address-editor-heading'>Safe signer<\/p>/)
 		assert.match(addNewAddressSource, /class = 'safe-signer-editor-dropdown'/)
 		assert.match(addNewAddressSource, /ariaLabel = 'Safe signer owner'/)
+		assert.match(addNewAddressSource, /<SmallAddress addressBookEntry = \{ getActiveAddressEntry\(address, safeSignerAddressBookEntries\.value\) \}/)
+		assert.match(addNewAddressSource, /safeSignerAddressBookEntries\.value = safeContractState\.ownerAddressBookEntries/)
 		assert.match(addNewAddressSource, /onChangedCallBack = \{ safeSignerAddress => \{ void setSafeSignerAddress\(safeSignerAddress\) \} \}/)
 		assert.doesNotMatch(addNewAddressSource, /name = 'active-safe-signer'/)
 		assert.doesNotMatch(addNewAddressSource, /Add Gnosis Safe signer/)

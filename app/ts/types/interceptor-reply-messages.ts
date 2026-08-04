@@ -205,7 +205,7 @@ const RequestIdentifyAddressReply = funtypes.ReadonlyObject({
 		addressBookEntry: funtypes.Union(AddressBookEntry, funtypes.Undefined),
 	}).And(funtypes.ReadonlyPartial({
 		safeContractState: funtypes.Union(
-			funtypes.ReadonlyObject({ ok: funtypes.Literal(true), owners: funtypes.ReadonlyArray(EthereumAddress), version: funtypes.String }),
+			funtypes.ReadonlyObject({ ok: funtypes.Literal(true), owners: funtypes.ReadonlyArray(EthereumAddress), ownerAddressBookEntries: funtypes.ReadonlyArray(AddressBookEntry), version: funtypes.String }),
 			funtypes.ReadonlyObject({ ok: funtypes.Literal(false), message: funtypes.String }),
 		),
 	}))

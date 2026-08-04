@@ -889,7 +889,7 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer hides Safe actions when the active Safe has no configured signer', async () => {
+	test('stack visualizer applies the Safe signing-mode rule to both import and copy actions', async () => {
 		const dom = installDomMock()
 		const { listeners } = installBrowserMock(() => undefined)
 		try {

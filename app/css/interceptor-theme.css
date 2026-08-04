@@ -236,6 +236,19 @@ svg[role="img"] {
 	min-height: 2.2em;
 }
 
+.address-editor-name-field {
+	grid-template-columns: max-content minmax(0, 1fr);
+}
+
+.address-editor-name-field > :first-child {
+	grid-row: 1 / 3;
+	align-self: center;
+}
+
+.address-editor-name-field > :not(:first-child) {
+	grid-column: 2;
+}
+
 .address-editor .input:disabled {
 	color: var(--disabled-text-color);
 	opacity: 1;
@@ -301,6 +314,17 @@ svg[role="img"] {
 	max-width: 100%;
 	min-width: 0;
 	width: 100%;
+}
+
+.safe-signer-dropdown-address {
+	display: block;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.safe-signer-dropdown-address > .inline-card {
+	max-width: 100%;
+	min-width: 0;
 }
 
 .safe-signer-editor-empty {

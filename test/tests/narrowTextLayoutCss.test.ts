@@ -59,6 +59,8 @@ describe('narrow text layout CSS', () => {
 		assert.match(compactAddress, /grid-template-columns\s*:\s*max-content minmax\(0,\s*1fr\)\s*;/)
 		const readonlyAddress = expectRule(css, '.address-editor-readonly-address')
 		assert.match(readonlyAddress, /text-overflow\s*:\s*ellipsis\s*;/)
+		const nameField = expectRule(css, '.address-editor-name-field')
+		assert.match(nameField, /grid-template-columns\s*:\s*max-content minmax\(0,\s*1fr\)\s*;/)
 		const addressEditorSection = expectRule(css, '.address-editor-section')
 		assert.match(addressEditorSection, /border-radius\s*:\s*6px\s*;/)
 		const addressEditorSectionHeading = expectRule(css, '.address-editor-section-heading')

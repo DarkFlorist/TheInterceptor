@@ -4,9 +4,10 @@ import type { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, ErrorText } from '../subcomponents/Error.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
 import { getMissingPopupReplyErrorMessage, requestPopupAbiAndNameFromBlockExplorer, requestPopupIdentifyAddress, sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
+import { AddressIcon, getActiveAddressEntry, SmallAddress } from '../subcomponents/address.js'
 import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
 import { createRef } from 'preact'
-import type { AddressBookEntry, AddressBookEntryType, ChainIdWithUniversal, DeclarativeNetRequestBlockMode } from '../../types/addressBookTypes.js'
+import type { AddressBookEntries, AddressBookEntry, AddressBookEntryType, ChainIdWithUniversal, DeclarativeNetRequestBlockMode } from '../../types/addressBookTypes.js'
 import { isBlockExplorerAvailableForChain, isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
 import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
@@ -158,6 +159,7 @@ type RenderinCompleteAddressBookParams = {
 	canFetchFromEtherScan: Signal<boolean>
 	blockExplorerLookupState: AsyncStates
 	safeSignerLookupState: AsyncStates
+	safeSignerAddressBookEntries: Signal<AddressBookEntries>
 	fetchAbiAndNameFromBlockExplorer: () => Promise<void>
 	refreshSafeSigners: () => void
 }
@@ -203,8 +205,9 @@ export async function updateModifyAddressWindowState(
 	}
 }
 
-function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries, canFetchFromEtherScan, blockExplorerLookupState, safeSignerLookupState, fetchAbiAndNameFromBlockExplorer, refreshSafeSigners }: RenderinCompleteAddressBookParams) {
+function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries, canFetchFromEtherScan, blockExplorerLookupState, safeSignerLookupState, safeSignerAddressBookEntries, fetchAbiAndNameFromBlockExplorer, refreshSafeSigners }: RenderinCompleteAddressBookParams) {
 	const disableDueToSource = modifyAddressWindowState.value.incompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || modifyAddressWindowState.value.incompleteAddressBookEntry.entrySource === 'Interceptor'
+	const logoUri = modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress === false && 'logoUri' in modifyAddressWindowState.value.incompleteAddressBookEntry ? modifyAddressWindowState.value.incompleteAddressBookEntry.logoUri : undefined
 	const selectedChainId = useComputed(() => modifyAddressWindowState.value.incompleteAddressBookEntry.chainId ?? 1n)
 	const blockExplorerAvailable = useComputed(() => isBlockExplorerAvailableForChain(selectedChainId.value, rpcEntries.value))
 
@@ -261,9 +264,19 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 	const decimals = useComputed(() => modifyAddressWindowState.value.incompleteAddressBookEntry.decimals !== undefined ? modifyAddressWindowState.value.incompleteAddressBookEntry.decimals.toString() : undefined)
 	const safeSignerAddresses = useComputed(() => modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddresses ?? [])
 	const selectedSafeSignerAddress = useComputed(() => modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddress ?? safeSignerAddresses.value[0] ?? '')
+	const renderSafeSigner = (safeSignerAddress: string) => {
+		const address = stringToAddress(safeSignerAddress)
+		if (address === undefined) return safeSignerAddress
+		return <span class = 'safe-signer-dropdown-address'><SmallAddress addressBookEntry = { getActiveAddressEntry(address, safeSignerAddressBookEntries.value) } renameAddressCallBack = { () => undefined } noCopying = { true } noEditAddress = { true } nonInteractive = { true }/></span>
+	}
 	const hasSafeSigners = safeSignerAddresses.value.length > 0
 	return <div class = 'address-editor'>
 		<div class = 'address-editor-fields'>
+			<label class = 'address-editor-field address-editor-name-field'>
+				<AddressIcon address = { stringToAddress(modifyAddressWindowState.value.incompleteAddressBookEntry.address) } logoUri = { logoUri } isBig = { false } backgroundColor = 'var(--text-color)'/>
+				<span>Name</span>
+				<NameInput nameInput = { modifyAddressWindowState.value.incompleteAddressBookEntry.name } setNameInput = { setName } disabled = { disableDueToSource }/>
+			</label>
 			<div class = 'address-editor-field'>
 				<span>Address type</span>
 				<DropDownMenu selected = { selectedAddresBookEntryType } dropDownOptions = { addressBookEntryOptions } onChangedCallBack = { onTypeChangedCallBack } buttonClassses = { 'btn btn--outline is-small' } ariaLabel = 'Address type'/>
@@ -272,10 +285,6 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 				<span>Chain</span>
 				<ChainSelector rpcEntries = { rpcEntries } chainId = { selectedChainId } changeChain = { setChain } buttonClassses = { 'btn btn--outline is-small' } ariaLabel = 'Chain'/>
 			</div>
-			<label class = 'address-editor-field'>
-				<span>Name</span>
-				<NameInput nameInput = { modifyAddressWindowState.value.incompleteAddressBookEntry.name } setNameInput = { setName } disabled = { disableDueToSource }/>
-			</label>
 			<label class = { `address-editor-field address-editor-field--wide ${ modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? '' : 'address-editor-field--compact-address' }` }>
 				<span>Address</span>
 				{ modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress
@@ -298,12 +307,12 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 				{ hasSafeSigners
 					? <div class = 'safe-signer-editor-dropdown'>
 						<span>Signer owner</span>
-						<DropDownMenu selected = { selectedSafeSignerAddress } dropDownOptions = { safeSignerAddresses } onChangedCallBack = { safeSignerAddress => { void setSafeSignerAddress(safeSignerAddress) } } buttonClassses = 'btn btn--outline is-small' ariaLabel = 'Safe signer owner' disabled = { disableDueToSource }/>
+						<DropDownMenu selected = { selectedSafeSignerAddress } dropDownOptions = { safeSignerAddresses } onChangedCallBack = { safeSignerAddress => { void setSafeSignerAddress(safeSignerAddress) } } buttonClassses = 'btn btn--outline is-small' ariaLabel = 'Safe signer owner' disabled = { disableDueToSource } renderOption = { renderSafeSigner }/>
 					</div>
 					: <p class = 'paragraph safe-signer-editor-empty'>Enter a deployed Safe address on a specific chain to retrieve its owners.</p>
 				}
 			</section> : <></> }
-			{ modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC20' || modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC1155' ? <label class = 'address-editor-field'>
+			{ modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC20' || modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC721' || modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC1155' ? <label class = 'address-editor-field'>
 				<span>Symbol</span>
 				<input disabled = { disableDueToSource } class = 'input subtitle is-7 is-spaced' type = 'text' value = { modifyAddressWindowState.value.incompleteAddressBookEntry.symbol } placeholder = '...' onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) setSymbol(e.target.value) } } />
 			</label> : <></> }
@@ -351,6 +360,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	const lastCompletedIdentification = useSignal<AddressIdentificationKey | undefined>(undefined)
 	const inFlightIdentifications = useSignal<readonly AddressIdentificationKey[]>([])
 	const safeSignerRefreshGeneration = useSignal(0)
+	const safeSignerAddressBookEntries = useSignal<AddressBookEntries>([])
 	const { value: blockExplorerLookup, waitFor: waitForBlockExplorerLookup, reset: resetBlockExplorerLookup } = useAsyncState<void>()
 	const { value: safeSignerLookup, waitFor: waitForSafeSignerLookup } = useAsyncState<void>()
 	const { value: saveEntryState, waitFor: waitForSaveEntry } = useAsyncState<void>()
@@ -407,6 +417,7 @@ export function AddNewAddress(param: AddAddressParam) {
 						setSafeContractStateError(safeContractState.message)
 						return
 					}
+					safeSignerAddressBookEntries.value = safeContractState.ownerAddressBookEntries
 					const currentState = param.modifyAddressWindowState.peek()
 					const safeSignerAddresses = safeContractState.owners.map(checksummedAddress)
 					const currentSafeSignerAddress = currentState.incompleteAddressBookEntry.safeSignerAddress
@@ -664,6 +675,7 @@ export function AddNewAddress(param: AddAddressParam) {
 							canFetchFromEtherScan = { canFetchFromEtherScan }
 							blockExplorerLookupState = { blockExplorerLookup.value.state }
 							safeSignerLookupState = { safeSignerLookup.value.state }
+							safeSignerAddressBookEntries = { safeSignerAddressBookEntries }
 							fetchAbiAndNameFromBlockExplorer = { fetchAbiAndNameFromBlockExplorer }
 							refreshSafeSigners = { refreshSafeSigners }
 						/>

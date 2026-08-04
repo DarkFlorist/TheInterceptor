@@ -285,6 +285,7 @@ export function SimulationStackPage() {
 		if (simVisResults.value.kind === 'passthrough') return true
 		return isEmptySimulation(simVisResults.value.value)
 	})
+	// Safe import and copy are signing-mode controls: intentionally hide both unless the active account is a configured Safe signer on this chain.
 	const showSafeActions = useComputed(() => getConfiguredSafeSigningEntry(activeAddresses.value, {
 		simulationMode: simulationMode.value,
 		useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress.value,
