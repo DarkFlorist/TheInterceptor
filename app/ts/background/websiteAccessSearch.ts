@@ -1,6 +1,5 @@
 import type { WebsiteAccessArray, WebsiteAccess, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { addressString } from '../utils/bigint.js'
-import { bestMatch } from './metadataSearch.js'
 import { createFuzzySearchPattern } from '../utils/fuzzySearch.js'
 
 type SearchMatch = {
@@ -9,29 +8,31 @@ type SearchMatch = {
 }
 
 function computeSearchMatch(searchQuery: string, searchAgainst: string): SearchMatch | undefined {
-	const pattern = createFuzzySearchPattern(searchQuery)
-	if (!pattern) return undefined
+	const fuzzyPattern = createFuzzySearchPattern(searchQuery)
+	if (!fuzzyPattern) return undefined
+	const pattern = new RegExp(fuzzyPattern.source, `${ fuzzyPattern.flags }g`)
 
-	const matchedString = bestMatch(searchAgainst.match(pattern))
-	if (!matchedString) return undefined
-
-	return {
-		length: matchedString.length,
-		location: searchAgainst.indexOf(matchedString)
+	let bestResult: SearchMatch | undefined
+	for (const match of searchAgainst.matchAll(pattern)) {
+		const matchedString = match[1]
+		if (matchedString === undefined || match.index === undefined) continue
+		bestResult = selectBetterMatch(bestResult, { length: matchedString.length, location: match.index })
 	}
+	return bestResult
 }
 
-function selectLongerMatch<T extends SearchMatch>(a: T | undefined, b: T | undefined): T | undefined
-function selectLongerMatch<T extends SearchMatch>(a: T | undefined, b: T | undefined, defaultValue: T): T
-function selectLongerMatch<T extends SearchMatch>(a: T | undefined, b: T | undefined, defaultValue?: T): T | undefined {
+function selectBetterMatch<T extends SearchMatch>(a: T | undefined, b: T | undefined): T | undefined
+function selectBetterMatch<T extends SearchMatch>(a: T | undefined, b: T | undefined, defaultValue: T): T
+function selectBetterMatch<T extends SearchMatch>(a: T | undefined, b: T | undefined, defaultValue?: T): T | undefined {
 	if (!a) return b ?? defaultValue
 	if (!b) return a
-	return a.length > b.length ? a : b
+	if (a.length !== b.length) return a.length < b.length ? a : b
+	return a.location <= b.location ? a : b
 }
 
 type SearchScore<T> = {
 	entry: T
-	score: number
+	match: SearchMatch
 }
 
 function calculateWebsiteAccessScore(entry: WebsiteAccess, query: string): SearchScore<WebsiteAccess> {
@@ -41,11 +42,11 @@ function calculateWebsiteAccessScore(entry: WebsiteAccess, query: string): Searc
 
 	const bestResult = [urlMatch, titleMatch, ...addressMatches]
 		.filter((x): x is NonNullable<typeof x> => x !== undefined)
-		.reduce(selectLongerMatch, { length: 0, location: Infinity })
+		.reduce(selectBetterMatch, { length: Infinity, location: Infinity })
 
 	return {
 		entry,
-		score: bestResult.length
+		match: bestResult
 	}
 }
 
@@ -55,7 +56,7 @@ export const searchWebsiteAccess = (query: string, websiteAccess: WebsiteAccessA
 
 	return websiteAccess
 		.map(entry => calculateWebsiteAccessScore(entry, query))
-		.filter(result => result.score > 0)
-		.sort((a, b) => b.score - a.score)
+		.filter(result => Number.isFinite(result.match.length))
+		.sort((a, b) => a.match.length - b.match.length || a.match.location - b.match.location)
 		.map(result => result.entry)
 }

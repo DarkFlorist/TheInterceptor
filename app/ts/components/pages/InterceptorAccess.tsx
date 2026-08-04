@@ -1,3 +1,4 @@
+import { Fragment } from 'preact'
 import { useEffect } from 'preact/hooks'
 import { ActiveAddressComponent, BigAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
@@ -186,7 +187,7 @@ export function AccessRequestActions({ accessRequest, reject, approve, informati
 
 export function AccessRequests(param: AccessRequestParam) {
 
-	return <> { param.pendingAccessRequests.map((pendingRequest) => <>
+	return <> { param.pendingAccessRequests.map((pendingRequest) => <Fragment key = { pendingRequest.accessRequestId }>
 		<div class = 'card' style = 'margin-bottom: 10px;'>
 			<AccessRequestHeader { ...pendingRequest.website } />
 			<div class = 'card-content' style = 'padding-bottom: 5px;'>
@@ -199,7 +200,7 @@ export function AccessRequests(param: AccessRequestParam) {
 				</div>
 				<AccessRequestActions accessRequest = { pendingRequest } reject = { param.reject } approve = { param.approve } informationChangedRecently = { param.informationChangedRecently } />
 			</div>
-		</>) } </>
+		</Fragment>) } </>
 }
 
 const DISABLED_DELAY_MS = 500

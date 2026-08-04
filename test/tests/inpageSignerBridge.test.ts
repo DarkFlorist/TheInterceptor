@@ -2972,6 +2972,12 @@ describe('inpage signer bridge', () => {
 			await waitFor(() => backgroundMessages.some((message) => message.method === 'eth_accounts_reply' && (message.params?.[0] as { requestAccounts: boolean } | undefined)?.requestAccounts === false))
 			signerEvents.chainChanged!('0x2a')
 			await waitFor(() => backgroundMessages.some((message) => message.method === 'signer_chainChanged' && message.params?.[0] === '0x2a'))
+			const chainChangeCount = backgroundMessages.filter((message) => message.method === 'signer_chainChanged').length
+			signerEvents.chainChanged!('42')
+			await waitFor(() => backgroundMessages.filter((message) => message.method === 'signer_chainChanged' && message.params?.[0] === '0x2a').length >= 2)
+			assert.equal(backgroundMessages.filter((message) => message.method === 'signer_chainChanged').length > chainChangeCount, true)
+			signerEvents.chainChanged!('1garbage')
+			await waitFor(() => backgroundMessages.some((message) => message.method === 'signer_chainChanged' && message.params?.[0] === '1garbage'))
 		})
 	})
 

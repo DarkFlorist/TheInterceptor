@@ -103,6 +103,12 @@ const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
 const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
 const REQUEST_SCOPED_PROVIDER_EVENT_METHODS = new Set(['accountsChanged', 'connect', 'disconnect', 'chainChanged'])
 
+export function normalizeSignerChainId(chainId: string) {
+	// Coinbase historically emitted decimal chain IDs. Only normalize the entire
+	// value so malformed IDs are not silently truncated by Number.parseInt.
+	return /^[0-9]+$/.test(chainId) ? `0x${ BigInt(chainId).toString(16) }` : chainId
+}
+
 type InterceptorApprovedMessageCandidate = {
 	readonly interceptorApproved?: unknown
 	readonly method?: unknown
@@ -769,8 +775,7 @@ class InterceptorMessageListener {
 			})
 			register('chainChanged', (chainId: string) => {
 				if (this.signerWindowEthereumProvider !== provider) return
-				// TODO: this is a hack to get coinbase working that calls this numbers in base 10 instead of in base 16
-				const params = /\d/.test(chainId) ? [`0x${parseInt(chainId).toString(16)}`, this.signerProviderGeneration] : [chainId, this.signerProviderGeneration]
+				const params = [normalizeSignerChainId(chainId), this.signerProviderGeneration]
 				this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params })
 			})
 			this.subscribedSignerProviders.add(provider)
