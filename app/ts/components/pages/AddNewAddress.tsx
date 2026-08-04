@@ -172,7 +172,9 @@ type RenderinCompleteAddressBookParams = {
 	rpcEntries: Signal<RpcEntries>
 	canFetchFromEtherScan: Signal<boolean>
 	blockExplorerLookupState: AsyncStates
+	safeSignerLookupState: AsyncStates
 	fetchAbiAndNameFromBlockExplorer: () => Promise<void>
+	refreshSafeSigners: () => void
 }
 
 const CellElement = (param: { element: ComponentChildren }) => {
@@ -222,7 +224,7 @@ export async function updateModifyAddressWindowState(
 	}
 }
 
-function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries, canFetchFromEtherScan, blockExplorerLookupState, fetchAbiAndNameFromBlockExplorer }: RenderinCompleteAddressBookParams) {
+function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries, canFetchFromEtherScan, blockExplorerLookupState, safeSignerLookupState, fetchAbiAndNameFromBlockExplorer, refreshSafeSigners }: RenderinCompleteAddressBookParams) {
 	const Text = (param: { text: ComponentChildren }) => {
 		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width: 100%'>
 			{ param.text }
@@ -249,9 +251,19 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 		})
 	)
 
-	const setAddress = async (address: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { address }))
+	const setAddress = async (address: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, previousEntry.type === 'safe' ? {
+		address,
+		safeSignerAddresses: [],
+		safeSignerAddress: undefined,
+		safeVersion: undefined,
+	} : { address }))
 	const setName = async (name: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { name }))
-	const setChain = async (chainEntry: ChainEntry) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { chainId: chainEntry.chainId }))
+	const setChain = async (chainEntry: ChainEntry) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, previousEntry.type === 'safe' ? {
+		chainId: chainEntry.chainId,
+		safeSignerAddresses: [],
+		safeSignerAddress: undefined,
+		safeVersion: undefined,
+	} : { chainId: chainEntry.chainId }))
 	const setAbi = async (abi: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { abi: abi.trim().length === 0 ? undefined : abi }))
 	const setSafeSignerAddress = async (safeSignerAddress: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { safeSignerAddress }))
 	const setSymbol = async (symbol: string) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { symbol }))
@@ -274,6 +286,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 	const setAskForAddressAccess = async (askForAddressAccess: boolean) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { askForAddressAccess }))
 
 	const decimals = useComputed(() => modifyAddressWindowState.value.incompleteAddressBookEntry.decimals !== undefined ? modifyAddressWindowState.value.incompleteAddressBookEntry.decimals.toString() : undefined)
+	const hasSafeSigners = (modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddresses ?? []).length > 0
 	return <div class = 'media'>
 		<div class = 'media-left'>
 			<figure class = 'image'>
@@ -303,10 +316,20 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 									disabled = { disableDueToSource }
 									onInput = { () => { void setSafeSignerAddress(safeSignerAddress) } }
 								/>
-								<span>{ safeSignerAddress }</span>
+								<code class = 'safe-signer-editor-address'>{ safeSignerAddress }</code>
 							</div>
 						) }
 						{ (modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddresses ?? []).length === 0 ? <p class = 'paragraph safe-signer-editor-empty'>Enter a deployed Gnosis Safe address on the selected chain to load its signers.</p> : <></> }
+						<div class = 'safe-signer-editor-actions'>
+							<AsyncActionButton
+								class = 'btn btn--outline is-small'
+								state = { safeSignerLookupState }
+								text = { hasSafeSigners ? 'Refresh Gnosis Safe signers' : 'Retrieve Gnosis Safe signers' }
+								pendingText = { hasSafeSigners ? 'Refreshing signers...' : 'Retrieving signers...' }
+								disabled = { disableDueToSource || stringToAddress(modifyAddressWindowState.value.incompleteAddressBookEntry.address) === undefined }
+								onClick = { refreshSafeSigners }
+							/>
+						</div>
 					</> : <></> }
 					{ modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC20' || modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC1155' ? <>
 						<CellElement element = { <Text text = { 'Symbol: ' }/> }/>
@@ -353,7 +376,9 @@ export function AddNewAddress(param: AddAddressParam) {
 	const canFetchFromEtherScan = useSignal<boolean>(false)
 	const lastCompletedIdentification = useSignal<AddressIdentificationKey | undefined>(undefined)
 	const inFlightIdentifications = useSignal<readonly AddressIdentificationKey[]>([])
+	const safeSignerRefreshGeneration = useSignal(0)
 	const { value: blockExplorerLookup, waitFor: waitForBlockExplorerLookup, reset: resetBlockExplorerLookup } = useAsyncState<void>()
+	const { value: safeSignerLookup, waitFor: waitForSafeSignerLookup } = useAsyncState<void>()
 	const { value: saveEntryState, waitFor: waitForSaveEntry } = useAsyncState<void>()
 	const isBlockExplorerLookupPending = useComputed(() => blockExplorerLookup.value.state === 'pending')
 
@@ -375,14 +400,10 @@ export function AddNewAddress(param: AddAddressParam) {
 	}, [])
 
 	useSignalEffect(() => {
-		const clearSafeContractState = (message: string) => {
+		safeSignerRefreshGeneration.value
+		const setSafeContractStateError = (message: string) => {
 			const currentState = param.modifyAddressWindowState.peek()
 			param.modifyAddressWindowState.value = modifyObject(currentState, {
-				incompleteAddressBookEntry: modifyObject(currentState.incompleteAddressBookEntry, {
-					safeSignerAddresses: [],
-					safeSignerAddress: undefined,
-					safeVersion: undefined,
-				}),
 				errorState: { blockEditing: false, message },
 			})
 		}
@@ -397,7 +418,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				if (!isIdentificationRequestCurrent(param.modifyAddressWindowState.peek(), requestedIdentification)) return
 				lastCompletedIdentification.value = requestedIdentification
 				if (identifiedAddress === undefined || identifiedAddress.data.chainId !== requestedIdentification.chainId) {
-					if (requestedIdentification.includeSafeContractState) clearSafeContractState('Interceptor did not return the current Gnosis Safe signers.')
+					if (requestedIdentification.includeSafeContractState) setSafeContractStateError('Interceptor did not return the current Gnosis Safe signers.')
 					return
 				}
 				const identifiedAddressBookEntry = identifiedAddress.data.addressBookEntry
@@ -406,10 +427,10 @@ export function AddNewAddress(param: AddAddressParam) {
 					const message = requestedIdentification.chainId === 'AllChains'
 						? 'Gnosis Safe wallets must use a specific chain to load their signers.'
 						: `Switch Interceptor to chain ${ requestedIdentification.chainId.toString() } to load this Gnosis Safe's signers.`
-					clearSafeContractState(message)
+					setSafeContractStateError(message)
 				} else if (requestedIdentification.includeSafeContractState && safeContractState !== undefined) {
 					if (!safeContractState.ok) {
-						clearSafeContractState(safeContractState.message)
+						setSafeContractStateError(safeContractState.message)
 						return
 					}
 					const currentState = param.modifyAddressWindowState.peek()
@@ -442,8 +463,17 @@ export function AddNewAddress(param: AddAddressParam) {
 		const currentIdentification = getAddressIdentificationKey(param.modifyAddressWindowState.value)
 		if (currentIdentification === undefined || areAddressIdentificationKeysEqual(lastCompletedIdentification.value, currentIdentification)) return
 		if (inFlightIdentifications.value.some((identification) => areAddressIdentificationKeysEqual(identification, currentIdentification))) return
+		if (currentIdentification.includeSafeContractState) {
+			void waitForSafeSignerLookup(async () => await identifyAddress(currentIdentification))
+			return
+		}
 		void identifyAddress(currentIdentification)
 	})
+
+	const refreshSafeSigners = () => {
+		safeSignerRefreshGeneration.value += 1
+		lastCompletedIdentification.value = undefined
+	}
 
 	useEffect(() => {
 		activeAddress.value = param.activeAddress
@@ -659,7 +689,9 @@ export function AddNewAddress(param: AddAddressParam) {
 							rpcEntries = { param.rpcEntries }
 							canFetchFromEtherScan = { canFetchFromEtherScan }
 							blockExplorerLookupState = { blockExplorerLookup.value.state }
+							safeSignerLookupState = { safeSignerLookup.value.state }
 							fetchAbiAndNameFromBlockExplorer = { fetchAbiAndNameFromBlockExplorer }
+							refreshSafeSigners = { refreshSafeSigners }
 						/>
 					</div>
 				</div>

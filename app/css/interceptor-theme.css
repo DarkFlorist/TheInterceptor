@@ -200,7 +200,8 @@ svg[role="img"] {
 .safe-signer-editor-title,
 .safe-signer-editor-row,
 .safe-signer-editor-add,
-.safe-signer-editor-empty {
+.safe-signer-editor-empty,
+.safe-signer-editor-actions {
 	grid-column: 1 / -1;
 	min-width: 0;
 }
@@ -215,6 +216,18 @@ svg[role="img"] {
 	grid-template-columns: 1em minmax(0, 1fr);
 	align-items: center;
 	gap: 0.4em;
+}
+
+.safe-signer-editor-address {
+	color: var(--text-color);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.safe-signer-editor-actions {
+	display: flex;
+	justify-content: flex-end;
 }
 
 .safe-signer-editor-add {
