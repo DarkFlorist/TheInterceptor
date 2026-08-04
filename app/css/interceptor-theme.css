@@ -211,14 +211,15 @@ svg[role="img"] {
 }
 
 .address-editor-fields {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr));
+	display: flex;
+	flex-wrap: wrap;
 	gap: 0.55em 0.7em;
 	min-width: 0;
 }
 
 .address-editor-field {
 	display: grid;
+	flex: 1 1 8rem;
 	align-content: start;
 	gap: 0.2em;
 	color: var(--subtitle-text-color);
@@ -237,7 +238,17 @@ svg[role="img"] {
 }
 
 .address-editor-name-field {
+	flex: 1.55 1 10.5rem;
 	grid-template-columns: max-content minmax(0, 1fr);
+	column-gap: 0.65rem;
+}
+
+.address-editor-name-field + .address-editor-field {
+	flex: 0.75 1 5.5rem;
+}
+
+.address-editor-name-field + .address-editor-field + .address-editor-field {
+	flex: 1.1 1 7.5rem;
 }
 
 .address-editor-name-field > :first-child {
@@ -255,7 +266,7 @@ svg[role="img"] {
 }
 
 .address-editor-field--wide {
-	grid-column: 1 / -1;
+	flex-basis: 100%;
 }
 
 .address-editor-field--compact-address {
