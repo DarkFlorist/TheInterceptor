@@ -203,17 +203,6 @@ svg[role="img"] {
 	min-width: 0;
 }
 
-.address-editor-identity {
-	display: grid;
-	grid-template-columns: max-content minmax(0, 1fr);
-	align-items: center;
-	gap: 0.5em;
-}
-
-.address-editor-icon {
-	margin: 0;
-}
-
 .address-editor-heading {
 	color: var(--text-color);
 	font-size: 0.9em;
@@ -223,7 +212,7 @@ svg[role="img"] {
 
 .address-editor-fields {
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+	grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr));
 	gap: 0.55em 0.7em;
 	min-width: 0;
 }
@@ -254,6 +243,22 @@ svg[role="img"] {
 
 .address-editor-field--wide {
 	grid-column: 1 / -1;
+}
+
+.address-editor-field--compact-address {
+	display: grid;
+	grid-template-columns: max-content minmax(0, 1fr);
+	align-items: baseline;
+	gap: 0.5em;
+}
+
+.address-editor-readonly-address {
+	color: var(--disabled-text-color);
+	min-width: 0;
+	overflow: hidden;
+	padding: 0;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .address-editor-section {

@@ -4,7 +4,6 @@ import type { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, ErrorText } from '../subcomponents/Error.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
 import { getMissingPopupReplyErrorMessage, requestPopupAbiAndNameFromBlockExplorer, requestPopupIdentifyAddress, sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
-import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
 import { createRef } from 'preact'
 import type { AddressBookEntry, AddressBookEntryType, ChainIdWithUniversal, DeclarativeNetRequestBlockMode } from '../../types/addressBookTypes.js'
@@ -113,20 +112,6 @@ const readableAddressType = {
 
 export const BLOCK_EXPLORER_REPLY_MISSING_ERROR = getMissingPopupReplyErrorMessage('Fetching ABI from the block explorer')
 
-type IncompleteAddressIconParams = {
-	addressInput: string | undefined,
-	logoUri: string | undefined,
-}
-
-function IncompleteAddressIcon({ addressInput, logoUri }: IncompleteAddressIconParams) {
-	return <AddressIcon
-		address = { stringToAddress(addressInput) }
-		logoUri = { logoUri }
-		isBig = { true }
-		backgroundColor = { 'var(--text-color)' }
-	/>
-}
-
 type NameInputParams = {
 	nameInput: string | undefined
 	setNameInput: (input: string) => void
@@ -220,7 +205,6 @@ export async function updateModifyAddressWindowState(
 
 function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries, canFetchFromEtherScan, blockExplorerLookupState, safeSignerLookupState, fetchAbiAndNameFromBlockExplorer, refreshSafeSigners }: RenderinCompleteAddressBookParams) {
 	const disableDueToSource = modifyAddressWindowState.value.incompleteAddressBookEntry.entrySource === 'DarkFloristMetadata' || modifyAddressWindowState.value.incompleteAddressBookEntry.entrySource === 'Interceptor'
-	const logoUri = modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress === false && 'logoUri' in modifyAddressWindowState.value.incompleteAddressBookEntry ? modifyAddressWindowState.value.incompleteAddressBookEntry.logoUri : undefined
 	const selectedChainId = useComputed(() => modifyAddressWindowState.value.incompleteAddressBookEntry.chainId ?? 1n)
 	const blockExplorerAvailable = useComputed(() => isBlockExplorerAvailableForChain(selectedChainId.value, rpcEntries.value))
 
@@ -279,14 +263,6 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 	const selectedSafeSignerAddress = useComputed(() => modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddress ?? safeSignerAddresses.value[0] ?? '')
 	const hasSafeSigners = safeSignerAddresses.value.length > 0
 	return <div class = 'address-editor'>
-		<div class = 'address-editor-identity'>
-			<figure class = 'image address-editor-icon'>
-				<IncompleteAddressIcon addressInput = { modifyAddressWindowState.value.incompleteAddressBookEntry.address } logoUri = { logoUri }/>
-			</figure>
-			<div>
-				<p class = 'address-editor-heading'>Address details</p>
-			</div>
-		</div>
 		<div class = 'address-editor-fields'>
 			<div class = 'address-editor-field'>
 				<span>Address type</span>
@@ -300,9 +276,12 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 				<span>Name</span>
 				<NameInput nameInput = { modifyAddressWindowState.value.incompleteAddressBookEntry.name } setNameInput = { setName } disabled = { disableDueToSource }/>
 			</label>
-			<label class = 'address-editor-field address-editor-field--wide'>
+			<label class = { `address-editor-field address-editor-field--wide ${ modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? '' : 'address-editor-field--compact-address' }` }>
 				<span>Address</span>
-				<AddressInput disabled = { modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress === false || disableDueToSource } addressInput = { modifyAddressWindowState.value.incompleteAddressBookEntry.address } setAddress = { setAddress } />
+				{ modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress
+					? <AddressInput disabled = { disableDueToSource } addressInput = { modifyAddressWindowState.value.incompleteAddressBookEntry.address } setAddress = { setAddress } />
+					: <code class = 'address-editor-readonly-address' title = { modifyAddressWindowState.value.incompleteAddressBookEntry.address }>{ modifyAddressWindowState.value.incompleteAddressBookEntry.address }</code>
+				}
 			</label>
 			{ modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'safe' ? <section class = 'address-editor-section address-editor-field--wide'>
 				<div class = 'address-editor-section-heading'>

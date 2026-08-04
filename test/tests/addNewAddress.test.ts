@@ -217,6 +217,7 @@ describe('add new address save flow', () => {
 	})
 
 	test('renders on-chain Gnosis Safe owners as signer choices', () => {
+		assert.match(addNewAddressSource, /class = 'address-editor-readonly-address'/)
 		assert.match(addNewAddressSource, /ariaLabel = 'Address type'/)
 		assert.match(addNewAddressSource, /ariaLabel = 'Chain'/)
 		assert.match(addNewAddressSource, /class = 'address-editor-heading'>Safe signer<\/p>/)

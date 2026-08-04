@@ -54,7 +54,11 @@ describe('narrow text layout CSS', () => {
 		assert.match(safeSignerEditorDropdown, /grid-template-columns\s*:\s*max-content minmax\(0,\s*1fr\)\s*;/)
 
 		const addressEditorFields = expectRule(css, '.address-editor-fields')
-		assert.match(addressEditorFields, /grid-template-columns\s*:\s*repeat\(auto-fit,\s*minmax\(min\(12rem,\s*100%\),\s*1fr\)\)\s*;/)
+		assert.match(addressEditorFields, /grid-template-columns\s*:\s*repeat\(auto-fit,\s*minmax\(min\(8rem,\s*100%\),\s*1fr\)\)\s*;/)
+		const compactAddress = expectRule(css, '.address-editor-field--compact-address')
+		assert.match(compactAddress, /grid-template-columns\s*:\s*max-content minmax\(0,\s*1fr\)\s*;/)
+		const readonlyAddress = expectRule(css, '.address-editor-readonly-address')
+		assert.match(readonlyAddress, /text-overflow\s*:\s*ellipsis\s*;/)
 		const addressEditorSection = expectRule(css, '.address-editor-section')
 		assert.match(addressEditorSection, /border-radius\s*:\s*6px\s*;/)
 		const addressEditorSectionHeading = expectRule(css, '.address-editor-section-heading')
