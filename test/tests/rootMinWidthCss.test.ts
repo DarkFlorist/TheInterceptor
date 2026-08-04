@@ -17,7 +17,7 @@ async function readHtmlShells(directory: string) {
 
 describe('root page CSS', () => {
 	test('does not restore Bulma root min-width', async () => {
-		const css = await Bun.file('app/css/bulma.css').text()
+		const css = await Bun.file('app/css/interceptor-framework.css').text()
 		assert.doesNotMatch(css, /html\s*\{[\s\S]*?min-width\s*:\s*300px\s*;/)
 	})
 
