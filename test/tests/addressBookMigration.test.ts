@@ -94,4 +94,22 @@ describe('address book migration', () => {
 
 		assert.equal(storageState.userAddressBookEntriesV2, undefined)
 	})
+
+	test('preserves valid V2 entries while repairing out-of-range ERC20 decimals', async () => {
+		const storageState = installBrowserMock()
+		const { migrateAddressBook } = await import('../../app/ts/background/addressBookMigration.js')
+		storageState.userAddressBookEntriesV2 = [
+			{ type: 'contact', name: 'Preserved contact', address: '0x0000000000000000000000000000000000000001', entrySource: 'User' },
+			{ type: 'ERC20', name: 'Invalid token', address: '0x0000000000000000000000000000000000000002', symbol: 'BAD', decimals: '0x100', entrySource: 'User' },
+		]
+
+		await migrateAddressBook()
+
+		assert.equal(storageState.userAddressBookEntriesV2, undefined)
+		const migratedEntries = storageState.userAddressBookEntriesV3
+		assert.ok(Array.isArray(migratedEntries))
+		if (!Array.isArray(migratedEntries)) throw new Error('Expected migrated entries array')
+		assert.equal(migratedEntries.some((entry) => typeof entry === 'object' && entry !== null && 'name' in entry && 'type' in entry && entry.name === 'Preserved contact' && entry.type === 'contact'), true)
+		assert.equal(migratedEntries.some((entry) => typeof entry === 'object' && entry !== null && 'name' in entry && 'type' in entry && entry.name === 'Invalid token' && entry.type === 'contract'), true)
+	})
 })

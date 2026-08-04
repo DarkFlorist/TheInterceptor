@@ -6,6 +6,7 @@ import { checksummedAddress, stringToUint8Array } from './bigint.js'
 import type { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../types/addressBookTypes.js'
 import { decodeFunctionOutputSafely, encodeFunctionCall } from './abiRuntime.js'
 import { isBigint, isBoolean, isNumberOrBigint, isString } from './typescript.js'
+import { isValidErc20Decimals } from './erc20.js'
 
 type EOA = {
 	type: 'EOA'
@@ -91,13 +92,14 @@ export async function itentifyAddressViaOnChainInformation(ethereumClientService
 			decimals: undefined
 		}
 	}
-	if (tokenName !== undefined && tokenSymbol !== undefined && tokenDecimals !== undefined && tokenSupply !== undefined) {
+	const parsedTokenDecimals = tokenDecimals === undefined ? undefined : BigInt(tokenDecimals)
+	if (tokenName !== undefined && tokenSymbol !== undefined && parsedTokenDecimals !== undefined && isValidErc20Decimals(parsedTokenDecimals) && tokenSupply !== undefined) {
 		return {
 			type: 'ERC20',
 			address,
 			name: tokenName,
 			symbol: tokenSymbol,
-			decimals: BigInt(tokenDecimals),
+			decimals: parsedTokenDecimals,
 			entrySource: 'OnChain'
 		}
 	}

@@ -1,8 +1,10 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { Signal } from '@preact/signals'
-import { mergeAddressWindowErrorState, saveAddressBookEntry, saveAddressBookEntryAndSwitch, updateModifyAddressWindowState } from '../../app/ts/components/pages/AddNewAddress.js'
+import { areAddressIdentificationKeysEqual, getAddressIdentificationKey, isAddressBookSubmissionDisabled, isIdentificationRequestCurrent, mergeAddressWindowErrorState, saveAddressBookEntry, saveAddressBookEntryAndSwitch, updateModifyAddressWindowState } from '../../app/ts/components/pages/AddNewAddress.js'
 import type { ModifyAddressWindowState } from '../../app/ts/types/visualizer-types.js'
+import { EthereumQuantityUint8 } from '../../app/ts/types/wire-types.js'
+import { isValidErc20Decimals } from '../../app/ts/utils/erc20.js'
 
 const sampleAddressBookEntry = {
 	type: 'contact',
@@ -81,6 +83,90 @@ describe('add new address save flow', () => {
 		assert.equal(closed, false)
 		assert.equal(switchedTo, undefined)
 		assert.equal(message, 'The configured address is not an owner of this Safe.')
+	})
+
+	test('applies every submission safety gate to create-and-switch', () => {
+		const validState = {
+			areInputsValid: true,
+			blockEditing: false,
+			requiresOnChainVerification: false,
+			isOnChainInformationVerified: false,
+			isBlockExplorerLookupPending: false,
+		}
+		assert.equal(isAddressBookSubmissionDisabled(validState), false)
+		assert.equal(isAddressBookSubmissionDisabled({ ...validState, areInputsValid: false }), true)
+		assert.equal(isAddressBookSubmissionDisabled({ ...validState, blockEditing: true }), true)
+		assert.equal(isAddressBookSubmissionDisabled({ ...validState, requiresOnChainVerification: true }), true)
+		assert.equal(isAddressBookSubmissionDisabled({ ...validState, requiresOnChainVerification: true, isOnChainInformationVerified: true }), false)
+		assert.equal(isAddressBookSubmissionDisabled({ ...validState, isBlockExplorerLookupPending: true }), true)
+	})
+
+	test('ignores token identification replies for an address or window that has changed', () => {
+		const state: ModifyAddressWindowState = {
+			windowStateId: 'current-window',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: true,
+				type: 'ERC20',
+				address: '0x0000000000000000000000000000000000000002',
+				askForAddressAccess: true,
+				name: undefined,
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				entrySource: 'User',
+				abi: undefined,
+				useAsActiveAddress: undefined,
+				declarativeNetRequestBlockMode: undefined,
+				chainId: 1n,
+			},
+		}
+
+		const requestedIdentification = getAddressIdentificationKey(state)
+		if (requestedIdentification === undefined) throw new Error('Expected a valid identification key')
+		assert.equal(isIdentificationRequestCurrent(state, requestedIdentification), true)
+		assert.equal(isIdentificationRequestCurrent({ ...state, windowStateId: 'new-window' }, requestedIdentification), false)
+		const changedAddressState = { ...state, incompleteAddressBookEntry: { ...state.incompleteAddressBookEntry, address: '0x0000000000000000000000000000000000000001' } }
+		assert.equal(isIdentificationRequestCurrent(changedAddressState, requestedIdentification), false)
+	})
+
+	test('rechecks the same address after its selected chain changes', () => {
+		const state: ModifyAddressWindowState = {
+			windowStateId: 'current-window',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: true,
+				type: 'ERC20',
+				address: '0x0000000000000000000000000000000000000002',
+				askForAddressAccess: true,
+				name: undefined,
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				entrySource: 'User',
+				abi: undefined,
+				useAsActiveAddress: undefined,
+				declarativeNetRequestBlockMode: undefined,
+				chainId: 1n,
+			},
+		}
+		const requestedIdentification = getAddressIdentificationKey(state)
+		const changedChainState = { ...state, incompleteAddressBookEntry: { ...state.incompleteAddressBookEntry, chainId: 10n } }
+		const changedChainIdentification = getAddressIdentificationKey(changedChainState)
+		if (requestedIdentification === undefined || changedChainIdentification === undefined) throw new Error('Expected valid identification keys')
+
+		assert.equal(isIdentificationRequestCurrent(changedChainState, requestedIdentification), false)
+		assert.equal(areAddressIdentificationKeysEqual(requestedIdentification, changedChainIdentification), false)
+	})
+
+	test('limits ERC-20 decimals to the uint8 range', () => {
+		assert.equal(isValidErc20Decimals(0n), true)
+		assert.equal(isValidErc20Decimals(255n), true)
+		assert.equal(isValidErc20Decimals(256n), false)
+		assert.equal(EthereumQuantityUint8.safeParse('0xff').success, true)
+		assert.equal(EthereumQuantityUint8.safeParse('0x100').success, false)
+		assert.equal(EthereumQuantityUint8.safeSerialize(255n).success, true)
+		assert.equal(EthereumQuantityUint8.safeSerialize(256n).success, false)
 	})
 
 	test('keeps non-blocking block explorer errors when validation has no error', () => {

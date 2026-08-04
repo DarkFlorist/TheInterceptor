@@ -1,20 +1,16 @@
 import type { WebsiteAccessArray, WebsiteAccess, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { addressString } from '../utils/bigint.js'
+import { createFuzzySearchPattern } from '../utils/fuzzySearch.js'
 
 type SearchMatch = {
 	length: number
 	location: number
 }
 
-const createSearchPattern = (searchString: string) => {
-	const unicodeEscapeString = (stringToEscape: string) => `\\u{${ stringToEscape.charCodeAt(0).toString(16) }}`
-	const segments = searchString.trim().split('')
-	return segments.length ? new RegExp(`(?=(${ segments.map(unicodeEscapeString).join('.*?') }))`, 'gui') : undefined
-}
-
 function computeSearchMatch(searchQuery: string, searchAgainst: string): SearchMatch | undefined {
-	const pattern = createSearchPattern(searchQuery)
-	if (!pattern) return undefined
+	const fuzzyPattern = createFuzzySearchPattern(searchQuery)
+	if (!fuzzyPattern) return undefined
+	const pattern = new RegExp(fuzzyPattern.source, `${ fuzzyPattern.flags }g`)
 
 	let bestResult: SearchMatch | undefined
 	for (const match of searchAgainst.matchAll(pattern)) {

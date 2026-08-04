@@ -1,7 +1,7 @@
 import type { PreSimulationTransaction, WebsiteCreatedEthereumTransaction } from '../types/visualizer-types.js'
 import type { EthereumSendableSignedTransaction } from '../types/wire-types.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
-import { getSignedTransactionForSimulation } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
 
 function createSafeExecutionSimulationTransaction(
 	transactionToSimulate: WebsiteCreatedEthereumTransaction,

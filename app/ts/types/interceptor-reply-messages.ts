@@ -192,7 +192,8 @@ export type RequestIdentifyAddress = funtypes.Static<typeof RequestIdentifyAddre
 export const RequestIdentifyAddress = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestIdentifyAddress'),
 	data: funtypes.ReadonlyObject({
-		address: EthereumAddress
+		address: EthereumAddress,
+		chainId: ChainIdWithUniversal,
 	})
 }).asReadonly()
 
@@ -200,7 +201,8 @@ type RequestIdentifyAddressReply = funtypes.Static<typeof RequestIdentifyAddress
 const RequestIdentifyAddressReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestIdentifyAddress'),
 	data: funtypes.ReadonlyObject({
-		addressBookEntry: AddressBookEntry
+		chainId: ChainIdWithUniversal,
+		addressBookEntry: funtypes.Union(AddressBookEntry, funtypes.Undefined),
 	})
 }).asReadonly()
 

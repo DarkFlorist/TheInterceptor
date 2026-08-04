@@ -1,5 +1,6 @@
 import { useSignal } from '@preact/signals'
-import { bigintSecondsToDate, isHexEncodedNumber, stringToUint8Array } from '../../utils/bigint.js'
+import { bigintSecondsToDate } from '../../utils/bigint.js'
+import { EthereumData } from '../../types/wire-types.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
@@ -91,8 +92,10 @@ type SignRequestParams = {
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }
 
-const decodeMessage = (message: string) => {
-	if (isHexEncodedNumber(message)) return new TextDecoder().decode(stringToUint8Array(message))
+export const decodeMessage = (message: string) => {
+	if (!message.startsWith('0x')) return message
+	const parsedMessage = EthereumData.safeParse(message)
+	if (parsedMessage.success) return new TextDecoder().decode(parsedMessage.value)
 	return message
 }
 
