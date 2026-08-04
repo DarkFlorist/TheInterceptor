@@ -90,24 +90,6 @@ try {
 	})()`)
 	await waitForSelector(addressBook, '.modal.is-active')
 	await captureScenario(addressBook, 'safe-address-form-empty')
-	await addressBook.evaluate(`(() => {
-		const addSignerButton = [...document.querySelectorAll('.modal.is-active button')].find((element) => element.textContent?.includes('Add Gnosis Safe signer'))
-		if (!(addSignerButton instanceof HTMLElement)) throw new Error('Add Gnosis Safe signer button was not found')
-		addSignerButton.click()
-	})()`)
-	await Bun.sleep(100)
-	await captureScenario(addressBook, 'safe-address-form-with-signer')
-	await addressBook.evaluate(`(() => {
-		const inputs = [...document.querySelectorAll('.modal.is-active input[type="text"]')]
-		const values = ['Treasury Safe', '0x1234567890123456789012345678901234567890', '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd']
-		for (const [index, value] of values.entries()) {
-			const input = inputs[index]
-			if (!(input instanceof HTMLInputElement)) continue
-			input.value = value
-			input.dispatchEvent(new InputEvent('input', { bubbles: true, data: value }))
-		}
-	})()`)
-	await captureScenario(addressBook, 'safe-address-form-filled')
 	const setSafeAddressFixture = `browser.storage.local.set({
 			activeSimulationAddress: '0x1234567890123456789012345678901234567890',
 			simulationMode: false,
@@ -131,6 +113,72 @@ try {
 		})`
 	await addressBook.evaluate(setSafeAddressFixture)
 	await addressBook.close()
+
+	const openSafeEditorFixture = `(() => {
+		const originalSendMessage = browser.runtime.sendMessage.bind(browser.runtime)
+		browser.runtime.sendMessage = async (message) => {
+			if (message?.method === 'popup_requestIdentifyAddress') return {
+				method: 'popup_requestIdentifyAddress',
+				data: {
+					chainId: '0x1',
+					addressBookEntry: undefined,
+					safeContractState: { ok: true, owners: ['0xabcdefabcdefabcdefabcdefabcdefabcdefabcd', '0xfedcbafedcbafedcbafedcbafedcbafedcbafedc'], version: '1.4.1' },
+				},
+			}
+			return await originalSendMessage(message)
+		}
+		const safeLink = [...document.querySelectorAll('a')].find((element) => element.textContent?.includes('My Gnosis Safes'))
+		if (!(safeLink instanceof HTMLElement)) throw new Error('My Gnosis Safes link was not found')
+		safeLink.click()
+	})()`
+
+	console.info('Opening compact Gnosis Safe editor')
+	const safeEditor = await browser.openPage('addressBook')
+	await waitForSelector(safeEditor, '.address-book-page')
+	await safeEditor.evaluate(openSafeEditorFixture)
+	await waitForText(safeEditor, 'Treasury Safe')
+	await safeEditor.evaluate(`(() => {
+		const editButton = [...document.querySelectorAll('button')].find((element) => element.textContent?.trim() === 'Edit')
+		if (!(editButton instanceof HTMLElement)) throw new Error('Gnosis Safe Edit button was not found')
+		editButton.click()
+	})()`)
+	await waitForText(safeEditor, 'Refresh signers')
+	await captureScenario(safeEditor, 'safe-owner-retrieval')
+	await safeEditor.evaluate(`(() => {
+		browser.runtime.sendMessage = async (message) => {
+			if (message?.method === 'popup_addOrModifyAddressBookEntry') return await new Promise(() => undefined)
+			return undefined
+		}
+		const modifyButton = [...document.querySelectorAll('.modal.is-active button')].find((element) => element.textContent?.trim() === 'Modify')
+		if (!(modifyButton instanceof HTMLElement)) throw new Error('Modify button was not found')
+		modifyButton.click()
+	})()`)
+	await waitForText(safeEditor, 'Modifying...')
+	await captureScenario(safeEditor, 'safe-modify-pending')
+	await safeEditor.close()
+
+	const refreshEditor = await browser.openPage('addressBook')
+	await waitForSelector(refreshEditor, '.address-book-page')
+	await refreshEditor.evaluate(openSafeEditorFixture)
+	await waitForText(refreshEditor, 'Treasury Safe')
+	await refreshEditor.evaluate(`(() => {
+		const editButton = [...document.querySelectorAll('button')].find((element) => element.textContent?.trim() === 'Edit')
+		if (!(editButton instanceof HTMLElement)) throw new Error('Gnosis Safe Edit button was not found')
+		editButton.click()
+	})()`)
+	await waitForText(refreshEditor, 'Refresh signers')
+	await refreshEditor.evaluate(`(() => {
+		browser.runtime.sendMessage = async (message) => {
+			if (message?.method === 'popup_requestIdentifyAddress') return await new Promise(() => undefined)
+			return undefined
+		}
+		const refreshButton = [...document.querySelectorAll('.modal.is-active button')].find((element) => element.textContent?.includes('Refresh signers'))
+		if (!(refreshButton instanceof HTMLElement)) throw new Error('Refresh signers button was not found')
+		refreshButton.click()
+	})()`)
+	await waitForText(refreshEditor, 'Refreshing...')
+	await captureScenario(refreshEditor, 'safe-owner-refresh-pending')
+	await refreshEditor.close()
 
 	console.info('Opening Gnosis Safe signing-mode popup')
 	const popup = await browser.openPage('popup')
@@ -255,7 +303,7 @@ try {
 	await captureScenario(settings, 'settings-import-export')
 	await settings.close()
 
-	const expectedScreenshotCount = 50
+	const expectedScreenshotCount = 55
 	const screenshotCount = capturedScenarioCount * viewports.length
 	if (screenshotCount !== expectedScreenshotCount) throw new Error(`Expected ${ expectedScreenshotCount } screenshots, captured ${ screenshotCount }`)
 	console.info(`Captured ${ screenshotCount } deterministic screenshots`)

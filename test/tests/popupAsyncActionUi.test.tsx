@@ -839,6 +839,7 @@ describe('popup async action UI', () => {
 		const modules = await modulesPromise
 		const dom = installDomMock()
 		const firstOwner = 0x1111111111111111111111111111111111111111n
+		const alternateOwner = 0x3333333333333333333333333333333333333333n
 		const refreshedOwner = 0x2222222222222222222222222222222222222222n
 		const firstReply = createDeferred<ReturnType<typeof createSafeIdentifyAddressReply>>()
 		const refreshReply = createDeferred<ReturnType<typeof createSafeIdentifyAddressReply>>()
@@ -894,11 +895,18 @@ describe('popup async action UI', () => {
 		assert.equal(isDisabled(retrieveButton), true)
 		assert.equal(requestCount, 1)
 		await act(async () => {
-			firstReply.resolve(createSafeIdentifyAddressReply([firstOwner]))
+			firstReply.resolve(createSafeIdentifyAddressReply([firstOwner, alternateOwner]))
 			await firstReply.promise
 			await settleAsyncUpdates()
 		})
 		assert.equal(dom.document.body.textContent?.includes('0x1111111111111111111111111111111111111111'), true)
+		const signerDropdown = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label')?.startsWith('Safe signer owner:'))
+		if (signerDropdown === undefined) throw new Error('Expected Safe signer owner dropdown')
+		await act(async () => { await clickElement(signerDropdown) })
+		const alternateOwnerOption = collectElements(dom.document.body, 'button').find((button) => button.textContent?.trim() === '0x3333333333333333333333333333333333333333')
+		if (alternateOwnerOption === undefined) throw new Error('Expected alternate Safe owner option')
+		await act(async () => { await clickElement(alternateOwnerOption) })
+		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddress, '0x3333333333333333333333333333333333333333')
 		const refreshButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Refresh signers'))
 		if (refreshButton === undefined) throw new Error('Expected Safe signer refresh button')
 		await act(async () => {

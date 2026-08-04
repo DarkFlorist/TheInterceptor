@@ -275,7 +275,9 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 	const setAskForAddressAccess = async (askForAddressAccess: boolean) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { askForAddressAccess }))
 
 	const decimals = useComputed(() => modifyAddressWindowState.value.incompleteAddressBookEntry.decimals !== undefined ? modifyAddressWindowState.value.incompleteAddressBookEntry.decimals.toString() : undefined)
-	const hasSafeSigners = (modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddresses ?? []).length > 0
+	const safeSignerAddresses = useComputed(() => modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddresses ?? [])
+	const selectedSafeSignerAddress = useComputed(() => modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddress ?? safeSignerAddresses.value[0] ?? '')
+	const hasSafeSigners = safeSignerAddresses.value.length > 0
 	return <div class = 'address-editor'>
 		<div class = 'address-editor-identity'>
 			<figure class = 'image address-editor-icon'>
@@ -283,7 +285,6 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 			</figure>
 			<div>
 				<p class = 'address-editor-heading'>Address details</p>
-				<p class = 'paragraph address-editor-description'>Configure how Interceptor identifies and uses this address.</p>
 			</div>
 		</div>
 		<div class = 'address-editor-fields'>
@@ -305,10 +306,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 			</label>
 			{ modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'safe' ? <section class = 'address-editor-section address-editor-field--wide'>
 				<div class = 'address-editor-section-heading'>
-					<div>
-						<p class = 'address-editor-heading'>Safe signer</p>
-						<p class = 'paragraph address-editor-description'>Choose an owner to sign transactions for this Safe.</p>
-					</div>
+					<p class = 'address-editor-heading'>Safe signer</p>
 					<AsyncActionButton
 						class = 'btn btn--outline is-small'
 						state = { safeSignerLookupState }
@@ -318,22 +316,13 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 						onClick = { refreshSafeSigners }
 					/>
 				</div>
-				<div class = 'safe-signer-editor-list'>
-						{ (modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddresses ?? []).map((safeSignerAddress, index) =>
-							<label class = 'safe-signer-editor-row' key = { index }>
-								<input
-									type = 'radio'
-									name = 'active-safe-signer'
-									aria-label = { `Use Gnosis Safe signer ${ index + 1 } as active signer` }
-									checked = { modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddress === safeSignerAddress }
-									disabled = { disableDueToSource }
-									onInput = { () => { void setSafeSignerAddress(safeSignerAddress) } }
-								/>
-								<code class = 'safe-signer-editor-address'>{ safeSignerAddress }</code>
-							</label>
-						) }
-						{ (modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddresses ?? []).length === 0 ? <p class = 'paragraph safe-signer-editor-empty'>Enter a deployed Safe address on a specific chain to retrieve its owners.</p> : <></> }
-				</div>
+				{ hasSafeSigners
+					? <div class = 'safe-signer-editor-dropdown'>
+						<span>Signer owner</span>
+						<DropDownMenu selected = { selectedSafeSignerAddress } dropDownOptions = { safeSignerAddresses } onChangedCallBack = { safeSignerAddress => { void setSafeSignerAddress(safeSignerAddress) } } buttonClassses = 'btn btn--outline is-small' ariaLabel = 'Safe signer owner' disabled = { disableDueToSource }/>
+					</div>
+					: <p class = 'paragraph safe-signer-editor-empty'>Enter a deployed Safe address on a specific chain to retrieve its owners.</p>
+				}
 			</section> : <></> }
 			{ modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC20' || modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC1155' ? <label class = 'address-editor-field'>
 				<span>Symbol</span>
@@ -345,10 +334,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 			</label> : <></> }
 			<section class = 'address-editor-section address-editor-field--wide'>
 				<div class = 'address-editor-section-heading'>
-					<div>
-						<p class = 'address-editor-heading'>Contract ABI</p>
-						<p class = 'paragraph address-editor-description'>Optional interface used to decode contract activity.</p>
-					</div>
+					<p class = 'address-editor-heading'>Contract ABI</p>
 						<AsyncActionButton
 							class = 'btn btn--outline is-small'
 							state = { blockExplorerLookupState }
