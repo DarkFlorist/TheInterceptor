@@ -279,11 +279,11 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 			</label>
 			<div class = 'address-editor-identity-selectors'>
 				<div class = 'address-editor-field'>
-					<span>Address type:</span>
+					<span>Address type</span>
 					<DropDownMenu selected = { selectedAddresBookEntryType } dropDownOptions = { addressBookEntryOptions } onChangedCallBack = { onTypeChangedCallBack } buttonClassses = { 'btn btn--outline is-small' } ariaLabel = 'Address type'/>
 				</div>
 				<div class = 'address-editor-field'>
-					<span>Chain:</span>
+					<span>Chain</span>
 					<ChainSelector rpcEntries = { rpcEntries } chainId = { selectedChainId } changeChain = { setChain } buttonClassses = { 'btn btn--outline is-small' } ariaLabel = 'Chain'/>
 				</div>
 			</div>
