@@ -9,7 +9,7 @@ import type { SignedMessageTransaction } from '../../types/visualizer-types.js'
 import type { RpcNetwork } from '../../types/rpc.js'
 import { getChainName } from '../../utils/constants.js'
 import { parseInputData } from '../../simulation/parsing.js'
-import { getMessageHashForPersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
+import { getMessageHashForPersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
 import { getMessageAndDomainHash, getSafeTxHash, isValidMessage } from '../../utils/eip712.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
 

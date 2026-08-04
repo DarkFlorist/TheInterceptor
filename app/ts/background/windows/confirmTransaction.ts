@@ -1,5 +1,7 @@
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
-import { getInputFieldFromDataOrInput, getSignedTransactionForSimulation, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas, simulatePersonalSign } from '../../simulation/services/SimulationModeEthereumClientService.js'
+import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas } from '../../simulation/services/SimulationModeEthereumClientService.js'
+import { simulatePersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
+import { getSignedTransactionForSimulation } from '../../simulation/services/simulationTransactionSigning.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
