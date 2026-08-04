@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
+import { EthereumAddress, EthereumQuantity, EthereumQuantityUint8, LiteralConverterParserFactory } from './wire-types.js'
 
 export type ChainIdWithUniversal = funtypes.Static<typeof ChainIdWithUniversal>
 export const ChainIdWithUniversal = funtypes.Union(EthereumQuantity, funtypes.Literal('AllChains'))
@@ -39,6 +39,18 @@ const nftAddressBookEntryOptionalFields = {
 
 export type Erc20TokenEntry = funtypes.Static<typeof Erc20TokenEntry>
 export const Erc20TokenEntry = funtypes.ReadonlyObject({
+	type: funtypes.Literal('ERC20'),
+	name: funtypes.String,
+	address: EthereumAddress,
+	symbol: funtypes.String,
+	decimals: EthereumQuantityUint8,
+	entrySource: EntrySource,
+}).And(funtypes.Partial({
+	...sharedAddressBookEntryOptionalFields,
+}))
+
+export type LegacyErc20TokenEntry = funtypes.Static<typeof LegacyErc20TokenEntry>
+export const LegacyErc20TokenEntry = funtypes.ReadonlyObject({
 	type: funtypes.Literal('ERC20'),
 	name: funtypes.String,
 	address: EthereumAddress,
@@ -173,7 +185,7 @@ export const IncompleteAddressBookEntry = funtypes.ReadonlyObject({
 	askForAddressAccess: funtypes.Boolean,
 	name: funtypes.Union(funtypes.String, funtypes.Undefined),
 	symbol: funtypes.Union(funtypes.String, funtypes.Undefined),
-	decimals: funtypes.Union(EthereumQuantity, funtypes.Undefined),
+	decimals: funtypes.Union(EthereumQuantityUint8, funtypes.Undefined),
 	logoUri: funtypes.Union(funtypes.String, funtypes.Undefined),
 	entrySource: EntrySource,
 	abi: funtypes.Union(funtypes.String, funtypes.Undefined),

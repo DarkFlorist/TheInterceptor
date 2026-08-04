@@ -3,13 +3,14 @@ import { describe, test } from 'bun:test'
 import { signal } from '@preact/signals'
 import { render } from 'preact'
 import { act } from 'preact/test-utils'
-import { findChainEntryByName } from '../../app/ts/components/subcomponents/ChainSelector.js'
+import { findChainEntryByName, findRpcEntryByUrl, getRpcEntryLabel } from '../../app/ts/components/subcomponents/ChainSelector.js'
 import { DropDownMenu } from '../../app/ts/components/subcomponents/DropDownMenu.js'
 import { InlineCard } from '../../app/ts/components/subcomponents/InlineCard.js'
 import { parseTimePickerDeltaValue, TimePicker } from '../../app/ts/components/subcomponents/TimePicker.js'
 import { rpcEntriesToChainEntriesWithAllChainsEntry } from '../../app/ts/components/ui-utils.js'
 import { parseRpcFormData } from '../../app/ts/utils/rpcFormData.js'
 import { installDomMock } from './domMock.js'
+import { synchronizeViewConfig, ViewSelector } from '../../app/ts/components/subcomponents/ViewSelector.js'
 
 type TestNode = {
 	readonly childNodes?: readonly TestNode[]
@@ -51,6 +52,16 @@ describe('UI boundary fixes', () => {
 		assert.equal(findChainEntryByName(chains, 'All Chains')?.chainId, 'AllChains')
 	})
 
+	test('selects duplicate-named RPC entries by URL', () => {
+		const entries = [
+			{ name: 'Same name', chainId: 1n, httpsRpc: 'https://first.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: true },
+			{ name: 'Same name', chainId: 1n, httpsRpc: 'https://second.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: false, minimized: true },
+		] as const
+
+		assert.equal(findRpcEntryByUrl(entries, 'https://second.example'), entries[1])
+		assert.equal(getRpcEntryLabel(entries, 'https://second.example'), 'Same name (https://second.example)')
+	})
+
 	test('keeps dropdown controls from submitting surrounding forms', async () => {
 		const dom = installDomMock()
 		try {
@@ -65,6 +76,40 @@ describe('UI boundary fixes', () => {
 			render(null, dom.document.body)
 			dom.restore()
 		}
+	})
+
+	test('updates view content when active-view props change', async () => {
+		const dom = installDomMock()
+		const selector = (showParsed: boolean) => <ViewSelector id = 'dynamic-view'>
+			<ViewSelector.List>
+				<ViewSelector.View title = 'Parsed' value = 'parsed' isActive = { showParsed }>Parsed content</ViewSelector.View>
+				<ViewSelector.View title = 'Raw' value = 'raw' isActive = { !showParsed }>Raw content</ViewSelector.View>
+			</ViewSelector.List>
+			<ViewSelector.Triggers />
+		</ViewSelector>
+		try {
+			await act(() => render(selector(false), dom.document.body))
+			assert.equal(dom.document.body.textContent.includes('Raw content'), true)
+			assert.equal(dom.document.body.textContent.includes('Parsed content'), false)
+
+			await act(() => render(selector(true), dom.document.body))
+			assert.equal(dom.document.body.textContent.includes('Parsed content'), true)
+			assert.equal(dom.document.body.textContent.includes('Raw content'), false)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('preserves manual view selection across title-only updates', () => {
+		let views = synchronizeViewConfig([], { title: 'Parsed', value: 'parsed', isActive: true }, 'activate')
+		views = synchronizeViewConfig(views, { title: 'Raw', value: 'raw', isActive: false }, 'preserve')
+		views = views.map(view => ({ ...view, isActive: view.value === 'raw' }))
+		views = synchronizeViewConfig(views, { title: 'Decoded', value: 'parsed', isActive: true }, 'preserve')
+
+		assert.equal(views.find(view => view.value === 'raw')?.isActive, true)
+		assert.equal(views.find(view => view.value === 'parsed')?.isActive, false)
+		assert.equal(views.find(view => view.value === 'parsed')?.title, 'Decoded')
 	})
 
 	test('renders warning details supplied by InlineCard callers', async () => {

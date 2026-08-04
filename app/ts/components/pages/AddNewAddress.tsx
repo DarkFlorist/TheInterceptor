@@ -7,7 +7,7 @@ import { getMissingPopupReplyErrorMessage, requestPopupAbiAndNameFromBlockExplor
 import { AddressIcon } from '../subcomponents/address.js'
 import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
 import { type ComponentChildren, createRef } from 'preact'
-import type { AddressBookEntry, AddressBookEntryType, DeclarativeNetRequestBlockMode } from '../../types/addressBookTypes.js'
+import type { AddressBookEntry, AddressBookEntryType, ChainIdWithUniversal, DeclarativeNetRequestBlockMode } from '../../types/addressBookTypes.js'
 import { isBlockExplorerAvailableForChain, isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
 import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
@@ -21,6 +21,7 @@ import { NonHexBigInt } from '../../types/wire-types.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { isValidAddressBookEntryName, MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH } from '../../utils/addressBookValidation.js'
+import { isValidErc20Decimals } from '../../utils/erc20.js'
 
 export function mergeAddressWindowErrorState(
 	currentErrorState: ModifyAddressWindowState['errorState'],
@@ -34,6 +35,46 @@ export function mergeAddressWindowErrorState(
 export function getAddressWindowStateSyncErrorMessage(error: unknown) {
 	if (error instanceof Error && error.message.length > 0) return `Failed to update address window state: ${ error.message }`
 	return 'Failed to update address window state.'
+}
+
+export function isAddressBookSubmissionDisabled({
+	areInputsValid,
+	blockEditing,
+	requiresOnChainVerification,
+	isOnChainInformationVerified,
+	isBlockExplorerLookupPending,
+}: {
+	areInputsValid: boolean
+	blockEditing: boolean
+	requiresOnChainVerification: boolean
+	isOnChainInformationVerified: boolean
+	isBlockExplorerLookupPending: boolean
+}) {
+	return !areInputsValid
+		|| blockEditing
+		|| (requiresOnChainVerification && !isOnChainInformationVerified)
+		|| isBlockExplorerLookupPending
+}
+
+export type AddressIdentificationKey = {
+	address: bigint
+	chainId: ChainIdWithUniversal
+	windowStateId: string
+}
+
+export function getAddressIdentificationKey(state: ModifyAddressWindowState): AddressIdentificationKey | undefined {
+	if (!state.incompleteAddressBookEntry.addingAddress) return undefined
+	const address = stringToAddress(state.incompleteAddressBookEntry.address)
+	if (address === undefined) return undefined
+	return { address, chainId: state.incompleteAddressBookEntry.chainId, windowStateId: state.windowStateId }
+}
+
+export function areAddressIdentificationKeysEqual(left: AddressIdentificationKey | undefined, right: AddressIdentificationKey | undefined) {
+	return left?.address === right?.address && left?.chainId === right?.chainId && left?.windowStateId === right?.windowStateId
+}
+
+export function isIdentificationRequestCurrent(state: ModifyAddressWindowState, requestedIdentification: AddressIdentificationKey) {
+	return areAddressIdentificationKeysEqual(getAddressIdentificationKey(state), requestedIdentification)
 }
 
 export async function saveAddressBookEntry(entryToAdd: AddressBookEntry | { type: 'error', error: string }, close: () => void, sendMessage: (message: { method: 'popup_addOrModifyAddressBookEntry', data: AddressBookEntry }) => Promise<{ readonly ok: boolean, readonly message?: string } | undefined> = sendPopupMessageWithReply,
@@ -242,7 +283,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 		const parseDecimalsString = () => {
 			if (decimals.length === 0) return undefined
 			const parsed = NonHexBigInt.safeParse(decimals)
-			if (parsed.success) return parsed.value
+			if (parsed.success && isValidErc20Decimals(parsed.value)) return parsed.value
 			return previousEntry.decimals
 		}
 		const parsed = parseDecimalsString()
@@ -336,7 +377,8 @@ export function AddNewAddress(param: AddAddressParam) {
 	const activeAddress = useSignal<bigint | undefined>(undefined)
 	const onChainInformationVerifiedByUser = useSignal<boolean>(false)
 	const canFetchFromEtherScan = useSignal<boolean>(false)
-	const lastCheckedAddress = useSignal<bigint>(0n)
+	const lastCompletedIdentification = useSignal<AddressIdentificationKey | undefined>(undefined)
+	const inFlightIdentifications = useSignal<readonly AddressIdentificationKey[]>([])
 	const { value: blockExplorerLookup, waitFor: waitForBlockExplorerLookup, reset: resetBlockExplorerLookup } = useAsyncState<void>()
 	const isBlockExplorerLookupPending = useComputed(() => blockExplorerLookup.value.state === 'pending')
 
@@ -360,25 +402,30 @@ export function AddNewAddress(param: AddAddressParam) {
 	useSignalEffect(() => {
 		// if user is adding a new address, fetch decimals and name from contract everytime that address changes
 		// we do not need to do that in case user is editing an address, as this data should have been fetched already
-		const identifyAddress = async () => {
-			if (!param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress) return
-			const address = stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address)
-			if (address === undefined) return
-			if (lastCheckedAddress.value === address) return
-			lastCheckedAddress.value = address
-			const identifiedAddress = await requestPopupIdentifyAddress({ address })
-			if (identifiedAddress === undefined) return
-			if (identifiedAddress.data.addressBookEntry.type === 'ERC20') {
-				param.modifyAddressWindowState.value = modifyObject(param.modifyAddressWindowState.value, { incompleteAddressBookEntry: {
-					...param.modifyAddressWindowState.value.incompleteAddressBookEntry,
-					name: identifiedAddress.data.addressBookEntry.name,
-					decimals: identifiedAddress.data.addressBookEntry.decimals,
-				} })
+		const identifyAddress = async (requestedIdentification: AddressIdentificationKey) => {
+			inFlightIdentifications.value = [...inFlightIdentifications.peek(), requestedIdentification]
+			try {
+				const identifiedAddress = await requestPopupIdentifyAddress({ address: requestedIdentification.address, chainId: requestedIdentification.chainId })
+				if (!isIdentificationRequestCurrent(param.modifyAddressWindowState.peek(), requestedIdentification)) return
+				lastCompletedIdentification.value = requestedIdentification
+				if (identifiedAddress === undefined || identifiedAddress.data.chainId !== requestedIdentification.chainId) return
+				const identifiedAddressBookEntry = identifiedAddress.data.addressBookEntry
+				if (identifiedAddressBookEntry?.type === 'ERC20') {
+					const currentState = param.modifyAddressWindowState.peek()
+					param.modifyAddressWindowState.value = modifyObject(currentState, { incompleteAddressBookEntry: {
+						...currentState.incompleteAddressBookEntry,
+						name: identifiedAddressBookEntry.name,
+						decimals: identifiedAddressBookEntry.decimals,
+					} })
+				}
+			} finally {
+				inFlightIdentifications.value = inFlightIdentifications.peek().filter((identification) => !areAddressIdentificationKeysEqual(identification, requestedIdentification))
 			}
 		}
-		if (param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress !== true) return
-		if (stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) === lastCheckedAddress.value) return
-		identifyAddress()
+		const currentIdentification = getAddressIdentificationKey(param.modifyAddressWindowState.value)
+		if (currentIdentification === undefined || areAddressIdentificationKeysEqual(lastCompletedIdentification.value, currentIdentification)) return
+		if (inFlightIdentifications.value.some((identification) => areAddressIdentificationKeysEqual(identification, currentIdentification))) return
+		void identifyAddress(currentIdentification)
 	})
 
 	useEffect(() => {
@@ -444,6 +491,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			case 'ERC20': {
 				if (incompleteAddressBookEntry.symbol === undefined) return { type: 'error', error: 'Symbol is missing' }
 				if (incompleteAddressBookEntry.decimals === undefined) return { type: 'error', error: 'Decimals are missing' }
+				if (!isValidErc20Decimals(incompleteAddressBookEntry.decimals)) return { type: 'error', error: 'Decimals must be between 0 and 255' }
 				return {
 					...base,
 					type: 'ERC20' as const,
@@ -476,6 +524,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	}
 
 	async function modifyOrAddEntry() {
+		if (isSubmitButtonDisabled.peek()) return
 		const entryToAdd = getCompleteAddressBookEntry()
 		const saveError = await saveAddressBookEntry(entryToAdd, param.close)
 		if (saveError !== undefined) {
@@ -486,6 +535,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	}
 
 	async function createAndSwitch() {
+		if (isSubmitButtonDisabled.peek()) return
 		const entryToAdd = getCompleteAddressBookEntry()
 		const saveError = await saveAddressBookEntryAndSwitch(entryToAdd, param.close, param.setActiveAddressAndInformAboutIt)
 		if (saveError !== undefined) {
@@ -551,10 +601,13 @@ export function AddNewAddress(param: AddAddressParam) {
 	})
 
 	const isSubmitButtonDisabled = useComputed(() => {
-		return !areInputsValid.value
-			|| (param.modifyAddressWindowState.value.errorState?.blockEditing)
-			|| (showOnChainVerificationErrorBox.value && !onChainInformationVerifiedByUser.value)
-			|| isBlockExplorerLookupPending.value
+		return isAddressBookSubmissionDisabled({
+			areInputsValid: areInputsValid.value,
+			blockEditing: param.modifyAddressWindowState.value.errorState?.blockEditing === true,
+			requiresOnChainVerification: showOnChainVerificationErrorBox.value,
+			isOnChainInformationVerified: onChainInformationVerifiedByUser.value,
+			isBlockExplorerLookupPending: isBlockExplorerLookupPending.value,
+		})
 	})
 
 	function getCardTitle() {
@@ -608,7 +661,7 @@ export function AddNewAddress(param: AddAddressParam) {
 				</div>
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value.incompleteAddressBookEntry === undefined || activeAddress.value === stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { !areInputsValid.value || isBlockExplorerLookupPending.value }>
+				{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value.incompleteAddressBookEntry === undefined || activeAddress.value === stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) ? <></> : <button class = 'button is-success is-primary' onClick = { createAndSwitch } disabled = { isSubmitButtonDisabled.value }>
 					{ param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' }
 				</button> }
 				<button class = 'button is-success is-primary' onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled.value }> { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>

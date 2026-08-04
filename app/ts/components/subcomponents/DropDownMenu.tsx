@@ -9,6 +9,7 @@ type DropDownMenuParams<OptionType> = {
 	onChangedCallBack: (newValue: OptionType) => void
 	buttonClassses: string
 	disabled?: boolean
+	getOptionLabel?: (option: OptionType) => string
 }
 
 export function DropDownMenuButtonContent({ label }: { label: string }) {
@@ -18,7 +19,7 @@ export function DropDownMenuButtonContent({ label }: { label: string }) {
 	</>
 }
 
-export const DropDownMenu = <OptionType extends string,>({ selected, dropDownOptions, onChangedCallBack, buttonClassses, disabled = false }: DropDownMenuParams<OptionType>) => {
+export const DropDownMenu = <OptionType extends string,>({ selected, dropDownOptions, onChangedCallBack, buttonClassses, disabled = false, getOptionLabel = (option) => option }: DropDownMenuParams<OptionType>) => {
 	const isOpen = useSignal(false)
 	const ref = useRef<HTMLDivElement>(null)
 	clickOutsideAlerter(ref, () => { isOpen.value = false })
@@ -36,15 +37,15 @@ export const DropDownMenu = <OptionType extends string,>({ selected, dropDownOpt
 
 	return <div ref = { ref } class = { `dropdown ${ isOpen.value ? 'is-active' : '' }` }>
 		<div class = 'dropdown-trigger' style = { { maxWidth: '100%' } }>
-			<button type = 'button' class = { buttonClassses } disabled = { disabled } aria-haspopup = 'true' aria-controls = 'dropdown-menu' onClick = { toggle } title = { selected.value } style = { { width: '100%' } }>
-				<DropDownMenuButtonContent label = { selected.value }/>
+			<button type = 'button' class = { buttonClassses } disabled = { disabled } aria-haspopup = 'true' aria-controls = 'dropdown-menu' onClick = { toggle } title = { getOptionLabel(selected.value) } style = { { width: '100%' } }>
+				<DropDownMenuButtonContent label = { getOptionLabel(selected.value) }/>
 			</button>
 		</div>
 		<div class = 'dropdown-menu' id = 'dropdown-menu' role = 'menu' style = { { right: '0' } }>
 			<div class = 'dropdown-content' style = { { right: '0' } }> {
 				dropDownOptions.value.map((option) => <>
 					<button type = 'button' class = { `dropdown-item ${ option === selected.value ? 'is-active' : '' }` } onClick = { () => onChanged(option) } >
-						{ option }
+						{ getOptionLabel(option) }
 					</button>
 				</>)
 			} </div>

@@ -3,7 +3,7 @@ import { Signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
-import { SimulationSummary } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
+import { getGasUsageText, SimulationSummary } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
 import type { ContactEntry, Erc20TokenEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { EnsEvent, TokenEvent } from '../../app/ts/types/EnrichedEthereumData.js'
 import type { VisualizedPersonalSignRequest } from '../../app/ts/types/personal-message-definitions.js'
@@ -213,6 +213,9 @@ function collectElements(node: TestNode, tagName: string): TestNode[] {
 }
 
 describe('SimulationSummary aggregate changes', () => {
+	test('renders zero gas limits without dividing by zero', () => {
+		assert.equal(getGasUsageText(0n, 0n), '0 / 0 gas (percentage unavailable)')
+	})
 	test('renders message-only summaries in block order and surfaces quarantined messages', async () => {
 		const firstSignature = makeSignature({ messageIdentifier: 1n, websiteTitle: 'First App' })
 		const secondSignature = makeSignature({
