@@ -197,42 +197,154 @@ svg[role="img"] {
 	white-space: nowrap;
 }
 
-.safe-signer-editor-title,
-.safe-signer-editor-row,
-.safe-signer-editor-add,
-.safe-signer-editor-empty,
-.safe-signer-editor-actions {
-	grid-column: 1 / -1;
+.address-editor {
+	display: grid;
+	gap: 1em;
 	min-width: 0;
 }
 
-.safe-signer-editor-title {
-	margin-top: 0.4em;
-	text-align: left;
+.address-editor-identity {
+	display: grid;
+	grid-template-columns: max-content minmax(0, 1fr);
+	align-items: center;
+	gap: 0.75em;
+}
+
+.address-editor-icon {
+	margin: 0;
+}
+
+.address-editor-heading {
+	color: var(--text-color);
+	font-size: 0.9em;
+	font-weight: 600;
+	margin: 0;
+}
+
+.address-editor-description {
+	color: var(--subtitle-text-color);
+	font-size: 0.75em;
+	margin: 0.15em 0 0;
+}
+
+.address-editor-fields {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr));
+	gap: 0.8em;
+	min-width: 0;
+}
+
+.address-editor-field {
+	display: grid;
+	align-content: start;
+	gap: 0.35em;
+	color: var(--subtitle-text-color);
+	font-size: 0.75em;
+	min-width: 0;
+}
+
+.address-editor-field > :where(.dropdown, .chainSelector, .input) {
+	max-width: 100%;
+	min-width: 0;
+	width: 100%;
+}
+
+.address-editor-field :where(.btn, .input) {
+	min-height: 2.5em;
+}
+
+.address-editor .input:disabled {
+	color: var(--disabled-text-color);
+	opacity: 1;
+}
+
+.address-editor-field--wide {
+	grid-column: 1 / -1;
+}
+
+.address-editor-section {
+	display: grid;
+	gap: 0.65em;
+	background: var(--white-alpha-10);
+	border: 1px solid var(--layout-line-color);
+	border-radius: 6px;
+	min-width: 0;
+	padding: 0.75em;
+}
+
+.address-editor-section-heading {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.75em;
+}
+
+.address-editor-section-heading > :first-child {
+	flex: 1 1 12rem;
+	min-width: 0;
+}
+
+.address-editor-section-heading > .btn {
+	white-space: nowrap;
+}
+
+.safe-signer-editor-list {
+	display: grid;
+	gap: 0.35em;
+	min-width: 0;
 }
 
 .safe-signer-editor-row {
 	display: grid;
 	grid-template-columns: 1em minmax(0, 1fr);
 	align-items: center;
-	gap: 0.4em;
+	gap: 0.55em;
+	background: var(--alpha-005);
+	border-radius: 4px;
+	cursor: pointer;
+	min-width: 0;
+	padding: 0.5em 0.6em;
+}
+
+.safe-signer-editor-row:before {
+	content: '';
+	background: transparent;
+	border-radius: 100%;
+	height: 0.4em;
+	margin: 0.3em;
+	outline: 1px solid var(--text-color);
+	outline-offset: 0.15em;
+	width: 0.4em;
+}
+
+.safe-signer-editor-row:has([type=radio]:checked):before {
+	background: var(--primary-color);
+}
+
+.safe-signer-editor-row:focus-within {
+	outline: 1px solid var(--primary-color);
 }
 
 .safe-signer-editor-address {
+	grid-column: 2;
+	display: block;
 	color: var(--text-color);
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	max-width: 100%;
+	min-width: 0;
+	overflow-wrap: anywhere;
+	padding: 0;
+	white-space: normal;
+	width: 100%;
 }
 
-.safe-signer-editor-actions {
-	display: flex;
-	justify-content: flex-end;
+.safe-signer-editor-empty {
+	color: var(--subtitle-text-color);
+	font-size: 0.75em;
+	margin: 0;
 }
 
-.safe-signer-editor-add {
-	display: flex;
-	justify-content: flex-end;
+.address-editor-preferences {
+	gap: 0.5em;
 }
 
 input[type=checkbox]:not([role=switch]) {

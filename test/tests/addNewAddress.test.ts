@@ -217,12 +217,14 @@ describe('add new address save flow', () => {
 	})
 
 	test('renders on-chain Gnosis Safe owners as signer choices', () => {
-		assert.match(addNewAddressSource, /class = 'safe-signer-editor-title'><Text text = 'Choose a Gnosis Safe signer'\/>/)
+		assert.match(addNewAddressSource, /ariaLabel = 'Address type'/)
+		assert.match(addNewAddressSource, /ariaLabel = 'Chain'/)
+		assert.match(addNewAddressSource, /class = 'address-editor-heading'>Safe signer<\/p>/)
 		assert.match(addNewAddressSource, /class = 'safe-signer-editor-row'/)
 		assert.match(addNewAddressSource, /type = 'radio'\s+name = 'active-safe-signer'/)
 		assert.doesNotMatch(addNewAddressSource, /Add Gnosis Safe signer/)
 		assert.match(addNewAddressSource, /class = 'safe-signer-editor-address'/)
-		assert.match(addNewAddressSource, /'Refresh Gnosis Safe signers' : 'Retrieve Gnosis Safe signers'/)
+		assert.match(addNewAddressSource, /hasSafeSigners \? 'Refresh signers' : 'Retrieve signers'/)
 		assert.match(addNewAddressSource, /safeSignerRefreshGeneration\.value \+= 1/)
 		assert.match(addNewAddressSource, /safeContractState\.owners\.map\(checksummedAddress\)/)
 		assert.match(addNewAddressSource, /address\.toLowerCase\(\) === currentSafeSignerAddress\.toLowerCase\(\)/)

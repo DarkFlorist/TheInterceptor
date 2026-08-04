@@ -889,7 +889,7 @@ describe('popup async action UI', () => {
 			}), dom.document.body)
 			await settleAsyncUpdates()
 		})
-		const retrieveButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Retrieving signers...'))
+		const retrieveButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Retrieving...'))
 		if (retrieveButton === undefined) throw new Error('Expected pending Safe signer retrieval button')
 		assert.equal(isDisabled(retrieveButton), true)
 		assert.equal(requestCount, 1)
@@ -899,13 +899,13 @@ describe('popup async action UI', () => {
 			await settleAsyncUpdates()
 		})
 		assert.equal(dom.document.body.textContent?.includes('0x1111111111111111111111111111111111111111'), true)
-		const refreshButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Refresh Gnosis Safe signers'))
+		const refreshButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Refresh signers'))
 		if (refreshButton === undefined) throw new Error('Expected Safe signer refresh button')
 		await act(async () => {
 			void clickElement(refreshButton)
 			await Promise.resolve()
 		})
-		assert.equal(dom.document.body.textContent?.includes('Refreshing signers...'), true)
+		assert.equal(dom.document.body.textContent?.includes('Refreshing...'), true)
 		assert.equal(isDisabled(refreshButton), true)
 
 		await act(async () => {

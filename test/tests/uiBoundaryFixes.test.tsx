@@ -82,6 +82,21 @@ describe('UI boundary fixes', () => {
 		}
 	})
 
+	test('combines a dropdown field label with its selected value', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(<DropDownMenu selected = { signal('safe') } dropDownOptions = { signal<readonly string[]>(['safe']) } onChangedCallBack = { () => undefined } buttonClassses = 'button-class' ariaLabel = 'Address type' />, dom.document.body)
+			})
+
+			const trigger = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-haspopup') === 'true')
+			assert.equal(trigger?.getAttribute?.('aria-label'), 'Address type: safe')
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	test('gives each dropdown its own menu id and matching accessibility target', async () => {
 		const dom = installDomMock()
 		try {

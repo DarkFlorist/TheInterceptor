@@ -8,6 +8,7 @@ type DropDownMenuParams<OptionType> = {
 	dropDownOptions: Signal<readonly OptionType[]>
 	onChangedCallBack: (newValue: OptionType) => void
 	buttonClassses: string
+	ariaLabel?: string
 	disabled?: boolean
 	getOptionLabel?: (option: OptionType) => string
 }
@@ -19,7 +20,7 @@ export function DropDownMenuButtonContent({ label }: { label: string }) {
 	</>
 }
 
-export const DropDownMenu = <OptionType extends string,>({ selected, dropDownOptions, onChangedCallBack, buttonClassses, disabled = false, getOptionLabel = (option) => option }: DropDownMenuParams<OptionType>) => {
+export const DropDownMenu = <OptionType extends string,>({ selected, dropDownOptions, onChangedCallBack, buttonClassses, ariaLabel, disabled = false, getOptionLabel = (option) => option }: DropDownMenuParams<OptionType>) => {
 	const isOpen = useSignal(false)
 	const ref = useRef<HTMLDivElement>(null)
 	const menuId = useId()
@@ -38,7 +39,7 @@ export const DropDownMenu = <OptionType extends string,>({ selected, dropDownOpt
 
 	return <div ref = { ref } class = { `dropdown ${ isOpen.value ? 'is-active' : '' }` }>
 		<div class = 'dropdown-trigger' style = { { maxWidth: '100%' } }>
-			<button type = 'button' class = { buttonClassses } disabled = { disabled } aria-haspopup = 'true' aria-expanded = { isOpen.value } aria-controls = { menuId } onClick = { toggle } title = { getOptionLabel(selected.value) } style = { { width: '100%' } }>
+			<button type = 'button' class = { buttonClassses } disabled = { disabled } aria-label = { ariaLabel === undefined ? undefined : `${ ariaLabel }: ${ getOptionLabel(selected.value) }` } aria-haspopup = 'true' aria-expanded = { isOpen.value } aria-controls = { menuId } onClick = { toggle } title = { getOptionLabel(selected.value) } style = { { width: '100%' } }>
 				<DropDownMenuButtonContent label = { getOptionLabel(selected.value) }/>
 			</button>
 		</div>
