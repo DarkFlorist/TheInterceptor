@@ -355,7 +355,6 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 		// check if the rules would change, if not, just bail out
 		const decralativeNetRequestBlockIdentifier = `${ tabIdsToBlock.join('|') }|a|${ sitesToBlock.join('|') }`
 		if (decralativeNetRequestBlockIdentifier === previousDecralativeNetRequestBlockIdentifier) return
-		previousDecralativeNetRequestBlockIdentifier = decralativeNetRequestBlockIdentifier
 
 		if (browser.runtime.getManifest().manifest_version === 3) {
 			const dynamicRuleIds = (await browser.declarativeNetRequest.getDynamicRules()).map((rule) => rule.id)
@@ -389,6 +388,7 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 			// enable `declarativeNetRequestFeedback` permission to manifest and uncomment to enable debugging
 			// const a = (data: any) => { console.log(data) }
 			// (browser.declarativeNetRequest as any).onRuleMatchedDebug.addListener(a)
+			previousDecralativeNetRequestBlockIdentifier = decralativeNetRequestBlockIdentifier
 		} else {
 			browser.webRequest.onBeforeRequest.removeListener(webRequestListener)
 			webRequestListener = (details: browser.webRequest._OnBeforeRequestDetails) => {
@@ -401,8 +401,12 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 				if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return { cancel: true }
 				return {}
 			}
-			if (sitesToBlock.length === 0 && tabIdsToBlock.length === 0) return
+			if (sitesToBlock.length === 0 && tabIdsToBlock.length === 0) {
+				previousDecralativeNetRequestBlockIdentifier = decralativeNetRequestBlockIdentifier
+				return
+			}
 			browser.webRequest.onBeforeRequest.addListener(webRequestListener, { urls: ['<all_urls>'] }, ['blocking'])
+			previousDecralativeNetRequestBlockIdentifier = decralativeNetRequestBlockIdentifier
 		}
 	})
 }
@@ -421,6 +425,7 @@ export async function updateWebsiteApprovalAccesses(
 	websiteTabConnections: WebsiteTabConnections,
 	settings: Settings,
 	promptForAccessesIfNeeded: boolean,
+	throwOnError = false,
 ): Promise<number> {
 	const popupRefreshGeneration = bumpPopupRefreshGeneration()
 	const allTabStates = await getAllTabStates()
@@ -429,6 +434,7 @@ export async function updateWebsiteApprovalAccesses(
 	try {
 		await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 	} catch (error) {
+		if (throwOnError) throw error
 		await reportUnexpectedError(error)
 	}
 	// update port connections and disconnect from ports that should not have access anymore
@@ -444,6 +450,7 @@ export async function updateWebsiteApprovalAccesses(
 	try {
 		await Promise.all(updatePromises)
 	} catch (error) {
+		if (throwOnError) throw error
 		await reportUnexpectedError(error)
 	}
 	const iconRefreshPromises = [...iconRefreshTargets.values()].map(({ tabId, websiteOrigin }) =>
@@ -452,6 +459,7 @@ export async function updateWebsiteApprovalAccesses(
 	try {
 		await Promise.all(iconRefreshPromises)
 	} catch (error) {
+		if (throwOnError) throw error
 		await reportUnexpectedError(error)
 	}
 	return popupRefreshGeneration

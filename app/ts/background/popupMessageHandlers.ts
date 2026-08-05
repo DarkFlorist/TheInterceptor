@@ -266,39 +266,52 @@ export async function removeAddressBookEntry(ethereum: EthereumClientService, to
 }
 
 export async function addOrModifyAddressBookEntry(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
-	let entryToStore: AddressBookEntry = entry.data
-	if (entry.data.type === 'safe') {
-		try {
-			if (entry.data.chainId !== ethereum.getChainId()) {
+	try {
+		let entryToStore: AddressBookEntry = entry.data
+		if (entry.data.type === 'safe') {
+			try {
+				if (entry.data.chainId !== ethereum.getChainId()) {
+					return {
+						type: 'AddOrModifyAddressBookEntryReply' as const,
+						ok: false as const,
+						message: `Switch Interceptor to chain ${ entry.data.chainId.toString() } before validating this Gnosis Safe.`,
+					}
+				}
+				const { blockNumber, state: safeState } = await getSafeContractSnapshot(ethereum, entry.data.address)
+				const ownerValidator = createSafeOwnerValidator(ethereum, entry.data.address, { blockNumber, state: safeState })
+				await Promise.all(getSafeSignerAddresses(entry.data).map(async (safeSignerAddress) =>
+					await ownerValidator.assertEoaOwner(safeSignerAddress)
+				))
+				entryToStore = { ...entry.data, safeVersion: safeState.version }
+			} catch(error) {
 				return {
 					type: 'AddOrModifyAddressBookEntryReply' as const,
 					ok: false as const,
-					message: `Switch Interceptor to chain ${ entry.data.chainId.toString() } before validating this Gnosis Safe.`,
+					message: getErrorMessage(error) ?? 'Failed to validate Gnosis Safe address.',
 				}
 			}
-			const { blockNumber, state: safeState } = await getSafeContractSnapshot(ethereum, entry.data.address)
-			const ownerValidator = createSafeOwnerValidator(ethereum, entry.data.address, { blockNumber, state: safeState })
-			await Promise.all(getSafeSignerAddresses(entry.data).map(async (safeSignerAddress) =>
-				await ownerValidator.assertEoaOwner(safeSignerAddress)
-			))
-			entryToStore = { ...entry.data, safeVersion: safeState.version }
-		} catch(error) {
-			return {
-				type: 'AddOrModifyAddressBookEntryReply' as const,
-				ok: false as const,
-				message: getErrorMessage(error) ?? 'Failed to validate Gnosis Safe address.',
+		}
+		await updateUserAddressBookEntries((previousContacts) => {
+			if (previousContacts.find((previous) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId)) ) {
+				return previousContacts.map((previous) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId) ? entryToStore : previous)
 			}
+			return previousContacts.concat([entryToStore])
+		})
+		if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true, true)
+		await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
+	} catch(error) {
+		if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error, {
+			source: 'address_book_save',
+			code: 'address_book_save_failed',
+			displayMessage: 'Failed to save address-book entry.',
+		})
+		return {
+			type: 'AddOrModifyAddressBookEntryReply' as const,
+			ok: false as const,
+			message: getErrorMessage(error) ?? 'Failed to save address-book entry.',
 		}
 	}
-	await updateUserAddressBookEntries((previousContacts) => {
-		if (previousContacts.find((previous) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId)) ) {
-			return previousContacts.map((previous) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId) ? entryToStore : previous)
-		}
-		return previousContacts.concat([entryToStore])
-	})
-	if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true)
-	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
-	return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
 }
 
 export async function setActiveSafeSigner(
