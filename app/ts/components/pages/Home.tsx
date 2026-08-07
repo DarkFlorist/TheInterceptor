@@ -713,6 +713,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 	const computedAddressBookEntries = useComputed(() => param.simulationAndVisualisationResults.value.kind === 'simulated' ? param.simulationAndVisualisationResults.value.value.addressBookEntries : [])
 	const currentResults = param.simulationAndVisualisationResults.value
 	const showCopyGnosisSafeTransactions = currentResults.kind === 'simulated'
+		&& param.safeSigningMode
 		&& currentResults.value.simulationStateInput?.some((block) =>
 			block.transactions.some((transaction) => transaction.safeTransaction !== undefined)
 		) === true
@@ -903,6 +904,7 @@ export function Home(param: HomeParams) {
 					simulationResultState = { param.simulationResultState }
 					openSimulationStack = { openSimulationStack }
 					numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich }
+					safeSigningMode = { safeSigningMode.value }
 				/>
 				: <SimulationLoadingSkeleton/>
 			: <></> }

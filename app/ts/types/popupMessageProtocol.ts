@@ -75,6 +75,7 @@ export const popupMessageProtocol = {
 	popup_requestCompleteVisualizedSimulation: { domain: 'simulation' },
 	popup_requestSimulationMetadata: { domain: 'simulation' },
 	popup_requestIdentifyAddress: { domain: 'address-book' },
+	popup_requestSafeContractState: { domain: 'safe' },
 	popup_isMainPopupWindowOpen: { domain: 'navigation' },
 	popup_isSimulationVisualizerOpen: { domain: 'navigation' },
 } satisfies Record<PopupMessage['method'], PopupMessageProtocolEntry>

@@ -8,6 +8,7 @@ import { changeActiveAddress, changeChainDialog, changePage, changePreSimulation
 import { popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
 import { addressBookPopupMessageHandlers } from './popupMessageHandlerRegistries/addressBook.js'
 import { settingsPopupMessageHandlers } from './popupMessageHandlerRegistries/settings.js'
+import { safePopupMessageHandlers } from './popupMessageHandlerRegistries/safe.js'
 import { websiteAccessPopupMessageHandlers } from './popupMessageHandlerRegistries/websiteAccess.js'
 
 export type { PopupMessageDispatcherContext } from './popupMessageHandlerRegistry.js'
@@ -56,6 +57,7 @@ const popupMessageHandlers = {
 	popup_isMainPopupWindowOpen: popupMessageHandler('popup_isMainPopupWindowOpen', async () => undefined),
 	popup_isSimulationVisualizerOpen: popupMessageHandler('popup_isSimulationVisualizerOpen', async () => undefined),
 	...addressBookPopupMessageHandlers,
+	...safePopupMessageHandlers,
 	...settingsPopupMessageHandlers,
 	...websiteAccessPopupMessageHandlers,
 } satisfies PopupMessageHandlerMap

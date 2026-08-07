@@ -13,6 +13,11 @@ const sampleAddressBookEntry = {
 	entrySource: 'User',
 } as const
 const addNewAddressSource = await Bun.file(new URL('../../app/ts/components/pages/AddNewAddress.tsx', import.meta.url)).text()
+const safeContractStateSource = await Bun.file(new URL('../../app/ts/background/safeContractState.ts', import.meta.url)).text()
+const metadataUtilsSource = await Bun.file(new URL('../../app/ts/background/metadataUtils.ts', import.meta.url)).text()
+const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
+const replyMessagesSource = await Bun.file(new URL('../../app/ts/types/interceptor-reply-messages.ts', import.meta.url)).text()
+const screenshotScriptSource = await Bun.file(new URL('../../scripts/capture-safe-ui-screenshots.mts', import.meta.url)).text()
 
 describe('add new address save flow', () => {
 	test('waits for the save message to finish before closing the popup', async () => {
@@ -169,6 +174,10 @@ describe('add new address save flow', () => {
 		assert.equal(EthereumQuantityUint8.safeSerialize(256n).success, false)
 	})
 
+	test('shows the required symbol field for every token address type', () => {
+		assert.match(addNewAddressSource, /type === 'ERC20' \|\| modifyAddressWindowState\.value\.incompleteAddressBookEntry\.type === 'ERC721' \|\| modifyAddressWindowState\.value\.incompleteAddressBookEntry\.type === 'ERC1155'/)
+	})
+
 	test('keeps non-blocking block explorer errors when validation has no error', () => {
 		const blockExplorerError = { blockEditing: false, message: 'No ABI available for this contract.' }
 
@@ -216,10 +225,53 @@ describe('add new address save flow', () => {
 		})
 	})
 
-	test('renders Gnosis Safe signer controls as full-width editor rows', () => {
-		assert.match(addNewAddressSource, /class = 'safe-signer-editor-title'><Text text = 'Gnosis Safe signers \(optional\)'\/>/)
-		assert.match(addNewAddressSource, /class = 'safe-signer-editor-row'/)
-		assert.match(addNewAddressSource, /type = 'radio'\s+name = 'active-safe-signer'/)
-		assert.match(addNewAddressSource, /class = 'safe-signer-editor-add'/)
+	test('renders on-chain Gnosis Safe owners as signer choices', () => {
+		assert.match(addNewAddressSource, /class = 'address-editor-readonly-address'/)
+		assert.ok(addNewAddressSource.indexOf('<span>Name</span>') < addNewAddressSource.indexOf('<span>Address type</span>'))
+		assert.ok(addNewAddressSource.indexOf('<span>Address type</span>') < addNewAddressSource.indexOf('<span>Chain</span>'))
+		assert.match(addNewAddressSource, /<AddressIcon address = \{ stringToAddress[^\n]+isBig = \{ true \}/)
+		assert.match(addNewAddressSource, /ariaLabel = 'Address type'/)
+		assert.match(addNewAddressSource, /ariaLabel = 'Chain'/)
+		assert.match(addNewAddressSource, /class = 'address-editor-heading'>Safe signer<\/p>/)
+		assert.match(addNewAddressSource, /class = 'safe-signer-editor-dropdown'/)
+		assert.match(addNewAddressSource, /ariaLabel = 'Safe signer owner'/)
+		assert.match(addNewAddressSource, /<SmallAddress addressBookEntry = \{ getActiveAddressEntry\(address, safeSignerAddressBookEntries\.value\) \}/)
+		assert.match(addNewAddressSource, /safeSignerAddressBookEntries\.value = safeContractState\.ownerAddressBookEntries/)
+		assert.match(addNewAddressSource, /onChangedCallBack = \{ safeSignerAddress => \{ void setSafeSignerAddress\(safeSignerAddress\) \} \}/)
+		assert.doesNotMatch(addNewAddressSource, /name = 'active-safe-signer'/)
+		assert.doesNotMatch(addNewAddressSource, /Add Gnosis Safe signer/)
+		assert.match(addNewAddressSource, /hasSafeSigners \? 'Refresh signers' : 'Retrieve signers'/)
+		assert.match(addNewAddressSource, /safeSignerRefreshGeneration\.value \+= 1/)
+		assert.match(addNewAddressSource, /safeContractState\.owners\.map\(checksummedAddress\)/)
+		assert.match(addNewAddressSource, /address\.toLowerCase\(\) === currentSafeSignerAddress\.toLowerCase\(\)/)
+	})
+
+	test('shows pending feedback while an address-book modification is saved', () => {
+		assert.match(addNewAddressSource, /state = \{ saveEntryState\.value\.state \}/)
+		assert.match(addNewAddressSource, /pendingText = \{ param\.modifyAddressWindowState\.value\.incompleteAddressBookEntry\.addingAddress \? 'Creating\.\.\.' : 'Modifying\.\.\.' \}/)
+		assert.match(addNewAddressSource, /await waitForSaveEntry\(async \(\) => \{[\s\S]*?saveAddressBookEntryAndSwitch/)
+		assert.match(addNewAddressSource, /'Modifying and switching\.\.\.'/)
+		assert.match(addNewAddressSource, /saveEntryState\.value\.state === 'pending' \|\| isAddressBookSubmissionDisabled/)
+	})
+
+	test('preserves known Safe owners on lookup failure and clears them when the target changes', () => {
+		assert.match(addNewAddressSource, /const setSafeContractStateError = \(message: string\)/)
+		assert.match(addNewAddressSource, /if \(!safeContractState\.ok\) \{[\s\S]*?setSafeContractStateError\(safeContractState\.message\)/)
+		assert.match(addNewAddressSource, /const setAddress = async[\s\S]*?safeSignerAddresses: \[\],[\s\S]*?safeSignerAddress: undefined,[\s\S]*?safeVersion: undefined/)
+		assert.match(addNewAddressSource, /const setChain = async[\s\S]*?safeSignerAddresses: \[\],[\s\S]*?safeSignerAddress: undefined,[\s\S]*?safeVersion: undefined/)
+		assert.match(safeContractStateSource, /chainId === 'AllChains'[\s\S]*?'Gnosis Safe wallets must use a specific chain to load their signers\.'/)
+		assert.match(addNewAddressSource, /requestPopupSafeContractState/)
+		assert.doesNotMatch(addNewAddressSource, /includeSafeContractState/)
+	})
+
+	test('keeps Safe contract retrieval separate from generic address identification', () => {
+		assert.doesNotMatch(metadataUtilsSource, /export async function identifyAddressWithoutNode/)
+		assert.doesNotMatch(popupMessageHandlersSource, /safeContractState|includeSafeContractState/)
+		assert.match(replyMessagesSource, /method: funtypes\.Literal\('popup_requestSafeContractState'\)/)
+		assert.doesNotMatch(replyMessagesSource, /RequestIdentifyAddress[\s\S]{0,500}includeSafeContractState/)
+		assert.match(safeContractStateSource, /getUserAddressBookEntriesForChainIdMorePreciseFirst/)
+		assert.match(safeContractStateSource, /if \(!safeSnapshot\.ok\) return[\s\S]*?const localEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst/)
+		assert.doesNotMatch(safeContractStateSource, /try \{[\s\S]*?getUserAddressBookEntriesForChainIdMorePreciseFirst/)
+		assert.match(screenshotScriptSource, /message\?\.method === 'popup_requestSafeContractState'\) return await new Promise/)
 	})
 })

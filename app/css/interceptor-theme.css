@@ -197,28 +197,164 @@ svg[role="img"] {
 	white-space: nowrap;
 }
 
-.safe-signer-editor-title,
-.safe-signer-editor-row,
-.safe-signer-editor-add {
-	grid-column: 1 / -1;
+.address-editor {
+	display: grid;
+	gap: 0.6em;
 	min-width: 0;
 }
 
-.safe-signer-editor-title {
-	margin-top: 0.4em;
-	text-align: left;
+.address-editor-heading {
+	color: var(--text-color);
+	font-size: 0.9em;
+	font-weight: 600;
+	margin: 0;
 }
 
-.safe-signer-editor-row {
-	display: grid;
-	grid-template-columns: 1em minmax(0, 1fr) auto;
-	align-items: center;
-	gap: 0.4em;
-}
-
-.safe-signer-editor-add {
+.address-editor-fields {
 	display: flex;
-	justify-content: flex-end;
+	flex-wrap: wrap;
+	gap: 0.55em 0.7em;
+	min-width: 0;
+}
+
+.address-editor-field {
+	display: grid;
+	flex: 1 1 8rem;
+	align-content: start;
+	gap: 0.2em;
+	color: var(--subtitle-text-color);
+	font-size: 0.75em;
+	min-width: 0;
+}
+
+.address-editor-field > :where(.dropdown, .chainSelector, .input) {
+	max-width: 100%;
+	min-width: 0;
+	width: 100%;
+}
+
+.address-editor-field :where(.btn, .input) {
+	min-height: 2.2em;
+}
+
+.address-editor-name-field {
+	flex: 1 1 11rem;
+	grid-template-columns: max-content minmax(0, 1fr);
+	column-gap: 0.65rem;
+}
+
+.address-editor-identity-selectors {
+	display: grid;
+	flex: 1 1 14rem;
+	gap: 0.35em;
+	min-width: 0;
+}
+
+.address-editor-identity-selectors > .address-editor-field {
+	grid-template-columns: max-content minmax(0, 1fr);
+	align-items: center;
+	column-gap: 0.5rem;
+}
+
+.address-editor-name-field > :first-child {
+	grid-row: 1 / 3;
+	align-self: center;
+}
+
+.address-editor-name-field > :not(:first-child) {
+	grid-column: 2;
+}
+
+.address-editor .input:disabled {
+	color: var(--disabled-text-color);
+	opacity: 1;
+}
+
+.address-editor-field--wide {
+	flex-basis: 100%;
+}
+
+.address-editor-field--compact-address {
+	display: grid;
+	grid-template-columns: max-content minmax(0, 1fr);
+	align-items: baseline;
+	gap: 0.5em;
+}
+
+.address-editor-readonly-address {
+	color: var(--disabled-text-color);
+	min-width: 0;
+	overflow: hidden;
+	padding: 0;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.address-editor-section {
+	display: grid;
+	gap: 0.4em;
+	background: var(--white-alpha-10);
+	border: 1px solid var(--layout-line-color);
+	border-radius: 6px;
+	min-width: 0;
+	padding: 0.55em 0.65em;
+}
+
+.address-editor-section-heading {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5em;
+}
+
+.address-editor-section-heading > :first-child {
+	flex: 1 1 8rem;
+	min-width: 0;
+}
+
+.address-editor-section-heading > .btn {
+	white-space: nowrap;
+}
+
+.safe-signer-editor-dropdown {
+	display: grid;
+	grid-template-columns: max-content minmax(0, 1fr);
+	align-items: center;
+	gap: 0.5em;
+	color: var(--subtitle-text-color);
+	font-size: 0.75em;
+	min-width: 0;
+}
+
+.safe-signer-editor-dropdown > .dropdown {
+	max-width: 100%;
+	min-width: 0;
+	width: 100%;
+}
+
+.safe-signer-dropdown-address {
+	display: block;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.safe-signer-dropdown-address > .inline-card {
+	max-width: 100%;
+	min-width: 0;
+}
+
+.safe-signer-editor-empty {
+	color: var(--subtitle-text-color);
+	font-size: 0.75em;
+	margin: 0;
+}
+
+.address-editor-preferences {
+	gap: 0.3em;
+}
+
+.address-editor-preferences .form-control {
+	line-height: 1.2;
 }
 
 input[type=checkbox]:not([role=switch]) {

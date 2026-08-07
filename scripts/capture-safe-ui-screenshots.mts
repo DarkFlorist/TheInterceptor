@@ -91,23 +91,56 @@ try {
 	await waitForSelector(addressBook, '.modal.is-active')
 	await captureScenario(addressBook, 'safe-address-form-empty')
 	await addressBook.evaluate(`(() => {
-		const addSignerButton = [...document.querySelectorAll('.modal.is-active button')].find((element) => element.textContent?.includes('Add Gnosis Safe signer'))
-		if (!(addSignerButton instanceof HTMLElement)) throw new Error('Add Gnosis Safe signer button was not found')
-		addSignerButton.click()
+		const originalSendMessage = browser.runtime.sendMessage.bind(browser.runtime)
+		browser.runtime.sendMessage = async (message) => message?.method === 'popup_requestIdentifyAddress'
+			? { method: 'popup_requestIdentifyAddress', data: { chainId: message.data.chainId, addressBookEntry: undefined } }
+			: await originalSendMessage(message)
 	})()`)
-	await Bun.sleep(100)
-	await captureScenario(addressBook, 'safe-address-form-with-signer')
-	await addressBook.evaluate(`(() => {
-		const inputs = [...document.querySelectorAll('.modal.is-active input[type="text"]')]
-		const values = ['Treasury Safe', '0x1234567890123456789012345678901234567890', '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd']
-		for (const [index, value] of values.entries()) {
-			const input = inputs[index]
-			if (!(input instanceof HTMLInputElement)) continue
-			input.value = value
-			input.dispatchEvent(new InputEvent('input', { bubbles: true, data: value }))
-		}
-	})()`)
-	await captureScenario(addressBook, 'safe-address-form-filled')
+	const addressTypes = [
+		{ type: 'contact', address: '0x1111111111111111111111111111111111111111' },
+		{ type: 'contract', address: '0x2222222222222222222222222222222222222222' },
+		{ type: 'ERC20', address: '0x3333333333333333333333333333333333333333' },
+		{ type: 'ERC721', address: '0x4444444444444444444444444444444444444444' },
+		{ type: 'ERC1155', address: '0x5555555555555555555555555555555555555555' },
+	] as const
+	for (const { type: addressType, address } of addressTypes) {
+		await addressBook.evaluate(`(() => {
+			const typeButton = [...document.querySelectorAll('.modal.is-active button')].find((element) => element.getAttribute('aria-label')?.startsWith('Address type:'))
+			if (!(typeButton instanceof HTMLElement)) throw new Error('Address type dropdown was not found')
+			typeButton.click()
+		})()`)
+		await Bun.sleep(50)
+		await addressBook.evaluate(`(() => {
+			const typeOption = [...document.querySelectorAll('.modal.is-active .dropdown-item')].find((element) => element.textContent?.trim() === ${ JSON.stringify(addressType) })
+			if (!(typeOption instanceof HTMLElement)) throw new Error(${ JSON.stringify(`${ addressType } option was not found`) })
+			typeOption.click()
+		})()`)
+		await Bun.sleep(100)
+		await addressBook.evaluate(`(() => {
+			const nameInput = document.querySelector('.modal.is-active .address-editor-name-field input')
+			const addressInput = document.querySelector('.modal.is-active label.address-editor-field--wide input')
+			if (nameInput instanceof HTMLInputElement) {
+				nameInput.value = 'Example ${ addressType }'
+				nameInput.dispatchEvent(new InputEvent('input', { bubbles: true, data: nameInput.value }))
+			}
+			if (addressInput instanceof HTMLInputElement) {
+				addressInput.value = ${ JSON.stringify(address) }
+				addressInput.dispatchEvent(new InputEvent('input', { bubbles: true, data: addressInput.value }))
+			}
+			const fields = [...document.querySelectorAll('.modal.is-active .address-editor-field')]
+			const setField = (label, value) => {
+				const field = fields.find((candidate) => candidate.querySelector(':scope > span')?.textContent?.trim() === label)
+				const input = field?.querySelector('input')
+				if (!(input instanceof HTMLInputElement)) return
+				input.value = value
+				input.dispatchEvent(new InputEvent('input', { bubbles: true, data: value }))
+			}
+			setField('Symbol', ${ JSON.stringify(addressType) }.toUpperCase())
+			setField('Decimals', '18')
+		})()`)
+		await Bun.sleep(100)
+		await captureScenario(addressBook, `address-form-${ addressType.toLowerCase() }`)
+	}
 	const setSafeAddressFixture = `browser.storage.local.set({
 			activeSimulationAddress: '0x1234567890123456789012345678901234567890',
 			simulationMode: false,
@@ -131,6 +164,87 @@ try {
 		})`
 	await addressBook.evaluate(setSafeAddressFixture)
 	await addressBook.close()
+
+	const openSafeEditorFixture = `(() => {
+		const originalSendMessage = browser.runtime.sendMessage.bind(browser.runtime)
+		browser.runtime.sendMessage = async (message) => {
+			if (message?.method === 'popup_requestIdentifyAddress') return {
+				method: 'popup_requestIdentifyAddress',
+				data: {
+					chainId: '0x1',
+					addressBookEntry: undefined,
+				},
+			}
+			if (message?.method === 'popup_requestSafeContractState') return {
+				method: 'popup_requestSafeContractState',
+				data: {
+					chainId: '0x1',
+					result: {
+						ok: true,
+						owners: ['0xabcdefabcdefabcdefabcdefabcdefabcdefabcd', '0xfedcbafedcbafedcbafedcbafedcbafedcbafedc'],
+						ownerAddressBookEntries: [
+							{ type: 'contact', name: 'Alice Hardware Wallet', address: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd', entrySource: 'User', askForAddressAccess: true, useAsActiveAddress: true, chainId: '0x1' },
+							{ type: 'contact', name: 'Operations Signer', address: '0xfedcbafedcbafedcbafedcbafedcbafedcbafedc', entrySource: 'User', askForAddressAccess: true, useAsActiveAddress: true, chainId: '0x1' },
+						],
+						version: '1.4.1',
+					},
+				},
+			}
+			return await originalSendMessage(message)
+		}
+		const safeLink = [...document.querySelectorAll('a')].find((element) => element.textContent?.includes('My Gnosis Safes'))
+		if (!(safeLink instanceof HTMLElement)) throw new Error('My Gnosis Safes link was not found')
+		safeLink.click()
+	})()`
+
+	console.info('Opening compact Gnosis Safe editor')
+	const safeEditor = await browser.openPage('addressBook')
+	await waitForSelector(safeEditor, '.address-book-page')
+	await safeEditor.evaluate(openSafeEditorFixture)
+	await waitForText(safeEditor, 'Treasury Safe')
+	await safeEditor.evaluate(`(() => {
+		const editButton = [...document.querySelectorAll('button')].find((element) => element.textContent?.trim() === 'Edit')
+		if (!(editButton instanceof HTMLElement)) throw new Error('Gnosis Safe Edit button was not found')
+		editButton.click()
+	})()`)
+	await waitForText(safeEditor, 'Refresh signers')
+	await captureScenario(safeEditor, 'safe-owner-retrieval')
+	await safeEditor.evaluate(`(() => {
+		browser.runtime.sendMessage = async (message) => {
+			if (message?.method === 'popup_addOrModifyAddressBookEntry') return await new Promise(() => undefined)
+			return undefined
+		}
+		const modifyButton = [...document.querySelectorAll('.modal.is-active button')].find((element) => element.textContent?.trim() === 'Modify')
+		if (!(modifyButton instanceof HTMLElement)) throw new Error('Modify button was not found')
+		modifyButton.click()
+	})()`)
+	await waitForText(safeEditor, 'Modifying...')
+	await captureScenario(safeEditor, 'safe-modify-pending')
+	await safeEditor.close()
+
+	const refreshEditor = await browser.openPage('addressBook')
+	await waitForSelector(refreshEditor, '.address-book-page')
+	await refreshEditor.evaluate(openSafeEditorFixture)
+	await waitForText(refreshEditor, 'Treasury Safe')
+	await refreshEditor.evaluate(`(() => {
+		const editButton = [...document.querySelectorAll('button')].find((element) => element.textContent?.trim() === 'Edit')
+		if (!(editButton instanceof HTMLElement)) throw new Error('Gnosis Safe Edit button was not found')
+		editButton.click()
+	})()`)
+	await waitForText(refreshEditor, 'Refresh signers')
+	await refreshEditor.evaluate(`(() => {
+		browser.runtime.sendMessage = async (message) => {
+			if (message?.method === 'popup_requestIdentifyAddress') return { method: 'popup_requestIdentifyAddress', data: { chainId: '0x1', addressBookEntry: undefined } }
+			if (message?.method === 'popup_requestSafeContractState') return await new Promise(() => undefined)
+			return undefined
+		}
+		const refreshButton = [...document.querySelectorAll('.modal.is-active button')].find((element) => element.textContent?.includes('Refresh signers'))
+		if (!(refreshButton instanceof HTMLElement)) throw new Error('Refresh signers button was not found')
+		refreshButton.click()
+	})()`)
+	await waitForText(refreshEditor, 'Refreshing...')
+	await captureScenario(refreshEditor, 'safe-owner-refresh-pending')
+	await refreshEditor.close()
 
 	console.info('Opening Gnosis Safe signing-mode popup')
 	const popup = await browser.openPage('popup')
@@ -255,7 +369,7 @@ try {
 	await captureScenario(settings, 'settings-import-export')
 	await settings.close()
 
-	const expectedScreenshotCount = 50
+	const expectedScreenshotCount = 80
 	const screenshotCount = capturedScenarioCount * viewports.length
 	if (screenshotCount !== expectedScreenshotCount) throw new Error(`Expected ${ expectedScreenshotCount } screenshots, captured ${ screenshotCount }`)
 	console.info(`Captured ${ screenshotCount } deterministic screenshots`)

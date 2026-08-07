@@ -39,6 +39,7 @@ interface ChainSelectorParams {
 	rpcEntries: Signal<RpcEntries>
 	changeChain: (entry: ChainEntry) => void
 	buttonClassses: string
+	ariaLabel?: string
 }
 
 export function findChainEntryByName(chains: readonly ChainEntry[], chainName: string) {
@@ -54,5 +55,5 @@ export function ChainSelector(params: ChainSelectorParams) {
 		if (newEntry === undefined) throw new Error(`Tried to change chain that does not exist: ${ chainName }`)
 		params.changeChain(newEntry)
 	}
-	return <DropDownMenu selected = { selected } dropDownOptions = { options } onChangedCallBack = { onChangedCallBack } buttonClassses = { params.buttonClassses }/>
+	return <DropDownMenu selected = { selected } dropDownOptions = { options } onChangedCallBack = { onChangedCallBack } buttonClassses = { params.buttonClassses } ariaLabel = { params.ariaLabel }/>
 }
