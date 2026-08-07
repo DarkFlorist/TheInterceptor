@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<meta name="description" content="A step-by-step guide to privately clear a malicious EIP-7702 delegation and rescue assets with Interceptor and Bouquet.">
+		<title>How to safely rescue an EIP-7702 delegated wallet</title>
+		<style>
+			:root {
+				color-scheme: light;
+				--background: #fbfaf7;
+				--surface: #ffffff;
+				--text: #242320;
+				--muted: #68655f;
+				--line: #e5e1d8;
+				--accent: #2563eb;
+				--accent-soft: #eef4ff;
+				--warning: #fff7df;
+				--warning-line: #e4b84f;
+				--danger: #fff0ee;
+				--danger-line: #d66757;
+			}
+
+			* { box-sizing: border-box; }
+
+			body {
+				margin: 0;
+				background: var(--background);
+				color: var(--text);
+				font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+				font-size: 17px;
+				line-height: 1.7;
+			}
+
+			main {
+				width: min(100% - 40px, 780px);
+				margin: 0 auto;
+				padding: 72px 0 96px;
+			}
+
+			.eyebrow {
+				margin: 0 0 12px;
+				color: var(--accent);
+				font-size: 0.78rem;
+				font-weight: 750;
+				letter-spacing: 0.12em;
+				text-transform: uppercase;
+			}
+
+			h1 {
+				max-width: 720px;
+				margin: 0;
+				font-size: clamp(2.35rem, 7vw, 4rem);
+				line-height: 1.08;
+				letter-spacing: -0.045em;
+			}
+
+			.lede {
+				max-width: 680px;
+				margin: 24px 0 40px;
+				color: var(--muted);
+				font-size: 1.15rem;
+			}
+
+			h2 {
+				margin: 56px 0 14px;
+				font-size: 1.55rem;
+				line-height: 1.3;
+				letter-spacing: -0.02em;
+			}
+
+			h3 {
+				margin: 28px 0 8px;
+				font-size: 1.08rem;
+			}
+
+			p, ul, ol { margin: 0 0 20px; }
+			ul, ol { padding-left: 1.4em; }
+			li + li { margin-top: 8px; }
+			strong { font-weight: 720; }
+
+			a {
+				color: var(--accent);
+				text-decoration-thickness: 1px;
+				text-underline-offset: 3px;
+			}
+
+			.callout {
+				margin: 28px 0;
+				padding: 18px 20px;
+				border: 1px solid var(--warning-line);
+				border-radius: 10px;
+				background: var(--warning);
+			}
+
+			.callout.danger {
+				border-color: var(--danger-line);
+				background: var(--danger);
+			}
+
+			.callout p:last-child { margin-bottom: 0; }
+
+			.step-number {
+				display: inline-grid;
+				width: 2rem;
+				height: 2rem;
+				margin-right: 0.5rem;
+				place-items: center;
+				border-radius: 50%;
+				background: var(--text);
+				color: var(--surface);
+				font-size: 0.95rem;
+				vertical-align: 0.15rem;
+			}
+
+			code {
+				padding: 0.12em 0.35em;
+				border-radius: 5px;
+				background: #eeece7;
+				font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+				font-size: 0.88em;
+				word-break: break-all;
+			}
+
+			figure { margin: 30px 0 38px; }
+
+			figure img {
+				display: block;
+				width: 100%;
+				height: auto;
+				border: 1px solid var(--line);
+				border-radius: 12px;
+				background: var(--surface);
+				box-shadow: 0 18px 45px rgb(42 38 30 / 10%);
+			}
+
+			figcaption {
+				margin-top: 10px;
+				color: var(--muted);
+				font-size: 0.86rem;
+				line-height: 1.5;
+				text-align: center;
+			}
+
+			.checklist {
+				padding: 22px 24px 4px;
+				border: 1px solid var(--line);
+				border-radius: 12px;
+				background: var(--surface);
+			}
+
+			footer {
+				margin-top: 64px;
+				padding-top: 24px;
+				border-top: 1px solid var(--line);
+				color: var(--muted);
+				font-size: 0.9rem;
+			}
+
+			@media (max-width: 600px) {
+				main { width: min(100% - 28px, 780px); padding-top: 40px; }
+				body { font-size: 16px; }
+				h2 { margin-top: 44px; }
+				.callout { padding: 16px; }
+			}
+
+			@media print {
+				body { background: #fff; }
+				main { width: 100%; padding: 0; }
+				figure img { box-shadow: none; }
+				a { color: inherit; }
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<header>
+				<p class="eyebrow">Interceptor rescue guide</p>
+				<h1>How to safely rescue an EIP-7702 delegated wallet</h1>
+				<p class="lede">A private, atomic rescue can remove a malicious delegation before the compromised wallet receives gas, then move its assets to safety in the same bundle.</p>
+			</header>
+
+			<aside class="callout danger">
+				<p><strong>Read this first.</strong> A compromised private key can never be made safe again. This process is only for moving assets to a new wallet whose recovery phrase and private key have never been exposed.</p>
+				<p>Practice the complete flow on Sepolia before using real funds. Stop immediately if any address, chain, nonce, authorization target, transaction order, or simulation result differs from what you expect.</p>
+			</aside>
+
+			<p>This guide is specifically for an account affected by an <a href="https://eips.ethereum.org/EIPS/eip-7702">EIP-7702 delegation</a>. A malicious delegation can let hostile code act through the account. Simply sending ETH to the compromised wallet for gas may give an attacker the opportunity to take it.</p>
+
+			<p>The rescue avoids that window by submitting one private atomic bundle in this order:</p>
+			<ol>
+				<li>A separate, clean sponsor pays for an EIP-7702 transaction that clears the compromised account's delegation.</li>
+				<li>The now-cleared account receives only the ETH needed for its rescue transactions.</li>
+				<li>Tokens, NFTs, and any remaining ETH move to a new safe wallet.</li>
+			</ol>
+
+			<h2>Before you begin</h2>
+			<ul>
+				<li>Install or update <a href="https://dark.florist/">Interceptor</a>.</li>
+				<li>Open <a href="https://bouquet.dark.florist/">Bouquet</a> from its official address.</li>
+				<li>Prepare a new safe wallet and a separate clean sponsor wallet.</li>
+				<li>Make sure the clean sponsor already has enough ETH to pay for the delegation-clearing transaction.</li>
+				<li>Have the compromised account's private key available. Never paste it into a website you have not verified and never share it with anyone.</li>
+			</ul>
+
+			<aside class="callout">
+				<p><strong>Important:</strong> Bouquet's temporary funding account funds the compromised account <em>after</em> its delegation is cleared. It does not fund the clean sponsor. Fund the sponsor independently before starting.</p>
+			</aside>
+
+			<h2><span class="step-number">1</span>Add the compromised address to Interceptor</h2>
+			<p>Open Interceptor, select <strong>Change</strong> beside the active address, and add the compromised address. You do not need to import its private key into Interceptor.</p>
+
+			<h2><span class="step-number">2</span>Switch to Simulating Mode</h2>
+			<p>Confirm that Interceptor is in <strong>Simulating Mode</strong>. This lets you inspect and assemble the rescue transactions without broadcasting them.</p>
+
+			<h2><span class="step-number">3</span>Enable Make Me Rich for the simulation</h2>
+			<p>Turn on <strong>Make Me Rich</strong> below the active address. This only changes the simulated state, making it easier to test the complete rescue before real funds are involved.</p>
+
+			<h2><span class="step-number">4</span>Add the asset transfers</h2>
+			<p>While still simulating, create transfers that send each token, NFT, and any remaining ETH to the new safe wallet. Check every token contract and recipient address carefully. Leave enough ETH in the compromised account to pay for every transaction it signs.</p>
+
+			<h2><span class="step-number">5</span>Export the simulation stack to Bouquet</h2>
+			<p>Review the funding and asset transfers in Interceptor. Open Bouquet and select <strong>Import Payload from The Interceptor</strong>, then approve Interceptor's request to share the simulation stack.</p>
+
+			<h2><span class="step-number">6</span>Create the delegation-clearing transaction in Bouquet</h2>
+			<p>Select <strong>Add EIP-7702 Delegation Clear</strong>. Bouquet creates the sponsored type-4 transaction and fixes its authorization target to the zero address:</p>
+			<p><code>0x0000000000000000000000000000000000000000</code></p>
+			<ul>
+				<li>Confirm the suggested compromised account.</li>
+				<li>Enter the address of your separate, clean funded sponsor.</li>
+				<li>Select <strong>Load Current Nonce</strong>. Bouquet retrieves the account nonce before the simulated transactions.</li>
+				<li>Confirm the displayed chain ID, then select <strong>Add Delegation Clear</strong>.</li>
+			</ul>
+
+			<figure>
+				<img src="images/eip-7702-rescue/bouquet-create-clear-delegation.png" alt="Bouquet form for creating an EIP-7702 delegation-clearing transaction with compromised account, clean sponsor, authorization nonce, and chain ID fields" width="1200" height="1050" loading="lazy">
+				<figcaption>Bouquet builds the zero-address authorization and adds it to the rescue bundle; the required keys are entered later.</figcaption>
+			</figure>
+
+			<aside class="callout danger">
+				<p><strong>Do not broadcast the clearing transaction on its own.</strong> Bouquet keeps it inside the private atomic bundle and refuses to submit an EIP-7702 rescue through mempool mode.</p>
+			</aside>
+
+			<h2><span class="step-number">7</span>Verify Rescue Mode and transaction order</h2>
+			<p>Bouquet detects the zero-address authorization and enters <strong>EIP-7702 Rescue Mode</strong>. It should order the bundle as follows:</p>
+			<ol>
+				<li><strong>Clear delegation</strong> — paid for by the clean sponsor.</li>
+				<li><strong>Funding</strong> — sent only after the delegation has been cleared.</li>
+				<li><strong>Sweep transactions</strong> — move the assets to the safe wallet.</li>
+			</ol>
+
+			<figure>
+				<img src="images/eip-7702-rescue/bouquet-rescue-transactions.png" alt="Bouquet showing EIP-7702 Rescue Mode and an ordered list containing clear-delegation, funding, and sweep transactions" width="1425" height="1800" loading="lazy">
+				<figcaption>Bouquet labels the zero-address EIP-7702 authorization and places it before funding and sweep transactions.</figcaption>
+			</figure>
+
+			<p>Do not continue unless the authorization target is exactly the zero address and the clearing transaction is first.</p>
+
+			<h2><span class="step-number">8</span>Configure signing and funding</h2>
+			<p>In Bouquet, add the required keys to the matching accounts:</p>
+			<ul>
+				<li>The clean sponsor key signs the outer type-4 transaction and pays for clearing the delegation.</li>
+				<li>The compromised account key signs the new zero-address authorization and its sweep transactions.</li>
+			</ul>
+
+			<figure>
+				<img src="images/eip-7702-rescue/bouquet-rescue-configuration.png" alt="Bouquet rescue configuration showing private-key fields and a temporary funding account beneath the ordered rescue transactions" width="1425" height="1500" loading="lazy">
+				<figcaption>Match every private key to its displayed address, then fund only the temporary funding account with the amount Bouquet calculates.</figcaption>
+			</figure>
+
+			<p>Send the displayed amount to Bouquet's temporary funding account. This account funds the compromised wallet inside the atomic bundle, after the delegation is gone. Any unused ETH can be withdrawn after the rescue.</p>
+
+			<h2><span class="step-number">9</span>Simulate the complete bundle</h2>
+			<p>Run Bouquet's bundle simulation and inspect every result. Confirm that:</p>
+			<ul>
+				<li>the delegation is cleared before the compromised wallet is funded;</li>
+				<li>every transaction succeeds in the displayed order;</li>
+				<li>all asset recipients are your new safe wallet; and</li>
+				<li>the bundle will be submitted through a supported private relay, never the public mempool.</li>
+			</ul>
+
+			<h2><span class="step-number">10</span>Submit and verify the rescue</h2>
+			<p>Submit the atomic bundle privately. Monitor its status until it is included, then verify on a block explorer that the delegation is cleared and the intended assets arrived at the safe wallet. Finally, withdraw any unused ETH from Bouquet's temporary funding account.</p>
+
+			<h2>What success looks like</h2>
+			<div class="checklist">
+				<ul>
+					<li>The compromised account no longer has EIP-7702 delegation code.</li>
+					<li>The clean sponsor paid for the clearing transaction.</li>
+					<li>Funding and sweeps landed in the same bundle, after the clearing transaction.</li>
+					<li>The rescued assets are in a new safe wallet.</li>
+					<li>No rescue transaction was exposed independently in the public mempool.</li>
+				</ul>
+			</div>
+
+			<aside class="callout danger">
+				<p><strong>Stop and investigate</strong> if the authorization points anywhere except the zero address, the chain or nonce is wrong, simulation fails, the sponsor lacks gas, the transaction order changes, the relay is unsupported, or any site asks you to broadcast the rescue transactions individually.</p>
+			</aside>
+
+			<footer>
+				<p>This is general security guidance and cannot cover every compromise. Keep private keys, seed phrases, and passwords secret; use only verified tools and addresses; and ask a trusted security professional for help if any part of the rescue differs from this guide.</p>
+			</footer>
+		</main>
+	</body>
+</html>
