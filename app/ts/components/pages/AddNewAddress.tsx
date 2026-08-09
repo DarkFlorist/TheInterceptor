@@ -131,13 +131,14 @@ type AddressInputParams = {
 }
 
 function AddressInput({ disabled, addressInput, setAddress }: AddressInputParams) {
-	return <input
+	return <textarea
 		disabled = { disabled }
 		class = 'input address-editor-address-input'
-		type = 'text'
+		rows = { 1 }
+		spellcheck = { false }
 		value = { addressInput }
 		placeholder = { '0x0...' }
-		onInput = { e => setAddress((e.target as HTMLInputElement).value) }
+		onInput = { e => setAddress(e.currentTarget.value.replaceAll('\n', '').replaceAll('\r', '')) }
 		style = { addressInput === undefined || isAddress(addressInput.trim()) ? undefined : 'color: var(--negative-color);' }
 	/>
 }

@@ -225,6 +225,12 @@ describe('add new address save flow', () => {
 		})
 	})
 
+	test('renders editable addresses in a wrapping single-value control', () => {
+		assert.match(addNewAddressSource, /<textarea[^>]+class = 'input address-editor-address-input'/s)
+		assert.match(addNewAddressSource, /rows = \{ 1 \}/)
+		assert.match(addNewAddressSource, /replaceAll\('\\n', ''\)\.replaceAll\('\\r', ''\)/)
+	})
+
 	test('renders on-chain Gnosis Safe owners as signer choices', () => {
 		assert.match(addNewAddressSource, /class = 'address-editor-readonly-address'/)
 		assert.ok(addNewAddressSource.indexOf('<span>Name</span>') < addNewAddressSource.indexOf('<span>Address type</span>'))

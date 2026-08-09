@@ -56,6 +56,18 @@ async function capture(connection: SafeUiScreenshotPage, filename: string, width
 	await connection.setViewport(width, height)
 	await prepareForDeterministicCapture(connection)
 	await Bun.sleep(250)
+	const clippedAddress = await connection.evaluate<string>(`(() => {
+		const addresses = document.querySelectorAll('.modal.is-active .address-editor-address-input, .modal.is-active .address-editor-readonly-address')
+		for (const address of addresses) {
+			if (!(address instanceof HTMLElement)) continue
+			const isClipped = address.scrollWidth > address.clientWidth + 1 || address.scrollHeight > address.clientHeight + 1
+			if (isClipped) {
+				return \`\${ address.className }: client=\${ address.clientWidth }x\${ address.clientHeight }, scroll=\${ address.scrollWidth }x\${ address.scrollHeight }\`
+			}
+		}
+		return ''
+	})()`)
+	if (clippedAddress !== '') throw new Error(`Address input is clipped in ${ filename }: ${ clippedAddress }`)
 	const screenshot = await connection.captureScreenshot()
 	await writeFile(path.join(outputDirectory, filename), Buffer.from(screenshot, 'base64'))
 }
@@ -123,7 +135,7 @@ try {
 				nameInput.value = 'Example ${ addressType }'
 				nameInput.dispatchEvent(new InputEvent('input', { bubbles: true, data: nameInput.value }))
 			}
-			if (addressInput instanceof HTMLInputElement) {
+			if (addressInput instanceof HTMLTextAreaElement) {
 				addressInput.value = ${ JSON.stringify(address) }
 				addressInput.dispatchEvent(new InputEvent('input', { bubbles: true, data: addressInput.value }))
 			}

@@ -212,6 +212,7 @@ svg[role="img"] {
 }
 
 .address-editor-fields {
+	container-type: inline-size;
 	display: grid;
 	gap: 12px;
 	min-width: 0;
@@ -310,9 +311,15 @@ svg[role="img"] {
 }
 
 .address-editor-address-input {
+	field-sizing: content;
 	font-family: monospace;
 	font-size: 12px !important;
 	line-height: 16px !important;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+	resize: none;
+	white-space: pre-wrap;
+	word-break: break-all;
 }
 
 .address-editor .input:disabled {
@@ -337,8 +344,43 @@ svg[role="img"] {
 }
 
 .address-editor-address-field {
+	align-items: center;
+	background: color-mix(in srgb, var(--text-color) 5%, transparent);
+	border: 1px solid var(--layout-line-color);
+	border-radius: 6px;
+	display: grid;
 	flex: 1 1 100%;
+	gap: 10px;
+	grid-template-columns: max-content minmax(0, 1fr);
+	padding: 7px 10px;
 	width: 100%;
+}
+
+.address-editor-address-field > span {
+	color: var(--subtitle-text-color);
+}
+
+.address-editor-address-field > .input {
+	min-height: 30px;
+}
+
+@container (max-width: 280px) {
+	.address-editor-address-field {
+		align-items: start;
+		gap: 4px;
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.address-editor-address-input {
+		field-sizing: fixed;
+		min-height: 44px !important;
+	}
+}
+
+@container (max-width: 180px) {
+	.address-editor-address-input {
+		min-height: 76px !important;
+	}
 }
 
 .address-editor-section {
