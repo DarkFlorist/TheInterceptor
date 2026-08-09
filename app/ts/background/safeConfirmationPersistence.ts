@@ -12,7 +12,7 @@ import { openPopupOrTab } from '../utils/popupOrTab.js'
 import { assertSafeContractStateUnchanged, createSafeOwnerValidator, getSafeContractSnapshot } from '../safe/safeCore.js'
 import { createSafeExecutionPreSimulationTransaction } from '../safe/safeSimulation.js'
 import { reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
-import { assertReviewedSafeSignerIsStillConfigured, validateSafeMessageCoSignature } from './safeConfirmationResolver.js'
+import { validateSafeMessageCoSignature } from './safeConfirmationResolver.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 
 export type SafeSignerReplyResolution =
@@ -68,7 +68,6 @@ async function persistSignedSafeTransaction(
 		if (safeSigningRequest.reviewedSafeState === undefined) {
 			throw new Error('Review this Gnosis Safe proposal again so its current owners, threshold, nonce, and signer can be verified.')
 		}
-		await assertReviewedSafeSignerIsStillConfigured(ethereum, safeSigningRequest)
 		const { blockNumber, state: safeState } = await getSafeContractSnapshot(ethereum, safeSigningRequest.safeAddress)
 		currentSafeNonce = safeState.nonce
 		assertSafeContractStateUnchanged(safeSigningRequest.reviewedSafeState, safeState)

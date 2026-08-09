@@ -6,7 +6,7 @@ test('rejects EIP-7702 authorization lists before creating a Safe proposal', asy
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
-		safeSignerAddress: recipientAddress,
+		safeSimulationSignerAddress: recipientAddress,
 		safeVersion: '1.4.1',
 	})])
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
@@ -79,7 +79,7 @@ test('shows stale local Safe stack failures in the transaction confirmation', as
 		transactions: [],
 	}])
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
-		safeSignerAddress: recipientAddress,
+		safeSimulationSignerAddress: recipientAddress,
 		safeVersion: '1.4.1',
 	})])
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
@@ -144,6 +144,12 @@ test('shows stale local Safe stack failures in the transaction confirmation', as
 })
 
 test('reconciles executed Safe operations before simulating the next proposal', async () => {
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [recipientAddress],
+		activeSigningAddress: recipientAddress,
+		signerChain: fakeRpcNetwork.chainId,
+	}))
 	fakeSafeContract.owners = [recipientAddress]
 	const firstSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
 		to: recipientAddress,
@@ -197,7 +203,7 @@ test('reconciles executed Safe operations before simulating the next proposal', 
 		})),
 	}))
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
-		safeSignerAddress: recipientAddress,
+		safeSimulationSignerAddress: recipientAddress,
 		safeVersion: '1.4.1',
 	})])
 	fakeSafeContract.nonce = 1n

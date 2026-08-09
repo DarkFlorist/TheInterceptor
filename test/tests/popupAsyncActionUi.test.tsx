@@ -814,7 +814,7 @@ describe('popup async action UI', () => {
 				useAsActiveAddress: true,
 				declarativeNetRequestBlockMode: undefined,
 				chainId: 1n,
-				safeSignerAddress: signerAddress,
+				safeSimulationSignerAddress: signerAddress,
 				safeSignerAddresses: [signerAddress],
 				safeVersion: '1.4.1',
 			},
@@ -871,7 +871,7 @@ describe('popup async action UI', () => {
 				useAsActiveAddress: true,
 				declarativeNetRequestBlockMode: undefined,
 				chainId: 1n,
-				safeSignerAddress: undefined,
+				safeSimulationSignerAddress: undefined,
 				safeSignerAddresses: [],
 				safeVersion: undefined,
 			},
@@ -905,13 +905,13 @@ describe('popup async action UI', () => {
 			await settleAsyncUpdates()
 		})
 		assert.equal(dom.document.body.textContent?.includes('Safe Owner 1'), true)
-		const signerDropdown = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label')?.startsWith('Safe signer owner:'))
+		const signerDropdown = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label')?.startsWith('Default Safe simulation signer:'))
 		if (signerDropdown === undefined) throw new Error('Expected Safe signer owner dropdown')
 		await act(async () => { await clickElement(signerDropdown) })
 		const alternateOwnerOption = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Safe Owner 2'))
 		if (alternateOwnerOption === undefined) throw new Error('Expected alternate Safe owner option')
 		await act(async () => { await clickElement(alternateOwnerOption) })
-		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddress, '0x3333333333333333333333333333333333333333')
+		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.safeSimulationSignerAddress, '0x3333333333333333333333333333333333333333')
 		const refreshButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Refresh signers'))
 		if (refreshButton === undefined) throw new Error('Expected Safe signer refresh button')
 		await act(async () => {
@@ -927,7 +927,7 @@ describe('popup async action UI', () => {
 			await settleAsyncUpdates()
 		})
 		assert.equal(requestCount, 2)
-		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddress, '0x2222222222222222222222222222222222222222')
+		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.safeSimulationSignerAddress, '0x2222222222222222222222222222222222222222')
 		render(null, dom.document.body)
 		dom.restore()
 	})

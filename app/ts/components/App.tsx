@@ -9,7 +9,7 @@ import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import type { EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
-import { getConfiguredSafeSigningEntry, isSafeEntryWithSafeSigner, type AddressBookEntry } from '../types/addressBookTypes.js'
+import { getSafeSigningEntry, type AddressBookEntry } from '../types/addressBookTypes.js'
 import type { RpcEntry } from '../types/rpc.js'
 import { UnexpectedError } from './subcomponents/Error.js'
 import { addressEditEntry } from './ui-utils.js'
@@ -82,7 +82,7 @@ export function App() {
 			entry.address === address && (entry.type !== 'safe' || entry.chainId === rpcNetwork.value?.chainId)
 		)
 		const selectedSafeOnAnyChain = activeAddresses.value.some((entry) => entry.type === 'safe' && entry.address === address)
-		if (simulationMode.value || isSafeEntryWithSafeSigner(selectedAddress)) {
+		if (simulationMode.value || selectedAddress?.type === 'safe') {
 			activeSimulationAddress.value = address
 			return
 		}
@@ -230,7 +230,7 @@ export function App() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_clearUnexpectedError' })
 	}
 
-	const activeSafe = useComputed(() => getConfiguredSafeSigningEntry(activeAddresses.value, {
+	const activeSafe = useComputed(() => getSafeSigningEntry(activeAddresses.value, {
 		simulationMode: simulationMode.value,
 		useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress.value,
 		activeSimulationAddress: activeSimulationAddress.value,
@@ -244,7 +244,7 @@ export function App() {
 		simulationMode.value
 			? activeAddresses.value.filter((entry) => entry.type !== 'safe' || entry.chainId === rpcNetwork.value?.chainId)
 			: activeAddresses.value.filter((entry) =>
-				entry.chainId === rpcNetwork.value?.chainId && isSafeEntryWithSafeSigner(entry)
+				entry.chainId === rpcNetwork.value?.chainId && entry.type === 'safe'
 			)
 	)
 

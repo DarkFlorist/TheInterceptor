@@ -1,11 +1,9 @@
 import * as funtypes from 'funtypes'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
-import type { SafeEntryWithSafeSigner } from '../types/addressBookTypes.js'
-import { isSafeEntryWithSafeSigner } from '../types/addressBookTypes.js'
+import type { SafeEntry } from '../types/addressBookTypes.js'
 import { EIP712Message } from '../types/eip721.js'
 import type { SignMessageParams } from '../types/jsonRpc-signing-types.js'
-import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import { getErrorMessage } from '../utils/errors.js'
 import { getPrettySignerName } from '../utils/signerMetadata.js'
@@ -20,7 +18,8 @@ import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeS
 export const SAFE_SIGNER_SELECTION_ERROR_CODE = -32010
 
 type SafeMessageCoSignContext = {
-	readonly safeEntry: SafeEntryWithSafeSigner
+	readonly safeEntry: SafeEntry
+	readonly safeSignerAddress: bigint
 	readonly safeTx: SafeTx
 	readonly safeTxHash: bigint
 	readonly ownerValidator: SafeOwnerValidator
@@ -47,25 +46,16 @@ export type SafeConfirmationResolution =
 		readonly pending: PendingTransactionOrSignableMessage
 	}
 
-async function getCurrentSafeEntryWithSigner(ethereum: EthereumClientService, safeAddress: bigint) {
+async function getCurrentSafeEntry(ethereum: EthereumClientService, safeAddress: bigint) {
 	const safeEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId()))
 		.find((entry) => entry.type === 'safe' && entry.address === safeAddress)
-	if (!isSafeEntryWithSafeSigner(safeEntry)) {
-		throw new Error('The Gnosis Safe no longer has an active signer configured in the address book.')
-	}
+	if (safeEntry?.type !== 'safe') throw new Error('The Gnosis Safe is no longer configured in the address book.')
 	return safeEntry
-}
-
-export async function assertReviewedSafeSignerIsStillConfigured(ethereum: EthereumClientService, safeSigningRequest: SafeTransactionSigningRequest) {
-	const currentSafeEntry = await getCurrentSafeEntryWithSigner(ethereum, safeSigningRequest.safeAddress)
-	if (currentSafeEntry.safeSignerAddress !== safeSigningRequest.safeSignerAddress) {
-		throw new Error(`The configured Gnosis Safe signer changed from ${ checksummedAddress(safeSigningRequest.safeSignerAddress) } to ${ checksummedAddress(currentSafeEntry.safeSignerAddress) } after this confirmation opened.`)
-	}
 }
 
 export async function getSafeSignerMismatchApprovalStatus(
 	tabId: number,
-	configuredSafeSigner: bigint,
+	reviewedSafeSigner: bigint,
 	refreshedSelection?: RefreshedSafeSignerSelection,
 ) {
 	const tabState = await getTabState(tabId)
@@ -73,11 +63,11 @@ export async function getSafeSignerMismatchApprovalStatus(
 	const selectedSigner = refreshedSelection === undefined
 		? tabState.activeSigningAddress ?? tabState.signerAccounts[0]
 		: refreshedSelection.selectedSigner
-	if (selectedSigner === configuredSafeSigner) return undefined
-	const configuredAddress = checksummedAddress(configuredSafeSigner)
+	if (selectedSigner === reviewedSafeSigner) return undefined
+	const reviewedAddress = checksummedAddress(reviewedSafeSigner)
 	if (refreshedSelection?.verificationError !== undefined) {
 		return createSafeSignerErrorStatus(
-			`Gnosis Safe signer could not be verified: ${ refreshedSelection.verificationError } Select ${ configuredAddress } in ${ signerName }, then retry.`,
+			`The wallet-selected Gnosis Safe owner could not be verified: ${ refreshedSelection.verificationError } Select ${ reviewedAddress } in ${ signerName }, then retry.`,
 			SAFE_SIGNER_SELECTION_ERROR_CODE,
 		)
 	}
@@ -85,7 +75,7 @@ export async function getSafeSignerMismatchApprovalStatus(
 		? 'no account selected'
 		: `${ checksummedAddress(selectedSigner) } selected`
 	return createSafeSignerErrorStatus(
-		`Gnosis Safe signer mismatch: this Gnosis Safe is configured to use ${ configuredAddress }, but ${ signerName } currently has ${ selectedAccountDescription }. Select ${ configuredAddress } in ${ signerName }, then retry.`,
+		`Gnosis Safe owner mismatch: this request was prepared for ${ reviewedAddress }, but ${ signerName } currently has ${ selectedAccountDescription }. Select ${ reviewedAddress } in ${ signerName }, then retry.`,
 		SAFE_SIGNER_SELECTION_ERROR_CODE,
 	)
 }
@@ -117,28 +107,27 @@ async function getSafeMessageCoSignContext(
 	if (requestedAccount !== pending.activeAddress || safeTx.domain.verifyingContract !== pending.activeAddress) {
 		throw new Error('The Gnosis Safe transaction signing account does not match the active Gnosis Safe.')
 	}
-	const safeEntry = await getCurrentSafeEntryWithSigner(ethereum, pending.activeAddress)
+	const safeEntry = await getCurrentSafeEntry(ethereum, pending.activeAddress)
 	if (safeEntry.safeVersion === undefined) {
 		throw new Error('Re-save the active Gnosis Safe address-book entry to verify and record its current Gnosis Safe version before co-signing.')
 	}
-	if (reviewedSnapshot.safeAddress !== safeEntry.address || reviewedSnapshot.safeSignerAddress !== safeEntry.safeSignerAddress) {
-		throw new Error('The configured Gnosis Safe signer changed after this co-signing confirmation opened.')
-	}
+	if (reviewedSnapshot.safeAddress !== safeEntry.address) throw new Error('The configured Gnosis Safe changed after this co-signing confirmation opened.')
 	const { safeTxHash, safeState, ownerValidator } = await validateSafeTransactionForSigning(
 		ethereum,
 		safeEntry.address,
-		safeEntry.safeSignerAddress,
+		reviewedSnapshot.safeSignerAddress,
 		safeTx,
 		safeEntry.safeVersion,
 	)
 	if (safeTxHash !== reviewedSnapshot.safeTxHash) throw new Error('The Gnosis Safe transaction changed after this co-signing confirmation opened.')
 	assertSafeContractStateUnchanged(reviewedSnapshot.reviewedSafeState, safeState)
-	return { safeEntry, safeTx, safeTxHash, ownerValidator }
+	return { safeEntry, safeSignerAddress: reviewedSnapshot.safeSignerAddress, safeTx, safeTxHash, ownerValidator }
 }
 
 export async function createSafeMessageCoSignSnapshot(
 	ethereum: EthereumClientService,
 	activeAddress: bigint,
+	walletSignerAddress: bigint | undefined,
 	transactionParams: SignMessageParams,
 	safeTx: SafeTx,
 ) {
@@ -147,20 +136,21 @@ export async function createSafeMessageCoSignSnapshot(
 	if (requestedAccount !== activeAddress || safeTx.domain.verifyingContract !== activeAddress) {
 		throw new Error('The Gnosis Safe transaction signing account does not match the active Gnosis Safe.')
 	}
-	const safeEntry = await getCurrentSafeEntryWithSigner(ethereum, activeAddress)
+	const safeEntry = await getCurrentSafeEntry(ethereum, activeAddress)
+	if (walletSignerAddress === undefined) throw new Error('Connect a signer wallet and select a Gnosis Safe owner before co-signing.')
 	if (safeEntry.safeVersion === undefined) {
 		throw new Error('Re-save the active Gnosis Safe address-book entry to verify and record its current Gnosis Safe version before co-signing.')
 	}
 	const { safeTxHash, safeState } = await validateSafeTransactionForSigning(
 		ethereum,
 		safeEntry.address,
-		safeEntry.safeSignerAddress,
+		walletSignerAddress,
 		safeTx,
 		safeEntry.safeVersion,
 	)
 	return {
 		safeAddress: safeEntry.address,
-		safeSignerAddress: safeEntry.safeSignerAddress,
+		safeSignerAddress: walletSignerAddress,
 		safeTxHash,
 		reviewedSafeState: safeState,
 	}
@@ -176,7 +166,7 @@ export async function validateSafeMessageCoSignature(
 	const ownerSignature = await currentCoSignContext.ownerValidator.validateSignature(
 		currentCoSignContext.safeTxHash,
 		funtypes.String.parse(signerReply),
-		currentCoSignContext.safeEntry.safeSignerAddress,
+		currentCoSignContext.safeSignerAddress,
 	)
 	return ownerSignature.signature
 }
@@ -195,8 +185,8 @@ async function refreshSafeExecutionRoute(
 	if (reviewedSafeState === undefined) throw new Error('Review this Gnosis Safe execution again so its current owner and threshold state can be verified.')
 	const safeAddress = originalRequest.params[0].from
 	if (safeAddress === undefined) throw new Error('The original Gnosis Safe execution request is missing its Gnosis Safe address.')
-	const safeEntry = await getCurrentSafeEntryWithSigner(ethereum, safeAddress)
-	const refreshedRoute = await prepareSafeExecutionSignerRoute(ethereum, originalRequest, safeEntry)
+	const safeEntry = await getCurrentSafeEntry(ethereum, safeAddress)
+	const refreshedRoute = await prepareSafeExecutionSignerRoute(ethereum, originalRequest, safeEntry, pending.safeExecutionSignerAddress)
 	if (refreshedRoute === undefined) throw new Error('The configured Gnosis Safe execution route is no longer available.')
 	assertSafeContractStateUnchanged(reviewedSafeState, refreshedRoute.safeState)
 	if (
@@ -233,7 +223,7 @@ async function assertSafeProposalSignerReady(
 		if (pending.safeTransaction.reviewedSafeState === undefined) {
 			throw new Error('Review this Gnosis Safe proposal again so its current owners, threshold, nonce, and signer can be verified.')
 		}
-		await assertReviewedSafeSignerIsStillConfigured(ethereum, pending.safeTransaction)
+		await getCurrentSafeEntry(ethereum, pending.safeTransaction.safeAddress)
 	}
 	return undefined
 }
@@ -306,7 +296,7 @@ function getSafeSignerFacingRequest(
 		return {
 			method: 'eth_signTypedData_v4',
 			params: [
-				coSignContext.safeEntry.safeSignerAddress,
+				coSignContext.safeSignerAddress,
 				EIP712Message.parse(safeTxToTypedDataJson(coSignContext.safeTx)),
 			],
 		}
@@ -359,7 +349,7 @@ export async function resolveSafeConfirmation(
 	} catch (error) {
 		return {
 			status: 'blocked',
-			approvalStatus: createSafeSignerErrorStatus(`Gnosis Safe proposal could not be prepared: ${ getErrorMessage(error) ?? 'The configured signer changed.' }`),
+			approvalStatus: createSafeSignerErrorStatus(`Gnosis Safe proposal could not be prepared: ${ getErrorMessage(error) ?? 'The wallet-selected Safe owner changed.' }`),
 		}
 	}
 	const mismatch = await getSafeSignerSelectionError(pending, refreshedSafeSignerSelection)

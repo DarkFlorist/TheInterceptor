@@ -257,7 +257,17 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 }
 
 export function repairLegacyAddressBookEntry(rawEntry: unknown): AddressBookEntry | undefined {
-	const parsedEntry = AddressBookEntry.safeParse(rawEntry)
+	const legacySafeSignerAddress = rawEntry !== null && typeof rawEntry === 'object' ? Reflect.get(rawEntry, 'safeSignerAddress') : undefined
+	const migratedEntry = rawEntry !== null
+		&& typeof rawEntry === 'object'
+		&& Reflect.get(rawEntry, 'type') === 'safe'
+		&& (typeof legacySafeSignerAddress === 'bigint' || typeof legacySafeSignerAddress === 'string')
+		? {
+			...Object.fromEntries(Object.entries(rawEntry).filter(([key]) => key !== 'safeSignerAddress')),
+			safeSimulationSignerAddress: Reflect.get(rawEntry, 'safeSimulationSignerAddress') ?? legacySafeSignerAddress,
+		}
+		: rawEntry
+	const parsedEntry = AddressBookEntry.safeParse(migratedEntry)
 	if (parsedEntry.success) return parsedEntry.value
 	const legacyErc20Entry = LegacyErc20TokenEntry.safeParse(rawEntry)
 	if (!legacyErc20Entry.success || isValidErc20Decimals(legacyErc20Entry.value.decimals)) return undefined
@@ -275,7 +285,10 @@ export function repairLegacyAddressBookEntries(rawEntries: unknown): AddressBook
 export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
 	const { userAddressBookEntriesV3: rawEntries } = await browser.storage.local.get('userAddressBookEntriesV3')
 	const parsedEntries = await browserStorageLocalSafeParseGet('userAddressBookEntriesV3')
-	if (parsedEntries?.userAddressBookEntriesV3 !== undefined) return parsedEntries.userAddressBookEntriesV3
+	const hasLegacySafeSigner = Array.isArray(rawEntries) && rawEntries.some((entry) =>
+		entry !== null && typeof entry === 'object' && Reflect.get(entry, 'type') === 'safe' && Reflect.get(entry, 'safeSignerAddress') !== undefined
+	)
+	if (parsedEntries?.userAddressBookEntriesV3 !== undefined && !hasLegacySafeSigner) return parsedEntries.userAddressBookEntriesV3
 	if (rawEntries === undefined) return DEFAULT_ACTIVE_ADDRESSES
 	const repairedEntries = repairLegacyAddressBookEntries(rawEntries)
 	if (repairedEntries !== undefined) {

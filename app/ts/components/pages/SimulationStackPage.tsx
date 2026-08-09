@@ -1,7 +1,7 @@
 import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { requestPopupInterceptorSimulationInput, sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
-import { getConfiguredSafeSigningEntry, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
+import { getSafeSigningEntry, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { EditEnsNamedHashWindowState, ModifyAddressWindowState, SimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { addressEditEntry } from '../ui-utils.js'
 import { ErrorBoundary, ErrorComponent, UnexpectedError } from '../subcomponents/Error.js'
@@ -285,8 +285,8 @@ export function SimulationStackPage() {
 		if (simVisResults.value.kind === 'passthrough') return true
 		return isEmptySimulation(simVisResults.value.value)
 	})
-	// Safe import and copy are signing-mode controls: intentionally hide both unless the active account is a configured Safe signer on this chain.
-	const showSafeActions = useComputed(() => getConfiguredSafeSigningEntry(activeAddresses.value, {
+	// Safe import and copy are signing-mode controls: intentionally hide both unless a Safe is the active account on this chain.
+	const showSafeActions = useComputed(() => getSafeSigningEntry(activeAddresses.value, {
 		simulationMode: simulationMode.value,
 		useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress.value,
 		activeSimulationAddress: activeSimulationAddress.value,

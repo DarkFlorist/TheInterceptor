@@ -70,14 +70,14 @@ test('accepts a signer reply from the current approved child-frame port', async 
 	assert.equal(childReply.result, modules.EthereumBytes32.serialize(signedTransaction.hash))
 })
 
-test('forwards a Safe transaction to the configured Safe signer as EIP-712 typed data', async () => {
+test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 typed data', async () => {
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
 		signerAccounts: [recipientAddress],
 		activeSigningAddress: recipientAddress,
 	}))
 	const safeAddressBookEntry = createSafeAddressBookEntry({
-		safeSignerAddress: recipientAddress,
+		safeSimulationSignerAddress: 0x2222222222222222222222222222222222222222n,
 	})
 	await modules.updateUserAddressBookEntries(() => [safeAddressBookEntry])
 	const postedMessages: unknown[] = []
@@ -120,23 +120,7 @@ test('forwards a Safe transaction to the configured Safe signer as EIP-712 typed
 		}],
 	})
 
-	const alternateSigner = 0x2222222222222222222222222222222222222222n
-	await modules.updateUserAddressBookEntries(() => [{ ...safeAddressBookEntry, safeSignerAddress: alternateSigner }])
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
-	}), false)
-	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
-	const [changedSignerProposal] = await modules.getPendingTransactionsAndMessages()
-	assert.equal(changedSignerProposal?.approvalStatus.status, 'SignerError')
-	if (changedSignerProposal?.approvalStatus.status !== 'SignerError') throw new Error('Missing changed-signer Gnosis Safe proposal error')
-	assert.match(changedSignerProposal.approvalStatus.message, /configured Gnosis Safe signer changed/u)
-
-	await modules.updateUserAddressBookEntries(() => [safeAddressBookEntry])
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({
-		...pending,
-		approvalStatus: { status: 'WaitingForUser' as const },
-	}))
+	await modules.updateUserAddressBookEntries(() => [{ ...safeAddressBookEntry, safeSimulationSignerAddress: activeAddress }])
 	fakeSafeContract.owners = [0x1111111111111111111111111111111111111111n]
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
@@ -169,7 +153,7 @@ test('forwards a Safe transaction to the configured Safe signer as EIP-712 typed
 	assert.equal(typedData.message.to.toLowerCase(), `0x${ recipientAddress.toString(16).padStart(40, '0') }`)
 })
 
-test('routes a Safe co-signing request through the configured signer of the active Safe', async () => {
+test('routes a Safe co-signing request through the wallet-selected owner', async () => {
 	const ownerAccount = privateKeyToAccount('0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd')
 	const safeSignerAddress = BigInt(ownerAccount.address)
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
@@ -182,13 +166,13 @@ test('routes a Safe co-signing request through the configured signer of the acti
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
-		safeSignerAddress,
+		safeSimulationSignerAddress: recipientAddress,
 		safeVersion: '1.4.1',
 	})])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
 		signerAccounts: [safeSignerAddress, recipientAddress],
-		activeSigningAddress: recipientAddress,
+		activeSigningAddress: safeSignerAddress,
 		signerChain: fakeRpcNetwork.chainId,
 	}))
 	const postedMessages: unknown[] = []
@@ -276,31 +260,6 @@ test('routes a Safe co-signing request through the configured signer of the acti
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier },
-	}), false)
-	const [mismatchedCoSignRequest] = await modules.getPendingTransactionsAndMessages()
-	assert.equal(mismatchedCoSignRequest?.approvalStatus.status, 'SignerError')
-	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
-	fakeSafeContract.owners = [...fakeSafeContract.owners, 0x1111111111111111111111111111111111111111n]
-	await modules.confirmDialog(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
-	})
-	await accountReply
-	assert.equal(postedMessages.some((message) => isRecord(message) && message.method === 'request_signer_to_eth_accounts'), true)
-	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
-	const [changedCoSignState] = await modules.getPendingTransactionsAndMessages()
-	assert.equal(changedCoSignState?.approvalStatus.status, 'SignerError')
-	if (changedCoSignState?.approvalStatus.status !== 'SignerError') throw new Error('Missing changed-state Safe co-signing error')
-	assert.match(changedCoSignState.approvalStatus.message, /owner set changed/u)
-
-	fakeSafeContract.owners = [safeSignerAddress]
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({
-		...pending,
-		approvalStatus: { status: 'WaitingForUser' as const },
-	}))
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
 	}), true)
 
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
@@ -312,25 +271,9 @@ test('routes a Safe co-signing request through the configured signer of the acti
 	const signature = await ownerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
 	await modules.updateUserAddressBookEntries((entries) => entries.map((entry) =>
 		entry.type === 'safe' && entry.address === activeAddress
-			? { ...entry, safeSignerAddress: 0x2222222222222222222222222222222222222222n }
+			? { ...entry, safeSimulationSignerAddress: 0x2222222222222222222222222222222222222222n }
 			: entry
 	))
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'signerIncluded', signerReply: signature, uniqueRequestIdentifier },
-	}), false)
-	const changedSignerReply = postedMessages.find((message) =>
-		isRecord(message) && message.type === 'result' && message.method === 'eth_signTypedData_v4' && message.requestId === uniqueRequestIdentifier.requestId
-	)
-	assert.equal(changedSignerReply, undefined)
-
-	await modules.updateUserAddressBookEntries((entries) => entries.map((entry) =>
-		entry.type === 'safe' && entry.address === activeAddress ? { ...entry, safeSignerAddress } : entry
-	))
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({
-		...pending,
-		approvalStatus: { status: 'WaitingForSigner' as const },
-	}))
 	const signerCodeReadsBeforeReply = fakeSafeContract.requestedCodeAddresses.filter((address) => address === safeSignerAddress).length
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
@@ -349,9 +292,7 @@ test('routes a Safe co-signing request through the configured signer of the acti
 test('recognizes only execTransaction calls to the active Safe for direct signer execution', async () => {
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
 	const safeSignerAddress = 0x1234567890123456789012345678901234567890n
-	const safeEntry = createSafeAddressBookEntry({
-		safeSignerAddress,
-	})
+	const safeEntry = createSafeAddressBookEntry({ safeSimulationSignerAddress: recipientAddress })
 	const transaction = SendTransactionParams.parse({
 		method: 'eth_sendTransaction',
 		params: [{
@@ -361,7 +302,7 @@ test('recognizes only execTransaction calls to the active Safe for direct signer
 		}],
 	})
 
-	assert.deepEqual(modules.getSafeExecutionSignerRoute(transaction, safeEntry), {
+	assert.deepEqual(modules.getSafeExecutionSignerRoute(transaction, safeEntry, safeSignerAddress), {
 		executor: safeSignerAddress,
 		transactionParams: {
 			method: 'eth_sendTransaction',
@@ -378,7 +319,7 @@ test('recognizes only execTransaction calls to the active Safe for direct signer
 			to: addressString(activeAddress),
 			data: '0x6a76120200',
 		}],
-	}), safeEntry), undefined)
+	}), safeEntry, safeSignerAddress), undefined)
 	assert.equal(modules.getSafeExecutionSignerRoute(SendTransactionParams.parse({
 		method: 'eth_sendTransaction',
 		params: [{
@@ -386,7 +327,7 @@ test('recognizes only execTransaction calls to the active Safe for direct signer
 			to: addressString(recipientAddress),
 			data: '0x6a76120200',
 		}],
-	}), safeEntry), undefined)
+	}), safeEntry, safeSignerAddress), undefined)
 	assert.equal(modules.getSafeExecutionSignerRoute(SendTransactionParams.parse({
 		method: 'eth_sendTransaction',
 		params: [{
@@ -394,8 +335,8 @@ test('recognizes only execTransaction calls to the active Safe for direct signer
 			to: addressString(activeAddress),
 			data: '0xa9059cbb',
 		}],
-	}), safeEntry), undefined)
-	assert.equal(modules.getSafeExecutionSignerRoute(transaction, { ...safeEntry, safeSignerAddress: undefined }), undefined)
+	}), safeEntry, safeSignerAddress), undefined)
+	assert.equal(modules.getSafeExecutionSignerRoute(transaction, safeEntry, undefined), undefined)
 	const nonzeroOuterValue = SendTransactionParams.parse({
 		method: 'eth_sendTransaction',
 		params: [{
@@ -406,7 +347,7 @@ test('recognizes only execTransaction calls to the active Safe for direct signer
 		}],
 	})
 	await assert.rejects(
-		modules.prepareSafeExecutionSignerRoute(ethereum, nonzeroOuterValue, safeEntry),
+		modules.prepareSafeExecutionSignerRoute(ethereum, nonzeroOuterValue, safeEntry, safeSignerAddress),
 		/A direct Gnosis Safe execution transaction must have zero outer ETH value/u,
 	)
 	fakeSafeContract.threshold = 3n
@@ -422,42 +363,42 @@ test('recognizes only execTransaction calls to the active Safe for direct signer
 		}],
 	})
 	await assert.rejects(
-		modules.prepareSafeExecutionSignerRoute(ethereum, insufficientSignatures, safeEntry),
+		modules.prepareSafeExecutionSignerRoute(ethereum, insufficientSignatures, safeEntry, safeSignerAddress),
 		/cannot satisfy its 3-signature threshold/u,
 	)
 	fakeSafeContract.threshold = 2n
 	fakeSafeContract.owners = [safeSignerAddress]
 	await assert.rejects(
-		modules.prepareSafeExecutionSignerRoute(ethereum, insufficientSignatures, safeEntry),
+		modules.prepareSafeExecutionSignerRoute(ethereum, insufficientSignatures, safeEntry, safeSignerAddress),
 		/signature format that Interceptor cannot validate/u,
 	)
 })
 
-test('changes the active Safe signer without revalidating the Safe contract', async () => {
+test('changes the Safe simulation signer without revalidating the Safe contract', async () => {
 	const alternateSigner = 0x1234567890123456789012345678901234567890n
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
 		useAsActiveAddress: false,
-		safeSignerAddress: recipientAddress,
+		safeSimulationSignerAddress: recipientAddress,
 		safeSignerAddresses: [recipientAddress, alternateSigner],
 	})])
 
-	const reply = await modules.setActiveSafeSigner(
+	const reply = await modules.setSafeSimulationSigner(
 		ethereum,
 		simulator.tokenPriceService,
 		() => undefined,
 		new Map(),
 		{
-			method: 'popup_setActiveSafeSigner',
+			method: 'popup_setSafeSimulationSigner',
 			data: {
 				chainId: fakeRpcNetwork.chainId,
 				safeAddress: activeAddress,
-				safeSignerAddress: alternateSigner,
+				safeSimulationSignerAddress: alternateSigner,
 			},
 		},
 	)
 
-	assert.deepEqual(reply, { type: 'SetActiveSafeSignerReply', ok: true })
-	assert.equal((await modules.getUserAddressBookEntries())[0]?.safeSignerAddress, alternateSigner)
+	assert.deepEqual(reply, { type: 'SetSafeSimulationSignerReply', ok: true })
+	assert.equal((await modules.getUserAddressBookEntries())[0]?.safeSimulationSignerAddress, alternateSigner)
 	assert.deepEqual(fakeSafeContract.requestedRpcMethods, [])
 })
 
@@ -686,8 +627,14 @@ test('blocks direct Safe execution when the configured signer cannot satisfy the
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
-		safeSignerAddress: configuredSigner,
+		safeSimulationSignerAddress: configuredSigner,
 	})])
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [configuredSigner],
+		activeSigningAddress: configuredSigner,
+		signerChain: fakeRpcNetwork.chainId,
+	}))
 	const transactionParams = SendTransactionParams.parse({
 		method: 'eth_sendTransaction',
 		params: [{

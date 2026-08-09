@@ -19,7 +19,7 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
-import { getConfiguredSafeSigningEntry } from '../types/addressBookTypes.js'
+import { getSafeSigningEntry } from '../types/addressBookTypes.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
@@ -40,7 +40,7 @@ function hasSignerCallbackAccess(websiteTabConnections: WebsiteTabConnections, t
 }
 
 async function getConfiguredSigningSafe(settings: Settings) {
-	return getConfiguredSafeSigningEntry(
+	return getSafeSigningEntry(
 		await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId),
 		{ ...settings, chainId: settings.activeRpcNetwork.chainId },
 	)

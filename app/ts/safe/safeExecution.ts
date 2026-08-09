@@ -66,10 +66,10 @@ export async function completeSafeExecutionWithConfiguredSigner(
 	const signatureCount = BigInt(signatures.length / SAFE_SIGNATURE_BYTES)
 	if (signatureCount >= safeState.threshold) return input
 	if (signatureCount + 1n < safeState.threshold) {
-		throw new Error(`This Gnosis Safe execution has ${ signatureCount.toString() } signature(s), and the configured signer cannot satisfy its ${ safeState.threshold.toString() }-signature threshold.`)
+		throw new Error(`This Gnosis Safe execution has ${ signatureCount.toString() } signature(s), and the wallet-selected Safe owner cannot satisfy its ${ safeState.threshold.toString() }-signature threshold.`)
 	}
 	if (!safeState.owners.includes(configuredSigner)) {
-		throw new Error('The configured Gnosis Safe signer is no longer an owner of this Gnosis Safe.')
+		throw new Error('The account selected in your wallet is no longer an owner of this Gnosis Safe.')
 	}
 	const safeTx = createSafeTxFromMessage(chainId, safeAddress, {
 			to: BigInt(execution.to),
@@ -106,7 +106,7 @@ export async function completeSafeExecutionWithConfiguredSigner(
 		throw new Error('The Gnosis Safe execution contains duplicate owner signatures.')
 	}
 	if (supportedSignatures.some(({ signer }) => signer === configuredSigner)) {
-		throw new Error('The configured Gnosis Safe signer already signed this execution, but the signature threshold is not satisfied.')
+		throw new Error('The wallet-selected Gnosis Safe owner already signed this execution, but the signature threshold is not satisfied.')
 	}
 	for (const { signer } of supportedSignatures) {
 		if (!safeState.owners.includes(signer)) throw new Error('The Gnosis Safe execution contains a signature from an address that is not a current owner.')

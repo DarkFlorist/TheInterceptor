@@ -94,24 +94,24 @@ export const AddOrModifyAddressBookEntryReply = funtypes.Union(
 	}),
 )
 
-export type SetActiveSafeSigner = funtypes.Static<typeof SetActiveSafeSigner>
-export const SetActiveSafeSigner = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_setActiveSafeSigner'),
+export type SetSafeSimulationSigner = funtypes.Static<typeof SetSafeSimulationSigner>
+export const SetSafeSimulationSigner = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_setSafeSimulationSigner'),
 	data: funtypes.ReadonlyObject({
 		chainId: EthereumQuantity,
 		safeAddress: EthereumAddress,
-		safeSignerAddress: EthereumAddress,
+		safeSimulationSignerAddress: EthereumAddress,
 	}),
 })
 
-export type SetActiveSafeSignerReply = funtypes.Static<typeof SetActiveSafeSignerReply>
-export const SetActiveSafeSignerReply = funtypes.Union(
+export type SetSafeSimulationSignerReply = funtypes.Static<typeof SetSafeSimulationSignerReply>
+export const SetSafeSimulationSignerReply = funtypes.Union(
 	funtypes.ReadonlyObject({
-		type: funtypes.Literal('SetActiveSafeSignerReply'),
+		type: funtypes.Literal('SetSafeSimulationSignerReply'),
 		ok: funtypes.Literal(true),
 	}),
 	funtypes.ReadonlyObject({
-		type: funtypes.Literal('SetActiveSafeSignerReply'),
+		type: funtypes.Literal('SetSafeSimulationSignerReply'),
 		ok: funtypes.Literal(false),
 		message: funtypes.String,
 	}),
@@ -265,7 +265,7 @@ type PopupRequestsRepliesMap = {
 	popup_requestInterceptorSimulationInput: typeof RequestInterceptorSimulationInputReply
 	popup_importSimulationStack: typeof ImportSimulationStackReply
 	popup_addOrModifyAddressBookEntry: typeof AddOrModifyAddressBookEntryReply
-	popup_setActiveSafeSigner: typeof SetActiveSafeSignerReply
+	popup_setSafeSimulationSigner: typeof SetSafeSimulationSignerReply
 	popup_requestSafeStackExport: typeof RequestSafeStackExportReply
 	popup_importSafeStack: typeof ImportSafeStackReply
 	popup_requestCompleteVisualizedSimulation: typeof RequestCompleteVisualizedSimulationReply
@@ -288,7 +288,7 @@ export const PopupRequestsReplies: PopupRequestsRepliesMap = {
 	popup_requestInterceptorSimulationInput: RequestInterceptorSimulationInputReply,
 	popup_importSimulationStack: ImportSimulationStackReply,
 	popup_addOrModifyAddressBookEntry: AddOrModifyAddressBookEntryReply,
-	popup_setActiveSafeSigner: SetActiveSafeSignerReply,
+	popup_setSafeSimulationSigner: SetSafeSimulationSignerReply,
 	popup_requestSafeStackExport: RequestSafeStackExportReply,
 	popup_importSafeStack: ImportSafeStackReply,
 	popup_requestCompleteVisualizedSimulation: RequestCompleteVisualizedSimulationReply,
@@ -326,7 +326,7 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestInterceptorSimulationInput') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_importSimulationStack'), data: InterceptorSimulationExport }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_addOrModifyAddressBookEntry'), data: AddressBookEntry }),
-	SetActiveSafeSigner,
+	SetSafeSimulationSigner,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSafeStackExport') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_importSafeStack'), data: SafeStackExport }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestCompleteVisualizedSimulation') }),
@@ -358,7 +358,7 @@ export type PopupReplyOption =
 	| RequestInterceptorSimulationInputReply
 	| ImportSimulationStackReply
 	| AddOrModifyAddressBookEntryReply
-	| SetActiveSafeSignerReply
+	| SetSafeSimulationSignerReply
 	| RequestSafeStackExportReply
 	| ImportSafeStackReply
 	| RequestCompleteVisualizedSimulationReply
@@ -380,7 +380,7 @@ export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union
 	RequestInterceptorSimulationInputReply,
 	ImportSimulationStackReply,
 	AddOrModifyAddressBookEntryReply,
-	SetActiveSafeSignerReply,
+	SetSafeSimulationSignerReply,
 	RequestSafeStackExportReply,
 	ImportSafeStackReply,
 	RequestCompleteVisualizedSimulationReply,

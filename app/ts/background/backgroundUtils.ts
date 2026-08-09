@@ -7,7 +7,7 @@ import { getActiveAddressEntry } from './metadataUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
-import { getConfiguredSafeSigningEntry, type AddressBookEntry } from '../types/addressBookTypes.js'
+import { getSafeSigningEntry, type AddressBookEntry } from '../types/addressBookTypes.js'
 
 function isIgnorableExtensionMessagingError(error: Error) {
 	return isIgnorablePortLifecycleError(error)
@@ -24,7 +24,7 @@ async function resolveConfiguredActiveAddress(settings: Settings): Promise<Confi
 	}
 	const chainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 	if (!settings.simulationMode) {
-		const configuredSafe = getConfiguredSafeSigningEntry(chainEntries, {
+		const configuredSafe = getSafeSigningEntry(chainEntries, {
 			...settings,
 			chainId: settings.activeRpcNetwork.chainId,
 		})

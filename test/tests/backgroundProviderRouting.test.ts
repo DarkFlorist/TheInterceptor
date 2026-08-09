@@ -1278,7 +1278,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal((await getActiveAddressesForAllTabs(settings)).find(({ tabId }) => tabId === 1)?.activeAddress, undefined)
 	})
 
-	test('never exposes a signerless Safe after enabling signing mode or selecting it while signing', async () => {
+	test('keeps a Safe selected in signing mode even without a simulation signer', async () => {
 		installBrowserMock()
 		const {
 			changeActiveAddressAndChain,
@@ -1323,7 +1323,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
 
-		assert.equal((await getActiveAddress(await getSettings(), socket.tabId))?.address, safeSignerAddress)
+		assert.equal((await getActiveAddress(await getSettings(), socket.tabId))?.address, safeAddress)
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -1332,14 +1332,13 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const ethAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 208)
-		assert.deepEqual(ethAccountsReplies.at(-1)?.result, ['0x5454545454545454545454545454545454545454'])
-		assert.equal(ethAccountsReplies.some((message) => Array.isArray(message.result) && message.result.includes('0x5353535353535353535353535353535353535353')), false)
+		assert.deepEqual(ethAccountsReplies.at(-1)?.result, [])
 
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			simulationMode: false,
 			activeAddress: safeAddress,
 		})
-		assert.notEqual((await getActiveAddress(await getSettings(), socket.tabId))?.address, safeAddress)
+		assert.equal((await getActiveAddress(await getSettings(), socket.tabId))?.address, safeAddress)
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -1451,6 +1450,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			changeSimulationMode,
 			handleInterceptedRequest,
 			setUseSignersAddressAsActiveAddress,
+			updateTabState,
 			updateUserAddressBookEntries,
 			updateWebsiteAccess,
 			websiteSocketToString,
@@ -1468,7 +1468,8 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			chainId: 1n,
 			entrySource: 'User',
 			useAsActiveAddress: true,
-			safeSignerAddress: signerAddress,
+			safeSimulationSignerAddress: 0x1818181818181818181818181818181818181818n,
+			safeSignerAddresses: [signerAddress],
 			safeVersion: '1.4.1',
 		}])
 		await updateWebsiteAccess(() => [{
@@ -1478,6 +1479,12 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		}])
 
 		const socket = { tabId: 1, connectionName: 0n }
+		await updateTabState(socket.tabId, (previousState) => ({
+			...previousState,
+			signerAccounts: [signerAddress],
+			activeSigningAddress: signerAddress,
+			signerChain: 1n,
+		}))
 		const { port, messages } = createPort(socket.tabId)
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
@@ -1502,6 +1509,38 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 				},
 			},
 		})
+		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
+
+		await updateTabState(socket.tabId, (previousState) => ({
+			...previousState,
+			signerAccounts: [],
+			activeSigningAddress: undefined,
+		}))
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 32, requestSocket: socket },
+			method: 'wallet_getCapabilities',
+			params: [addressString(safeAddress), ['0x1']],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const capabilityReplyWithoutWalletOwner = messages.find((message) => message.method === 'wallet_getCapabilities' && message.requestId === 32)
+		assert.deepEqual(capabilityReplyWithoutWalletOwner?.result, {})
+		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
+
+		await updateTabState(socket.tabId, (previousState) => ({
+			...previousState,
+			signerAccounts: [0x1919191919191919191919191919191919191919n],
+			activeSigningAddress: 0x1919191919191919191919191919191919191919n,
+		}))
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 33, requestSocket: socket },
+			method: 'wallet_getCapabilities',
+			params: [addressString(safeAddress), ['0x1']],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const capabilityReplyForNonOwner = messages.find((message) => message.method === 'wallet_getCapabilities' && message.requestId === 33)
+		assert.deepEqual(capabilityReplyForNonOwner?.result, {})
 		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
 	})
 

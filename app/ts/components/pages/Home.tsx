@@ -11,7 +11,7 @@ import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
-import { getConfiguredSafeSigningEntry, getSafeSignerAddresses, isSafeEntryWithSafeSigner, type AddressBookEntry } from '../../types/addressBookTypes.js'
+import { getSafeSigningEntry, getSafeSignerAddresses, type AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon, ChevronIcon, OpenInNewIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { type Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
@@ -405,25 +405,25 @@ function FirstCard(param: FirstCardParams) {
 	const { value: connectToSignerButtonState, waitFor: waitForConnectToSigner } = useAsyncState<void>()
 	const { value: safeSignerSelectionState, waitFor: waitForSafeSignerSelection } = useAsyncState<void>()
 	const activeSafe = useComputed(() =>
-		!param.simulationMode.value && isSafeEntryWithSafeSigner(param.activeAddress.value)
+		param.activeAddress.value?.type === 'safe'
 			? param.activeAddress.value
 			: undefined
 	)
-	const safeSignerAddressBookEntries = useComputed(() => {
-		if (activeSafe.value === undefined) return undefined
-		return getSafeSignerAddresses(activeSafe.value).map((safeSignerAddress) =>
-			getActiveAddressEntry(safeSignerAddress, param.activeAddresses.value ?? [])
+	const safeSimulationSignerAddressBookEntries = useComputed(() => {
+		if (!param.simulationMode.value || activeSafe.value === undefined) return undefined
+		return getSafeSignerAddresses(activeSafe.value).map((safeSimulationSignerAddress) =>
+			getActiveAddressEntry(safeSimulationSignerAddress, param.activeAddresses.value ?? [])
 		)
 	})
 	const selectedSignerAddress = useComputed(() =>
 		param.tabState.value?.activeSigningAddress ?? param.tabState.value?.signerAccounts[0]
 	)
-	const safeSignerIsSelected = useComputed(() => {
+	const walletSignerIsSafeOwner = useComputed(() => {
 		const safe = activeSafe.value
-		return safe !== undefined && selectedSignerAddress.value === safe.safeSignerAddress
+		return safe !== undefined && selectedSignerAddress.value !== undefined && getSafeSignerAddresses(safe).includes(selectedSignerAddress.value)
 	})
 	const signerAvailable = useComputed(() =>
-		activeSafe.value === undefined ? isSignerAvailable(param.tabState.value) : safeSignerIsSelected.value
+		activeSafe.value === undefined ? isSignerAvailable(param.tabState.value) : walletSignerIsSafeOwner.value
 	)
 	const isActiveAddressLoading = !param.isFreshHomeDataLoaded.value && param.activeAddress.value === undefined
 
@@ -435,11 +435,11 @@ function FirstCard(param: FirstCardParams) {
 		})
 	}
 
-	const selectSafeSigner = (safeSignerAddress: bigint) => {
+	const selectSafeSigner = (safeSimulationSignerAddress: bigint) => {
 		if (!param.isInitialHomeDataLoaded.value || safeSignerSelectionState.value.state === 'pending') return
 		const safe = activeSafe.peek()
-		if (safe === undefined || safe.safeSignerAddress === safeSignerAddress) return
-		const updatedSafe = { ...safe, safeSignerAddress }
+		if (safe === undefined || !param.simulationMode.value || safe.safeSimulationSignerAddress === safeSimulationSignerAddress) return
+		const updatedSafe = { ...safe, safeSimulationSignerAddress }
 		if (param.activeAddresses.value !== undefined) {
 			param.activeAddresses.value = param.activeAddresses.value.map((entry) =>
 				entry.type === 'safe' && entry.address === safe.address && entry.chainId === safe.chainId ? updatedSafe : entry
@@ -448,20 +448,20 @@ function FirstCard(param: FirstCardParams) {
 		void waitForSafeSignerSelection(async () => {
 			try {
 				const reply = await sendPopupMessageWithReply({
-					method: 'popup_setActiveSafeSigner',
+						method: 'popup_setSafeSimulationSigner',
 					data: {
 						chainId: safe.chainId,
 						safeAddress: safe.address,
-						safeSignerAddress,
+						safeSimulationSignerAddress,
 					},
 				})
-				if (reply === undefined) throw new Error('Interceptor did not reply while changing the active Gnosis Safe signer.')
-				if (!reply.ok) throw new Error(reply.message ?? 'Failed to change the active Gnosis Safe signer.')
+				if (reply === undefined) throw new Error('Interceptor did not reply while changing the Safe simulation signer.')
+				if (!reply.ok) throw new Error(reply.message ?? 'Failed to change the Safe simulation signer.')
 			} catch (error) {
 				if (param.activeAddresses.value !== undefined) {
 					param.activeAddresses.value = param.activeAddresses.value.map((entry) =>
-						entry.type === 'safe' && entry.address === safe.address && entry.chainId === safe.chainId && entry.safeSignerAddress === safeSignerAddress
-							? { ...entry, safeSignerAddress: safe.safeSignerAddress }
+						entry.type === 'safe' && entry.address === safe.address && entry.chainId === safe.chainId && entry.safeSimulationSignerAddress === safeSimulationSignerAddress
+							? { ...entry, safeSimulationSignerAddress: safe.safeSimulationSignerAddress }
 							: entry
 					)
 				}
@@ -540,35 +540,35 @@ function FirstCard(param: FirstCardParams) {
 						/>
 					</div>
 				}
-				{ isActiveAddressLoading || safeSignerAddressBookEntries.value === undefined ? <></> :
+				{ isActiveAddressLoading || safeSimulationSignerAddressBookEntries.value === undefined ? <></> :
 					<div class = 'safe-signer-address popup-data-reveal' style = 'margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--unimportant-text-color);'>
-						<p class = 'subtitle is-7' style = 'color: var(--subtitle-text-color); margin-bottom: 4px;'>Gnosis Safe signers</p>
-						{ safeSignerAddressBookEntries.value.map((safeSignerAddressBookEntry) =>
-							<label class = 'form-control safe-signer-option' title = { safeSignerAddressBookEntry.name } key = { safeSignerAddressBookEntry.address.toString() }>
+						<p class = 'subtitle is-7' style = 'color: var(--subtitle-text-color); margin-bottom: 4px;'>Simulate as Safe owner</p>
+						{ safeSimulationSignerAddressBookEntries.value.map((safeSimulationSignerAddressBookEntry) =>
+							<label class = 'form-control safe-signer-option' title = { safeSimulationSignerAddressBookEntry.name } key = { safeSimulationSignerAddressBookEntry.address.toString() }>
 								<input
 									type = 'radio'
 									name = 'active-safe-signer'
-									aria-label = { `Use ${ checksummedAddress(safeSignerAddressBookEntry.address) } as active Gnosis Safe signer` }
-									checked = { activeSafe.value?.safeSignerAddress === safeSignerAddressBookEntry.address }
+									aria-label = { `Simulate as Gnosis Safe owner ${ checksummedAddress(safeSimulationSignerAddressBookEntry.address) }` }
+									checked = { activeSafe.value?.safeSimulationSignerAddress === safeSimulationSignerAddressBookEntry.address }
 									disabled = { !param.isInitialHomeDataLoaded.value || safeSignerSelectionState.value.state === 'pending' }
-									onChange = { () => { selectSafeSigner(safeSignerAddressBookEntry.address) } }
+									onChange = { () => { selectSafeSigner(safeSimulationSignerAddressBookEntry.address) } }
 								/>
 								<span
 									class = 'safe-signer-option-address'
 									onClick = { (event) => {
 										event.preventDefault()
 										event.stopPropagation()
-										selectSafeSigner(safeSignerAddressBookEntry.address)
+										selectSafeSigner(safeSimulationSignerAddressBookEntry.address)
 									} }
 								>
 									<SmallAddress
-										addressBookEntry = { safeSignerAddressBookEntry }
+										addressBookEntry = { safeSimulationSignerAddressBookEntry }
 										renameAddressCallBack = { param.renameAddressCallBack }
 										copyOnActionOnly = { true }
 									/>
-									{ safeSignerAddressBookEntry.name === checksummedAddress(safeSignerAddressBookEntry.address)
+									{ safeSimulationSignerAddressBookEntry.name === checksummedAddress(safeSimulationSignerAddressBookEntry.address)
 										? <></>
-										: <code class = 'address-text is-size-7'>{ checksummedAddress(safeSignerAddressBookEntry.address) }</code> }
+										: <code class = 'address-text is-size-7'>{ checksummedAddress(safeSimulationSignerAddressBookEntry.address) }</code> }
 								</span>
 							</label>
 						) }
@@ -595,11 +595,11 @@ function FirstCard(param: FirstCardParams) {
 						: <p class = 'subtitle is-7 safe-signer-connection-message'> {
 							activeSafe.value === undefined
 								? ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }`
-								: safeSignerIsSelected.value
-									? `The configured Gnosis Safe signer is selected in ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }.`
+								: walletSignerIsSafeOwner.value
+									? `${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } has an eligible Gnosis Safe owner selected.`
 									: selectedSignerAddress.value === undefined
-										? `Select the configured Gnosis Safe signer in ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } before signing.`
-										: `${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } has ${ checksummedAddress(selectedSignerAddress.value) } selected. Switch to the configured Gnosis Safe signer before signing.`
+										? `Select a Gnosis Safe owner in ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } before signing.`
+										: `${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } has ${ checksummedAddress(selectedSignerAddress.value) } selected, but that account is not a current Gnosis Safe owner.`
 						} </p>
 					}
 				</> : !param.isFreshHomeDataLoaded.value ?
@@ -804,7 +804,7 @@ export function Home(param: HomeParams) {
 	const activeSigningAddress = useComputed(() =>
 		param.activeSigningAddress.value !== undefined ? getActiveAddressEntry(param.activeSigningAddress.value, param.activeAddresses.value) : undefined
 	)
-	const activeSafe = useComputed(() => getConfiguredSafeSigningEntry(param.activeAddresses.value, {
+	const activeSafe = useComputed(() => getSafeSigningEntry(param.activeAddresses.value, {
 		simulationMode: param.simulationMode.value,
 		useSignersAddressAsActiveAddress: param.useSignersAddressAsActiveAddress.value,
 		activeSimulationAddress: param.activeSimulationAddress.value,

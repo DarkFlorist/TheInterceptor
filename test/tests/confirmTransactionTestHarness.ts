@@ -210,7 +210,7 @@ export async function loadModules() {
 		confirmDialog: popupMessageHandlers.confirmDialog,
 		importSafeStack: popupMessageHandlers.importSafeStack,
 		requestSafeStackExport: popupMessageHandlers.requestSafeStackExport,
-		setActiveSafeSigner: popupMessageHandlers.setActiveSafeSigner,
+		setSafeSimulationSigner: popupMessageHandlers.setSafeSimulationSigner,
 		fetchSimulationStackRequestConfirmation: popupMessageHandlers.fetchSimulationStackRequestConfirmation,
 		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
 		formEthSendTransaction: confirmTransaction.formEthSendTransaction,

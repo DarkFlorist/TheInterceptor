@@ -1,7 +1,6 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { isSafeEntryWithSafeSigner } from '../types/addressBookTypes.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -57,14 +56,14 @@ export async function changeActiveAddressAndChain(
 		const selectedSafe = change.activeAddress === undefined
 			? undefined
 			: allEntries.find((entry) => entry.type === 'safe' && entry.address === change.activeAddress)
-		const safeEntryWithSafeSigner = change.activeAddress === undefined
+		const safeEntryOnActiveChain = change.activeAddress === undefined
 			? undefined
-			: activeChainEntries.find((entry) => entry.address === change.activeAddress && isSafeEntryWithSafeSigner(entry))
+			: activeChainEntries.find((entry) => entry.address === change.activeAddress && entry.type === 'safe')
 		await changeSimulationMode({
 			simulationMode: change.simulationMode,
 			...(selectedSafe === undefined && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
-			...(selectedSafe !== undefined && safeEntryWithSafeSigner === undefined ? { activeSigningAddress: undefined } : {}),
-			...('activeAddress' in change ? { activeSimulationAddress: safeEntryWithSafeSigner?.address } : {}),
+			...(selectedSafe !== undefined && safeEntryOnActiveChain === undefined ? { activeSigningAddress: undefined } : {}),
+			...('activeAddress' in change ? { activeSimulationAddress: safeEntryOnActiveChain?.address } : {}),
 			...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
 		})
 	}

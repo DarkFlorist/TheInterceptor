@@ -946,7 +946,7 @@ export function ConfirmTransaction() {
 							}
 							{ currentPendingTransactionOrSignableMessage.value.type === 'Transaction' && currentPendingTransactionOrSignableMessage.value.safeTransaction !== undefined
 								? <DinoSaysNotification
-									text = { `This transaction will be wrapped as Gnosis Safe transaction nonce ${ currentPendingTransactionOrSignableMessage.value.safeTransaction.safeTx.message.nonce.toString() } and signed by the configured Gnosis Safe signer. It will be added to the local optimistic Gnosis Safe stack, not broadcast automatically.` }
+									text = { `This transaction will be wrapped as Gnosis Safe transaction nonce ${ currentPendingTransactionOrSignableMessage.value.safeTransaction.safeTx.message.nonce.toString() } and signed by the Gnosis Safe owner selected in your wallet. It will be added to the local optimistic Gnosis Safe stack, not broadcast automatically.` }
 									close = { () => undefined }
 								/>
 								: <></>

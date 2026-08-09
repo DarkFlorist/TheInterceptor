@@ -154,7 +154,7 @@ try {
 				entrySource: 'FilledIn',
 				askForAddressAccess: true,
 				useAsActiveAddress: true,
-				safeSignerAddress: '0xfedcbafedcbafedcbafedcbafedcbafedcbafedc',
+				safeSimulationSignerAddress: '0xfedcbafedcbafedcbafedcbafedcbafedcbafedc',
 				safeSignerAddresses: [
 					'0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
 					'0xfedcbafedcbafedcbafedcbafedcbafedcbafedc',
@@ -163,6 +163,7 @@ try {
 			}],
 		})`
 	await addressBook.evaluate(setSafeAddressFixture)
+	await addressBook.evaluate(`browser.storage.local.set({ simulationMode: true })`)
 	await addressBook.close()
 
 	const openSafeEditorFixture = `(() => {
@@ -246,12 +247,17 @@ try {
 	await captureScenario(refreshEditor, 'safe-owner-refresh-pending')
 	await refreshEditor.close()
 
-	console.info('Opening Gnosis Safe signing-mode popup')
+	console.info('Opening Gnosis Safe simulation-mode popup')
 	const popup = await browser.openPage('popup')
 	await waitForSelector(popup, '.popup-home-card')
 	await waitForText(popup, 'Treasury Safe')
-	await waitForText(popup, 'Gnosis Safe signers')
+	await waitForText(popup, 'Simulate as Safe owner')
 	await Bun.sleep(500)
+	await captureScenario(popup, 'safe-simulation-mode')
+	await popup.evaluate(`browser.storage.local.set({ simulationMode: false }).then(() => location.reload())`)
+	await waitForSelector(popup, '.popup-home-card')
+	await waitForText(popup, 'Treasury Safe')
+	await waitForText(popup, 'before signing')
 	await captureScenario(popup, 'safe-signing-mode')
 
 	console.info('Opening Gnosis Safe transaction confirmation')
@@ -369,7 +375,7 @@ try {
 	await captureScenario(settings, 'settings-import-export')
 	await settings.close()
 
-	const expectedScreenshotCount = 80
+	const expectedScreenshotCount = 85
 	const screenshotCount = capturedScenarioCount * viewports.length
 	if (screenshotCount !== expectedScreenshotCount) throw new Error(`Expected ${ expectedScreenshotCount } screenshots, captured ${ screenshotCount }`)
 	console.info(`Captured ${ screenshotCount } deterministic screenshots`)

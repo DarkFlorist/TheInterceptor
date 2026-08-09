@@ -186,7 +186,7 @@ export function createSafeOwnerValidator(
 		const normalizedSignature = normalizeSafeSignature(signature)
 		const signer = await recoverNormalizedSafeSignatureOwner(safeTxHash, normalizedSignature)
 		if (expectedSafeSigner !== undefined && signer !== expectedSafeSigner) {
-			throw new Error(`The wallet signature was created by ${ addressString(signer) }, not the configured Gnosis Safe signer ${ addressString(expectedSafeSigner) }.`)
+			throw new Error(`The wallet signature was created by ${ addressString(signer) }, not the expected wallet-selected Gnosis Safe owner ${ addressString(expectedSafeSigner) }.`)
 		}
 		await assertEoaOwner(signer)
 		return { signer, signature: normalizedSignature }

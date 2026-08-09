@@ -27,7 +27,7 @@ export const popupMessageProtocol = {
 	popup_watchAssetDialog: { domain: 'confirmation' },
 	popup_enableSimulationMode: { domain: 'simulation' },
 	popup_addOrModifyAddressBookEntry: { domain: 'address-book' },
-	popup_setActiveSafeSigner: { domain: 'safe' },
+	popup_setSafeSimulationSigner: { domain: 'safe' },
 	popup_getAddressBookData: { domain: 'address-book' },
 	popup_removeAddressBookEntry: { domain: 'address-book' },
 	popup_openAddressBook: { domain: 'navigation' },

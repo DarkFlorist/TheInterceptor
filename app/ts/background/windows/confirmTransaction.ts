@@ -556,8 +556,10 @@ export async function openConfirmTransactionDialogForMessage(
 	}
 	try {
 		const visualizedPersonalSignRequest = await craftPersonalSignPopupMessage(ethereumClientService, undefined, signedMessageTransaction, ethereumClientService.getRpcEntry())
+		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
+		const walletSignerAddress = signerTabState.activeSigningAddress ?? signerTabState.signerAccounts[0]
 		const safeMessageCoSignSnapshot = !simulationMode && visualizedPersonalSignRequest.type === 'SafeTx'
-			? await createSafeMessageCoSignSnapshot(ethereumClientService, activeAddress, transactionParams, visualizedPersonalSignRequest.message)
+			? await createSafeMessageCoSignSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, visualizedPersonalSignRequest.message)
 			: undefined
 		await pendingConfirmationSemaphore.execute(async () => {
 			const openedDialog = await getPendingTransactionWindow(ethereumClientService, tokenPriceService, websiteTabConnections)
@@ -620,11 +622,14 @@ export async function openConfirmTransactionDialogForTransaction(
 	const transactionIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
 	const created = new Date()
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
+	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
+	const walletSignerAddress = signerTabState.activeSigningAddress ?? signerTabState.signerAccounts[0]
 	const safePreparation = await prepareSafeTransactionConfirmation(
 		ethereumClientService,
 		transactionParams,
 		simulationMode,
 		activeAddress,
+		walletSignerAddress,
 	)
 	if (safePreparation.rejection !== undefined) {
 		return formRejectMessage(safePreparation.rejection.code, safePreparation.rejection.message)

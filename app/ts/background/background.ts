@@ -1,6 +1,6 @@
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
-import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
+import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { getSettings, updateWebsiteAccess } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
@@ -28,7 +28,7 @@ import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequest
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent } from './signerStateOwnership.js'
 import { handleWatchAssetRequest, initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
-import { getConfiguredSafeSigningEntry } from '../types/addressBookTypes.js'
+import { getSafeSignerAddresses, getSafeSigningEntry } from '../types/addressBookTypes.js'
 import { getSafeModeRpcPolicyReply } from '../safe/safeRequestPolicy.js'
 import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
 import { createMethodHandlerFor, hasOwnKey } from '../utils/methodHandlers.js'
@@ -70,6 +70,7 @@ async function handleRPCRequest(
 	simulationOverlayEnabled: boolean,
 	safeSigningMode: boolean,
 	activeSafeSigner: bigint | undefined,
+	knownSafeOwner: bigint | undefined,
 ): Promise<RPCReply> {
 	const maybeParsedRequest = EthereumJsonRpcRequest.safeParse(request)
 	const forwardToSigner = !settings.simulationMode && !request.usingInterceptorWithoutSigner
@@ -160,12 +161,12 @@ async function handleRPCRequest(
 		wallet_getPermissions: rpcRequestHandler('wallet_getPermissions', async () => await getPermissions(activeAddress, website)),
 		wallet_getCapabilities: rpcRequestHandler('wallet_getCapabilities', async (_context, rpcRequest) => {
 			if (rpcRequest.params[0] !== activeAddress) {
-				return getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, activeSafeSigner)
+				return getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, knownSafeOwner)
 			}
-			if (activeSafeSigner === undefined && forwardToSigner) {
+			if (!safeSigningMode && activeSafeSigner === undefined && forwardToSigner) {
 				return { type: 'forwardToSigner', replyWithSignersReply: true, ...request }
 			}
-			return getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, activeSafeSigner)
+			return getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, knownSafeOwner)
 		}),
 		eth_accounts: rpcRequestHandler('eth_accounts', async () => await getAccounts(activeAddress)),
 		eth_requestAccounts: rpcRequestHandler('eth_requestAccounts', async () => await getAccounts(activeAddress)),
@@ -490,14 +491,19 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 			? undefined
 			: currentChainEntries.find((entry) => entry.address === activeAddress)
 		const simulationOverlayEnabled = settings.simulationMode || activeAddressBookEntry?.type === 'safe'
-		const configuredSafe = getConfiguredSafeSigningEntry(currentChainEntries, {
+		const configuredSafe = getSafeSigningEntry(currentChainEntries, {
 			...settings,
 			// The request's active address is captured before async handling begins. Do not reroute an in-flight request if the popup selects another account meanwhile.
 			activeSimulationAddress: activeAddress,
 			chainId: settings.activeRpcNetwork.chainId,
 		})
 		const safeSigningMode = configuredSafe !== undefined
-		const activeSafeSigner = configuredSafe?.safeSignerAddress
+		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
+		const selectedWalletAccount = signerTabState.activeSigningAddress ?? signerTabState.signerAccounts[0]
+		const walletSelectedSafeSigner = configuredSafe === undefined ? undefined : selectedWalletAccount
+		const walletSelectedKnownSafeOwner = configuredSafe !== undefined && selectedWalletAccount !== undefined && getSafeSignerAddresses(configuredSafe).includes(selectedWalletAccount)
+			? selectedWalletAccount
+			: undefined
 		let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
 		let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
 		const getSimulationInput = async () => {
@@ -514,7 +520,7 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 			})()
 			return await executionSimulationStatePromise
 		}
-		const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, activeSafeSigner)
+		const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, walletSelectedSafeSigner, walletSelectedKnownSafeOwner)
 		await persistApprovedAccountsForAccountRequest(
 			ethereum,
 			tokenPriceService,

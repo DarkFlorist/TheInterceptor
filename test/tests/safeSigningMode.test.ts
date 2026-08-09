@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getConfiguredSafeSigningEntry } from '../../app/ts/types/addressBookTypes.js'
+import { getSafeSigningEntry } from '../../app/ts/types/addressBookTypes.js'
 
 const safeEntry = {
 	type: 'safe' as const,
@@ -9,7 +9,7 @@ const safeEntry = {
 	chainId: 1n,
 	entrySource: 'User' as const,
 	useAsActiveAddress: true,
-	safeSignerAddress: 0x5678n,
+	safeSimulationSignerAddress: 0x5678n,
 }
 
 const signingSettings = {
@@ -21,16 +21,17 @@ const signingSettings = {
 
 describe('Gnosis Safe signing-mode selection', () => {
 	test('selects the configured Safe only on its recorded chain', () => {
-		assert.equal(getConfiguredSafeSigningEntry([safeEntry], signingSettings), safeEntry)
-		assert.equal(getConfiguredSafeSigningEntry([safeEntry], { ...signingSettings, chainId: 2n }), undefined)
+		assert.equal(getSafeSigningEntry([safeEntry], signingSettings), safeEntry)
+		assert.equal(getSafeSigningEntry([safeEntry], { ...signingSettings, chainId: 2n }), undefined)
 	})
 
 	test('does not select a Safe in simulation or signer-address mode', () => {
-		assert.equal(getConfiguredSafeSigningEntry([safeEntry], { ...signingSettings, simulationMode: true }), undefined)
-		assert.equal(getConfiguredSafeSigningEntry([safeEntry], { ...signingSettings, useSignersAddressAsActiveAddress: true }), undefined)
+		assert.equal(getSafeSigningEntry([safeEntry], { ...signingSettings, simulationMode: true }), undefined)
+		assert.equal(getSafeSigningEntry([safeEntry], { ...signingSettings, useSignersAddressAsActiveAddress: true }), undefined)
 	})
 
-	test('requires the selected Safe to have an active configured signer', () => {
-		assert.equal(getConfiguredSafeSigningEntry([{ ...safeEntry, safeSignerAddress: undefined }], signingSettings), undefined)
+	test('does not require a simulation signer in signing mode', () => {
+		const safeWithoutSimulationSigner = { ...safeEntry, safeSimulationSignerAddress: undefined }
+		assert.deepEqual(getSafeSigningEntry([safeWithoutSimulationSigner], signingSettings), safeWithoutSimulationSigner)
 	})
 })

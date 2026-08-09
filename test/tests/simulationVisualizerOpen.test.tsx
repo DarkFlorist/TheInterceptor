@@ -903,11 +903,11 @@ describe('simulation visualizer open replies', () => {
 			if (activeSafe?.type !== 'safe') throw new Error('Expected a Safe fixture')
 
 			await act(() => {
-				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, data: { ...update.data, activeAddresses: [{ ...activeSafe, safeSignerAddress: undefined }] } }) }, {}, () => undefined)
+				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, data: { ...update.data, activeAddresses: [{ ...activeSafe, safeSimulationSignerAddress: undefined }] } }) }, {}, () => undefined)
 			})
 
-			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), false)
-			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), false)
+			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), true)
+			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), true)
 		} finally {
 			dom.restore()
 		}

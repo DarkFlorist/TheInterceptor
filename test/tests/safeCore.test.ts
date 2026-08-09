@@ -136,7 +136,7 @@ describe('Safe transaction support', () => {
 			chainId: '0x1',
 			entrySource: 'User',
 			useAsActiveAddress: true,
-			safeSignerAddress: '0x0000000000000000000000000000000000005678',
+			safeSimulationSignerAddress: '0x0000000000000000000000000000000000005678',
 			safeSignerAddresses: [
 				'0x0000000000000000000000000000000000009abc',
 				'0x0000000000000000000000000000000000005678',
@@ -147,10 +147,10 @@ describe('Safe transaction support', () => {
 
 		assert.equal(entry.type, 'safe')
 		assert.equal(entry.address, 0x1234n)
-		assert.equal(entry.safeSignerAddress, 0x5678n)
+		assert.equal(entry.safeSimulationSignerAddress, 0x5678n)
 		assert.deepEqual(getSafeSignerAddresses(entry), [0x9abcn, 0x5678n])
-		assert.deepEqual(getSafeSignerAddresses({ ...entry, safeSignerAddress: 0x9abcn }), [0x9abcn, 0x5678n])
-		assert.deepEqual(getSafeSignerAddresses({ ...entry, safeSignerAddress: 0xdef0n }), [0x9abcn, 0x5678n, 0xdef0n])
+		assert.deepEqual(getSafeSignerAddresses({ ...entry, safeSimulationSignerAddress: 0x9abcn }), [0x9abcn, 0x5678n])
+		assert.deepEqual(getSafeSignerAddresses({ ...entry, safeSimulationSignerAddress: 0xdef0n }), [0x9abcn, 0x5678n, 0xdef0n])
 		assert.equal(entry.abi, '[]')
 	})
 

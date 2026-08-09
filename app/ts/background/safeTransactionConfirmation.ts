@@ -42,6 +42,7 @@ export async function prepareSafeTransactionConfirmation(
 	transactionParams: SendTransactionParams | SendRawTransactionParams,
 	simulationMode: boolean,
 	activeAddress: bigint,
+	walletSignerAddress: bigint | undefined,
 ): Promise<SafeTransactionConfirmationPreparation> {
 	const configuredSafeEntry = simulationMode
 		? undefined
@@ -58,13 +59,13 @@ export async function prepareSafeTransactionConfirmation(
 	}
 
 	const basicExecutionRoute = transactionParams.method === 'eth_sendTransaction'
-		? getSafeExecutionSignerRoute(transactionParams, configuredSafeEntry)
+		? getSafeExecutionSignerRoute(transactionParams, configuredSafeEntry, walletSignerAddress)
 		: undefined
 	let safeExecutionSignerRoute: SafeExecutionSignerRoute | undefined
 	let executionPreparationMessage: string | undefined
 	if (basicExecutionRoute !== undefined && transactionParams.method === 'eth_sendTransaction') {
 		try {
-			safeExecutionSignerRoute = await prepareSafeExecutionSignerRoute(ethereum, transactionParams, configuredSafeEntry)
+			safeExecutionSignerRoute = await prepareSafeExecutionSignerRoute(ethereum, transactionParams, configuredSafeEntry, walletSignerAddress)
 		} catch (error) {
 			executionPreparationMessage = getErrorMessage(error) ?? 'The Gnosis Safe execution transaction could not be prepared.'
 			await reportLocalRecovery(error, {
@@ -114,6 +115,7 @@ export async function prepareSafeTransactionConfirmation(
 						safeExecutionSignerRoute?.transactionParams ?? transactionParams,
 						finalizedTransaction,
 						safeEntry,
+						walletSignerAddress,
 						reconciledStoredSafeState,
 					)
 				} catch (error) {
@@ -170,13 +172,14 @@ async function createSafeSigningRequestForTransaction(
 	transactionParams: SendTransactionParams | SendRawTransactionParams,
 	transactionToSimulate: WebsiteCreatedEthereumTransaction,
 	safeEntry: SafeEntry | undefined,
+	walletSignerAddress: bigint | undefined,
 	reconciledStoredSafeState: ReconciledStoredSafeState | undefined,
 ): Promise<SafeTransactionSigningRequest | undefined> {
 	if (safeEntry === undefined) return undefined
 	if (transactionParams.method !== 'eth_sendTransaction') throw new Error('Gnosis Safe wallets do not support eth_sendRawTransaction.')
 	if (transactionToSimulate.transaction.type === '7702') throw new Error('Gnosis Safe wallets do not support EIP-7702 authorization lists.')
 	if (transactionToSimulate.transaction.to === null) throw new Error('Gnosis Safe wallets do not support contract-creation transactions.')
-	if (safeEntry.safeSignerAddress === undefined) throw new Error('Add a Gnosis Safe signer to this Gnosis Safe address-book entry before using signing mode.')
+	if (walletSignerAddress === undefined) throw new Error('Connect a signer wallet and select a Gnosis Safe owner before using signing mode.')
 	if (reconciledStoredSafeState === undefined) throw new Error('The Gnosis Safe stack was not reconciled before preparing the transaction.')
 
 	const { safeState, storedStack } = reconciledStoredSafeState
@@ -194,7 +197,7 @@ async function createSafeSigningRequestForTransaction(
 	return await createSafeTransactionSigningRequest(
 		ethereum,
 		safeEntry.address,
-		safeEntry.safeSignerAddress,
+		walletSignerAddress,
 		{
 			to: transactionToSimulate.transaction.to,
 			value: transactionToSimulate.transaction.value,
