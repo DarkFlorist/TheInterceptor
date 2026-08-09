@@ -137,12 +137,6 @@ export const AddressBookEntry: funtypes.Runtype<AddressBookEntry> = funtypes.Uni
 	SafeEntry,
 )
 
-export type SafeEntryWithSimulationSigner = SafeEntry & { readonly safeSimulationSignerAddress: EthereumAddress }
-
-export function isSafeEntryWithSimulationSigner(entry: AddressBookEntry | undefined): entry is SafeEntryWithSimulationSigner {
-	return entry?.type === 'safe' && entry.safeSimulationSignerAddress !== undefined
-}
-
 export function getSafeSigningEntry(
 	entries: readonly AddressBookEntry[],
 	settings: {

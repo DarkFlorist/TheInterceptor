@@ -154,7 +154,7 @@ describe('Safe transaction support', () => {
 		assert.equal(entry.abi, '[]')
 	})
 
-	test('does not retain the removed Safe signer preference field', () => {
+	test('intentionally discards the removed signing preference instead of migrating it to the simulation preference', () => {
 		const entry = AddressBookEntry.parse({
 			type: 'safe',
 			name: 'Legacy Safe',
