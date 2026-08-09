@@ -331,10 +331,14 @@ svg[role="img"] {
 	font-size: 12px;
 	line-height: 16px;
 	min-width: 0;
-	overflow: hidden;
+	overflow-wrap: anywhere;
 	padding: 2px 0;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	white-space: normal;
+}
+
+.address-editor-address-field {
+	flex: 1 1 100%;
+	width: 100%;
 }
 
 .address-editor-section {

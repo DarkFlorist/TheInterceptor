@@ -269,13 +269,6 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 							<span>Name</span>
 							<NameInput nameInput = { entry.name } setNameInput = { setName } disabled = { disableDueToSource }/>
 						</label>
-						<label class = 'address-editor-field address-editor-address-field'>
-							<span>Address</span>
-							{ entry.addingAddress
-								? <AddressInput disabled = { disableDueToSource } addressInput = { entry.address } setAddress = { setAddress } />
-								: <code class = 'address-editor-readonly-address' title = { entry.address }>{ entry.address }</code>
-							}
-						</label>
 					</div>
 				</div>
 				<div class = 'address-editor-identity-selectors'>
@@ -288,6 +281,13 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 					<ChainSelector rpcEntries = { rpcEntries } chainId = { selectedChainId } changeChain = { setChain } buttonClassses = { 'btn btn--outline is-small' } ariaLabel = 'Chain'/>
 				</div>
 				</div>
+				<label class = 'address-editor-field address-editor-address-field'>
+					<span>Address</span>
+					{ entry.addingAddress
+						? <AddressInput disabled = { disableDueToSource } addressInput = { entry.address } setAddress = { setAddress } />
+						: <code class = 'address-editor-readonly-address' title = { entry.address }>{ entry.address }</code>
+					}
+				</label>
 			</div>
 			{ entry.type === 'safe' ? <section class = 'address-editor-section address-editor-field--wide address-editor-safe-section'>
 				<div class = 'address-editor-section-heading'>
