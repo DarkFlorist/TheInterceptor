@@ -1,5 +1,6 @@
 import { AMBIRE_LOGO, BRAVE_LOGO, COINBASEWALLET_LOGO, METAMASK_LOGO, RABBY_LOGO } from './constants.js'
 import type { SignerName } from '../types/signerTypes.js'
+import type { TabState } from '../types/user-interface-types.js'
 
 const signerLogos = {
 	MetaMask: METAMASK_LOGO,
@@ -22,4 +23,8 @@ export function getPrettySignerName(signerName: SignerName) {
 export function getSignerLogo(signerName: SignerName) {
 	if (signerName === 'NoSigner' || signerName === 'NotRecognizedSigner' || signerName === 'NoSignerDetected') return undefined
 	return signerLogos[signerName]
+}
+
+export function getWalletSelectedAccount(tabState: Pick<TabState, 'activeSigningAddress' | 'signerAccounts'> | undefined) {
+	return tabState?.activeSigningAddress ?? tabState?.signerAccounts[0]
 }

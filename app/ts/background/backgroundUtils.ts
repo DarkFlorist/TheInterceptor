@@ -8,6 +8,7 @@ import { reportUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 import { getSafeSigningEntry, type AddressBookEntry } from '../types/addressBookTypes.js'
+import { getWalletSelectedAccount } from '../utils/signerMetadata.js'
 
 function isIgnorableExtensionMessagingError(error: Error) {
 	return isIgnorablePortLifecycleError(error)
@@ -54,7 +55,7 @@ export async function getActiveOrFirstSignerAddress(settings: Settings, tabId: n
 	const tabState = await getTabState(tabId)
 	const configuredAddress = await resolveConfiguredActiveAddress(settings)
 	if (configuredAddress.useConfiguredAddress) return configuredAddress.activeAddress
-	const address = tabState.activeSigningAddress ?? tabState.signerAccounts[0]
+	const address = getWalletSelectedAccount(tabState)
 	if (address === undefined) return undefined
 	return await getActiveAddressEntry(address)
 }

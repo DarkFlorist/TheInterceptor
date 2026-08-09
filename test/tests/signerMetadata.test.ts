@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { SignerName } from '../../app/ts/types/signerTypes.js'
-import { getPrettySignerName, getSignerLogo } from '../../app/ts/utils/signerMetadata.js'
+import { getPrettySignerName, getSignerLogo, getWalletSelectedAccount } from '../../app/ts/utils/signerMetadata.js'
 
 describe('signer metadata', () => {
 	test('provides validated names and UI metadata for Ambire and Rabby', () => {
@@ -11,5 +11,12 @@ describe('signer metadata', () => {
 		assert.equal(getPrettySignerName('Rabby'), 'Rabby Wallet')
 		assert.equal(getSignerLogo('Ambire'), '../img/signers/ambire.svg')
 		assert.equal(getSignerLogo('Rabby'), '../img/signers/rabby.svg')
+	})
+
+	test('uses the active wallet account and falls back to the first reported account', () => {
+		assert.equal(getWalletSelectedAccount(undefined), undefined)
+		assert.equal(getWalletSelectedAccount({ activeSigningAddress: undefined, signerAccounts: [] }), undefined)
+		assert.equal(getWalletSelectedAccount({ activeSigningAddress: undefined, signerAccounts: [1n, 2n] }), 1n)
+		assert.equal(getWalletSelectedAccount({ activeSigningAddress: 2n, signerAccounts: [1n, 2n] }), 2n)
 	})
 })

@@ -6,7 +6,7 @@ import { EIP712Message } from '../types/eip721.js'
 import type { SignMessageParams } from '../types/jsonRpc-signing-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import { getErrorMessage } from '../utils/errors.js'
-import { getPrettySignerName } from '../utils/signerMetadata.js'
+import { getPrettySignerName, getWalletSelectedAccount } from '../utils/signerMetadata.js'
 import { modifyObject } from '../utils/typescript.js'
 import { getPendingTransactionsAndMessages, getSafeTransactionStacks, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { assertSafeContractStateUnchanged, createSafeTransactionSigningRequest, getSafeContractState, safeTxToTypedDataJson, type SafeOwnerValidator, validateSafeTransactionForSigning } from '../safe/safeCore.js'
@@ -61,7 +61,7 @@ export async function getSafeSignerMismatchApprovalStatus(
 	const tabState = await getTabState(tabId)
 	const signerName = getPrettySignerName(tabState.signerName)
 	const selectedSigner = refreshedSelection === undefined
-		? tabState.activeSigningAddress ?? tabState.signerAccounts[0]
+		? getWalletSelectedAccount(tabState)
 		: refreshedSelection.selectedSigner
 	if (selectedSigner === reviewedSafeSigner) return undefined
 	const reviewedAddress = checksummedAddress(reviewedSafeSigner)
@@ -214,7 +214,7 @@ async function getRequiredSafeCoSignContext(
 	return context
 }
 
-async function assertSafeProposalSignerReady(
+async function assertSafeProposalReviewPrerequisites(
 	ethereum: EthereumClientService,
 	pending: PendingTransactionOrSignableMessage,
 ) {
@@ -345,7 +345,7 @@ export async function resolveSafeConfirmation(
 	}
 
 	try {
-		await assertSafeProposalSignerReady(ethereum, pending)
+		await assertSafeProposalReviewPrerequisites(ethereum, pending)
 	} catch (error) {
 		return {
 			status: 'blocked',

@@ -22,6 +22,7 @@ import { bigintSecondsToDate, checksummedAddress } from '../../utils/bigint.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
+import { getWalletSelectedAccount } from '../../utils/signerMetadata.js'
 import { updateRichListAddress } from '../../utils/richList.js'
 import { CopySafeTransactionsButton } from '../subcomponents/CopySafeTransactionsButton.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
@@ -415,9 +416,7 @@ function FirstCard(param: FirstCardParams) {
 			getActiveAddressEntry(safeSimulationSignerAddress, param.activeAddresses.value ?? [])
 		)
 	})
-	const selectedSignerAddress = useComputed(() =>
-		param.tabState.value?.activeSigningAddress ?? param.tabState.value?.signerAccounts[0]
-	)
+	const selectedSignerAddress = useComputed(() => getWalletSelectedAccount(param.tabState.value))
 	const walletSignerIsSafeOwner = useComputed(() => {
 		const safe = activeSafe.value
 		return safe !== undefined && selectedSignerAddress.value !== undefined && getSafeSignerAddresses(safe).includes(selectedSignerAddress.value)

@@ -38,6 +38,7 @@ import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalan
 import { prepareSafeTransactionConfirmation } from '../safeTransactionConfirmation.js'
 import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
 import { resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
+import { getWalletSelectedAccount } from '../../utils/signerMetadata.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -46,7 +47,7 @@ const NO_RESPONSE_RETRY_DELAY_MS = 50
 export async function refreshPendingSafeSignerSelectionErrors(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, tabId: number) {
 	const tabState = await getTabState(tabId)
 	const refreshedSelection = {
-		selectedSigner: tabState.activeSigningAddress ?? tabState.signerAccounts[0],
+		selectedSigner: getWalletSelectedAccount(tabState),
 		verificationError: undefined,
 	}
 	let pendingStateChanged = false
@@ -557,7 +558,7 @@ export async function openConfirmTransactionDialogForMessage(
 	try {
 		const visualizedPersonalSignRequest = await craftPersonalSignPopupMessage(ethereumClientService, undefined, signedMessageTransaction, ethereumClientService.getRpcEntry())
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
-		const walletSignerAddress = signerTabState.activeSigningAddress ?? signerTabState.signerAccounts[0]
+		const walletSignerAddress = getWalletSelectedAccount(signerTabState)
 		const safeMessageCoSignSnapshot = !simulationMode && visualizedPersonalSignRequest.type === 'SafeTx'
 			? await createSafeMessageCoSignSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, visualizedPersonalSignRequest.message)
 			: undefined
@@ -623,7 +624,7 @@ export async function openConfirmTransactionDialogForTransaction(
 	const created = new Date()
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
-	const walletSignerAddress = signerTabState.activeSigningAddress ?? signerTabState.signerAccounts[0]
+	const walletSignerAddress = getWalletSelectedAccount(signerTabState)
 	const safePreparation = await prepareSafeTransactionConfirmation(
 		ethereumClientService,
 		transactionParams,

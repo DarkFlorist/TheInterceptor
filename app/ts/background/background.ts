@@ -24,6 +24,7 @@ import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
+import { getWalletSelectedAccount } from '../utils/signerMetadata.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent } from './signerStateOwnership.js'
@@ -499,7 +500,7 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 		})
 		const safeSigningMode = configuredSafe !== undefined
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
-		const selectedWalletAccount = signerTabState.activeSigningAddress ?? signerTabState.signerAccounts[0]
+		const selectedWalletAccount = getWalletSelectedAccount(signerTabState)
 		const walletSelectedSafeSigner = configuredSafe === undefined ? undefined : selectedWalletAccount
 		const walletSelectedKnownSafeOwner = configuredSafe !== undefined && selectedWalletAccount !== undefined && getSafeSignerAddresses(configuredSafe).includes(selectedWalletAccount)
 			? selectedWalletAccount
