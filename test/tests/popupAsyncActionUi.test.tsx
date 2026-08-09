@@ -905,7 +905,7 @@ describe('popup async action UI', () => {
 			await settleAsyncUpdates()
 		})
 		assert.equal(dom.document.body.textContent?.includes('Safe Owner 1'), true)
-		const signerDropdown = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label')?.startsWith('Default Safe simulation signer:'))
+		const signerDropdown = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label')?.startsWith('Safe signer in simulation:'))
 		if (signerDropdown === undefined) throw new Error('Expected Safe signer owner dropdown')
 		await act(async () => { await clickElement(signerDropdown) })
 		const alternateOwnerOption = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Safe Owner 2'))

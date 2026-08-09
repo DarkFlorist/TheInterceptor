@@ -229,6 +229,7 @@ describe('add new address save flow', () => {
 		assert.match(addNewAddressSource, /<textarea[^>]+class = 'input address-editor-address-input'/s)
 		assert.match(addNewAddressSource, /rows = \{ 1 \}/)
 		assert.match(addNewAddressSource, /replaceAll\('\\n', ''\)\.replaceAll\('\\r', ''\)/)
+		assert.doesNotMatch(addNewAddressSource, /What should we call this address/)
 	})
 
 	test('renders on-chain Gnosis Safe owners as signer choices', () => {
@@ -240,12 +241,14 @@ describe('add new address save flow', () => {
 		assert.match(addNewAddressSource, /ariaLabel = 'Chain'/)
 		assert.match(addNewAddressSource, /class = 'address-editor-heading'>Safe owners/)
 		assert.match(addNewAddressSource, /class = 'safe-signer-editor-dropdown'/)
-		assert.match(addNewAddressSource, /ariaLabel = 'Default Safe simulation signer'/)
+		assert.match(addNewAddressSource, /<span>Safe signer in simulation<\/span>/)
+		assert.match(addNewAddressSource, /ariaLabel = 'Safe signer in simulation'/)
 		assert.match(addNewAddressSource, /<SmallAddress addressBookEntry = \{ getActiveAddressEntry\(address, safeSimulationSignerAddressBookEntries\.value\) \}/)
 		assert.match(addNewAddressSource, /safeSimulationSignerAddressBookEntries\.value = safeContractState\.ownerAddressBookEntries/)
 		assert.match(addNewAddressSource, /onChangedCallBack = \{ safeSimulationSignerAddress => \{ void setSafeSignerAddress\(safeSimulationSignerAddress\) \} \}/)
 		assert.doesNotMatch(addNewAddressSource, /name = 'active-safe-signer'/)
 		assert.doesNotMatch(addNewAddressSource, /Add Gnosis Safe signer/)
+		assert.doesNotMatch(addNewAddressSource, /Choose the owner used when simulating transactions|Enter a deployed Safe address|Choose how Interceptor uses this address/)
 		assert.match(addNewAddressSource, /hasSafeSigners \? 'Refresh owners' : 'Retrieve owners'/)
 		assert.match(addNewAddressSource, /safeSignerRefreshGeneration\.value \+= 1/)
 		assert.match(addNewAddressSource, /safeContractState\.owners\.map\(checksummedAddress\)/)

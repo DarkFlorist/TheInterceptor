@@ -27,7 +27,8 @@ type AddressIconParams = {
 
 const AddressIconFrame = ({ isBig, children }: { isBig: boolean, children?: ComponentChildren }) => {
 	const cssProperties: JSX.CSSProperties = { backgroundColor: 'var(--unimportant-text-color)', fontSize: isBig ? '2.5em' : '1.5em' }
-	return <div style = { cssProperties } class = 'noselect nopointer'>{ children }</div>
+	const className = `address-icon-frame noselect nopointer${ children === undefined ? ' address-icon-frame--empty' : '' }`
+	return <div style = { cssProperties } class = { className } aria-hidden = 'true'>{ children }</div>
 }
 
 export function AddressIcon(param: AddressIconParams) {

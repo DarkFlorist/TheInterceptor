@@ -36,7 +36,7 @@ import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization
 import { identifyAddress } from '../metadataUtils.js'
 import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
 import { prepareSafeTransactionConfirmation } from '../safeTransactionConfirmation.js'
-import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, isSafeSignerSelectionFailure, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
+import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, isSafeSignerSelectionFailure, refreshSafeTransactionSignerSelection, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
 import { resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/signerMetadata.js'
 
@@ -53,6 +53,34 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 	let pendingStateChanged = false
 	for (const pending of await getPendingTransactionsAndMessages()) {
 		const safeSignerAddress = getPendingSafeSignerAddress(pending)
+		if (
+			pending.type === 'Transaction'
+			&& pending.safeTransaction !== undefined
+			&& refreshedSelection.selectedSigner !== undefined
+			&& pending.uniqueRequestIdentifier.requestSocket.tabId === tabId
+			&& (
+				pending.approvalStatus.status === 'WaitingForUser'
+				|| pending.approvalStatus.status === 'SignerError' && pending.approvalStatus.code === SAFE_SIGNER_SELECTION_ERROR_CODE
+			)
+			&& (
+				pending.safeTransaction.safeSignerAddress !== refreshedSelection.selectedSigner
+				|| pending.approvalStatus.status === 'SignerError'
+			)
+		) {
+			const refreshedTransaction = await refreshSafeTransactionSignerSelection(ethereum, pending, refreshedSelection.selectedSigner)
+			if (refreshedTransaction === undefined) continue
+			if (
+				refreshedTransaction.approvalStatus.status === 'SignerError'
+				&& pending.approvalStatus.status === 'SignerError'
+				&& pending.approvalStatus.message === refreshedTransaction.approvalStatus.message
+			) continue
+			await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => {
+				if (current.type !== 'Transaction' || current.safeTransaction === undefined) return current
+				return modifyObject(current, refreshedTransaction)
+			})
+			pendingStateChanged = true
+			continue
+		}
 		if (
 			safeSignerAddress === undefined
 			|| pending.uniqueRequestIdentifier.requestSocket.tabId !== tabId

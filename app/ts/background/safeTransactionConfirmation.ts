@@ -7,9 +7,10 @@ import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_METHOD_NOT_SUPPO
 import { getErrorMessage, reportLocalRecovery } from '../utils/errors.js'
 import { getPendingTransactionsAndMessages, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { reconcileStoredSafeState, type ReconciledStoredSafeState } from './safeStackState.js'
-import { createSafeTransactionSigningRequest } from '../safe/safeCore.js'
+import { createSafeTransactionReviewRequest, createSafeTransactionSigningRequest, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
 import { getSafeExecutionSignerRoute, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
-import { getSafeSignerMismatchApprovalStatus } from './safeConfirmationResolver.js'
+import { getSafeSignerMismatchApprovalStatus, SAFE_SIGNER_SELECTION_ERROR_CODE } from './safeConfirmationResolver.js'
+import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 
 type SafeExecutionSignerRoute = NonNullable<Awaited<ReturnType<typeof prepareSafeExecutionSignerRoute>>>
 
@@ -108,6 +109,7 @@ export async function prepareSafeTransactionConfirmation(
 		async finalize(transactionToSimulate, tabId) {
 			let finalizedTransaction = transactionToSimulate
 			let safeTransaction: SafeTransactionSigningRequest | undefined
+			let safeSignerSelectionError: SafeSignerErrorStatus | undefined
 			if (finalizedTransaction.success) {
 				try {
 					safeTransaction = await createSafeSigningRequestForTransaction(
@@ -119,27 +121,44 @@ export async function prepareSafeTransactionConfirmation(
 						reconciledStoredSafeState,
 					)
 				} catch (error) {
-					const message = getErrorMessage(error) ?? 'The Gnosis Safe transaction could not be prepared.'
-					await reportLocalRecovery(error, {
-						code: 'safe_transaction_preparation_failed',
-						message: 'Showing the Gnosis Safe preparation failure in the confirmation window.',
-						details: error instanceof Error ? error.stack : undefined,
-					})
-					finalizedTransaction = {
-						website: finalizedTransaction.website,
-						created: finalizedTransaction.created,
-						originalRequestParameters: safeExecutionSignerRoute?.transactionParams ?? transactionParams,
-						transactionIdentifier: finalizedTransaction.transactionIdentifier,
-						success: false,
-						error: { code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, message },
+					if (isSafeOwnerValidationFailure(error)) {
+						safeTransaction = await createSafeSigningRequestForTransaction(
+							ethereum,
+							safeExecutionSignerRoute?.transactionParams ?? transactionParams,
+							finalizedTransaction,
+							safeEntry,
+							walletSignerAddress,
+							reconciledStoredSafeState,
+							false,
+						)
+						safeSignerSelectionError = createSafeSignerErrorStatus(
+							getErrorMessage(error) ?? 'Select a current Gnosis Safe owner in the signer wallet before signing.',
+							SAFE_SIGNER_SELECTION_ERROR_CODE,
+						)
+					} else {
+						const message = getErrorMessage(error) ?? 'The Gnosis Safe transaction could not be prepared.'
+						await reportLocalRecovery(error, {
+							code: 'safe_transaction_preparation_failed',
+							message: 'Showing the Gnosis Safe preparation failure in the confirmation window.',
+							details: error instanceof Error ? error.stack : undefined,
+						})
+						finalizedTransaction = {
+							website: finalizedTransaction.website,
+							created: finalizedTransaction.created,
+							originalRequestParameters: safeExecutionSignerRoute?.transactionParams ?? transactionParams,
+							transactionIdentifier: finalizedTransaction.transactionIdentifier,
+							success: false,
+							error: { code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, message },
+						}
 					}
 				}
 			}
-			const approvalStatus = safeTransaction === undefined
+			const approvalStatus = safeSignerSelectionError ?? (safeTransaction === undefined
 				? safeExecutionSignerRoute === undefined
 					? undefined
 					: await getSafeSignerMismatchApprovalStatus(tabId, safeExecutionSignerRoute.executor)
 				: await getSafeSignerMismatchApprovalStatus(tabId, safeTransaction.safeSignerAddress)
+			)
 			return { transactionToSimulate: finalizedTransaction, safeTransaction, approvalStatus, pendingSafeFields }
 		},
 	}
@@ -174,6 +193,7 @@ async function createSafeSigningRequestForTransaction(
 	safeEntry: SafeEntry | undefined,
 	walletSignerAddress: bigint | undefined,
 	reconciledStoredSafeState: ReconciledStoredSafeState | undefined,
+	validateOwner = true,
 ): Promise<SafeTransactionSigningRequest | undefined> {
 	if (safeEntry === undefined) return undefined
 	if (transactionParams.method !== 'eth_sendTransaction') throw new Error('Gnosis Safe wallets do not support eth_sendRawTransaction.')
@@ -194,7 +214,8 @@ async function createSafeSigningRequestForTransaction(
 	))
 	let nonce = firstUncommittedNonce
 	while (pendingSafeTransactionNonces.has(nonce)) nonce += 1n
-	return await createSafeTransactionSigningRequest(
+	const createRequest = validateOwner ? createSafeTransactionSigningRequest : createSafeTransactionReviewRequest
+	return await createRequest(
 		ethereum,
 		safeEntry.address,
 		walletSignerAddress,

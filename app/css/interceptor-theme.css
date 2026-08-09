@@ -310,6 +310,19 @@ svg[role="img"] {
 	line-height: 22px !important;
 }
 
+.address-icon-frame {
+	border-radius: 6px;
+	box-sizing: border-box;
+	height: 1em;
+	overflow: hidden;
+	width: 1em;
+}
+
+.address-icon-frame--empty {
+	background: color-mix(in srgb, var(--text-color) 5%, transparent) !important;
+	border: 1px solid var(--layout-line-color);
+}
+
 .address-editor-address-input {
 	field-sizing: content;
 	font-family: monospace;
@@ -409,13 +422,6 @@ svg[role="img"] {
 	white-space: nowrap;
 }
 
-.address-editor-section-description {
-	color: var(--subtitle-text-color);
-	font-size: 12px;
-	line-height: 16px;
-	margin: 1px 0 0;
-}
-
 .safe-signer-editor-dropdown {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
@@ -442,13 +448,6 @@ svg[role="img"] {
 .safe-signer-dropdown-address > .inline-card {
 	max-width: 100%;
 	min-width: 0;
-}
-
-.safe-signer-editor-empty {
-	color: var(--subtitle-text-color);
-	font-size: 12px;
-	line-height: 16px;
-	margin: 0;
 }
 
 .address-editor-token-fields {
@@ -498,17 +497,6 @@ svg[role="img"] {
 .address-editor-disclosure[open] > summary::after,
 .address-editor-preference-disclosure[open] > summary::after {
 	transform: rotate(90deg);
-}
-
-.address-editor-disclosure > summary span {
-	display: grid;
-}
-
-.address-editor-disclosure > summary small {
-	color: var(--subtitle-text-color);
-	font-size: 12px;
-	font-weight: 400;
-	line-height: 16px;
 }
 
 .address-editor-disclosure-content {

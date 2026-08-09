@@ -8,6 +8,7 @@ import { addressString, bytes32String, dataStringWith0xStart, stringToUint8Array
 import { ensureHex } from '../utils/ethereumBytes.js'
 import { recoverAddress } from '../utils/ethereumPrimitives.js'
 import { getSafeTxHash } from '../utils/eip712.js'
+import { createTaggedError, isTaggedError } from '../utils/caughtErrors.js'
 
 const SUPPORTED_SAFE_VERSIONS = ['1.3.0', '1.4.0', '1.4.1'] as const
 
@@ -107,13 +108,11 @@ export type SafeOwnerValidator = {
 }
 
 function createSafeOwnerValidationFailure(message: string) {
-	const error = new Error(message)
-	error.name = 'SafeOwnerValidationFailure'
-	return error
+	return createTaggedError(message, 'safeOwnerValidationFailure')
 }
 
 export function isSafeOwnerValidationFailure(error: unknown) {
-	return error instanceof Error && error.name === 'SafeOwnerValidationFailure'
+	return isTaggedError(error, 'safeOwnerValidationFailure')
 }
 
 function canonicalSafeOwners(owners: readonly bigint[]) {
@@ -292,6 +291,29 @@ async function validateSafeTransactionForSigningAtBlock(
 	blockNumber: bigint,
 	expectedSafeVersion?: string,
 ) {
+	const context = await validateSafeTransactionStateAtBlock(ethereum, safeAddress, safeTx, blockNumber, expectedSafeVersion)
+	await context.ownerValidator.assertEoaOwner(safeSignerAddress)
+	return await validateSafeTransactionHashAtBlock(ethereum, safeAddress, safeTx, blockNumber, context)
+}
+
+async function validateSafeTransactionForReviewAtBlock(
+	ethereum: EthereumClientService,
+	safeAddress: EthereumAddress,
+	safeTx: SafeTx,
+	blockNumber: bigint,
+	expectedSafeVersion?: string,
+) {
+	const context = await validateSafeTransactionStateAtBlock(ethereum, safeAddress, safeTx, blockNumber, expectedSafeVersion)
+	return await validateSafeTransactionHashAtBlock(ethereum, safeAddress, safeTx, blockNumber, context)
+}
+
+async function validateSafeTransactionStateAtBlock(
+	ethereum: EthereumClientService,
+	safeAddress: EthereumAddress,
+	safeTx: SafeTx,
+	blockNumber: bigint,
+	expectedSafeVersion?: string,
+) {
 	const chainId = ethereum.getChainId()
 	if (chainId === 0n) throw new Error('Gnosis Safe transactions require a chain ID.')
 	if (safeTx.domain.chainId !== chainId) throw new Error('The Gnosis Safe transaction chain ID does not match the selected chain.')
@@ -305,11 +327,45 @@ async function validateSafeTransactionForSigningAtBlock(
 		throw new Error(`The Gnosis Safe transaction nonce ${ safeTx.message.nonce.toString() } is older than the current nonce ${ state.nonce.toString() }.`)
 	}
 	const ownerValidator = createSafeOwnerValidator(ethereum, safeAddress, { blockNumber, state })
-	await ownerValidator.assertEoaOwner(safeSignerAddress)
+	return { safeState: state, ownerValidator }
+}
+
+async function validateSafeTransactionHashAtBlock(
+	ethereum: EthereumClientService,
+	safeAddress: EthereumAddress,
+	safeTx: SafeTx,
+	blockNumber: bigint,
+	context: { readonly safeState: SafeContractState, readonly ownerValidator: SafeOwnerValidator },
+) {
 	const localHash = BigInt(getSafeTxHash(safeTx))
 	const contractHash = await getSafeTransactionHashFromContract(ethereum, safeAddress, safeTx, blockNumber)
 	if (localHash !== contractHash) throw new Error('The locally computed Gnosis Safe transaction hash does not match the Gnosis Safe contract.')
-	return { safeTxHash: localHash, safeState: state, ownerValidator }
+	return { safeTxHash: localHash, ...context }
+}
+
+async function createSafeTransactionRequest(
+	ethereum: EthereumClientService,
+	safeAddress: EthereumAddress,
+	safeSignerAddress: EthereumAddress,
+	transaction: { readonly to: EthereumAddress, readonly value: bigint, readonly input: Uint8Array, readonly gas: bigint },
+	nonce: bigint,
+	validateOwner: boolean,
+): Promise<SafeTransactionSigningRequest> {
+	const safeTx = createSafeTx(ethereum.getChainId(), safeAddress, transaction, nonce)
+	const blockNumber = await ethereum.getBlockNumber(undefined)
+	const validation = validateOwner
+		? await validateSafeTransactionForSigningAtBlock(ethereum, safeAddress, safeSignerAddress, safeTx, blockNumber)
+		: await validateSafeTransactionForReviewAtBlock(ethereum, safeAddress, safeTx, blockNumber)
+	return {
+		safeAddress,
+		safeSignerAddress,
+		safeVersion: validation.safeState.version,
+		threshold: validation.safeState.threshold,
+		reviewedSafeState: validation.safeState,
+		safeTxHash: validation.safeTxHash,
+		safeTx,
+		executionGasLimit: transaction.gas,
+	}
 }
 
 export async function createSafeTransactionSigningRequest(
@@ -319,18 +375,17 @@ export async function createSafeTransactionSigningRequest(
 	transaction: { readonly to: EthereumAddress, readonly value: bigint, readonly input: Uint8Array, readonly gas: bigint },
 	nonce: bigint,
 ): Promise<SafeTransactionSigningRequest> {
-	const safeTx = createSafeTx(ethereum.getChainId(), safeAddress, transaction, nonce)
-	const { safeTxHash, safeState } = await validateSafeTransactionForSigning(ethereum, safeAddress, safeSignerAddress, safeTx)
-	return {
-		safeAddress,
-		safeSignerAddress,
-		safeVersion: safeState.version,
-		threshold: safeState.threshold,
-		reviewedSafeState: safeState,
-		safeTxHash,
-		safeTx,
-		executionGasLimit: transaction.gas,
-	}
+	return await createSafeTransactionRequest(ethereum, safeAddress, safeSignerAddress, transaction, nonce, true)
+}
+
+export async function createSafeTransactionReviewRequest(
+	ethereum: EthereumClientService,
+	safeAddress: EthereumAddress,
+	safeSignerAddress: EthereumAddress,
+	transaction: { readonly to: EthereumAddress, readonly value: bigint, readonly input: Uint8Array, readonly gas: bigint },
+	nonce: bigint,
+): Promise<SafeTransactionSigningRequest> {
+	return await createSafeTransactionRequest(ethereum, safeAddress, safeSignerAddress, transaction, nonce, false)
 }
 
 export function safeTxToTypedDataJson(safeTx: SafeTx) {

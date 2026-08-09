@@ -20,6 +20,14 @@ export function createInterceptorInternalError(message: string, interceptorError
 	return Object.assign(new Error(message), { interceptorErrorCode })
 }
 
+export function createTaggedError<Tag extends string>(message: string, tag: Tag) {
+	return Object.assign(new Error(message), { interceptorErrorTag: tag })
+}
+
+export function isTaggedError<Tag extends string>(error: unknown, tag: Tag): error is Error & { readonly interceptorErrorTag: Tag } {
+	return error instanceof Error && 'interceptorErrorTag' in error && error.interceptorErrorTag === tag
+}
+
 export function getInterceptorInternalErrorCode(error: unknown): InterceptorInternalErrorCode | undefined {
 	if (typeof error !== 'object' || error === null || !('interceptorErrorCode' in error)) return undefined
 	const code = error.interceptorErrorCode

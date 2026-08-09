@@ -6,7 +6,7 @@ import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages
 import { getErrorMessage, getInterceptorInternalErrorCode, isBrowserFetchTransportError } from './caughtErrors.js'
 import { NEW_BLOCK_ABORT } from './constants.js'
 import { createErrorDebugId, createUnexpectedErrorPopupMessage } from './unexpectedErrorPopupMessage.js'
-export { createInterceptorInternalError, getErrorMessage } from './caughtErrors.js'
+export { createInterceptorInternalError, createTaggedError, getErrorMessage, isTaggedError } from './caughtErrors.js'
 
 export const GENERIC_UNEXPECTED_ERROR_MESSAGE = 'An internal Interceptor error occurred. Please see The Interceptor console for technical details.'
 

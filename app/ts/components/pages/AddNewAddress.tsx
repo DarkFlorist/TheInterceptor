@@ -116,7 +116,6 @@ function NameInput({ nameInput, setNameInput, disabled }: NameInputParams) {
 		class = 'input address-editor-name-input'
 		type = 'text'
 		value = { nameInput }
-		placeholder = { 'What should we call this address?' }
 		onInput = { e => setNameInput((e.target as HTMLInputElement).value) }
 		maxLength = { MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH }
 		ref = { ref }
@@ -292,10 +291,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 			</div>
 			{ entry.type === 'safe' ? <section class = 'address-editor-section address-editor-field--wide address-editor-safe-section'>
 				<div class = 'address-editor-section-heading'>
-					<div>
-						<p class = 'address-editor-heading'>Safe owners{ hasSafeSigners ? ` · ${ safeSignerAddresses.value.length }` : '' }</p>
-						<p class = 'address-editor-section-description'>Choose the owner used when simulating transactions.</p>
-					</div>
+					<p class = 'address-editor-heading'>Safe owners{ hasSafeSigners ? ` · ${ safeSignerAddresses.value.length }` : '' }</p>
 					<AsyncActionButton
 						class = 'btn btn--outline is-small'
 						state = { safeSignerLookupState }
@@ -307,10 +303,10 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 				</div>
 				{ hasSafeSigners
 					? <div class = 'safe-signer-editor-dropdown'>
-						<span>Simulation owner</span>
-						<DropDownMenu selected = { selectedSafeSignerAddress } dropDownOptions = { safeSignerAddresses } onChangedCallBack = { safeSimulationSignerAddress => { void setSafeSignerAddress(safeSimulationSignerAddress) } } buttonClassses = 'btn btn--outline is-small' ariaLabel = 'Default Safe simulation signer' disabled = { disableDueToSource } renderOption = { renderSafeSigner }/>
+						<span>Safe signer in simulation</span>
+						<DropDownMenu selected = { selectedSafeSignerAddress } dropDownOptions = { safeSignerAddresses } onChangedCallBack = { safeSimulationSignerAddress => { void setSafeSignerAddress(safeSimulationSignerAddress) } } buttonClassses = 'btn btn--outline is-small' ariaLabel = 'Safe signer in simulation' disabled = { disableDueToSource } renderOption = { renderSafeSigner }/>
 					</div>
-					: <p class = 'paragraph safe-signer-editor-empty'>Enter a deployed Safe address on a specific chain, then retrieve its owners.</p>
+					: <></>
 				}
 			</section> : <></> }
 			{ entry.type === 'ERC20' || entry.type === 'ERC721' || entry.type === 'ERC1155' ? <div class = 'address-editor-token-fields address-editor-field--wide'>
@@ -325,10 +321,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 			</div> : <></> }
 			<details class = 'address-editor-disclosure address-editor-field--wide' open = { entry.abi !== undefined }>
 				<summary>
-					<span>
-						<strong>Advanced details</strong>
-						<small>Contract ABI</small>
-					</span>
+					<strong>Advanced details</strong>
 				</summary>
 				<div class = 'address-editor-disclosure-content'>
 					<div class = 'address-editor-section-heading'>
@@ -348,10 +341,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 		</div>
 		<section class = 'address-editor-preferences'>
 			<div class = 'address-editor-preferences-heading'>
-				<div>
-					<p class = 'address-editor-heading'>Usage preferences</p>
-					<p class = 'address-editor-section-description'>Choose how Interceptor uses this address.</p>
-				</div>
+				<p class = 'address-editor-heading'>Usage preferences</p>
 				<label class = 'address-editor-setting address-editor-setting--primary'>
 					<span>Use as active address</span>
 					<input role = 'switch' type = 'checkbox' checked = { entry.useAsActiveAddress } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setUseAsActiveAddress(e.target.checked) } } } />
