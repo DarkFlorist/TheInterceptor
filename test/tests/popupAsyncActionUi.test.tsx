@@ -591,7 +591,7 @@ describe('popup async action UI', () => {
 
 		const buttons = collectElements(dom.document.body, 'button')
 		const fetchButton = buttons.find((button) => button.textContent?.includes('Fetch from Block Explorer'))
-		const modifyButton = buttons.find((button) => button.textContent?.includes('Modify'))
+		const modifyButton = buttons.find((button) => button.textContent?.includes('Save changes'))
 		const cancelButton = buttons.find((button) => button.textContent?.includes('Cancel'))
 		if (fetchButton === undefined || modifyButton === undefined || cancelButton === undefined) throw new Error('Expected address modal buttons to render')
 
@@ -831,8 +831,8 @@ describe('popup async action UI', () => {
 			await settleAsyncUpdates()
 		})
 		assert.equal(dom.document.body.textContent?.includes(signerAddress), true)
-		const modifyButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.trim() === 'Modify')
-		if (modifyButton === undefined) throw new Error('Expected Modify button')
+		const modifyButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.trim() === 'Save changes')
+		if (modifyButton === undefined) throw new Error('Expected Save changes button')
 		await act(async () => { await clickElement(modifyButton) })
 		assert.equal(JSON.stringify(saveMessage).includes(signerAddress), true)
 		render(null, dom.document.body)
@@ -912,7 +912,7 @@ describe('popup async action UI', () => {
 		if (alternateOwnerOption === undefined) throw new Error('Expected alternate Safe owner option')
 		await act(async () => { await clickElement(alternateOwnerOption) })
 		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.safeSimulationSignerAddress, '0x3333333333333333333333333333333333333333')
-		const refreshButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Refresh signers'))
+		const refreshButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Refresh owners'))
 		if (refreshButton === undefined) throw new Error('Expected Safe signer refresh button')
 		await act(async () => {
 			void clickElement(refreshButton)

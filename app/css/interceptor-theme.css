@@ -199,31 +199,32 @@ svg[role="img"] {
 
 .address-editor {
 	display: grid;
-	gap: 0.6em;
+	gap: 12px;
 	min-width: 0;
 }
 
 .address-editor-heading {
 	color: var(--text-color);
-	font-size: 0.9em;
+	font-size: 13px;
 	font-weight: 600;
+	line-height: 18px;
 	margin: 0;
 }
 
 .address-editor-fields {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.55em 0.7em;
+	display: grid;
+	gap: 12px;
 	min-width: 0;
 }
 
 .address-editor-field {
 	display: grid;
-	flex: 1 1 8rem;
 	align-content: start;
-	gap: 0.2em;
+	gap: 4px;
 	color: var(--subtitle-text-color);
-	font-size: 0.75em;
+	font-size: 12px;
+	font-weight: 500;
+	line-height: 16px;
 	min-width: 0;
 }
 
@@ -233,36 +234,85 @@ svg[role="img"] {
 	width: 100%;
 }
 
-.address-editor-field :where(.btn, .input) {
-	min-height: 2.2em;
+.address-editor-field :where(.btn, .input),
+.safe-signer-editor-dropdown .btn {
+	font-size: 14px;
+	min-height: 32px;
 }
 
-.address-editor-name-field {
-	flex: 1 1 11rem;
-	grid-template-columns: max-content minmax(0, 1fr);
-	column-gap: 0.65rem;
+.address-editor .input,
+.address-editor .address-editor-field .btn,
+.address-editor .safe-signer-editor-dropdown .btn {
+	background: color-mix(in srgb, var(--text-color) 5%, transparent);
+	border: 1px solid var(--white-alpha-20);
+	border-radius: 6px;
+	box-shadow: none;
+	box-sizing: border-box;
+	color: var(--text-color);
+	line-height: 20px;
+	padding: 5px 10px;
 }
 
-.address-editor-identity-selectors {
-	display: grid;
-	flex: 1 1 14rem;
-	gap: 0.35em;
+.address-editor .input:hover,
+.address-editor .address-editor-field .btn:hover,
+.address-editor .safe-signer-editor-dropdown .btn:hover {
+	background: var(--white-alpha-10);
+	border: 1px solid var(--highlighted-primary-color);
+}
+
+.address-editor .input:focus,
+.address-editor .address-editor-field .btn:focus,
+.address-editor .safe-signer-editor-dropdown .btn:focus {
+	border: 1px solid var(--primary-color);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 22%, transparent);
+}
+
+.address-editor-identity {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: start;
+	gap: 16px;
 	min-width: 0;
 }
 
-.address-editor-identity-selectors > .address-editor-field {
-	grid-template-columns: max-content minmax(0, 1fr);
-	align-items: center;
-	column-gap: 0.5rem;
+.address-editor-primary-identity {
+	display: grid;
+	flex: 3 1 240px;
+	grid-template-columns: 44px minmax(0, 1fr);
+	align-items: start;
+	gap: 12px;
+	min-width: 0;
 }
 
-.address-editor-name-field > :first-child {
-	grid-row: 1 / 3;
-	align-self: center;
+.address-editor-address-icon {
+	display: grid;
+	place-items: center;
+	min-height: 44px;
+	padding-top: 17px;
 }
 
-.address-editor-name-field > :not(:first-child) {
-	grid-column: 2;
+.address-editor-identity-copy,
+.address-editor-identity-selectors {
+	display: grid;
+	gap: 8px;
+	min-width: 0;
+}
+
+.address-editor-identity-selectors {
+	flex: 2 1 160px;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr));
+}
+
+.address-editor-name-input {
+	font-size: 16px !important;
+	font-weight: 600;
+	line-height: 22px !important;
+}
+
+.address-editor-address-input {
+	font-family: monospace;
+	font-size: 12px !important;
+	line-height: 16px !important;
 }
 
 .address-editor .input:disabled {
@@ -271,40 +321,37 @@ svg[role="img"] {
 }
 
 .address-editor-field--wide {
-	flex-basis: 100%;
-}
-
-.address-editor-field--compact-address {
-	display: grid;
-	grid-template-columns: max-content minmax(0, 1fr);
-	align-items: baseline;
-	gap: 0.5em;
+	width: 100%;
 }
 
 .address-editor-readonly-address {
-	color: var(--disabled-text-color);
+	color: var(--text-color);
+	display: block;
+	font-family: monospace;
+	font-size: 12px;
+	line-height: 16px;
 	min-width: 0;
 	overflow: hidden;
-	padding: 0;
+	padding: 2px 0;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
 .address-editor-section {
 	display: grid;
-	gap: 0.4em;
-	background: var(--white-alpha-10);
+	gap: 8px;
+	background: color-mix(in srgb, var(--text-color) 5%, transparent);
 	border: 1px solid var(--layout-line-color);
-	border-radius: 6px;
+	border-radius: 8px;
 	min-width: 0;
-	padding: 0.55em 0.65em;
+	padding: 10px 12px;
 }
 
 .address-editor-section-heading {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	gap: 0.5em;
+	gap: 8px;
 }
 
 .address-editor-section-heading > :first-child {
@@ -316,13 +363,21 @@ svg[role="img"] {
 	white-space: nowrap;
 }
 
+.address-editor-section-description {
+	color: var(--subtitle-text-color);
+	font-size: 12px;
+	line-height: 16px;
+	margin: 1px 0 0;
+}
+
 .safe-signer-editor-dropdown {
 	display: grid;
-	grid-template-columns: max-content minmax(0, 1fr);
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
 	align-items: center;
-	gap: 0.5em;
+	gap: 10px;
 	color: var(--subtitle-text-color);
-	font-size: 0.75em;
+	font-size: 12px;
+	font-weight: 500;
 	min-width: 0;
 }
 
@@ -345,16 +400,214 @@ svg[role="img"] {
 
 .safe-signer-editor-empty {
 	color: var(--subtitle-text-color);
-	font-size: 0.75em;
+	font-size: 12px;
+	line-height: 16px;
 	margin: 0;
 }
 
-.address-editor-preferences {
-	gap: 0.3em;
+.address-editor-token-fields {
+	display: grid;
+	grid-template-columns: minmax(0, 2fr) minmax(96px, 1fr);
+	gap: 12px;
 }
 
-.address-editor-preferences .form-control {
-	line-height: 1.2;
+.address-editor-disclosure,
+.address-editor-preferences {
+	background: color-mix(in srgb, var(--text-color) 5%, transparent);
+	border: 1px solid var(--layout-line-color);
+	border-radius: 8px;
+	min-width: 0;
+}
+
+.address-editor-disclosure > summary,
+.address-editor-preference-disclosure > summary {
+	align-items: center;
+	color: var(--text-color);
+	cursor: pointer;
+	display: flex;
+	font-size: 13px;
+	font-weight: 600;
+	justify-content: space-between;
+	line-height: 18px;
+	list-style: none;
+	padding: 10px 12px;
+}
+
+.address-editor-disclosure > summary::-webkit-details-marker,
+.address-editor-preference-disclosure > summary::-webkit-details-marker {
+	display: none;
+}
+
+.address-editor-disclosure > summary::after,
+.address-editor-preference-disclosure > summary::after {
+	color: var(--subtitle-text-color);
+	content: '›';
+	font-size: 20px;
+	font-weight: 400;
+	line-height: 16px;
+	transform: rotate(0deg);
+	transition: transform 120ms ease;
+}
+
+.address-editor-disclosure[open] > summary::after,
+.address-editor-preference-disclosure[open] > summary::after {
+	transform: rotate(90deg);
+}
+
+.address-editor-disclosure > summary span {
+	display: grid;
+}
+
+.address-editor-disclosure > summary small {
+	color: var(--subtitle-text-color);
+	font-size: 12px;
+	font-weight: 400;
+	line-height: 16px;
+}
+
+.address-editor-disclosure-content {
+	border-top: 1px solid var(--layout-line-color);
+	display: grid;
+	gap: 8px;
+	padding: 10px 12px 12px;
+}
+
+.address-editor-preferences {
+	display: grid;
+}
+
+.address-editor-preferences-heading {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	justify-content: space-between;
+	padding: 10px 12px;
+}
+
+.address-editor-setting {
+	align-items: center;
+	color: var(--text-color);
+	cursor: pointer;
+	display: flex;
+	font-size: 13px;
+	gap: 12px;
+	justify-content: space-between;
+	line-height: 18px;
+}
+
+.address-editor-setting > span {
+	display: grid;
+	min-width: 0;
+}
+
+.address-editor-setting small {
+	color: var(--subtitle-text-color);
+	font-size: 12px;
+	font-weight: 400;
+	line-height: 16px;
+}
+
+.address-editor-setting--primary {
+	white-space: nowrap;
+}
+
+.address-editor-preference-disclosure {
+	border-top: 1px solid var(--layout-line-color);
+}
+
+.address-editor-preference-content {
+	display: grid;
+	gap: 10px;
+	padding: 0 12px 12px;
+}
+
+.address-editor input[role=switch] {
+	appearance: none;
+	background: var(--white-alpha-20);
+	border: 1px solid var(--layout-line-color);
+	border-radius: 999px;
+	box-sizing: border-box;
+	cursor: pointer;
+	display: block;
+	flex: 0 0 auto;
+	height: 20px;
+	margin: 0;
+	padding: 2px;
+	width: 36px;
+}
+
+.address-editor input[role=switch]::before {
+	background: var(--text-color);
+	border-radius: 50%;
+	content: '';
+	display: block;
+	height: 14px;
+	transform: translateX(0);
+	transition: transform 120ms ease;
+	width: 14px;
+}
+
+.address-editor input[role=switch]:checked {
+	background: var(--primary-color);
+	border-color: var(--primary-color);
+}
+
+.address-editor input[role=switch]:checked::before {
+	background: var(--black-color);
+	transform: translateX(16px);
+}
+
+.address-editor-errors:empty {
+	display: none;
+}
+
+.address-editor-errors {
+	display: grid;
+	gap: 8px;
+	padding-top: 10px;
+}
+
+.address-editor-modal {
+	border: 1px solid var(--layout-line-color);
+	border-radius: 10px;
+	box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+	max-width: min(468px, calc(100% - 32px));
+}
+
+.address-editor-modal .interceptor-modal-head {
+	border-bottom: 1px solid var(--layout-line-color);
+	min-height: 48px;
+	padding: 0 8px 0 16px;
+}
+
+.address-editor-modal .card-header-title {
+	font-size: 16px;
+	font-weight: 600;
+	line-height: 20px;
+	padding: 0;
+}
+
+.address-editor-modal .modal-card-body {
+	background: var(--card-bg-color);
+	padding: 16px;
+}
+
+.window-footer.address-editor-footer {
+	background: var(--card-bg-color);
+	border-top: 1px solid var(--layout-line-color) !important;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	justify-content: flex-end;
+	min-height: 56px;
+	padding: 10px 16px !important;
+}
+
+.address-editor-footer .btn {
+	font-size: 14px;
+	min-height: 34px;
+	white-space: nowrap;
 }
 
 input[type=checkbox]:not([role=switch]) {

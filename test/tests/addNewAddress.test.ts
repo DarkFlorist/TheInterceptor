@@ -175,7 +175,7 @@ describe('add new address save flow', () => {
 	})
 
 	test('shows the required symbol field for every token address type', () => {
-		assert.match(addNewAddressSource, /type === 'ERC20' \|\| modifyAddressWindowState\.value\.incompleteAddressBookEntry\.type === 'ERC721' \|\| modifyAddressWindowState\.value\.incompleteAddressBookEntry\.type === 'ERC1155'/)
+		assert.match(addNewAddressSource, /entry\.type === 'ERC20' \|\| entry\.type === 'ERC721' \|\| entry\.type === 'ERC1155'/)
 	})
 
 	test('keeps non-blocking block explorer errors when validation has no error', () => {
@@ -232,7 +232,7 @@ describe('add new address save flow', () => {
 		assert.match(addNewAddressSource, /<AddressIcon address = \{ stringToAddress[^\n]+isBig = \{ true \}/)
 		assert.match(addNewAddressSource, /ariaLabel = 'Address type'/)
 		assert.match(addNewAddressSource, /ariaLabel = 'Chain'/)
-		assert.match(addNewAddressSource, /class = 'address-editor-heading'>Safe owners<\/p>/)
+		assert.match(addNewAddressSource, /class = 'address-editor-heading'>Safe owners/)
 		assert.match(addNewAddressSource, /class = 'safe-signer-editor-dropdown'/)
 		assert.match(addNewAddressSource, /ariaLabel = 'Default Safe simulation signer'/)
 		assert.match(addNewAddressSource, /<SmallAddress addressBookEntry = \{ getActiveAddressEntry\(address, safeSimulationSignerAddressBookEntries\.value\) \}/)
@@ -240,7 +240,7 @@ describe('add new address save flow', () => {
 		assert.match(addNewAddressSource, /onChangedCallBack = \{ safeSimulationSignerAddress => \{ void setSafeSignerAddress\(safeSimulationSignerAddress\) \} \}/)
 		assert.doesNotMatch(addNewAddressSource, /name = 'active-safe-signer'/)
 		assert.doesNotMatch(addNewAddressSource, /Add Gnosis Safe signer/)
-		assert.match(addNewAddressSource, /hasSafeSigners \? 'Refresh signers' : 'Retrieve signers'/)
+		assert.match(addNewAddressSource, /hasSafeSigners \? 'Refresh owners' : 'Retrieve owners'/)
 		assert.match(addNewAddressSource, /safeSignerRefreshGeneration\.value \+= 1/)
 		assert.match(addNewAddressSource, /safeContractState\.owners\.map\(checksummedAddress\)/)
 		assert.match(addNewAddressSource, /address\.toLowerCase\(\) === currentSafeSignerAddress\.toLowerCase\(\)/)
@@ -248,7 +248,7 @@ describe('add new address save flow', () => {
 
 	test('shows pending feedback while an address-book modification is saved', () => {
 		assert.match(addNewAddressSource, /state = \{ saveEntryState\.value\.state \}/)
-		assert.match(addNewAddressSource, /pendingText = \{ param\.modifyAddressWindowState\.value\.incompleteAddressBookEntry\.addingAddress \? 'Creating\.\.\.' : 'Modifying\.\.\.' \}/)
+		assert.match(addNewAddressSource, /pendingText = \{ param\.modifyAddressWindowState\.value\.incompleteAddressBookEntry\.addingAddress \? 'Creating\.\.\.' : 'Saving\.\.\.' \}/)
 		assert.match(addNewAddressSource, /await waitForSaveEntry\(async \(\) => \{[\s\S]*?saveAddressBookEntryAndSwitch/)
 		assert.match(addNewAddressSource, /'Modifying and switching\.\.\.'/)
 		assert.match(addNewAddressSource, /saveEntryState\.value\.state === 'pending' \|\| isAddressBookSubmissionDisabled/)

@@ -118,7 +118,7 @@ try {
 		await Bun.sleep(100)
 		await addressBook.evaluate(`(() => {
 			const nameInput = document.querySelector('.modal.is-active .address-editor-name-field input')
-			const addressInput = document.querySelector('.modal.is-active label.address-editor-field--wide input')
+			const addressInput = document.querySelector('.modal.is-active .address-editor-address-input')
 			if (nameInput instanceof HTMLInputElement) {
 				nameInput.value = 'Example ${ addressType }'
 				nameInput.dispatchEvent(new InputEvent('input', { bubbles: true, data: nameInput.value }))
@@ -208,18 +208,18 @@ try {
 		if (!(editButton instanceof HTMLElement)) throw new Error('Gnosis Safe Edit button was not found')
 		editButton.click()
 	})()`)
-	await waitForText(safeEditor, 'Refresh signers')
+	await waitForText(safeEditor, 'Refresh owners')
 	await captureScenario(safeEditor, 'safe-owner-retrieval')
 	await safeEditor.evaluate(`(() => {
 		browser.runtime.sendMessage = async (message) => {
 			if (message?.method === 'popup_addOrModifyAddressBookEntry') return await new Promise(() => undefined)
 			return undefined
 		}
-		const modifyButton = [...document.querySelectorAll('.modal.is-active button')].find((element) => element.textContent?.trim() === 'Modify')
-		if (!(modifyButton instanceof HTMLElement)) throw new Error('Modify button was not found')
+		const modifyButton = [...document.querySelectorAll('.modal.is-active button')].find((element) => element.textContent?.trim() === 'Save changes')
+		if (!(modifyButton instanceof HTMLElement)) throw new Error('Save changes button was not found')
 		modifyButton.click()
 	})()`)
-	await waitForText(safeEditor, 'Modifying...')
+	await waitForText(safeEditor, 'Saving...')
 	await captureScenario(safeEditor, 'safe-modify-pending')
 	await safeEditor.close()
 
@@ -232,15 +232,15 @@ try {
 		if (!(editButton instanceof HTMLElement)) throw new Error('Gnosis Safe Edit button was not found')
 		editButton.click()
 	})()`)
-	await waitForText(refreshEditor, 'Refresh signers')
+	await waitForText(refreshEditor, 'Refresh owners')
 	await refreshEditor.evaluate(`(() => {
 		browser.runtime.sendMessage = async (message) => {
 			if (message?.method === 'popup_requestIdentifyAddress') return { method: 'popup_requestIdentifyAddress', data: { chainId: '0x1', addressBookEntry: undefined } }
 			if (message?.method === 'popup_requestSafeContractState') return await new Promise(() => undefined)
 			return undefined
 		}
-		const refreshButton = [...document.querySelectorAll('.modal.is-active button')].find((element) => element.textContent?.includes('Refresh signers'))
-		if (!(refreshButton instanceof HTMLElement)) throw new Error('Refresh signers button was not found')
+		const refreshButton = [...document.querySelectorAll('.modal.is-active button')].find((element) => element.textContent?.includes('Refresh owners'))
+		if (!(refreshButton instanceof HTMLElement)) throw new Error('Refresh owners button was not found')
 		refreshButton.click()
 	})()`)
 	await waitForText(refreshEditor, 'Refreshing...')
