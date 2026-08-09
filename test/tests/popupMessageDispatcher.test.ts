@@ -9,6 +9,8 @@ const storageState: Record<string, unknown> = {}
 const sentMessages: unknown[] = []
 const dynamicRuleUpdates: unknown[] = []
 const dispatcherEvents: ({ type: 'message', message: unknown } | { type: 'dynamicRuleUpdate' })[] = []
+let storageSetError: Error | undefined
+let dynamicRuleUpdateError: Error | undefined
 
 Reflect.set(globalThis, 'chrome', { runtime: { id: 'test-extension' } })
 Reflect.set(globalThis, 'browser', {
@@ -32,6 +34,7 @@ Reflect.set(globalThis, 'browser', {
 				return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 			},
 			async set(items: Record<string, unknown>) {
+				if (storageSetError !== undefined) throw storageSetError
 				Object.assign(storageState, items)
 			},
 			async remove(keys: string | string[]) {
@@ -66,6 +69,7 @@ Reflect.set(globalThis, 'browser', {
 		getDynamicRules: async () => [],
 		getSessionRules: async () => [],
 		updateDynamicRules: async (update: unknown) => {
+			if (dynamicRuleUpdateError !== undefined) throw dynamicRuleUpdateError
 			dynamicRuleUpdates.push(update)
 			dispatcherEvents.push({ type: 'dynamicRuleUpdate' })
 			return undefined
@@ -76,11 +80,13 @@ Reflect.set(globalThis, 'browser', {
 
 const [
 	{ dispatchPopupMessage },
+	{ getLatestUnexpectedError },
 	{ EthereumClientService: EthereumClientServiceConstructor },
 	{ TokenPriceService: TokenPriceServiceConstructor },
 	{ MessageToPopup },
 ] = await Promise.all([
 	import('../../app/ts/background/popupMessageDispatcher.js'),
+	import('../../app/ts/background/storageVariables.js'),
 	import('../../app/ts/simulation/services/EthereumClientService.js'),
 	import('../../app/ts/simulation/services/priceEstimator.js'),
 	import('../../app/ts/types/interceptor-messages.js'),
@@ -121,6 +127,8 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 }
 
 beforeEach(() => {
+	storageSetError = undefined
+	dynamicRuleUpdateError = undefined
 	for (const key of Object.keys(storageState)) delete storageState[key]
 	sentMessages.splice(0, sentMessages.length)
 	dynamicRuleUpdates.splice(0, dynamicRuleUpdates.length)
@@ -128,6 +136,78 @@ beforeEach(() => {
 })
 
 describe('popup message dispatcher seams', () => {
+	test('returns a save failure when address-book persistence fails', async () => {
+		storageSetError = new Error('Address-book storage unavailable.')
+
+		const result = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: {
+				type: 'contact',
+				name: 'Alice',
+				address: 1n,
+				entrySource: 'User',
+			},
+		})
+
+		assert.deepEqual(result, {
+			type: 'AddOrModifyAddressBookEntryReply',
+			ok: false,
+			message: 'Address-book storage unavailable.',
+		})
+	})
+
+	test('returns and records a failure when active-address access refresh fails', async () => {
+		storageState.websiteAccess = [{
+			website: {
+				websiteOrigin: 'address-book-refresh-failure.test',
+				icon: undefined,
+				title: 'Address-book refresh failure',
+			},
+			addressAccess: [],
+			access: true,
+			declarativeNetRequestBlockMode: 'block-all',
+		}]
+		dynamicRuleUpdateError = new Error('Access refresh unavailable.')
+
+		const result = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: {
+				type: 'contact',
+				name: 'Alice',
+				address: 1n,
+				entrySource: 'User',
+				useAsActiveAddress: true,
+			},
+		})
+		const latestUnexpectedError = await getLatestUnexpectedError()
+
+		assert.deepEqual(result, {
+			type: 'AddOrModifyAddressBookEntryReply',
+			ok: false,
+			message: 'Access refresh unavailable.',
+		})
+		assert.equal(latestUnexpectedError?.data.source, 'address_book_save')
+		assert.equal(latestUnexpectedError?.data.code, 'address_book_save_failed')
+
+		dynamicRuleUpdateError = undefined
+		const retryResult = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: {
+				type: 'contact',
+				name: 'Alice',
+				address: 1n,
+				entrySource: 'User',
+				useAsActiveAddress: true,
+			},
+		})
+
+		assert.deepEqual(retryResult, {
+			type: 'AddOrModifyAddressBookEntryReply',
+			ok: true,
+		})
+		assert.equal(dynamicRuleUpdates.length, 1)
+	})
+
 	test('delegates simulation reset through the injected lifecycle callback', async () => {
 		let resetCount = 0
 		const result = await dispatchPopupMessage(createDispatcherContext(async () => {
