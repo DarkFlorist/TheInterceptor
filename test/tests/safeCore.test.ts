@@ -128,7 +128,7 @@ describe('Safe transaction support', () => {
 		assert.deepEqual(SafeStackExport.parse(SafeStackExport.serialize(stack)), stack)
 	})
 
-	test('parses a chain-specific Safe address-book entry with an optional Safe signer', () => {
+	test('parses a chain-specific Safe address-book entry with an optional simulation signer', () => {
 		const entry = AddressBookEntry.parse({
 			type: 'safe',
 			name: 'Treasury Safe',
@@ -150,8 +150,24 @@ describe('Safe transaction support', () => {
 		assert.equal(entry.safeSimulationSignerAddress, 0x5678n)
 		assert.deepEqual(getSafeSignerAddresses(entry), [0x9abcn, 0x5678n])
 		assert.deepEqual(getSafeSignerAddresses({ ...entry, safeSimulationSignerAddress: 0x9abcn }), [0x9abcn, 0x5678n])
-		assert.deepEqual(getSafeSignerAddresses({ ...entry, safeSimulationSignerAddress: 0xdef0n }), [0x9abcn, 0x5678n, 0xdef0n])
+		assert.deepEqual(getSafeSignerAddresses({ ...entry, safeSimulationSignerAddress: 0xdef0n }), [0x9abcn, 0x5678n])
 		assert.equal(entry.abi, '[]')
+	})
+
+	test('does not retain the removed Safe signer preference field', () => {
+		const entry = AddressBookEntry.parse({
+			type: 'safe',
+			name: 'Legacy Safe',
+			address: '0x0000000000000000000000000000000000001234',
+			chainId: '0x1',
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			safeSignerAddress: '0x0000000000000000000000000000000000005678',
+		})
+
+		assert.equal(entry.type, 'safe')
+		assert.equal(entry.safeSimulationSignerAddress, undefined)
+		assert.equal('safeSignerAddress' in entry, false)
 	})
 
 	test('reads Safe metadata and validates configured EOA owners from its snapshot', async () => {

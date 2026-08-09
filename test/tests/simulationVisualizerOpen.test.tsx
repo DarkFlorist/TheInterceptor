@@ -374,7 +374,7 @@ function createStackHomePageUpdate(tabId: number, popupRefreshGeneration: number
 		...update,
 		data: {
 			...update.data,
-			activeAddresses: [{ type: 'safe', name: 'Test Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSignerAddress: 0x1000000000000000000000000000000000000001n }],
+			activeAddresses: [{ type: 'safe', name: 'Test Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSimulationSignerAddress: 0x1000000000000000000000000000000000000001n }],
 			visualizedSimulatorState: createSimulatedCompleteVisualizedSimulation(serializableSettings, transactionIdentifiers, numberOfAddressesMadeRich),
 			settings: serializableSettings,
 			rpcEntries: [serializableSettings.activeRpcNetwork],

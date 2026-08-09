@@ -1468,7 +1468,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			chainId: 1n,
 			entrySource: 'User',
 			useAsActiveAddress: true,
-			safeSimulationSignerAddress: 0x1818181818181818181818181818181818181818n,
+			safeSimulationSignerAddress: 0x1919191919191919191919191919191919191919n,
 			safeSignerAddresses: [signerAddress],
 			safeVersion: '1.4.1',
 		}])

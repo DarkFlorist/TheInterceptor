@@ -117,8 +117,6 @@ export const SafeEntry = funtypes.ReadonlyObject({
 	useAsActiveAddress: funtypes.Boolean,
 }).And(funtypes.Partial({
 	safeSimulationSignerAddress: EthereumAddress,
-	// Legacy import/storage field. Normalize to safeSimulationSignerAddress before persisting.
-	safeSignerAddress: EthereumAddress,
 	safeSignerAddresses: funtypes.ReadonlyArray(EthereumAddress),
 	safeVersion: funtypes.String,
 	logoUri: funtypes.String,
@@ -168,9 +166,7 @@ export function getSafeSigningEntry(
 }
 
 export function getSafeSignerAddresses(entry: SafeEntry) {
-	const configuredSigners = Array.from(new Set(entry.safeSignerAddresses ?? []))
-	if (entry.safeSimulationSignerAddress === undefined || configuredSigners.includes(entry.safeSimulationSignerAddress)) return configuredSigners
-	return [...configuredSigners, entry.safeSimulationSignerAddress]
+	return Array.from(new Set(entry.safeSignerAddresses ?? []))
 }
 
 export type AddressBookEntries = readonly AddressBookEntry[]

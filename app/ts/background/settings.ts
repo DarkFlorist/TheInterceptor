@@ -5,7 +5,7 @@ import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
 import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { getUserAddressBookEntries, repairLegacyAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
+import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
@@ -247,9 +247,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
 	}
 	if (exportedSetings.version === '1.4') {
-		const migratedEntries = repairLegacyAddressBookEntries(exportedSetings.settings.addressBookEntries)
-		if (migratedEntries === undefined) throw new Error('The imported address book is invalid.')
-		await updateUserAddressBookEntries(() => migratedEntries)
+		await updateUserAddressBookEntries(() => exportedSetings.settings.addressBookEntries)
 	} else {
 		await updateUserAddressBookEntries((previousEntries) => {
 			const convertActiveAddressToAddressBookEntry = (info: ActiveAddress): AddressBookEntry => ({ ...info, type: 'contact' as const, useAsActiveAddress: true, entrySource: 'User' as const })
