@@ -773,8 +773,8 @@ test('shows the wallet-selected Safe owner without a signer selector in signing 
 			const popupText = dom.document.body.textContent ?? ''
 			assert.equal(popupText.includes('Treasury Safe'), true)
 			assert.equal(popupText.includes('0x3000000000000000000000000000000000000003'), true)
-			assert.equal(popupText.includes('MetaMask has an eligible Gnosis Safe owner selected.'), true)
-			assert.equal(popupText.includes('0x4000000000000000000000000000000000000004'), false)
+			assert.equal(popupText.includes('Interceptor verifies this account against the current Gnosis Safe owners when signing.'), true)
+			assert.equal(popupText.includes('0x4000000000000000000000000000000000000004'), true)
 			assert.equal(popupText.includes('0x5000000000000000000000000000000000000005'), false)
 			assert.equal(collectElements(dom.document.body, 'input').filter((element) => element.getAttribute?.('name') === 'active-safe-signer').length, 0)
 			const signerOptions = collectElements(dom.document.body, 'label').filter((element) =>
@@ -783,7 +783,7 @@ test('shows the wallet-selected Safe owner without a signer selector in signing 
 			assert.equal(signerOptions.length, 0)
 			assert.equal(popupText.includes('CONNECTED'), true)
 			assert.equal(popupText.includes('NOT CONNECTED'), false)
-			assert.equal(popupText.includes('MetaMask has an eligible Gnosis Safe owner selected.'), true)
+			assert.equal(popupText.includes('Interceptor verifies this account against the current Gnosis Safe owners when signing.'), true)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
@@ -1094,7 +1094,7 @@ test('copies and edits a Safe simulation signer without changing the selection',
 		}
 	})
 
-test('shows a disconnected Safe when the wallet-selected address is not an owner', async () => {
+test('does not infer Safe ownership from cached owners in signing mode', async () => {
 		const dom = installDomMock()
 		try {
 			await act(() => {
@@ -1120,8 +1120,9 @@ test('shows a disconnected Safe when the wallet-selected address is not an owner
 
 			const popupText = dom.document.body.textContent ?? ''
 			assert.equal(popupText.includes('Gnosis Safe signers'), false)
-			assert.equal(popupText.includes('NOT CONNECTED'), true)
-			assert.equal(popupText.includes('MetaMask has 0x6000000000000000000000000000000000000006 selected, but that account is not a current Gnosis Safe owner.'), true)
+			assert.equal(popupText.includes('CONNECTED'), true)
+			assert.equal(popupText.includes('NOT CONNECTED'), false)
+			assert.equal(popupText.includes('MetaMask has 0x6000000000000000000000000000000000000006 selected. Interceptor verifies this account against the current Gnosis Safe owners when signing.'), true)
 			const retrievalStatus = collectElements(dom.document.body, 'p').find((element) =>
 				element.getAttribute?.('class') === 'popup-home-retrieval-status'
 			)

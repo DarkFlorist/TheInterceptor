@@ -6,7 +6,7 @@ import type { EditEnsNamedHashWindowState, ModifyAddressWindowState, SimulationA
 import { addressEditEntry } from '../ui-utils.js'
 import { ErrorBoundary, ErrorComponent, UnexpectedError } from '../subcomponents/Error.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
-import { BroomIcon, ChevronIcon, ExportIcon, ImportIcon } from '../subcomponents/icons.js'
+import { BroomIcon, ChevronIcon, CopyIcon, ExportIcon, ImportIcon } from '../subcomponents/icons.js'
 import { clipboardCopy } from '../subcomponents/clipboardcopy.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
@@ -49,23 +49,22 @@ function getMadeRichAddressBookEntries(
 	return [...entries, getActiveAddressEntry(activeSimulationAddress, activeAddresses)]
 }
 
-function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSimulation, disableReset, showSafeActions }: {
+function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSimulation, disableReset, showSafeSigningActions }: {
 	openImportSimulation: () => void
 	openImportSafe: () => void
 	resetSimulation: () => Promise<void>
 	disableReset: Signal<boolean>
-	showSafeActions: boolean
+	showSafeSigningActions: boolean
 }) {
 	const { value: exportSimulationStackState, waitFor: waitForExportSimulationStack } = useAsyncState<void>()
 	const { value: clearSimulationStackState, waitFor: waitForClearSimulationStack } = useAsyncState<void>()
 	const latestExportType = useSignal<'simulation' | 'safe' | undefined>(undefined)
 	const safeCopyError = useSignal<string | undefined>(undefined)
-	const exportError = useComputed(() => {
-		if (latestExportType.value === 'safe') return safeCopyError.value
-		return latestExportType.value === 'simulation' && exportSimulationStackState.value.state === 'rejected'
+	const exportError = latestExportType.value === 'safe'
+		? showSafeSigningActions ? safeCopyError.value : undefined
+		: latestExportType.value === 'simulation' && exportSimulationStackState.value.state === 'rejected'
 			? exportSimulationStackState.value.error.message
 			: undefined
-	})
 
 	const exportSimulationStack = async () => {
 		const reply = await requestPopupInterceptorSimulationInput()
@@ -84,59 +83,79 @@ function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSim
 	}
 
 	return <header class = 'simulation-stack-page-header'>
-		<div class = 'simulation-stack-page-title'>
-			<h1>Simulation Stack</h1>
-			<p>Import, export, and adjust the simulation stack.</p>
-		</div>
-		<div class = 'simulation-stack-page-actions'>
-			<button class = 'btn btn--outline' type = 'button' onClick = { openImportSimulation } title = 'Import simulation stack' aria-label = 'Import simulation stack'>
-				<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-					<ImportIcon/>
-				</span>
-				<span>Import</span>
-			</button>
+		<div class = 'simulation-stack-page-heading'>
+			<div class = 'simulation-stack-page-title'>
+				<h1>Simulation Stack</h1>
+				<p>Import, export, and adjust the simulation stack.</p>
+			</div>
 			<AsyncActionButton
-				class = 'btn btn--outline'
+				class = 'btn btn--outline simulation-stack-page-clear'
 				type = 'button'
-				state = { exportSimulationStackState.value.state }
-				onClick = { exportStack }
-				text = { <>
-					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-						<ExportIcon/>
-					</span>
-					<span>Export simulation</span>
-				</> }
-				pendingText = 'Exporting simulation stack...'
-			/>
-			{ showSafeActions ? <>
-			<button class = 'btn btn--outline' type = 'button' onClick = { openImportSafe }>Import Gnosis Safe transactions</button>
-			<CopySafeTransactionsButton
-				class = 'btn btn--outline'
-				onCopyStart = { () => {
-					latestExportType.value = 'safe'
-					safeCopyError.value = undefined
-				} }
-				onCopyError = { (message) => { safeCopyError.value = message } }
-			/>
-			</> : <></> }
-			<AsyncActionButton
-				class = 'btn btn--destructive'
-				type = 'button'
+				ariaLabel = 'Clear simulation stack'
+				pendingAriaLabel = 'Clearing simulation stack...'
+				title = 'Clear simulation stack'
 				state = { clearSimulationStackState.value.state }
 				disabled = { disableReset.value }
 				onClick = { clearStack }
 				text = { <>
-					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-						<BroomIcon />
-					</span>
-					<span>Clear</span>
+					<span class = 'simulation-stack-action-icon'><BroomIcon /></span>
+					<span class = 'simulation-stack-clear-label'>Clear stack</span>
 				</> }
 				pendingText = 'Clearing simulation stack...'
 			/>
 		</div>
-		{ exportError.value === undefined ? <></> :
+		<nav class = 'simulation-stack-page-actions' aria-label = 'Simulation stack actions'>
+			<div class = 'simulation-stack-action-group'>
+				<div class = 'simulation-stack-action-label'>
+					<strong>Simulation</strong>
+					<span>Entire stack</span>
+				</div>
+				<div class = 'simulation-stack-action-controls'>
+					<button class = 'btn btn--outline' type = 'button' onClick = { openImportSimulation } title = 'Import simulation stack' aria-label = 'Import simulation stack'>
+						<span class = 'simulation-stack-action-icon'><ImportIcon/></span>
+						<span>Import simulation</span>
+					</button>
+					<AsyncActionButton
+						class = 'btn btn--outline'
+						type = 'button'
+						state = { exportSimulationStackState.value.state }
+						onClick = { exportStack }
+						text = { <>
+							<span class = 'simulation-stack-action-icon'><ExportIcon/></span>
+							<span>Export simulation</span>
+						</> }
+						pendingText = 'Exporting simulation stack...'
+					/>
+				</div>
+			</div>
+			{ showSafeSigningActions ? <div class = 'simulation-stack-action-group'>
+				<div class = 'simulation-stack-action-label'>
+					<strong>Gnosis Safe</strong>
+					<span>Proposals and signatures</span>
+				</div>
+				<div class = 'simulation-stack-action-controls'>
+					<button class = 'btn btn--outline' type = 'button' onClick = { openImportSafe }>
+						<span class = 'simulation-stack-action-icon'><ImportIcon/></span>
+						<span>Import Gnosis Safe transactions</span>
+					</button>
+					<CopySafeTransactionsButton
+						class = 'btn btn--outline'
+						text = { <>
+							<span class = 'simulation-stack-action-icon'><CopyIcon/></span>
+							<span>Copy Gnosis Safe transactions</span>
+						</> }
+						onCopyStart = { () => {
+							latestExportType.value = 'safe'
+							safeCopyError.value = undefined
+						} }
+						onCopyError = { (message) => { safeCopyError.value = message } }
+					/>
+				</div>
+			</div> : <></> }
+		</nav>
+		{ exportError === undefined ? <></> :
 			<div class = 'simulation-stack-page-action-error'>
-				<ErrorComponent text = { exportError.value } containerStyle = { { margin: '0' } }/>
+				<ErrorComponent text = { exportError } containerStyle = { { margin: '0' } }/>
 			</div>
 		}
 	</header>
@@ -286,7 +305,7 @@ export function SimulationStackPage() {
 		return isEmptySimulation(simVisResults.value.value)
 	})
 	// Safe import and copy are signing-mode controls: intentionally hide both unless a Safe is the active account on this chain.
-	const showSafeActions = useComputed(() => getSafeSigningEntry(activeAddresses.value, {
+	const showSafeSigningActions = useComputed(() => getSafeSigningEntry(activeAddresses.value, {
 		simulationMode: simulationMode.value,
 		useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress.value,
 		activeSimulationAddress: activeSimulationAddress.value,
@@ -388,7 +407,7 @@ export function SimulationStackPage() {
 					openImportSafe = { () => { modalState.value = { page: 'importSafe', state: new Signal('') } } }
 					resetSimulation = { resetSimulation }
 					disableReset = { disableReset }
-					showSafeActions = { showSafeActions.value }
+					showSafeSigningActions = { showSafeSigningActions.value }
 				/>
 				<div class = 'simulation-stack-page-body'>
 					<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>

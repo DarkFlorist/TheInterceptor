@@ -417,12 +417,8 @@ function FirstCard(param: FirstCardParams) {
 		)
 	})
 	const selectedSignerAddress = useComputed(() => getWalletSelectedAccount(param.tabState.value))
-	const walletSignerIsSafeOwner = useComputed(() => {
-		const safe = activeSafe.value
-		return safe !== undefined && selectedSignerAddress.value !== undefined && getSafeSignerAddresses(safe).includes(selectedSignerAddress.value)
-	})
 	const signerAvailable = useComputed(() =>
-		activeSafe.value === undefined ? isSignerAvailable(param.tabState.value) : walletSignerIsSafeOwner.value
+		activeSafe.value === undefined ? isSignerAvailable(param.tabState.value) : selectedSignerAddress.value !== undefined
 	)
 	const isActiveAddressLoading = !param.isFreshHomeDataLoaded.value && param.activeAddress.value === undefined
 
@@ -594,11 +590,9 @@ function FirstCard(param: FirstCardParams) {
 						: <p class = 'subtitle is-7 safe-signer-connection-message'> {
 							activeSafe.value === undefined
 								? ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }`
-								: walletSignerIsSafeOwner.value
-									? `${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } has an eligible Gnosis Safe owner selected.`
-									: selectedSignerAddress.value === undefined
-										? `Select a Gnosis Safe owner in ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } before signing.`
-										: `${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } has ${ checksummedAddress(selectedSignerAddress.value) } selected, but that account is not a current Gnosis Safe owner.`
+								: selectedSignerAddress.value === undefined
+									? `Select a Gnosis Safe owner in ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } before signing.`
+									: `${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } has ${ checksummedAddress(selectedSignerAddress.value) } selected. Interceptor verifies this account against the current Gnosis Safe owners when signing.`
 						} </p>
 					}
 				</> : !param.isFreshHomeDataLoaded.value ?

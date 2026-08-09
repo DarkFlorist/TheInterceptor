@@ -108,6 +108,7 @@ export const ContractEntry = funtypes.ReadonlyObject({
 }))
 
 export type SafeEntry = funtypes.Static<typeof SafeEntry>
+// `safeSignerAddress` is intentionally absent: signing uses the wallet-selected owner, and simulation has its own explicit preference.
 export const SafeEntry = funtypes.ReadonlyObject({
 	type: funtypes.Literal('safe'),
 	name: funtypes.String,

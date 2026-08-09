@@ -1469,7 +1469,8 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			entrySource: 'User',
 			useAsActiveAddress: true,
 			safeSimulationSignerAddress: 0x1919191919191919191919191919191919191919n,
-			safeSignerAddresses: [signerAddress],
+			// Capability discovery must not depend on cached owners; signing performs fresh on-chain validation.
+			safeSignerAddresses: [],
 			safeVersion: '1.4.1',
 		}])
 		await updateWebsiteAccess(() => [{
@@ -1539,8 +1540,17 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			method: 'wallet_getCapabilities',
 			params: [addressString(safeAddress), ['0x1']],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
-		const capabilityReplyForNonOwner = messages.find((message) => message.method === 'wallet_getCapabilities' && message.requestId === 33)
-		assert.deepEqual(capabilityReplyForNonOwner?.result, {})
+		const capabilityReplyForChangedWalletSigner = messages.find((message) => message.method === 'wallet_getCapabilities' && message.requestId === 33)
+		assert.deepEqual(capabilityReplyForChangedWalletSigner?.result, {
+			'0x1': {
+				gnosisSafeExecution: {
+					supported: true,
+					version: '1.0.0',
+					activeSigner: addressString(0x1919191919191919191919191919191919191919n),
+					submissionMethod: 'eth_sendTransaction',
+				},
+			},
+		})
 		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
 	})
 

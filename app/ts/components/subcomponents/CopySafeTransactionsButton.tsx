@@ -1,4 +1,5 @@
 import { useSignal } from '@preact/signals'
+import type { ComponentChildren } from 'preact'
 import { sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { getErrorMessage } from '../../utils/errors.js'
 import { AsyncActionButton } from './AsyncAction.js'
@@ -11,10 +12,12 @@ export function CopySafeTransactionsButton({
 	class: className = 'button is-small',
 	onCopyStart,
 	onCopyError,
+	text = 'Copy Gnosis Safe transactions',
 }: {
 	readonly class?: string
 	readonly onCopyStart?: () => void
 	readonly onCopyError?: (message: string) => void
+	readonly text?: ComponentChildren
 }) {
 	const { value: copyState, waitFor: waitForCopy } = useAsyncState<void>()
 	const copied = useSignal(false)
@@ -34,12 +37,12 @@ export function CopySafeTransactionsButton({
 		}
 	}
 
-	return <div>
+	return <div class = 'copy-safe-transactions-button'>
 		<AsyncActionButton
 			class = { className }
 			state = { copyState.value.state }
 			onClick = { () => { void waitForCopy(copySafeTransactions) } }
-			text = 'Copy Gnosis Safe transactions'
+			text = { text }
 			pendingText = 'Copying Gnosis Safe transactions...'
 		/>
 		{ copied.value

@@ -383,6 +383,19 @@ function createStackHomePageUpdate(tabId: number, popupRefreshGeneration: number
 	}
 }
 
+function createNonSafeStackHomePageUpdate(tabId: number, popupRefreshGeneration: number, iconReason: string): UpdateHomePage {
+	const update = createStackHomePageUpdate(tabId, popupRefreshGeneration, iconReason)
+	const nonSafeAddress = 0x4000000000000000000000000000000000000004n
+	return {
+		...update,
+		data: {
+			...update.data,
+			activeAddresses: [{ type: 'contact', name: 'Not a Safe', address: nonSafeAddress, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true }],
+			settings: { ...update.data.settings, activeSimulationAddress: nonSafeAddress },
+		},
+	}
+}
+
 function createSerializableRichHomePageUpdate(tabId: number, popupRefreshGeneration: number, iconReason: string, numberOfAddressesMadeRich: number, richList: readonly EnrichedRichListElement[]): UpdateHomePage {
 	const update = createHomePageUpdate(tabId, popupRefreshGeneration, iconReason, numberOfAddressesMadeRich, richList)
 	const serializableSettings = createSerializableSettings()
@@ -642,12 +655,12 @@ describe('simulation visualizer open replies', () => {
 			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), true)
 			assert.equal(dom.document.body.textContent?.includes('Import, export, and adjust the simulation stack.'), true)
 			assert.equal(dom.document.body.textContent?.includes('Loading...'), false)
-			assert.equal(hasButtonWithText(dom.document.body, 'Import'), true)
+			assert.equal(hasButtonWithText(dom.document.body, 'Import simulation'), true)
 			assert.equal(hasButtonWithText(dom.document.body, 'Export simulation'), true)
-			assert.equal(hasButtonWithText(dom.document.body, 'Clear'), true)
-			assert.equal(getButtonByText(dom.document.body, 'Import').getAttribute?.('class')?.includes('is-small') ?? false, false)
+			assert.equal(hasButtonWithText(dom.document.body, 'Clear stack'), true)
+			assert.equal(getButtonByText(dom.document.body, 'Import simulation').getAttribute?.('class')?.includes('is-small') ?? false, false)
 			assert.equal(getButtonByText(dom.document.body, 'Export simulation').getAttribute?.('class')?.includes('is-small') ?? false, false)
-			assert.equal(getButtonByText(dom.document.body, 'Clear').getAttribute?.('class')?.includes('is-small') ?? false, false)
+			assert.equal(getButtonByText(dom.document.body, 'Clear stack').getAttribute?.('class')?.includes('is-small') ?? false, false)
 			assert.equal(dom.document.body.textContent?.includes('Export Simulation Stack'), false)
 			assert.equal(hasCompactStackCard(dom.document.body), false)
 			const targetRow = findElementById(dom.document.body, 'simulation-stack-transaction-0x1')
@@ -884,6 +897,12 @@ describe('simulation visualizer open replies', () => {
 			})
 
 			assert.equal(dom.document.body.textContent?.includes(exportError), true)
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createNonSafeStackHomePageUpdate(21, 2, 'Non-Safe stack tab')) }, {}, () => undefined)
+			})
+
+			assert.equal(dom.document.body.textContent?.includes(exportError), false)
 		} finally {
 			dom.restore()
 		}
@@ -903,7 +922,14 @@ describe('simulation visualizer open replies', () => {
 			if (activeSafe?.type !== 'safe') throw new Error('Expected a Safe fixture')
 
 			await act(() => {
-				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, data: { ...update.data, activeAddresses: [{ ...activeSafe, safeSimulationSignerAddress: undefined }] } }) }, {}, () => undefined)
+				listener({ role: 'all', ...serialize(UpdateHomePage, createNonSafeStackHomePageUpdate(23, 2, 'Non-Safe stack tab')) }, {}, () => undefined)
+			})
+
+			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), false)
+			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), false)
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, popupRefreshGeneration: 3, data: { ...update.data, activeAddresses: [{ ...activeSafe, safeSimulationSignerAddress: undefined }] } }) }, {}, () => undefined)
 			})
 
 			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), true)

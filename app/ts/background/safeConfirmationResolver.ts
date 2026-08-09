@@ -9,13 +9,24 @@ import { getErrorMessage } from '../utils/errors.js'
 import { getPrettySignerName, getWalletSelectedAccount } from '../utils/signerMetadata.js'
 import { modifyObject } from '../utils/typescript.js'
 import { getPendingTransactionsAndMessages, getSafeTransactionStacks, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { assertSafeContractStateUnchanged, createSafeTransactionSigningRequest, getSafeContractState, safeTxToTypedDataJson, type SafeOwnerValidator, validateSafeTransactionForSigning } from '../safe/safeCore.js'
+import { assertSafeContractStateUnchanged, createSafeTransactionSigningRequest, getSafeContractState, isSafeOwnerValidationFailure, safeTxToTypedDataJson, type SafeOwnerValidator, validateSafeTransactionForSigning } from '../safe/safeCore.js'
 import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
 import { reconcileSafeTransactionStack } from '../safe/safeStack.js'
 import type { SafeTx } from '../types/personal-message-definitions.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 
 export const SAFE_SIGNER_SELECTION_ERROR_CODE = -32010
+
+function createSafeSignerSelectionFailure(message: string) {
+	return Object.assign(new Error(message), { safeSignerSelectionFailure: true as const })
+}
+
+export function isSafeSignerSelectionFailure(error: unknown) {
+	return typeof error === 'object'
+		&& error !== null
+		&& 'safeSignerSelectionFailure' in error
+		&& error.safeSignerSelectionFailure === true
+}
 
 type SafeMessageCoSignContext = {
 	readonly safeEntry: SafeEntry
@@ -137,17 +148,28 @@ export async function createSafeMessageCoSignSnapshot(
 		throw new Error('The Gnosis Safe transaction signing account does not match the active Gnosis Safe.')
 	}
 	const safeEntry = await getCurrentSafeEntry(ethereum, activeAddress)
-	if (walletSignerAddress === undefined) throw new Error('Connect a signer wallet and select a Gnosis Safe owner before co-signing.')
+	if (walletSignerAddress === undefined) {
+		throw createSafeSignerSelectionFailure('Connect a signer wallet and select a Gnosis Safe owner before co-signing.')
+	}
 	if (safeEntry.safeVersion === undefined) {
 		throw new Error('Re-save the active Gnosis Safe address-book entry to verify and record its current Gnosis Safe version before co-signing.')
 	}
-	const { safeTxHash, safeState } = await validateSafeTransactionForSigning(
-		ethereum,
-		safeEntry.address,
-		walletSignerAddress,
-		safeTx,
-		safeEntry.safeVersion,
-	)
+	let validatedSafeTransaction: Awaited<ReturnType<typeof validateSafeTransactionForSigning>>
+	try {
+		validatedSafeTransaction = await validateSafeTransactionForSigning(
+			ethereum,
+			safeEntry.address,
+			walletSignerAddress,
+			safeTx,
+			safeEntry.safeVersion,
+		)
+	} catch(error) {
+		if (isSafeOwnerValidationFailure(error)) {
+			throw createSafeSignerSelectionFailure(getErrorMessage(error) ?? 'Select a current Gnosis Safe owner in the signer wallet before co-signing.')
+		}
+		throw error
+	}
+	const { safeTxHash, safeState } = validatedSafeTransaction
 	return {
 		safeAddress: safeEntry.address,
 		safeSignerAddress: walletSignerAddress,

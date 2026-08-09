@@ -263,7 +263,7 @@ test('rebases a later pending Safe proposal after an earlier nonce is rejected',
 	const safeSignerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [safeSignerAddress]
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
-		safeSignerAddress,
+		safeSignerAddresses: [safeSignerAddress],
 	})])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
@@ -360,7 +360,7 @@ test('rejects a stale forwarded Safe nonce before persistence and rebases it whe
 	const safeSignerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [safeSignerAddress]
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
-		safeSignerAddress,
+		safeSignerAddresses: [safeSignerAddress],
 	})])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,

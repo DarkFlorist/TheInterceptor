@@ -29,7 +29,7 @@ import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequest
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent } from './signerStateOwnership.js'
 import { handleWatchAssetRequest, initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
-import { getSafeSignerAddresses, getSafeSigningEntry } from '../types/addressBookTypes.js'
+import { getSafeSigningEntry } from '../types/addressBookTypes.js'
 import { getSafeModeRpcPolicyReply } from '../safe/safeRequestPolicy.js'
 import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
 import { createMethodHandlerFor, hasOwnKey } from '../utils/methodHandlers.js'
@@ -71,7 +71,6 @@ async function handleRPCRequest(
 	simulationOverlayEnabled: boolean,
 	safeSigningMode: boolean,
 	activeSafeSigner: bigint | undefined,
-	knownSafeOwner: bigint | undefined,
 ): Promise<RPCReply> {
 	const maybeParsedRequest = EthereumJsonRpcRequest.safeParse(request)
 	const forwardToSigner = !settings.simulationMode && !request.usingInterceptorWithoutSigner
@@ -162,12 +161,12 @@ async function handleRPCRequest(
 		wallet_getPermissions: rpcRequestHandler('wallet_getPermissions', async () => await getPermissions(activeAddress, website)),
 		wallet_getCapabilities: rpcRequestHandler('wallet_getCapabilities', async (_context, rpcRequest) => {
 			if (rpcRequest.params[0] !== activeAddress) {
-				return getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, knownSafeOwner)
+				return getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, activeSafeSigner)
 			}
 			if (!safeSigningMode && activeSafeSigner === undefined && forwardToSigner) {
 				return { type: 'forwardToSigner', replyWithSignersReply: true, ...request }
 			}
-			return getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, knownSafeOwner)
+			return getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, activeSafeSigner)
 		}),
 		eth_accounts: rpcRequestHandler('eth_accounts', async () => await getAccounts(activeAddress)),
 		eth_requestAccounts: rpcRequestHandler('eth_requestAccounts', async () => await getAccounts(activeAddress)),
@@ -502,9 +501,6 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 		const selectedWalletAccount = getWalletSelectedAccount(signerTabState)
 		const walletSelectedSafeSigner = configuredSafe === undefined ? undefined : selectedWalletAccount
-		const walletSelectedKnownSafeOwner = configuredSafe !== undefined && selectedWalletAccount !== undefined && getSafeSignerAddresses(configuredSafe).includes(selectedWalletAccount)
-			? selectedWalletAccount
-			: undefined
 		let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
 		let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
 		const getSimulationInput = async () => {
@@ -521,7 +517,7 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 			})()
 			return await executionSimulationStatePromise
 		}
-		const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, walletSelectedSafeSigner, walletSelectedKnownSafeOwner)
+		const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, walletSelectedSafeSigner)
 		await persistApprovedAccountsForAccountRequest(
 			ethereum,
 			tokenPriceService,

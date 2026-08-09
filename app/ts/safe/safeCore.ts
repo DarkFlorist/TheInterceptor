@@ -106,6 +106,16 @@ export type SafeOwnerValidator = {
 	) => Promise<SafeOwnerSignature>
 }
 
+function createSafeOwnerValidationFailure(message: string) {
+	const error = new Error(message)
+	error.name = 'SafeOwnerValidationFailure'
+	return error
+}
+
+export function isSafeOwnerValidationFailure(error: unknown) {
+	return error instanceof Error && error.name === 'SafeOwnerValidationFailure'
+}
+
 function canonicalSafeOwners(owners: readonly bigint[]) {
 	return [...owners].sort((first, second) => first < second ? -1 : first > second ? 1 : 0)
 }
@@ -164,14 +174,14 @@ export function createSafeOwnerValidator(
 	const eoaValidationByOwner = new Map<EthereumAddress, Promise<void>>()
 	const assertEoaOwner = async (owner: EthereumAddress) => {
 		if (!safeOwners.has(owner)) {
-			throw new Error(`${ addressString(owner) } is not an owner of Gnosis Safe ${ addressString(safeAddress) }.`)
+			throw createSafeOwnerValidationFailure(`${ addressString(owner) } is not an owner of Gnosis Safe ${ addressString(safeAddress) }.`)
 		}
 		let validation = eoaValidationByOwner.get(owner)
 		if (validation === undefined) {
 			validation = (async () => {
 				const ownerCode = await ethereum.getCode(owner, snapshot.blockNumber, undefined)
 				if (ownerCode.length > 0) {
-					throw new Error(`${ addressString(owner) } is a contract owner. This Gnosis Safe workflow currently supports EOA owners only.`)
+					throw createSafeOwnerValidationFailure(`${ addressString(owner) } is a contract owner. This Gnosis Safe workflow currently supports EOA owners only.`)
 				}
 			})()
 			eoaValidationByOwner.set(owner, validation)

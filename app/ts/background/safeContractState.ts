@@ -4,6 +4,16 @@ import type { RequestSafeContractState } from '../types/interceptor-reply-messag
 import { getErrorMessage, isExpectedInfrastructureError, reportUnexpectedError } from '../utils/errors.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 
+type SafeContractStateErrorReporter = (error: unknown, metadata: { code: string }) => Promise<unknown>
+
+export async function handleSafeContractSnapshotFailure(error: unknown, reportError: SafeContractStateErrorReporter = reportUnexpectedError) {
+	if (isExpectedInfrastructureError(error)) {
+		return { ok: false as const, message: getErrorMessage(error) ?? 'Failed to retrieve Gnosis Safe signers.' }
+	}
+	await reportError(error, { code: 'safe_contract_state_retrieval_failed' })
+	throw error
+}
+
 export async function requestSafeContractState(ethereum: EthereumClientService, request: RequestSafeContractState) {
 	const { address, chainId } = request.data
 	if (chainId === 'AllChains') return {
@@ -17,14 +27,7 @@ export async function requestSafeContractState(ethereum: EthereumClientService, 
 
 	const safeSnapshot = await getSafeContractSnapshot(ethereum, address).then(
 		(snapshot) => ({ ok: true as const, snapshot }),
-		async (error: unknown) => {
-			if (!isExpectedInfrastructureError(error)) {
-				await reportUnexpectedError(error, {
-					code: 'safe_contract_state_retrieval_failed',
-				})
-			}
-			return { ok: false as const, message: getErrorMessage(error) ?? 'Failed to retrieve Gnosis Safe signers.' }
-		},
+		handleSafeContractSnapshotFailure,
 	)
 	if (!safeSnapshot.ok) return {
 		method: 'popup_requestSafeContractState' as const,

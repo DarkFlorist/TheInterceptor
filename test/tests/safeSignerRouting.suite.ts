@@ -289,6 +289,65 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 	assert.equal(signerCodeReadsAfterReply - signerCodeReadsBeforeReply, 1)
 })
 
+test('returns a Safe signer error when the wallet-selected co-signer is not a current owner', async () => {
+	const safeSignerAddress = recipientAddress
+	const currentOwner = safeTestOwnerAddress
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	fakeSafeContract.owners = [currentOwner]
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+		safeSignerAddresses: [safeSignerAddress],
+		safeVersion: '1.4.1',
+	})])
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [safeSignerAddress],
+		activeSigningAddress: safeSignerAddress,
+		signerChain: fakeRpcNetwork.chainId,
+	}))
+	const port = createWebsitePort(uniqueRequestIdentifier.requestSocket, 0, [])
+	const websiteTabConnections = new Map([[uniqueRequestIdentifier.requestSocket.tabId, {
+		connections: {
+			[modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)]: {
+				port,
+				socket: uniqueRequestIdentifier.requestSocket,
+				websiteOrigin: 'https://sealwort.example',
+				approved: true,
+				wantsToConnect: true,
+			},
+		},
+	}]])
+	const signRequest = {
+		method: 'eth_signTypedData_v4' as const,
+		params: [activeAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const,
+	}
+	const request = {
+		interceptorRequest: true as const,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier,
+		...signRequest,
+	}
+
+	const reply = await modules.openConfirmTransactionDialogForMessage(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		request,
+		signRequest,
+		false,
+		activeAddress,
+		{ websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' },
+		websiteTabConnections,
+	)
+
+	assert.equal(reply.type, 'result')
+	if (reply.type !== 'result' || !('error' in reply)) throw new Error('Missing Safe signer selection error')
+	assert.equal(reply.error.code, -32010)
+	assert.match(reply.error.message, /is not an owner of Gnosis Safe/u)
+})
+
 test('recognizes only execTransaction calls to the active Safe for direct signer execution', async () => {
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
 	const safeSignerAddress = 0x1234567890123456789012345678901234567890n
@@ -417,7 +476,7 @@ test('routes a completed active Safe execution through its configured signer and
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
-		safeSignerAddress,
+		safeSignerAddresses: [safeSignerAddress],
 	})])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
