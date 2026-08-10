@@ -60,7 +60,7 @@ export type HomeParams = {
 }
 
 export type ChangeActiveAddressParam = {
-	activeAddresses: Signal<AddressBookEntries>
+	activeAddresses: ReadonlySignal<AddressBookEntries>
 	close: () => void,
 	setActiveAddressAndInformAboutIt: (address: bigint | 'signer') => void,
 	signerAccounts: readonly bigint[] | undefined,
