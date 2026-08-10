@@ -65,6 +65,9 @@ async function persistSignedSafeTransaction(
 	let ownerSignature: SafeOwnerSignature
 	let currentSafeNonce: bigint
 	try {
+		if (safeSigningRequest.safeSignerAddress === undefined) {
+			throw new Error('Connect a signer wallet and select a current Gnosis Safe owner before signing.')
+		}
 		if (safeSigningRequest.reviewedSafeState === undefined) {
 			throw new Error('Review this Gnosis Safe proposal again so its current owners, threshold, nonce, and signer can be verified.')
 		}

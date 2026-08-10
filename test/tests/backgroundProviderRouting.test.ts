@@ -165,6 +165,7 @@ describe('background eth_accounts', () => {
 			signedMessages: [{
 				website,
 				created: new Date('2026-08-03T00:00:00.000Z'),
+				activeAddress: address,
 				fakeSignedFor: address,
 				originalRequestParameters,
 				request: {

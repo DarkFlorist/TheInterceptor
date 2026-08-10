@@ -8,7 +8,7 @@ import { getErrorMessage, reportLocalRecovery } from '../utils/errors.js'
 import { getPendingTransactionsAndMessages, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { reconcileStoredSafeState, type ReconciledStoredSafeState } from './safeStackState.js'
 import { createSafeTransactionReviewRequest, createSafeTransactionSigningRequest, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
-import { getSafeExecutionSignerRoute, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
+import { getSafeExecutionReviewedState, getSafeExecutionSignerRoute, isSafeExecutionRequestForActiveSafe, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
 import { getSafeSignerMismatchApprovalStatus, SAFE_SIGNER_SELECTION_ERROR_CODE } from './safeConfirmationResolver.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 
@@ -31,9 +31,9 @@ export type SafeTransactionConfirmationPreparation = {
 		readonly safeTransaction: SafeTransactionSigningRequest | undefined
 		readonly approvalStatus: Awaited<ReturnType<typeof getSafeSignerMismatchApprovalStatus>> | undefined
 		readonly pendingSafeFields: {
-			readonly safeExecutionSignerAddress: bigint
+			readonly safeExecutionSignerAddress?: bigint
 			readonly safeExecutionOriginalRequestParameters: SendTransactionParams
-			readonly safeExecutionReviewedSafeState: SafeExecutionSignerRoute['safeState']
+			readonly safeExecutionReviewedSafeState?: SafeExecutionSignerRoute['safeState']
 		} | undefined
 	}>
 }
@@ -62,11 +62,19 @@ export async function prepareSafeTransactionConfirmation(
 	const basicExecutionRoute = transactionParams.method === 'eth_sendTransaction'
 		? getSafeExecutionSignerRoute(transactionParams, configuredSafeEntry, walletSignerAddress)
 		: undefined
+	const isDirectSafeExecution = transactionParams.method === 'eth_sendTransaction'
+		&& isSafeExecutionRequestForActiveSafe(transactionParams, configuredSafeEntry)
 	let safeExecutionSignerRoute: SafeExecutionSignerRoute | undefined
+	let safeExecutionReviewedState: SafeExecutionSignerRoute['safeState'] | undefined
 	let executionPreparationMessage: string | undefined
-	if (basicExecutionRoute !== undefined && transactionParams.method === 'eth_sendTransaction') {
+	if (isDirectSafeExecution && transactionParams.method === 'eth_sendTransaction') {
 		try {
-			safeExecutionSignerRoute = await prepareSafeExecutionSignerRoute(ethereum, transactionParams, configuredSafeEntry, walletSignerAddress)
+			if (basicExecutionRoute === undefined) {
+				safeExecutionReviewedState = await getSafeExecutionReviewedState(ethereum, transactionParams, configuredSafeEntry)
+			} else {
+				safeExecutionSignerRoute = await prepareSafeExecutionSignerRoute(ethereum, transactionParams, configuredSafeEntry, walletSignerAddress)
+				safeExecutionReviewedState = safeExecutionSignerRoute?.safeState
+			}
 		} catch (error) {
 			executionPreparationMessage = getErrorMessage(error) ?? 'The Gnosis Safe execution transaction could not be prepared.'
 			await reportLocalRecovery(error, {
@@ -77,7 +85,7 @@ export async function prepareSafeTransactionConfirmation(
 		}
 	}
 
-	const safeEntry = safeExecutionSignerRoute === undefined ? configuredSafeEntry : undefined
+	const safeEntry = isDirectSafeExecution ? undefined : configuredSafeEntry
 	let reconciledStoredSafeState: ReconciledStoredSafeState | undefined
 	let reconciliationMessage: string | undefined
 	if (safeEntry !== undefined) {
@@ -93,23 +101,32 @@ export async function prepareSafeTransactionConfirmation(
 		}
 	}
 
-	const pendingSafeFields = safeExecutionSignerRoute === undefined || transactionParams.method !== 'eth_sendTransaction'
+	const pendingSafeFields = !isDirectSafeExecution || transactionParams.method !== 'eth_sendTransaction'
 		? undefined
 		: {
-			safeExecutionSignerAddress: safeExecutionSignerRoute.executor,
 			safeExecutionOriginalRequestParameters: transactionParams,
-			safeExecutionReviewedSafeState: safeExecutionSignerRoute.safeState,
+			...(safeExecutionSignerRoute === undefined ? {} : { safeExecutionSignerAddress: safeExecutionSignerRoute.executor }),
+			...(safeExecutionReviewedState === undefined ? {} : { safeExecutionReviewedSafeState: safeExecutionReviewedState }),
 		}
+	const directSignerSelectionMessage = isDirectSafeExecution && safeExecutionSignerRoute === undefined
+		? executionPreparationMessage ?? 'Connect a signer wallet and select a current Gnosis Safe owner before signing.'
+		: undefined
 	return {
 		effectiveTransactionParams: safeExecutionSignerRoute?.transactionParams ?? transactionParams,
 		transactionExecutor: safeExecutionSignerRoute?.executor ?? activeAddress,
-		gasPayment: safeEntry === undefined ? 'transaction-sender' : 'external-executor',
-		preparationMessage: executionPreparationMessage ?? reconciliationMessage,
+		gasPayment: safeEntry === undefined && !isDirectSafeExecution ? 'transaction-sender' : 'external-executor',
+		preparationMessage: directSignerSelectionMessage ?? executionPreparationMessage ?? reconciliationMessage,
 		rejection: undefined,
 		async finalize(transactionToSimulate, tabId) {
 			let finalizedTransaction = transactionToSimulate
 			let safeTransaction: SafeTransactionSigningRequest | undefined
 			let safeSignerSelectionError: SafeSignerErrorStatus | undefined
+			if (isDirectSafeExecution && safeExecutionSignerRoute === undefined) {
+				safeSignerSelectionError = createSafeSignerErrorStatus(
+					directSignerSelectionMessage ?? 'Connect a signer wallet and select a current Gnosis Safe owner before signing.',
+					SAFE_SIGNER_SELECTION_ERROR_CODE,
+				)
+			}
 			if (finalizedTransaction.success) {
 				try {
 					safeTransaction = await createSafeSigningRequestForTransaction(
@@ -153,11 +170,19 @@ export async function prepareSafeTransactionConfirmation(
 					}
 				}
 			}
+			if (safeTransaction !== undefined && safeTransaction.safeSignerAddress === undefined) {
+				safeSignerSelectionError = createSafeSignerErrorStatus(
+					'Connect a signer wallet and select a current Gnosis Safe owner before signing.',
+					SAFE_SIGNER_SELECTION_ERROR_CODE,
+				)
+			}
 			const approvalStatus = safeSignerSelectionError ?? (safeTransaction === undefined
 				? safeExecutionSignerRoute === undefined
 					? undefined
 					: await getSafeSignerMismatchApprovalStatus(tabId, safeExecutionSignerRoute.executor)
-				: await getSafeSignerMismatchApprovalStatus(tabId, safeTransaction.safeSignerAddress)
+				: safeTransaction.safeSignerAddress === undefined
+					? undefined
+					: await getSafeSignerMismatchApprovalStatus(tabId, safeTransaction.safeSignerAddress)
 			)
 			return { transactionToSimulate: finalizedTransaction, safeTransaction, approvalStatus, pendingSafeFields }
 		},
@@ -199,7 +224,6 @@ async function createSafeSigningRequestForTransaction(
 	if (transactionParams.method !== 'eth_sendTransaction') throw new Error('Gnosis Safe wallets do not support eth_sendRawTransaction.')
 	if (transactionToSimulate.transaction.type === '7702') throw new Error('Gnosis Safe wallets do not support EIP-7702 authorization lists.')
 	if (transactionToSimulate.transaction.to === null) throw new Error('Gnosis Safe wallets do not support contract-creation transactions.')
-	if (walletSignerAddress === undefined) throw new Error('Connect a signer wallet and select a Gnosis Safe owner before using signing mode.')
 	if (reconciledStoredSafeState === undefined) throw new Error('The Gnosis Safe stack was not reconciled before preparing the transaction.')
 
 	const { safeState, storedStack } = reconciledStoredSafeState
@@ -214,17 +238,13 @@ async function createSafeSigningRequestForTransaction(
 	))
 	let nonce = firstUncommittedNonce
 	while (pendingSafeTransactionNonces.has(nonce)) nonce += 1n
-	const createRequest = validateOwner ? createSafeTransactionSigningRequest : createSafeTransactionReviewRequest
-	return await createRequest(
-		ethereum,
-		safeEntry.address,
-		walletSignerAddress,
-		{
-			to: transactionToSimulate.transaction.to,
-			value: transactionToSimulate.transaction.value,
-			input: transactionToSimulate.transaction.input,
-			gas: transactionToSimulate.transaction.gas,
-		},
-		nonce,
-	)
+	const transaction = {
+		to: transactionToSimulate.transaction.to,
+		value: transactionToSimulate.transaction.value,
+		input: transactionToSimulate.transaction.input,
+		gas: transactionToSimulate.transaction.gas,
+	}
+	return validateOwner && walletSignerAddress !== undefined
+		? await createSafeTransactionSigningRequest(ethereum, safeEntry.address, walletSignerAddress, transaction, nonce)
+		: await createSafeTransactionReviewRequest(ethereum, safeEntry.address, walletSignerAddress, transaction, nonce)
 }

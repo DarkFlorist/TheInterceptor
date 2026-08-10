@@ -21,13 +21,13 @@ export const SafeMessageCoSignSnapshot = funtypes.ReadonlyObject({
 export type SafeTransactionSigningRequest = funtypes.Static<typeof SafeTransactionSigningRequest>
 export const SafeTransactionSigningRequest = funtypes.ReadonlyObject({
 	safeAddress: EthereumAddress,
-	safeSignerAddress: EthereumAddress,
 	safeVersion: funtypes.String,
 	threshold: EthereumQuantity,
 	safeTxHash: EthereumBytes32,
 	safeTx: SafeTx,
 }).And(funtypes.Partial({
-	// Optional so pending requests created by an older extension version remain readable.
+	// Undefined only while a reviewed proposal is waiting for the signer wallet to select an owner.
+	safeSignerAddress: EthereumAddress,
 	executionGasLimit: EthereumQuantity,
 	reviewedSafeState: SafeContractStateSnapshot,
 }))

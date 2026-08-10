@@ -78,12 +78,18 @@ export function isIdentificationRequestCurrent(state: ModifyAddressWindowState, 
 	return areAddressIdentificationKeysEqual(getAddressIdentificationKey(state), requestedIdentification)
 }
 
-export async function saveAddressBookEntry(entryToAdd: AddressBookEntry | { type: 'error', error: string }, close: () => void, sendMessage: (message: { method: 'popup_addOrModifyAddressBookEntry', data: AddressBookEntry }) => Promise<{ readonly ok: boolean, readonly message?: string } | undefined> = sendPopupMessageWithReply,
-) {
+export async function persistAddressBookEntry(entryToAdd: AddressBookEntry | { type: 'error', error: string }, sendMessage: (message: { method: 'popup_addOrModifyAddressBookEntry', data: AddressBookEntry }) => Promise<{ readonly ok: boolean, readonly message?: string } | undefined> = sendPopupMessageWithReply) {
 	if (entryToAdd.type === 'error') return
 	const reply = await sendMessage({ method: 'popup_addOrModifyAddressBookEntry', data: entryToAdd })
 	if (reply === undefined) return 'Interceptor did not reply while validating the address-book entry.'
 	if (reply.ok === false) return reply.message ?? 'Failed to save address-book entry.'
+	return undefined
+}
+
+export async function saveAddressBookEntry(entryToAdd: AddressBookEntry | { type: 'error', error: string }, close: () => void, sendMessage: (message: { method: 'popup_addOrModifyAddressBookEntry', data: AddressBookEntry }) => Promise<{ readonly ok: boolean, readonly message?: string } | undefined> = sendPopupMessageWithReply,
+) {
+	const saveError = await persistAddressBookEntry(entryToAdd, sendMessage)
+	if (saveError !== undefined || entryToAdd.type === 'error') return saveError
 	close()
 	return undefined
 }
@@ -95,9 +101,10 @@ export async function saveAddressBookEntryAndSwitch(
 	sendMessage: (message: { method: 'popup_addOrModifyAddressBookEntry', data: AddressBookEntry }) => Promise<{ readonly ok: boolean, readonly message?: string } | undefined> = sendPopupMessageWithReply,
 ) {
 	if (entryToAdd.type === 'error') return entryToAdd.error
-	const saveError = await saveAddressBookEntry(entryToAdd, close, sendMessage)
+	const saveError = await persistAddressBookEntry(entryToAdd, sendMessage)
 	if (saveError !== undefined) return saveError
 	await setActiveAddressAndInformAboutIt?.(entryToAdd.address)
+	close()
 	return undefined
 }
 
@@ -369,6 +376,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	const onChainInformationVerifiedByUser = useSignal<boolean>(false)
 	const canFetchFromEtherScan = useSignal<boolean>(false)
 	const lastCompletedIdentification = useSignal<AddressIdentificationKey | undefined>(undefined)
+	const lastSuccessfulSafeIdentification = useSignal<AddressIdentificationKey | undefined>(undefined)
 	const inFlightIdentifications = useSignal<readonly AddressIdentificationKey[]>([])
 	const safeSignerRefreshGeneration = useSignal(0)
 	const safeSimulationSignerAddressBookEntries = useSignal<AddressBookEntries>([])
@@ -422,6 +430,7 @@ export function AddNewAddress(param: AddAddressParam) {
 						setSafeContractStateError(safeContractState.message)
 						return
 					}
+					lastSuccessfulSafeIdentification.value = requestedIdentification
 					safeSimulationSignerAddressBookEntries.value = safeContractState.ownerAddressBookEntries
 					const currentState = param.modifyAddressWindowState.peek()
 					const safeSignerAddresses = safeContractState.owners.map(checksummedAddress)
@@ -463,6 +472,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	const refreshSafeSigners = () => {
 		safeSignerRefreshGeneration.value += 1
 		lastCompletedIdentification.value = undefined
+		lastSuccessfulSafeIdentification.value = undefined
 	}
 
 	useEffect(() => {
@@ -546,14 +556,17 @@ export function AddNewAddress(param: AddAddressParam) {
 			}
 			case 'safe': {
 				if (incompleteAddressBookEntry.chainId === 'AllChains') return { type: 'error', error: 'Gnosis Safe wallets must use a specific chain.' }
+				if (parsedSafeSignerAddresses.length === 0) return { type: 'error', error: 'Retrieve the current Gnosis Safe owners before saving.' }
+				if (safeSimulationSignerAddress === undefined || !parsedSafeSignerAddresses.includes(safeSimulationSignerAddress)) return { type: 'error', error: 'Select a current Gnosis Safe owner for simulation.' }
+				if (incompleteAddressBookEntry.safeVersion === undefined) return { type: 'error', error: 'Retrieve the current Gnosis Safe version before saving.' }
 				return {
 					...base,
 					type: 'safe' as const,
 					chainId: incompleteAddressBookEntry.chainId,
 					useAsActiveAddress: true,
-					...(safeSimulationSignerAddress === undefined ? {} : { safeSimulationSignerAddress }),
-					...(parsedSafeSignerAddresses.length === 0 ? {} : { safeSignerAddresses: Array.from(new Set(parsedSafeSignerAddresses)) }),
-					...(incompleteAddressBookEntry.safeVersion === undefined ? {} : { safeVersion: incompleteAddressBookEntry.safeVersion }),
+					safeSimulationSignerAddress,
+					safeSignerAddresses: Array.from(new Set(parsedSafeSignerAddresses)),
+					safeVersion: incompleteAddressBookEntry.safeVersion,
 				}
 			}
 			default: assertUnreachable(incompleteAddressBookEntry.type)
@@ -586,6 +599,11 @@ export function AddNewAddress(param: AddAddressParam) {
 	})
 
 	const areInputsValid = useComputed(() => completeAddressBookEntryOrError.value.type !== 'error')
+	const isCurrentSafeLookupComplete = useComputed(() => {
+		const currentIdentification = getAddressIdentificationKey(param.modifyAddressWindowState.value)
+		return currentIdentification?.requestSafeContractState !== true
+			|| areAddressIdentificationKeysEqual(lastSuccessfulSafeIdentification.value, currentIdentification)
+	})
 
 	async function fetchAbiAndNameFromBlockExplorer() {
 		const address = stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address)
@@ -636,7 +654,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	})
 
 	const isSubmitButtonDisabled = useComputed(() => {
-		return saveEntryState.value.state === 'pending' || isAddressBookSubmissionDisabled({
+		return saveEntryState.value.state === 'pending' || !isCurrentSafeLookupComplete.value || isAddressBookSubmissionDisabled({
 			areInputsValid: areInputsValid.value,
 			blockEditing: param.modifyAddressWindowState.value.errorState?.blockEditing === true,
 			requiresOnChainVerification: showOnChainVerificationErrorBox.value,

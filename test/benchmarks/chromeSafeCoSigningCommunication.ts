@@ -66,6 +66,7 @@ const SIGNED_MESSAGE_STACK = {
 		signedMessageTransaction: {
 			website: { websiteOrigin: 'https://signed-message.example', icon: undefined, title: 'Signed message' },
 			created: new Date('2026-07-28T00:00:00.000Z'),
+			activeAddress: SAFE_ADDRESS,
 			fakeSignedFor: SAFE_ADDRESS,
 			originalRequestParameters: { method: 'personal_sign' as const, params: ['0x68656c6c6f', SAFE_ADDRESS] },
 			request: {

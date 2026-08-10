@@ -338,6 +338,7 @@ function createPendingSafeTxMessage(modules: TestModules, rpcNetwork: RpcEntry):
 		signedMessageTransaction: {
 			website: visualizedPersonalSignRequest.website,
 			created: visualizedPersonalSignRequest.created,
+			activeAddress: activeAddress.address,
 			fakeSignedFor: activeAddress.address,
 			originalRequestParameters,
 			request: {

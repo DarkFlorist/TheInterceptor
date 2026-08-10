@@ -778,7 +778,7 @@ describe('popup async action UI', () => {
 		dom.restore()
 	})
 
-	test('preserves configured Safe signers when automatic owner retrieval fails', async () => {
+	test('shows cached Safe owners but blocks saving when automatic owner retrieval fails', async () => {
 		const modules = await modulesPromise
 		const dom = installDomMock()
 		const safeAddress = '0x3000000000000000000000000000000000000003'
@@ -833,8 +833,9 @@ describe('popup async action UI', () => {
 		assert.equal(dom.document.body.textContent?.includes(signerAddress), true)
 		const modifyButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.trim() === 'Save changes')
 		if (modifyButton === undefined) throw new Error('Expected Save changes button')
+		assert.equal(isDisabled(modifyButton), true)
 		await act(async () => { await clickElement(modifyButton) })
-		assert.equal(JSON.stringify(saveMessage).includes(signerAddress), true)
+		assert.equal(saveMessage, undefined)
 		render(null, dom.document.body)
 		dom.restore()
 	})

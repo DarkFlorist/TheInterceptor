@@ -108,6 +108,7 @@ const makePreSimulationTransaction = (): PreSimulationTransaction => ({
 const makeSignedMessageTransaction = (): SignedMessageTransaction => ({
 	website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 	created: new Date('2024-01-01T00:00:00.000Z'),
+	activeAddress: ACTIVE_ADDRESS,
 	fakeSignedFor: ACTIVE_ADDRESS,
 	originalRequestParameters: { method: 'personal_sign', params: ['0x68656c6c6f', ACTIVE_ADDRESS] },
 	request: { method: 'personal_sign', params: ['0x68656c6c6f', ACTIVE_ADDRESS] },

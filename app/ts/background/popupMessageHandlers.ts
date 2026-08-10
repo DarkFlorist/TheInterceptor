@@ -17,7 +17,7 @@ import type { TabState, WebsiteTabConnections } from '../types/user-interface-ty
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState } from '../types/visualizer-types.js'
 import { isJSON } from '../utils/json.js'
-import { doAddressBookChainIdsMatch, getSafeSigningEntry, getSafeSignerAddresses, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
+import { doAddressBookChainIdsMatch, getSafeSigningEntry, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
 import { checksummedAddress, generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
@@ -47,7 +47,7 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerforma
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { updateRichListAddress } from '../utils/richList.js'
 import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply.js'
-import { createSafeOwnerValidator, getSafeContractSnapshot } from '../safe/safeCore.js'
+import { createSafeContractValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getPendingSafeSignerAddress } from './safeConfirmationResolver.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
@@ -97,7 +97,11 @@ export async function confirmDialog(ethereum: EthereumClientService, tokenPriceS
 			doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, confirmation.data.uniqueRequestIdentifier)
 		)
 		: undefined
-	const refreshedSafeSignerSelection = pending !== undefined && getPendingSafeSignerAddress(pending) !== undefined
+	const refreshedSafeSignerSelection = pending !== undefined && (
+		getPendingSafeSignerAddress(pending) !== undefined
+		|| pending.type === 'Transaction' && pending.safeTransaction !== undefined
+		|| pending.type === 'SignableMessage' && pending.safeMessageCoSignSnapshot !== undefined
+	)
 		? await (async () => {
 			const refreshResult = await refreshSignerAccountsForTab(
 				websiteTabConnections,
@@ -278,12 +282,27 @@ export async function addOrModifyAddressBookEntry(ethereum: EthereumClientServic
 					}
 				}
 				const { blockNumber, state: safeState } = await getSafeContractSnapshot(ethereum, entry.data.address)
+				if (safeState.owners.length === 0) throw createSafeContractValidationFailure('The Gnosis Safe does not have any owners.')
+				const safeSimulationSignerAddress = entry.data.safeSimulationSignerAddress
+				if (safeSimulationSignerAddress === undefined || !safeState.owners.includes(safeSimulationSignerAddress)) {
+					throw createSafeContractValidationFailure('Select a current Gnosis Safe owner for simulation.')
+				}
 				const ownerValidator = createSafeOwnerValidator(ethereum, entry.data.address, { blockNumber, state: safeState })
-				await Promise.all(getSafeSignerAddresses(entry.data).map(async (safeSimulationSignerAddress) =>
-					await ownerValidator.assertEoaOwner(safeSimulationSignerAddress)
-				))
-				entryToStore = { ...entry.data, safeVersion: safeState.version }
+				await ownerValidator.assertEoaOwner(safeSimulationSignerAddress)
+				entryToStore = {
+					...entry.data,
+					safeSimulationSignerAddress,
+					safeSignerAddresses: [...safeState.owners],
+					safeVersion: safeState.version,
+				}
 			} catch(error) {
+				if (!isSafeContractValidationFailure(error) && !isSafeOwnerValidationFailure(error) && !isExpectedInfrastructureError(error)) {
+					await reportUnexpectedError(error, {
+						source: 'address_book_safe_validation',
+						code: 'address_book_safe_validation_failed',
+						displayMessage: 'Failed to validate the Gnosis Safe address.',
+					})
+				}
 				return {
 					type: 'AddOrModifyAddressBookEntryReply' as const,
 					ok: false as const,
@@ -321,14 +340,40 @@ export async function setSafeSimulationSigner(
 	websiteTabConnections: WebsiteTabConnections,
 	request: SetSafeSimulationSigner,
 ) {
+	if (request.data.chainId !== ethereum.getChainId()) {
+		return {
+			type: 'SetSafeSimulationSignerReply' as const,
+			ok: false as const,
+			message: `Switch Interceptor to chain ${ request.data.chainId.toString() } before changing the Safe simulation signer.`,
+		}
+	}
+	const safeEntry = (await getUserAddressBookEntries()).find((entry) =>
+		entry.type === 'safe' && entry.address === request.data.safeAddress && entry.chainId === request.data.chainId
+	)
+	if (safeEntry?.type !== 'safe') {
+		return { type: 'SetSafeSimulationSignerReply' as const, ok: false as const, message: 'The Gnosis Safe address-book entry no longer exists.' }
+	}
+	try {
+		const { blockNumber, state } = await getSafeContractSnapshot(ethereum, safeEntry.address)
+		const ownerValidator = createSafeOwnerValidator(ethereum, safeEntry.address, { blockNumber, state })
+		await ownerValidator.assertEoaOwner(request.data.safeSimulationSignerAddress)
+	} catch(error) {
+		if (!isSafeContractValidationFailure(error) && !isSafeOwnerValidationFailure(error) && !isExpectedInfrastructureError(error)) {
+			await reportUnexpectedError(error, {
+				source: 'safe_simulation_signer',
+				code: 'safe_simulation_signer_validation_failed',
+				displayMessage: 'Failed to validate the Safe simulation signer.',
+			})
+		}
+		return {
+			type: 'SetSafeSimulationSignerReply' as const,
+			ok: false as const,
+			message: getErrorMessage(error) ?? 'The selected address is not a current wallet-signable Safe owner.',
+		}
+	}
 	let updatedEntry: AddressBookEntry | undefined
-	let failureMessage: string | undefined
 	await updateUserAddressBookEntries((entries) => entries.map((entry) => {
 		if (entry.type !== 'safe' || entry.address !== request.data.safeAddress || entry.chainId !== request.data.chainId) return entry
-		if (!getSafeSignerAddresses(entry).includes(request.data.safeSimulationSignerAddress)) {
-			failureMessage = 'The selected Gnosis Safe simulation signer is not a known owner of this address-book entry.'
-			return entry
-		}
 		updatedEntry = { ...entry, safeSimulationSignerAddress: request.data.safeSimulationSignerAddress }
 		return updatedEntry
 	}))
@@ -336,7 +381,7 @@ export async function setSafeSimulationSigner(
 		return {
 			type: 'SetSafeSimulationSignerReply' as const,
 			ok: false as const,
-			message: failureMessage ?? 'The Gnosis Safe address-book entry no longer exists.',
+			message: 'The Gnosis Safe address-book entry no longer exists.',
 		}
 	}
 	if (updatedEntry.useAsActiveAddress) {

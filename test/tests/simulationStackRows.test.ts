@@ -2,9 +2,34 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { normalizeSimulationStackRows } from '../../app/ts/components/simulationExplaining/simulationStackRows.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
-import type { PreSimulationTransaction, SignedMessageTransaction, SimulationStateInput, VisualizedSimulationState } from '../../app/ts/types/visualizer-types.js'
+import { SignedMessageTransaction, type PreSimulationTransaction, type SimulationStateInput, type VisualizedSimulationState } from '../../app/ts/types/visualizer-types.js'
+import { getSignedMessageActiveAddress } from '../../app/ts/background/windows/personalSign.js'
 
 describe('simulation stack rows', () => {
+	test('loads messages persisted before active Safe addresses were stored separately', () => {
+		const serializedMessage = SignedMessageTransaction.serialize({
+			website: { websiteOrigin: 'https://example.com', title: 'Example', icon: undefined },
+			created: new Date('2024-01-01T00:00:00.000Z'),
+			activeAddress: 0x5678n,
+			fakeSignedFor: 0x1234n,
+			originalRequestParameters: { method: 'personal_sign', params: ['0x', 0x1234n] },
+			request: {
+				method: 'personal_sign',
+				params: ['0x', 0x1234n],
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 1n } },
+			},
+			simulationMode: true,
+			messageIdentifier: 1n,
+		})
+		const { activeAddress: _activeAddress, ...legacySerializedMessage } = serializedMessage
+		const legacyMessage = SignedMessageTransaction.parse(legacySerializedMessage)
+
+		assert.equal(legacyMessage.activeAddress, undefined)
+		assert.equal(getSignedMessageActiveAddress(legacyMessage), legacyMessage.fakeSignedFor)
+	})
+
 	test('message-only input produces a message row', () => {
 		const signedMessages: readonly SignedMessageTransaction[] = [{
 			stateOverrides: {},
@@ -15,6 +40,7 @@ describe('simulation stack rows', () => {
 			signedMessages: [{
 				website: { websiteOrigin: 'https://example.com', title: 'Example', icon: undefined },
 				created: new Date('2024-01-01T00:00:00.000Z'),
+				activeAddress: 0n,
 				fakeSignedFor: 0n,
 				originalRequestParameters: { method: 'personal_sign', params: ['0x', 0n] },
 				request: { method: 'personal_sign', params: ['0x', 0n] },
@@ -62,6 +88,7 @@ describe('simulation stack rows', () => {
 		const signedMessages: readonly SignedMessageTransaction[] = [{
 			website: { websiteOrigin: 'https://example.com', title: 'Example', icon: undefined },
 			created: new Date('2024-01-01T00:00:01.000Z'),
+			activeAddress: 0n,
 			fakeSignedFor: 0n,
 			originalRequestParameters: { method: 'personal_sign', params: ['0x', 0n] },
 			request: { method: 'personal_sign', params: ['0x', 0n] },

@@ -90,6 +90,43 @@ describe('add new address save flow', () => {
 		assert.equal(message, 'The configured address is not an owner of this Safe.')
 	})
 
+	test('keeps the modal open until switching finishes', async () => {
+		const calls: string[] = []
+		let finishSwitch: (() => void) | undefined
+		const switchFinished = new Promise<void>((resolve) => { finishSwitch = resolve })
+		const saving = saveAddressBookEntryAndSwitch(
+			sampleAddressBookEntry,
+			() => { calls.push('close') },
+			async () => {
+				calls.push('switch:start')
+				await switchFinished
+				calls.push('switch:end')
+			},
+			async () => {
+				calls.push('save')
+				return { ok: true }
+			},
+		)
+		await Promise.resolve()
+		assert.deepEqual(calls, ['save'])
+		await Promise.resolve()
+		assert.deepEqual(calls, ['save', 'switch:start'])
+		finishSwitch?.()
+		await saving
+		assert.deepEqual(calls, ['save', 'switch:start', 'switch:end', 'close'])
+	})
+
+	test('does not close when switching fails', async () => {
+		let closed = false
+		await assert.rejects(saveAddressBookEntryAndSwitch(
+			sampleAddressBookEntry,
+			() => { closed = true },
+			async () => { throw new Error('Switch failed') },
+			async () => ({ ok: true }),
+		), /Switch failed/u)
+		assert.equal(closed, false)
+	})
+
 	test('applies every submission safety gate to create-and-switch', () => {
 		const validState = {
 			areInputsValid: true,
@@ -260,7 +297,8 @@ describe('add new address save flow', () => {
 		assert.match(addNewAddressSource, /pendingText = \{ param\.modifyAddressWindowState\.value\.incompleteAddressBookEntry\.addingAddress \? 'Creating\.\.\.' : 'Saving\.\.\.' \}/)
 		assert.match(addNewAddressSource, /await waitForSaveEntry\(async \(\) => \{[\s\S]*?saveAddressBookEntryAndSwitch/)
 		assert.match(addNewAddressSource, /'Modifying and switching\.\.\.'/)
-		assert.match(addNewAddressSource, /saveEntryState\.value\.state === 'pending' \|\| isAddressBookSubmissionDisabled/)
+		assert.match(addNewAddressSource, /saveEntryState\.value\.state === 'pending' \|\| !isCurrentSafeLookupComplete\.value \|\| isAddressBookSubmissionDisabled/)
+		assert.match(addNewAddressSource, /lastSuccessfulSafeIdentification/)
 	})
 
 	test('preserves known Safe owners on lookup failure and clears them when the target changes', () => {
@@ -282,5 +320,13 @@ describe('add new address save flow', () => {
 		assert.match(safeContractStateSource, /if \(!safeSnapshot\.ok\) return[\s\S]*?const localEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst/)
 		assert.doesNotMatch(safeContractStateSource, /try \{[\s\S]*?getUserAddressBookEntriesForChainIdMorePreciseFirst/)
 		assert.match(screenshotScriptSource, /message\?\.method === 'popup_requestSafeContractState'\) return await new Promise/)
+	})
+
+	test('requires current Safe owners in the editor and persists the authoritative snapshot', () => {
+		assert.match(addNewAddressSource, /parsedSafeSignerAddresses\.length === 0[\s\S]*?Retrieve the current Gnosis Safe owners before saving/)
+		assert.match(addNewAddressSource, /areAddressIdentificationKeysEqual\(lastSuccessfulSafeIdentification\.value, currentIdentification\)/)
+		assert.match(popupMessageHandlersSource, /safeSignerAddresses: \[\.\.\.safeState\.owners\]/)
+		assert.match(popupMessageHandlersSource, /ownerValidator\.assertEoaOwner\(safeSimulationSignerAddress\)/)
+		assert.doesNotMatch(popupMessageHandlersSource, /Promise\.all\(getSafeSignerAddresses\(entry\.data\)/)
 	})
 })

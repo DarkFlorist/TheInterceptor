@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { handleSafeContractSnapshotFailure } from '../../app/ts/background/safeContractState.js'
+import { createSafeContractValidationFailure } from '../../app/ts/safe/safeCore.js'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
 
 describe('Safe contract state error boundary', () => {
@@ -12,6 +13,17 @@ describe('Safe contract state error boundary', () => {
 		})
 
 		assert.deepEqual(result, { ok: false, message: NEW_BLOCK_ABORT })
+		assert.equal(reportCount, 0)
+	})
+
+	test('returns a user-facing failure when the address has no deployed Safe contract', async () => {
+		let reportCount = 0
+		const failure = createSafeContractValidationFailure('The Gnosis Safe address does not contain a deployed contract on the selected chain.')
+		const result = await handleSafeContractSnapshotFailure(failure, async () => {
+			reportCount += 1
+		})
+
+		assert.deepEqual(result, { ok: false, message: failure.message })
 		assert.equal(reportCount, 0)
 	})
 
