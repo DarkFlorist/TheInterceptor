@@ -161,7 +161,10 @@ export function getSafeSigningEntry(
 }
 
 export function getSafeSignerAddresses(entry: SafeEntry) {
-	return Array.from(new Set(entry.safeSignerAddresses ?? []))
+	return Array.from(new Set([
+		...(entry.safeSignerAddresses ?? []),
+		...(entry.safeSimulationSignerAddress === undefined ? [] : [entry.safeSimulationSignerAddress]),
+	]))
 }
 
 export type AddressBookEntries = readonly AddressBookEntry[]

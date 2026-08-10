@@ -353,10 +353,12 @@ export async function setSafeSimulationSigner(
 	if (safeEntry?.type !== 'safe') {
 		return { type: 'SetSafeSimulationSignerReply' as const, ok: false as const, message: 'The Gnosis Safe address-book entry no longer exists.' }
 	}
+	let validatedSafeState: Awaited<ReturnType<typeof getSafeContractSnapshot>>['state']
 	try {
 		const { blockNumber, state } = await getSafeContractSnapshot(ethereum, safeEntry.address)
 		const ownerValidator = createSafeOwnerValidator(ethereum, safeEntry.address, { blockNumber, state })
 		await ownerValidator.assertEoaOwner(request.data.safeSimulationSignerAddress)
+		validatedSafeState = state
 	} catch(error) {
 		if (!isSafeContractValidationFailure(error) && !isSafeOwnerValidationFailure(error) && !isExpectedInfrastructureError(error)) {
 			await reportUnexpectedError(error, {
@@ -374,7 +376,12 @@ export async function setSafeSimulationSigner(
 	let updatedEntry: AddressBookEntry | undefined
 	await updateUserAddressBookEntries((entries) => entries.map((entry) => {
 		if (entry.type !== 'safe' || entry.address !== request.data.safeAddress || entry.chainId !== request.data.chainId) return entry
-		updatedEntry = { ...entry, safeSimulationSignerAddress: request.data.safeSimulationSignerAddress }
+		updatedEntry = {
+			...entry,
+			safeSimulationSignerAddress: request.data.safeSimulationSignerAddress,
+			safeSignerAddresses: [...validatedSafeState.owners],
+			safeVersion: validatedSafeState.version,
+		}
 		return updatedEntry
 	}))
 	if (updatedEntry === undefined) {

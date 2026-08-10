@@ -197,6 +197,39 @@ svg[role="img"] {
 	white-space: nowrap;
 }
 
+.safe-signer-address {
+	border-top: 1px solid var(--unimportant-text-color);
+	display: grid;
+	gap: 8px;
+	margin-top: 8px;
+	min-width: 0;
+	padding-top: 8px;
+}
+
+.safe-signer-home-heading {
+	align-items: center;
+	display: flex;
+	gap: 8px;
+}
+
+.safe-signer-home-heading > :first-child {
+	color: var(--subtitle-text-color);
+	flex: 1 1 auto;
+	margin: 0;
+	min-width: 0;
+}
+
+.safe-signer-home-heading > .btn {
+	flex: 0 0 auto;
+	white-space: nowrap;
+}
+
+.safe-signer-address > .dropdown,
+.safe-signer-address > .dropdown > .dropdown-trigger {
+	min-width: 0;
+	width: 100%;
+}
+
 .address-editor {
 	display: grid;
 	gap: 12px;
@@ -423,8 +456,8 @@ svg[role="img"] {
 }
 
 .safe-signer-editor-dropdown {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: 10px;
 	color: var(--subtitle-text-color);
@@ -433,10 +466,17 @@ svg[role="img"] {
 	min-width: 0;
 }
 
+.safe-signer-editor-dropdown > span {
+	flex: 1 1 8rem;
+	min-width: 0;
+}
+
 .safe-signer-editor-dropdown > .dropdown {
+	flex: 0 1 240px;
+	margin-left: auto;
 	max-width: 100%;
 	min-width: 0;
-	width: 100%;
+	width: min(100%, 240px);
 }
 
 .safe-signer-dropdown-address {

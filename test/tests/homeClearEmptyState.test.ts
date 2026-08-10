@@ -60,32 +60,6 @@ const rpcNetwork: RpcEntry = {
 
 const ZERO_BLOCK_TIME_MANIPULATION: BlockTimeManipulation = { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' }
 
-function installClipboardMock() {
-	const previousNavigator = globalThis.navigator
-	const copiedText: string[] = []
-	Object.defineProperty(globalThis, 'navigator', {
-		configurable: true,
-		writable: true,
-		value: {
-			clipboard: {
-				async writeText(text: string) {
-					copiedText.push(text)
-				},
-			},
-		},
-	})
-	return {
-		copiedText,
-		restore() {
-			Object.defineProperty(globalThis, 'navigator', {
-				configurable: true,
-				writable: true,
-				value: previousNavigator,
-			})
-		},
-	}
-}
-
 const makePreSimulationTransaction = (): PreSimulationTransaction => ({
 	signedTransaction: mockSignTransaction({
 		type: '1559',
@@ -896,35 +870,23 @@ test('changes the Safe simulation signer from the popup in simulation mode', asy
 				})), dom.document.body)
 			})
 
-			const otherSignerOption = collectElements(dom.document.body, 'label').find((element) =>
-				collectElements(element, 'input').some((input) => input.getAttribute?.('aria-label') === 'Simulate as Gnosis Safe owner 0x5000000000000000000000000000000000000005')
+			const signerDropdown = collectElements(dom.document.body, 'button').find((button) =>
+				button.getAttribute?.('aria-label') === 'Safe signer in simulation: 0x4000000000000000000000000000000000000004'
+			)
+			if (signerDropdown === undefined) throw new Error('Missing Safe simulation signer dropdown')
+			await act(async () => { await clickElement(signerDropdown) })
+			const otherSignerOption = collectElements(dom.document.body, 'button').find((button) =>
+				button.getAttribute?.('class')?.includes('dropdown-item') === true
+				&& button.textContent?.includes('0x5000000000000000000000000000000000000005') === true
 			)
 			if (otherSignerOption === undefined) throw new Error('Missing alternate Safe signer option')
-			const otherSignerIdentity = collectElements(otherSignerOption, 'span').find((element) => element.getAttribute?.('class') === 'safe-signer-option-address')
-			if (otherSignerIdentity?.l === undefined) throw new Error('Missing alternate Safe signer identity')
-			const clickHandler = Object.entries(otherSignerIdentity.l).find(([key]) => key.startsWith('Click'))?.[1]
-			if (clickHandler === undefined) throw new Error('Missing alternate Safe signer identity click handler')
-			let defaultPrevented = false
-			let propagationStopped = false
-			await act(async () => {
-				await clickHandler({
-					currentTarget: otherSignerIdentity,
-					preventDefault() { defaultPrevented = true },
-					stopPropagation() { propagationStopped = true },
-				})
-			})
+			await act(async () => { await clickElement(otherSignerOption) })
 			assert.equal(activeAddresses.value[0]?.safeSimulationSignerAddress, OTHER_SIGNER_ADDRESS)
-			const optimisticallySelectedRadios = collectElements(dom.document.body, 'input').filter((element) =>
-				element.getAttribute?.('name') === 'active-safe-signer'
-			)
-			assert.equal(optimisticallySelectedRadios[0]?.checked === true || (optimisticallySelectedRadios[0]?.getAttribute?.('checked') ?? null) !== null, false)
-			assert.equal(optimisticallySelectedRadios[1]?.checked === true || (optimisticallySelectedRadios[1]?.getAttribute?.('checked') ?? null) !== null, true)
+			assert.equal(collectElements(dom.document.body, 'button').some((button) =>
+				button.getAttribute?.('aria-label') === 'Safe signer in simulation: 0x5000000000000000000000000000000000000005'
+			), true)
 			await act(async () => {
-				await clickHandler({
-					currentTarget: otherSignerIdentity,
-					preventDefault() { return undefined },
-					stopPropagation() { return undefined },
-				})
+				await clickElement(otherSignerOption)
 			})
 			assert.equal(browserMock.sentMessages.filter((message) => hasMethod(message, 'popup_setSafeSimulationSigner')).length, 1)
 			if (resolveSelection === undefined) throw new Error('Missing Safe signer selection resolver')
@@ -937,21 +899,13 @@ test('changes the Safe simulation signer from the popup in simulation mode', asy
 			if (typeof updateMessage !== 'object' || updateMessage === null || !('data' in updateMessage)) throw new Error('Missing Safe signer update message')
 			const updatedSafe = updateMessage.data
 			if (typeof updatedSafe !== 'object' || updatedSafe === null || !('safeSimulationSignerAddress' in updatedSafe)) throw new Error('Missing Safe simulation signer')
-			assert.equal(defaultPrevented, true)
-			assert.equal(propagationStopped, true)
 			assert.equal(updatedSafe.safeSimulationSignerAddress, OTHER_SIGNER_ADDRESS)
 			assert.equal(updatedSafe.safeAddress, SAFE_ADDRESS)
 			assert.equal(updatedSafe.chainId, 1n)
 			assert.equal(activeAddresses.value[0]?.safeSimulationSignerAddress, OTHER_SIGNER_ADDRESS)
-			const signerRadios = collectElements(dom.document.body, 'input').filter((element) =>
-				element.getAttribute?.('name') === 'active-safe-signer'
-			)
-			assert.deepEqual(signerRadios.map((radio) => radio.getAttribute?.('aria-label')), [
-				'Simulate as Gnosis Safe owner 0x4000000000000000000000000000000000000004',
-				'Simulate as Gnosis Safe owner 0x5000000000000000000000000000000000000005',
-			])
-			assert.equal(signerRadios[0]?.checked === true || (signerRadios[0]?.getAttribute?.('checked') ?? null) !== null, false)
-			assert.equal(signerRadios[1]?.checked === true || (signerRadios[1]?.getAttribute?.('checked') ?? null) !== null, true)
+			assert.equal(collectElements(dom.document.body, 'button').some((button) =>
+				button.getAttribute?.('aria-label') === 'Safe signer in simulation: 0x5000000000000000000000000000000000000005'
+			), true)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
@@ -991,22 +945,17 @@ test('rolls back only the simulation signer when optimistic persistence fails', 
 				})), dom.document.body)
 			})
 
-			const alternateSignerOption = collectElements(dom.document.body, 'label').find((element) =>
-				collectElements(element, 'input').some((input) => input.getAttribute?.('aria-label') === 'Simulate as Gnosis Safe owner 0x5000000000000000000000000000000000000005')
+			const signerDropdown = collectElements(dom.document.body, 'button').find((button) =>
+				button.getAttribute?.('aria-label')?.startsWith('Safe signer in simulation:') === true
 			)
-			const alternateSignerIdentity = alternateSignerOption === undefined
-				? undefined
-				: collectElements(alternateSignerOption, 'span').find((element) => element.getAttribute?.('class') === 'safe-signer-option-address')
-			if (alternateSignerIdentity?.l === undefined) throw new Error('Missing alternate Safe signer identity')
-			const clickHandler = Object.entries(alternateSignerIdentity.l).find(([key]) => key.startsWith('Click'))?.[1]
-			if (clickHandler === undefined) throw new Error('Missing alternate Safe signer identity click handler')
-			await act(async () => {
-				await clickHandler({
-					currentTarget: alternateSignerIdentity,
-					preventDefault() { return undefined },
-					stopPropagation() { return undefined },
-				})
-			})
+			if (signerDropdown === undefined) throw new Error('Missing Safe simulation signer dropdown')
+			await act(async () => { await clickElement(signerDropdown) })
+			const alternateSignerOption = collectElements(dom.document.body, 'button').find((button) =>
+				button.getAttribute?.('class')?.includes('dropdown-item') === true
+				&& button.textContent?.includes('0x5000000000000000000000000000000000000005') === true
+			)
+			if (alternateSignerOption === undefined) throw new Error('Missing alternate Safe signer option')
+			await act(async () => { await clickElement(alternateSignerOption) })
 			assert.equal(activeAddresses.value[0]?.safeSimulationSignerAddress, OTHER_SIGNER_ADDRESS)
 
 			activeAddresses.value = [{ ...safeEntry, name: 'Refreshed Treasury Safe', safeSimulationSignerAddress: OTHER_SIGNER_ADDRESS }]
@@ -1026,15 +975,31 @@ test('rolls back only the simulation signer when optimistic persistence fails', 
 		}
 	})
 
-test('copies and edits a Safe simulation signer without changing the selection', async () => {
+test('shows the selected Safe simulation signer and retrieves missing owner choices', async () => {
 		const dom = installDomMock()
-		const browserMock = installBrowserMock()
-		const clipboardMock = installClipboardMock()
-		let editedSignerAddress: bigint | undefined
+		const browserMock = installBrowserMock((message) => {
+			if (hasMethod(message, 'popup_setSafeSimulationSigner')) return { type: 'SetSafeSimulationSignerReply', ok: true }
+			return hasMethod(message, 'popup_requestSafeContractState') ? {
+				method: 'popup_requestSafeContractState',
+				data: {
+					chainId: '0x1',
+					result: {
+						ok: true,
+						owners: [
+							'0x4000000000000000000000000000000000000004',
+							'0x5000000000000000000000000000000000000005',
+						],
+						ownerAddressBookEntries: [],
+						version: '1.4.1',
+					},
+				},
+			} : undefined
+		})
+		const activeAddresses = new Signal([{ ...safeEntry, safeSignerAddresses: undefined }])
 		try {
 			await act(() => {
 				render(h(Home, createHomeParams({
-					activeAddresses: new Signal([safeEntry]),
+					activeAddresses,
 					tabState: new Signal<TabState | undefined>({
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
@@ -1050,48 +1015,33 @@ test('copies and edits a Safe simulation signer without changing the selection',
 					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
 				simulationMode: new Signal(true),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
-					renameAddressCallBack: (entry) => { editedSignerAddress = entry.address },
 				})), dom.document.body)
 			})
 
-			const signerOption = collectElements(dom.document.body, 'label').find((element) =>
-				element.getAttribute?.('class')?.includes('safe-signer-option') === true
+			const signerDropdown = collectElements(dom.document.body, 'button').find((button) =>
+				button.getAttribute?.('aria-label') === 'Safe signer in simulation: 0x4000000000000000000000000000000000000004'
 			)
-			if (signerOption === undefined) throw new Error('Missing Safe signer option')
-			const signerButtons = collectElements(signerOption, 'button')
-			const copyButton = signerButtons.find((button) => button.textContent?.includes('copy') === true)
-			const editButton = signerButtons.find((button) => button.textContent?.includes('edit') === true)
-			if (copyButton?.l === undefined || editButton?.l === undefined) throw new Error('Missing Safe signer address actions')
-			const copyHandler = Object.entries(copyButton.l).find(([key]) => key.startsWith('Click'))?.[1]
-			const editHandler = Object.entries(editButton.l).find(([key]) => key.startsWith('Click'))?.[1]
-			if (copyHandler === undefined || editHandler === undefined) throw new Error('Missing Safe signer address action handlers')
-
-			let copyPropagationStopped = false
-			await copyHandler({
-				clientX: 0,
-				clientY: 0,
-				currentTarget: copyButton,
-				stopPropagation() { copyPropagationStopped = true },
+			if (signerDropdown === undefined) throw new Error('Missing selected Safe simulation signer')
+			const retrieveOwnersButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Retrieve owners'))
+			if (retrieveOwnersButton === undefined) throw new Error('Missing retrieve Safe owners button')
+			await act(async () => {
+				await clickElement(retrieveOwnersButton)
+				await new Promise((resolve) => setTimeout(resolve, 0))
 			})
-			let editPropagationStopped = false
-			await editHandler({
-				currentTarget: editButton,
-				stopPropagation() { editPropagationStopped = true },
-			})
-
-			assert.equal(copyPropagationStopped, true)
-			assert.deepEqual(clipboardMock.copiedText, ['0x4000000000000000000000000000000000000004'])
-			assert.equal(editPropagationStopped, true)
-			assert.equal(editedSignerAddress, SAFE_SIGNER_ADDRESS)
-			assert.equal(browserMock.sentMessages.some((message) => hasMethod(message, 'popup_setSafeSimulationSigner')), false)
-			const signerRadios = collectElements(dom.document.body, 'input').filter((element) => element.getAttribute?.('name') === 'active-safe-signer')
-			assert.equal(signerRadios[0]?.checked === true || (signerRadios[0]?.getAttribute?.('checked') ?? null) !== null, true)
-			assert.equal(signerRadios[1]?.checked === true || (signerRadios[1]?.getAttribute?.('checked') ?? null) !== null, false)
+			assert.deepEqual(activeAddresses.value[0]?.safeSignerAddresses, [SAFE_SIGNER_ADDRESS, OTHER_SIGNER_ADDRESS])
+			assert.equal(activeAddresses.value[0]?.safeVersion, '1.4.1')
+			const refreshMessage = getMessageWithMethod(browserMock.sentMessages, 'popup_setSafeSimulationSigner')
+			if (typeof refreshMessage !== 'object' || refreshMessage === null || !('data' in refreshMessage)) throw new Error('Missing persisted Safe owner refresh')
+			assert.equal(refreshMessage.data.safeSimulationSignerAddress, SAFE_SIGNER_ADDRESS)
+			await act(async () => { await clickElement(signerDropdown) })
+			assert.equal(collectElements(dom.document.body, 'button').some((button) =>
+				button.getAttribute?.('class')?.includes('dropdown-item') === true
+				&& button.textContent?.includes('0x5000000000000000000000000000000000000005') === true
+			), true)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
 			browserMock.restore()
-			clipboardMock.restore()
 		}
 	})
 

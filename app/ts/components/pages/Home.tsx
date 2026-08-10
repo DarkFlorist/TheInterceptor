@@ -7,18 +7,18 @@ import { ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIV
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
-import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
+import { requestPopupSafeContractState, sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
-import { getSafeSigningEntry, getSafeSignerAddresses, type AddressBookEntry } from '../../types/addressBookTypes.js'
+import { getSafeSigningEntry, getSafeSignerAddresses, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon, ChevronIcon, OpenInNewIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { type Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
 import { type DeltaUnit, TimePicker, type TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
 import { assertNever } from '../../utils/typescript.js'
-import { bigintSecondsToDate, checksummedAddress } from '../../utils/bigint.js'
+import { bigintSecondsToDate, checksummedAddress, stringToAddress } from '../../utils/bigint.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
@@ -28,7 +28,7 @@ import { CopySafeTransactionsButton } from '../subcomponents/CopySafeTransaction
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import type { ComponentChildren, JSX } from 'preact'
-import { DropDownMenuButtonContent } from '../subcomponents/DropDownMenu.js'
+import { DropDownMenu, DropDownMenuButtonContent } from '../subcomponents/DropDownMenu.js'
 
 function scheduleAfterPaint(callback: () => void) {
 	if (typeof globalThis.requestAnimationFrame === 'function' && typeof globalThis.cancelAnimationFrame === 'function') {
@@ -405,6 +405,8 @@ function FirstCard(param: FirstCardParams) {
 	const timeSelectorDeltaUnit = useSignal<DeltaUnit>('Seconds')
 	const { value: connectToSignerButtonState, waitFor: waitForConnectToSigner } = useAsyncState<void>()
 	const { value: safeSignerSelectionState, waitFor: waitForSafeSignerSelection } = useAsyncState<void>()
+	const { value: safeOwnerLookupState, waitFor: waitForSafeOwnerLookup } = useAsyncState<void>()
+	const retrievedSafeOwnerAddressBookEntries = useSignal<AddressBookEntries>([])
 	const activeSafe = useComputed(() =>
 		param.activeAddress.value?.type === 'safe'
 			? param.activeAddress.value
@@ -413,8 +415,19 @@ function FirstCard(param: FirstCardParams) {
 	const safeSimulationSignerAddressBookEntries = useComputed(() => {
 		if (!param.simulationMode.value || activeSafe.value === undefined) return undefined
 		return getSafeSignerAddresses(activeSafe.value).map((safeSimulationSignerAddress) =>
-			getActiveAddressEntry(safeSimulationSignerAddress, param.activeAddresses.value ?? [])
+			getActiveAddressEntry(safeSimulationSignerAddress, [
+				...retrievedSafeOwnerAddressBookEntries.value,
+				...(param.activeAddresses.value ?? []),
+			])
 		)
+	})
+	const safeSimulationSignerOptions = useComputed(() =>
+		(safeSimulationSignerAddressBookEntries.value ?? []).map(({ address }) => checksummedAddress(address))
+	)
+	const selectedSafeSimulationSigner = useComputed(() => {
+		const safe = activeSafe.value
+		if (safe?.safeSimulationSignerAddress !== undefined) return checksummedAddress(safe.safeSimulationSignerAddress)
+		return safeSimulationSignerOptions.value[0] ?? ''
 	})
 	const selectedSignerAddress = useComputed(() => getWalletSelectedAccount(param.tabState.value))
 	const signerAvailable = useComputed(() =>
@@ -463,6 +476,59 @@ function FirstCard(param: FirstCardParams) {
 				throw error
 			}
 		})
+	}
+
+	const refreshSafeOwners = () => {
+		const safe = activeSafe.peek()
+		if (safe === undefined || !param.simulationMode.value) return
+		void waitForSafeOwnerLookup(async () => {
+			const safeContractStateReply = await requestPopupSafeContractState({ address: safe.address, chainId: safe.chainId })
+			if (safeContractStateReply === undefined) throw new Error('Interceptor did not return the current Gnosis Safe owners.')
+			const safeContractState = safeContractStateReply.data.result
+			if (!safeContractState.ok) throw new Error(safeContractState.message)
+			const safeSimulationSignerAddress = safe.safeSimulationSignerAddress !== undefined
+				&& safeContractState.owners.includes(safe.safeSimulationSignerAddress)
+				? safe.safeSimulationSignerAddress
+				: safeContractState.owners[0]
+			if (safeSimulationSignerAddress === undefined) throw new Error('The Gnosis Safe does not have any owners.')
+			const reply = await sendPopupMessageWithReply({
+				method: 'popup_setSafeSimulationSigner',
+				data: {
+					chainId: safe.chainId,
+					safeAddress: safe.address,
+					safeSimulationSignerAddress,
+				},
+			})
+			if (reply === undefined) throw new Error('Interceptor did not reply while refreshing the Safe owners.')
+			if (!reply.ok) throw new Error(reply.message ?? 'Failed to refresh the Safe owners.')
+			retrievedSafeOwnerAddressBookEntries.value = safeContractState.ownerAddressBookEntries
+			if (param.activeAddresses.value === undefined) return
+			param.activeAddresses.value = param.activeAddresses.value.map((entry) =>
+				entry.type === 'safe' && entry.address === safe.address && entry.chainId === safe.chainId
+					? {
+						...entry,
+						safeSimulationSignerAddress,
+						safeSignerAddresses: [...safeContractState.owners],
+						safeVersion: safeContractState.version,
+					}
+					: entry
+			)
+		})
+	}
+
+	const renderSafeSimulationSigner = (safeSimulationSignerAddress: string) => {
+		const address = stringToAddress(safeSimulationSignerAddress)
+		if (address === undefined) return safeSimulationSignerAddress
+		return <SmallAddress
+			addressBookEntry = { getActiveAddressEntry(address, [
+				...retrievedSafeOwnerAddressBookEntries.value,
+				...(param.activeAddresses.value ?? []),
+			]) }
+			renameAddressCallBack = { param.renameAddressCallBack }
+			noCopying = { true }
+			noEditAddress = { true }
+			nonInteractive = { true }
+		/>
 	}
 
 	const timeSelectorOnChange = () => {
@@ -536,39 +602,37 @@ function FirstCard(param: FirstCardParams) {
 					</div>
 				}
 				{ isActiveAddressLoading || safeSimulationSignerAddressBookEntries.value === undefined ? <></> :
-					<div class = 'safe-signer-address popup-data-reveal' style = 'margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--unimportant-text-color);'>
-						<p class = 'subtitle is-7' style = 'color: var(--subtitle-text-color); margin-bottom: 4px;'>Simulate as Safe owner</p>
-						{ safeSimulationSignerAddressBookEntries.value.map((safeSimulationSignerAddressBookEntry) =>
-							<label class = 'form-control safe-signer-option' title = { safeSimulationSignerAddressBookEntry.name } key = { safeSimulationSignerAddressBookEntry.address.toString() }>
-								<input
-									type = 'radio'
-									name = 'active-safe-signer'
-									aria-label = { `Simulate as Gnosis Safe owner ${ checksummedAddress(safeSimulationSignerAddressBookEntry.address) }` }
-									checked = { activeSafe.value?.safeSimulationSignerAddress === safeSimulationSignerAddressBookEntry.address }
-									disabled = { !param.isInitialHomeDataLoaded.value || safeSignerSelectionState.value.state === 'pending' }
-									onChange = { () => { selectSafeSigner(safeSimulationSignerAddressBookEntry.address) } }
-								/>
-								<span
-									class = 'safe-signer-option-address'
-									onClick = { (event) => {
-										event.preventDefault()
-										event.stopPropagation()
-										selectSafeSigner(safeSimulationSignerAddressBookEntry.address)
-									} }
-								>
-									<SmallAddress
-										addressBookEntry = { safeSimulationSignerAddressBookEntry }
-										renameAddressCallBack = { param.renameAddressCallBack }
-										copyOnActionOnly = { true }
-									/>
-									{ safeSimulationSignerAddressBookEntry.name === checksummedAddress(safeSimulationSignerAddressBookEntry.address)
-										? <></>
-										: <code class = 'address-text is-size-7'>{ checksummedAddress(safeSimulationSignerAddressBookEntry.address) }</code> }
-								</span>
-							</label>
-						) }
+					<div class = 'safe-signer-address popup-data-reveal'>
+						<div class = 'safe-signer-home-heading'>
+							<p class = 'subtitle is-7'>Safe signer in simulation</p>
+							<AsyncActionButton
+								class = 'btn btn--outline is-small'
+								state = { safeOwnerLookupState.value.state }
+								text = { safeSimulationSignerOptions.value.length > 1 ? 'Refresh owners' : 'Retrieve owners' }
+								pendingText = 'Retrieving...'
+								disabled = { !param.isInitialHomeDataLoaded.value || safeSignerSelectionState.value.state === 'pending' }
+								onClick = { refreshSafeOwners }
+							/>
+						</div>
+						{ safeSimulationSignerOptions.value.length === 0 ? <></> :
+							<DropDownMenu
+								selected = { selectedSafeSimulationSigner }
+								dropDownOptions = { safeSimulationSignerOptions }
+								onChangedCallBack = { safeSimulationSignerAddress => {
+									const address = stringToAddress(safeSimulationSignerAddress)
+									if (address !== undefined) selectSafeSigner(address)
+								} }
+								buttonClassses = 'btn btn--outline is-small'
+								ariaLabel = 'Safe signer in simulation'
+								disabled = { !param.isInitialHomeDataLoaded.value || safeSignerSelectionState.value.state === 'pending' || safeOwnerLookupState.value.state === 'pending' }
+								renderOption = { renderSafeSimulationSigner }
+							/>
+						}
 						{ safeSignerSelectionState.value.state === 'rejected'
 							? <ErrorComponent text = { safeSignerSelectionState.value.error.message }/>
+							: <></> }
+						{ safeOwnerLookupState.value.state === 'rejected'
+							? <ErrorComponent text = { safeOwnerLookupState.value.error.message }/>
 							: <></> }
 					</div>
 				}

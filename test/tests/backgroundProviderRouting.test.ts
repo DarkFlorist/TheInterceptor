@@ -1350,6 +1350,16 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal(repliesAfterSelectingSafe.some((message) =>
 			Array.isArray(message.result) && message.result.includes('0x5353535353535353535353535353535353535353')
 		), false)
+
+		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			simulationMode: false,
+			activeAddress: undefined,
+		})
+		assert.equal((await getSettings()).activeSimulationAddress, safeAddress)
+		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			simulationMode: true,
+		})
+		assert.equal((await getSettings()).activeSimulationAddress, safeAddress)
 	})
 
 	test('skip simulation state refresh for eth_accounts in simulation mode', async () => {

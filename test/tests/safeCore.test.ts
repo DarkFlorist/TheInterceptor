@@ -4,7 +4,7 @@ import { AddressBookEntry, getSafeSignerAddresses } from '../../app/ts/types/add
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { SafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import { SafeStackExport } from '../../app/ts/types/safeTypes.js'
-import { SAFE_ABI, assertInterceptorSafeTransactionPolicy, createSafeOwnerValidator, createSafeTx, getSafeContractSnapshot, getSafeContractState, normalizeSafeSignature, recoverSafeSignatureOwner, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
+import { SAFE_ABI, assertInterceptorSafeTransactionPolicy, createSafeOwnerValidator, createSafeTx, getSafeContractSnapshot, getSafeContractState, isSafeContractValidationFailure, normalizeSafeSignature, recoverSafeSignatureOwner, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
 import { completeSafeExecutionWithConfiguredSigner, SAFE_EXECUTION_ABI } from '../../app/ts/safe/safeExecution.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
@@ -150,7 +150,8 @@ describe('Safe transaction support', () => {
 		assert.equal(entry.safeSimulationSignerAddress, 0x5678n)
 		assert.deepEqual(getSafeSignerAddresses(entry), [0x9abcn, 0x5678n])
 		assert.deepEqual(getSafeSignerAddresses({ ...entry, safeSimulationSignerAddress: 0x9abcn }), [0x9abcn, 0x5678n])
-		assert.deepEqual(getSafeSignerAddresses({ ...entry, safeSimulationSignerAddress: 0xdef0n }), [0x9abcn, 0x5678n])
+		assert.deepEqual(getSafeSignerAddresses({ ...entry, safeSimulationSignerAddress: 0xdef0n }), [0x9abcn, 0x5678n, 0xdef0n])
+		assert.deepEqual(getSafeSignerAddresses({ ...entry, safeSignerAddresses: undefined }), [0x5678n])
 		assert.equal(entry.abi, '[]')
 	})
 
@@ -178,7 +179,7 @@ describe('Safe transaction support', () => {
 			owners: encodeFunctionCall(SAFE_ABI, 'getOwners', []).slice(0, 10),
 			threshold: encodeFunctionCall(SAFE_ABI, 'getThreshold', []).slice(0, 10),
 		}
-		const createEthereum = (contractOwner = false) => ({
+		const createEthereum = (contractOwner = false, version = '1.4.1') => ({
 			async getBlockNumber() {
 				return 123n
 			},
@@ -189,7 +190,7 @@ describe('Safe transaction support', () => {
 			async call(transaction: { readonly input: Uint8Array }, blockTag: bigint | string) {
 				assert.equal(blockTag, 123n)
 				switch (bytesToHex(transaction.input).slice(0, 10)) {
-					case selectors.version: return encodeFunctionReturn(SAFE_ABI, 'VERSION', ['1.4.1'])
+					case selectors.version: return encodeFunctionReturn(SAFE_ABI, 'VERSION', [version])
 					case selectors.nonce: return encodeFunctionReturn(SAFE_ABI, 'nonce', [3n])
 					case selectors.owners: return encodeFunctionReturn(SAFE_ABI, 'getOwners', [['0x0000000000000000000000000000000000005678']])
 					case selectors.threshold: return encodeFunctionReturn(SAFE_ABI, 'getThreshold', [2n])
@@ -208,6 +209,10 @@ describe('Safe transaction support', () => {
 		await assert.doesNotReject(createSafeOwnerValidator(createEthereum(), 0x1234n, snapshot).assertEoaOwner(owner))
 		await assert.rejects(createSafeOwnerValidator(createEthereum(), 0x1234n, snapshot).assertEoaOwner(0x9abcn), /is not an owner of Gnosis Safe/u)
 		await assert.rejects(createSafeOwnerValidator(createEthereum(true), 0x1234n, snapshot).assertEoaOwner(owner), /supports EOA owners only/u)
+		await assert.rejects(
+			getSafeContractState(createEthereum(false, '2.0.0'), 0x1234n),
+			(error) => isSafeContractValidationFailure(error) && /version 2\.0\.0 is not supported/u.test(error.message),
+		)
 	})
 
 	test('reuses the Safe snapshot and owner-code result across repeated validations', async () => {

@@ -50,8 +50,8 @@ describe('narrow text layout CSS', () => {
 		assert.match(safeSignerConnectionMessage, /overflow-wrap\s*:\s*anywhere\s*;/)
 
 		const safeSignerEditorDropdown = expectRule(css, '.safe-signer-editor-dropdown')
-		assert.match(safeSignerEditorDropdown, /display\s*:\s*grid\s*;/)
-		assert.match(safeSignerEditorDropdown, /grid-template-columns\s*:\s*repeat\(auto-fit,/)
+		assert.match(safeSignerEditorDropdown, /display\s*:\s*flex\s*;/)
+		assert.match(safeSignerEditorDropdown, /flex-wrap\s*:\s*wrap\s*;/)
 
 		const addressEditorFields = expectRule(css, '.address-editor-fields')
 		assert.match(addressEditorFields, /display\s*:\s*grid\s*;/)
@@ -89,8 +89,10 @@ describe('narrow text layout CSS', () => {
 		const addressEditorSectionHeading = expectRule(css, '.address-editor-section-heading')
 		assert.match(addressEditorSectionHeading, /align-items\s*:\s*center\s*;/)
 		const safeSignerDropdownControl = expectRule(css, '.safe-signer-editor-dropdown > .dropdown')
+		assert.match(safeSignerDropdownControl, /flex\s*:\s*0 1 240px\s*;/)
+		assert.match(safeSignerDropdownControl, /margin-left\s*:\s*auto\s*;/)
 		assert.match(safeSignerDropdownControl, /min-width\s*:\s*0\s*;/)
-		assert.match(safeSignerDropdownControl, /width\s*:\s*100%\s*;/)
+		assert.match(safeSignerDropdownControl, /width\s*:\s*min\(100%,\s*240px\)\s*;/)
 
 		const dropdownText = expectRule(css, '.dropdown button > .truncate')
 		assert.match(dropdownText, /min-width\s*:\s*0\s*;/)

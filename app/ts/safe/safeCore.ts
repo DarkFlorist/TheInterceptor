@@ -158,7 +158,7 @@ async function getSafeContractStateAtBlock(ethereum: EthereumClientService, safe
 	const owners = decodeFunctionOutput(SAFE_ABI, 'getOwners', ownersResult)
 	const threshold = decodeFunctionOutput(SAFE_ABI, 'getThreshold', thresholdResult)
 	if (!SUPPORTED_SAFE_VERSIONS.some((supportedVersion) => supportedVersion === version)) {
-		throw new Error(`Gnosis Safe version ${ version } is not supported. Supported versions: ${ SUPPORTED_SAFE_VERSIONS.join(', ') }.`)
+		throw createSafeContractValidationFailure(`Gnosis Safe version ${ version } is not supported. Supported versions: ${ SUPPORTED_SAFE_VERSIONS.join(', ') }.`)
 	}
 	return { version, nonce, owners: owners.map((owner) => BigInt(owner)), threshold }
 }

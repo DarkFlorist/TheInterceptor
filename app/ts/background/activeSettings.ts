@@ -63,7 +63,9 @@ export async function changeActiveAddressAndChain(
 			simulationMode: change.simulationMode,
 			...(selectedSafe === undefined && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
 			...(selectedSafe !== undefined && safeEntryOnActiveChain === undefined ? { activeSigningAddress: undefined } : {}),
-			...('activeAddress' in change ? { activeSimulationAddress: safeEntryOnActiveChain?.address } : {}),
+			...(safeEntryOnActiveChain !== undefined
+				? { activeSimulationAddress: safeEntryOnActiveChain.address }
+				: change.activeAddress !== undefined ? { activeSimulationAddress: undefined } : {}),
 			...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
 		})
 	}

@@ -526,11 +526,14 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	)
 
 	assert.deepEqual(reply, { type: 'SetSafeSimulationSignerReply', ok: true })
-	assert.equal((await modules.getUserAddressBookEntries())[0]?.safeSimulationSignerAddress, alternateSigner)
+	const updatedSafeEntry = (await modules.getUserAddressBookEntries())[0]
+	assert.equal(updatedSafeEntry?.safeSimulationSignerAddress, alternateSigner)
+	assert.deepEqual(updatedSafeEntry?.safeSignerAddresses, [recipientAddress, alternateSigner])
+	assert.equal(updatedSafeEntry?.safeVersion, fakeSafeContract.version)
 	assert.equal(fakeSafeContract.requestedCodeAddresses.includes(alternateSigner), true)
 
 	fakeSafeContract.version = 'invalid-version'
-	const unexpectedFailure = await withSilencedConsole(async () => modules.setSafeSimulationSigner(
+	const unsupportedVersionFailure = await withSilencedConsole(async () => modules.setSafeSimulationSigner(
 		ethereum,
 		simulator.tokenPriceService,
 		() => undefined,
@@ -545,12 +548,13 @@ test('changes the Safe simulation signer only after validating current on-chain 
 		},
 	))
 	fakeSafeContract.version = '1.4.1'
-	assert.equal(unexpectedFailure.ok, false)
-	assert.equal((await getLatestUnexpectedError())?.data.code, 'safe_simulation_signer_validation_failed')
+	assert.equal(unsupportedVersionFailure.ok, false)
+	assert.match(unsupportedVersionFailure.message ?? '', /version invalid-version is not supported/u)
+	assert.equal(await getLatestUnexpectedError(), undefined)
 
 	fakeSafeContract.version = 'invalid-version'
 	const { addOrModifyAddressBookEntry } = await import('../../app/ts/background/popupMessageHandlers.js')
-	const unexpectedSaveFailure = await withSilencedConsole(async () => addOrModifyAddressBookEntry(
+	const unsupportedVersionSaveFailure = await withSilencedConsole(async () => addOrModifyAddressBookEntry(
 		ethereum,
 		simulator.tokenPriceService,
 		() => undefined,
@@ -564,8 +568,9 @@ test('changes the Safe simulation signer only after validating current on-chain 
 		},
 	))
 	fakeSafeContract.version = '1.4.1'
-	assert.equal(unexpectedSaveFailure.ok, false)
-	assert.equal((await getLatestUnexpectedError())?.data.code, 'address_book_safe_validation_failed')
+	assert.equal(unsupportedVersionSaveFailure.ok, false)
+	assert.match(unsupportedVersionSaveFailure.message ?? '', /version invalid-version is not supported/u)
+	assert.equal(await getLatestUnexpectedError(), undefined)
 })
 
 test('routes a completed active Safe execution through its configured signer and rechecks signer changes', async () => {
@@ -660,7 +665,7 @@ test('routes a completed active Safe execution through its configured signer and
 	}))
 	fakeSafeContract.version = 'invalid-version'
 	await withSilencedConsole(async () => modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, socket.tabId))
-	assert.equal((await getLatestUnexpectedError())?.data.code, 'direct_safe_execution_recovery_failed')
+	assert.equal(await getLatestUnexpectedError(), undefined)
 	assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.approvalStatus.status, 'SignerError')
 	fakeSafeContract.version = '1.4.1'
 	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, socket.tabId)
@@ -677,6 +682,7 @@ test('routes a completed active Safe execution through its configured signer and
 	assert.equal(pendingExecution.originalRequestParameters.params[0].from, safeSignerAddress)
 
 	fakeSafeContract.version = 'invalid-version'
+	const unexpectedErrorBeforeUnsupportedVersion = (await getLatestUnexpectedError())?.data.code
 	assert.equal(await withSilencedConsole(async () => modules.resolvePendingTransactionOrMessage(
 		simulator.ethereum,
 		simulator.tokenPriceService,
@@ -687,7 +693,7 @@ test('routes a completed active Safe execution through its configured signer and
 		},
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	)), false)
-	assert.equal((await getLatestUnexpectedError())?.data.code, 'direct_safe_execution_recovery_failed')
+	assert.equal((await getLatestUnexpectedError())?.data.code, unexpectedErrorBeforeUnsupportedVersion)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 
 	assert.equal(await withSilencedConsole(async () => modules.resolvePendingTransactionOrMessage(
@@ -700,7 +706,7 @@ test('routes a completed active Safe execution through its configured signer and
 		},
 		{ selectedSigner: alternateSignerAddress, verificationError: undefined },
 	)), false)
-	assert.equal((await getLatestUnexpectedError())?.data.code, 'direct_safe_execution_recovery_failed')
+	assert.equal((await getLatestUnexpectedError())?.data.code, unexpectedErrorBeforeUnsupportedVersion)
 	fakeSafeContract.version = '1.4.1'
 	assert.equal(await modules.resolvePendingTransactionOrMessage(
 		simulator.ethereum,
