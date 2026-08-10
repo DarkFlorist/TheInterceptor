@@ -701,7 +701,7 @@ describe('Home popup clear empty state', () => {
 		}
 	})
 
-	test('keeps the active-address selector available in signing mode without a wallet', async () => {
+	test('disables the active-address selector when signing mode has no Safe alternative', async () => {
 		const dom = installDomMock()
 		let changeActiveAddressCalls = 0
 		try {
@@ -727,7 +727,45 @@ describe('Home popup clear empty state', () => {
 			})
 
 			assert.equal(dom.document.body.textContent?.includes('Connect a browser wallet to sign with the selected address.'), true)
-			await act(async () => { await clickElement(getButtonByText(dom.document.body, 'Change')) })
+			const changeButton = getButtonByText(dom.document.body, 'Change')
+			assert.equal(changeButton.attributes.disabled !== undefined, true)
+			assert.equal(changeActiveAddressCalls, 0)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('enables the signing address selector when the signer owns a Safe alternative', async () => {
+		const dom = installDomMock()
+		let changeActiveAddressCalls = 0
+		try {
+			await act(() => {
+				render(h(Home, createHomeParams({
+					changeActiveAddress: () => { changeActiveAddressCalls++ },
+					activeAddresses: new Signal([activeAddressEntry, safeEntry]),
+					tabState: new Signal<TabState | undefined>({
+						tabId: 1,
+						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+						signerConnected: true,
+						signerName: 'MetaMask',
+						signerAccounts: [SAFE_SIGNER_ADDRESS],
+						signerAccountError: undefined,
+						signerChain: 1n,
+						tabIconDetails: { icon: ICON_SIGNING, iconReason: 'Connected through MetaMask.' },
+						activeSigningAddress: SAFE_SIGNER_ADDRESS,
+					}),
+					activeSimulationAddress: new Signal<bigint | undefined>(undefined),
+					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					useSignersAddressAsActiveAddress: new Signal(true),
+					simulationMode: new Signal(false),
+					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Connected through MetaMask.' }),
+				})), dom.document.body)
+			})
+
+			const changeButton = getButtonByText(dom.document.body, 'Change')
+			assert.equal(changeButton.attributes.disabled !== undefined, false)
+			await act(async () => { await clickElement(changeButton) })
 			assert.equal(changeActiveAddressCalls, 1)
 		} finally {
 			render(null, dom.document.body)

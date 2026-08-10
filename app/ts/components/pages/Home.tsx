@@ -29,6 +29,7 @@ import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import type { ComponentChildren, JSX } from 'preact'
 import { DropDownMenu, DropDownMenuButtonContent } from '../subcomponents/DropDownMenu.js'
+import { getSelectableActiveAddresses } from '../../utils/activeAddressSelection.js'
 
 function scheduleAfterPaint(callback: () => void) {
 	if (typeof globalThis.requestAnimationFrame === 'function' && typeof globalThis.cancelAnimationFrame === 'function') {
@@ -407,6 +408,12 @@ function FirstCard(param: FirstCardParams) {
 	const { value: safeSignerSelectionState, waitFor: waitForSafeSignerSelection } = useAsyncState<void>()
 	const { value: safeOwnerLookupState, waitFor: waitForSafeOwnerLookup } = useAsyncState<void>()
 	const retrievedSafeOwnerAddressBookEntries = useSignal<AddressBookEntries>([])
+	const hasAlternativeSigningAddress = useComputed(() => getSelectableActiveAddresses(
+		param.activeAddresses.value ?? [],
+		param.simulationMode.value,
+		param.rpcNetwork.value?.chainId,
+		param.tabState.value?.signerAccounts ?? [],
+	).length > 0)
 	const activeSafe = useComputed(() =>
 		param.activeAddress.value?.type === 'safe'
 			? param.activeAddress.value
@@ -598,7 +605,7 @@ function FirstCard(param: FirstCardParams) {
 						<ActiveAddressComponent
 							activeAddress = { param.activeAddress }
 							buttonText = { 'Change' }
-							disableButton = { !param.isInitialHomeDataLoaded.value }
+							disableButton = { !param.isInitialHomeDataLoaded.value || (!param.simulationMode.value && !hasAlternativeSigningAddress.value) }
 							noCopying = { !param.isInitialHomeDataLoaded.value }
 							noEditAddress = { !param.isInitialHomeDataLoaded.value }
 							changeActiveAddress = { param.changeActiveAddress }
