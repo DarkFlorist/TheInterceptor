@@ -430,8 +430,22 @@ function FirstCard(param: FirstCardParams) {
 		return safeSimulationSignerOptions.value[0] ?? ''
 	})
 	const selectedSignerAddress = useComputed(() => getWalletSelectedAccount(param.tabState.value))
+	const selectedSignerIsKnownSafeOwner = useComputed(() => {
+		const safe = activeSafe.value
+		const signerAddress = selectedSignerAddress.value
+		if (safe === undefined || signerAddress === undefined || safe.safeSignerAddresses === undefined) return undefined
+		return safe.safeSignerAddresses.includes(signerAddress)
+	})
 	const signerAvailable = useComputed(() =>
 		activeSafe.value === undefined ? isSignerAvailable(param.tabState.value) : selectedSignerAddress.value !== undefined
+	)
+	const canRequestSignerAccounts = useComputed(() =>
+		param.tabState.value !== undefined
+		&& param.tabState.value.signerName !== 'NoSigner'
+		&& param.tabState.value.signerName !== 'NoSignerDetected'
+		&& param.tabState.value.signerAccounts.length === 0
+		&& param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE
+		&& param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE_WITH_SHIELD
 	)
 	const isActiveAddressLoading = !param.isFreshHomeDataLoaded.value && param.activeAddress.value === undefined
 
@@ -559,17 +573,6 @@ function FirstCard(param: FirstCardParams) {
 		}
 	})
 
-	if (param.tabState.value?.signerName === 'NoSigner' && param.simulationMode.value === false) {
-		return <>
-			<section class = 'card popup-home-card popup-data-reveal'>
-				<FirstCardHeader { ...param }/>
-				<div class = 'card-content'>
-					<DinoSays text = { 'No signer connnected. You can use Interceptor in simulation mode without a signer, but signing mode requires a browser wallet.' } />
-				</div>
-			</section>
-		</>
-	}
-
 	return <>
 		<section class = 'card popup-home-card popup-data-reveal'>
 			<FirstCardHeader { ...param }/>
@@ -639,7 +642,7 @@ function FirstCard(param: FirstCardParams) {
 					</div>
 				}
 				{ isActiveAddressLoading ? <></> : !param.simulationMode.value ? <>
-					{ (param.tabState.value?.signerAccounts.length === 0 && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE_WITH_SHIELD) ?
+					{ canRequestSignerAccounts.value ?
 						<div style = 'margin-top: 5px'>
 							<AsyncActionButton
 								class = 'button is-primary'
@@ -653,12 +656,20 @@ function FirstCard(param: FirstCardParams) {
 								onClick = { connectToSigner }
 							/>
 						</div>
+						: selectedSignerIsKnownSafeOwner.value === false && selectedSignerAddress.value !== undefined
+							? <ErrorComponent
+								warning = { true }
+								containerStyle = { { margin: '5px 0 0' } }
+								text = { `${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } has ${ checksummedAddress(selectedSignerAddress.value) } selected. You cannot sign the current Gnosis Safe with it.` }
+							/>
 						: <p class = 'subtitle is-7 safe-signer-connection-message'> {
-							activeSafe.value === undefined
+							!isSignerAvailable(param.tabState.value)
+								? 'Connect a browser wallet to sign with the selected address.'
+								: activeSafe.value === undefined
 								? ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }`
 								: selectedSignerAddress.value === undefined
 									? `Select a Gnosis Safe owner in ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } before signing.`
-									: `${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } has ${ checksummedAddress(selectedSignerAddress.value) } selected. Interceptor verifies this account against the current Gnosis Safe owners when signing.`
+									: `${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } has ${ checksummedAddress(selectedSignerAddress.value) } selected.`
 						} </p>
 					}
 				</> : !param.isFreshHomeDataLoaded.value ?

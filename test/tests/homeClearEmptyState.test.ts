@@ -701,6 +701,40 @@ describe('Home popup clear empty state', () => {
 		}
 	})
 
+	test('keeps the active-address selector available in signing mode without a wallet', async () => {
+		const dom = installDomMock()
+		let changeActiveAddressCalls = 0
+		try {
+			await act(() => {
+				render(h(Home, createHomeParams({
+					changeActiveAddress: () => { changeActiveAddressCalls++ },
+					tabState: new Signal<TabState | undefined>({
+						tabId: 1,
+						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+						signerConnected: false,
+						signerName: 'NoSigner',
+						signerAccounts: [],
+						signerAccountError: undefined,
+						signerChain: undefined,
+						tabIconDetails: { icon: ICON_SIGNING, iconReason: 'No signer wallet detected.' },
+						activeSigningAddress: undefined,
+					}),
+					activeSimulationAddress: new Signal<bigint | undefined>(undefined),
+					activeSigningAddress: new Signal<bigint | undefined>(undefined),
+					simulationMode: new Signal(false),
+					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'No signer wallet detected.' }),
+				})), dom.document.body)
+			})
+
+			assert.equal(dom.document.body.textContent?.includes('Connect a browser wallet to sign with the selected address.'), true)
+			await act(async () => { await clickElement(getButtonByText(dom.document.body, 'Change')) })
+			assert.equal(changeActiveAddressCalls, 1)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	test('shows an unsaved signer address when it is active in simulation mode', async () => {
 		const dom = installDomMock()
 		try {
@@ -748,7 +782,7 @@ test('shows the wallet-selected Safe owner without a signer selector in signing 
 			const popupText = dom.document.body.textContent ?? ''
 			assert.equal(popupText.includes('Treasury Safe'), true)
 			assert.equal(popupText.includes('0x3000000000000000000000000000000000000003'), true)
-			assert.equal(popupText.includes('Interceptor verifies this account against the current Gnosis Safe owners when signing.'), true)
+			assert.equal(popupText.includes('MetaMask has 0x4000000000000000000000000000000000000004 selected.'), true)
 			assert.equal(popupText.includes('0x4000000000000000000000000000000000000004'), true)
 			assert.equal(popupText.includes('0x5000000000000000000000000000000000000005'), false)
 			assert.equal(collectElements(dom.document.body, 'input').filter((element) => element.getAttribute?.('name') === 'active-safe-signer').length, 0)
@@ -758,7 +792,7 @@ test('shows the wallet-selected Safe owner without a signer selector in signing 
 			assert.equal(signerOptions.length, 0)
 			assert.equal(popupText.includes('CONNECTED'), true)
 			assert.equal(popupText.includes('NOT CONNECTED'), false)
-			assert.equal(popupText.includes('Interceptor verifies this account against the current Gnosis Safe owners when signing.'), true)
+			assert.equal(popupText.includes('You cannot sign the current Gnosis Safe with it.'), false)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
@@ -1131,7 +1165,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 		}
 	})
 
-test('does not infer Safe ownership from cached owners in signing mode', async () => {
+test('warns when the wallet-selected account is not among the known Safe owners', async () => {
 		const dom = installDomMock()
 		try {
 			await act(() => {
@@ -1159,15 +1193,15 @@ test('does not infer Safe ownership from cached owners in signing mode', async (
 			assert.equal(popupText.includes('Gnosis Safe signers'), false)
 			assert.equal(popupText.includes('CONNECTED'), true)
 			assert.equal(popupText.includes('NOT CONNECTED'), false)
-			assert.equal(popupText.includes('MetaMask has 0x6000000000000000000000000000000000000006 selected. Interceptor verifies this account against the current Gnosis Safe owners when signing.'), true)
+			assert.equal(popupText.includes('MetaMask has 0x6000000000000000000000000000000000000006 selected. You cannot sign the current Gnosis Safe with it.'), true)
+			assert.equal(collectElements(dom.document.body, 'img').some((element) =>
+				element.getAttribute?.('src') === '../img/warning-sign-black.svg'
+			), true)
 			const retrievalStatus = collectElements(dom.document.body, 'p').find((element) =>
 				element.getAttribute?.('class') === 'popup-home-retrieval-status'
 			)
 			if (retrievalStatus === undefined) throw new Error('Missing aligned wallet retrieval status')
 			assert.equal(collectElements(retrievalStatus, 'span').some((element) => element.getAttribute?.('class') === 'popup-home-retrieval-source'), true)
-			assert.equal(collectElements(dom.document.body, 'p').some((element) =>
-				element.getAttribute?.('class')?.includes('safe-signer-connection-message') === true
-			), true)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()

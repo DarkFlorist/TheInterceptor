@@ -9,7 +9,7 @@ import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import type { EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
-import { getSafeSigningEntry, type AddressBookEntry } from '../types/addressBookTypes.js'
+import { getSafeSigningEntry, type AddressBookEntries, type AddressBookEntry } from '../types/addressBookTypes.js'
 import type { RpcEntry } from '../types/rpc.js'
 import { UnexpectedError } from './subcomponents/Error.js'
 import { addressEditEntry } from './ui-utils.js'
@@ -21,6 +21,13 @@ import { NetworkErrors } from './subcomponents/NetworkErrors.js'
 import { ProviderErrors } from './subcomponents/ProviderErrors.js'
 import { PopupModal, type PopupPage } from './PopupModal.js'
 export { NetworkErrors } from './subcomponents/NetworkErrors.js'
+
+export function getSelectableActiveAddresses(activeAddresses: AddressBookEntries, simulationMode: boolean, activeChainId: bigint | undefined, signerAccounts: readonly bigint[]) {
+	if (simulationMode || signerAccounts.length === 0) {
+		return activeAddresses.filter((entry) => entry.type !== 'safe' || entry.chainId === activeChainId)
+	}
+	return activeAddresses.filter((entry) => entry.type === 'safe' && entry.chainId === activeChainId)
+}
 
 export function App() {
 	const appPage = useSignal<PopupPage>({ page: 'Unknown' })
@@ -241,11 +248,7 @@ export function App() {
 		simulationMode.value || safeSigningMode.value ? activeSimulationAddress.value : activeSigningAddress.value
 	)
 	const selectableActiveAddresses = useComputed(() =>
-		simulationMode.value
-			? activeAddresses.value.filter((entry) => entry.type !== 'safe' || entry.chainId === rpcNetwork.value?.chainId)
-			: activeAddresses.value.filter((entry) =>
-				entry.chainId === rpcNetwork.value?.chainId && entry.type === 'safe'
-			)
+		getSelectableActiveAddresses(activeAddresses.value, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])
 	)
 
 	return (
