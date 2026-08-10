@@ -60,11 +60,26 @@ type BigAddressParams = {
 	readonly style?: JSX.CSSProperties
 }
 
-export function BigAddress(params: BigAddressParams) {
-	const addressBookEntry = resolveSignal(params.addressBookEntry)
+function getBigAddressText(addressBookEntry: AddressBookEntry | undefined) {
 	const addressString = addressBookEntry && checksummedAddress(addressBookEntry.address)
 	const labelText = addressBookEntry?.name || addressString || 'No address found'
 	const noteText = addressString && addressString !== labelText ? addressString : '(Not in addressbook)'
+	return { addressString, labelText, noteText }
+}
+
+export function StaticBigAddress({ addressBookEntry }: { readonly addressBookEntry: SignalOrValue<AddressBookEntry | undefined> }) {
+	const currentAddressBookEntry = resolveSignal(addressBookEntry)
+	const { labelText, noteText } = getBigAddressText(currentAddressBookEntry)
+	return <span class = 'multiline-card multiline-card--static' role = 'figure' title = { labelText }>
+		<span role = 'img'>{ currentAddressBookEntry === undefined ? <></> : <Blockie address = { currentAddressBookEntry.address } /> }</span>
+		<span class = 'multiline-card-static-label'><data class = 'text-legible' value = { labelText }>{ labelText }</data></span>
+		<span class = 'multiline-card-static-note'><data class = 'text-legible' value = { noteText }>{ noteText }</data></span>
+	</span>
+}
+
+export function BigAddress(params: BigAddressParams) {
+	const addressBookEntry = resolveSignal(params.addressBookEntry)
+	const { addressString, labelText, noteText } = getBigAddressText(addressBookEntry)
 
 	const configPartialWithEditOnClick  = {
 		onClick: () => addressBookEntry && params.renameAddressCallBack(addressBookEntry),

@@ -4,7 +4,7 @@ import type { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, ErrorText } from '../subcomponents/Error.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
 import { getMissingPopupReplyErrorMessage, requestPopupAbiAndNameFromBlockExplorer, requestPopupIdentifyAddress, requestPopupSafeContractState, sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
-import { AddressIcon, getActiveAddressEntry, SmallAddress } from '../subcomponents/address.js'
+import { AddressIcon, getActiveAddressEntry, StaticBigAddress } from '../subcomponents/address.js'
 import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
 import { createRef } from 'preact'
 import type { AddressBookEntries, AddressBookEntry, AddressBookEntryType, ChainIdWithUniversal, DeclarativeNetRequestBlockMode } from '../../types/addressBookTypes.js'
@@ -260,7 +260,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 	const renderSafeSigner = (safeSimulationSignerAddress: string) => {
 		const address = stringToAddress(safeSimulationSignerAddress)
 		if (address === undefined) return safeSimulationSignerAddress
-		return <span class = 'safe-signer-dropdown-address'><SmallAddress addressBookEntry = { getActiveAddressEntry(address, safeSimulationSignerAddressBookEntries.value) } renameAddressCallBack = { () => undefined } noCopying = { true } noEditAddress = { true } nonInteractive = { true }/></span>
+		return <span class = 'safe-signer-dropdown-address'><StaticBigAddress addressBookEntry = { getActiveAddressEntry(address, safeSimulationSignerAddressBookEntries.value) }/></span>
 	}
 	const hasSafeSigners = safeSignerAddresses.value.length > 0
 	const entry = modifyAddressWindowState.value.incompleteAddressBookEntry

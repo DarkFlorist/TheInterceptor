@@ -271,25 +271,15 @@ svg[role="img"] {
 }
 
 .safe-signer-home-option {
-	display: grid;
-	gap: 3px;
+	display: block;
 	min-width: 0;
 	width: 100%;
 }
 
-.safe-signer-home-option > .inline-card {
-	justify-self: start;
+.safe-signer-home-option > .multiline-card {
 	max-width: 100%;
 	min-width: 0;
-}
-
-.safe-signer-home-option > code {
-	color: var(--subtitle-text-color);
-	font-size: 0.68rem;
-	line-height: 1.25;
-	overflow-wrap: anywhere;
-	white-space: normal;
-	word-break: break-all;
+	width: 100%;
 }
 
 .address-editor {
@@ -544,12 +534,13 @@ svg[role="img"] {
 .safe-signer-dropdown-address {
 	display: block;
 	min-width: 0;
-	overflow: hidden;
+	width: 100%;
 }
 
-.safe-signer-dropdown-address > .inline-card {
+.safe-signer-dropdown-address > .multiline-card {
 	max-width: 100%;
 	min-width: 0;
+	width: 100%;
 }
 
 .address-editor-token-fields {
@@ -1459,8 +1450,20 @@ li {
 	cursor: pointer;
 }
 
+a.dropdown-item:hover,
+button.dropdown-item:hover,
+a.dropdown-item:focus-visible,
+button.dropdown-item:focus-visible {
+	background-color: color-mix(in srgb, var(--primary-color) 18%, var(--card-content-bg-color));
+	color: var(--text-color);
+	outline: 1px solid var(--primary-color);
+	outline-offset: -1px;
+}
+
 a.dropdown-item.is-active, button.dropdown-item.is-active {
-	background-color: var(--primary-color);
+	background-color: color-mix(in srgb, var(--primary-color) 38%, var(--card-content-bg-color));
+	box-shadow: inset 3px 0 0 var(--primary-color);
+	color: var(--text-color);
 }
 
 .card-header-icon {

@@ -1044,9 +1044,11 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 				button.getAttribute?.('class')?.includes('dropdown-item') === true
 				&& button.textContent?.includes('0x5000000000000000000000000000000000000005') === true
 			), true)
-			assert.equal(collectElements(dom.document.body, 'code').some((code) =>
-				code.textContent === '0x5000000000000000000000000000000000000005'
+			assert.equal(collectElements(dom.document.body, 'data').some((data) =>
+				data.textContent === '0x5000000000000000000000000000000000000005'
 			), true)
+			assert.equal(dom.document.body.textContent?.includes('Safe owner'), false)
+			assert.equal(dom.document.body.textContent?.includes('(Not in addressbook)'), true)
 			const refreshOwnersButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Refresh owners'))
 			if (refreshOwnersButton === undefined) throw new Error('Missing refresh Safe owners button')
 			act(() => { void clickElement(refreshOwnersButton) })

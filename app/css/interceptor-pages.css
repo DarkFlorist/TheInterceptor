@@ -585,6 +585,36 @@ header:has(form[role='search']) h1 {
 	}
 }
 
+.multiline-card--static {
+	grid-template-columns: [left] minmax(0, min-content) [data] minmax(0, 1fr) [right];
+	max-width: 100%;
+	width: 100%;
+}
+
+.multiline-card--static > .multiline-card-static-label {
+	font-weight: 600;
+	grid-area: top / data / sub / right;
+	min-width: 0;
+}
+
+.multiline-card--static > .multiline-card-static-note {
+	grid-area: sub / data / bottom / right;
+	min-width: 0;
+}
+
+.multiline-card--static > .multiline-card-static-note > data {
+	color: var(--disabled-text-color);
+	font-size: 0.825em;
+}
+
+.multiline-card--static data {
+	display: block;
+	min-width: 0;
+	overflow-wrap: anywhere;
+	white-space: normal;
+	word-break: break-all;
+}
+
 .tooltip {
 	background: var(--tooltip-color);
 	color: var(--white-color);

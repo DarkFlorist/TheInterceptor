@@ -1,6 +1,6 @@
 import type { HomeParams, FirstCardParams, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
 import { type SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
-import { ActiveAddressComponent, SmallAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
+import { ActiveAddressComponent, SmallAddress, StaticBigAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
 import { ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../utils/constants.js'
@@ -528,18 +528,8 @@ function FirstCard(param: FirstCardParams) {
 				...retrievedSafeOwnerAddressBookEntries.value,
 				...(param.activeAddresses.value ?? []),
 			])
-		const displayEntry = addressBookEntry.name === safeSimulationSignerAddress
-			? { ...addressBookEntry, name: 'Safe owner' }
-			: addressBookEntry
 		return <span class = 'safe-signer-home-option'>
-			<SmallAddress
-				addressBookEntry = { displayEntry }
-				renameAddressCallBack = { param.renameAddressCallBack }
-				noCopying = { true }
-				noEditAddress = { true }
-				nonInteractive = { true }
-			/>
-			<code>{ safeSimulationSignerAddress }</code>
+			<StaticBigAddress addressBookEntry = { addressBookEntry }/>
 		</span>
 	}
 

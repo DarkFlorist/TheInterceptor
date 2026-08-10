@@ -280,7 +280,7 @@ describe('add new address save flow', () => {
 		assert.match(addNewAddressSource, /class = 'safe-signer-editor-dropdown'/)
 		assert.match(addNewAddressSource, /<span>Safe signer in simulation<\/span>/)
 		assert.match(addNewAddressSource, /ariaLabel = 'Safe signer in simulation'/)
-		assert.match(addNewAddressSource, /<SmallAddress addressBookEntry = \{ getActiveAddressEntry\(address, safeSimulationSignerAddressBookEntries\.value\) \}/)
+		assert.match(addNewAddressSource, /<StaticBigAddress addressBookEntry = \{ getActiveAddressEntry\(address, safeSimulationSignerAddressBookEntries\.value\) \}\/>/)
 		assert.match(addNewAddressSource, /safeSimulationSignerAddressBookEntries\.value = safeContractState\.ownerAddressBookEntries/)
 		assert.match(addNewAddressSource, /onChangedCallBack = \{ safeSimulationSignerAddress => \{ void setSafeSignerAddress\(safeSimulationSignerAddress\) \} \}/)
 		assert.doesNotMatch(addNewAddressSource, /name = 'active-safe-signer'/)
