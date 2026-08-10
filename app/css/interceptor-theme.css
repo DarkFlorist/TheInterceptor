@@ -230,6 +230,68 @@ svg[role="img"] {
 	width: 100%;
 }
 
+.safe-signer-address .dropdown-trigger > button {
+	height: auto;
+	min-height: 0;
+	padding: 7px 9px;
+	text-align: left;
+	white-space: normal;
+}
+
+.safe-signer-address .dropdown button > .truncate {
+	display: block;
+	max-width: 100%;
+	min-width: 0;
+	overflow: visible;
+	white-space: normal;
+	width: 100%;
+}
+
+.safe-signer-address .dropdown-menu,
+.safe-signer-address .dropdown-content {
+	box-sizing: border-box;
+	max-width: 100%;
+	width: 100%;
+}
+
+.safe-signer-address .dropdown-menu {
+	min-width: 0;
+}
+
+.safe-signer-address .dropdown-content {
+	padding: 6px;
+}
+
+.safe-signer-address .dropdown-item {
+	box-sizing: border-box;
+	padding: 7px;
+	text-align: left;
+	white-space: normal;
+	width: 100%;
+}
+
+.safe-signer-home-option {
+	display: grid;
+	gap: 3px;
+	min-width: 0;
+	width: 100%;
+}
+
+.safe-signer-home-option > .inline-card {
+	justify-self: start;
+	max-width: 100%;
+	min-width: 0;
+}
+
+.safe-signer-home-option > code {
+	color: var(--subtitle-text-color);
+	font-size: 0.68rem;
+	line-height: 1.25;
+	overflow-wrap: anywhere;
+	white-space: normal;
+	word-break: break-all;
+}
+
 .address-editor {
 	display: grid;
 	gap: 12px;

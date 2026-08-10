@@ -977,23 +977,29 @@ test('rolls back only the simulation signer when optimistic persistence fails', 
 
 test('shows the selected Safe simulation signer and retrieves missing owner choices', async () => {
 		const dom = installDomMock()
+		const safeStateReply = {
+			method: 'popup_requestSafeContractState' as const,
+			data: {
+				chainId: '0x1',
+				result: {
+					ok: true as const,
+					owners: [
+						'0x4000000000000000000000000000000000000004',
+						'0x5000000000000000000000000000000000000005',
+					],
+					ownerAddressBookEntries: [],
+					version: '1.4.1',
+				},
+			},
+		}
+		let safeStateRequestCount = 0
+		let resolvePendingRefresh: ((reply: typeof safeStateReply) => void) | undefined
+		const pendingRefresh = new Promise<typeof safeStateReply>((resolve) => { resolvePendingRefresh = resolve })
 		const browserMock = installBrowserMock((message) => {
 			if (hasMethod(message, 'popup_setSafeSimulationSigner')) return { type: 'SetSafeSimulationSignerReply', ok: true }
-			return hasMethod(message, 'popup_requestSafeContractState') ? {
-				method: 'popup_requestSafeContractState',
-				data: {
-					chainId: '0x1',
-					result: {
-						ok: true,
-						owners: [
-							'0x4000000000000000000000000000000000000004',
-							'0x5000000000000000000000000000000000000005',
-						],
-						ownerAddressBookEntries: [],
-						version: '1.4.1',
-					},
-				},
-			} : undefined
+			if (!hasMethod(message, 'popup_requestSafeContractState')) return undefined
+			safeStateRequestCount += 1
+			return safeStateRequestCount === 1 ? safeStateReply : pendingRefresh
 		})
 		const activeAddresses = new Signal([{ ...safeEntry, safeSignerAddresses: undefined }])
 		try {
@@ -1038,6 +1044,84 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 				button.getAttribute?.('class')?.includes('dropdown-item') === true
 				&& button.textContent?.includes('0x5000000000000000000000000000000000000005') === true
 			), true)
+			assert.equal(collectElements(dom.document.body, 'code').some((code) =>
+				code.textContent === '0x5000000000000000000000000000000000000005'
+			), true)
+			const refreshOwnersButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Refresh owners'))
+			if (refreshOwnersButton === undefined) throw new Error('Missing refresh Safe owners button')
+			act(() => { void clickElement(refreshOwnersButton) })
+			await act(async () => { await Promise.resolve() })
+			assert.equal(dom.document.body.textContent?.includes('Refreshing...'), true)
+			if (resolvePendingRefresh === undefined) throw new Error('Missing pending Safe owner refresh resolver')
+			resolvePendingRefresh(safeStateReply)
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+			browserMock.restore()
+		}
+	})
+
+	test('keeps retrieved owners selectable when the first Safe owner cannot simulate', async () => {
+		const dom = installDomMock()
+		const contractOwner = 0x6000000000000000000000000000000000000006n
+		let signerUpdateCount = 0
+		const browserMock = installBrowserMock((message) => {
+			if (hasMethod(message, 'popup_requestSafeContractState')) return {
+				method: 'popup_requestSafeContractState',
+				data: {
+					chainId: '0x1',
+					result: {
+						ok: true,
+						owners: [
+							'0x6000000000000000000000000000000000000006',
+							'0x5000000000000000000000000000000000000005',
+						],
+						ownerAddressBookEntries: [],
+						version: '1.4.1',
+					},
+				},
+			}
+			if (!hasMethod(message, 'popup_setSafeSimulationSigner')) return undefined
+			signerUpdateCount += 1
+			return { type: 'SetSafeSimulationSignerReply', ok: true }
+		})
+		const activeAddresses = new Signal([{ ...safeEntry, safeSimulationSignerAddress: undefined, safeSignerAddresses: undefined }])
+		try {
+			await act(() => {
+				render(h(Home, createHomeParams({
+					activeAddresses,
+					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					simulationMode: new Signal(true),
+				})), dom.document.body)
+			})
+
+			const retrieveOwnersButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Retrieve owners'))
+			if (retrieveOwnersButton === undefined) throw new Error('Missing retrieve Safe owners button')
+			await act(async () => {
+				await clickElement(retrieveOwnersButton)
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+
+			assert.deepEqual(activeAddresses.value[0]?.safeSignerAddresses, [contractOwner, OTHER_SIGNER_ADDRESS])
+			assert.equal(activeAddresses.value[0]?.safeSimulationSignerAddress, undefined)
+			assert.equal(signerUpdateCount, 0)
+			const signerDropdown = collectElements(dom.document.body, 'button').find((button) =>
+				button.getAttribute?.('aria-label') === 'Safe signer in simulation: 0x6000000000000000000000000000000000000006'
+			)
+			if (signerDropdown === undefined) throw new Error('Missing retrieved Safe owner dropdown')
+			await act(async () => { await clickElement(signerDropdown) })
+			const eoaOwnerOption = collectElements(dom.document.body, 'button').find((button) =>
+				button.getAttribute?.('class')?.includes('dropdown-item') === true
+				&& button.textContent?.includes('0x5000000000000000000000000000000000000005') === true
+			)
+			if (eoaOwnerOption === undefined) throw new Error('Missing selectable EOA Safe owner')
+			await act(async () => {
+				await clickElement(eoaOwnerOption)
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.equal(activeAddresses.value[0]?.safeSimulationSignerAddress, OTHER_SIGNER_ADDRESS)
+			assert.equal(signerUpdateCount, 1)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()

@@ -486,49 +486,61 @@ function FirstCard(param: FirstCardParams) {
 			if (safeContractStateReply === undefined) throw new Error('Interceptor did not return the current Gnosis Safe owners.')
 			const safeContractState = safeContractStateReply.data.result
 			if (!safeContractState.ok) throw new Error(safeContractState.message)
-			const safeSimulationSignerAddress = safe.safeSimulationSignerAddress !== undefined
+			if (safeContractState.owners.length === 0) throw new Error('The Gnosis Safe does not have any owners.')
+			const currentSafeSimulationSignerAddress = safe.safeSimulationSignerAddress !== undefined
 				&& safeContractState.owners.includes(safe.safeSimulationSignerAddress)
 				? safe.safeSimulationSignerAddress
-				: safeContractState.owners[0]
-			if (safeSimulationSignerAddress === undefined) throw new Error('The Gnosis Safe does not have any owners.')
+				: undefined
+			retrievedSafeOwnerAddressBookEntries.value = safeContractState.ownerAddressBookEntries
+			const updateVisibleSafeOwners = (simulationSignerAddress: bigint | undefined) => {
+				if (param.activeAddresses.value === undefined) return
+				param.activeAddresses.value = param.activeAddresses.value.map((entry) =>
+					entry.type === 'safe' && entry.address === safe.address && entry.chainId === safe.chainId
+						? {
+							...entry,
+							safeSimulationSignerAddress: simulationSignerAddress,
+							safeSignerAddresses: [...safeContractState.owners],
+							safeVersion: safeContractState.version,
+						}
+						: entry
+				)
+			}
+			updateVisibleSafeOwners(currentSafeSimulationSignerAddress)
+			if (currentSafeSimulationSignerAddress === undefined) return
 			const reply = await sendPopupMessageWithReply({
 				method: 'popup_setSafeSimulationSigner',
 				data: {
 					chainId: safe.chainId,
 					safeAddress: safe.address,
-					safeSimulationSignerAddress,
+					safeSimulationSignerAddress: currentSafeSimulationSignerAddress,
 				},
 			})
 			if (reply === undefined) throw new Error('Interceptor did not reply while refreshing the Safe owners.')
 			if (!reply.ok) throw new Error(reply.message ?? 'Failed to refresh the Safe owners.')
-			retrievedSafeOwnerAddressBookEntries.value = safeContractState.ownerAddressBookEntries
-			if (param.activeAddresses.value === undefined) return
-			param.activeAddresses.value = param.activeAddresses.value.map((entry) =>
-				entry.type === 'safe' && entry.address === safe.address && entry.chainId === safe.chainId
-					? {
-						...entry,
-						safeSimulationSignerAddress,
-						safeSignerAddresses: [...safeContractState.owners],
-						safeVersion: safeContractState.version,
-					}
-					: entry
-			)
+			updateVisibleSafeOwners(currentSafeSimulationSignerAddress)
 		})
 	}
 
 	const renderSafeSimulationSigner = (safeSimulationSignerAddress: string) => {
 		const address = stringToAddress(safeSimulationSignerAddress)
 		if (address === undefined) return safeSimulationSignerAddress
-		return <SmallAddress
-			addressBookEntry = { getActiveAddressEntry(address, [
+		const addressBookEntry = getActiveAddressEntry(address, [
 				...retrievedSafeOwnerAddressBookEntries.value,
 				...(param.activeAddresses.value ?? []),
-			]) }
-			renameAddressCallBack = { param.renameAddressCallBack }
-			noCopying = { true }
-			noEditAddress = { true }
-			nonInteractive = { true }
-		/>
+			])
+		const displayEntry = addressBookEntry.name === safeSimulationSignerAddress
+			? { ...addressBookEntry, name: 'Safe owner' }
+			: addressBookEntry
+		return <span class = 'safe-signer-home-option'>
+			<SmallAddress
+				addressBookEntry = { displayEntry }
+				renameAddressCallBack = { param.renameAddressCallBack }
+				noCopying = { true }
+				noEditAddress = { true }
+				nonInteractive = { true }
+			/>
+			<code>{ safeSimulationSignerAddress }</code>
+		</span>
 	}
 
 	const timeSelectorOnChange = () => {
@@ -609,7 +621,7 @@ function FirstCard(param: FirstCardParams) {
 								class = 'btn btn--outline is-small'
 								state = { safeOwnerLookupState.value.state }
 								text = { safeSimulationSignerOptions.value.length > 1 ? 'Refresh owners' : 'Retrieve owners' }
-								pendingText = 'Retrieving...'
+								pendingText = { safeSimulationSignerOptions.value.length > 1 ? 'Refreshing...' : 'Retrieving...' }
 								disabled = { !param.isInitialHomeDataLoaded.value || safeSignerSelectionState.value.state === 'pending' }
 								onClick = { refreshSafeOwners }
 							/>
