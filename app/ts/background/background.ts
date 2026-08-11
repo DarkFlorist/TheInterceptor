@@ -179,7 +179,7 @@ async function handleRPCRequest(
 			return { type: 'result' as const, method: rpcRequest.method, error: { code: 10000, message: 'wallet_addEthereumChain not implemented' } }
 		}),
 		eth_getStorageAt: rpcRequestHandler('eth_getStorageAt', async (_context, rpcRequest) => {
-			if (forwardToSigner && !simulationOverlayEnabled) return getForwardingMessage(rpcRequest)
+			if (forwardToSigner && !simulationOverlayEnabled) return { ...getForwardingMessage(rpcRequest), replyWithSignersReply: true as const }
 			return await withSimulationInput((simulationInput) => getStorageAt(ethereum, simulationInput, rpcRequest))
 		}),
 		eth_getLogs: rpcRequestHandler('eth_getLogs', async (_context, rpcRequest) => await withExecutionSimulationState((simulationState) => getLogs(ethereum, simulationState, rpcRequest))),

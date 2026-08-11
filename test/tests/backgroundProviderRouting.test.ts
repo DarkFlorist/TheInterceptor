@@ -152,6 +152,43 @@ describe('background eth_accounts', () => {
 		})
 	})
 
+	test('asks the inpage bridge to settle forwarded EOA storage reads from the signer reply', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateTabState } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x1111111111111111111111111111111111111111n
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
+		await setUseSignersAddressAsActiveAddress(true)
+		await updateTabState(1, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connectionKey = websiteSocketToString(socket)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
+			method: 'eth_getStorageAt',
+			params: ['0xE592427A0AEce92De3Edee1F18E0157C05861564', '0x0', 'latest'],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.deepEqual(messages.at(-1), {
+			interceptorApproved: true,
+			requestId: 1,
+			type: 'forwardToSigner',
+			replyWithSignersReply: true,
+			method: 'eth_getStorageAt',
+			params: ['0xe592427a0aece92de3edee1f18e0157c05861564', '0x0', 'latest'],
+		})
+	})
+
 	test('preserves transaction-free overlays without running transaction preparation', async () => {
 		installBrowserMock()
 		const { prepareSimulationInputForRpc } = await import('../../app/ts/background/simulationUpdating.js')
