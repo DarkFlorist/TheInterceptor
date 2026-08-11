@@ -695,6 +695,37 @@ svg[role="img"] {
 	width: 14px;
 }
 
+.safe-signer-error-details {
+	align-items: center;
+	background: color-mix(in srgb, var(--text-color) 5%, transparent);
+	border: 1px solid var(--layout-line-color);
+	border-radius: 6px;
+	display: grid;
+	gap: 6px 10px;
+	grid-template-columns: max-content minmax(0, 1fr);
+	margin-top: 8px;
+	padding: 8px;
+}
+
+.safe-signer-error-details > dt {
+	color: var(--subtitle-text-color);
+	font-size: 12px;
+}
+
+.safe-signer-error-details > dd,
+.safe-signer-error-owner-list {
+	display: grid;
+	gap: 5px;
+	justify-items: end;
+	margin: 0;
+	min-width: 0;
+}
+
+.safe-signer-error-details .inline-card {
+	max-width: 100%;
+	min-width: 0;
+}
+
 .address-editor input[role=switch]:checked {
 	background: var(--primary-color);
 	border-color: var(--primary-color);
@@ -1257,10 +1288,6 @@ li {
 	font-size: 0.8rem;
 	min-height: 30px;
 	padding: 0 10px;
-}
-
-.simulation-summary-section-card > summary::after {
-	display: none;
 }
 
 .simulation-summary-section-card > summary .details--arrow {

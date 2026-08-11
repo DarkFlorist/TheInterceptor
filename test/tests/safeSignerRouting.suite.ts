@@ -371,10 +371,17 @@ test('shows a Safe signing-account mismatch in the confirmation dialog without r
 	fakeSafeContract.owners = [walletOwner]
 	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	const walletOwnerEntry = {
+		type: 'contact' as const,
+		name: 'Known Safe owner',
+		address: walletOwner,
+		chainId: fakeRpcNetwork.chainId,
+		entrySource: 'User' as const,
+	}
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
 		safeSignerAddresses: [walletOwner],
 		safeVersion: '1.4.1',
-	})])
+	}), walletOwnerEntry])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
 		signerAccounts: [walletOwner],
@@ -424,8 +431,68 @@ test('shows a Safe signing-account mismatch in the confirmation dialog without r
 	if (pendingMessage?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe account mismatch error')
 	assert.equal(pendingMessage.approvalStatus.code, -32010)
 	assert.equal(pendingMessage.approvalStatus.message, 'The Gnosis Safe transaction signing account does not match the active Gnosis Safe.')
+	assert.deepEqual(pendingMessage.approvalStatus.safeSignerErrorDetails, {
+		kind: 'safeSigningAccountMismatch',
+		requestedSigningAccount: mismatchedRequestedAccount,
+		activeSafe: activeAddress,
+		requestedSafe: activeAddress,
+		safeOwners: [walletOwner],
+		safeOwnerAddressBookEntries: [walletOwnerEntry],
+	})
 	assert.equal(pendingMessage.type === 'SignableMessage' ? pendingMessage.safeMessageCoSignSnapshot : undefined, undefined)
 	assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeRequest)
+
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	fakeSafeContract.safeOwnerLookupFailure = 'expected'
+	try {
+		assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(
+			simulator.ethereum,
+			simulator.tokenPriceService,
+			request,
+			signRequest,
+			false,
+			activeAddress,
+			{ websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' },
+			websiteTabConnections,
+		), { type: 'doNotReply' })
+	} finally {
+		fakeSafeContract.safeOwnerLookupFailure = undefined
+	}
+	const [pendingMessageWithoutOwners] = await modules.getPendingTransactionsAndMessages()
+	if (pendingMessageWithoutOwners?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe account mismatch error after owner lookup failure')
+	assert.deepEqual(pendingMessageWithoutOwners.approvalStatus.safeSignerErrorDetails, {
+		kind: 'safeSigningAccountMismatch',
+		requestedSigningAccount: mismatchedRequestedAccount,
+		activeSafe: activeAddress,
+		requestedSafe: activeAddress,
+		safeOwners: [],
+		safeOwnerAddressBookEntries: [],
+		safeOwnersUnavailableReason: 'Safe owner lookup unavailable',
+	})
+	assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeRequest)
+
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	fakeSafeContract.safeOwnerLookupFailure = 'unexpected'
+	try {
+		await withSilencedConsole(async () => {
+			assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(
+				simulator.ethereum,
+				simulator.tokenPriceService,
+				request,
+				signRequest,
+				false,
+				activeAddress,
+				{ websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' },
+				websiteTabConnections,
+			), { type: 'doNotReply' })
+		})
+	} finally {
+		fakeSafeContract.safeOwnerLookupFailure = undefined
+	}
+	const [pendingMessageAfterUnexpectedLookupFailure] = await modules.getPendingTransactionsAndMessages()
+	if (pendingMessageAfterUnexpectedLookupFailure?.approvalStatus.status !== 'SignerError') throw new Error('Missing reviewable mismatch after unexpected owner lookup failure')
+	assert.equal(pendingMessageAfterUnexpectedLookupFailure.approvalStatus.safeSignerErrorDetails?.kind, 'safeSigningAccountMismatch')
+	assert.equal((await getLatestUnexpectedError())?.data.code, 'safe_signer_owner_lookup_failed')
 })
 
 test('uses the configured Safe simulation signer without changing the active Safe account', async () => {

@@ -4,7 +4,6 @@ import type { PendingTransactionOrSignableMessage } from '../types/accessRequest
 import type { SafeEntry } from '../types/addressBookTypes.js'
 import { EIP712Message } from '../types/eip721.js'
 import type { SignMessageParams } from '../types/jsonRpc-signing-types.js'
-import { checksummedAddress } from '../utils/bigint.js'
 import { createTaggedError, getErrorMessage, isTaggedError } from '../utils/caughtErrors.js'
 import { isExpectedInfrastructureError, reportUnexpectedError } from '../utils/errors.js'
 import { getPrettySignerName, getWalletSelectedAccount } from '../utils/signerMetadata.js'
@@ -14,6 +13,7 @@ import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, 
 import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
 import { reconcileSafeTransactionStack } from '../safe/safeStack.js'
 import type { SafeTx } from '../types/personal-message-definitions.js'
+import type { SafeSignerErrorDetails } from '../types/safeTypes.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 
 export const SAFE_SIGNER_SELECTION_ERROR_CODE = -32010
@@ -26,12 +26,13 @@ export function isSafeSignerSelectionFailure(error: unknown) {
 	return isTaggedError(error, 'safeSignerSelectionFailure')
 }
 
-function createSafeMessageAccountMismatchFailure(message: string) {
-	return createTaggedError(message, 'safeMessageAccountMismatchFailure')
+function createSafeMessageAccountMismatchFailure(message: string, safeSignerErrorDetails: SafeSignerErrorDetails) {
+	return Object.assign(createTaggedError(message, 'safeMessageAccountMismatchFailure'), { safeSignerErrorDetails })
 }
 
-export function isSafeMessageAccountMismatchFailure(error: unknown) {
+export function isSafeMessageAccountMismatchFailure(error: unknown): error is Error & { readonly safeSignerErrorDetails: SafeSignerErrorDetails } {
 	return isTaggedError(error, 'safeMessageAccountMismatchFailure')
+		&& 'safeSignerErrorDetails' in error
 }
 
 export async function reportUnexpectedDirectSafeExecutionRecovery(error: unknown) {
@@ -73,10 +74,15 @@ export type SafeConfirmationResolution =
 	}
 
 async function getCurrentSafeEntry(ethereum: EthereumClientService, safeAddress: bigint) {
-	const safeEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId()))
+	return (await getCurrentSafeEntryAndAddressBookEntries(ethereum, safeAddress)).safeEntry
+}
+
+async function getCurrentSafeEntryAndAddressBookEntries(ethereum: EthereumClientService, safeAddress: bigint) {
+	const addressBookEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId())
+	const safeEntry = addressBookEntries
 		.find((entry) => entry.type === 'safe' && entry.address === safeAddress)
 	if (safeEntry?.type !== 'safe') throw createSafeContractValidationFailure('The Gnosis Safe is no longer configured in the address book.')
-	return safeEntry
+	return { safeEntry, addressBookEntries }
 }
 
 export async function getSafeSignerMismatchApprovalStatus(
@@ -90,19 +96,25 @@ export async function getSafeSignerMismatchApprovalStatus(
 		? getWalletSelectedAccount(tabState)
 		: refreshedSelection.selectedSigner
 	if (selectedSigner === reviewedSafeSigner) return undefined
-	const reviewedAddress = checksummedAddress(reviewedSafeSigner)
+	const safeSignerErrorDetails: SafeSignerErrorDetails = {
+		kind: 'safeOwnerMismatch',
+		expectedOwner: reviewedSafeSigner,
+		...(selectedSigner === undefined ? {} : { walletAccount: selectedSigner }),
+	}
 	if (refreshedSelection?.verificationError !== undefined) {
 		return createSafeSignerErrorStatus(
-			`The wallet-selected Gnosis Safe owner could not be verified: ${ refreshedSelection.verificationError } Select ${ reviewedAddress } in ${ signerName }, then retry.`,
+			`The wallet-selected Gnosis Safe owner could not be verified: ${ refreshedSelection.verificationError } Select the expected owner in ${ signerName }, then retry.`,
 			SAFE_SIGNER_SELECTION_ERROR_CODE,
+			safeSignerErrorDetails,
 		)
 	}
 	const selectedAccountDescription = selectedSigner === undefined
 		? 'no account selected'
-		: `${ checksummedAddress(selectedSigner) } selected`
+		: 'a different account selected'
 	return createSafeSignerErrorStatus(
-		`Gnosis Safe owner mismatch: this request was prepared for ${ reviewedAddress }, but ${ signerName } currently has ${ selectedAccountDescription }. Select ${ reviewedAddress } in ${ signerName }, then retry.`,
+		`Gnosis Safe owner mismatch: this request expects a different owner, but ${ signerName } currently has ${ selectedAccountDescription }. Select the expected owner in ${ signerName }, then retry.`,
 		SAFE_SIGNER_SELECTION_ERROR_CODE,
+		safeSignerErrorDetails,
 	)
 }
 
@@ -212,10 +224,36 @@ export async function createSafeMessageCoSignSnapshot(
 ) {
 	if (transactionParams.method !== 'eth_signTypedData_v4') throw new Error('Gnosis Safe co-signing requires an EIP-712 typed-data request.')
 	const [requestedAccount] = transactionParams.params
+	const { safeEntry, addressBookEntries } = await getCurrentSafeEntryAndAddressBookEntries(ethereum, activeAddress)
 	if (requestedAccount !== activeAddress || safeTx.domain.verifyingContract !== activeAddress) {
-		throw createSafeMessageAccountMismatchFailure('The Gnosis Safe transaction signing account does not match the active Gnosis Safe.')
+		let safeOwners: readonly bigint[] = []
+		let safeOwnersUnavailableReason: string | undefined
+		try {
+			safeOwners = (await getSafeContractState(ethereum, activeAddress)).owners
+		} catch (error) {
+			if (!isExpectedInfrastructureError(error) && !isSafeContractValidationFailure(error)) {
+				await reportUnexpectedError(error, {
+					source: 'safe_signer_owner_lookup',
+					code: 'safe_signer_owner_lookup_failed',
+					displayMessage: 'Failed to load the active Gnosis Safe owners.',
+				})
+			}
+			safeOwnersUnavailableReason = getErrorMessage(error) ?? 'The current owner list could not be loaded.'
+		}
+		const safeOwnerSet = new Set(safeOwners)
+		throw createSafeMessageAccountMismatchFailure(
+			'The Gnosis Safe transaction signing account does not match the active Gnosis Safe.',
+			{
+				kind: 'safeSigningAccountMismatch',
+				requestedSigningAccount: requestedAccount,
+				activeSafe: activeAddress,
+				requestedSafe: safeTx.domain.verifyingContract,
+				safeOwners,
+				safeOwnerAddressBookEntries: addressBookEntries.filter((entry) => safeOwnerSet.has(entry.address)),
+				...(safeOwnersUnavailableReason === undefined ? {} : { safeOwnersUnavailableReason }),
+			},
+		)
 	}
-	const safeEntry = await getCurrentSafeEntry(ethereum, activeAddress)
 	// Signing deliberately ignores stored simulation/owner preferences: the wallet selection is refreshed before forwarding and validated against current on-chain Safe state.
 	if (walletSignerAddress === undefined) {
 		throw createSafeSignerSelectionFailure('Connect a signer wallet and select a Gnosis Safe owner before co-signing.')

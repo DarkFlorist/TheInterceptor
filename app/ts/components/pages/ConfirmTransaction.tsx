@@ -41,6 +41,7 @@ import { reportUnexpectedError } from '../../utils/errors.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
 import type { SignerName } from '../../types/signerTypes.js'
+import { assertNever } from '../../utils/typescript.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: ReadonlySignal<PendingTransactionOrSignableMessage[]>
@@ -469,15 +470,70 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 type CheckBoxesParams = {
 	currentPendingTransactionOrSignableMessage: ReadonlySignal<PendingTransactionOrSignableMessage | undefined>,
 	forceSend: Signal<boolean>,
+	addressBookEntries?: readonly AddressBookEntry[],
 }
+
+function SafeSignerErrorAddress({ label, address, addressBookEntries }: { label: string, address: bigint, addressBookEntries: readonly AddressBookEntry[] }) {
+	return <>
+		<dt>{ label }</dt>
+		<dd><SmallAddress addressBookEntry = { getAddressBookEntryOrAFiller(addressBookEntries, address) } renameAddressCallBack = { () => undefined } noEditAddress = { true } /></dd>
+	</>
+}
+
+function SafeSignerErrorDetails({ details, addressBookEntries }: {
+	details: NonNullable<Extract<PendingTransactionOrSignableMessage['approvalStatus'], { status: 'SignerError' }>['safeSignerErrorDetails']>,
+	addressBookEntries: readonly AddressBookEntry[],
+}) {
+	switch (details.kind) {
+		case 'safeSigningAccountMismatch':
+			addressBookEntries = [...details.safeOwnerAddressBookEntries, ...addressBookEntries]
+			return <dl class = 'safe-signer-error-details'>
+				<SafeSignerErrorAddress label = 'Signing account' address = { details.requestedSigningAccount } addressBookEntries = { addressBookEntries } />
+				<SafeSignerErrorAddress label = 'Active Safe' address = { details.activeSafe } addressBookEntries = { addressBookEntries } />
+				{ details.requestedSafe === details.activeSafe ? <></> : <SafeSignerErrorAddress label = 'Transaction Safe' address = { details.requestedSafe } addressBookEntries = { addressBookEntries } /> }
+				<dt>Safe owners</dt>
+				<dd class = 'safe-signer-error-owner-list'>
+					{ details.safeOwnersUnavailableReason !== undefined
+						? <span>Owners unavailable: { details.safeOwnersUnavailableReason }</span>
+						: details.safeOwners.length === 0
+						? <span>No owners found</span>
+						: details.safeOwners.map((owner) => <SmallAddress key = { owner.toString() } addressBookEntry = { getAddressBookEntryOrAFiller(addressBookEntries, owner) } renameAddressCallBack = { () => undefined } noEditAddress = { true } />)
+					}
+				</dd>
+			</dl>
+		case 'safeOwnerMismatch':
+			return <dl class = 'safe-signer-error-details'>
+				<SafeSignerErrorAddress label = 'Expected owner' address = { details.expectedOwner } addressBookEntries = { addressBookEntries } />
+				<dt>Wallet account</dt>
+				<dd>{ details.walletAccount === undefined
+					? <span>No account selected</span>
+					: <SmallAddress addressBookEntry = { getAddressBookEntryOrAFiller(addressBookEntries, details.walletAccount) } renameAddressCallBack = { () => undefined } noEditAddress = { true } />
+				}</dd>
+			</dl>
+		default: assertNever(details)
+	}
+}
+
 export const CheckBoxes = (params: CheckBoxesParams) => {
 	const current = params.currentPendingTransactionOrSignableMessage.value
 	if (current === undefined) return <></>
 	if (current?.transactionOrMessageCreationStatus !== 'Simulated') return <></>
 	const margins = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px;'
+	const visualizedAddressBookEntries = current.type === 'SignableMessage'
+		? [
+			current.visualizedPersonalSignRequest.account,
+			current.visualizedPersonalSignRequest.activeAddress,
+			...(current.visualizedPersonalSignRequest.type === 'SafeTx' ? [current.visualizedPersonalSignRequest.verifyingContract, ...current.visualizedPersonalSignRequest.parsedMessageDataAddressBookEntries] : []),
+		]
+		: []
+	const addressBookEntries = [...visualizedAddressBookEntries, ...(params.addressBookEntries ?? [])]
 	if (current.approvalStatus.status === 'SignerError') return <div style = 'display: grid'>
 		<div style = { margins }>
 			<ErrorComponent text = { current.approvalStatus.message } />
+			{ current.approvalStatus.safeSignerErrorDetails === undefined
+				? <></>
+				: <SafeSignerErrorDetails details = { current.approvalStatus.safeSignerErrorDetails } addressBookEntries = { addressBookEntries } />
+			}
 		</div>
 	</div>
 	if (current?.type === 'SignableMessage') {
@@ -984,7 +1040,7 @@ export function ConfirmTransaction() {
 							</> }
 						</div>
 						<nav class = 'window-footer popup-button-row' style = 'position: sticky; bottom: 0; width: 100%;'>
-							<CheckBoxes currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage } forceSend = { forceSend } />
+							<CheckBoxes currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage } forceSend = { forceSend } addressBookEntries = { completeVisualizedSimulation.value.addressBookEntries } />
 					<ConfirmationButtons
 						currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage.value }
 						reject = { reject }

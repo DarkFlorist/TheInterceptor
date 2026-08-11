@@ -21,6 +21,7 @@ import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
 import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
 import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
+import type { SafeSignerErrorDetails } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
 import { getSettings } from '../settings.js'
 import * as funtypes from 'funtypes'
@@ -707,12 +708,14 @@ export async function openConfirmTransactionDialogForMessage(
 		const walletSignerAddress = getWalletSelectedAccount(signerTabState)
 		let safeMessageCoSignSnapshot: Awaited<ReturnType<typeof createSafeMessageCoSignSnapshot>> | undefined
 		let safeMessageAccountMismatch: string | undefined
+		let safeMessageAccountMismatchDetails: SafeSignerErrorDetails | undefined
 		if (!simulationMode && visualizedPersonalSignRequest.type === 'SafeTx') {
 			try {
 				safeMessageCoSignSnapshot = await createSafeMessageCoSignSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, visualizedPersonalSignRequest.message)
 			} catch (error) {
 				if (!isSafeMessageAccountMismatchFailure(error)) throw error
 				safeMessageAccountMismatch = getErrorMessage(error) ?? 'The Gnosis Safe transaction signing account does not match the active Gnosis Safe.'
+				safeMessageAccountMismatchDetails = error.safeSignerErrorDetails
 			}
 		}
 		await pendingConfirmationSemaphore.execute(async () => {
@@ -731,7 +734,7 @@ export async function openConfirmTransactionDialogForMessage(
 				website,
 				approvalStatus: safeMessageAccountMismatch === undefined
 					? { status: 'WaitingForUser' as const }
-					: createSafeSignerErrorStatus(safeMessageAccountMismatch, SAFE_SIGNER_SELECTION_ERROR_CODE),
+					: createSafeSignerErrorStatus(safeMessageAccountMismatch, SAFE_SIGNER_SELECTION_ERROR_CODE, safeMessageAccountMismatchDetails),
 				signedMessageTransaction,
 				...(safeMessageCoSignSnapshot === undefined ? {} : { safeMessageCoSignSnapshot }),
 			}

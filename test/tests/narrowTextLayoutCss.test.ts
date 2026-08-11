@@ -116,7 +116,7 @@ describe('narrow text layout CSS', () => {
 		const addressEditorDisclosureChevron = expectRule(css, '.address-editor-disclosure-chevron')
 		assert.match(addressEditorDisclosureChevron, /display\s*:\s*inline-flex\s*;/)
 		assert.match(addressEditorDisclosureChevron, /height\s*:\s*16px\s*;/)
-		assert.doesNotMatch(css, /address-editor-(?:preference-)?disclosure[^}]*summary::after/)
+		assert.doesNotMatch(css, /summary::?after\s*\{/)
 		const addressEditorSection = expectRule(css, '.address-editor-section')
 		assert.match(addressEditorSection, /border-radius\s*:\s*8px\s*;/)
 		const addressEditorSectionHeading = expectRule(css, '.address-editor-section-heading')

@@ -267,6 +267,8 @@ describe('add new address save flow', () => {
 		assert.match(addNewAddressSource, /rows = \{ 1 \}/)
 		assert.match(addNewAddressSource, /replaceAll\('\\n', ''\)\.replaceAll\('\\r', ''\)/)
 		assert.doesNotMatch(addNewAddressSource, /What should we call this address/)
+		assert.match(addNewAddressSource, /<small>Sites see this address without asking user<\/small>/)
+		assert.doesNotMatch(addNewAddressSource, /Reduces protection when this address is active\./)
 	})
 
 	test('renders on-chain Gnosis Safe owners as signer choices', () => {

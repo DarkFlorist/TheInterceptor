@@ -367,7 +367,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 				</summary>
 				<div class = 'address-editor-preference-content'>
 					<label class = 'address-editor-setting'>
-						<span><strong>Skip access requests</strong><small>Reduces protection when this address is active.</small></span>
+						<span><strong>Skip access requests</strong><small>Sites see this address without asking user</small></span>
 						<input role = 'switch' type = 'checkbox' checked = { !entry.askForAddressAccess } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setAskForAddressAccess(!e.target.checked) } } } />
 					</label>
 					<label class = 'address-editor-setting'>
