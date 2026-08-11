@@ -47,7 +47,7 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerforma
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { updateRichListAddress } from '../utils/richList.js'
 import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply.js'
-import { createSafeContractValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot } from '../safe/safeCore.js'
+import { createSafeContractValidationFailure, validateSafeOwnerIsEoa } from '../safe/safeCore.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getPendingSafeSignerAddress } from './safeConfirmationResolver.js'
 import { getWalletSelectedAccount } from '../utils/signerMetadata.js'
@@ -316,14 +316,11 @@ export async function addOrModifyAddressBookEntry(ethereum: EthereumClientServic
 						message: `Switch Interceptor to chain ${ entry.data.chainId.toString() } before validating this Gnosis Safe.`,
 					}
 				}
-				const { blockNumber, state: safeState } = await getSafeContractSnapshot(ethereum, entry.data.address)
-				if (safeState.owners.length === 0) throw createSafeContractValidationFailure('The Gnosis Safe does not have any owners.')
 				const safeSimulationSignerAddress = entry.data.safeSimulationSignerAddress
-				if (safeSimulationSignerAddress === undefined || !safeState.owners.includes(safeSimulationSignerAddress)) {
+				if (safeSimulationSignerAddress === undefined) {
 					throw createSafeContractValidationFailure('Select a current Gnosis Safe owner for simulation.')
 				}
-				const ownerValidator = createSafeOwnerValidator(ethereum, entry.data.address, { blockNumber, state: safeState })
-				await ownerValidator.assertEoaOwner(safeSimulationSignerAddress)
+				const { snapshot: { state: safeState } } = await validateSafeOwnerIsEoa(ethereum, entry.data.address, safeSimulationSignerAddress)
 				entryToStore = {
 					...entry.data,
 					safeSimulationSignerAddress,
@@ -389,12 +386,10 @@ export async function setSafeSimulationSigner(
 	if (safeEntry?.type !== 'safe') {
 		return { type: 'SetSafeSimulationSignerReply' as const, ok: false as const, message: 'The Gnosis Safe address-book entry no longer exists.' }
 	}
-	let validatedSafeState: Awaited<ReturnType<typeof getSafeContractSnapshot>>['state']
+	let validatedSafeState: Awaited<ReturnType<typeof validateSafeOwnerIsEoa>>['snapshot']['state']
 	try {
-		const { blockNumber, state } = await getSafeContractSnapshot(ethereum, safeEntry.address)
-		const ownerValidator = createSafeOwnerValidator(ethereum, safeEntry.address, { blockNumber, state })
-		await ownerValidator.assertEoaOwner(request.data.safeSimulationSignerAddress)
-		validatedSafeState = state
+		const { snapshot } = await validateSafeOwnerIsEoa(ethereum, safeEntry.address, request.data.safeSimulationSignerAddress)
+		validatedSafeState = snapshot.state
 	} catch(error) {
 		if (!isExpectedHandledError(error)) {
 			await reportUnexpectedError(error, {

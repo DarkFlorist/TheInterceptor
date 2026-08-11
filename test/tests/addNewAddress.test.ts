@@ -336,7 +336,7 @@ describe('add new address save flow', () => {
 		assert.match(addNewAddressSource, /!isCurrentSafeLookupComplete\.value \? <><\/> : <ErrorText/)
 		assert.match(addNewAddressSource, /areAddressIdentificationKeysEqual\(lastSuccessfulSafeIdentification\.value, currentIdentification\)/)
 		assert.match(popupMessageHandlersSource, /safeSignerAddresses: \[\.\.\.safeState\.owners\]/)
-		assert.match(popupMessageHandlersSource, /ownerValidator\.assertEoaOwner\(safeSimulationSignerAddress\)/)
+		assert.match(popupMessageHandlersSource, /validateSafeOwnerIsEoa\(ethereum, entry\.data\.address, safeSimulationSignerAddress\)/)
 		assert.doesNotMatch(popupMessageHandlersSource, /Promise\.all\(getSafeSignerAddresses\(entry\.data\)/)
 	})
 })

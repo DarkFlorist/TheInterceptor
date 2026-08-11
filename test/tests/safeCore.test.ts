@@ -4,7 +4,7 @@ import { AddressBookEntry, getSafeSignerAddresses } from '../../app/ts/types/add
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { SafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import { SafeStackExport } from '../../app/ts/types/safeTypes.js'
-import { SAFE_ABI, assertInterceptorSafeTransactionPolicy, createSafeOwnerValidator, createSafeTx, getSafeContractSnapshot, getSafeContractState, isSafeContractValidationFailure, normalizeSafeSignature, recoverSafeSignatureOwner, safeTxToTypedDataJson } from '../../app/ts/safe/safeCore.js'
+import { SAFE_ABI, assertInterceptorSafeTransactionPolicy, createSafeOwnerValidator, createSafeTx, getSafeContractSnapshot, getSafeContractState, isSafeContractValidationFailure, isSafeOwnerValidationFailure, normalizeSafeSignature, recoverSafeSignatureOwner, safeTxToTypedDataJson, validateSafeOwnerIsEoa } from '../../app/ts/safe/safeCore.js'
 import { completeSafeExecutionWithConfiguredSigner, SAFE_EXECUTION_ABI } from '../../app/ts/safe/safeExecution.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
@@ -207,8 +207,17 @@ describe('Safe transaction support', () => {
 		})
 		const snapshot = await getSafeContractSnapshot(createEthereum(), 0x1234n)
 		await assert.doesNotReject(createSafeOwnerValidator(createEthereum(), 0x1234n, snapshot).assertEoaOwner(owner))
+		assert.deepEqual((await validateSafeOwnerIsEoa(createEthereum(), 0x1234n, owner)).snapshot, snapshot)
 		await assert.rejects(createSafeOwnerValidator(createEthereum(), 0x1234n, snapshot).assertEoaOwner(0x9abcn), /is not an owner of Gnosis Safe/u)
+		await assert.rejects(
+			validateSafeOwnerIsEoa(createEthereum(), 0x1234n, 0x9abcn),
+			(error) => isSafeOwnerValidationFailure(error) && /is not an owner of Gnosis Safe/u.test(error.message),
+		)
 		await assert.rejects(createSafeOwnerValidator(createEthereum(true), 0x1234n, snapshot).assertEoaOwner(owner), /supports EOA owners only/u)
+		await assert.rejects(
+			validateSafeOwnerIsEoa(createEthereum(true), 0x1234n, owner),
+			(error) => isSafeOwnerValidationFailure(error) && /supports EOA owners only/u.test(error.message),
+		)
 		await assert.rejects(
 			getSafeContractState(createEthereum(false, '2.0.0'), 0x1234n),
 			(error) => isSafeContractValidationFailure(error) && /version 2\.0\.0 is not supported/u.test(error.message),
