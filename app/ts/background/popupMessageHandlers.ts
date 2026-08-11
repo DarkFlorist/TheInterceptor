@@ -50,6 +50,7 @@ import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply
 import { createSafeContractValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getPendingSafeSignerAddress } from './safeConfirmationResolver.js'
+import { getWalletSelectedAccount } from '../utils/signerMetadata.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
 export { getLastKnownCurrentTabId } from './currentTab.js'
 export { exportSettings, importSettings, setNewRpcList, settingsOpened } from './popupMessageHandlers/settings.js'
@@ -89,6 +90,12 @@ async function refreshSignerAccountsForTabIfNeeded(websiteTabConnections: Websit
 
 	await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, approvedConnection.socket, false)
 	return await getTabState(tabId)
+}
+
+async function getWalletSelectedAddressBookEntry(tabState: TabState, chainId: bigint) {
+	const walletSelectedAccount = getWalletSelectedAccount(tabState)
+	if (walletSelectedAccount === undefined) return undefined
+	return (await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)).find((entry) => entry.address === walletSelectedAccount)
 }
 
 export async function confirmDialog(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
@@ -797,6 +804,7 @@ export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTab
 	const settings = await settingsPromise
 	const tabState = await tabStatePromise
 	const activeSigningAddress = tabId === undefined ? undefined : (await getActiveAddressForCurrentPopupSignerState(settings, websiteTabConnections, tabId))?.address
+	const walletSelectedAddressBookEntry = await getWalletSelectedAddressBookEntry(tabState, settings.activeRpcNetwork.chainId)
 	const interceptorDisabled = isInterceptorDisabledForWebsite(settings, tabState.website?.websiteOrigin)
 
 	await sendPopupMessageToOpenWindows({
@@ -804,6 +812,7 @@ export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTab
 		popupRefreshGeneration,
 		data: {
 			activeAddresses: await activeAddressesPromise,
+			walletSelectedAddressBookEntry,
 			tabState,
 			settings,
 			activeSigningAddressInThisTab: activeSigningAddress,
@@ -1116,6 +1125,7 @@ async function buildHomePageUpdate(
 	let tabState = await tabStatePromise
 	tabState = await refreshSignerAccountsForTabIfNeeded(websiteTabConnections, tabId, tabState, shouldRefreshSignerAccounts)
 	const activeSigningAddress = tabId === undefined ? undefined : (await getActiveAddressForCurrentPopupSignerState(settings, websiteTabConnections, tabId))?.address
+	const walletSelectedAddressBookEntry = await getWalletSelectedAddressBookEntry(tabState, settings.activeRpcNetwork.chainId)
 	const interceptorDisabled = isInterceptorDisabledForWebsite(settings, tabState.website?.websiteOrigin)
 	const richData = await richDataPromise
 	const websiteAccessAddressMetadata = includeWebsiteAccessAddressMetadata ? await getAddressMetadataForAccess(settings.websiteAccess) : []
@@ -1126,6 +1136,7 @@ async function buildHomePageUpdate(
 		data: {
 			visualizedSimulatorState: await visualizedSimulatorStatePromise,
 			activeAddresses: await activeAddressesPromise,
+			walletSelectedAddressBookEntry,
 			richList: richData.richList,
 			makeCurrentAddressRich: richData.makeCurrentAddressRich,
 			latestUnexpectedError: await latestUnexpectedErrorPromise,

@@ -637,7 +637,9 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		rpcEntries: RpcEntries,
 		interceptorDisabled: funtypes.Boolean,
 		preSimulationBlockTimeManipulation: BlockTimeManipulation,
-	})
+	}).And(funtypes.ReadonlyPartial({
+		walletSelectedAddressBookEntry: AddressBookEntry,
+	}))
 })
 
 export type HomePageBootstrap = funtypes.Static<typeof HomePageBootstrap>
@@ -652,7 +654,9 @@ export const HomePageBootstrap = funtypes.ReadonlyObject({
 		tabId: funtypes.Union(funtypes.Number, funtypes.Undefined),
 		rpcEntries: RpcEntries,
 		interceptorDisabled: funtypes.Boolean,
-	})
+	}).And(funtypes.ReadonlyPartial({
+		walletSelectedAddressBookEntry: AddressBookEntry,
+	}))
 })
 
 type ActiveSigningAddressChanged = funtypes.Static<typeof ActiveSigningAddressChanged>

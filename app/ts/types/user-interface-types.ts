@@ -35,6 +35,7 @@ export type HomeParams = {
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>
 	activeAddresses: Signal<AddressBookEntries>
+	walletSelectedAddressBookEntry: Signal<AddressBookEntry | undefined>
 	tabState: Signal<TabState | undefined>
 	activeSimulationAddress: Signal<bigint | undefined>
 	activeSigningAddress: Signal<bigint | undefined>
@@ -73,6 +74,7 @@ export type FirstCardParams = {
 	activeAddress: Signal<AddressBookEntry | undefined>
 	useSignersAddressAsActiveAddress: Signal<boolean>
 	activeAddresses: Signal<AddressBookEntries | undefined>
+	walletSelectedAddressBookEntry: Signal<AddressBookEntry | undefined>
 	changeActiveRpc: (rpcEntry: RpcEntry) => void
 	rpcNetwork: Signal<RpcNetwork | undefined>
 	simulationMode: Signal<boolean>

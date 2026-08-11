@@ -127,6 +127,12 @@ async function clickElement(element: { l?: Record<string, (event: unknown) => un
 	await clickHandler({ currentTarget: element })
 }
 
+async function changeElement(element: { l?: Record<string, (event: unknown) => unknown> }) {
+	const changeHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Change'))?.[1]
+	if (changeHandler === undefined) throw new Error('Expected change handler')
+	await changeHandler({ currentTarget: element })
+}
+
 function isDisabled(element: TestDomNode | undefined) {
 	if (element === undefined) return false
 	return 'disabled' in element || element.attributes?.disabled !== undefined
@@ -906,12 +912,15 @@ describe('popup async action UI', () => {
 			await settleAsyncUpdates()
 		})
 		assert.equal(dom.document.body.textContent?.includes('Safe Owner 1'), true)
-		const signerDropdown = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label')?.startsWith('Safe signer in simulation:'))
-		if (signerDropdown === undefined) throw new Error('Expected Safe signer owner dropdown')
-		await act(async () => { await clickElement(signerDropdown) })
-		const alternateOwnerOption = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Safe Owner 2'))
-		if (alternateOwnerOption === undefined) throw new Error('Expected alternate Safe owner option')
-		await act(async () => { await clickElement(alternateOwnerOption) })
+		const ownerOptions = collectElements(dom.document.body, 'input').filter((input) => input.getAttribute?.('name') === 'safe-simulation-signer')
+		assert.equal(ownerOptions.length, 2)
+		assert.equal(dom.document.body.textContent?.includes('Safe Owner 2'), true)
+		const alternateOwnerOption = ownerOptions.find((input) => input.getAttribute?.('value') === '0x3333333333333333333333333333333333333333')
+		if (alternateOwnerOption === undefined) throw new Error('Expected alternate Safe owner radio option')
+		const alternateOwnerLabel = alternateOwnerOption.parentNode
+		if (alternateOwnerLabel === undefined || alternateOwnerLabel === null) throw new Error('Expected alternate Safe owner label')
+		assert.equal(collectElements(alternateOwnerLabel, 'button').length, 0)
+		await act(async () => { await changeElement(alternateOwnerOption) })
 		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.safeSimulationSignerAddress, '0x3333333333333333333333333333333333333333')
 		const refreshButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Refresh owners'))
 		if (refreshButton === undefined) throw new Error('Expected Safe signer refresh button')

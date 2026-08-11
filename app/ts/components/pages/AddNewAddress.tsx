@@ -4,7 +4,7 @@ import type { AddAddressParam } from '../../types/user-interface-types.js'
 import { ErrorCheckBox, ErrorText } from '../subcomponents/Error.js'
 import { checksummedAddress, stringToAddress } from '../../utils/bigint.js'
 import { getMissingPopupReplyErrorMessage, requestPopupAbiAndNameFromBlockExplorer, requestPopupIdentifyAddress, requestPopupSafeContractState, sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
-import { AddressIcon, getActiveAddressEntry, StaticBigAddress } from '../subcomponents/address.js'
+import { AddressIcon, getActiveAddressEntry, SmallAddress } from '../subcomponents/address.js'
 import { assertUnreachable, modifyObject } from '../../utils/typescript.js'
 import { createRef } from 'preact'
 import type { AddressBookEntries, AddressBookEntry, AddressBookEntryType, ChainIdWithUniversal, DeclarativeNetRequestBlockMode } from '../../types/addressBookTypes.js'
@@ -257,11 +257,6 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 	const decimals = useComputed(() => modifyAddressWindowState.value.incompleteAddressBookEntry.decimals !== undefined ? modifyAddressWindowState.value.incompleteAddressBookEntry.decimals.toString() : undefined)
 	const safeSignerAddresses = useComputed(() => modifyAddressWindowState.value.incompleteAddressBookEntry.safeSignerAddresses ?? [])
 	const selectedSafeSignerAddress = useComputed(() => modifyAddressWindowState.value.incompleteAddressBookEntry.safeSimulationSignerAddress ?? safeSignerAddresses.value[0] ?? '')
-	const renderSafeSigner = (safeSimulationSignerAddress: string) => {
-		const address = stringToAddress(safeSimulationSignerAddress)
-		if (address === undefined) return safeSimulationSignerAddress
-		return <span class = 'safe-signer-dropdown-address'><StaticBigAddress addressBookEntry = { getActiveAddressEntry(address, safeSimulationSignerAddressBookEntries.value) }/></span>
-	}
 	const hasSafeSigners = safeSignerAddresses.value.length > 0
 	const entry = modifyAddressWindowState.value.incompleteAddressBookEntry
 	return <div class = 'address-editor'>
@@ -302,16 +297,26 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 					<AsyncActionButton
 						class = 'btn btn--outline is-small'
 						state = { safeSignerLookupState }
-						text = { hasSafeSigners ? 'Refresh owners' : 'Retrieve owners' }
+						text = 'Refresh owners'
 						pendingText = { hasSafeSigners ? 'Refreshing...' : 'Retrieving...' }
 						disabled = { disableDueToSource || stringToAddress(entry.address) === undefined }
 						onClick = { refreshSafeSigners }
 					/>
 				</div>
 				{ hasSafeSigners
-					? <div class = 'safe-signer-editor-dropdown'>
-						<span>Safe signer in simulation</span>
-						<DropDownMenu selected = { selectedSafeSignerAddress } dropDownOptions = { safeSignerAddresses } onChangedCallBack = { safeSimulationSignerAddress => { void setSafeSignerAddress(safeSimulationSignerAddress) } } buttonClassses = 'btn btn--outline is-small' ariaLabel = 'Safe signer in simulation' disabled = { disableDueToSource } renderOption = { renderSafeSigner }/>
+					? <div class = 'safe-signer-owner-picker'>
+						<p>Safe signer in simulation</p>
+						<div class = 'safe-signer-owner-list' role = 'radiogroup' aria-label = 'Safe signer in simulation'>
+							{ safeSignerAddresses.value.map((safeSignerAddress) => {
+								const parsedAddress = stringToAddress(safeSignerAddress)
+								if (parsedAddress === undefined) return <></>
+								const addressBookEntry = getActiveAddressEntry(parsedAddress, safeSimulationSignerAddressBookEntries.value)
+								return <label class = 'safe-signer-owner-option' key = { safeSignerAddress }>
+									<input type = 'radio' name = 'safe-simulation-signer' value = { safeSignerAddress } checked = { selectedSafeSignerAddress.value.toLowerCase() === safeSignerAddress.toLowerCase() } disabled = { disableDueToSource } onChange = { () => { void setSafeSignerAddress(safeSignerAddress) } } />
+									<SmallAddress addressBookEntry = { addressBookEntry } renameAddressCallBack = { () => undefined } noEditAddress = { true } nonInteractive = { true } />
+								</label>
+							}) }
+						</div>
 					</div>
 					: <></>
 				}
@@ -556,7 +561,7 @@ export function AddNewAddress(param: AddAddressParam) {
 			}
 			case 'safe': {
 				if (incompleteAddressBookEntry.chainId === 'AllChains') return { type: 'error', error: 'Gnosis Safe wallets must use a specific chain.' }
-				if (parsedSafeSignerAddresses.length === 0) return { type: 'error', error: 'Retrieve the current Gnosis Safe owners before saving.' }
+				if (parsedSafeSignerAddresses.length === 0) return { type: 'error', error: 'Gnosis Safe owner metadata is unavailable.' }
 				if (safeSimulationSignerAddress === undefined || !parsedSafeSignerAddresses.includes(safeSimulationSignerAddress)) return { type: 'error', error: 'Select a current Gnosis Safe owner for simulation.' }
 				if (incompleteAddressBookEntry.safeVersion === undefined) return { type: 'error', error: 'Retrieve the current Gnosis Safe version before saving.' }
 				return {
@@ -691,7 +696,7 @@ export function AddNewAddress(param: AddAddressParam) {
 								refreshSafeSigners = { refreshSafeSigners }
 						/>
 					<div class = 'address-editor-errors'>
-					{ completeAddressBookEntryOrError.value.type !== 'error' ? <></> : <ErrorText text = { completeAddressBookEntryOrError.value.error } /> }
+					{ completeAddressBookEntryOrError.value.type !== 'error' || !isCurrentSafeLookupComplete.value ? <></> : <ErrorText text = { completeAddressBookEntryOrError.value.error } /> }
 
 					{ param.modifyAddressWindowState.value.errorState === undefined ? <></> : <ErrorText text = { param.modifyAddressWindowState.value.errorState.message } /> }
 					{ saveEntryState.value.state === 'rejected' ? <ErrorText text = { saveEntryState.value.error.message } /> : <></> }

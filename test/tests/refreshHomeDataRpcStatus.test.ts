@@ -8,6 +8,8 @@ type RuntimeMessage = {
 	popupRefreshGeneration?: number
 	data?: {
 		activeSigningAddressInThisTab?: bigint
+		activeAddresses?: readonly { address: bigint }[]
+		walletSelectedAddressBookEntry?: { address: bigint, name: string }
 		rpcConnectionStatus?: {
 			retrying: boolean
 		}
@@ -365,6 +367,16 @@ describe('refreshHomeData', () => {
 			websiteAccess: [],
 			activeRpcNetwork: rpcNetwork,
 			simulationMode: false,
+			userAddressBookEntriesV3: [
+				defaultAddress,
+				{
+					type: 'contact',
+					name: 'Named signer contact',
+					address: signerAddress,
+					entrySource: 'User',
+					useAsActiveAddress: false,
+				},
+			],
 		})
 		await saveCurrentTabId(1)
 		await updateTabState(1, (previousState) => ({
@@ -392,6 +404,8 @@ describe('refreshHomeData', () => {
 		const bootstrap = browserMock.sentMessages.findLast((message) => message.method === 'popup_homePageBootstrap')
 		assert.equal(bootstrap?.popupRefreshGeneration, 7)
 		assert.equal(bootstrap?.data?.activeSigningAddressInThisTab, signerAddress)
+		assert.equal(bootstrap?.data?.walletSelectedAddressBookEntry?.name, 'Named signer contact')
+		assert.equal(bootstrap?.data?.activeAddresses?.some((entry) => entry.address === signerAddress), false)
 		assert.equal(bootstrap?.data?.settings?.simulationMode, false)
 		assert.equal(bootstrap?.data?.visualizedSimulatorState, undefined)
 
@@ -418,6 +432,7 @@ describe('refreshHomeData', () => {
 
 		const fullHomeData = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage')
 		assert.equal(fullHomeData?.data?.activeSigningAddressInThisTab, defaultAddress.address)
+		assert.equal(fullHomeData?.data?.walletSelectedAddressBookEntry?.name, 'Named signer contact')
 	})
 
 	test('home bootstrap hides cached signer addresses without a confirmed signer owner', async () => {

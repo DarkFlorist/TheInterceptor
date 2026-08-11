@@ -27,6 +27,7 @@ export function App() {
 	const appPage = useSignal<PopupPage>({ page: 'Unknown' })
 	const {
 		activeAddresses,
+		walletSelectedAddressBookEntry,
 		activeSimulationAddress,
 		activeSigningAddress,
 		useSignersAddressAsActiveAddress,
@@ -280,6 +281,7 @@ export function App() {
 						changeActiveAddress = { changeActiveAddress }
 						makeCurrentAddressRich = { makeCurrentAddressRich }
 						activeAddresses = { activeAddresses }
+						walletSelectedAddressBookEntry = { walletSelectedAddressBookEntry }
 						simulationMode = { simulationMode }
 						tabIconDetails = { tabIconDetails }
 						currentBlockNumber = { currentBlockNumber }

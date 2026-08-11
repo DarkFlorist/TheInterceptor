@@ -46,6 +46,19 @@ function scheduleAfterPaint(callback: () => void) {
 	return () => globalThis.clearTimeout(timeout)
 }
 
+function WalletSelectedAddressStatus({ signerName, addressBookEntry, renameAddressCallBack, cannotSignSafe = false }: {
+	readonly signerName: string
+	readonly addressBookEntry: AddressBookEntry | undefined
+	readonly renameAddressCallBack: RenameAddressCallBack
+	readonly cannotSignSafe?: boolean
+}) {
+	return <>
+		{ signerName } has{' '}
+		<SmallAddress addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack } copyOnActionOnly = { true } />
+		{' '}selected.{ cannotSignSafe ? ' You cannot sign the current Gnosis Safe with it.' : '' }
+	</>
+}
+
 async function waitForNextPaint() {
 	await new Promise<void>((resolve) => { scheduleAfterPaint(resolve) })
 }
@@ -437,6 +450,12 @@ function FirstCard(param: FirstCardParams) {
 		return safeSimulationSignerOptions.value[0] ?? ''
 	})
 	const selectedSignerAddress = useComputed(() => getWalletSelectedAccount(param.tabState.value))
+	const selectedSignerAddressBookEntry = useComputed(() => {
+		const address = selectedSignerAddress.value
+		if (address === undefined) return undefined
+		if (param.walletSelectedAddressBookEntry.value?.address === address) return param.walletSelectedAddressBookEntry.value
+		return getActiveAddressEntry(address, param.activeAddresses.value ?? [])
+	})
 	const selectedSignerIsKnownSafeOwner = useComputed(() => {
 		const safe = activeSafe.value
 		const signerAddress = selectedSignerAddress.value
@@ -667,7 +686,7 @@ function FirstCard(param: FirstCardParams) {
 							? <ErrorComponent
 								warning = { true }
 								containerStyle = { { margin: '5px 0 0' } }
-								text = { `${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } has ${ checksummedAddress(selectedSignerAddress.value) } selected. You cannot sign the current Gnosis Safe with it.` }
+								text = { <WalletSelectedAddressStatus signerName = { getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } addressBookEntry = { selectedSignerAddressBookEntry.value } renameAddressCallBack = { param.renameAddressCallBack } cannotSignSafe = { true } /> }
 							/>
 						: <p class = 'subtitle is-7 safe-signer-connection-message'> {
 							!isSignerAvailable(param.tabState.value)
@@ -676,7 +695,7 @@ function FirstCard(param: FirstCardParams) {
 								? ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }`
 								: selectedSignerAddress.value === undefined
 									? `Select a Gnosis Safe owner in ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } before signing.`
-									: `${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } has ${ checksummedAddress(selectedSignerAddress.value) } selected.`
+									: <WalletSelectedAddressStatus signerName = { getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } addressBookEntry = { selectedSignerAddressBookEntry.value } renameAddressCallBack = { param.renameAddressCallBack } />
 						} </p>
 					}
 				</> : !param.isFreshHomeDataLoaded.value ?
@@ -948,6 +967,7 @@ export function Home(param: HomeParams) {
 		<FirstCard
 			preSimulationBlockTimeManipulation = { param.preSimulationBlockTimeManipulation }
 			activeAddresses = { param.activeAddresses }
+			walletSelectedAddressBookEntry = { param.walletSelectedAddressBookEntry }
 			useSignersAddressAsActiveAddress = { param.useSignersAddressAsActiveAddress }
 			activeAddress = { currentActiveAddress }
 			rpcNetwork = { param.rpcNetwork }

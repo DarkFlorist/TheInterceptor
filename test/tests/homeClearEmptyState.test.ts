@@ -48,6 +48,13 @@ const safeEntry: SafeEntry = {
 	useAsActiveAddress: true,
 }
 
+const safeSignerEntry: ContactEntry = {
+	type: 'contact',
+	name: 'Safe owner account',
+	address: SAFE_SIGNER_ADDRESS,
+	entrySource: 'User',
+}
+
 const rpcNetwork: RpcEntry = {
 	name: 'Ethereum',
 	chainId: 1n,
@@ -190,6 +197,7 @@ function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 		changeActiveAddress: () => undefined,
 		makeCurrentAddressRich: new Signal(false),
 		activeAddresses: new Signal([activeAddressEntry]),
+		walletSelectedAddressBookEntry: new Signal(undefined),
 		tabState: new Signal<TabState | undefined>(undefined),
 		activeSimulationAddress: new Signal<bigint | undefined>(ACTIVE_ADDRESS),
 		activeSigningAddress: new Signal<bigint | undefined>(undefined),
@@ -793,12 +801,13 @@ describe('Home popup clear empty state', () => {
 		}
 	})
 
-test('shows the wallet-selected Safe owner without a signer selector in signing mode', async () => {
+	test('shows the named wallet-selected Safe owner with an address icon and without a signer selector in signing mode', async () => {
 		const dom = installDomMock()
 		try {
 			await act(() => {
 				render(h(Home, createHomeParams({
 					activeAddresses: new Signal([safeEntry]),
+					walletSelectedAddressBookEntry: new Signal(safeSignerEntry),
 					tabState: new Signal<TabState | undefined>({
 						tabId: 1,
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
@@ -820,8 +829,14 @@ test('shows the wallet-selected Safe owner without a signer selector in signing 
 			const popupText = dom.document.body.textContent ?? ''
 			assert.equal(popupText.includes('Treasury Safe'), true)
 			assert.equal(popupText.includes('0x3000000000000000000000000000000000000003'), true)
-			assert.equal(popupText.includes('MetaMask has 0x4000000000000000000000000000000000000004 selected.'), true)
-			assert.equal(popupText.includes('0x4000000000000000000000000000000000000004'), true)
+			assert.equal(popupText.includes('MetaMask has'), true)
+			assert.equal(popupText.includes('Safe owner account'), true)
+			assert.equal(popupText.includes('0x4000000000000000000000000000000000000004'), false)
+			const selectedSignerCard = collectElements(dom.document.body, 'span').find((element) =>
+				element.getAttribute?.('class') === 'inline-card' && element.getAttribute?.('title') === 'Safe owner account'
+			)
+			if (selectedSignerCard === undefined) throw new Error('Missing wallet-selected Safe owner address card')
+			assert.equal(collectElements(selectedSignerCard, 'svg').length > 0, true)
 			assert.equal(popupText.includes('0x5000000000000000000000000000000000000005'), false)
 			assert.equal(collectElements(dom.document.body, 'input').filter((element) => element.getAttribute?.('name') === 'active-safe-signer').length, 0)
 			const signerOptions = collectElements(dom.document.body, 'label').filter((element) =>
@@ -1231,7 +1246,14 @@ test('warns when the wallet-selected account is not among the known Safe owners'
 			assert.equal(popupText.includes('Gnosis Safe signers'), false)
 			assert.equal(popupText.includes('CONNECTED'), true)
 			assert.equal(popupText.includes('NOT CONNECTED'), false)
-			assert.equal(popupText.includes('MetaMask has 0x6000000000000000000000000000000000000006 selected. You cannot sign the current Gnosis Safe with it.'), true)
+			assert.equal(popupText.includes('MetaMask has'), true)
+			assert.equal(popupText.includes('0x6000000000000000000000000000000000000006'), true)
+			assert.equal(popupText.includes('selected. You cannot sign the current Gnosis Safe with it.'), true)
+			const selectedSignerCard = collectElements(dom.document.body, 'span').find((element) =>
+				element.getAttribute?.('class') === 'inline-card' && element.getAttribute?.('title') === '0x6000000000000000000000000000000000000006'
+			)
+			if (selectedSignerCard === undefined) throw new Error('Missing unknown wallet-selected signer address card')
+			assert.equal(collectElements(selectedSignerCard, 'svg').length > 0, true)
 			assert.equal(collectElements(dom.document.body, 'img').some((element) =>
 				element.getAttribute?.('src') === '../img/warning-sign-black.svg'
 			), true)

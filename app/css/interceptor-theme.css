@@ -320,15 +320,13 @@ svg[role="img"] {
 	width: 100%;
 }
 
-.address-editor-field :where(.btn, .input),
-.safe-signer-editor-dropdown .btn {
+.address-editor-field :where(.btn, .input) {
 	font-size: 14px;
 	min-height: 32px;
 }
 
 .address-editor .input,
-.address-editor .address-editor-field .btn,
-.address-editor .safe-signer-editor-dropdown .btn {
+.address-editor .address-editor-field .btn {
 	background: color-mix(in srgb, var(--text-color) 5%, transparent);
 	border: 1px solid var(--white-alpha-20);
 	border-radius: 6px;
@@ -340,15 +338,13 @@ svg[role="img"] {
 }
 
 .address-editor .input:hover,
-.address-editor .address-editor-field .btn:hover,
-.address-editor .safe-signer-editor-dropdown .btn:hover {
+.address-editor .address-editor-field .btn:hover {
 	background: var(--white-alpha-10);
 	border: 1px solid var(--highlighted-primary-color);
 }
 
 .address-editor .input:focus,
-.address-editor .address-editor-field .btn:focus,
-.address-editor .safe-signer-editor-dropdown .btn:focus {
+.address-editor .address-editor-field .btn:focus {
 	border: 1px solid var(--primary-color);
 	box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 22%, transparent);
 }
@@ -507,40 +503,46 @@ svg[role="img"] {
 	white-space: nowrap;
 }
 
-.safe-signer-editor-dropdown {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 10px;
+.safe-signer-owner-picker {
+	display: grid;
+	gap: 6px;
 	color: var(--subtitle-text-color);
 	font-size: 12px;
 	font-weight: 500;
 	min-width: 0;
 }
 
-.safe-signer-editor-dropdown > span {
-	flex: 1 1 8rem;
-	min-width: 0;
+.safe-signer-owner-list {
+	display: grid;
+	gap: 4px;
 }
 
-.safe-signer-editor-dropdown > .dropdown {
-	flex: 0 1 240px;
-	margin-left: auto;
+.safe-signer-owner-option {
+	align-items: center;
+	background: color-mix(in srgb, var(--text-color) 4%, transparent);
+	border: 1px solid var(--layout-line-color);
+	border-radius: 6px;
+	cursor: pointer;
+	display: grid;
+	gap: 8px;
+	grid-template-columns: max-content minmax(0, 1fr);
+	min-width: 0;
+	padding: 5px 8px;
+}
+
+.safe-signer-owner-option:has(input:checked) {
+	background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+	border-color: var(--primary-color);
+}
+
+.safe-signer-owner-option > input {
+	accent-color: var(--primary-color);
+	margin: 0;
+}
+
+.safe-signer-owner-option > .inline-card {
 	max-width: 100%;
 	min-width: 0;
-	width: min(100%, 240px);
-}
-
-.safe-signer-dropdown-address {
-	display: block;
-	min-width: 0;
-	width: 100%;
-}
-
-.safe-signer-dropdown-address > .multiline-card {
-	max-width: 100%;
-	min-width: 0;
-	width: 100%;
 }
 
 .address-editor-token-fields {
