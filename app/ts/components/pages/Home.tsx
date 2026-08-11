@@ -732,6 +732,7 @@ type SimulationResultsHeaderParams = {
 	disableReset?: ReadonlySignal<boolean>
 	resetSimulation?: () => Promise<void>
 	showCopyGnosisSafeTransactions?: boolean
+	hasSafeTransactionsToExport?: boolean
 }
 
 function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
@@ -753,7 +754,12 @@ function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 					<OpenSimulationStackButtonContent/>
 				</button>
 			}
-			{ param.showCopyGnosisSafeTransactions === true ? <CopySafeTransactionsButton/> : <></> }
+			{ param.showCopyGnosisSafeTransactions === true
+				? <CopySafeTransactionsButton
+					disabled = { param.hasSafeTransactionsToExport !== true }
+					disabledTitle = 'There are no Gnosis Safe proposals to export on the selected chain.'
+				/>
+				: <></> }
 			{ param.disableReset === undefined || param.resetSimulation === undefined ? <></> :
 				<AsyncActionButton
 					class = 'btn is-small is-danger'
@@ -821,7 +827,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 
 	if (currentResults.kind === 'passthrough') {
 		return <div class = 'popup-data-reveal'>
-			<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } showCopyGnosisSafeTransactions = { showCopyGnosisSafeTransactions } />
+			<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } showCopyGnosisSafeTransactions = { showCopyGnosisSafeTransactions } hasSafeTransactionsToExport = { param.hasSafeTransactionsToExport.value } />
 			{ isEmpty.value ?
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 			: <RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } openSimulationStack = { param.openSimulationStack } /> }
@@ -831,7 +837,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 	const resolvedResults = currentResults.value
 
 	return <div class = 'popup-data-reveal'>
-		<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } showCopyGnosisSafeTransactions = { showCopyGnosisSafeTransactions } />
+		<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } showCopyGnosisSafeTransactions = { showCopyGnosisSafeTransactions } hasSafeTransactionsToExport = { param.hasSafeTransactionsToExport.value } />
 
 			{ resolvedResults.visualizedSimulationState.success === false ? <>
 				<ErrorComponent text = { `Failed to simulate the stack due to error: "${ resolvedResults.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
@@ -1001,6 +1007,7 @@ export function Home(param: HomeParams) {
 					simulationResultState = { param.simulationResultState }
 					openSimulationStack = { openSimulationStack }
 					numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich }
+					hasSafeTransactionsToExport = { param.hasSafeTransactionsToExport }
 					safeSigningMode = { safeSigningMode.value }
 				/>
 				: <SimulationLoadingSkeleton/>

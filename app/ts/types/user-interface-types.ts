@@ -56,6 +56,7 @@ export type HomeParams = {
 	preSimulationBlockTimeManipulation: Signal<BlockTimeManipulation | undefined>
 	fixedAddressRichList: Signal<readonly EnrichedRichListElement[]>
 	numberOfAddressesMadeRich: Signal<number>
+	hasSafeTransactionsToExport: Signal<boolean>
 	isInitialHomeDataLoaded: Signal<boolean>
 	isFreshHomeDataLoaded: Signal<boolean>
 }
@@ -105,6 +106,7 @@ export type SimulationStateParam = {
 	simulationResultState: Signal<SimulationResultState | undefined>
 	openSimulationStack: (target?: TransactionOrMessageIdentifier) => void
 	numberOfAddressesMadeRich: Signal<number>
+	hasSafeTransactionsToExport: ReadonlySignal<boolean>
 	safeSigningMode: boolean
 }
 

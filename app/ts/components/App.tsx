@@ -52,10 +52,12 @@ export function App() {
 		makeCurrentAddressRich,
 		simulationMode,
 		numberOfAddressesMadeRich,
+		hasSafeTransactionsToExport,
 	} = useLiveSimulationHomeData({
 		answerMainPopupOpen: true,
 		answerSimulationDataConsumerOpen: true,
 		requestFreshHomeDataOnMount: true,
+		requestHomeDataOnSimulationStateChange: true,
 		onInitialSettings(settings: Settings) {
 			if (appPage.value.page !== 'Unknown') return
 			if (settings.openedPage.page === 'AddNewAddress' || settings.openedPage.page === 'ModifyAddress') {
@@ -296,6 +298,7 @@ export function App() {
 						preSimulationBlockTimeManipulation = { preSimulationBlockTimeManipulation }
 						fixedAddressRichList = { fixedAddressRichList }
 						numberOfAddressesMadeRich = { numberOfAddressesMadeRich }
+						hasSafeTransactionsToExport = { hasSafeTransactionsToExport }
 						isInitialHomeDataLoaded = { isSettingsLoaded }
 						isFreshHomeDataLoaded = { isFreshHomeDataLoaded }
 					/>

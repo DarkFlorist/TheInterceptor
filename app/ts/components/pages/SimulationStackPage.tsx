@@ -1,4 +1,5 @@
 import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
+import type { JSX } from 'preact'
 import { requestPopupInterceptorSimulationInput, sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
 import { getSafeSigningEntry, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -26,6 +27,8 @@ import { createUnexpectedErrorPopupMessage } from '../../utils/unexpectedErrorPo
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { CopySafeTransactionsButton } from '../subcomponents/CopySafeTransactionsButton.js'
+import { Tooltip } from '../subcomponents/Tooltip.js'
+import { useCopyFeedback } from '../hooks/useCopyFeedback.js'
 
 type ModalState =
 	{ page: 'modifyAddress', state: Signal<ModifyAddressWindowState> } |
@@ -49,33 +52,37 @@ function getMadeRichAddressBookEntries(
 	return [...entries, getActiveAddressEntry(activeSimulationAddress, activeAddresses)]
 }
 
-function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSimulation, disableReset, showSafeSigningActions }: {
+function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSimulation, disableReset, showSafeSigningActions, hasSafeTransactionsToExport }: {
 	openImportSimulation: () => void
 	openImportSafe: () => void
 	resetSimulation: () => Promise<void>
 	disableReset: Signal<boolean>
 	showSafeSigningActions: boolean
+	hasSafeTransactionsToExport: boolean
 }) {
 	const { value: exportSimulationStackState, waitFor: waitForExportSimulationStack } = useAsyncState<void>()
 	const { value: clearSimulationStackState, waitFor: waitForClearSimulationStack } = useAsyncState<void>()
 	const latestExportType = useSignal<'simulation' | 'safe' | undefined>(undefined)
 	const safeCopyError = useSignal<string | undefined>(undefined)
+	const { coolingDown: simulationExportCoolingDown, tooltip: simulationExportTooltip, showCopied: showSimulationExportCopied } = useCopyFeedback()
 	const exportError = latestExportType.value === 'safe'
 		? showSafeSigningActions ? safeCopyError.value : undefined
 		: latestExportType.value === 'simulation' && exportSimulationStackState.value.state === 'rejected'
 			? exportSimulationStackState.value.error.message
 			: undefined
 
-	const exportSimulationStack = async () => {
+	const exportSimulationStack = async (copyPosition: { x: number, y: number }) => {
 		const reply = await requestPopupInterceptorSimulationInput()
 		if (reply === undefined) throw new Error('Interceptor did not reply to the simulation stack export request.')
 		if (!reply.ok) throw new Error(reply.message)
 		await clipboardCopy(reply.ethSimulateV1InputString)
+		showSimulationExportCopied(copyPosition)
 	}
 
-	const exportStack = () => {
+	const exportStack = (event: JSX.TargetedMouseEvent<HTMLButtonElement>) => {
 		latestExportType.value = 'simulation'
-		void waitForExportSimulationStack(exportSimulationStack)
+		const copyPosition = { x: event.clientX, y: event.clientY }
+		void waitForExportSimulationStack(async () => await exportSimulationStack(copyPosition))
 	}
 
 	const clearStack = () => {
@@ -119,13 +126,17 @@ function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSim
 						class = 'btn btn--outline'
 						type = 'button'
 						state = { exportSimulationStackState.value.state }
+						disabled = { simulationExportCoolingDown.value }
 						onClick = { exportStack }
 						text = { <>
 							<span class = 'simulation-stack-action-icon'><ExportIcon/></span>
 							<span>Export simulation</span>
 						</> }
 						pendingText = 'Exporting simulation stack...'
+						keepTextWhilePending = { true }
+						pendingIndicatorPlacement = 'overlay'
 					/>
+					<Tooltip config = { simulationExportTooltip } />
 				</div>
 			</div>
 			{ showSafeSigningActions ? <div class = 'simulation-stack-action-group'>
@@ -140,6 +151,8 @@ function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSim
 					</button>
 					<CopySafeTransactionsButton
 						class = 'btn btn--outline'
+						disabled = { !hasSafeTransactionsToExport }
+						disabledTitle = 'There are no Gnosis Safe proposals to export on the selected chain.'
 						text = { <>
 							<span class = 'simulation-stack-action-icon'><CopyIcon/></span>
 							<span>Copy Gnosis Safe transactions</span>
@@ -277,6 +290,7 @@ export function SimulationStackPage() {
 		fixedAddressRichList,
 		makeCurrentAddressRich,
 		numberOfAddressesMadeRich,
+		hasSafeTransactionsToExport,
 		simulationMode,
 		useSignersAddressAsActiveAddress,
 	} = useLiveSimulationHomeData({
@@ -408,6 +422,7 @@ export function SimulationStackPage() {
 					resetSimulation = { resetSimulation }
 					disableReset = { disableReset }
 					showSafeSigningActions = { showSafeSigningActions.value }
+					hasSafeTransactionsToExport = { hasSafeTransactionsToExport.value }
 				/>
 				<div class = 'simulation-stack-page-body'>
 					<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>

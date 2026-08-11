@@ -133,7 +133,7 @@ function collectElements(node: TestDomNode | null | undefined, tagName: string, 
 async function clickElement(element: { l?: Record<string, (event: unknown) => unknown> }) {
 	const clickHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Click'))?.[1]
 	if (clickHandler === undefined) throw new Error('Expected click handler')
-	await clickHandler({ currentTarget: element, stopPropagation() { return undefined } })
+	await clickHandler({ currentTarget: element, clientX: 100, clientY: 50, stopPropagation() { return undefined } })
 }
 
 function getHeadersContainingText(root: TestDomNode, text: string) {
@@ -259,6 +259,7 @@ function createHomePageUpdate(tabId: number, popupRefreshGeneration: number, ico
 			activeAddresses: [],
 			richList,
 			makeCurrentAddressRich: false,
+			hasSafeTransactionsToExport: true,
 			latestUnexpectedError: undefined,
 			websiteAccessAddressMetadata: [],
 			tabState: {
@@ -832,10 +833,47 @@ describe('simulation visualizer open replies', () => {
 
 			await act(async () => {
 				await clickElement(getButtonByText(dom.document.body, 'Export simulation'))
+				await new Promise((resolve) => setTimeout(resolve, 0))
 			})
 
 			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestInterceptorSimulationInput'), true)
 			assert.deepStrictEqual(clipboardMock.copiedText, [exportPayload])
+			assert.equal(dom.document.body.textContent?.includes('Copied!'), true)
+			assert.notEqual(getButtonByText(dom.document.body, 'Export simulation').getAttribute?.('disabled'), null)
+		} finally {
+			clipboardMock.restore()
+			dom.restore()
+		}
+	})
+
+	test('stack visualizer Safe export copies with feedback and a cooldown', async () => {
+		const dom = installDomMock()
+		const clipboardMock = installClipboardMock()
+		const safeExportPayload = '{ "name": "Interceptor Safe Stack" }'
+		const { listeners } = installBrowserMock((message) => {
+			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestSafeStackExport') {
+				return { method: 'popup_requestSafeStackExport', ok: true, safeStackJson: safeExportPayload }
+			}
+			return undefined
+		})
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(24, 1, 'Stack tab')) }, {}, () => undefined)
+			})
+
+			await act(async () => {
+				await clickElement(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions'))
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+
+			assert.deepStrictEqual(clipboardMock.copiedText, [safeExportPayload])
+			assert.equal(dom.document.body.textContent?.includes('Copied!'), true)
+			assert.notEqual(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions').getAttribute?.('disabled'), null)
 		} finally {
 			clipboardMock.restore()
 			dom.restore()
@@ -929,11 +967,13 @@ describe('simulation visualizer open replies', () => {
 			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), false)
 
 			await act(() => {
-				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, popupRefreshGeneration: 3, data: { ...update.data, activeAddresses: [{ ...activeSafe, safeSimulationSignerAddress: undefined }] } }) }, {}, () => undefined)
+				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, popupRefreshGeneration: 3, data: { ...update.data, activeAddresses: [{ ...activeSafe, safeSimulationSignerAddress: undefined }], hasSafeTransactionsToExport: false } }) }, {}, () => undefined)
 			})
 
 			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), true)
 			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), true)
+			assert.notEqual(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions').getAttribute?.('disabled'), null)
+			assert.equal(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions').getAttribute?.('title'), 'There are no Gnosis Safe proposals to export on the selected chain.')
 		} finally {
 			dom.restore()
 		}

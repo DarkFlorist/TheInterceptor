@@ -13,6 +13,7 @@ import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import type { HomeParams, RpcConnectionStatus, TabState } from '../../app/ts/types/user-interface-types.js'
 import { PASSTHROUGH_STATE, toResolvedSimulationResults } from '../../app/ts/types/visualizer-types.js'
 import type { BlockTimeManipulation, PreSimulationTransaction, ResolvedSimulationResults, SignedMessageTransaction, SimulationAndVisualisationResults, SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
+import type { SafeTx } from '../../app/ts/types/personal-message-definitions.js'
 
 const ACTIVE_ADDRESS = 0x1000000000000000000000000000000000000001n
 const RECIPIENT_ADDRESS = 0x2000000000000000000000000000000000000002n
@@ -85,6 +86,54 @@ const makePreSimulationTransaction = (): PreSimulationTransaction => ({
 	originalRequestParameters: { method: 'eth_sendTransaction', params: [{ from: ACTIVE_ADDRESS, to: RECIPIENT_ADDRESS, value: 0n, input: new Uint8Array() }] },
 	transactionIdentifier: 1n,
 })
+
+const makeSafePreSimulationTransaction = (): PreSimulationTransaction => {
+	const safeTx: SafeTx = {
+		types: {
+			SafeTx: [
+				{ name: 'to', type: 'address' },
+				{ name: 'value', type: 'uint256' },
+				{ name: 'data', type: 'bytes' },
+				{ name: 'operation', type: 'uint8' },
+				{ name: 'safeTxGas', type: 'uint256' },
+				{ name: 'baseGas', type: 'uint256' },
+				{ name: 'gasPrice', type: 'uint256' },
+				{ name: 'gasToken', type: 'address' },
+				{ name: 'refundReceiver', type: 'address' },
+				{ name: 'nonce', type: 'uint256' },
+			],
+			EIP712Domain: [
+				{ name: 'chainId', type: 'uint256' },
+				{ name: 'verifyingContract', type: 'address' },
+			],
+		},
+		primaryType: 'SafeTx',
+		domain: { chainId: 1n, verifyingContract: SAFE_ADDRESS },
+		message: {
+			to: RECIPIENT_ADDRESS,
+			value: 0n,
+			data: new Uint8Array(),
+			operation: 0n,
+			safeTxGas: 0n,
+			baseGas: 0n,
+			gasPrice: 0n,
+			gasToken: 0n,
+			refundReceiver: 0n,
+			nonce: 0n,
+		},
+	}
+	return {
+		...makePreSimulationTransaction(),
+		safeTransaction: {
+			safeTx,
+			safeTxHash: 1n,
+			created: new Date('2024-01-01T00:00:00.000Z'),
+			websiteOrigin: 'https://example.com',
+			transactionIdentifier: 1n,
+			signatures: [],
+		},
+	}
+}
 
 const makeSignedMessageTransaction = (): SignedMessageTransaction => ({
 	website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
@@ -161,6 +210,17 @@ const createEmptySimulationResults = (): SimulationAndVisualisationResults => ({
 	},
 })
 
+const createSafeSimulationResults = (): SimulationAndVisualisationResults => ({
+	...createSimulationResults(),
+	simulationStateInput: [{
+		stateOverrides: {},
+		transactions: [makeSafePreSimulationTransaction()],
+		signedMessages: [],
+		blockTimeManipulation: ZERO_BLOCK_TIME_MANIPULATION,
+		simulateWithZeroBaseFee: true,
+	}],
+})
+
 const createPendingSimulationResults = (): SimulationAndVisualisationResults => ({
 	...createSimulationResults(),
 	visualizedSimulationState: {
@@ -218,6 +278,7 @@ function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 		preSimulationBlockTimeManipulation: new Signal<BlockTimeManipulation | undefined>(undefined),
 		fixedAddressRichList: new Signal<readonly EnrichedRichListElement[]>([]),
 		numberOfAddressesMadeRich: new Signal(0),
+		hasSafeTransactionsToExport: new Signal(false),
 		isInitialHomeDataLoaded: new Signal(true),
 		isFreshHomeDataLoaded: new Signal(true),
 		...overrides,
@@ -1280,5 +1341,47 @@ test('warns when the wallet-selected account is not among the known Safe owners'
 		assert.notEqual(copyPosition, -1)
 		assert.notEqual(clearPosition, -1)
 		assert.equal(viewPosition < copyPosition && copyPosition < clearPosition, true)
+	})
+
+	test('disables the Home Gnosis Safe export when the selected chain has no stored proposals', async () => {
+		const dom = installDomMock()
+		const browserMock = installBrowserMock()
+		const hasSafeTransactionsToExport = new Signal(false)
+		try {
+			await act(async () => {
+				render(h(Home, createHomeParams({
+					activeAddresses: new Signal([safeEntry, safeSignerEntry]),
+					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					simulationMode: new Signal(false),
+					tabState: new Signal<TabState | undefined>({
+						tabId: 1,
+						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+						signerConnected: true,
+						signerName: 'MetaMask',
+						signerAccounts: [SAFE_SIGNER_ADDRESS],
+						signerAccountError: undefined,
+						signerChain: 1n,
+						tabIconDetails: { icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' },
+						activeSigningAddress: SAFE_SIGNER_ADDRESS,
+					}),
+					simVisResults: new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createSafeSimulationResults())),
+					hasSafeTransactionsToExport,
+				})), dom.document.body)
+				await new Promise((resolve) => setTimeout(resolve, 40))
+			})
+
+			const safeExportButton = getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions')
+			assert.notEqual(safeExportButton.getAttribute?.('disabled'), null)
+			assert.equal(safeExportButton.getAttribute?.('title'), 'There are no Gnosis Safe proposals to export on the selected chain.')
+			assert.equal(browserMock.sentMessages.some((message) => hasMethod(message, 'popup_requestSafeStackExport')), false)
+
+			await act(() => { hasSafeTransactionsToExport.value = true })
+			assert.equal(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions').getAttribute?.('disabled'), null)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+			browserMock.restore()
+		}
 	})
 })

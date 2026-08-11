@@ -41,7 +41,7 @@ type AsyncActionButtonProps = {
 	pendingText: ComponentChildren
 	keepTextWhilePending?: boolean
 	pendingIndicatorPlacement?: 'inline' | 'overlay'
-	onClick: () => void | Promise<void>
+	onClick: (event: JSX.TargetedMouseEvent<HTMLButtonElement>) => void | Promise<void>
 	disabled?: boolean
 	class?: string
 	style?: JSX.CSSProperties | string
