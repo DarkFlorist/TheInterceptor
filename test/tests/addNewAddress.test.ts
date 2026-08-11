@@ -276,6 +276,8 @@ describe('add new address save flow', () => {
 		assert.match(addNewAddressSource, /<AddressIcon address = \{ stringToAddress[^\n]+isBig = \{ true \}/)
 		assert.match(addNewAddressSource, /ariaLabel = 'Address type'/)
 		assert.match(addNewAddressSource, /ariaLabel = 'Chain'/)
+		assert.equal((addNewAddressSource.match(/class = 'address-editor-disclosure-chevron'/g) ?? []).length, 2)
+		assert.match(addNewAddressSource, /class = 'address-editor-disclosure-chevron' aria-hidden = 'true'><ChevronIcon \/>/)
 		assert.match(addNewAddressSource, /class = 'address-editor-heading'>Safe owners/)
 		assert.match(addNewAddressSource, /class = 'safe-signer-owner-list' role = 'radiogroup' aria-label = 'Safe signer in simulation'/)
 		assert.match(addNewAddressSource, /<p>Safe signer in simulation<\/p>/)

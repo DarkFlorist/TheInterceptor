@@ -11,7 +11,7 @@ import type { AddressBookEntries, AddressBookEntry, AddressBookEntryType, ChainI
 import { isBlockExplorerAvailableForChain, isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
 import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
-import { XMarkIcon } from '../subcomponents/icons.js'
+import { ChevronIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import type { ChainEntry, RpcEntries } from '../../types/rpc.js'
 import { type Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
@@ -334,6 +334,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 			<details class = 'address-editor-disclosure address-editor-field--wide' open = { entry.abi !== undefined }>
 				<summary>
 					<strong>Advanced details</strong>
+					<span class = 'address-editor-disclosure-chevron' aria-hidden = 'true'><ChevronIcon /></span>
 				</summary>
 				<div class = 'address-editor-disclosure-content'>
 					<div class = 'address-editor-section-heading'>
@@ -360,7 +361,10 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 				</label>
 			</div>
 			<details class = 'address-editor-preference-disclosure'>
-				<summary>Privacy and site controls</summary>
+				<summary>
+					<span>Privacy and site controls</span>
+					<span class = 'address-editor-disclosure-chevron' aria-hidden = 'true'><ChevronIcon /></span>
+				</summary>
 				<div class = 'address-editor-preference-content'>
 					<label class = 'address-editor-setting'>
 						<span><strong>Skip access requests</strong><small>Reduces protection when this address is active.</small></span>

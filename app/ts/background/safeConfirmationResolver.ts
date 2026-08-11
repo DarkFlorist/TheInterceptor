@@ -26,6 +26,14 @@ export function isSafeSignerSelectionFailure(error: unknown) {
 	return isTaggedError(error, 'safeSignerSelectionFailure')
 }
 
+function createSafeMessageAccountMismatchFailure(message: string) {
+	return createTaggedError(message, 'safeMessageAccountMismatchFailure')
+}
+
+export function isSafeMessageAccountMismatchFailure(error: unknown) {
+	return isTaggedError(error, 'safeMessageAccountMismatchFailure')
+}
+
 export async function reportUnexpectedDirectSafeExecutionRecovery(error: unknown) {
 	if (isSafeContractValidationFailure(error) || isSafeSignerSelectionFailure(error) || isExpectedInfrastructureError(error)) return
 	await reportUnexpectedError(error, {
@@ -205,7 +213,7 @@ export async function createSafeMessageCoSignSnapshot(
 	if (transactionParams.method !== 'eth_signTypedData_v4') throw new Error('Gnosis Safe co-signing requires an EIP-712 typed-data request.')
 	const [requestedAccount] = transactionParams.params
 	if (requestedAccount !== activeAddress || safeTx.domain.verifyingContract !== activeAddress) {
-		throw new Error('The Gnosis Safe transaction signing account does not match the active Gnosis Safe.')
+		throw createSafeMessageAccountMismatchFailure('The Gnosis Safe transaction signing account does not match the active Gnosis Safe.')
 	}
 	const safeEntry = await getCurrentSafeEntry(ethereum, activeAddress)
 	// Signing deliberately ignores stored simulation/owner preferences: the wallet selection is refreshed before forwarding and validated against current on-chain Safe state.

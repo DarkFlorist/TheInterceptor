@@ -36,7 +36,7 @@ import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization
 import { identifyAddress } from '../metadataUtils.js'
 import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
 import { prepareSafeTransactionConfirmation } from '../safeTransactionConfirmation.js'
-import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, isSafeSignerSelectionFailure, refreshSafeExecutionSignerSelection, refreshSafeMessageCoSignSignerSelection, refreshSafeTransactionSignerSelection, reportUnexpectedDirectSafeExecutionRecovery, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
+import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, isSafeMessageAccountMismatchFailure, isSafeSignerSelectionFailure, refreshSafeExecutionSignerSelection, refreshSafeMessageCoSignSignerSelection, refreshSafeTransactionSignerSelection, reportUnexpectedDirectSafeExecutionRecovery, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
 import { resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/signerMetadata.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
@@ -705,9 +705,16 @@ export async function openConfirmTransactionDialogForMessage(
 		const visualizedPersonalSignRequest = await craftPersonalSignPopupMessage(ethereumClientService, undefined, signedMessageTransaction, ethereumClientService.getRpcEntry())
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 		const walletSignerAddress = getWalletSelectedAccount(signerTabState)
-		const safeMessageCoSignSnapshot = !simulationMode && visualizedPersonalSignRequest.type === 'SafeTx'
-			? await createSafeMessageCoSignSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, visualizedPersonalSignRequest.message)
-			: undefined
+		let safeMessageCoSignSnapshot: Awaited<ReturnType<typeof createSafeMessageCoSignSnapshot>> | undefined
+		let safeMessageAccountMismatch: string | undefined
+		if (!simulationMode && visualizedPersonalSignRequest.type === 'SafeTx') {
+			try {
+				safeMessageCoSignSnapshot = await createSafeMessageCoSignSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, visualizedPersonalSignRequest.message)
+			} catch (error) {
+				if (!isSafeMessageAccountMismatchFailure(error)) throw error
+				safeMessageAccountMismatch = getErrorMessage(error) ?? 'The Gnosis Safe transaction signing account does not match the active Gnosis Safe.'
+			}
+		}
 		await pendingConfirmationSemaphore.execute(async () => {
 			const openedDialog = await getPendingTransactionWindow(ethereumClientService, tokenPriceService, websiteTabConnections)
 			if (openedDialog === undefined) throw new Error('Failed to get pending transaction window!')
@@ -722,7 +729,9 @@ export async function openConfirmTransactionDialogForMessage(
 				created,
 				transactionOrMessageCreationStatus: 'Crafting' as const,
 				website,
-				approvalStatus: { status: 'WaitingForUser' as const },
+				approvalStatus: safeMessageAccountMismatch === undefined
+					? { status: 'WaitingForUser' as const }
+					: createSafeSignerErrorStatus(safeMessageAccountMismatch, SAFE_SIGNER_SELECTION_ERROR_CODE),
 				signedMessageTransaction,
 				...(safeMessageCoSignSnapshot === undefined ? {} : { safeMessageCoSignSnapshot }),
 			}

@@ -360,6 +360,74 @@ test('returns a Safe signer error when the wallet-selected co-signer is not a cu
 	assert.match(reply.error.message, /is not an owner of Gnosis Safe/u)
 })
 
+test('shows a Safe signing-account mismatch in the confirmation dialog without reporting an unexpected error', async () => {
+	const walletOwner = safeTestOwnerAddress
+	const mismatchedRequestedAccount = recipientAddress
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	fakeSafeContract.owners = [walletOwner]
+	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+		safeSignerAddresses: [walletOwner],
+		safeVersion: '1.4.1',
+	})])
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [walletOwner],
+		activeSigningAddress: walletOwner,
+		signerChain: fakeRpcNetwork.chainId,
+	}))
+	const socket = uniqueRequestIdentifier.requestSocket
+	const port = createWebsitePort(socket, 0, [])
+	const websiteTabConnections = new Map([[socket.tabId, {
+		connections: {
+			[modules.websiteSocketToString(socket)]: {
+				port,
+				socket,
+				websiteOrigin: 'https://sealwort.example',
+				approved: true,
+				wantsToConnect: true,
+			},
+		},
+	}]])
+	const signRequest = {
+		method: 'eth_signTypedData_v4' as const,
+		params: [mismatchedRequestedAccount, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const,
+	}
+	const request = {
+		interceptorRequest: true as const,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier,
+		...signRequest,
+	}
+	const unexpectedErrorBeforeRequest = await getLatestUnexpectedError()
+
+	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		request,
+		signRequest,
+		false,
+		activeAddress,
+		{ websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' },
+		websiteTabConnections,
+	), { type: 'doNotReply' })
+
+	const [pendingMessage] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(pendingMessage?.type, 'SignableMessage')
+	assert.equal(pendingMessage?.transactionOrMessageCreationStatus, 'Simulated')
+	assert.equal(pendingMessage?.approvalStatus.status, 'SignerError')
+	if (pendingMessage?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe account mismatch error')
+	assert.equal(pendingMessage.approvalStatus.code, -32010)
+	assert.equal(pendingMessage.approvalStatus.message, 'The Gnosis Safe transaction signing account does not match the active Gnosis Safe.')
+	assert.equal(pendingMessage.type === 'SignableMessage' ? pendingMessage.safeMessageCoSignSnapshot : undefined, undefined)
+	assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeRequest)
+})
+
 test('uses the configured Safe simulation signer without changing the active Safe account', async () => {
 	const simulationSignerAddress = 0x4444444444444444444444444444444444444444n
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {

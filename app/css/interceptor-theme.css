@@ -320,6 +320,20 @@ svg[role="img"] {
 	width: 100%;
 }
 
+.address-editor-field .dropdown-menu {
+	box-sizing: border-box;
+	left: auto;
+	min-width: 100%;
+	right: 0;
+	width: 100%;
+}
+
+.address-editor-field .dropdown-content {
+	box-sizing: border-box;
+	position: static;
+	width: 100%;
+}
+
 .address-editor-field :where(.btn, .input) {
 	font-size: 14px;
 	min-height: 32px;
@@ -578,20 +592,24 @@ svg[role="img"] {
 	display: none;
 }
 
-.address-editor-disclosure > summary::after,
-.address-editor-preference-disclosure > summary::after {
+.address-editor-disclosure-chevron {
 	color: var(--subtitle-text-color);
-	content: '›';
-	font-size: 20px;
-	font-weight: 400;
-	line-height: 16px;
-	transform: rotate(0deg);
+	display: inline-flex;
+	flex: 0 0 auto;
+	height: 16px;
 	transition: transform 120ms ease;
+	width: 16px;
 }
 
-.address-editor-disclosure[open] > summary::after,
-.address-editor-preference-disclosure[open] > summary::after {
-	transform: rotate(90deg);
+.address-editor-disclosure-chevron > svg {
+	display: block;
+	height: 100%;
+	width: 100%;
+}
+
+.address-editor-disclosure[open] > summary > .address-editor-disclosure-chevron,
+.address-editor-preference-disclosure[open] > summary > .address-editor-disclosure-chevron {
+	transform: rotate(180deg);
 }
 
 .address-editor-disclosure-content {
