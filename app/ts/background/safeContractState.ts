@@ -1,14 +1,14 @@
 import { getSafeContractSnapshot, isSafeContractValidationFailure } from '../safe/safeCore.js'
-import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import { EthereumJSONRpcRequestHandler } from '../simulation/services/EthereumJSONRpcRequestHandler.js'
 import type { RequestSafeContractState } from '../types/interceptor-reply-messages.js'
 import { getErrorMessage, isExpectedInfrastructureError, reportUnexpectedError } from '../utils/errors.js'
 import { getPrimaryRpcForChain, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { createSimulationServices } from '../simulation/serviceLifecycle.js'
 import type { RpcEntry } from '../types/rpc.js'
 
 type SafeContractStateDependencies = {
 	readonly getRpcEntry?: typeof getSafeContractRpcEntry
-	readonly createTemporaryEthereum?: (rpcEntry: RpcEntry) => { ethereum: EthereumClientService, cleanup: () => void }
+	readonly createTemporaryEthereum?: (rpcEntry: RpcEntry) => EthereumClientService
 	readonly getSnapshot?: typeof getSafeContractSnapshot
 	readonly getLocalEntries?: typeof getUserAddressBookEntriesForChainIdMorePreciseFirst
 }
@@ -33,8 +33,12 @@ export async function getSafeContractRpcEntry(
 }
 
 function createTemporarySafeEthereum(rpcEntry: RpcEntry) {
-	const services = createSimulationServices(rpcEntry, async () => undefined, async () => undefined)
-	return { ethereum: services.ethereum, cleanup: () => services.ethereum.cleanup() }
+	return new EthereumClientService(
+		new EthereumJSONRpcRequestHandler(rpcEntry.httpsRpc, true),
+		async () => undefined,
+		async () => undefined,
+		rpcEntry,
+	)
 }
 
 export async function requestSafeContractState(ethereum: EthereumClientService, request: RequestSafeContractState, dependencies: SafeContractStateDependencies = {}) {
@@ -51,12 +55,12 @@ export async function requestSafeContractState(ethereum: EthereumClientService, 
 	const temporaryEthereum = ethereum.getChainId() === chainId
 		? undefined
 		: (dependencies.createTemporaryEthereum ?? createTemporarySafeEthereum)(rpcEntry)
-	const safeEthereum = temporaryEthereum?.ethereum ?? ethereum
+	const safeEthereum = temporaryEthereum ?? ethereum
 
 	const safeSnapshot = await (dependencies.getSnapshot ?? getSafeContractSnapshot)(safeEthereum, address).then(
 		(snapshot) => ({ ok: true as const, snapshot }),
 		handleSafeContractSnapshotFailure,
-	).finally(() => temporaryEthereum?.cleanup())
+	)
 	if (!safeSnapshot.ok) return {
 		method: 'popup_requestSafeContractState' as const,
 		data: { chainId, result: safeSnapshot },

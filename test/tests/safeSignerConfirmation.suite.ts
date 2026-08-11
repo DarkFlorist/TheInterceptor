@@ -278,6 +278,53 @@ test('rebuilds an ordinary Safe proposal when the wallet switches between curren
 	assert.equal(refreshedPending?.safeTransaction?.safeSignerAddress, selectedOwner)
 })
 
+test('keeps signer refresh failures visible in the Safe proposal instead of aborting the refresh loop', async () => {
+	const reviewedOwner = recipientAddress
+	const selectedOwner = safeTestOwnerAddress
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	const failedTransaction = {
+		website: pendingTransaction.website,
+		created: pendingTransaction.created,
+		originalRequestParameters: pendingTransaction.originalRequestParameters,
+		transactionIdentifier: pendingTransaction.transactionIdentifier,
+		success: false as const,
+		error: { code: -32_000, message: 'Previous simulation failed.' },
+	}
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			simulationMode: false,
+			transactionOrMessageCreationStatus: 'FailedToSimulate' as const,
+			transactionToSimulate: failedTransaction,
+			safeTransaction: {
+				safeAddress: activeAddress,
+				safeSignerAddress: reviewedOwner,
+				safeVersion: '1.4.1',
+				threshold: 1n,
+				reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [reviewedOwner, selectedOwner], threshold: 1n },
+				safeTxHash: BigInt(getSafeTxHash(safeTx)),
+				safeTx,
+			},
+		}],
+	})
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [selectedOwner],
+		activeSigningAddress: selectedOwner,
+	}))
+
+	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+
+	const [failedProposal] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(failedProposal?.approvalStatus.status, 'SignerError')
+	assert.equal(failedProposal?.approvalStatus.status === 'SignerError' ? failedProposal.approvalStatus.code : undefined, -32010)
+	assert.match(failedProposal?.approvalStatus.status === 'SignerError' ? failedProposal.approvalStatus.message : '', /missing its execution gas limit/u)
+})
+
 test('refreshes the selected signer before forwarding a Safe transaction', async () => {
 	const configuredSigner = recipientAddress
 	const freshlySelectedSigner = activeAddress

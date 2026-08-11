@@ -57,22 +57,20 @@ describe('Safe contract state error boundary', () => {
 		}
 	})
 
-	test('cleans up the temporary cross-chain client after successful owner retrieval', async () => {
+	test('uses the temporary cross-chain client for successful owner retrieval', async () => {
 		const ethereum = createEthereum()
 		const temporaryEthereum = createEthereum(safeRpc)
-		let cleanupCount = 0
 		try {
 			const result = await requestSafeContractState(ethereum, {
 				method: 'popup_requestSafeContractState',
 				data: { address: 1n, chainId: safeRpc.chainId },
 			}, {
 				getRpcEntry: async () => safeRpc,
-				createTemporaryEthereum: () => ({ ethereum: temporaryEthereum, cleanup: () => { cleanupCount += 1 } }),
+				createTemporaryEthereum: () => temporaryEthereum,
 				getSnapshot: async () => ({ blockNumber: 100n, state: { version: '1.4.1', nonce: 0n, owners: [2n], threshold: 1n } }),
 				getLocalEntries: async () => [{ type: 'contact', name: 'Owner', address: 2n, entrySource: 'User' }],
 			})
 
-			assert.equal(cleanupCount, 1)
 			assert.deepEqual(result.data.result, {
 				ok: true,
 				owners: [2n],
@@ -85,10 +83,32 @@ describe('Safe contract state error boundary', () => {
 		}
 	})
 
-	test('cleans up the temporary cross-chain client when snapshot retrieval fails', async () => {
+	test('creates a lightweight Ethereum client for the configured cross-chain RPC', async () => {
+		const ethereum = createEthereum()
+		let snapshotRpc: typeof safeRpc | undefined
+		try {
+			const result = await requestSafeContractState(ethereum, {
+				method: 'popup_requestSafeContractState',
+				data: { address: 1n, chainId: safeRpc.chainId },
+			}, {
+				getRpcEntry: async () => safeRpc,
+				getSnapshot: async (safeEthereum) => {
+					snapshotRpc = safeEthereum.getRpcEntry()
+					return { blockNumber: 100n, state: { version: '1.4.1', nonce: 0n, owners: [], threshold: 1n } }
+				},
+				getLocalEntries: async () => [],
+			})
+
+			assert.equal(snapshotRpc, safeRpc)
+			assert.equal(result.data.result.ok, true)
+		} finally {
+			ethereum.cleanup()
+		}
+	})
+
+	test('returns a failure from the temporary cross-chain client', async () => {
 		const ethereum = createEthereum()
 		const temporaryEthereum = createEthereum(safeRpc)
-		let cleanupCount = 0
 		const snapshotFailure = createSafeContractValidationFailure('Safe lookup failed.')
 		try {
 			const result = await requestSafeContractState(ethereum, {
@@ -96,11 +116,10 @@ describe('Safe contract state error boundary', () => {
 				data: { address: 1n, chainId: safeRpc.chainId },
 			}, {
 				getRpcEntry: async () => safeRpc,
-				createTemporaryEthereum: () => ({ ethereum: temporaryEthereum, cleanup: () => { cleanupCount += 1 } }),
+				createTemporaryEthereum: () => temporaryEthereum,
 				getSnapshot: async () => { throw snapshotFailure },
 			})
 
-			assert.equal(cleanupCount, 1)
 			assert.deepEqual(result.data.result, { ok: false, message: snapshotFailure.message })
 		} finally {
 			temporaryEthereum.cleanup()

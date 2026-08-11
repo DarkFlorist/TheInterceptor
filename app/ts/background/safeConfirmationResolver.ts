@@ -73,6 +73,22 @@ export type SafeConfirmationResolution =
 		readonly pending: PendingTransactionOrSignableMessage
 	}
 
+type SafeSignerSelectionRefreshResult =
+	| { readonly status: 'unchanged', readonly pending: PendingTransactionOrSignableMessage }
+	| { readonly status: 'refreshed', readonly pending: PendingTransactionOrSignableMessage, readonly requiresReview: boolean }
+	| { readonly status: 'blocked', readonly approvalStatus: SafeSignerErrorStatus }
+
+type SafeExecutionSignerRefresh = {
+	readonly pending: PendingTransactionOrSignableMessage
+	readonly requiresReview: boolean
+}
+
+type SafeExecutionSignerRefresher = (
+	ethereum: EthereumClientService,
+	pending: PendingTransactionOrSignableMessage,
+	selectedSigner?: bigint,
+) => Promise<SafeExecutionSignerRefresh | undefined>
+
 async function getCurrentSafeEntry(ethereum: EthereumClientService, safeAddress: bigint) {
 	return (await getCurrentSafeEntryAndAddressBookEntries(ethereum, safeAddress)).safeEntry
 }
@@ -359,6 +375,108 @@ async function assertSafeProposalReviewPrerequisites(
 	return undefined
 }
 
+export async function refreshSafeSignerSelectionForPending(
+	ethereum: EthereumClientService,
+	pending: PendingTransactionOrSignableMessage,
+	refreshedSelection: RefreshedSafeSignerSelection | undefined,
+	mode: 'confirmation' | 'walletSelectionChanged',
+	refreshExecution: SafeExecutionSignerRefresher = async (currentEthereum, currentPending, selectedSigner) => {
+		const refreshedPending = await refreshSafeExecutionSignerSelection(currentEthereum, currentPending, selectedSigner)
+		return refreshedPending === undefined ? undefined : { pending: refreshedPending, requiresReview: false }
+	},
+): Promise<SafeSignerSelectionRefreshResult> {
+	const selectedSigner = refreshedSelection?.verificationError === undefined
+		? refreshedSelection?.selectedSigner
+		: undefined
+	if (
+		pending.type === 'Transaction'
+		&& pending.safeExecutionOriginalRequestParameters !== undefined
+		&& (mode === 'confirmation' || selectedSigner !== undefined && pending.approvalStatus.status !== 'WaitingForSigner')
+	) {
+		try {
+			const refreshedExecution = await refreshExecution(ethereum, pending, selectedSigner)
+			return refreshedExecution === undefined
+				? { status: 'unchanged', pending }
+				: { status: 'refreshed', ...refreshedExecution }
+		} catch(error) {
+			await reportUnexpectedDirectSafeExecutionRecovery(error)
+			return {
+				status: 'blocked',
+				approvalStatus: createSafeSignerErrorStatus(
+					`Gnosis Safe execution could not be prepared: ${ getErrorMessage(error) ?? 'The current Gnosis Safe state could not be validated.' }`,
+					SAFE_SIGNER_SELECTION_ERROR_CODE,
+				),
+			}
+		}
+	}
+	if (
+		pending.type === 'SignableMessage'
+		&& pending.safeMessageCoSignSnapshot !== undefined
+		&& selectedSigner !== undefined
+		&& pending.safeMessageCoSignSnapshot.safeSignerAddress !== selectedSigner
+		&& (mode === 'confirmation' || pending.approvalStatus.status !== 'WaitingForSigner')
+	) {
+		try {
+			const refreshedCoSign = await refreshSafeMessageCoSignSignerSelection(ethereum, pending, selectedSigner)
+			return refreshedCoSign === undefined || refreshedCoSign === pending
+				? { status: 'unchanged', pending }
+				: { status: 'refreshed', pending: refreshedCoSign, requiresReview: false }
+		} catch(error) {
+			return {
+				status: 'blocked',
+				approvalStatus: createSafeSignerErrorStatus(
+					getErrorMessage(error) ?? 'Select a current Gnosis Safe owner in the signer wallet before co-signing.',
+					SAFE_SIGNER_SELECTION_ERROR_CODE,
+				),
+			}
+		}
+	}
+	if (
+		!pending.simulationMode
+		&& pending.type === 'Transaction'
+		&& pending.safeTransaction !== undefined
+		&& selectedSigner !== undefined
+		&& (
+			pending.safeTransaction.safeSignerAddress !== selectedSigner
+			|| pending.approvalStatus.status === 'SignerError' && pending.approvalStatus.code === SAFE_SIGNER_SELECTION_ERROR_CODE
+		)
+		&& (
+			mode === 'confirmation'
+			|| pending.approvalStatus.status === 'WaitingForUser'
+			|| pending.approvalStatus.status === 'SignerError' && pending.approvalStatus.code === SAFE_SIGNER_SELECTION_ERROR_CODE
+		)
+	) {
+		try {
+			if (mode === 'confirmation') await assertSafeProposalReviewPrerequisites(ethereum, pending)
+			const refreshedTransaction = await refreshSafeTransactionSignerSelection(ethereum, pending, selectedSigner)
+			if (refreshedTransaction === undefined) return { status: 'unchanged', pending }
+			if (refreshedTransaction.approvalStatus.status === 'SignerError') {
+				return { status: 'blocked', approvalStatus: refreshedTransaction.approvalStatus }
+			}
+			return { status: 'refreshed', pending: modifyObject(pending, refreshedTransaction), requiresReview: false }
+		} catch(error) {
+			return {
+				status: 'blocked',
+				approvalStatus: createSafeSignerErrorStatus(
+					`Gnosis Safe proposal could not be prepared: ${ getErrorMessage(error) ?? 'The wallet-selected Safe owner could not be validated.' }`,
+					SAFE_SIGNER_SELECTION_ERROR_CODE,
+				),
+			}
+		}
+	}
+	if (mode === 'confirmation') {
+		try {
+			await assertSafeProposalReviewPrerequisites(ethereum, pending)
+		} catch(error) {
+			return {
+				status: 'blocked',
+				approvalStatus: createSafeSignerErrorStatus(`Gnosis Safe proposal could not be prepared: ${ getErrorMessage(error) ?? 'The wallet-selected Safe owner changed.' }`),
+			}
+		}
+	}
+	return { status: 'unchanged', pending }
+}
+
 async function getSafeSignerSelectionError(
 	pending: PendingTransactionOrSignableMessage,
 	refreshedSafeSignerSelection?: RefreshedSafeSignerSelection,
@@ -456,43 +574,24 @@ export async function resolveSafeConfirmation(
 	pendingInput: PendingTransactionOrSignableMessage,
 	action: TransactionConfirmationAction,
 	refreshedSafeSignerSelection?: RefreshedSafeSignerSelection,
+	refreshExecution?: SafeExecutionSignerRefresher,
 ): Promise<SafeConfirmationResolution> {
 	let pending = pendingInput
 	let pendingChanged = false
 	if (action !== 'accept') return { status: 'ready', pending, pendingChanged, signerFacingRequest: undefined }
 
-	try {
-		const refreshedExecution = await refreshSafeExecutionSignerSelection(ethereum, pending)
-		if (refreshedExecution !== undefined) {
-			pending = refreshedExecution
-			pendingChanged = true
-		}
-	} catch (error) {
-		await reportUnexpectedDirectSafeExecutionRecovery(error)
-		return {
-			status: 'blocked',
-			approvalStatus: createSafeSignerErrorStatus(`Gnosis Safe execution could not be prepared: ${ getErrorMessage(error) ?? 'The current Gnosis Safe state could not be validated.' }`),
-		}
-	}
-	if (
-		pending.type === 'SignableMessage'
-		&& pending.safeMessageCoSignSnapshot !== undefined
-		&& refreshedSafeSignerSelection?.selectedSigner !== undefined
-		&& refreshedSafeSignerSelection.verificationError === undefined
-		&& pending.safeMessageCoSignSnapshot.safeSignerAddress !== refreshedSafeSignerSelection.selectedSigner
-	) {
-		try {
-			const refreshedCoSign = await refreshSafeMessageCoSignSignerSelection(ethereum, pending, refreshedSafeSignerSelection.selectedSigner)
-			if (refreshedCoSign !== undefined) {
-				pending = refreshedCoSign
-				pendingChanged = true
-			}
-		} catch(error) {
-			return {
-				status: 'blocked',
-				approvalStatus: createSafeSignerErrorStatus(getErrorMessage(error) ?? 'Select a current Gnosis Safe owner in the signer wallet before co-signing.', SAFE_SIGNER_SELECTION_ERROR_CODE),
-			}
-		}
+	const signerSelectionRefresh = await refreshSafeSignerSelectionForPending(
+		ethereum,
+		pending,
+		refreshedSafeSignerSelection,
+		'confirmation',
+		refreshExecution,
+	)
+	if (signerSelectionRefresh.status === 'blocked') return signerSelectionRefresh
+	if (signerSelectionRefresh.status === 'refreshed') {
+		if (signerSelectionRefresh.requiresReview) return { status: 'refreshed', pending: signerSelectionRefresh.pending }
+		pending = signerSelectionRefresh.pending
+		pendingChanged = true
 	}
 
 	let coSignContext: SafeMessageCoSignContext | undefined
@@ -505,45 +604,6 @@ export async function resolveSafeConfirmation(
 		}
 	}
 
-	try {
-		await assertSafeProposalReviewPrerequisites(ethereum, pending)
-	} catch (error) {
-		return {
-			status: 'blocked',
-			approvalStatus: createSafeSignerErrorStatus(`Gnosis Safe proposal could not be prepared: ${ getErrorMessage(error) ?? 'The wallet-selected Safe owner changed.' }`),
-		}
-	}
-	if (
-		!pending.simulationMode
-		&& pending.type === 'Transaction'
-		&& pending.safeTransaction !== undefined
-		&& refreshedSafeSignerSelection?.selectedSigner !== undefined
-		&& refreshedSafeSignerSelection.verificationError === undefined
-		&& (
-			pending.safeTransaction.safeSignerAddress !== refreshedSafeSignerSelection.selectedSigner
-			|| pending.approvalStatus.status === 'SignerError' && pending.approvalStatus.code === SAFE_SIGNER_SELECTION_ERROR_CODE
-		)
-	) {
-		try {
-			const refreshedTransaction = await refreshSafeTransactionSignerSelection(
-				ethereum,
-				pending,
-				refreshedSafeSignerSelection.selectedSigner,
-			)
-			if (refreshedTransaction?.approvalStatus.status === 'SignerError') {
-				return { status: 'blocked', approvalStatus: refreshedTransaction.approvalStatus }
-			}
-			if (refreshedTransaction !== undefined) {
-				pending = modifyObject(pending, refreshedTransaction)
-				pendingChanged = true
-			}
-		} catch (error) {
-			return {
-				status: 'blocked',
-				approvalStatus: createSafeSignerErrorStatus(`Gnosis Safe proposal could not be prepared: ${ getErrorMessage(error) ?? 'The wallet-selected Safe owner could not be validated.' }`),
-			}
-		}
-	}
 	const mismatch = await getSafeSignerSelectionError(pending, refreshedSafeSignerSelection)
 	if (mismatch !== undefined) return { status: 'blocked', approvalStatus: mismatch }
 
