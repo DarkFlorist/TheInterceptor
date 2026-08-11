@@ -208,29 +208,22 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(dynamicRuleUpdates.length, 1)
 	})
 
-	test('refreshes open simulation metadata after saving an address-book entry', async () => {
-		const { addOrModifyAddressBookEntry } = await import('../../app/ts/background/popupMessageHandlers.js')
-		const context = createDispatcherContext(async () => undefined)
-		let metadataRefreshCount = 0
-		const result = await addOrModifyAddressBookEntry(
-			context.ethereum,
-			context.tokenPriceService,
-			context.resetSimulationServices,
-			context.websiteTabConnections,
-			{
-				method: 'popup_addOrModifyAddressBookEntry',
-				data: {
-					type: 'contact',
-					name: 'Updated Safe participant',
-					address: 1n,
-					entrySource: 'User',
-				},
+	test('broadcasts address-book saves for metadata consumers to refresh themselves', async () => {
+		const result = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: {
+				type: 'contact',
+				name: 'Updated Safe participant',
+				address: 1n,
+				entrySource: 'User',
 			},
-			async () => { metadataRefreshCount += 1 },
-		)
+		})
 
 		assert.deepEqual(result, { type: 'AddOrModifyAddressBookEntryReply', ok: true })
-		assert.equal(metadataRefreshCount, 1)
+		assert.equal(sentMessages.some((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_addressBookEntriesChanged'
+		}), true)
 	})
 
 	test('delegates simulation reset through the injected lifecycle callback', async () => {

@@ -2000,6 +2000,21 @@ describe('background eth_accounts', () => {
 		assert.equal(ownedSafeSettings.activeSimulationAddress, safeAddress)
 		assert.equal(ownedSafeSettings.useSignersAddressAsActiveAddress, false)
 		assert.equal((await getActiveAddress(ownedSafeSettings, socket.tabId))?.address, safeAddress)
+
+		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [], activeSigningAddress: undefined }))
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: safeAddress, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await enableSimulationMode(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			method: 'popup_enableSimulationMode',
+			data: false,
+		})
+
+		const noSignerSettings = await getSettings()
+		assert.equal(noSignerSettings.simulationMode, false)
+		assert.equal(noSignerSettings.activeSimulationAddress, safeAddress)
+		assert.equal(noSignerSettings.activeSigningAddress, undefined)
+		assert.equal(noSignerSettings.useSignersAddressAsActiveAddress, true)
+		assert.equal((await getActiveAddress(noSignerSettings, socket.tabId)), undefined)
 	})
 
 	test('does not apply the passive reply timeout to interactive signer approval', async () => {

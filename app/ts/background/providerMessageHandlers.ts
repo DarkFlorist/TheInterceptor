@@ -20,6 +20,7 @@ import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 import { getSafeSigningEntry } from '../types/addressBookTypes.js'
+import { getActiveAddressSelection } from '../utils/activeAddressSelection.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
@@ -50,12 +51,9 @@ async function getRememberedSigningAddress(signerAddress: bigint, settings: Sett
 	const preference = (await getSigningAddressPreferences()).find((candidate) => candidate.signerAddress === signerAddress)
 	if (preference === undefined || preference.selection === 'signer') return 'signer'
 	if (preference.chainId !== settings.activeRpcNetwork.chainId) return 'signer'
-	const safe = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)).find((entry) =>
-		entry.type === 'safe'
-		&& entry.address === preference.safeAddress
-		&& entry.safeSignerAddresses?.includes(signerAddress) === true
-	)
-	return safe?.address ?? 'signer'
+	const activeChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
+	const selection = getActiveAddressSelection(preference.safeAddress, activeChainEntries, false, settings.activeRpcNetwork.chainId, [signerAddress])
+	return selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? selection.entry.address : 'signer'
 }
 
 export async function ethAccountsReply(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {

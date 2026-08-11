@@ -6,7 +6,7 @@ import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryR
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type WatchAssetConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type ForceSetGasLimitForTransaction, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
-import { askForSignerAccountsFromSignerIfNotAvailable, assertAccessDialogAddressIsAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
+import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
 import { resolveChainChange } from './windows/changeChain.js'
 import { updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
@@ -17,7 +17,7 @@ import type { TabState, WebsiteTabConnections } from '../types/user-interface-ty
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState } from '../types/visualizer-types.js'
 import { isJSON } from '../utils/json.js'
-import { doAddressBookChainIdsMatch, getSafeSigningEntry, type AddressBookEntry, type IncompleteAddressBookEntry, type SafeEntry } from '../types/addressBookTypes.js'
+import { doAddressBookChainIdsMatch, getSafeSigningEntry, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
 import { checksummedAddress, generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
@@ -51,6 +51,7 @@ import { createSafeContractValidationFailure, validateSafeOwnerIsEoa } from '../
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getPendingSafeSignerAddress } from './safeConfirmationResolver.js'
 import { getWalletSelectedAccount } from '../utils/signerMetadata.js'
+import { assertActiveAddressSelectionAllowed, getActiveAddressSelection } from '../utils/activeAddressSelection.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
 export { getLastKnownCurrentTabId } from './currentTab.js'
 export { exportSettings, importSettings, setNewRpcList, settingsOpened } from './popupMessageHandlers/settings.js'
@@ -214,49 +215,30 @@ async function getSignerAccount() {
 }
 
 export async function changeActiveAddress(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, addressChange: ChangeActiveAddress) {
-	// if using signers address, set the active address to signers address if available, otherwise we don't know active address and set it to be undefined
 	if (addressChange.data.activeAddress === 'signer') {
-		await setUseSignersAddressAsActiveAddress(true, await getSignerAccount())
 		await refreshSignerAccountsFromApprovedWebsitePorts(websiteTabConnections, false)
 		sendCallbackToAllConfirmedSignerOwners(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
-		const signerAccount = await getSignerAccount()
-
-		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
-			simulationMode: addressChange.data.simulationMode,
-			activeAddress: signerAccount,
-		})
-		if (!addressChange.data.simulationMode && signerAccount !== undefined) {
-			await rememberSigningAddressPreference({ signerAddress: signerAccount, selection: 'signer' })
-		}
-	} else {
-		const activeChainId = (await getSettings()).activeRpcNetwork.chainId
-		if (addressChange.data.simulationMode) {
-			assertAccessDialogAddressIsAvailable(await getUserAddressBookEntries(), activeChainId, addressChange.data.activeAddress)
-		}
-		const activeChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(activeChainId)
-		const activeChainSigningSafe = activeChainEntries.find((entry): entry is SafeEntry =>
-			entry.type === 'safe' && entry.address === addressChange.data.activeAddress
-		)
-		if (!addressChange.data.simulationMode) {
-			if (activeChainSigningSafe === undefined) return
-			const signerAccount = await getSignerAccount()
-			if (signerAccount !== undefined && activeChainSigningSafe.safeSignerAddresses?.includes(signerAccount) !== true) return
-		}
-		await setUseSignersAddressAsActiveAddress(false)
-		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
-			simulationMode: addressChange.data.simulationMode,
-			activeAddress: addressChange.data.activeAddress,
-		})
-		if (!addressChange.data.simulationMode && activeChainSigningSafe !== undefined) {
-			const signerAccount = await getSignerAccount()
-			if (signerAccount !== undefined) await rememberSigningAddressPreference({
-				signerAddress: signerAccount,
-				selection: 'safe',
-				safeAddress: activeChainSigningSafe.address,
-				chainId: activeChainSigningSafe.chainId,
-			})
-		}
 	}
+	const settings = await getSettings()
+	const signerAccount = await getSignerAccount()
+	const activeAddresses = await getActiveAddresses()
+	const signerAccounts = signerAccount === undefined ? [] : [signerAccount]
+	const selection = getActiveAddressSelection(addressChange.data.activeAddress, activeAddresses, addressChange.data.simulationMode, settings.activeRpcNetwork.chainId, signerAccounts)
+	if (selection === undefined) {
+		if (!addressChange.data.simulationMode) return
+		assertActiveAddressSelectionAllowed(addressChange.data.activeAddress, activeAddresses, true, settings.activeRpcNetwork.chainId, signerAccounts)
+		return
+	}
+	const selectedAddress = selection.type === 'signer' ? selection.address : selection.entry.address
+	await setUseSignersAddressAsActiveAddress(selection.type === 'signer', selection.type === 'signer' ? selection.address : undefined)
+	await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+		simulationMode: addressChange.data.simulationMode,
+		activeAddress: selectedAddress,
+	})
+	if (addressChange.data.simulationMode || signerAccount === undefined) return
+	await rememberSigningAddressPreference(selection.type === 'signer'
+		? { signerAddress: signerAccount, selection: 'signer' }
+		: { signerAddress: signerAccount, selection: 'safe', safeAddress: selection.entry.address, chainId: settings.activeRpcNetwork.chainId })
 }
 
 export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich) {
@@ -289,22 +271,7 @@ export async function removeAddressBookEntry(ethereum: EthereumClientService, to
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
 
-type RefreshAddressBookMetadata = (ethereum: EthereumClientService, tokenPriceService: TokenPriceService) => Promise<void>
-
-export async function refreshAddressBookMetadataAfterSave(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
-	try {
-		await refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined)
-	} catch(error) {
-		if (isExpectedInfrastructureError(error)) return
-		await reportUnexpectedError(error, {
-			source: 'address_book_metadata_refresh',
-			code: 'address_book_metadata_refresh_failed',
-			displayMessage: 'Failed to refresh simulation address metadata.',
-		})
-	}
-}
-
-export async function addOrModifyAddressBookEntry(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry, refreshMetadata: RefreshAddressBookMetadata = refreshAddressBookMetadataAfterSave) {
+export async function addOrModifyAddressBookEntry(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
 	try {
 		let entryToStore: AddressBookEntry = entry.data
 		if (entry.data.type === 'safe') {
@@ -349,7 +316,6 @@ export async function addOrModifyAddressBookEntry(ethereum: EthereumClientServic
 			return previousContacts.concat([entryToStore])
 		})
 		if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true, true)
-		await refreshMetadata(ethereum, tokenPriceService)
 		await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
 	} catch(error) {
@@ -701,8 +667,9 @@ export async function enableSimulationMode(
 		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain
 		const networkToSwitch = chainToSwitch === undefined ? (await getRpcList())[0] : await getPrimaryRpcForChain(chainToSwitch)
 		const targetChainId = networkToSwitch?.chainId ?? settings.activeRpcNetwork.chainId
+		const activeChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(targetChainId)
 		const configuredSigningSafeCandidate = getSafeSigningEntry(
-			await getUserAddressBookEntriesForChainIdMorePreciseFirst(targetChainId),
+			activeChainEntries,
 			{
 				simulationMode: params.data,
 				useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
@@ -711,9 +678,11 @@ export async function enableSimulationMode(
 			},
 		)
 		const signerAccount = await getSignerAccount()
-		const configuredSigningSafe = configuredSigningSafeCandidate !== undefined
-			&& (signerAccount === undefined || configuredSigningSafeCandidate.safeSignerAddresses?.includes(signerAccount) === true)
-			? configuredSigningSafeCandidate
+		const configuredSigningSelection = configuredSigningSafeCandidate === undefined
+			? undefined
+			: getActiveAddressSelection(configuredSigningSafeCandidate.address, activeChainEntries, false, targetChainId, signerAccount === undefined ? [] : [signerAccount])
+		const configuredSigningSafe = configuredSigningSelection?.type === 'addressBookEntry' && configuredSigningSelection.entry.type === 'safe'
+			? configuredSigningSelection.entry
 			: undefined
 		if (!params.data) {
 			await setUseSignersAddressAsActiveAddress(configuredSigningSafe === undefined, signerAccount)

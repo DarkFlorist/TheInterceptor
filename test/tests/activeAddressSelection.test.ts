@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getSelectableActiveAddresses, isActiveAddressSelectionAllowed } from '../../app/ts/utils/activeAddressSelection.js'
+import { assertActiveAddressSelectionAllowed, getActiveAddressSelection, getSelectableActiveAddresses, isActiveAddressSelectionAllowed } from '../../app/ts/utils/activeAddressSelection.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
 
 const EOA_ADDRESS = 0x1000000000000000000000000000000000000001n
@@ -8,6 +8,9 @@ const SAFE_ADDRESS = 0x2000000000000000000000000000000000000002n
 const OTHER_CHAIN_SAFE_ADDRESS = 0x3000000000000000000000000000000000000003n
 const UNOWNED_SAFE_ADDRESS = 0x4000000000000000000000000000000000000004n
 const UNKNOWN_OWNERS_SAFE_ADDRESS = 0x5000000000000000000000000000000000000005n
+const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
+const interceptorAccessSource = await Bun.file(new URL('../../app/ts/background/windows/interceptorAccess.ts', import.meta.url)).text()
+const providerMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/providerMessageHandlers.ts', import.meta.url)).text()
 
 const activeAddresses: AddressBookEntries = [
 	{ type: 'contact', name: 'Saved EOA', address: EOA_ADDRESS, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
@@ -18,11 +21,12 @@ const activeAddresses: AddressBookEntries = [
 ]
 
 describe('active address selection', () => {
-	test('allows current-chain Safes but not arbitrary EOAs in signing mode without a wallet account', () => {
+	test('does not allow selecting an EOA or Safe in signing mode without a wallet account', () => {
 		assert.deepEqual(
 			getSelectableActiveAddresses(activeAddresses, false, 1n, []).map(({ address }) => address),
-			[SAFE_ADDRESS, UNOWNED_SAFE_ADDRESS, UNKNOWN_OWNERS_SAFE_ADDRESS],
+			[],
 		)
+		assert.equal(isActiveAddressSelectionAllowed('signer', activeAddresses, false, 1n, []), false)
 	})
 
 	test('shows only current-chain Safes owned by the wallet-selected signer account', () => {
@@ -41,8 +45,19 @@ describe('active address selection', () => {
 
 	test('blocks alternate signing-mode selection paths from choosing arbitrary EOAs or unowned Safes', () => {
 		assert.equal(isActiveAddressSelectionAllowed('signer', activeAddresses, false, 1n, [EOA_ADDRESS]), true)
-		assert.equal(isActiveAddressSelectionAllowed(EOA_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), false)
+		assert.equal(isActiveAddressSelectionAllowed(EOA_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), true)
+		assert.deepEqual(getActiveAddressSelection(EOA_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), { type: 'signer', address: EOA_ADDRESS })
 		assert.equal(isActiveAddressSelectionAllowed(SAFE_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), true)
 		assert.equal(isActiveAddressSelectionAllowed(UNOWNED_SAFE_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), false)
+		assert.throws(() => assertActiveAddressSelectionAllowed(OTHER_CHAIN_SAFE_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), /configured for another chain/u)
+	})
+
+	test('keeps popup and access-dialog security gates on the shared selection policy', () => {
+		assert.match(popupMessageHandlersSource, /selection = getActiveAddressSelection\(/u)
+		assert.doesNotMatch(popupMessageHandlersSource, /activeChainSigningSafe\.safeSignerAddresses/u)
+		assert.match(interceptorAccessSource, /assertActiveAddressSelectionAllowed\(address, selectableAddresses/u)
+		assert.doesNotMatch(interceptorAccessSource, /address === signerAccounts\[0\]/u)
+		assert.match(providerMessageHandlersSource, /selection = getActiveAddressSelection\(preference\.safeAddress/u)
+		assert.doesNotMatch(providerMessageHandlersSource, /safeSignerAddresses\?\.includes\(signerAddress\)/u)
 	})
 })

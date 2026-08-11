@@ -23,7 +23,7 @@ import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOr
 import { isAccountConnectionMethod } from '../accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
 import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, signerConnectionReplacedError, signerUnavailableError, tabHasApprovedWebsiteConnection, waitForConfirmedSignerStateToken } from '../signerStateOwnership.js'
-import { isActiveAddressSelectionAllowed } from '../../utils/activeAddressSelection.js'
+import { assertActiveAddressSelectionAllowed } from '../../utils/activeAddressSelection.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab
@@ -157,13 +157,6 @@ export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessAr
 
 export function filterAccessDialogAddressesForChain(activeAddresses: AddressBookEntries, chainId: bigint) {
 	return activeAddresses.filter((entry) => entry.type !== 'safe' || entry.chainId === chainId)
-}
-
-export function assertAccessDialogAddressIsAvailable(activeAddresses: AddressBookEntries, chainId: bigint, address: bigint) {
-	const matchingSafeEntries = activeAddresses.filter((entry) => entry.type === 'safe' && entry.address === address)
-	if (matchingSafeEntries.length > 0 && !matchingSafeEntries.some((entry) => entry.chainId === chainId)) {
-		throw new Error('The selected Gnosis Safe is configured for another chain.')
-	}
 }
 
 async function getAccessDialogActiveAddresses() {
@@ -575,15 +568,13 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 async function assertAddressSelectionAllowedForAccessRequest(pendingAccessRequest: PendingAccessRequest, address: bigint | 'signer') {
 	const settings = await getSettings()
 	const simulationMode = pendingAccessRequest.simulationMode && settings.simulationMode
-	if (simulationMode) {
-		if (address === 'signer') return
-		assertAccessDialogAddressIsAvailable(await getActiveAddresses(), settings.activeRpcNetwork.chainId, address)
-		return
-	}
 	const signerAccounts = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts
-	if (address !== 'signer' && address === signerAccounts[0]) return
-	if (isActiveAddressSelectionAllowed(address, await getActiveAddresses(), false, settings.activeRpcNetwork.chainId, signerAccounts)) return
-	throw new Error('The selected address is not available for the current signing wallet.')
+	const activeAddresses = await getActiveAddresses()
+	const requestedEntry = pendingAccessRequest.requestAccessToAddress
+	const selectableAddresses = requestedEntry === undefined || activeAddresses.some((entry) => entry.address === requestedEntry.address && entry.chainId === requestedEntry.chainId)
+		? activeAddresses
+		: [...activeAddresses, requestedEntry]
+	assertActiveAddressSelectionAllowed(address, selectableAddresses, simulationMode, settings.activeRpcNetwork.chainId, signerAccounts)
 }
 
 export async function interceptorAccessMetadataRefresh() {
