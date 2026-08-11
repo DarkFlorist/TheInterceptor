@@ -495,6 +495,76 @@ test('shows a Safe signing-account mismatch in the confirmation dialog without r
 	assert.equal((await getLatestUnexpectedError())?.data.code, 'safe_signer_owner_lookup_failed')
 })
 
+test('signs Safe transaction typed data normally when the active signing address is an EOA', async () => {
+	const eoaAddress = safeTestOwnerAddress
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	fakeSafeContract.owners = [eoaAddress]
+	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateUserAddressBookEntries(() => [
+		createSafeAddressBookEntry({ safeSignerAddresses: [eoaAddress], safeVersion: '1.4.1' }),
+		{ type: 'contact', name: 'Sealwort signer', address: eoaAddress, chainId: fakeRpcNetwork.chainId, entrySource: 'User' },
+	])
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [eoaAddress],
+		activeSigningAddress: eoaAddress,
+		signerChain: fakeRpcNetwork.chainId,
+	}))
+	const socket = uniqueRequestIdentifier.requestSocket
+	const port = createWebsitePort(socket, 0, [])
+	const websiteTabConnections = new Map([[socket.tabId, {
+		connections: {
+			[modules.websiteSocketToString(socket)]: {
+				port,
+				socket,
+				websiteOrigin: 'https://sealwort.example',
+				approved: true,
+				wantsToConnect: true,
+			},
+		},
+	}]])
+	const signRequest = {
+		method: 'eth_signTypedData_v4' as const,
+		params: [eoaAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const,
+	}
+	const request = {
+		interceptorRequest: true as const,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier,
+		...signRequest,
+	}
+	const unexpectedErrorBeforeRequest = await getLatestUnexpectedError()
+
+	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		request,
+		signRequest,
+		false,
+		eoaAddress,
+		{ websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' },
+		websiteTabConnections,
+	), { type: 'doNotReply' })
+
+	const [pendingMessage] = await modules.getPendingTransactionsAndMessages()
+	if (pendingMessage?.type !== 'SignableMessage' || pendingMessage.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Missing EOA Safe typed-data confirmation')
+	assert.equal(pendingMessage.approvalStatus.status, 'WaitingForUser')
+	assert.equal(pendingMessage.safeMessageCoSignSnapshot, undefined)
+	assert.deepEqual(await modules.resolveSafeConfirmation(simulator.ethereum, pendingMessage, 'accept'), {
+		status: 'ready',
+		pending: pendingMessage,
+		pendingChanged: false,
+		signerFacingRequest: undefined,
+	})
+	assert.deepEqual(await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, pendingMessage, '0x1234'), { status: 'not-safe' })
+	assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeRequest)
+})
+
 test('uses the configured Safe simulation signer without changing the active Safe account', async () => {
 	const simulationSignerAddress = 0x4444444444444444444444444444444444444444n
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {

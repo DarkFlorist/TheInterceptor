@@ -682,10 +682,8 @@ export async function openConfirmTransactionDialogForMessage(
 	websiteTabConnections: WebsiteTabConnections,
 ) {
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
-	const activeAddressEntry = simulationMode
-		? (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()))
-			.find((entry) => entry.address === activeAddress)
-		: undefined
+	const activeAddressEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()))
+		.find((entry) => entry.address === activeAddress)
 	const simulationSignerAddress = activeAddressEntry?.type === 'safe'
 		? activeAddressEntry.safeSimulationSignerAddress ?? activeAddressEntry.safeSignerAddresses?.[0] ?? activeAddress
 		: activeAddress
@@ -709,7 +707,7 @@ export async function openConfirmTransactionDialogForMessage(
 		let safeMessageCoSignSnapshot: Awaited<ReturnType<typeof createSafeMessageCoSignSnapshot>> | undefined
 		let safeMessageAccountMismatch: string | undefined
 		let safeMessageAccountMismatchDetails: SafeSignerErrorDetails | undefined
-		if (!simulationMode && visualizedPersonalSignRequest.type === 'SafeTx') {
+		if (!simulationMode && activeAddressEntry?.type === 'safe' && visualizedPersonalSignRequest.type === 'SafeTx') {
 			try {
 				safeMessageCoSignSnapshot = await createSafeMessageCoSignSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, visualizedPersonalSignRequest.message)
 			} catch (error) {

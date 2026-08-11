@@ -178,6 +178,7 @@ export async function loadModules() {
 		safeConfirmationResolver,
 		safeSimulation,
 		safeCore,
+		safeConfirmationPersistence,
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/EthereumClientService.js'),
 		import('../../app/ts/simulation/services/priceEstimator.js'),
@@ -199,6 +200,7 @@ export async function loadModules() {
 		import('../../app/ts/background/safeConfirmationResolver.js'),
 		import('../../app/ts/safe/safeSimulation.js'),
 		import('../../app/ts/safe/safeCore.js'),
+		import('../../app/ts/background/safeConfirmationPersistence.js'),
 	])
 	const flushPendingTerminalRepliesForSocket: typeof flushPendingTerminalRepliesForSocketType = terminalReplyDelivery.flushPendingTerminalRepliesForSocket
 
@@ -226,6 +228,7 @@ export async function loadModules() {
 		resolveSafeConfirmation: safeConfirmationResolver.resolveSafeConfirmation,
 		createSafeExecutionPreSimulationTransaction: safeSimulation.createSafeExecutionPreSimulationTransaction,
 		createSafeContractValidationFailure: safeCore.createSafeContractValidationFailure,
+		resolveSafeSignerReply: safeConfirmationPersistence.resolveSafeSignerReply,
 		getPendingTransactionsAndMessages: storageVariables.getPendingTransactionsAndMessages,
 		getSafeTransactionStacks: storageVariables.getSafeTransactionStacks,
 		getInterceptorTransactionStack: storageVariables.getInterceptorTransactionStack,

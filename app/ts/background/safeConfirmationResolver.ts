@@ -173,13 +173,11 @@ async function getSafeMessageCoSignContext(
 		|| pending.simulationMode
 		|| pending.transactionOrMessageCreationStatus !== 'Simulated'
 		|| pending.visualizedPersonalSignRequest.type !== 'SafeTx'
+		|| pending.safeMessageCoSignSnapshot === undefined
 		|| pending.originalRequestParameters.method !== 'eth_signTypedData_v4'
 	) return undefined
 	const safeTx = pending.visualizedPersonalSignRequest.message
 	const reviewedSnapshot = pending.safeMessageCoSignSnapshot
-	if (reviewedSnapshot === undefined) {
-		throw new Error('Review this Gnosis Safe co-signing request again so its current owners, threshold, nonce, and signer can be verified.')
-	}
 	const [requestedAccount] = pending.originalRequestParameters.params
 	if (requestedAccount !== pending.activeAddress || safeTx.domain.verifyingContract !== pending.activeAddress) {
 		throw new Error('The Gnosis Safe transaction signing account does not match the active Gnosis Safe.')
@@ -340,6 +338,7 @@ async function getRequiredSafeCoSignContext(
 		pending.type !== 'SignableMessage'
 		|| pending.transactionOrMessageCreationStatus !== 'Simulated'
 		|| pending.visualizedPersonalSignRequest.type !== 'SafeTx'
+		|| pending.safeMessageCoSignSnapshot === undefined
 	) return undefined
 	const context = await getSafeMessageCoSignContext(ethereum, pending)
 	if (context === undefined) throw new Error('This Gnosis Safe transaction is not eligible for Interceptor co-signing.')

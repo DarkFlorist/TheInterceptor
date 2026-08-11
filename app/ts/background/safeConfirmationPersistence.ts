@@ -41,6 +41,7 @@ export async function resolveSafeSignerReply(
 		pending.type === 'SignableMessage'
 		&& pending.transactionOrMessageCreationStatus === 'Simulated'
 		&& pending.visualizedPersonalSignRequest.type === 'SafeTx'
+		&& pending.safeMessageCoSignSnapshot !== undefined
 	) {
 		try {
 			return { status: 'success', result: await validateSafeMessageCoSignature(ethereum, pending, signerReply) }
