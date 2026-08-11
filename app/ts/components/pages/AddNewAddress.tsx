@@ -266,22 +266,20 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 					<div class = 'address-editor-address-icon'>
 						<AddressIcon address = { stringToAddress(entry.address) } logoUri = { logoUri } isBig = { true } backgroundColor = 'var(--text-color)'/>
 					</div>
-					<div class = 'address-editor-identity-copy'>
+					<div class = 'address-editor-identity-controls'>
 						<label class = 'address-editor-field address-editor-name-field'>
 							<span>Name</span>
 							<NameInput nameInput = { entry.name } setNameInput = { setName } disabled = { disableDueToSource }/>
 						</label>
+						<div class = 'address-editor-field address-editor-type-field'>
+							<span>Address type</span>
+							<DropDownMenu selected = { selectedAddresBookEntryType } dropDownOptions = { addressBookEntryOptions } onChangedCallBack = { onTypeChangedCallBack } buttonClassses = { 'btn btn--outline is-small' } ariaLabel = 'Address type'/>
+						</div>
+						<div class = 'address-editor-field address-editor-chain-field'>
+							<span>Chain</span>
+							<ChainSelector rpcEntries = { rpcEntries } chainId = { selectedChainId } changeChain = { setChain } buttonClassses = { 'btn btn--outline is-small' } ariaLabel = 'Chain'/>
+						</div>
 					</div>
-				</div>
-				<div class = 'address-editor-identity-selectors'>
-				<div class = 'address-editor-field'>
-					<span>Address type</span>
-					<DropDownMenu selected = { selectedAddresBookEntryType } dropDownOptions = { addressBookEntryOptions } onChangedCallBack = { onTypeChangedCallBack } buttonClassses = { 'btn btn--outline is-small' } ariaLabel = 'Address type'/>
-				</div>
-				<div class = 'address-editor-field'>
-					<span>Chain</span>
-					<ChainSelector rpcEntries = { rpcEntries } chainId = { selectedChainId } changeChain = { setChain } buttonClassses = { 'btn btn--outline is-small' } ariaLabel = 'Chain'/>
-				</div>
 				</div>
 				<label class = 'address-editor-field address-editor-address-field'>
 					<span>Address</span>

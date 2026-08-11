@@ -289,7 +289,22 @@ export async function removeAddressBookEntry(ethereum: EthereumClientService, to
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
 
-export async function addOrModifyAddressBookEntry(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
+type RefreshAddressBookMetadata = (ethereum: EthereumClientService, tokenPriceService: TokenPriceService) => Promise<void>
+
+export async function refreshAddressBookMetadataAfterSave(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
+	try {
+		await refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined)
+	} catch(error) {
+		if (isExpectedInfrastructureError(error)) return
+		await reportUnexpectedError(error, {
+			source: 'address_book_metadata_refresh',
+			code: 'address_book_metadata_refresh_failed',
+			displayMessage: 'Failed to refresh simulation address metadata.',
+		})
+	}
+}
+
+export async function addOrModifyAddressBookEntry(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry, refreshMetadata: RefreshAddressBookMetadata = refreshAddressBookMetadataAfterSave) {
 	try {
 		let entryToStore: AddressBookEntry = entry.data
 		if (entry.data.type === 'safe') {
@@ -337,6 +352,7 @@ export async function addOrModifyAddressBookEntry(ethereum: EthereumClientServic
 			return previousContacts.concat([entryToStore])
 		})
 		if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true, true)
+		await refreshMetadata(ethereum, tokenPriceService)
 		await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
 	} catch(error) {
@@ -525,13 +541,17 @@ export async function removeTransactionOrSignedMessage(ethereum: EthereumClientS
 }
 
 export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined) {
+	const promises = await getPendingTransactionsAndMessages()
+	const first = promises[0]
+	if (first === undefined) return
 	const currentBlockNumberPromise = ethereum.getBlockNumber(requestAbortController)
 	silenceChromeUnCaughtPromise(currentBlockNumberPromise)
 	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
-	const promises = await getPendingTransactionsAndMessages()
-	const visualizedSimulatorStatePromise = silenceChromeUnCaughtPromise(updatePopupVisualisationIfNeeded(ethereum, tokenPriceService))
-	const first = promises[0]
-	if (first === undefined) return
+	const visualizedSimulatorStatePromise = silenceChromeUnCaughtPromise((async () => {
+		// A confirmation popup consumes this state even when the standalone simulation visualizer is closed.
+		await updatePopupVisualisationState(ethereum, tokenPriceService, undefined, true)
+		return await getPopupVisualisationState()
+	})())
 	switch (first.type) {
 		case 'SignableMessage': {
 			const visualizedPersonalSignRequestPromise = craftPersonalSignPopupMessage(ethereum, requestAbortController, first.signedMessageTransaction, ethereum.getRpcEntry())

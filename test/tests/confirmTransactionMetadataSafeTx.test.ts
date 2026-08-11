@@ -147,6 +147,7 @@ async function loadModules() {
 	const priceEstimator = await import('../../app/ts/simulation/services/priceEstimator.js')
 	const settings = await import('../../app/ts/background/settings.js')
 	const storageUtils = await import('../../app/ts/utils/storageUtils.js')
+	const storageVariables = await import('../../app/ts/background/storageVariables.js')
 	const wireTypes = await import('../../app/ts/types/wire-types.js')
 
 	return {
@@ -157,6 +158,7 @@ async function loadModules() {
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		browserStorageLocalSet: storageUtils.browserStorageLocalSet,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
+		getPopupVisualisationState: storageVariables.getPopupVisualisationState,
 		serialize: wireTypes.serialize,
 		EthereumBlockHeader: wireTypes.EthereumBlockHeader,
 		EthereumQuantity: wireTypes.EthereumQuantity,
@@ -425,6 +427,8 @@ describe('SafeTx confirm transaction metadata', () => {
 		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined)
 
 		assertPopupPendingSafeTxShape(browserMock.sentMessages)
+		assert.equal((await modules.getPopupVisualisationState()).simulationId, 1)
+		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_isSimulationVisualizerOpen'), false)
 	})
 
 	test('initial confirm render sends popup-safe SafeTx payload', async () => {

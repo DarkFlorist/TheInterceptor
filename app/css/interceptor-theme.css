@@ -364,20 +364,19 @@ svg[role="img"] {
 }
 
 .address-editor-identity {
-	display: flex;
-	flex-wrap: wrap;
+	display: grid;
 	align-items: start;
-	gap: 16px;
+	gap: 12px;
 	min-width: 0;
 }
 
 .address-editor-primary-identity {
 	display: grid;
-	flex: 3 1 240px;
 	grid-template-columns: 44px minmax(0, 1fr);
 	align-items: start;
 	gap: 12px;
 	min-width: 0;
+	width: 100%;
 }
 
 .address-editor-address-icon {
@@ -387,16 +386,25 @@ svg[role="img"] {
 	padding-top: 17px;
 }
 
-.address-editor-identity-copy,
-.address-editor-identity-selectors {
+.address-editor-identity-controls {
 	display: grid;
 	gap: 8px;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
 	min-width: 0;
 }
 
-.address-editor-identity-selectors {
-	flex: 2 1 160px;
-	grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr));
+.address-editor-name-field {
+	grid-column: 1 / -1;
+}
+
+.address-editor-chain-field {
+	grid-column: 2;
+	grid-row: 2;
+}
+
+.address-editor-type-field {
+	grid-column: 1;
+	grid-row: 2;
 }
 
 .address-editor-name-input {
@@ -473,6 +481,18 @@ svg[role="img"] {
 }
 
 @container (max-width: 280px) {
+	.address-editor-identity-controls {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.address-editor-chain-field,
+	.address-editor-type-field {
+		grid-column: 1;
+	}
+
+	.address-editor-chain-field { grid-row: 3; }
+	.address-editor-type-field { grid-row: 2; }
+
 	.address-editor-address-field {
 		align-items: start;
 		gap: 4px;
