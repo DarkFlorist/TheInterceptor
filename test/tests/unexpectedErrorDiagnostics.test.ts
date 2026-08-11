@@ -6,14 +6,17 @@ import { installDateMock, installDomMock } from './domMock.js'
 import { withSilencedConsole } from './consoleSilence.js'
 
 const { NEW_BLOCK_ABORT } = await import('../../app/ts/utils/constants.js')
-const { createTaggedError, isTaggedError } = await import('../../app/ts/utils/errors.js')
+const { classifyCaughtError, createInterceptorInternalError, hasInterceptorInternalErrorCode, isExpectedHandledError, isExpectedInfrastructureError } = await import('../../app/ts/utils/errors.js')
 
-test('tagged errors use one shared classification mechanism', () => {
-	const error = createTaggedError('Select a Safe owner.', 'safeSignerSelectionFailure')
+test('Safe failures use the shared internal error classification mechanism', () => {
+	const error = createInterceptorInternalError('Select a Safe owner.', 'safe_signer_selection')
 
-	assert.equal(isTaggedError(error, 'safeSignerSelectionFailure'), true)
-	assert.equal(isTaggedError(error, 'safeOwnerValidationFailure'), false)
-	assert.equal(isTaggedError(new Error('Select a Safe owner.'), 'safeSignerSelectionFailure'), false)
+	assert.equal(hasInterceptorInternalErrorCode(error, 'safe_signer_selection'), true)
+	assert.equal(hasInterceptorInternalErrorCode(error, 'safe_owner_validation'), false)
+	assert.equal(hasInterceptorInternalErrorCode(new Error('Select a Safe owner.'), 'safe_signer_selection'), false)
+	assert.equal(classifyCaughtError(error), 'safeValidation')
+	assert.equal(isExpectedHandledError(error), true)
+	assert.equal(isExpectedInfrastructureError(error), false)
 })
 
 type RuntimeMessage = {

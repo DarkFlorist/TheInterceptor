@@ -124,7 +124,10 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 		const rememberedSelectionIsActive = rememberedSigningAddress === 'signer'
 			? settings.useSignersAddressAsActiveAddress && selectedSafe === undefined && configuredActiveAddress === signerAddress
 			: rememberedSigningAddress !== undefined && !settings.useSignersAddressAsActiveAddress && selectedSafe?.address === rememberedSigningAddress
-		const shouldRestoreRememberedSelection = rememberedSigningAddress !== undefined && !rememberedSelectionIsActive
+		const signerAccountChanged = tabStateChange.previousState.activeSigningAddress !== tabStateChange.newState.activeSigningAddress
+		const shouldRestoreRememberedSelection = rememberedSigningAddress !== undefined
+			&& !rememberedSelectionIsActive
+			&& (signerAccountChanged || selectedSafe === undefined)
 		const shouldUpdateUnrememberedSignerAddress = rememberedSigningAddress === undefined && selectedSafe === undefined && ((settings.useSignersAddressAsActiveAddress && configuredActiveAddress !== signerAddress)
 			|| (!settings.simulationMode && tabStateChange.previousState.activeSigningAddress !== tabStateChange.newState.activeSigningAddress))
 		if (shouldRestoreRememberedSelection || shouldUpdateUnrememberedSignerAddress) {

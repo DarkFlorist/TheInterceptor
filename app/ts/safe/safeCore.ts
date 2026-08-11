@@ -8,7 +8,7 @@ import { addressString, bytes32String, dataStringWith0xStart, stringToUint8Array
 import { ensureHex } from '../utils/ethereumBytes.js'
 import { recoverAddress } from '../utils/ethereumPrimitives.js'
 import { getSafeTxHash } from '../utils/eip712.js'
-import { createTaggedError, isTaggedError } from '../utils/caughtErrors.js'
+import { createInterceptorInternalError, hasInterceptorInternalErrorCode } from '../utils/caughtErrors.js'
 
 const SUPPORTED_SAFE_VERSIONS = ['1.3.0', '1.4.0', '1.4.1'] as const
 
@@ -108,19 +108,19 @@ export type SafeOwnerValidator = {
 }
 
 function createSafeOwnerValidationFailure(message: string) {
-	return createTaggedError(message, 'safeOwnerValidationFailure')
+	return createInterceptorInternalError(message, 'safe_owner_validation')
 }
 
 export function isSafeOwnerValidationFailure(error: unknown) {
-	return isTaggedError(error, 'safeOwnerValidationFailure')
+	return hasInterceptorInternalErrorCode(error, 'safe_owner_validation')
 }
 
 export function createSafeContractValidationFailure(message: string) {
-	return createTaggedError(message, 'safeContractValidationFailure')
+	return createInterceptorInternalError(message, 'safe_contract_validation')
 }
 
 export function isSafeContractValidationFailure(error: unknown) {
-	return isTaggedError(error, 'safeContractValidationFailure')
+	return hasInterceptorInternalErrorCode(error, 'safe_contract_validation')
 }
 
 function canonicalSafeOwners(owners: readonly bigint[]) {

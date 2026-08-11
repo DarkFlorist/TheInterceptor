@@ -2,11 +2,19 @@ export type InterceptorInternalErrorCode =
 	| 'fetch_aborted'
 	| 'fetch_timeout'
 	| 'fetch_transport_failed'
+	| 'safe_contract_validation'
+	| 'safe_message_account_mismatch'
+	| 'safe_owner_validation'
+	| 'safe_signer_selection'
 
 const interceptorInternalErrorCodes: readonly InterceptorInternalErrorCode[] = [
 	'fetch_aborted',
 	'fetch_timeout',
 	'fetch_transport_failed',
+	'safe_contract_validation',
+	'safe_message_account_mismatch',
+	'safe_owner_validation',
+	'safe_signer_selection',
 ]
 
 export function getErrorMessage(error: unknown) {
@@ -20,19 +28,15 @@ export function createInterceptorInternalError(message: string, interceptorError
 	return Object.assign(new Error(message), { interceptorErrorCode })
 }
 
-export function createTaggedError<Tag extends string>(message: string, tag: Tag) {
-	return Object.assign(new Error(message), { interceptorErrorTag: tag })
-}
-
-export function isTaggedError<Tag extends string>(error: unknown, tag: Tag): error is Error & { readonly interceptorErrorTag: Tag } {
-	return error instanceof Error && 'interceptorErrorTag' in error && error.interceptorErrorTag === tag
-}
-
 export function getInterceptorInternalErrorCode(error: unknown): InterceptorInternalErrorCode | undefined {
 	if (typeof error !== 'object' || error === null || !('interceptorErrorCode' in error)) return undefined
 	const code = error.interceptorErrorCode
 	if (typeof code !== 'string') return undefined
 	return interceptorInternalErrorCodes.find((knownCode) => knownCode === code)
+}
+
+export function hasInterceptorInternalErrorCode<Code extends InterceptorInternalErrorCode>(error: unknown, code: Code): error is Error & { readonly interceptorErrorCode: Code } {
+	return error instanceof Error && getInterceptorInternalErrorCode(error) === code
 }
 
 export function isBrowserFetchTransportError(error: unknown) {

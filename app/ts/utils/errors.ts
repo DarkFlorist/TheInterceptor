@@ -6,7 +6,7 @@ import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages
 import { getErrorMessage, getInterceptorInternalErrorCode, isBrowserFetchTransportError } from './caughtErrors.js'
 import { NEW_BLOCK_ABORT } from './constants.js'
 import { createErrorDebugId, createUnexpectedErrorPopupMessage } from './unexpectedErrorPopupMessage.js'
-export { createInterceptorInternalError, createTaggedError, getErrorMessage, isTaggedError } from './caughtErrors.js'
+export { createInterceptorInternalError, getErrorMessage, hasInterceptorInternalErrorCode } from './caughtErrors.js'
 
 export const GENERIC_UNEXPECTED_ERROR_MESSAGE = 'An internal Interceptor error occurred. Please see The Interceptor console for technical details.'
 
@@ -94,15 +94,22 @@ export const isWrappedNewBlockAbort = (error: unknown) => {
 	return message !== undefined && message !== NEW_BLOCK_ABORT && message.includes(NEW_BLOCK_ABORT)
 }
 
-export type CaughtErrorClassification = 'newBlockAbort' | 'failedToFetch' | 'unexpected'
+export type CaughtErrorClassification = 'newBlockAbort' | 'failedToFetch' | 'safeValidation' | 'unexpected'
 
 export function classifyCaughtError(error: unknown): CaughtErrorClassification {
 	if (isNewBlockAbort(error)) return 'newBlockAbort'
 	if (isFailedToFetchError(error)) return 'failedToFetch'
+	const code = getInterceptorInternalErrorCode(error)
+	if (code === 'safe_contract_validation' || code === 'safe_message_account_mismatch' || code === 'safe_owner_validation' || code === 'safe_signer_selection') return 'safeValidation'
 	return 'unexpected'
 }
 
-export const isExpectedInfrastructureError = (error: unknown) => classifyCaughtError(error) !== 'unexpected'
+export const isExpectedInfrastructureError = (error: unknown) => {
+	const classification = classifyCaughtError(error)
+	return classification === 'newBlockAbort' || classification === 'failedToFetch'
+}
+
+export const isExpectedHandledError = (error: unknown) => classifyCaughtError(error) !== 'unexpected'
 
 function getForwardedDiagnostics(error: unknown): string | undefined {
 	const maybeInterceptorError = InterceptorError.safeParse(error)

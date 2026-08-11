@@ -1,8 +1,8 @@
-import { getSafeContractSnapshot, isSafeContractValidationFailure } from '../safe/safeCore.js'
+import { getSafeContractSnapshot } from '../safe/safeCore.js'
 import { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { EthereumJSONRpcRequestHandler } from '../simulation/services/EthereumJSONRpcRequestHandler.js'
 import type { RequestSafeContractState } from '../types/interceptor-reply-messages.js'
-import { getErrorMessage, isExpectedInfrastructureError, reportUnexpectedError } from '../utils/errors.js'
+import { getErrorMessage, isExpectedHandledError, reportUnexpectedError } from '../utils/errors.js'
 import { getPrimaryRpcForChain, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import type { RpcEntry } from '../types/rpc.js'
 
@@ -16,7 +16,7 @@ type SafeContractStateDependencies = {
 type SafeContractStateErrorReporter = (error: unknown, metadata: { code: string }) => Promise<unknown>
 
 export async function handleSafeContractSnapshotFailure(error: unknown, reportError: SafeContractStateErrorReporter = reportUnexpectedError) {
-	if (isExpectedInfrastructureError(error) || isSafeContractValidationFailure(error)) {
+	if (isExpectedHandledError(error)) {
 		return { ok: false as const, message: getErrorMessage(error) ?? 'Failed to retrieve Gnosis Safe signers.' }
 	}
 	await reportError(error, { code: 'safe_contract_state_retrieval_failed' })

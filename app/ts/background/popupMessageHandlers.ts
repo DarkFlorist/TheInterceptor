@@ -32,7 +32,7 @@ import { assertNever, modifyObject } from '../utils/typescript.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { getCurrentSimulationInput, getMetadataForSimulation, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
-import { getErrorMessage, reportUnexpectedError, isExpectedInfrastructureError } from '../utils/errors.js'
+import { getErrorMessage, reportUnexpectedError, isExpectedHandledError, isExpectedInfrastructureError } from '../utils/errors.js'
 import type { ImportSimulationStackReply, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, SetSafeSimulationSigner, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getWebsiteCreatedEthereumTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from './popupVisualisationUpdater.js'
@@ -47,7 +47,7 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerforma
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { updateRichListAddress } from '../utils/richList.js'
 import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply.js'
-import { createSafeContractValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
+import { createSafeContractValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot } from '../safe/safeCore.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getPendingSafeSignerAddress } from './safeConfirmationResolver.js'
 import { getWalletSelectedAccount } from '../utils/signerMetadata.js'
@@ -331,7 +331,7 @@ export async function addOrModifyAddressBookEntry(ethereum: EthereumClientServic
 					safeVersion: safeState.version,
 				}
 			} catch(error) {
-				if (!isSafeContractValidationFailure(error) && !isSafeOwnerValidationFailure(error) && !isExpectedInfrastructureError(error)) {
+				if (!isExpectedHandledError(error)) {
 					await reportUnexpectedError(error, {
 						source: 'address_book_safe_validation',
 						code: 'address_book_safe_validation_failed',
@@ -396,7 +396,7 @@ export async function setSafeSimulationSigner(
 		await ownerValidator.assertEoaOwner(request.data.safeSimulationSignerAddress)
 		validatedSafeState = state
 	} catch(error) {
-		if (!isSafeContractValidationFailure(error) && !isSafeOwnerValidationFailure(error) && !isExpectedInfrastructureError(error)) {
+		if (!isExpectedHandledError(error)) {
 			await reportUnexpectedError(error, {
 				source: 'safe_simulation_signer',
 				code: 'safe_simulation_signer_validation_failed',
@@ -720,7 +720,15 @@ export async function enableSimulationMode(
 			&& (signerAccount === undefined || configuredSigningSafeCandidate.safeSignerAddresses?.includes(signerAccount) === true)
 			? configuredSigningSafeCandidate
 			: undefined
-		if (!params.data) await setUseSignersAddressAsActiveAddress(configuredSigningSafe === undefined, signerAccount)
+		if (!params.data) {
+			await setUseSignersAddressAsActiveAddress(configuredSigningSafe === undefined, signerAccount)
+			if (signerAccount !== undefined && configuredSigningSafe !== undefined) await rememberSigningAddressPreference({
+				signerAddress: signerAccount,
+				selection: 'safe',
+				safeAddress: configuredSigningSafe.address,
+				chainId: configuredSigningSafe.chainId,
+			})
+		}
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			simulationMode: params.data,
 			activeAddress: configuredSigningSafe?.address ?? signerAccount,

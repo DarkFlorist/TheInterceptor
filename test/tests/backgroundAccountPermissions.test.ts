@@ -2053,7 +2053,9 @@ describe('background eth_accounts', () => {
 		const {
 			changeSimulationMode,
 			enableSimulationMode,
+			getActiveAddress,
 			getSettings,
+			getSigningAddressPreferences,
 			handleInterceptedRequest,
 			saveCurrentTabId,
 			setUseSignersAddressAsActiveAddress,
@@ -2121,7 +2123,15 @@ describe('background eth_accounts', () => {
 		})
 		await accountReply
 
-		assert.equal((await getSettings()).simulationMode, false)
+		const signingSettings = await getSettings()
+		assert.equal(signingSettings.simulationMode, false)
+		assert.equal((await getActiveAddress(signingSettings, currentSocket.tabId))?.address, safeAddress)
+		assert.deepEqual(await getSigningAddressPreferences(), [{
+			signerAddress: safeSignerAddress,
+			selection: 'safe',
+			safeAddress,
+			chainId: 1n,
+		}])
 		assert.equal(currentMessages.filter((message) => message.method === 'request_signer_to_eth_accounts').length, 1)
 		assert.equal(unrelatedMessages.some((message) => message.method === 'request_signer_to_eth_accounts'), false)
 	})
