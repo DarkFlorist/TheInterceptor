@@ -249,6 +249,7 @@ const defaultHomePageBootstrap = (tabId: number, icon: { icon: string; iconReaso
 		popupRefreshGeneration,
 		data: {
 			activeAddresses: homePage.data.activeAddresses,
+			hasSafeTransactionsToExport: homePage.data.hasSafeTransactionsToExport,
 			tabState: homePage.data.tabState,
 			settings: homePage.data.settings,
 			activeSigningAddressInThisTab: homePage.data.activeSigningAddressInThisTab,

@@ -13,6 +13,7 @@ const popupHandlerRegistrySources = [
 	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/safe.ts', import.meta.url)),
 ]
 const safeConfirmationResolverSource = await Bun.file(new URL('../../app/ts/background/safeConfirmationResolver.ts', import.meta.url)).text()
+const safeSignerSelectionRefreshSource = await Bun.file(new URL('../../app/ts/background/safeSignerSelectionRefresh.ts', import.meta.url)).text()
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
 
 const getDeclaredPopupHandlerMethods = async (source: Bun.BunFile) => {
@@ -66,9 +67,12 @@ test('popup method guards reject inherited object keys', () => {
 	assert.equal(isPopupMessageMethod('__proto__'), false)
 })
 
-test('Safe signer refresh persistence remains owned by the Safe confirmation resolver', () => {
-	assert.match(safeConfirmationResolverSource, /export async function refreshAndPersistSafeSignerSelection[\s\S]*?updatePendingTransactionOrMessage/u)
+test('Safe signer refresh persistence is isolated from confirmation resolution', () => {
+	assert.match(safeSignerSelectionRefreshSource, /export async function refreshAndPersistSafeSignerSelection[\s\S]*?updatePendingTransactionOrMessage/u)
 	assert.match(confirmTransactionSource, /refreshAndPersistSafeSignerSelection\(/u)
+	assert.doesNotMatch(safeConfirmationResolverSource, /function shouldRefreshSafeSignerSelection/u)
+	assert.doesNotMatch(safeConfirmationResolverSource, /function mergeSafeSignerSelectionRefresh/u)
+	assert.doesNotMatch(safeSignerSelectionRefreshSource, /JSON\.stringify/u)
 	assert.doesNotMatch(confirmTransactionSource, /function shouldRefreshSafeSignerSelection/u)
 	assert.doesNotMatch(confirmTransactionSource, /function mergeSafeSignerSelectionRefresh/u)
 	assert.doesNotMatch(confirmTransactionSource, /function persistSafeSignerSelectionRefresh/u)

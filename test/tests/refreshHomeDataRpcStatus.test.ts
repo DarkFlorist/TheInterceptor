@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -9,6 +10,7 @@ type RuntimeMessage = {
 	data?: {
 		activeSigningAddressInThisTab?: bigint
 		activeAddresses?: readonly { address: bigint }[]
+		hasSafeTransactionsToExport?: boolean
 		walletSelectedAddressBookEntry?: { address: bigint, name: string }
 		rpcConnectionStatus?: {
 			retrying: boolean
@@ -353,7 +355,7 @@ describe('refreshHomeData', () => {
 	test('home bootstrap uses mode-aware active address resolution without a simulation snapshot', async () => {
 		const browserMock = installBrowserMock()
 		const modules: TestModules = await loadModules()
-		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, requestHomePageBootstrap, requestNewHomeData, defaultActiveAddresses, defaultRpcs, websiteSocketToString, EthereumClientService } = modules
+		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, updateTransactionState, requestHomePageBootstrap, requestNewHomeData, defaultActiveAddresses, defaultRpcs, websiteSocketToString, EthereumClientService } = modules
 
 		const [defaultAddress] = defaultActiveAddresses
 		if (defaultAddress === undefined) throw new Error('missing default address')
@@ -385,6 +387,28 @@ describe('refreshHomeData', () => {
 			signerAccounts: [signerAddress],
 			activeSigningAddress: undefined,
 		}))
+		await updateTransactionState((previousState) => ({
+			...previousState,
+			safeTransactionStacks: [{
+				chainId: rpcNetwork.chainId,
+				safeAddress: defaultAddress.address,
+				safeVersion: '1.4.1',
+				baseNonce: 0n,
+				threshold: 1n,
+				transactions: [{
+					safeTx: createSafeTx(rpcNetwork.chainId, defaultAddress.address, {
+						to: defaultAddress.address,
+						value: 0n,
+						input: new Uint8Array(),
+					}, 0n),
+					safeTxHash: 0n,
+					created: new Date('2024-01-01T00:00:00.000Z'),
+					websiteOrigin: 'https://example.com',
+					transactionIdentifier: 1n,
+					signatures: [],
+				}],
+			}],
+		}))
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port } = createPort(socket.tabId)
 		const websiteTabConnections = new Map([[socket.tabId, {
@@ -405,6 +429,7 @@ describe('refreshHomeData', () => {
 		assert.equal(bootstrap?.popupRefreshGeneration, 7)
 		assert.equal(bootstrap?.data?.activeSigningAddressInThisTab, signerAddress)
 		assert.equal(bootstrap?.data?.walletSelectedAddressBookEntry?.name, 'Named signer contact')
+		assert.equal(bootstrap?.data?.hasSafeTransactionsToExport, true)
 		assert.equal(bootstrap?.data?.activeAddresses?.some((entry) => entry.address === signerAddress), false)
 		assert.equal(bootstrap?.data?.settings?.simulationMode, false)
 		assert.equal(bootstrap?.data?.visualizedSimulatorState, undefined)

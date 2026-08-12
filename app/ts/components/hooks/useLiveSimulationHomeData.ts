@@ -139,6 +139,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			const wasLoaded = isSettingsLoaded.value
 			isSettingsLoaded.value = true
 			activeAddresses.value = data.activeAddresses
+			hasSafeTransactionsToExport.value = data.hasSafeTransactionsToExport
 			walletSelectedAddressBookEntry.value = data.walletSelectedAddressBookEntry
 			activeSigningAddress.value = data.activeSigningAddressInThisTab
 			currentTabId.value = data.tabId

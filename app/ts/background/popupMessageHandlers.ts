@@ -813,6 +813,7 @@ export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTab
 	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
 	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
 	const activeAddressesPromise = silenceChromeUnCaughtPromise(getActiveAddresses())
+	const safeTransactionStacksPromise = silenceChromeUnCaughtPromise(getSafeTransactionStacks())
 	const tabId = await getLastKnownCurrentTabId()
 	const tabStatePromise = silenceChromeUnCaughtPromise(tabId === undefined ? getTabState(-1) : getTabState(tabId))
 	const settings = await settingsPromise
@@ -826,6 +827,9 @@ export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTab
 		popupRefreshGeneration,
 		data: {
 			activeAddresses: await activeAddressesPromise,
+			hasSafeTransactionsToExport: (await safeTransactionStacksPromise).some((stack) =>
+				stack.chainId === settings.activeRpcNetwork.chainId && stack.transactions.length > 0
+			),
 			walletSelectedAddressBookEntry,
 			tabState,
 			settings,

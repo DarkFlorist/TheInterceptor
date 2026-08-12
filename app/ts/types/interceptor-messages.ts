@@ -653,6 +653,7 @@ export const HomePageBootstrap = funtypes.ReadonlyObject({
 	popupRefreshGeneration: PopupRefreshGeneration,
 	data: funtypes.ReadonlyObject({
 		activeAddresses: AddressBookEntries,
+		hasSafeTransactionsToExport: funtypes.Boolean,
 		tabState: TabState,
 		settings: Settings,
 		activeSigningAddressInThisTab: OptionalEthereumAddress,
