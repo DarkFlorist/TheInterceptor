@@ -6,13 +6,25 @@ import type { InterceptedRequest, WebsiteSocket } from '../../app/ts/utils/reque
 
 type Listener = (id: number) => unknown
 
+// The background module is cached across tests. Preserve its registered listeners while routing them to each test's fresh browser mock.
+const registeredWindowRemovedListeners = new Set<Listener>()
+const registeredTabRemovedListeners = new Set<Listener>()
+let activeWindowRemovedListeners: Listener[] = []
+let activeTabRemovedListeners: Listener[] = []
+let activeStorageState: Record<string, unknown> = {}
+let activePendingAccessClearHook: (() => void) | undefined
+let activePendingAccessReadHook: (() => void) | undefined
+
 function installBrowserMock() {
 	const storageState: Record<string, unknown> = {}
-	const windowRemovedListeners: Listener[] = []
-	const tabRemovedListeners: Listener[] = []
+	activeStorageState = storageState
+	activePendingAccessClearHook = undefined
+	activePendingAccessReadHook = undefined
+	const windowRemovedListeners = [...registeredWindowRemovedListeners]
+	const tabRemovedListeners = [...registeredTabRemovedListeners]
+	activeWindowRemovedListeners = windowRemovedListeners
+	activeTabRemovedListeners = tabRemovedListeners
 	const postedMessages: unknown[] = []
-	let pendingAccessClearHook: (() => void) | undefined
-	let pendingAccessReadHook: (() => void) | undefined
 
 	;(globalThis as typeof globalThis & { browser: typeof globalThis.browser }).browser = {
 		runtime: {
@@ -28,28 +40,28 @@ function installBrowserMock() {
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
 					const result = (() => {
-						if (keys === undefined || keys === null) return { ...storageState }
-						if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-						if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-						return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+						if (keys === undefined || keys === null) return { ...activeStorageState }
+						if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in activeStorageState).map((key) => [key, activeStorageState[key]]))
+						if (typeof keys === 'string') return keys in activeStorageState ? { [keys]: activeStorageState[keys] } : {}
+						return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in activeStorageState ? activeStorageState[key] : defaultValue]))
 					})()
-					if (Array.isArray(result.pendingInterceptorAccessRequests) && result.pendingInterceptorAccessRequests.length > 0 && pendingAccessReadHook !== undefined) {
-						const hook = pendingAccessReadHook
-						pendingAccessReadHook = undefined
+					if (Array.isArray(result.pendingInterceptorAccessRequests) && result.pendingInterceptorAccessRequests.length > 0 && activePendingAccessReadHook !== undefined) {
+						const hook = activePendingAccessReadHook
+						activePendingAccessReadHook = undefined
 						hook()
 					}
 					return result
 				},
 				async set(items: Record<string, unknown>) {
-					Object.assign(storageState, items)
-					if (Array.isArray(items.pendingInterceptorAccessRequests) && items.pendingInterceptorAccessRequests.length === 0 && pendingAccessClearHook !== undefined) {
-						const hook = pendingAccessClearHook
-						pendingAccessClearHook = undefined
-						queueMicrotask(hook)
+					Object.assign(activeStorageState, items)
+					if (Array.isArray(items.pendingInterceptorAccessRequests) && items.pendingInterceptorAccessRequests.length === 0 && activePendingAccessClearHook !== undefined) {
+						const hook = activePendingAccessClearHook
+						activePendingAccessClearHook = undefined
+						hook()
 					}
 				},
 				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys]) delete activeStorageState[key]
 				},
 			},
 		},
@@ -59,10 +71,14 @@ function installBrowserMock() {
 			async update() { return undefined },
 			onUpdated: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
 			onRemoved: {
-				addListener(listener: Listener) { tabRemovedListeners.push(listener) },
+				addListener(listener: Listener) {
+					registeredTabRemovedListeners.add(listener)
+					if (!activeTabRemovedListeners.includes(listener)) activeTabRemovedListeners.push(listener)
+				},
 				removeListener(listener: Listener) {
-					const index = tabRemovedListeners.indexOf(listener)
-					if (index >= 0) tabRemovedListeners.splice(index, 1)
+					registeredTabRemovedListeners.delete(listener)
+					const index = activeTabRemovedListeners.indexOf(listener)
+					if (index >= 0) activeTabRemovedListeners.splice(index, 1)
 				},
 			},
 		},
@@ -72,10 +88,14 @@ function installBrowserMock() {
 			async update() { return undefined },
 			async remove() { return undefined },
 			onRemoved: {
-				addListener(listener: Listener) { windowRemovedListeners.push(listener) },
+				addListener(listener: Listener) {
+					registeredWindowRemovedListeners.add(listener)
+					if (!activeWindowRemovedListeners.includes(listener)) activeWindowRemovedListeners.push(listener)
+				},
 				removeListener(listener: Listener) {
-					const index = windowRemovedListeners.indexOf(listener)
-					if (index >= 0) windowRemovedListeners.splice(index, 1)
+					registeredWindowRemovedListeners.delete(listener)
+					const index = activeWindowRemovedListeners.indexOf(listener)
+					if (index >= 0) activeWindowRemovedListeners.splice(index, 1)
 				},
 			},
 		},
@@ -104,15 +124,14 @@ function installBrowserMock() {
 	return {
 		postedMessages,
 		onPendingAccessClear(hook: () => void) {
-			pendingAccessClearHook = hook
+			activePendingAccessClearHook = hook
 		},
 		onPendingAccessRead(hook: () => void) {
-			pendingAccessReadHook = hook
+			activePendingAccessReadHook = hook
 		},
 		closeAccessWindow() {
-			const [listener] = windowRemovedListeners
-			if (listener === undefined) throw new Error('Missing access window close listener')
-			return listener(1)
+			if (windowRemovedListeners.length === 0) throw new Error('Missing access window close listener')
+			return Promise.all([...windowRemovedListeners].map(async (listener) => await listener(1)))
 		},
 	}
 }
