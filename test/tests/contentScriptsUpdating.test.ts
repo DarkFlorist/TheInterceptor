@@ -29,7 +29,8 @@ function installBrowserMock({ registerError, updateError, executeScriptError, ta
 	const executedScriptFiles: string[] = []
 	const registeredContentScripts = new Map(registeredContentScriptIds.map((id) => [id, { id }]))
 	let executeScriptCalls = 0
-	let unregisterContentScriptCalls = 0
+	const scriptingOperations: string[] = []
+	const unregisteredContentScriptIdBatches: string[][] = []
 	let currentTabUrl = tabUrl
 	let committedListener: ((details: browser.webNavigation._OnCommittedDetails) => unknown) | undefined
 	const getStorageItems = (keys?: string | string[] | Record<string, unknown> | null) => {
@@ -67,16 +68,20 @@ function installBrowserMock({ registerError, updateError, executeScriptError, ta
 				},
 			},
 			scripting: {
-				async unregisterContentScripts() {
-					unregisterContentScriptCalls++
-					registeredContentScripts.clear()
+				async unregisterContentScripts(filter?: { readonly ids?: readonly string[] }) {
+					scriptingOperations.push('unregister')
+					const ids = filter?.ids === undefined ? [...registeredContentScripts.keys()] : [...filter.ids]
+					unregisteredContentScriptIdBatches.push(ids)
+					for (const id of ids) registeredContentScripts.delete(id)
 				},
 				async getRegisteredContentScripts() { return [...registeredContentScripts.values()] },
 				async registerContentScripts(scripts: readonly RegisteredContentScript[]) {
+					scriptingOperations.push('register')
 					if (registerError !== undefined) throw registerError
 					for (const script of scripts) registeredContentScripts.set(script.id, script)
 				},
 				async updateContentScripts(scripts: readonly RegisteredContentScript[]) {
+					scriptingOperations.push('update')
 					if (updateError !== undefined) throw updateError
 					for (const script of scripts) registeredContentScripts.set(script.id, script)
 				},
@@ -125,7 +130,8 @@ function installBrowserMock({ registerError, updateError, executeScriptError, ta
 	return {
 		sentMessages,
 		getRegisteredContentScripts() { return [...registeredContentScripts.values()] },
-		getUnregisterContentScriptCalls() { return unregisterContentScriptCalls },
+		getScriptingOperations() { return [...scriptingOperations] },
+		getUnregisteredContentScriptIdBatches() { return unregisteredContentScriptIdBatches.map((ids) => [...ids]) },
 		getExecuteScriptCalls() { return executeScriptCalls },
 		getExecutedScriptFiles() { return [...executedScriptFiles] },
 		getCommittedListener() {
@@ -220,28 +226,30 @@ describe('content script injection strategy', () => {
 		assert.equal(sentMessages.at(-1)?.method, 'popup_UnexpectedErrorOccured')
 	})
 
-	test('registers missing manifest v3 scripts and updates existing definitions without unregistering', async () => {
-		const { getRegisteredContentScripts, getUnregisterContentScriptCalls } = installBrowserMock({ registeredContentScriptIds: ['inpage'] })
+	test('registers missing scripts, updates existing definitions, and then prunes obsolete registrations', async () => {
+		const { getRegisteredContentScripts, getScriptingOperations, getUnregisteredContentScriptIdBatches } = installBrowserMock({ registeredContentScriptIds: ['inpage', 'obsolete-inpage'] })
 		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
 
 		await updateContentScriptInjectionStrategyManifestV3()
 
-		assert.equal(getUnregisterContentScriptCalls(), 0)
 		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2'])
 		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
+		assert.deepEqual(getScriptingOperations(), ['register', 'update', 'unregister'])
+		assert.deepEqual(getUnregisteredContentScriptIdBatches(), [['obsolete-inpage']])
 	})
 
-	test('keeps existing manifest v3 content scripts registered when an update fails', async () => {
-		const { getRegisteredContentScripts, getUnregisterContentScriptCalls } = installBrowserMock({
-			registeredContentScriptIds: ['inpage', 'inpage2'],
+	test('keeps existing and obsolete manifest v3 content scripts registered when an update fails', async () => {
+		const { getRegisteredContentScripts, getScriptingOperations, getUnregisteredContentScriptIdBatches } = installBrowserMock({
+			registeredContentScriptIds: ['inpage', 'inpage2', 'obsolete-inpage'],
 			updateError: new Error('update failed'),
 		})
 		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
 
 		await withSilencedConsole(async () => await updateContentScriptInjectionStrategyManifestV3())
 
-		assert.equal(getUnregisterContentScriptCalls(), 0)
-		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2'])
+		assert.deepEqual(getScriptingOperations(), ['update'])
+		assert.deepEqual(getUnregisteredContentScriptIdBatches(), [])
+		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2', 'obsolete-inpage'])
 	})
 
 	test('keeps missing-tab manifest v2 injection failures ignored', async () => {

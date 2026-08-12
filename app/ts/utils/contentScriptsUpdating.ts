@@ -64,10 +64,13 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 		}]
 		const registeredContentScripts = await browser.scripting.getRegisteredContentScripts()
 		const registeredContentScriptIds = new Set(registeredContentScripts.map(({ id }) => id))
+		const desiredContentScriptIds = new Set(contentScripts.map(({ id }) => id))
 		const missingContentScripts = contentScripts.filter(({ id }) => !registeredContentScriptIds.has(id))
 		const existingContentScripts = contentScripts.filter(({ id }) => registeredContentScriptIds.has(id))
+		const obsoleteContentScriptIds = registeredContentScripts.map(({ id }) => id).filter((id) => !desiredContentScriptIds.has(id))
 		if (missingContentScripts.length > 0) await browser.scripting.registerContentScripts(missingContentScripts)
 		if (existingContentScripts.length > 0) await browser.scripting.updateContentScripts(existingContentScripts)
+		if (obsoleteContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
 	} catch (error: unknown) {
 		await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
 	}
