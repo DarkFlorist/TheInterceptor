@@ -1421,7 +1421,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal((await getActiveAddressesForAllTabs(settings)).find(({ tabId }) => tabId === 1)?.activeAddress, undefined)
 	})
 
-	test('keeps a Safe selected in signing mode even without a simulation signer', async () => {
+	test('does not keep a Safe selected in signing mode without cached owner membership', async () => {
 		installBrowserMock()
 		const {
 			changeActiveAddressAndChain,
@@ -1466,7 +1466,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
 
-		assert.equal((await getActiveAddress(await getSettings(), socket.tabId))?.address, safeAddress)
+		assert.equal(await getActiveAddress(await getSettings(), socket.tabId), undefined)
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -1475,13 +1475,13 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const ethAccountsReplies = messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 208)
-		assert.deepEqual(ethAccountsReplies.at(-1)?.result, [])
+		assert.deepEqual(ethAccountsReplies.at(-1)?.result, [addressString(safeSignerAddress)])
 
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			simulationMode: false,
 			activeAddress: safeAddress,
 		})
-		assert.equal((await getActiveAddress(await getSettings(), socket.tabId))?.address, safeAddress)
+		assert.equal(await getActiveAddress(await getSettings(), socket.tabId), undefined)
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -1622,8 +1622,8 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			entrySource: 'User',
 			useAsActiveAddress: true,
 			safeSimulationSignerAddress: 0x1919191919191919191919191919191919191919n,
-			// Capability discovery must not depend on cached owners; signing performs fresh on-chain validation.
-			safeSignerAddresses: [],
+			// Selection uses cached membership; signing still performs fresh on-chain validation before forwarding.
+			safeSignerAddresses: [signerAddress],
 			safeVersion: '1.4.1',
 		}])
 		await updateWebsiteAccess(() => [{

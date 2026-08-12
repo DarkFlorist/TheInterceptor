@@ -7,8 +7,9 @@ import { getActiveAddressEntry } from './metadataUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
-import { getSafeSigningEntry, type AddressBookEntry } from '../types/addressBookTypes.js'
+import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { getWalletSelectedAccount } from '../utils/signerMetadata.js'
+import { getActiveAddressSelection } from '../utils/activeAddressSelection.js'
 
 function isIgnorableExtensionMessagingError(error: Error) {
 	return isIgnorablePortLifecycleError(error)
@@ -25,16 +26,16 @@ async function resolveConfiguredActiveAddress(settings: Settings, signerAccounts
 	}
 	const chainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 	if (!settings.simulationMode) {
-		const configuredSafe = getSafeSigningEntry(chainEntries, {
-			...settings,
-			chainId: settings.activeRpcNetwork.chainId,
-		})
-		const signerAddress = signerAccounts[0]
-		const signerIsKnownOwner = configuredSafe?.safeSignerAddresses === undefined
-			|| configuredSafe.safeSignerAddresses.length === 0
-			|| (signerAddress !== undefined && configuredSafe.safeSignerAddresses.includes(signerAddress))
+		const configuredSafe = chainEntries.find((entry) => entry.type === 'safe' && entry.address === settings.activeSimulationAddress)
+		const selection = getActiveAddressSelection(
+			settings.activeSimulationAddress,
+			chainEntries,
+			false,
+			settings.activeRpcNetwork.chainId,
+			signerAccounts,
+		)
 		return configuredSafe !== undefined
-			? { useConfiguredAddress: true, activeAddress: signerAddress !== undefined && signerIsKnownOwner ? configuredSafe : undefined }
+			? { useConfiguredAddress: true, activeAddress: selection?.type === 'addressBookEntry' ? selection.entry : undefined }
 			: { useConfiguredAddress: false }
 	}
 	const configuredEntry = chainEntries.find((entry) => entry.address === settings.activeSimulationAddress)

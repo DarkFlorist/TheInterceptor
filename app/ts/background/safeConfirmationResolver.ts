@@ -8,7 +8,7 @@ import { createInterceptorInternalError, getErrorMessage, hasInterceptorInternal
 import { isExpectedHandledError, reportUnexpectedError } from '../utils/errors.js'
 import { getPrettySignerName, getWalletSelectedAccount } from '../utils/signerMetadata.js'
 import { modifyObject } from '../utils/typescript.js'
-import { getPendingTransactionsAndMessages, getSafeTransactionStacks, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
+import { getPendingTransactionsAndMessages, getSafeTransactionStacks, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, createSafeTransactionSigningRequest, getSafeContractState, isSafeOwnerValidationFailure, safeTxToTypedDataJson, type SafeOwnerValidator, validateSafeTransactionForSigning } from '../safe/safeCore.js'
 import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
 import { reconcileSafeTransactionStack } from '../safe/safeStack.js'
@@ -88,6 +88,13 @@ export type SafeSignerSelectionRefreshResult =
 	| { readonly status: 'unchanged', readonly pending: PendingTransactionOrSignableMessage }
 	| { readonly status: 'refreshed', readonly pending: PendingTransactionOrSignableMessage }
 	| { readonly status: 'blocked', readonly approvalStatus: SafeSignerErrorStatus }
+
+export type SafeSignerSelectionRefreshPersistence = {
+	readonly refreshRequired: boolean
+	readonly refreshResult: SafeSignerSelectionRefreshResult
+	readonly persisted: boolean
+	readonly persistedPending: PendingTransactionOrSignableMessage | undefined
+}
 
 async function getCurrentSafeEntry(ethereum: EthereumClientService, safeAddress: bigint) {
 	return (await getCurrentSafeEntryAndAddressBookEntries(ethereum, safeAddress)).safeEntry
@@ -463,6 +470,136 @@ export async function refreshSafeSignerSelection(
 		return await refreshSafeProposalSignerSelection(ethereum, pending, selectedSigner)
 	}
 	return { status: 'unchanged', pending }
+}
+
+function shouldRefreshSafeSignerSelection(pending: PendingTransactionOrSignableMessage, selectedSigner: bigint) {
+	if (pending.approvalStatus.status === 'WaitingForSigner') return false
+	if (pending.type === 'Transaction' && pending.safeExecutionOriginalRequestParameters !== undefined) {
+		return pending.safeExecutionSignerAddress !== selectedSigner
+	}
+	if (pending.type === 'SignableMessage' && pending.safeMessageCoSignSnapshot !== undefined) {
+		return pending.safeMessageCoSignSnapshot.safeSignerAddress !== selectedSigner
+	}
+	if (pending.type !== 'Transaction' || pending.safeTransaction === undefined) return false
+	return (
+		pending.approvalStatus.status === 'WaitingForUser'
+		|| pending.approvalStatus.status === 'SignerError' && pending.approvalStatus.code === SAFE_SIGNER_SELECTION_ERROR_CODE
+	) && (
+		pending.safeTransaction.safeSignerAddress !== selectedSigner
+		|| pending.approvalStatus.status === 'SignerError'
+	)
+}
+
+function isSameSafeSignerError(pending: PendingTransactionOrSignableMessage, refreshResult: SafeSignerSelectionRefreshResult) {
+	return refreshResult.status === 'blocked'
+		&& pending.approvalStatus.status === 'SignerError'
+		&& pending.approvalStatus.code === refreshResult.approvalStatus.code
+		&& pending.approvalStatus.message === refreshResult.approvalStatus.message
+}
+
+function mergeSafeSignerSelectionRefresh(
+	current: PendingTransactionOrSignableMessage,
+	refreshed: PendingTransactionOrSignableMessage,
+): PendingTransactionOrSignableMessage {
+	if (
+		current.type === 'SignableMessage'
+		&& refreshed.type === 'SignableMessage'
+		&& current.safeMessageCoSignSnapshot !== undefined
+		&& refreshed.safeMessageCoSignSnapshot !== undefined
+	) return modifyObject(current, {
+		safeMessageCoSignSnapshot: refreshed.safeMessageCoSignSnapshot,
+		approvalStatus: refreshed.approvalStatus,
+	})
+	if (
+		current.type === 'Transaction'
+		&& refreshed.type === 'Transaction'
+		&& current.safeExecutionOriginalRequestParameters !== undefined
+		&& refreshed.safeExecutionOriginalRequestParameters !== undefined
+	) return modifyObject(current, {
+		activeAddress: refreshed.activeAddress,
+		originalRequestParameters: refreshed.originalRequestParameters,
+		safeExecutionSignerAddress: refreshed.safeExecutionSignerAddress,
+		safeExecutionReviewedSafeState: refreshed.safeExecutionReviewedSafeState,
+		approvalStatus: refreshed.approvalStatus,
+		...refreshed.transactionOrMessageCreationStatus === 'Simulated' || refreshed.transactionOrMessageCreationStatus === 'FailedToSimulate'
+			? {
+				transactionOrMessageCreationStatus: refreshed.transactionOrMessageCreationStatus,
+				transactionToSimulate: refreshed.transactionToSimulate,
+				popupVisualisation: refreshed.popupVisualisation,
+			}
+			: {},
+	})
+	if (
+		current.type === 'Transaction'
+		&& refreshed.type === 'Transaction'
+		&& current.safeTransaction !== undefined
+		&& refreshed.safeTransaction !== undefined
+	) return modifyObject(current, {
+		safeTransaction: refreshed.safeTransaction,
+		approvalStatus: refreshed.approvalStatus,
+	})
+	return current
+}
+
+type RefreshDirectSafeExecutionSimulation = (
+	pending: PendingTransactionOrSignableMessage,
+) => Promise<PendingTransactionOrSignableMessage>
+
+function pendingSafeRefreshBaseMatches(
+	current: PendingTransactionOrSignableMessage,
+	refreshBase: PendingTransactionOrSignableMessage,
+) {
+	const stringifyPending = (pending: PendingTransactionOrSignableMessage) => JSON.stringify(
+		pending,
+		(_key, value: unknown) => typeof value === 'bigint' ? { bigint: value.toString(10) } : value,
+	)
+	return stringifyPending(current) === stringifyPending(refreshBase)
+}
+
+export async function refreshAndPersistSafeSignerSelection(
+	ethereum: EthereumClientService,
+	pending: PendingTransactionOrSignableMessage,
+	selectedSigner: bigint,
+	refreshDirectSafeExecutionSimulation: RefreshDirectSafeExecutionSimulation,
+): Promise<SafeSignerSelectionRefreshPersistence> {
+	if (!shouldRefreshSafeSignerSelection(pending, selectedSigner)) {
+		return {
+			refreshRequired: false,
+			refreshResult: { status: 'unchanged', pending },
+			persisted: false,
+			persistedPending: undefined,
+		}
+	}
+
+	let refreshResult = await refreshSafeSignerSelection(ethereum, pending, selectedSigner)
+	if (
+		refreshResult.status === 'refreshed'
+		&& pending.type === 'Transaction'
+		&& pending.safeExecutionOriginalRequestParameters !== undefined
+	) {
+		try {
+			refreshResult = {
+				status: 'refreshed',
+				pending: await refreshDirectSafeExecutionSimulation(refreshResult.pending),
+			}
+		} catch(error) {
+			refreshResult = await handleSafeExecutionRefreshFailure(error)
+		}
+	}
+
+	if (refreshResult.status === 'unchanged' || isSameSafeSignerError(pending, refreshResult)) {
+		return { refreshRequired: true, refreshResult, persisted: false, persistedPending: undefined }
+	}
+	let persistedPending: PendingTransactionOrSignableMessage | undefined
+	await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => {
+		if (!shouldRefreshSafeSignerSelection(current, selectedSigner)) return current
+		if (!pendingSafeRefreshBaseMatches(current, pending)) return current
+		persistedPending = refreshResult.status === 'refreshed'
+			? mergeSafeSignerSelectionRefresh(current, refreshResult.pending)
+			: modifyObject(current, { approvalStatus: refreshResult.approvalStatus })
+		return persistedPending
+	})
+	return { refreshRequired: true, refreshResult, persisted: persistedPending !== undefined, persistedPending }
 }
 
 async function getSafeSignerSelectionError(

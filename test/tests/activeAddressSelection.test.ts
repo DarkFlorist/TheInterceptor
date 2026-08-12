@@ -12,6 +12,7 @@ const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/backgrou
 const interceptorAccessSource = await Bun.file(new URL('../../app/ts/background/windows/interceptorAccess.ts', import.meta.url)).text()
 const providerMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/providerMessageHandlers.ts', import.meta.url)).text()
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
+const backgroundUtilsSource = await Bun.file(new URL('../../app/ts/background/backgroundUtils.ts', import.meta.url)).text()
 
 const activeAddresses: AddressBookEntries = [
 	{ type: 'contact', name: 'Saved EOA', address: EOA_ADDRESS, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
@@ -69,5 +70,10 @@ describe('active address selection', () => {
 			assert.doesNotMatch(consumerSource, /setUseSignersAddressAsActiveAddress\(/u)
 			assert.doesNotMatch(consumerSource, /rememberSigningAddressPreference\(/u)
 		}
+	})
+
+	test('keeps background active-address resolution on the shared selection policy', () => {
+		assert.match(backgroundUtilsSource, /selection = getActiveAddressSelection\(/u)
+		assert.doesNotMatch(backgroundUtilsSource, /safeSignerAddresses/u)
 	})
 })
