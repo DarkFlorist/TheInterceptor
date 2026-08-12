@@ -93,7 +93,7 @@ export const isWrappedNewBlockAbort = (error: unknown) => {
 	return message !== undefined && message !== NEW_BLOCK_ABORT && message.includes(NEW_BLOCK_ABORT)
 }
 
-export type CaughtErrorClassification = 'newBlockAbort' | 'failedToFetch' | 'safeValidation' | 'unexpected'
+export type CaughtErrorClassification = 'newBlockAbort' | 'failedToFetch' | 'handled' | 'unexpected'
 
 export function classifyCaughtError(error: unknown): CaughtErrorClassification {
 	if (isNewBlockAbort(error)) return 'newBlockAbort'

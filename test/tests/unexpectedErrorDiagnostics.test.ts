@@ -7,16 +7,25 @@ import { withSilencedConsole } from './consoleSilence.js'
 
 const { NEW_BLOCK_ABORT } = await import('../../app/ts/utils/constants.js')
 const { classifyCaughtError, createInterceptorInternalError, hasInterceptorInternalErrorCode, isExpectedInfrastructureError, shouldSuppressUnexpectedErrorReport } = await import('../../app/ts/utils/errors.js')
+const { createSafeValidationError } = await import('../../app/ts/safe/safeErrors.js')
 
 test('Safe failures use the shared internal error classification mechanism', () => {
-	const error = createInterceptorInternalError('Select a Safe owner.', 'safe_signer_selection')
+	const error = createSafeValidationError('Select a Safe owner.', 'safe_signer_selection')
 
 	assert.equal(hasInterceptorInternalErrorCode(error, 'safe_signer_selection'), true)
 	assert.equal(hasInterceptorInternalErrorCode(error, 'safe_owner_validation'), false)
 	assert.equal(hasInterceptorInternalErrorCode(new Error('Select a Safe owner.'), 'safe_signer_selection'), false)
-	assert.equal(classifyCaughtError(error), 'safeValidation')
+	assert.equal(classifyCaughtError(error), 'handled')
 	assert.equal(shouldSuppressUnexpectedErrorReport(error), true)
 	assert.equal(isExpectedInfrastructureError(error), false)
+})
+
+test('shared error infrastructure stays independent from Safe error codes', async () => {
+	const caughtErrorsSource = await Bun.file(new URL('../../app/ts/utils/caughtErrors.ts', import.meta.url)).text()
+	const errorsSource = await Bun.file(new URL('../../app/ts/utils/errors.ts', import.meta.url)).text()
+
+	assert.doesNotMatch(caughtErrorsSource, /safe_/u)
+	assert.doesNotMatch(errorsSource, /safeValidation/u)
 })
 
 type RuntimeMessage = {
@@ -161,9 +170,9 @@ describe('unexpected error diagnostics', () => {
 
 		assert.equal(isFailedToFetchError(new Error('Failed to fetch')), true)
 		assert.equal(isFailedToFetchError('NetworkError when attempting to fetch resource'), true)
-		assert.equal(isFailedToFetchError(createInterceptorInternalError('Fetch request timed out.', 'fetch_timeout')), true)
-		assert.equal(isFailedToFetchError(createInterceptorInternalError('Fetch request aborted.', 'fetch_aborted')), true)
-		assert.equal(isFailedToFetchError(createInterceptorInternalError('Failed to fetch', 'fetch_transport_failed')), true)
+		assert.equal(isFailedToFetchError(createInterceptorInternalError('Fetch request timed out.', 'fetch_timeout', 'failedToFetch')), true)
+		assert.equal(isFailedToFetchError(createInterceptorInternalError('Fetch request aborted.', 'fetch_aborted', 'failedToFetch')), true)
+		assert.equal(isFailedToFetchError(createInterceptorInternalError('Failed to fetch', 'fetch_transport_failed', 'failedToFetch')), true)
 		assert.equal(isFailedToFetchError({ message: 'Fetch request timed out.' }), false)
 		assert.equal(isFailedToFetchError({ message: 'Fetch request aborted.' }), false)
 		assert.equal(isFailedToFetchError('unrelated error'), false)
@@ -181,7 +190,7 @@ describe('unexpected error diagnostics', () => {
 
 		await reportUnexpectedError(NEW_BLOCK_ABORT)
 		await reportUnexpectedError(new Error(NEW_BLOCK_ABORT))
-		await reportUnexpectedError(createInterceptorInternalError('Fetch request timed out.', 'fetch_timeout'))
+		await reportUnexpectedError(createInterceptorInternalError('Fetch request timed out.', 'fetch_timeout', 'failedToFetch'))
 
 		assert.equal(await getLatestUnexpectedError(), undefined)
 		assert.equal((await getInterceptorErrorDiagnostics()).length, 0)
@@ -190,9 +199,9 @@ describe('unexpected error diagnostics', () => {
 
 	test('does not report handled Safe validation failures as unexpected errors', async () => {
 		browserMock.reset()
-		const { createInterceptorInternalError, getInterceptorErrorDiagnostics, reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
+		const { getInterceptorErrorDiagnostics, reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
 
-		await reportUnexpectedError(createInterceptorInternalError('Select a current Safe owner.', 'safe_signer_selection'))
+		await reportUnexpectedError(createSafeValidationError('Select a current Safe owner.', 'safe_signer_selection'))
 
 		assert.equal(await getLatestUnexpectedError(), undefined)
 		assert.equal((await getInterceptorErrorDiagnostics()).length, 0)
@@ -203,7 +212,7 @@ describe('unexpected error diagnostics', () => {
 		browserMock.reset()
 		const { createInterceptorInternalError, getLatestUnexpectedError, reportUnexpectedError } = await modulesPromise
 
-		await withSilencedConsole(async () => await reportUnexpectedError(createInterceptorInternalError('Failed to fetch', 'fetch_transport_failed'), {
+		await withSilencedConsole(async () => await reportUnexpectedError(createInterceptorInternalError('Failed to fetch', 'fetch_transport_failed', 'failedToFetch'), {
 			source: 'popup',
 			code: 'popup_message_listener_failed',
 			suppressExpectedHandledErrors: false,

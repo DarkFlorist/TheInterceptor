@@ -4,7 +4,7 @@ import type { PendingTransactionOrSignableMessage } from '../types/accessRequest
 import type { SafeEntry } from '../types/addressBookTypes.js'
 import { EIP712Message } from '../types/eip721.js'
 import type { SignMessageParams } from '../types/jsonRpc-signing-types.js'
-import { createInterceptorInternalError, getErrorMessage, hasInterceptorInternalErrorCode } from '../utils/caughtErrors.js'
+import { getErrorMessage } from '../utils/caughtErrors.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { getPrettySignerName } from '../utils/signerMetadata.js'
 import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
@@ -16,23 +16,24 @@ import { reconcileSafeTransactionStack } from '../safe/safeStack.js'
 import type { SafeTx } from '../types/personal-message-definitions.js'
 import type { SafeSignerErrorDetails } from '../types/safeTypes.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
+import { createSafeValidationError, hasSafeValidationErrorCode } from '../safe/safeErrors.js'
 
 export const SAFE_SIGNER_SELECTION_ERROR_CODE = -32010
 
 function createSafeSignerSelectionFailure(message: string) {
-	return createInterceptorInternalError(message, 'safe_signer_selection')
+	return createSafeValidationError(message, 'safe_signer_selection')
 }
 
 export function isSafeSignerSelectionFailure(error: unknown) {
-	return hasInterceptorInternalErrorCode(error, 'safe_signer_selection')
+	return hasSafeValidationErrorCode(error, 'safe_signer_selection')
 }
 
 function createSafeMessageAccountMismatchFailure(message: string, safeSignerErrorDetails: SafeSignerErrorDetails) {
-	return Object.assign(createInterceptorInternalError(message, 'safe_message_account_mismatch'), { safeSignerErrorDetails })
+	return Object.assign(createSafeValidationError(message, 'safe_message_account_mismatch'), { safeSignerErrorDetails })
 }
 
 export function isSafeMessageAccountMismatchFailure(error: unknown): error is Error & { readonly safeSignerErrorDetails: SafeSignerErrorDetails } {
-	return hasInterceptorInternalErrorCode(error, 'safe_message_account_mismatch')
+	return hasSafeValidationErrorCode(error, 'safe_message_account_mismatch')
 		&& 'safeSignerErrorDetails' in error
 }
 

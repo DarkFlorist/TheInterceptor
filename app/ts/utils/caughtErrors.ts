@@ -1,16 +1,9 @@
-const interceptorInternalErrorDefinitions = [
-	{ code: 'fetch_aborted', classification: 'failedToFetch' },
-	{ code: 'fetch_timeout', classification: 'failedToFetch' },
-	{ code: 'fetch_transport_failed', classification: 'failedToFetch' },
-	{ code: 'safe_contract_validation', classification: 'safeValidation' },
-	{ code: 'safe_message_account_mismatch', classification: 'safeValidation' },
-	{ code: 'safe_owner_validation', classification: 'safeValidation' },
-	{ code: 'safe_signer_selection', classification: 'safeValidation' },
-] as const
+export type InterceptorInternalErrorClassification = 'failedToFetch' | 'handled'
 
-type InterceptorInternalErrorDefinition = typeof interceptorInternalErrorDefinitions[number]
-export type InterceptorInternalErrorCode = InterceptorInternalErrorDefinition['code']
-export type InterceptorInternalErrorClassification = InterceptorInternalErrorDefinition['classification']
+type InterceptorInternalErrorDefinition = {
+	readonly code: string
+	readonly classification: InterceptorInternalErrorClassification
+}
 
 export function getErrorMessage(error: unknown) {
 	if (error instanceof Error) return error.message
@@ -19,18 +12,22 @@ export function getErrorMessage(error: unknown) {
 	return undefined
 }
 
-export function createInterceptorInternalError(message: string, interceptorErrorCode: InterceptorInternalErrorCode) {
-	return Object.assign(new Error(message), { interceptorErrorCode })
+export function createInterceptorInternalError<Code extends string>(message: string, interceptorErrorCode: Code, interceptorErrorClassification: InterceptorInternalErrorClassification) {
+	return Object.assign(new Error(message), { interceptorErrorCode, interceptorErrorClassification })
 }
 
 function getInterceptorInternalErrorDefinition(error: unknown): InterceptorInternalErrorDefinition | undefined {
 	if (typeof error !== 'object' || error === null || !('interceptorErrorCode' in error)) return undefined
 	const code = error.interceptorErrorCode
 	if (typeof code !== 'string') return undefined
-	return interceptorInternalErrorDefinitions.find((definition) => definition.code === code)
+	if ('interceptorErrorClassification' in error) {
+		const classification = error.interceptorErrorClassification
+		if (classification === 'failedToFetch' || classification === 'handled') return { code, classification }
+	}
+	return undefined
 }
 
-export function getInterceptorInternalErrorCode(error: unknown): InterceptorInternalErrorCode | undefined {
+export function getInterceptorInternalErrorCode(error: unknown): string | undefined {
 	return getInterceptorInternalErrorDefinition(error)?.code
 }
 
@@ -38,7 +35,7 @@ export function getInterceptorInternalErrorClassification(error: unknown): Inter
 	return getInterceptorInternalErrorDefinition(error)?.classification
 }
 
-export function hasInterceptorInternalErrorCode<Code extends InterceptorInternalErrorCode>(error: unknown, code: Code): error is Error & { readonly interceptorErrorCode: Code } {
+export function hasInterceptorInternalErrorCode<Code extends string>(error: unknown, code: Code): error is Error & { readonly interceptorErrorCode: Code } {
 	return error instanceof Error && getInterceptorInternalErrorCode(error) === code
 }
 

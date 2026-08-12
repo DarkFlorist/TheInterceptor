@@ -8,7 +8,7 @@ import { addressString, bytes32String, dataStringWith0xStart, stringToUint8Array
 import { ensureHex } from '../utils/ethereumBytes.js'
 import { recoverAddress } from '../utils/ethereumPrimitives.js'
 import { getSafeTxHash } from '../utils/eip712.js'
-import { createInterceptorInternalError, hasInterceptorInternalErrorCode } from '../utils/caughtErrors.js'
+import { createSafeValidationError, hasSafeValidationErrorCode } from './safeErrors.js'
 
 const SUPPORTED_SAFE_VERSIONS = ['1.3.0', '1.4.0', '1.4.1'] as const
 
@@ -113,19 +113,19 @@ export type ValidatedSafeEoaOwner = {
 }
 
 function createSafeOwnerValidationFailure(message: string) {
-	return createInterceptorInternalError(message, 'safe_owner_validation')
+	return createSafeValidationError(message, 'safe_owner_validation')
 }
 
 export function isSafeOwnerValidationFailure(error: unknown) {
-	return hasInterceptorInternalErrorCode(error, 'safe_owner_validation')
+	return hasSafeValidationErrorCode(error, 'safe_owner_validation')
 }
 
 export function createSafeContractValidationFailure(message: string) {
-	return createInterceptorInternalError(message, 'safe_contract_validation')
+	return createSafeValidationError(message, 'safe_contract_validation')
 }
 
 export function isSafeContractValidationFailure(error: unknown) {
-	return hasInterceptorInternalErrorCode(error, 'safe_contract_validation')
+	return hasSafeValidationErrorCode(error, 'safe_contract_validation')
 }
 
 function canonicalSafeOwners(owners: readonly bigint[]) {
