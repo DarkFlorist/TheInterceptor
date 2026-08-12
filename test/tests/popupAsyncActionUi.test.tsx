@@ -3,7 +3,7 @@ import { afterEach, describe, test } from 'bun:test'
 import { signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
-import { type GovernanceVoteInputParameters, SimulateExecutionReply } from '../../app/ts/types/interceptor-messages.js'
+import { type GovernanceVoteInputParameters, MessageToPopup, PopupMessage, SimulateExecutionReply } from '../../app/ts/types/interceptor-messages.js'
 import { PopupRequestsReplies } from '../../app/ts/types/interceptor-reply-messages.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import type { SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
@@ -475,6 +475,87 @@ describe('popup async action UI', () => {
 
 		deferredReply.resolve()
 		await deferredReply.promise
+		render(null, dom.document.body)
+		dom.restore()
+	})
+
+	test('keeps the access request id when selecting an address closes the modal', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const currentAddress = 0x1111111111111111111111111111111111111111n
+		const selectedAddress = 0x2222222222222222222222222222222222222222n
+		const request = {
+			...createAccessRequestFixture(),
+			requestAccessToAddress: {
+				type: 'contact' as const,
+				name: 'Current address',
+				address: currentAddress,
+				askForAddressAccess: true,
+				useAsActiveAddress: true,
+				entrySource: 'User' as const,
+			},
+			originalRequestAccessToAddress: {
+				type: 'contact' as const,
+				name: 'Current address',
+				address: currentAddress,
+				askForAddressAccess: true,
+				useAsActiveAddress: true,
+				entrySource: 'User' as const,
+			},
+			simulationMode: true,
+		}
+		const selectedAddressEntry = {
+			type: 'contact' as const,
+			name: 'Selected address',
+			address: selectedAddress,
+			askForAddressAccess: true,
+			useAsActiveAddress: true,
+			entrySource: 'User' as const,
+		}
+		let addressChangeMessage: unknown = undefined
+		runtimeSendMessage = async (message) => {
+			if (getRuntimeMethod(message) === 'popup_interceptorAccessChangeAddress') addressChangeMessage = message
+			return undefined
+		}
+
+		await act(async () => {
+			render(h(modules.InterceptorAccess, {}), dom.document.body)
+			await settleAsyncUpdates()
+		})
+		await act(async () => {
+			await emitRuntimeMessage(MessageToPopup.serialize({
+				role: 'all',
+				method: 'popup_interceptorAccessDialog',
+				data: { activeAddresses: [selectedAddressEntry], pendingAccessRequests: [request] },
+			}))
+		})
+
+		const changeButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.trim() === 'Change')
+		if (changeButton === undefined) throw new Error('Expected the change-address button to render')
+		await act(async () => { await clickElement(changeButton) })
+
+		const selectedAddressCard = collectElements(dom.document.body, 'div').find((element) =>
+			element.attributes?.class?.split(/\s+/).includes('card') === true
+			&& element.textContent?.includes('Selected address') === true
+		)
+		if (selectedAddressCard === undefined) throw new Error('Expected the selected address card to render')
+		await act(async () => {
+			await clickElement(selectedAddressCard)
+			await settleAsyncUpdates()
+		})
+
+		const parsedAddressChangeMessage = PopupMessage.parse(addressChangeMessage)
+		assert.deepEqual(parsedAddressChangeMessage, {
+			method: 'popup_interceptorAccessChangeAddress',
+			data: {
+				socket: request.socket,
+				website: request.website,
+				requestAccessToAddress: currentAddress,
+				newActiveAddress: selectedAddress,
+				accessRequestId: request.accessRequestId,
+			},
+		})
+
 		render(null, dom.document.body)
 		dom.restore()
 	})
