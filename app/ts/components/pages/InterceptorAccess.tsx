@@ -363,7 +363,7 @@ export function InterceptorAccess() {
 			<div class = { `modal ${ isModalActive ? 'is-active' : ''}` }>
 				{ (appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress') && selectedAccessRequest !== undefined
 					? <AddNewAddress
-						setActiveAddressAndInformAboutIt = { selectedAccessRequest.simulationMode ? (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) : undefined }
+						setActiveAddressAndInformAboutIt = { selectedAccessRequest.simulationMode ? (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(selectedAccessRequest.accessRequestId, address) : undefined }
 						modifyAddressWindowState = { appPage.value.state }
 						close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
 						activeAddress = { selectedAccessRequest.requestAccessToAddress?.address }
@@ -374,7 +374,7 @@ export function InterceptorAccess() {
 
 				{ appPage.value.page === 'ChangeActiveAddress' && selectedAccessRequest !== undefined
 					? <ChangeActiveAddress
-						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) }
+						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(selectedAccessRequest.accessRequestId, address) }
 						signerAccounts = { selectedAccessRequest.signerAccounts }
 						close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
 						activeAddresses = { selectableActiveAddresses }
