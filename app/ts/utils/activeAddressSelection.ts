@@ -1,8 +1,13 @@
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
+import type { TabState } from '../types/user-interface-types.js'
 
 export type ActiveAddressSelection =
 	| { readonly type: 'signer', readonly address: bigint | undefined }
 	| { readonly type: 'addressBookEntry', readonly entry: AddressBookEntry }
+
+export function getWalletSelectedAccount(tabState: Pick<TabState, 'activeSigningAddress' | 'signerAccounts'> | undefined) {
+	return tabState?.activeSigningAddress ?? tabState?.signerAccounts[0]
+}
 
 export function getSelectableActiveAddresses(activeAddresses: AddressBookEntries, simulationMode: boolean, activeChainId: bigint | undefined, signerAccounts: readonly bigint[]) {
 	if (simulationMode) return activeAddresses.filter((entry) => entry.type !== 'safe' || entry.chainId === activeChainId)

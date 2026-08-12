@@ -8,8 +8,7 @@ import { reportUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
-import { getWalletSelectedAccount } from '../utils/signerMetadata.js'
-import { getActiveAddressSelection } from '../utils/activeAddressSelection.js'
+import { getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 
 function isIgnorableExtensionMessagingError(error: Error) {
 	return isIgnorablePortLifecycleError(error)

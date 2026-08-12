@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { assertActiveAddressSelectionAllowed, getActiveAddressSelection, getSelectableActiveAddresses, isActiveAddressSelectionAllowed } from '../../app/ts/utils/activeAddressSelection.js'
+import { assertActiveAddressSelectionAllowed, getActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, isActiveAddressSelectionAllowed } from '../../app/ts/utils/activeAddressSelection.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
 
 const EOA_ADDRESS = 0x1000000000000000000000000000000000000001n
@@ -14,6 +14,7 @@ const providerMessageHandlersSource = await Bun.file(new URL('../../app/ts/backg
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
 const backgroundUtilsSource = await Bun.file(new URL('../../app/ts/background/backgroundUtils.ts', import.meta.url)).text()
 const providerSigningSelectionSource = await Bun.file(new URL('../../app/ts/background/signingAddressSelection.ts', import.meta.url)).text()
+const signerMetadataSource = await Bun.file(new URL('../../app/ts/utils/signerMetadata.ts', import.meta.url)).text()
 
 const activeAddresses: AddressBookEntries = [
 	{ type: 'contact', name: 'Saved EOA', address: EOA_ADDRESS, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
@@ -24,6 +25,13 @@ const activeAddresses: AddressBookEntries = [
 ]
 
 describe('active address selection', () => {
+	test('uses the active wallet account and falls back to the first reported account', () => {
+		assert.equal(getWalletSelectedAccount(undefined), undefined)
+		assert.equal(getWalletSelectedAccount({ activeSigningAddress: undefined, signerAccounts: [] }), undefined)
+		assert.equal(getWalletSelectedAccount({ activeSigningAddress: undefined, signerAccounts: [1n, 2n] }), 1n)
+		assert.equal(getWalletSelectedAccount({ activeSigningAddress: 2n, signerAccounts: [1n, 2n] }), 2n)
+		assert.doesNotMatch(signerMetadataSource, /getWalletSelectedAccount/u)
+	})
 	test('does not allow selecting an EOA or Safe in signing mode without a wallet account', () => {
 		assert.deepEqual(
 			getSelectableActiveAddresses(activeAddresses, false, 1n, []).map(({ address }) => address),
