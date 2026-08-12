@@ -104,9 +104,12 @@ const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
 const REQUEST_SCOPED_PROVIDER_EVENT_METHODS = new Set(['accountsChanged', 'connect', 'disconnect', 'chainChanged'])
 
 export function normalizeSignerChainId(chainId: string) {
-	// Coinbase historically emitted decimal chain IDs. Only normalize the entire
-	// value so malformed IDs are not silently truncated by Number.parseInt.
+	// Coinbase historically emitted decimal chain IDs. Only normalize the entire value so malformed IDs are not silently truncated by Number.parseInt.
 	return /^[0-9]+$/.test(chainId) ? `0x${ BigInt(chainId).toString(16) }` : chainId
+}
+
+function chainIdToNetworkVersion(chainId: string) {
+	return BigInt(chainId).toString(10)
 }
 
 type InterceptorApprovedMessageCandidate = {
@@ -1371,7 +1374,7 @@ class InterceptorMessageListener {
 					this.activeChainId = reply
 					if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && inpageWindow.ethereum !== undefined) {
 						setCompatibilityProperty(inpageWindow.ethereum, 'chainId', reply, 'window.ethereum.chainId')
-						setCompatibilityProperty(inpageWindow.ethereum, 'networkVersion', Number(reply).toString(10), 'window.ethereum.networkVersion')
+						setCompatibilityProperty(inpageWindow.ethereum, 'networkVersion', chainIdToNetworkVersion(reply), 'window.ethereum.networkVersion')
 					}
 					for (const callback of this.onChainChangedCallBacks) {
 						callback(reply)
@@ -1475,9 +1478,9 @@ class InterceptorMessageListener {
 						}
 						case 'eth_chainId': {
 							if (typeof forwardRequest.result !== 'string') throw new Error('wrong type')
-							const chainId = forwardRequest.result as string
+							const chainId = forwardRequest.result
 							setCompatibilityProperty(inpageWindow.ethereum, 'chainId', chainId, 'window.ethereum.chainId')
-							setCompatibilityProperty(inpageWindow.ethereum, 'networkVersion', Number(chainId).toString(10), 'window.ethereum.networkVersion')
+							setCompatibilityProperty(inpageWindow.ethereum, 'networkVersion', chainIdToNetworkVersion(chainId), 'window.ethereum.networkVersion')
 							this.activeChainId = chainId
 							break
 						}

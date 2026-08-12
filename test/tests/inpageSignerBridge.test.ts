@@ -640,6 +640,41 @@ describe('inpage signer bridge', () => {
 		assert.deepEqual(connectedToSignerParams, [[false, 'NoSigner', 1]])
 	})
 
+	test('preserves large chain IDs in the legacy networkVersion compatibility property', async () => {
+		const largeChainId = '0x20000000000001'
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundReply) => {
+				if (request.method === 'connected_to_signer') {
+					sendBackgroundReply({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: { metamaskCompatibilityMode: true },
+					})
+					return true
+				}
+				if (request.method !== 'eth_chainId') return false
+				sendBackgroundReply({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: request.method,
+					result: largeChainId,
+				})
+				return true
+			},
+		})
+		Reflect.deleteProperty(fakeWindow, 'ethereum')
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?large-network-version', async () => {
+			const provider = Reflect.get(fakeWindow, 'ethereum')
+			if (!isRecord(provider) || typeof provider.request !== 'function') throw new Error('Interceptor provider was not installed')
+			assert.equal(await provider.request({ method: 'eth_chainId' }), largeChainId)
+			assert.equal(provider.networkVersion, '9007199254740993')
+		})
+	})
+
 	test('reports a fresh signer epoch when the background requests reconnect status', async () => {
 		const connectedToSignerParams: unknown[][] = []
 		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
