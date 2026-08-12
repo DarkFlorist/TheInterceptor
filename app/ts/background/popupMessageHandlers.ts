@@ -47,7 +47,7 @@ import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerforma
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { updateRichListAddress } from '../utils/richList.js'
 import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply.js'
-import { createSafeContractValidationFailure, validateSafeOwnerIsEoa } from '../safe/safeCore.js'
+import { createSafeContractValidationFailure, getSafeContractSnapshot, validateSafeOwnerIsEoa } from '../safe/safeCore.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getPendingSafeSignerAddress } from './safeConfirmationResolver.js'
 import { getWalletSelectedAccount } from '../utils/signerMetadata.js'
@@ -360,26 +360,33 @@ export async function setSafeSimulationSigner(
 	}
 	let validatedSafeState: Awaited<ReturnType<typeof validateSafeOwnerIsEoa>>['snapshot']['state']
 	try {
-		const { snapshot } = await validateSafeOwnerIsEoa(ethereum, safeEntry.address, request.data.safeSimulationSignerAddress)
+		const snapshot = request.data.safeSimulationSignerAddress === undefined
+			? await getSafeContractSnapshot(ethereum, safeEntry.address)
+			: (await validateSafeOwnerIsEoa(ethereum, safeEntry.address, request.data.safeSimulationSignerAddress)).snapshot
 		validatedSafeState = snapshot.state
 	} catch(error) {
 		await reportUnexpectedError(error, {
 			source: 'safe_simulation_signer',
 			code: 'safe_simulation_signer_validation_failed',
-			displayMessage: 'Failed to validate the Safe simulation signer.',
+			displayMessage: request.data.safeSimulationSignerAddress === undefined
+				? 'Failed to refresh the Gnosis Safe owners.'
+				: 'Failed to validate the Safe simulation signer.',
 		})
 		return {
 			type: 'SetSafeSimulationSignerReply' as const,
 			ok: false as const,
-			message: getErrorMessage(error) ?? 'The selected address is not a current wallet-signable Safe owner.',
+			message: getErrorMessage(error) ?? (request.data.safeSimulationSignerAddress === undefined
+				? 'Failed to refresh the Gnosis Safe owners.'
+				: 'The selected address is not a current wallet-signable Safe owner.'),
 		}
 	}
 	let updatedEntry: AddressBookEntry | undefined
 	await updateUserAddressBookEntries((entries) => entries.map((entry) => {
 		if (entry.type !== 'safe' || entry.address !== request.data.safeAddress || entry.chainId !== request.data.chainId) return entry
+		const { safeSimulationSignerAddress: _previousSafeSimulationSignerAddress, ...entryWithoutSimulationSigner } = entry
 		updatedEntry = {
-			...entry,
-			safeSimulationSignerAddress: request.data.safeSimulationSignerAddress,
+			...entryWithoutSimulationSigner,
+			...(request.data.safeSimulationSignerAddress === undefined ? {} : { safeSimulationSignerAddress: request.data.safeSimulationSignerAddress }),
 			safeSignerAddresses: [...validatedSafeState.owners],
 			safeVersion: validatedSafeState.version,
 		}

@@ -447,7 +447,7 @@ function FirstCard(param: FirstCardParams) {
 	const selectedSafeSimulationSigner = useComputed(() => {
 		const safe = activeSafe.value
 		if (safe?.safeSimulationSignerAddress !== undefined) return checksummedAddress(safe.safeSimulationSignerAddress)
-		return safeSimulationSignerOptions.value[0] ?? ''
+		return 'Select signer'
 	})
 	const selectedSignerAddress = useComputed(() => getWalletSelectedAccount(param.tabState.value))
 	const selectedSignerAddressBookEntry = useComputed(() => {
@@ -545,8 +545,6 @@ function FirstCard(param: FirstCardParams) {
 						: entry
 				)
 			}
-			updateVisibleSafeOwners(currentSafeSimulationSignerAddress)
-			if (currentSafeSimulationSignerAddress === undefined) return
 			const reply = await sendPopupMessageWithReply({
 				method: 'popup_setSafeSimulationSigner',
 				data: {

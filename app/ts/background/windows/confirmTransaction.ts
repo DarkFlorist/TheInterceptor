@@ -615,9 +615,15 @@ export async function openConfirmTransactionDialogForMessage(
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	const activeAddressEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()))
 		.find((entry) => entry.address === activeAddress)
+	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 	const simulationSignerAddress = activeAddressEntry?.type === 'safe'
-		? activeAddressEntry.safeSimulationSignerAddress ?? activeAddressEntry.safeSignerAddresses?.[0] ?? activeAddress
+		? simulationMode ? activeAddressEntry.safeSimulationSignerAddress : getWalletSelectedAccount(signerTabState)
 		: activeAddress
+	if (simulationSignerAddress === undefined) {
+		return formRejectMessage(SAFE_SIGNER_SELECTION_ERROR_CODE, simulationMode
+			? 'Select a Gnosis Safe signer for simulation before signing a message.'
+			: 'Select a current Gnosis Safe owner in the signer wallet before signing a message.')
+	}
 	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
 	const messageIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
 	const created = new Date()
@@ -633,7 +639,6 @@ export async function openConfirmTransactionDialogForMessage(
 	}
 	try {
 		const visualizedPersonalSignRequest = await craftPersonalSignPopupMessage(ethereumClientService, undefined, signedMessageTransaction, ethereumClientService.getRpcEntry())
-		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 		const walletSignerAddress = getWalletSelectedAccount(signerTabState)
 		let safeMessageCoSignSnapshot: Awaited<ReturnType<typeof createSafeMessageCoSignSnapshot>> | undefined
 		let safeMessageAccountMismatch: string | undefined

@@ -1212,7 +1212,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 		}
 	})
 
-	test('keeps retrieved owners selectable when the first Safe owner cannot simulate', async () => {
+	test('persists retrieved owners and clears a stale simulation signer when the first owner cannot simulate', async () => {
 		const dom = installDomMock()
 		const contractOwner = 0x6000000000000000000000000000000000000006n
 		let signerUpdateCount = 0
@@ -1236,7 +1236,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 			signerUpdateCount += 1
 			return { type: 'SetSafeSimulationSignerReply', ok: true }
 		})
-		const activeAddresses = new Signal([{ ...safeEntry, safeSimulationSignerAddress: undefined, safeSignerAddresses: undefined }])
+		const activeAddresses = new Signal([{ ...safeEntry, safeSimulationSignerAddress: SAFE_SIGNER_ADDRESS, safeSignerAddresses: undefined }])
 		try {
 			await act(() => {
 				render(h(Home, createHomeParams({
@@ -1255,11 +1255,14 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 
 			assert.deepEqual(activeAddresses.value[0]?.safeSignerAddresses, [contractOwner, OTHER_SIGNER_ADDRESS])
 			assert.equal(activeAddresses.value[0]?.safeSimulationSignerAddress, undefined)
-			assert.equal(signerUpdateCount, 0)
+			assert.equal(signerUpdateCount, 1)
+			const ownerRefreshMessage = getMessageWithMethod(browserMock.sentMessages, 'popup_setSafeSimulationSigner')
+			if (typeof ownerRefreshMessage !== 'object' || ownerRefreshMessage === null || !('data' in ownerRefreshMessage)) throw new Error('Missing persisted Safe owner refresh')
+			assert.equal(ownerRefreshMessage.data.safeSimulationSignerAddress, undefined)
 			const signerDropdown = collectElements(dom.document.body, 'button').find((button) =>
-				button.getAttribute?.('aria-label') === 'Safe signer in simulation: 0x6000000000000000000000000000000000000006'
+				button.getAttribute?.('aria-label') === 'Safe signer in simulation: Select signer'
 			)
-			if (signerDropdown === undefined) throw new Error('Missing retrieved Safe owner dropdown')
+			if (signerDropdown === undefined) throw new Error('Missing unset Safe signer dropdown')
 			await act(async () => { await clickElement(signerDropdown) })
 			const eoaOwnerOption = collectElements(dom.document.body, 'button').find((button) =>
 				button.getAttribute?.('class')?.includes('dropdown-item') === true
@@ -1271,7 +1274,52 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 				await new Promise((resolve) => setTimeout(resolve, 0))
 			})
 			assert.equal(activeAddresses.value[0]?.safeSimulationSignerAddress, OTHER_SIGNER_ADDRESS)
-			assert.equal(signerUpdateCount, 1)
+			assert.equal(signerUpdateCount, 2)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+			browserMock.restore()
+		}
+	})
+
+	test('keeps visible Safe owner metadata unchanged when refreshed owners cannot be persisted', async () => {
+		const dom = installDomMock()
+		const initialSafe = { ...safeEntry, safeSignerAddresses: [SAFE_SIGNER_ADDRESS, OTHER_SIGNER_ADDRESS], safeVersion: '1.3.0' }
+		const activeAddresses = new Signal([initialSafe])
+		const browserMock = installBrowserMock((message) => {
+			if (hasMethod(message, 'popup_requestSafeContractState')) return {
+				method: 'popup_requestSafeContractState',
+				data: {
+					chainId: '0x1',
+					result: {
+						ok: true,
+						owners: ['0x5000000000000000000000000000000000000005'],
+						ownerAddressBookEntries: [],
+						version: '1.4.1',
+					},
+				},
+			}
+			if (hasMethod(message, 'popup_setSafeSimulationSigner')) return { type: 'SetSafeSimulationSignerReply', ok: false, message: 'Owner metadata persistence failed.' }
+			return undefined
+		})
+		try {
+			await act(() => {
+				render(h(Home, createHomeParams({
+					activeAddresses,
+					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					simulationMode: new Signal(true),
+				})), dom.document.body)
+			})
+
+			const refreshOwnersButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Refresh owners'))
+			if (refreshOwnersButton === undefined) throw new Error('Missing refresh Safe owners button')
+			await act(async () => {
+				await clickElement(refreshOwnersButton)
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+
+			assert.deepEqual(activeAddresses.value, [initialSafe])
+			assert.equal((dom.document.body.textContent ?? '').includes('Owner metadata persistence failed.'), true)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()

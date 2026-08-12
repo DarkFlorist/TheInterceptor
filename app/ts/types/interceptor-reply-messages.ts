@@ -100,7 +100,7 @@ export const SetSafeSimulationSigner = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		chainId: EthereumQuantity,
 		safeAddress: EthereumAddress,
-		safeSimulationSignerAddress: EthereumAddress,
+		safeSimulationSignerAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 	}),
 })
 

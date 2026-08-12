@@ -630,6 +630,43 @@ test('uses the configured Safe simulation signer without changing the active Saf
 	assert.equal(pendingMessage.signedMessageTransaction.fakeSignedFor, simulationSignerAddress)
 })
 
+test('requires an explicit Safe simulation signer instead of using the first cached owner', async () => {
+	const cachedOwner = 0x4444444444444444444444444444444444444444n
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+		safeSimulationSignerAddress: undefined,
+		safeSignerAddresses: [cachedOwner],
+		safeVersion: '1.4.1',
+	})])
+	const signRequest = {
+		method: 'personal_sign' as const,
+		params: ['0x1234', activeAddress] as const,
+	}
+	const request = {
+		interceptorRequest: true as const,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier,
+		...signRequest,
+	}
+
+	const reply = await modules.openConfirmTransactionDialogForMessage(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		request,
+		signRequest,
+		true,
+		activeAddress,
+		{ websiteOrigin: 'https://simulation-signer.example', icon: undefined, title: 'Simulation signer' },
+		new Map(),
+	)
+
+	assert.equal(reply.type, 'result')
+	if (reply.type !== 'result' || !('error' in reply)) throw new Error('Missing Safe simulation signer error')
+	assert.equal(reply.error.code, -32010)
+	assert.match(reply.error.message, /Select a Gnosis Safe signer for simulation/u)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+})
+
 test('recognizes only execTransaction calls to the active Safe for direct signer execution', async () => {
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
 	const safeSignerAddress = 0x1234567890123456789012345678901234567890n
@@ -785,6 +822,39 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	assert.equal(unsupportedVersionSaveFailure.ok, false)
 	assert.match(unsupportedVersionSaveFailure.message ?? '', /version invalid-version is not supported/u)
 	assert.equal(await getLatestUnexpectedError(), undefined)
+})
+
+test('refreshes Safe owner metadata and clears a stale simulation signer without choosing a replacement', async () => {
+	const staleSigner = 0x1234567890123456789012345678901234567890n
+	fakeSafeContract.owners = [recipientAddress]
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+		useAsActiveAddress: false,
+		safeSimulationSignerAddress: staleSigner,
+		safeSignerAddresses: [staleSigner],
+		safeVersion: '1.3.0',
+	})])
+
+	const reply = await modules.setSafeSimulationSigner(
+		ethereum,
+		simulator.tokenPriceService,
+		() => undefined,
+		new Map(),
+		{
+			method: 'popup_setSafeSimulationSigner',
+			data: {
+				chainId: fakeRpcNetwork.chainId,
+				safeAddress: activeAddress,
+				safeSimulationSignerAddress: undefined,
+			},
+		},
+	)
+
+	assert.deepEqual(reply, { type: 'SetSafeSimulationSignerReply', ok: true })
+	const updatedSafeEntry = (await modules.getUserAddressBookEntries())[0]
+	assert.equal(updatedSafeEntry?.safeSimulationSignerAddress, undefined)
+	assert.deepEqual(updatedSafeEntry?.safeSignerAddresses, [recipientAddress])
+	assert.equal(updatedSafeEntry?.safeVersion, fakeSafeContract.version)
+	assert.equal(fakeSafeContract.requestedCodeAddresses.includes(recipientAddress), false)
 })
 
 test('routes a completed active Safe execution through its configured signer and rechecks signer changes', async () => {
