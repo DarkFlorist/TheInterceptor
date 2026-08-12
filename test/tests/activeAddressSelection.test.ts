@@ -1,7 +1,8 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { assertActiveAddressSelectionAllowed, getActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, isActiveAddressSelectionAllowed } from '../../app/ts/utils/activeAddressSelection.js'
+import { assertActiveAddressSelectionAllowed, getActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../../app/ts/utils/activeAddressSelection.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
+import { requestActiveAddressChange } from '../../app/ts/components/activeAddressChange.js'
 
 const EOA_ADDRESS = 0x1000000000000000000000000000000000000001n
 const SAFE_ADDRESS = 0x2000000000000000000000000000000000000002n
@@ -51,6 +52,47 @@ describe('active address selection', () => {
 		assert.deepEqual(
 			getSelectableActiveAddresses(activeAddresses, true, 1n, [EOA_ADDRESS]).map(({ address }) => address),
 			[EOA_ADDRESS, SAFE_ADDRESS, UNOWNED_SAFE_ADDRESS, UNKNOWN_OWNERS_SAFE_ADDRESS],
+		)
+	})
+
+	test('makes a freshly persisted entry selectable before the popup address list refreshes', () => {
+		const freshAddress = 0x6000000000000000000000000000000000000006n
+		const persistedEntry = { type: 'contact', name: 'Fresh address', address: freshAddress, entrySource: 'User' } as const
+		const selectableAddresses = includePersistedAddressBookEntry(activeAddresses, persistedEntry)
+
+		assert.equal(isActiveAddressSelectionAllowed(freshAddress, activeAddresses, true, 1n, []), false)
+		assert.equal(isActiveAddressSelectionAllowed(freshAddress, selectableAddresses, true, 1n, []), true)
+		assert.equal(selectableAddresses.at(-1), persistedEntry)
+	})
+
+	test('waits for the background to accept an active-address change', async () => {
+		let sentMessage: unknown
+		await requestActiveAddressChange(EOA_ADDRESS, true, async (message) => {
+			sentMessage = message
+			return { type: 'ChangeActiveAddressReply', ok: true }
+		})
+
+		assert.deepEqual(sentMessage, {
+			method: 'popup_changeActiveAddress',
+			data: { activeAddress: EOA_ADDRESS, simulationMode: true },
+		})
+	})
+
+	test('surfaces background rejection of an active-address change', async () => {
+		await assert.rejects(
+			requestActiveAddressChange(EOA_ADDRESS, true, async () => ({
+				type: 'ChangeActiveAddressReply',
+				ok: false,
+				message: 'The address is not available yet.',
+			})),
+			/The address is not available yet\./u,
+		)
+	})
+
+	test('surfaces a missing background active-address reply', async () => {
+		await assert.rejects(
+			requestActiveAddressChange(EOA_ADDRESS, true, async () => undefined),
+			/Changing the active address failed because the background page did not return a reply\./u,
 		)
 	})
 

@@ -93,12 +93,16 @@ describe('background eth_accounts', () => {
 		}])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
 
-		await assert.rejects(
-			changeActiveAddress(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+		assert.deepEqual(
+			await changeActiveAddress(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
 				method: 'popup_changeActiveAddress',
 				data: { activeAddress: wrongChainSafe, simulationMode: true },
 			}),
-			/configured for another chain/,
+			{
+				type: 'ChangeActiveAddressReply',
+				ok: false,
+				message: 'The selected Gnosis Safe is configured for another chain.',
+			},
 		)
 		assert.equal((await getSettings()).activeSimulationAddress, originalAddress)
 	})

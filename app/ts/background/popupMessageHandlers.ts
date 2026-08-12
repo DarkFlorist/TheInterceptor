@@ -236,16 +236,25 @@ export async function changeActiveAddress(ethereum: EthereumClientService, token
 					simulationMode: false,
 					signerAddress: undefined,
 				})
+				return { type: 'ChangeActiveAddressReply', ok: true } as const
 			}
-			return
 		}
-		assertActiveAddressSelectionAllowed(addressChange.data.activeAddress, activeAddresses, true, settings.activeRpcNetwork.chainId, signerAccounts)
-		return
+		try {
+			assertActiveAddressSelectionAllowed(addressChange.data.activeAddress, activeAddresses, addressChange.data.simulationMode, settings.activeRpcNetwork.chainId, signerAccounts)
+		} catch (error) {
+			return {
+				type: 'ChangeActiveAddressReply',
+				ok: false,
+				message: error instanceof Error ? error.message : 'The selected address is not available.',
+			} as const
+		}
+		return { type: 'ChangeActiveAddressReply', ok: false, message: 'The selected address is not available.' } as const
 	}
 	await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, selection, {
 		simulationMode: addressChange.data.simulationMode,
 		signerAddress: signerAccount,
 	})
+	return { type: 'ChangeActiveAddressReply', ok: true } as const
 }
 
 export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich) {

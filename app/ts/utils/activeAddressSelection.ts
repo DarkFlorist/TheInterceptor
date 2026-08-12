@@ -1,4 +1,4 @@
-import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
+import { doAddressBookChainIdsMatch, type AddressBookEntries, type AddressBookEntry } from '../types/addressBookTypes.js'
 import type { TabState } from '../types/user-interface-types.js'
 
 export type ActiveAddressSelection =
@@ -7,6 +7,14 @@ export type ActiveAddressSelection =
 
 export function getWalletSelectedAccount(tabState: Pick<TabState, 'activeSigningAddress' | 'signerAccounts'> | undefined) {
 	return tabState?.activeSigningAddress ?? tabState?.signerAccounts[0]
+}
+
+export function includePersistedAddressBookEntry(activeAddresses: AddressBookEntries, persistedEntry: AddressBookEntry | undefined): AddressBookEntries {
+	if (persistedEntry === undefined) return activeAddresses
+	return [
+		...activeAddresses.filter((entry) => entry.address !== persistedEntry.address || !doAddressBookChainIdsMatch(entry.chainId, persistedEntry.chainId)),
+		persistedEntry,
+	]
 }
 
 export function getSelectableActiveAddresses(activeAddresses: AddressBookEntries, simulationMode: boolean, activeChainId: bigint | undefined, signerAccounts: readonly bigint[]) {

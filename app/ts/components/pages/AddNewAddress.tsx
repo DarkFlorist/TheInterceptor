@@ -97,13 +97,13 @@ export async function saveAddressBookEntry(entryToAdd: AddressBookEntry | { type
 export async function saveAddressBookEntryAndSwitch(
 	entryToAdd: AddressBookEntry | { type: 'error', error: string },
 	close: () => void,
-	setActiveAddressAndInformAboutIt: ((address: bigint) => Promise<void>) | undefined,
+	setActiveAddressAndInformAboutIt: ((address: bigint, persistedEntry: AddressBookEntry) => Promise<void>) | undefined,
 	sendMessage: (message: { method: 'popup_addOrModifyAddressBookEntry', data: AddressBookEntry }) => Promise<{ readonly ok: boolean, readonly message?: string } | undefined> = sendPopupMessageWithReply,
 ) {
 	if (entryToAdd.type === 'error') return entryToAdd.error
 	const saveError = await persistAddressBookEntry(entryToAdd, sendMessage)
 	if (saveError !== undefined) return saveError
-	await setActiveAddressAndInformAboutIt?.(entryToAdd.address)
+	await setActiveAddressAndInformAboutIt?.(entryToAdd.address, entryToAdd)
 	close()
 	return undefined
 }

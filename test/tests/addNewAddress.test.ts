@@ -93,12 +93,14 @@ describe('add new address save flow', () => {
 
 	test('keeps the modal open until switching finishes', async () => {
 		const calls: string[] = []
+		let switchedEntry: typeof sampleAddressBookEntry | undefined
 		let finishSwitch: (() => void) | undefined
 		const switchFinished = new Promise<void>((resolve) => { finishSwitch = resolve })
 		const saving = saveAddressBookEntryAndSwitch(
 			sampleAddressBookEntry,
 			() => { calls.push('close') },
-			async () => {
+			async (_address, persistedEntry) => {
+				switchedEntry = persistedEntry
 				calls.push('switch:start')
 				await switchFinished
 				calls.push('switch:end')
@@ -115,6 +117,7 @@ describe('add new address save flow', () => {
 		finishSwitch?.()
 		await saving
 		assert.deepEqual(calls, ['save', 'switch:start', 'switch:end', 'close'])
+		assert.equal(switchedEntry, sampleAddressBookEntry)
 	})
 
 	test('does not close when switching fails', async () => {

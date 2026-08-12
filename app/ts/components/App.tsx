@@ -20,7 +20,8 @@ import { useLiveSimulationHomeData } from './hooks/useLiveSimulationHomeData.js'
 import { NetworkErrors } from './subcomponents/NetworkErrors.js'
 import { ProviderErrors } from './subcomponents/ProviderErrors.js'
 import { PopupModal, type PopupPage } from './PopupModal.js'
-import { getSelectableActiveAddresses, isActiveAddressSelectionAllowed } from '../utils/activeAddressSelection.js'
+import { getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../utils/activeAddressSelection.js'
+import { requestActiveAddressChange } from './activeAddressChange.js'
 export { NetworkErrors } from './subcomponents/NetworkErrors.js'
 
 export function App() {
@@ -69,12 +70,13 @@ export function App() {
 	})
 	const boundaryResetKey = useSignal(0)
 
-	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
+	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer', persistedEntry?: AddressBookEntry) {
 		if (!isSettingsLoaded.value) return
-		if (!isActiveAddressSelectionAllowed(address, activeAddresses.value, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])) return
+		const selectableAddresses = includePersistedAddressBookEntry(activeAddresses.value, persistedEntry)
+		if (!isActiveAddressSelectionAllowed(address, selectableAddresses, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])) return
+		await requestActiveAddressChange(address, simulationMode.value)
 		useSignersAddressAsActiveAddress.value = address === 'signer'
 		if (address === 'signer') {
-			sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: 'signer', simulationMode: simulationMode.value } })
 			if (simulationMode.value) {
 				activeSimulationAddress.value = tabState.value && tabState.value.signerAccounts.length > 0 ? tabState.value.signerAccounts[0] : undefined
 				return
@@ -82,11 +84,10 @@ export function App() {
 			activeSigningAddress.value = tabState.value && tabState.value.signerAccounts.length > 0 ? tabState.value.signerAccounts[0] : undefined
 			return
 		}
-		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: address, simulationMode: simulationMode.value } })
-		const selectedAddress = activeAddresses.value.find((entry) =>
+		const selectedAddress = selectableAddresses.find((entry) =>
 			entry.address === address && (entry.type !== 'safe' || entry.chainId === rpcNetwork.value?.chainId)
 		)
-		const selectedSafeOnAnyChain = activeAddresses.value.some((entry) => entry.type === 'safe' && entry.address === address)
+		const selectedSafeOnAnyChain = selectableAddresses.some((entry) => entry.type === 'safe' && entry.address === address)
 		if (simulationMode.value || selectedAddress?.type === 'safe') {
 			activeSimulationAddress.value = address
 			return
