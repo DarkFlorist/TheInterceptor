@@ -5,7 +5,7 @@ import type { SafeEntry } from '../types/addressBookTypes.js'
 import { EIP712Message } from '../types/eip721.js'
 import type { SignMessageParams } from '../types/jsonRpc-signing-types.js'
 import { createInterceptorInternalError, getErrorMessage, hasInterceptorInternalErrorCode } from '../utils/caughtErrors.js'
-import { isExpectedHandledError, reportUnexpectedError } from '../utils/errors.js'
+import { reportUnexpectedError } from '../utils/errors.js'
 import { getPrettySignerName, getWalletSelectedAccount } from '../utils/signerMetadata.js'
 import { modifyObject } from '../utils/typescript.js'
 import { getPendingTransactionsAndMessages, getSafeTransactionStacks, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingTransactionOrMessage } from './storageVariables.js'
@@ -36,7 +36,6 @@ export function isSafeMessageAccountMismatchFailure(error: unknown): error is Er
 }
 
 async function reportUnexpectedDirectSafeExecutionRecovery(error: unknown) {
-	if (isExpectedHandledError(error)) return
 	await reportUnexpectedError(error, {
 		source: 'direct_safe_execution_recovery',
 		code: 'direct_safe_execution_recovery_failed',
@@ -252,13 +251,11 @@ export async function createSafeMessageCoSignSnapshot(
 		try {
 			safeOwners = (await getSafeContractState(ethereum, activeAddress)).owners
 		} catch (error) {
-			if (!isExpectedHandledError(error)) {
-				await reportUnexpectedError(error, {
-					source: 'safe_signer_owner_lookup',
-					code: 'safe_signer_owner_lookup_failed',
-					displayMessage: 'Failed to load the active Gnosis Safe owners.',
-				})
-			}
+			await reportUnexpectedError(error, {
+				source: 'safe_signer_owner_lookup',
+				code: 'safe_signer_owner_lookup_failed',
+				displayMessage: 'Failed to load the active Gnosis Safe owners.',
+			})
 			safeOwnersUnavailableReason = getErrorMessage(error) ?? 'The current owner list could not be loaded.'
 		}
 		const safeOwnerSet = new Set(safeOwners)
@@ -430,13 +427,11 @@ async function handleSafeSignerSelectionRefreshFailure(
 	fallbackMessage: string,
 	source: 'safe_proposal_signer_refresh' | 'safe_cosign_signer_refresh',
 ): Promise<{ readonly status: 'blocked', readonly approvalStatus: SafeSignerErrorStatus }> {
-	if (!isExpectedHandledError(error)) {
-		await reportUnexpectedError(error, {
-			source,
-			code: `${ source }_failed`,
-			displayMessage: `${ messagePrefix ?? 'Gnosis Safe signer refresh failed' } due to an unexpected error.`,
-		})
-	}
+	await reportUnexpectedError(error, {
+		source,
+		code: `${ source }_failed`,
+		displayMessage: `${ messagePrefix ?? 'Gnosis Safe signer refresh failed' } due to an unexpected error.`,
+	})
 	return {
 		status: 'blocked',
 		approvalStatus: createSafeSignerErrorStatus(

@@ -6,7 +6,7 @@ import { installDateMock, installDomMock } from './domMock.js'
 import { withSilencedConsole } from './consoleSilence.js'
 
 const { NEW_BLOCK_ABORT } = await import('../../app/ts/utils/constants.js')
-const { classifyCaughtError, createInterceptorInternalError, hasInterceptorInternalErrorCode, isExpectedHandledError, isExpectedInfrastructureError } = await import('../../app/ts/utils/errors.js')
+const { classifyCaughtError, createInterceptorInternalError, hasInterceptorInternalErrorCode, isExpectedInfrastructureError, shouldSuppressUnexpectedErrorReport } = await import('../../app/ts/utils/errors.js')
 
 test('Safe failures use the shared internal error classification mechanism', () => {
 	const error = createInterceptorInternalError('Select a Safe owner.', 'safe_signer_selection')
@@ -15,7 +15,7 @@ test('Safe failures use the shared internal error classification mechanism', () 
 	assert.equal(hasInterceptorInternalErrorCode(error, 'safe_owner_validation'), false)
 	assert.equal(hasInterceptorInternalErrorCode(new Error('Select a Safe owner.'), 'safe_signer_selection'), false)
 	assert.equal(classifyCaughtError(error), 'safeValidation')
-	assert.equal(isExpectedHandledError(error), true)
+	assert.equal(shouldSuppressUnexpectedErrorReport(error), true)
 	assert.equal(isExpectedInfrastructureError(error), false)
 })
 
@@ -188,6 +188,17 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(browserMock.sentMessages.length, 0)
 	})
 
+	test('does not report handled Safe validation failures as unexpected errors', async () => {
+		browserMock.reset()
+		const { createInterceptorInternalError, getInterceptorErrorDiagnostics, reportUnexpectedError, getLatestUnexpectedError } = await modulesPromise
+
+		await reportUnexpectedError(createInterceptorInternalError('Select a current Safe owner.', 'safe_signer_selection'))
+
+		assert.equal(await getLatestUnexpectedError(), undefined)
+		assert.equal((await getInterceptorErrorDiagnostics()).length, 0)
+		assert.equal(browserMock.sentMessages.length, 0)
+	})
+
 	test('reports explicit expected-infrastructure diagnostics when suppression is disabled', async () => {
 		browserMock.reset()
 		const { createInterceptorInternalError, getLatestUnexpectedError, reportUnexpectedError } = await modulesPromise
@@ -195,7 +206,7 @@ describe('unexpected error diagnostics', () => {
 		await withSilencedConsole(async () => await reportUnexpectedError(createInterceptorInternalError('Failed to fetch', 'fetch_transport_failed'), {
 			source: 'popup',
 			code: 'popup_message_listener_failed',
-			suppressExpectedInfrastructure: false,
+			suppressExpectedHandledErrors: false,
 		}))
 
 		const latestUnexpectedError = await getLatestUnexpectedError()

@@ -13,6 +13,7 @@ const interceptorAccessSource = await Bun.file(new URL('../../app/ts/background/
 const providerMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/providerMessageHandlers.ts', import.meta.url)).text()
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
 const backgroundUtilsSource = await Bun.file(new URL('../../app/ts/background/backgroundUtils.ts', import.meta.url)).text()
+const providerSigningSelectionSource = await Bun.file(new URL('../../app/ts/background/signingAddressSelection.ts', import.meta.url)).text()
 
 const activeAddresses: AddressBookEntries = [
 	{ type: 'contact', name: 'Saved EOA', address: EOA_ADDRESS, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
@@ -59,12 +60,12 @@ describe('active address selection', () => {
 		assert.doesNotMatch(popupMessageHandlersSource, /activeChainSigningSafe\.safeSignerAddresses/u)
 		assert.match(interceptorAccessSource, /assertActiveAddressSelectionAllowed\(address, selectableAddresses/u)
 		assert.doesNotMatch(interceptorAccessSource, /address === signerAccounts\[0\]/u)
-		assert.match(providerMessageHandlersSource, /selection = getActiveAddressSelection\(preference\.safeAddress/u)
+		assert.match(providerSigningSelectionSource, /selection = getActiveAddressSelection\(preference\.safeAddress/u)
 		assert.doesNotMatch(providerMessageHandlersSource, /safeSignerAddresses\?\.includes\(signerAddress\)/u)
 	})
 
 	test('keeps activation choreography in the shared background orchestrator', () => {
-		assert.match(activeSettingsSource, /export async function activateAddressSelection[\s\S]*?setUseSignersAddressAsActiveAddress[\s\S]*?changeActiveAddressAndChain[\s\S]*?rememberSigningAddressPreference/u)
+		assert.match(activeSettingsSource, /export async function activateAddressSelection[\s\S]*?setUseSignersAddressAsActiveAddress[\s\S]*?changeActiveAddressAndChain[\s\S]*?rememberSigningAddressSelection/u)
 		for (const consumerSource of [popupMessageHandlersSource, interceptorAccessSource, providerMessageHandlersSource]) {
 			assert.match(consumerSource, /activateAddressSelection\(/u)
 			assert.doesNotMatch(consumerSource, /setUseSignersAddressAsActiveAddress\(/u)
@@ -75,5 +76,13 @@ describe('active address selection', () => {
 	test('keeps background active-address resolution on the shared selection policy', () => {
 		assert.match(backgroundUtilsSource, /selection = getActiveAddressSelection\(/u)
 		assert.doesNotMatch(backgroundUtilsSource, /safeSignerAddresses/u)
+	})
+
+	test('keeps remembered signer selection decisions in one policy module', () => {
+		assert.match(providerSigningSelectionSource, /export async function getSigningAddressSelectionTransition/u)
+		assert.match(providerMessageHandlersSource, /getSigningAddressSelectionTransition\(/u)
+		assert.doesNotMatch(providerMessageHandlersSource, /getSigningAddressPreferences/u)
+		assert.doesNotMatch(providerMessageHandlersSource, /shouldRestoreRememberedSelection/u)
+		assert.doesNotMatch(backgroundUtilsSource, /signingAddressPreferences/u)
 	})
 })

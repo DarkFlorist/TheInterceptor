@@ -9,9 +9,10 @@ import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
-import { changeSimulationMode, getSettings, rememberSigningAddressPreference, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
+import { changeSimulationMode, getSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
 import { getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, promoteRpcAsPrimary, updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
+import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 
 export async function resetSimulationStateFromConfig(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
 	await updateTransactionState(() => ({
@@ -115,11 +116,11 @@ export async function activateAddressSelection(
 	})
 	if (options.simulationMode || options.signerAddress === undefined || selection === undefined) return
 	if (selection.type === 'signer') {
-		await rememberSigningAddressPreference({ signerAddress: options.signerAddress, selection: 'signer' })
+		await rememberSigningAddressSelection({ signerAddress: options.signerAddress, selection: 'signer' })
 		return
 	}
 	if (selection.entry.type !== 'safe') throw new Error('Signing mode can only activate the external signer or an owned Gnosis Safe.')
-	await rememberSigningAddressPreference({
+	await rememberSigningAddressSelection({
 		signerAddress: options.signerAddress,
 		selection: 'safe',
 		safeAddress: selection.entry.address,

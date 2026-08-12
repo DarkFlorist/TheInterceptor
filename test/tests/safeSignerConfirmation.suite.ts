@@ -3,6 +3,22 @@ import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 
+test('maps signer account refresh replies into Safe confirmation selections', () => {
+	const walletError = Object.assign(new Error('Wallet account verification failed.'), { code: 4001 })
+	assert.deepEqual(modules.getSafeSignerSelectionFromAccountRefresh({ accounts: [safeTestOwnerAddress], error: undefined }), {
+		selectedSigner: safeTestOwnerAddress,
+		verificationError: undefined,
+	})
+	assert.deepEqual(modules.getSafeSignerSelectionFromAccountRefresh({ accounts: [], error: walletError }), {
+		selectedSigner: undefined,
+		verificationError: walletError.message,
+	})
+	assert.deepEqual(modules.getSafeSignerSelectionFromAccountRefresh(undefined), {
+		selectedSigner: undefined,
+		verificationError: 'The connected signer wallet is unavailable.',
+	})
+})
+
 test('recovers a Safe proposal after the wallet switches from a non-owner to a current owner', async () => {
 	fakeSafeContract.owners = [safeTestOwnerAddress]
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })

@@ -32,7 +32,7 @@ import { assertNever, modifyObject } from '../utils/typescript.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { getCurrentSimulationInput, getMetadataForSimulation, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
-import { getErrorMessage, reportUnexpectedError, isExpectedHandledError, isExpectedInfrastructureError } from '../utils/errors.js'
+import { getErrorMessage, reportUnexpectedError, isExpectedInfrastructureError } from '../utils/errors.js'
 import type { ImportSimulationStackReply, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, SetSafeSimulationSigner, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getWebsiteCreatedEthereumTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { updatePopupVisualisationIfNeeded, updatePopupVisualisationState } from './popupVisualisationUpdater.js'
@@ -99,6 +99,15 @@ async function getWalletSelectedAddressBookEntry(tabState: TabState, chainId: bi
 	return (await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)).find((entry) => entry.address === walletSelectedAccount)
 }
 
+type SafeSignerAccountRefresh = Awaited<ReturnType<typeof refreshSignerAccountsForTab>>
+
+export function getSafeSignerSelectionFromAccountRefresh(refreshResult: SafeSignerAccountRefresh) {
+	return {
+		selectedSigner: refreshResult?.error === undefined ? refreshResult?.accounts[0] : undefined,
+		verificationError: refreshResult?.error?.message ?? (refreshResult === undefined ? 'The connected signer wallet is unavailable.' : undefined),
+	}
+}
+
 export async function confirmDialog(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	const pending = confirmation.data.action === 'accept'
 		? (await getPendingTransactionsAndMessages()).find((entry) =>
@@ -116,10 +125,7 @@ export async function confirmDialog(ethereum: EthereumClientService, tokenPriceS
 				pending.uniqueRequestIdentifier.requestSocket.tabId,
 				false,
 			)
-			return {
-				selectedSigner: refreshResult?.error === undefined ? refreshResult?.accounts[0] : undefined,
-				verificationError: refreshResult?.error?.message ?? (refreshResult === undefined ? 'The connected signer wallet is unavailable.' : undefined),
-			}
+			return getSafeSignerSelectionFromAccountRefresh(refreshResult)
 		})()
 		: undefined
 	await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, refreshedSafeSignerSelection)
@@ -297,13 +303,11 @@ export async function addOrModifyAddressBookEntry(ethereum: EthereumClientServic
 					safeVersion: safeState.version,
 				}
 			} catch(error) {
-				if (!isExpectedHandledError(error)) {
-					await reportUnexpectedError(error, {
-						source: 'address_book_safe_validation',
-						code: 'address_book_safe_validation_failed',
-						displayMessage: 'Failed to validate the Gnosis Safe address.',
-					})
-				}
+				await reportUnexpectedError(error, {
+					source: 'address_book_safe_validation',
+					code: 'address_book_safe_validation_failed',
+					displayMessage: 'Failed to validate the Gnosis Safe address.',
+				})
 				return {
 					type: 'AddOrModifyAddressBookEntryReply' as const,
 					ok: false as const,
@@ -359,13 +363,11 @@ export async function setSafeSimulationSigner(
 		const { snapshot } = await validateSafeOwnerIsEoa(ethereum, safeEntry.address, request.data.safeSimulationSignerAddress)
 		validatedSafeState = snapshot.state
 	} catch(error) {
-		if (!isExpectedHandledError(error)) {
-			await reportUnexpectedError(error, {
-				source: 'safe_simulation_signer',
-				code: 'safe_simulation_signer_validation_failed',
-				displayMessage: 'Failed to validate the Safe simulation signer.',
-			})
-		}
+		await reportUnexpectedError(error, {
+			source: 'safe_simulation_signer',
+			code: 'safe_simulation_signer_validation_failed',
+			displayMessage: 'Failed to validate the Safe simulation signer.',
+		})
 		return {
 			type: 'SetSafeSimulationSignerReply' as const,
 			ok: false as const,
@@ -1042,7 +1044,7 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 			await reportUnexpectedError(error, {
 				displayMessage: `Failed to identify rich list address ${ address }: ${ errorMessage }`,
 				details: { address, richListEntry: element },
-				suppressExpectedInfrastructure: false,
+				suppressExpectedHandledErrors: false,
 			})
 			return {
 				...element,
@@ -1168,7 +1170,7 @@ export async function reportUnexpectedErrorInWindow(parsedRequest: UnexpectedErr
 		code: parsedRequest.data.code,
 		debugId: parsedRequest.data.debugId,
 		details: parsedRequest.data,
-		suppressExpectedInfrastructure: false,
+		suppressExpectedHandledErrors: false,
 	})
 }
 

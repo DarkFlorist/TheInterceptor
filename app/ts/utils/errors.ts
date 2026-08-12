@@ -19,7 +19,7 @@ type ErrorReportMetadata = {
 	severity?: InterceptorErrorSeverity
 	details?: unknown
 	userVisible?: boolean
-	suppressExpectedInfrastructure?: boolean
+	suppressExpectedHandledErrors?: boolean
 }
 
 type LocalRecoveryMetadata = {
@@ -108,7 +108,7 @@ export const isExpectedInfrastructureError = (error: unknown) => {
 	return classification === 'newBlockAbort' || classification === 'failedToFetch'
 }
 
-export const isExpectedHandledError = (error: unknown) => classifyCaughtError(error) !== 'unexpected'
+export const shouldSuppressUnexpectedErrorReport = (error: unknown) => classifyCaughtError(error) !== 'unexpected'
 
 function getForwardedDiagnostics(error: unknown): string | undefined {
 	const maybeInterceptorError = InterceptorError.safeParse(error)
@@ -211,7 +211,7 @@ async function appendErrorDiagnostic(report: InterceptorErrorReport) {
 }
 
 export async function reportUnexpectedError(error: unknown, metadata: ErrorReportMetadata = {}): Promise<UnexpectedErrorOccured | undefined> {
-	if ((metadata.suppressExpectedInfrastructure ?? true) && isExpectedInfrastructureError(error)) return
+	if ((metadata.suppressExpectedHandledErrors ?? true) && shouldSuppressUnexpectedErrorReport(error)) return
 	const defaultCode = isWrappedNewBlockAbort(error) ? 'wrapped_new_block_abort' : 'unexpected_error'
 	const report = createErrorReport(error, metadata, ERROR_REPORTING_POLICY.unexpected, defaultCode, metadata.displayMessage ?? normalizeUnexpectedError(error).message)
 	logUnexpectedError(error, report)

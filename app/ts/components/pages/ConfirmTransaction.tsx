@@ -126,7 +126,7 @@ export async function sendConfirmDialogMessage(message: TransactionConfirmation)
 			source: 'confirmTransaction',
 			code: 'confirm_dialog_delivery_failed',
 			displayMessage: getConfirmDialogDeliveryErrorMessage(error),
-			suppressExpectedInfrastructure: false,
+			suppressExpectedHandledErrors: false,
 		})
 		return errorMessage?.data
 	}
