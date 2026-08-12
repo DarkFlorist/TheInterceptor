@@ -353,7 +353,7 @@ export function InterceptorAccess() {
 			<div class = { `modal ${ isModalActive ? 'is-active' : ''}` }>
 				{ (appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress') && selectedPendingAccessRequest !== undefined
 					? <AddNewAddress
-						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) }
+						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(selectedPendingAccessRequest.accessRequestId, address) }
 						modifyAddressWindowState = { appPage.value.state }
 						close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
 						activeAddress = { selectedPendingAccessRequest.requestAccessToAddress?.address }
@@ -364,7 +364,7 @@ export function InterceptorAccess() {
 
 				{ appPage.value.page === 'ChangeActiveAddress' && selectedPendingAccessRequest !== undefined
 					? <ChangeActiveAddress
-						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(appPage.value.accessRequestId, address) }
+						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(selectedPendingAccessRequest.accessRequestId, address) }
 						signerAccounts = { selectedPendingAccessRequest.signerAccounts }
 						close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
 						activeAddresses = { activeAddresses }
