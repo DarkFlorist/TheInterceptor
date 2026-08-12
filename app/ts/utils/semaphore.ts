@@ -64,22 +64,22 @@ export class Semaphore {
 			return Promise.resolve(true)
 		}
 
-		// We save the resolver function in the current scope so that we can resolve the promise to false if the time expires.
+		let timeoutId: ReturnType<typeof setTimeout> | undefined
 		let resolver: (result: boolean) => void
 		const promise = new Promise<boolean>(resolve => { resolver = resolve })
+		const queuedResolver = (result: boolean) => {
+			clearTimeout(timeoutId)
+			resolver(result)
+		}
 
 		// The saved resolver gets added to our list of promise resolvers so that it gets a chance to be resolved as a result of a call to signal().
-		this.promiseResolverQueue.push(resolver!)
+		this.promiseResolverQueue.push(queuedResolver)
 
-		setTimeout(() => {
+		timeoutId = setTimeout(() => {
 			// We have to remove the promise resolver from our list. Resolving it twice would not be an issue but signal() always takes the next resolver from the queue and resolves it which would swallow a permit if we didn't remove it.
-			const index = this.promiseResolverQueue.indexOf(resolver)
-			if (index !== -1) {
-				this.promiseResolverQueue.splice(index, 1)
-			} else {
-				// This shouldn't happen, not much we can do at this point
-				console.warn(`Semaphore.waitFor couldn't find its promise resolver in the queue`)
-			}
+			const index = this.promiseResolverQueue.indexOf(queuedResolver)
+			if (index === -1) return
+			this.promiseResolverQueue.splice(index, 1)
 
 			// false because the wait was unsuccessful.
 			resolver(false)

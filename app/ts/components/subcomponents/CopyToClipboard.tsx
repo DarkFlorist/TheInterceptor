@@ -1,8 +1,21 @@
 import type { ComponentChildren, JSX } from 'preact'
 import type { Signal } from '@preact/signals'
 import { clipboardCopy } from './clipboardcopy.js'
+import { showHint } from './Hint.js'
 
 type CopySource = { content: string } | { copyFunction: () => Promise<string | undefined> }
+
+export const copyToClipboard = async (source: CopySource, copy = clipboardCopy) => {
+	if ('content' in source) {
+		await copy(source.content)
+		return true
+	}
+
+	const resolvedText = await source.copyFunction()
+	if (resolvedText === undefined) return false
+	await copy(resolvedText)
+	return true
+}
 
 type CopyToClipboardProps = CopySource & {
 	children: ComponentChildren
@@ -13,21 +26,25 @@ type CopyToClipboardProps = CopySource & {
 }
 
 export function CopyToClipboard(props: CopyToClipboardProps) {
-	const performCopy = async () => {
-		if ('content' in props) {
-			await clipboardCopy(props.content)
+	const performCopy = async (event: JSX.TargetedMouseEvent<HTMLDivElement>) => {
+		const target = event.currentTarget
+		const position = { x: event.clientX, y: event.clientY }
+		const text = 'content' in props ? props.content : await props.copyFunction()
+		if (text === undefined) return
+		try {
+			await clipboardCopy(text)
+		} catch (error: unknown) {
+			if (!(error instanceof DOMException)) throw error
+			showHint(target, { content: 'Could not copy to clipboard.', delay: 1500, ...position })
 			return
 		}
-
-		const resolvedText = await props.copyFunction()
-		if (resolvedText === undefined) return
-		await clipboardCopy(resolvedText)
+		showHint(target, { content: props.copyMessage ?? 'Copied to clipboard!', delay: 1500, ...position })
 	}
 
 	const tooltipContent = 'content' in props ? (props.contentDisplayOverride ?? props.content) : props.contentDisplayOverride
 
 	return <div onClick = { performCopy } class = { props.classNames } style = { props.style ?? 'display: inherit; overflow: inherit;' }>
-		<div data-hint-clickable-hide-timer-ms = { 1500 } data-hint = { props.copyMessage ?? 'Copied to clipboard!' } data-tooltip = { tooltipContent } style = 'display: inherit; overflow: inherit; width: 100%;'>
+		<div data-tooltip = { tooltipContent } style = 'display: inherit; overflow: inherit; width: 100%;'>
 			{ props.children }
 		</div>
 	</div>

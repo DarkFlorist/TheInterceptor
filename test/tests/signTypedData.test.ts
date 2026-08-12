@@ -60,7 +60,21 @@ describe('EIP712', () => {
 	test('can verify eip712Example message', () => {
 		const verification = verifyEip712Message(JSON.parse(eip712Example))
 		if (verification.valid === false) throw new Error(verification.reason)
-			getMessageAndDomainHash({method: 'eth_signTypedData_v4', params: [0x1n, JSON.parse(eip712Example)]})
+		getMessageAndDomainHash({method: 'eth_signTypedData_v4', params: [0x1n, JSON.parse(eip712Example)]})
+	})
+	test('rejects odd-length dynamic bytes values', () => {
+		const typedData = {
+			types: {
+				EIP712Domain: [],
+				Message: [{ name: 'payload', type: 'bytes' }],
+			},
+			primaryType: 'Message',
+			domain: {},
+			message: { payload: '0x1' },
+		}
+		assert.equal(verifyEip712Message(typedData).valid, false)
+		assert.equal(verifyEip712Message({ ...typedData, message: { payload: '0x' } }).valid, true)
+		assert.equal(verifyEip712Message({ ...typedData, message: { payload: '0x01' } }).valid, true)
 	})
 	test('can verify permit2MessageNumberChainId message', () => {
 		const verification = verifyEip712Message(JSON.parse(permit2MessageNumberChainId))
