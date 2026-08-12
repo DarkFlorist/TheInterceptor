@@ -265,6 +265,15 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 		signerAccounts: [alternateOwnerAddress],
 		activeSigningAddress: alternateOwnerAddress,
 	}))
+	fakeSafeContract.safeOwnerLookupFailure = 'unexpected'
+	try {
+		await withSilencedConsole(async () => modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, socket.tabId))
+	} finally {
+		fakeSafeContract.safeOwnerLookupFailure = undefined
+	}
+	const [failedCoSignRefresh] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(failedCoSignRefresh?.approvalStatus.status, 'SignerError')
+	assert.equal((await getLatestUnexpectedError())?.data.code, 'safe_cosign_signer_refresh_failed')
 	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, socket.tabId)
 	const [refreshedCoSignRequest] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(refreshedCoSignRequest?.type === 'SignableMessage' ? refreshedCoSignRequest.safeMessageCoSignSnapshot?.safeSignerAddress : undefined, alternateOwnerAddress)

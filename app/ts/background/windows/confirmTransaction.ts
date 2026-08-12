@@ -37,7 +37,7 @@ import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization
 import { identifyAddress } from '../metadataUtils.js'
 import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
 import { prepareSafeTransactionConfirmation } from '../safeTransactionConfirmation.js'
-import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, isSafeMessageAccountMismatchFailure, isSafeSignerSelectionFailure, refreshSafeCoSignSignerSelection, refreshSafeExecutionSignerSelection, refreshSafeProposalSignerSelection, reportUnexpectedDirectSafeExecutionRecovery, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
+import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, handleSafeExecutionRefreshFailure, isSafeMessageAccountMismatchFailure, isSafeSignerSelectionFailure, refreshSafeSignerSelection, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection, type SafeSignerSelectionRefreshResult } from '../safeConfirmationResolver.js'
 import { resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/signerMetadata.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
@@ -46,51 +46,137 @@ const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const NO_RESPONSE_RETRY_DELAY_MS = 50
 
-async function rebuildDirectSafeExecutionForSigner(
+async function refreshSafeSignerSelectionForDisplay(
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	pending: PendingTransactionOrSignableMessage,
 	selectedSigner: bigint,
-) {
+): Promise<SafeSignerSelectionRefreshResult> {
+	const refreshResult = await refreshSafeSignerSelection(ethereum, pending, selectedSigner)
 	if (
-		pending.type !== 'Transaction'
+		refreshResult.status !== 'refreshed'
+		|| pending.type !== 'Transaction'
 		|| pending.safeExecutionOriginalRequestParameters === undefined
-		|| pending.safeExecutionSignerAddress === selectedSigner
-	) return undefined
-	const refreshedPending = await refreshSafeExecutionSignerSelection(ethereum, pending, selectedSigner)
-	if (refreshedPending?.type !== 'Transaction' || refreshedPending.originalRequestParameters.method !== 'eth_sendTransaction') return undefined
-	const transactionToSimulate = await formEthSendTransaction(
-		ethereum,
-		undefined,
-		refreshedPending.activeAddress,
-		refreshedPending.website,
-		refreshedPending.originalRequestParameters,
-		refreshedPending.created,
-		refreshedPending.transactionIdentifier,
-		false,
-		'external-executor',
-	)
-	const popupVisualisation = await refreshConfirmTransactionSimulation(
-		ethereum,
-		tokenPriceService,
-		refreshedPending.activeAddress,
-		false,
-		refreshedPending.uniqueRequestIdentifier,
-		transactionToSimulate,
-	)
-	if (popupVisualisation === undefined) throw new Error('The refreshed Gnosis Safe execution simulation did not complete.')
-	if (transactionToSimulate.success) return {
-		...refreshedPending,
-		transactionToSimulate,
-		popupVisualisation,
-		transactionOrMessageCreationStatus: 'Simulated' as const,
+		|| refreshResult.pending.type !== 'Transaction'
+	) return refreshResult
+	try {
+		const refreshedPending = refreshResult.pending
+		const originalRequestParameters = refreshedPending.originalRequestParameters
+		if (originalRequestParameters.method !== 'eth_sendTransaction') return refreshResult
+		const transactionToSimulate = await formEthSendTransaction(
+			ethereum,
+			undefined,
+			refreshedPending.activeAddress,
+			refreshedPending.website,
+			originalRequestParameters,
+			refreshedPending.created,
+			refreshedPending.transactionIdentifier,
+			false,
+			'external-executor',
+		)
+		const popupVisualisation = await refreshConfirmTransactionSimulation(
+			ethereum,
+			tokenPriceService,
+			refreshedPending.activeAddress,
+			false,
+			refreshedPending.uniqueRequestIdentifier,
+			transactionToSimulate,
+		)
+		if (popupVisualisation === undefined) throw new Error('The refreshed Gnosis Safe execution simulation did not complete.')
+		return transactionToSimulate.success
+			? {
+				status: 'refreshed',
+				pending: { ...refreshedPending, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'Simulated' },
+			}
+			: {
+				status: 'refreshed',
+				pending: { ...refreshedPending, transactionToSimulate, popupVisualisation, transactionOrMessageCreationStatus: 'FailedToSimulate' },
+			}
+	} catch(error) {
+		return await handleSafeExecutionRefreshFailure(error)
 	}
-	return {
-		...refreshedPending,
-		transactionToSimulate,
-		popupVisualisation,
-		transactionOrMessageCreationStatus: 'FailedToSimulate' as const,
+}
+
+function shouldRefreshSafeSignerSelection(pending: PendingTransactionOrSignableMessage, selectedSigner: bigint) {
+	if (pending.approvalStatus.status === 'WaitingForSigner') return false
+	if (pending.type === 'Transaction' && pending.safeExecutionOriginalRequestParameters !== undefined) {
+		return pending.safeExecutionSignerAddress !== selectedSigner
 	}
+	if (pending.type === 'SignableMessage' && pending.safeMessageCoSignSnapshot !== undefined) {
+		return pending.safeMessageCoSignSnapshot.safeSignerAddress !== selectedSigner
+	}
+	if (pending.type !== 'Transaction' || pending.safeTransaction === undefined) return false
+	return (
+		pending.approvalStatus.status === 'WaitingForUser'
+		|| pending.approvalStatus.status === 'SignerError' && pending.approvalStatus.code === SAFE_SIGNER_SELECTION_ERROR_CODE
+	) && (
+		pending.safeTransaction.safeSignerAddress !== selectedSigner
+		|| pending.approvalStatus.status === 'SignerError'
+	)
+}
+
+function isSameSafeSignerError(pending: PendingTransactionOrSignableMessage, refreshResult: SafeSignerSelectionRefreshResult) {
+	return refreshResult.status === 'blocked'
+		&& pending.approvalStatus.status === 'SignerError'
+		&& pending.approvalStatus.code === refreshResult.approvalStatus.code
+		&& pending.approvalStatus.message === refreshResult.approvalStatus.message
+}
+
+function mergeSafeSignerSelectionRefresh(
+	current: PendingTransactionOrSignableMessage,
+	refreshed: PendingTransactionOrSignableMessage,
+): PendingTransactionOrSignableMessage {
+	if (
+		current.type === 'SignableMessage'
+		&& refreshed.type === 'SignableMessage'
+		&& current.safeMessageCoSignSnapshot !== undefined
+		&& refreshed.safeMessageCoSignSnapshot !== undefined
+	) return modifyObject(current, {
+		safeMessageCoSignSnapshot: refreshed.safeMessageCoSignSnapshot,
+		approvalStatus: refreshed.approvalStatus,
+	})
+	if (
+		current.type === 'Transaction'
+		&& refreshed.type === 'Transaction'
+		&& current.safeExecutionOriginalRequestParameters !== undefined
+		&& refreshed.safeExecutionOriginalRequestParameters !== undefined
+	) return modifyObject(current, {
+		activeAddress: refreshed.activeAddress,
+		originalRequestParameters: refreshed.originalRequestParameters,
+		safeExecutionSignerAddress: refreshed.safeExecutionSignerAddress,
+		safeExecutionReviewedSafeState: refreshed.safeExecutionReviewedSafeState,
+		approvalStatus: refreshed.approvalStatus,
+		...refreshed.transactionOrMessageCreationStatus === 'Simulated' || refreshed.transactionOrMessageCreationStatus === 'FailedToSimulate'
+			? {
+				transactionOrMessageCreationStatus: refreshed.transactionOrMessageCreationStatus,
+				transactionToSimulate: refreshed.transactionToSimulate,
+				popupVisualisation: refreshed.popupVisualisation,
+			}
+			: {},
+	})
+	if (
+		current.type === 'Transaction'
+		&& refreshed.type === 'Transaction'
+		&& current.safeTransaction !== undefined
+		&& refreshed.safeTransaction !== undefined
+	) return modifyObject(current, {
+		safeTransaction: refreshed.safeTransaction,
+		approvalStatus: refreshed.approvalStatus,
+	})
+	return current
+}
+
+async function persistSafeSignerSelectionRefresh(pending: PendingTransactionOrSignableMessage, selectedSigner: bigint, refreshResult: SafeSignerSelectionRefreshResult) {
+	if (refreshResult.status === 'unchanged' || isSameSafeSignerError(pending, refreshResult)) return false
+	let persisted = false
+	await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => {
+		if (!shouldRefreshSafeSignerSelection(current, selectedSigner)) return current
+		persisted = true
+		return refreshResult.status === 'refreshed'
+			? mergeSafeSignerSelectionRefresh(current, refreshResult.pending)
+			: modifyObject(current, { approvalStatus: refreshResult.approvalStatus })
+	})
+	return persisted
 }
 
 export async function refreshPendingSafeSignerSelectionErrors(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, tabId: number) {
@@ -103,79 +189,10 @@ export async function refreshPendingSafeSignerSelectionErrors(ethereum: Ethereum
 	for (const pending of await getPendingTransactionsAndMessages()) {
 		const safeSignerAddress = getPendingSafeSignerAddress(pending)
 		if (pending.uniqueRequestIdentifier.requestSocket.tabId !== tabId) continue
-		if (
-			pending.type === 'Transaction'
-			&& pending.safeExecutionOriginalRequestParameters !== undefined
-			&& refreshedSelection.selectedSigner !== undefined
-			&& pending.approvalStatus.status !== 'WaitingForSigner'
-		) {
-			try {
-				const refreshedExecution = await rebuildDirectSafeExecutionForSigner(ethereum, tokenPriceService, pending, refreshedSelection.selectedSigner)
-				if (refreshedExecution !== undefined) {
-					await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async () => refreshedExecution)
-					pendingStateChanged = true
-					continue
-				}
-			} catch(error) {
-				await reportUnexpectedDirectSafeExecutionRecovery(error)
-				await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => modifyObject(current, {
-					approvalStatus: createSafeSignerErrorStatus(
-						`Gnosis Safe execution could not be prepared: ${ getErrorMessage(error) ?? 'The current Gnosis Safe state could not be validated.' }`,
-						SAFE_SIGNER_SELECTION_ERROR_CODE,
-					),
-				}))
-				pendingStateChanged = true
-				continue
-			}
-		}
-		if (
-			pending.type === 'SignableMessage'
-			&& pending.safeMessageCoSignSnapshot !== undefined
-			&& refreshedSelection.selectedSigner !== undefined
-			&& pending.safeMessageCoSignSnapshot.safeSignerAddress !== refreshedSelection.selectedSigner
-			&& pending.approvalStatus.status !== 'WaitingForSigner'
-		) {
-			const coSignRefresh = await refreshSafeCoSignSignerSelection(ethereum, pending, refreshedSelection.selectedSigner)
-			if (coSignRefresh.status === 'refreshed') {
-				await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async () => coSignRefresh.pending)
-				pendingStateChanged = true
-				continue
-			}
-			if (coSignRefresh.status === 'blocked') {
-				await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => modifyObject(current, {
-					approvalStatus: coSignRefresh.approvalStatus,
-				}))
-				pendingStateChanged = true
-				continue
-			}
-		}
-		if (
-			pending.type === 'Transaction'
-			&& pending.safeTransaction !== undefined
-			&& refreshedSelection.selectedSigner !== undefined
-			&& (
-				pending.approvalStatus.status === 'WaitingForUser'
-				|| pending.approvalStatus.status === 'SignerError' && pending.approvalStatus.code === SAFE_SIGNER_SELECTION_ERROR_CODE
-			)
-			&& (
-				pending.safeTransaction.safeSignerAddress !== refreshedSelection.selectedSigner
-				|| pending.approvalStatus.status === 'SignerError'
-			)
-		) {
-			const proposalRefresh = await refreshSafeProposalSignerSelection(ethereum, pending, refreshedSelection.selectedSigner)
-			if (proposalRefresh.status === 'unchanged') continue
-			if (
-				proposalRefresh.status === 'blocked'
-				&& pending.approvalStatus.status === 'SignerError'
-				&& pending.approvalStatus.code === proposalRefresh.approvalStatus.code
-				&& pending.approvalStatus.message === proposalRefresh.approvalStatus.message
-			) continue
-			await updatePendingTransactionOrMessage(pending.uniqueRequestIdentifier, async (current) => proposalRefresh.status === 'refreshed'
-				? proposalRefresh.pending
-				: modifyObject(current, { approvalStatus: proposalRefresh.approvalStatus })
-			)
-			pendingStateChanged = true
-			continue
+		if (refreshedSelection.selectedSigner !== undefined && shouldRefreshSafeSignerSelection(pending, refreshedSelection.selectedSigner)) {
+			const refreshResult = await refreshSafeSignerSelectionForDisplay(ethereum, tokenPriceService, pending, refreshedSelection.selectedSigner)
+			if (await persistSafeSignerSelectionRefresh(pending, refreshedSelection.selectedSigner, refreshResult)) pendingStateChanged = true
+			if (refreshResult.status !== 'unchanged') continue
 		}
 		if (
 			safeSignerAddress === undefined
@@ -334,25 +351,30 @@ export const setGasLimitForTransaction = async (transactionIdentifier: BigInt, g
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
-	if (confirmation.data.action === 'accept' && refreshedSafeSignerSelection?.selectedSigner !== undefined && refreshedSafeSignerSelection.verificationError === undefined) {
-		try {
-			const refreshedExecution = await rebuildDirectSafeExecutionForSigner(ethereum, tokenPriceService, pendingTransactionOrMessage, refreshedSafeSignerSelection.selectedSigner)
-			if (refreshedExecution !== undefined) {
-				await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => refreshedExecution)
-				await updateConfirmTransactionView(ethereum, tokenPriceService)
-				return false
-			}
-		} catch(error) {
-			await reportUnexpectedDirectSafeExecutionRecovery(error)
-			await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
-				approvalStatus: createSafeSignerErrorStatus(
-					`Gnosis Safe execution could not be prepared: ${ getErrorMessage(error) ?? 'The current Gnosis Safe state could not be validated.' }`,
-					SAFE_SIGNER_SELECTION_ERROR_CODE,
-				),
-			}))
+	if (
+		confirmation.data.action === 'accept'
+		&& refreshedSafeSignerSelection?.selectedSigner !== undefined
+		&& refreshedSafeSignerSelection.verificationError === undefined
+		&& shouldRefreshSafeSignerSelection(pendingTransactionOrMessage, refreshedSafeSignerSelection.selectedSigner)
+	) {
+		const directSafeExecution = pendingTransactionOrMessage.type === 'Transaction'
+			&& pendingTransactionOrMessage.safeExecutionOriginalRequestParameters !== undefined
+		const refreshResult = await refreshSafeSignerSelectionForDisplay(
+			ethereum,
+			tokenPriceService,
+			pendingTransactionOrMessage,
+			refreshedSafeSignerSelection.selectedSigner,
+		)
+		const persisted = await persistSafeSignerSelectionRefresh(pendingTransactionOrMessage, refreshedSafeSignerSelection.selectedSigner, refreshResult)
+		if (refreshResult.status !== 'unchanged' && !persisted) {
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 			return false
 		}
+		if (refreshResult.status === 'blocked' || directSafeExecution && refreshResult.status === 'refreshed') {
+			await updateConfirmTransactionView(ethereum, tokenPriceService)
+			return false
+		}
+		if (refreshResult.status === 'refreshed') pendingTransactionOrMessage = refreshResult.pending
 	}
 	const safeResolution = await resolveSafeConfirmation(
 		ethereum,

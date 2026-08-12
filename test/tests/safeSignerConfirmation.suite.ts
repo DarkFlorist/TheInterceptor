@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
+import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
 import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 
 test('recovers a Safe proposal after the wallet switches from a non-owner to a current owner', async () => {
@@ -278,6 +279,68 @@ test('rebuilds an ordinary Safe proposal when the wallet switches between curren
 	assert.equal(refreshedPending?.safeTransaction?.safeSignerAddress, selectedOwner)
 })
 
+test('does not overwrite a request forwarded while its Safe signer refresh is in flight', async () => {
+	const reviewedOwner = recipientAddress
+	const selectedOwner = safeTestOwnerAddress
+	fakeSafeContract.owners = [reviewedOwner, selectedOwner]
+	fakeSafeContract.threshold = 2n
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			simulationMode: false,
+			approvalStatus: { status: 'WaitingForUser' as const },
+			safeTransaction: {
+				safeAddress: activeAddress,
+				safeSignerAddress: reviewedOwner,
+				safeVersion: '1.4.1',
+				threshold: 2n,
+				reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [reviewedOwner, selectedOwner], threshold: 2n },
+				safeTxHash: BigInt(getSafeTxHash(safeTx)),
+				safeTx,
+				executionGasLimit: 21_000n,
+			},
+		}],
+	})
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [selectedOwner],
+		activeSigningAddress: selectedOwner,
+	}))
+	let allowRefreshToContinue: (() => void) | undefined
+	const refreshCanContinue = new Promise<void>((resolve) => { allowRefreshToContinue = resolve })
+	let markRefreshStarted: (() => void) | undefined
+	const refreshStarted = new Promise<void>((resolve) => { markRefreshStarted = resolve })
+	fakeSafeContract.beforeVersionResponse = async () => {
+		markRefreshStarted?.()
+		await refreshCanContinue
+	}
+
+	try {
+		const refresh = modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+		await refreshStarted
+		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => ({
+			...current,
+			approvalStatus: { status: 'WaitingForSigner' as const },
+		}))
+		allowRefreshToContinue?.()
+		await refresh
+	} finally {
+		fakeSafeContract.beforeVersionResponse = undefined
+		allowRefreshToContinue?.()
+	}
+
+	const [forwardedPending] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(forwardedPending?.approvalStatus.status, 'WaitingForSigner')
+	assert.equal(forwardedPending?.type === 'Transaction' ? forwardedPending.safeTransaction?.safeSignerAddress : undefined, reviewedOwner)
+})
+
 test('keeps signer refresh failures visible in the Safe proposal instead of aborting the refresh loop', async () => {
 	const reviewedOwner = recipientAddress
 	const selectedOwner = safeTestOwnerAddress
@@ -323,6 +386,7 @@ test('keeps signer refresh failures visible in the Safe proposal instead of abor
 	assert.equal(failedProposal?.approvalStatus.status, 'SignerError')
 	assert.equal(failedProposal?.approvalStatus.status === 'SignerError' ? failedProposal.approvalStatus.code : undefined, -32010)
 	assert.match(failedProposal?.approvalStatus.status === 'SignerError' ? failedProposal.approvalStatus.message : '', /missing its execution gas limit/u)
+	assert.equal((await getLatestUnexpectedError())?.data.code, 'safe_proposal_signer_refresh_failed')
 })
 
 test('refreshes the selected signer before forwarding a Safe transaction', async () => {
