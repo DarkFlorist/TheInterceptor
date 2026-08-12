@@ -103,6 +103,46 @@ describe('background eth_accounts', () => {
 		assert.equal((await getSettings()).activeSimulationAddress, originalAddress)
 	})
 
+	test('clears a stale signing-mode Safe when the popup selects a disconnected signer', async () => {
+		installBrowserMock()
+		const {
+			changeActiveAddress,
+			changeSimulationMode,
+			getActiveAddress,
+			getSettings,
+			saveCurrentTabId,
+			setUseSignersAddressAsActiveAddress,
+			updateTabState,
+			updateUserAddressBookEntries,
+		} = await loadModules()
+		const safeAddress = 0x4040404040404040404040404040404040404040n
+		const previousOwner = 0x4141414141414141414141414141414141414141n
+		const tabId = 198
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: safeAddress, activeSigningAddress: previousOwner })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateUserAddressBookEntries(() => [{
+			type: 'safe',
+			name: 'Disconnected Safe',
+			address: safeAddress,
+			chainId: 1n,
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			safeSignerAddresses: [previousOwner],
+		}])
+		await updateTabState(tabId, (previousState) => ({ ...previousState, signerAccounts: [], activeSigningAddress: undefined }))
+		await saveCurrentTabId(tabId)
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await changeActiveAddress(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			method: 'popup_changeActiveAddress',
+			data: { activeAddress: 'signer', simulationMode: false },
+		})
+
+		const settings = await getSettings()
+		assert.equal(settings.useSignersAddressAsActiveAddress, true)
+		assert.equal(await getActiveAddress(settings, tabId), undefined)
+	})
+
 	test('remembers whether a signer account last selected its Safe or the external EOA', async () => {
 		installBrowserMock()
 		const {

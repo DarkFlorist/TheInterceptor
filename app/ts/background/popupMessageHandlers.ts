@@ -1,7 +1,7 @@
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
-import { changeActiveAddressAndChain, changeActiveRpc } from './activeSettings.js'
+import { activateAddressSelection, changeActiveAddressAndChain, changeActiveRpc } from './activeSettings.js'
 import { getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
-import { getSettings, setUseTabsInsteadOfPopup, setPage, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList, rememberSigningAddressPreference } from './settings.js'
+import { getSettings, setUseTabsInsteadOfPopup, setPage, updateWebsiteAccess, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type WatchAssetConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type ForceSetGasLimitForTransaction, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
@@ -225,20 +225,22 @@ export async function changeActiveAddress(ethereum: EthereumClientService, token
 	const signerAccounts = signerAccount === undefined ? [] : [signerAccount]
 	const selection = getActiveAddressSelection(addressChange.data.activeAddress, activeAddresses, addressChange.data.simulationMode, settings.activeRpcNetwork.chainId, signerAccounts)
 	if (selection === undefined) {
-		if (!addressChange.data.simulationMode) return
+		if (!addressChange.data.simulationMode) {
+			if (addressChange.data.activeAddress === 'signer') {
+				await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, undefined, {
+					simulationMode: false,
+					signerAddress: undefined,
+				})
+			}
+			return
+		}
 		assertActiveAddressSelectionAllowed(addressChange.data.activeAddress, activeAddresses, true, settings.activeRpcNetwork.chainId, signerAccounts)
 		return
 	}
-	const selectedAddress = selection.type === 'signer' ? selection.address : selection.entry.address
-	await setUseSignersAddressAsActiveAddress(selection.type === 'signer', selection.type === 'signer' ? selection.address : undefined)
-	await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+	await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, selection, {
 		simulationMode: addressChange.data.simulationMode,
-		activeAddress: selectedAddress,
+		signerAddress: signerAccount,
 	})
-	if (addressChange.data.simulationMode || signerAccount === undefined) return
-	await rememberSigningAddressPreference(selection.type === 'signer'
-		? { signerAddress: signerAccount, selection: 'signer' }
-		: { signerAddress: signerAccount, selection: 'safe', safeAddress: selection.entry.address, chainId: settings.activeRpcNetwork.chainId })
 }
 
 export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich) {
@@ -685,13 +687,15 @@ export async function enableSimulationMode(
 			? configuredSigningSelection.entry
 			: undefined
 		if (!params.data) {
-			await setUseSignersAddressAsActiveAddress(configuredSigningSafe === undefined, signerAccount)
-			if (signerAccount !== undefined && configuredSigningSafe !== undefined) await rememberSigningAddressPreference({
+			const signingSelection = configuredSigningSafe === undefined
+				? signerAccount === undefined ? undefined : getActiveAddressSelection('signer', activeChainEntries, false, targetChainId, [signerAccount])
+				: configuredSigningSelection
+			await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, signingSelection, {
+				simulationMode: false,
 				signerAddress: signerAccount,
-				selection: 'safe',
-				safeAddress: configuredSigningSafe.address,
-				chainId: configuredSigningSafe.chainId,
+				...(chainToSwitch === undefined || networkToSwitch === undefined ? {} : { rpcNetwork: networkToSwitch }),
 			})
+			return
 		}
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			simulationMode: params.data,

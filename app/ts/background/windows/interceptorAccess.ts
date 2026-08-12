@@ -5,10 +5,10 @@ import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphor
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAssociatedAddresses, persistWebsiteAccessChange, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
 import { handleInterceptedRequest, refuseAccess } from '../background.js'
-import { changeActiveAddressAndChain } from '../activeSettings.js'
+import { activateAddressSelection } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntry, getActiveAddresses } from '../metadataUtils.js'
-import { getSettings, rememberSigningAddressPreference, setUseSignersAddressAsActiveAddress } from '../settings.js'
+import { getSettings } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
@@ -491,18 +491,17 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 			await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, false)
 			const settings = await getSettings()
 			const signerAddress = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts[0]
-			const useSignerAddress = !settings.simulationMode && signerAddress !== undefined && accessReply.requestAccessToAddress === signerAddress
-			if (!settings.simulationMode) await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
-			await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			const activeAddresses = await getActiveAddresses()
+			const requestEntry = pendingAccessRequest.requestAccessToAddress
+			const selectableAddresses = requestEntry === undefined || activeAddresses.some((entry) => entry.address === requestEntry.address && entry.chainId === requestEntry.chainId)
+				? activeAddresses
+				: [...activeAddresses, requestEntry]
+			const selection = assertActiveAddressSelectionAllowed(accessReply.requestAccessToAddress, selectableAddresses, settings.simulationMode, settings.activeRpcNetwork.chainId, signerAddress === undefined ? [] : [signerAddress])
+			await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, selection, {
 				simulationMode: settings.simulationMode,
-				activeAddress: accessReply.requestAccessToAddress,
+				signerAddress,
 				promptForAccessesIfNeeded: false,
 			})
-			if (!settings.simulationMode && signerAddress !== undefined) {
-				await rememberSigningAddressPreference(useSignerAddress
-					? { signerAddress, selection: 'signer' }
-					: { signerAddress, selection: 'safe', safeAddress: accessReply.requestAccessToAddress, chainId: settings.activeRpcNetwork.chainId })
-			}
 		}
 		if (accountRequestSocket === undefined) {
 			await applyAccessReply()

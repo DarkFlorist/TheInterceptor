@@ -19,7 +19,7 @@ type ConfiguredActiveAddressResolution =
 	| { readonly useConfiguredAddress: false }
 	| { readonly useConfiguredAddress: true, readonly activeAddress: AddressBookEntry | undefined }
 
-async function resolveConfiguredActiveAddress(settings: Settings): Promise<ConfiguredActiveAddressResolution> {
+async function resolveConfiguredActiveAddress(settings: Settings, signerAccounts: readonly bigint[]): Promise<ConfiguredActiveAddressResolution> {
 	if (settings.useSignersAddressAsActiveAddress || settings.activeSimulationAddress === undefined) {
 		return { useConfiguredAddress: false }
 	}
@@ -29,8 +29,12 @@ async function resolveConfiguredActiveAddress(settings: Settings): Promise<Confi
 			...settings,
 			chainId: settings.activeRpcNetwork.chainId,
 		})
+		const signerAddress = signerAccounts[0]
+		const signerIsKnownOwner = configuredSafe?.safeSignerAddresses === undefined
+			|| configuredSafe.safeSignerAddresses.length === 0
+			|| (signerAddress !== undefined && configuredSafe.safeSignerAddresses.includes(signerAddress))
 		return configuredSafe !== undefined
-			? { useConfiguredAddress: true, activeAddress: configuredSafe }
+			? { useConfiguredAddress: true, activeAddress: signerAddress !== undefined && signerIsKnownOwner ? configuredSafe : undefined }
 			: { useConfiguredAddress: false }
 	}
 	const configuredEntry = chainEntries.find((entry) => entry.address === settings.activeSimulationAddress)
@@ -44,16 +48,17 @@ async function resolveConfiguredActiveAddress(settings: Settings): Promise<Confi
 }
 
 export async function getActiveAddress(settings: Settings, tabId: number) {
-	const configuredAddress = await resolveConfiguredActiveAddress(settings)
+	const tabState = await getTabState(tabId)
+	const configuredAddress = await resolveConfiguredActiveAddress(settings, tabState.signerAccounts)
 	if (configuredAddress.useConfiguredAddress) return configuredAddress.activeAddress
-	const signingAddr = (await getTabState(tabId)).activeSigningAddress
+	const signingAddr = settings.simulationMode ? tabState.activeSigningAddress : getWalletSelectedAccount(tabState)
 	if (signingAddr === undefined) return undefined
 	return await getActiveAddressEntry(signingAddr)
 }
 
 export async function getActiveOrFirstSignerAddress(settings: Settings, tabId: number) {
 	const tabState = await getTabState(tabId)
-	const configuredAddress = await resolveConfiguredActiveAddress(settings)
+	const configuredAddress = await resolveConfiguredActiveAddress(settings, tabState.signerAccounts)
 	if (configuredAddress.useConfiguredAddress) return configuredAddress.activeAddress
 	const address = getWalletSelectedAccount(tabState)
 	if (address === undefined) return undefined
@@ -62,12 +67,10 @@ export async function getActiveOrFirstSignerAddress(settings: Settings, tabId: n
 
 export async function getActiveAddressesForAllTabs(settings: Settings) {
 	const tabStates = await getAllTabStates()
-	const configuredAddress = await resolveConfiguredActiveAddress(settings)
-	if (configuredAddress.useConfiguredAddress) {
-		return tabStates.map((state) => ({ tabId: state.tabId, activeAddress: configuredAddress.activeAddress }))
-	}
 	return Promise.all(tabStates.map(async (state) => {
-		const signingAddr = state.activeSigningAddress
+		const configuredAddress = await resolveConfiguredActiveAddress(settings, state.signerAccounts)
+		if (configuredAddress.useConfiguredAddress) return { tabId: state.tabId, activeAddress: configuredAddress.activeAddress }
+		const signingAddr = settings.simulationMode ? state.activeSigningAddress : getWalletSelectedAccount(state)
 		return { tabId: state.tabId, activeAddress: signingAddr === undefined ? undefined : await getActiveAddressEntry(signingAddr) }
 	}))
 }

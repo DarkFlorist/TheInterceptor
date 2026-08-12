@@ -155,7 +155,7 @@ describe('Safe transaction support', () => {
 		assert.equal(entry.abi, '[]')
 	})
 
-	test('does not reinterpret the removed signing-only Safe owner as a simulation preference', () => {
+	test('keeps the current Safe schema free of the removed signing-only owner field', () => {
 		const entry = AddressBookEntry.parse({
 			type: 'safe',
 			name: 'Legacy Safe',

@@ -1,10 +1,10 @@
 import { ConnectedToSigner, SignerReply, type Settings, WalletSwitchEthereumChainReply, WatchAssetSignerRequest } from '../types/interceptor-messages.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
-import { changeActiveAddressAndChain } from './activeSettings.js'
+import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, getUserAddressBookEntriesForChainIdMorePreciseFirst, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
-import { getMetamaskCompatibilityMode, getSettings, getSigningAddressPreferences, rememberSigningAddressPreference, setUseSignersAddressAsActiveAddress } from './settings.js'
+import { getMetamaskCompatibilityMode, getSettings, getSigningAddressPreferences } from './settings.js'
 import { getPendingSignerChainChangeTokenForCallback, isPendingSignerChainChangeReply, resolveSignerChainChange } from './windows/changeChain.js'
 import { type ApprovalState, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
@@ -20,7 +20,7 @@ import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 import { getSafeSigningEntry } from '../types/addressBookTypes.js'
-import { getActiveAddressSelection } from '../utils/activeAddressSelection.js'
+import { getActiveAddressSelection, type ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
@@ -47,13 +47,15 @@ async function getConfiguredSigningSafe(settings: Settings) {
 	)
 }
 
-async function getRememberedSigningAddress(signerAddress: bigint, settings: Settings): Promise<bigint | 'signer'> {
+async function getRememberedSigningSelection(signerAddress: bigint, settings: Settings): Promise<ActiveAddressSelection> {
 	const preference = (await getSigningAddressPreferences()).find((candidate) => candidate.signerAddress === signerAddress)
-	if (preference === undefined || preference.selection === 'signer') return 'signer'
-	if (preference.chainId !== settings.activeRpcNetwork.chainId) return 'signer'
 	const activeChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
+	const signerSelection = getActiveAddressSelection('signer', activeChainEntries, false, settings.activeRpcNetwork.chainId, [signerAddress])
+	if (signerSelection === undefined) throw new Error('The connected signing wallet does not expose an active account.')
+	if (preference === undefined || preference.selection === 'signer') return signerSelection
+	if (preference.chainId !== settings.activeRpcNetwork.chainId) return signerSelection
 	const selection = getActiveAddressSelection(preference.safeAddress, activeChainEntries, false, settings.activeRpcNetwork.chainId, [signerAddress])
-	return selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? selection.entry.address : 'signer'
+	return selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? selection : signerSelection
 }
 
 export async function ethAccountsReply(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
@@ -116,30 +118,31 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 		const selectedSafe = await getConfiguredSigningSafe(settings)
 		const configuredActiveAddress = settings.simulationMode ? settings.activeSimulationAddress : tabStateChange.previousState.activeSigningAddress
 		const signerAddress = signerAccounts[0]
-		const rememberedSigningAddress = !settings.simulationMode && signerAddress !== undefined
-			? await getRememberedSigningAddress(signerAddress, settings)
+		const rememberedSigningSelection = !settings.simulationMode && signerAddress !== undefined
+			? await getRememberedSigningSelection(signerAddress, settings)
 			: undefined
-		const rememberedSelectionIsActive = rememberedSigningAddress === 'signer'
+		const rememberedSelectionIsActive = rememberedSigningSelection?.type === 'signer'
 			? settings.useSignersAddressAsActiveAddress && selectedSafe === undefined && configuredActiveAddress === signerAddress
-			: rememberedSigningAddress !== undefined && !settings.useSignersAddressAsActiveAddress && selectedSafe?.address === rememberedSigningAddress
+			: rememberedSigningSelection !== undefined && !settings.useSignersAddressAsActiveAddress && selectedSafe?.address === rememberedSigningSelection.entry.address
 		const signerAccountChanged = tabStateChange.previousState.activeSigningAddress !== tabStateChange.newState.activeSigningAddress
-		const shouldRestoreRememberedSelection = rememberedSigningAddress !== undefined
+		const shouldClearDisconnectedSigner = !settings.simulationMode
+			&& signerAddress === undefined
+			&& (!settings.useSignersAddressAsActiveAddress || selectedSafe !== undefined || configuredActiveAddress !== undefined)
+		const shouldRestoreRememberedSelection = rememberedSigningSelection !== undefined
 			&& !rememberedSelectionIsActive
 			&& (signerAccountChanged || selectedSafe === undefined)
-		const shouldUpdateUnrememberedSignerAddress = rememberedSigningAddress === undefined && selectedSafe === undefined && ((settings.useSignersAddressAsActiveAddress && configuredActiveAddress !== signerAddress)
+		const shouldUpdateUnrememberedSignerAddress = rememberedSigningSelection === undefined && selectedSafe === undefined && ((settings.useSignersAddressAsActiveAddress && configuredActiveAddress !== signerAddress)
 			|| (!settings.simulationMode && tabStateChange.previousState.activeSigningAddress !== tabStateChange.newState.activeSigningAddress))
-		if (shouldRestoreRememberedSelection || shouldUpdateUnrememberedSignerAddress) {
-			const activeAddress = rememberedSigningAddress === 'signer' ? signerAddress : rememberedSigningAddress ?? tabStateChange.newState.activeSigningAddress
+		if (shouldClearDisconnectedSigner || shouldRestoreRememberedSelection || shouldUpdateUnrememberedSignerAddress) {
 			const changeActiveAddress = async () => {
-				if (rememberedSigningAddress !== undefined) await setUseSignersAddressAsActiveAddress(rememberedSigningAddress === 'signer', signerAddress)
-				await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+				const selection = shouldClearDisconnectedSigner ? undefined : rememberedSigningSelection ?? (signerAddress === undefined
+					? undefined
+					: getActiveAddressSelection('signer', await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId), false, settings.activeRpcNetwork.chainId, [signerAddress]))
+				await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, selection, {
 					simulationMode: settings.simulationMode,
-					activeAddress,
+					signerAddress,
 					promptForAccessesIfNeeded: !signerAccountsReply.requestAccounts,
 				})
-				if (!settings.simulationMode && signerAddress !== undefined && rememberedSigningAddress === undefined) {
-					await rememberSigningAddressPreference({ signerAddress, selection: 'signer' })
-				}
 			}
 			if (signerAccountsReply.requestAccounts) {
 				await withSuppressedUnscopedConnectionEventsForSocketAsync(signerStateToken.socket, changeActiveAddress)

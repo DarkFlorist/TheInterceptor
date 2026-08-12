@@ -9,8 +9,9 @@ import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
-import { changeSimulationMode, getSettings, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
+import { changeSimulationMode, getSettings, rememberSigningAddressPreference, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
 import { getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, promoteRpcAsPrimary, updateTransactionState } from './storageVariables.js'
+import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 
 export async function resetSimulationStateFromConfig(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
 	await updateTransactionState(() => ({
@@ -88,6 +89,41 @@ export async function changeActiveAddressAndChain(
 			}
 		}
 		await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
+	})
+}
+
+export async function activateAddressSelection(
+	ethereum: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	resetSimulationServices: ResetSimulationServices,
+	websiteTabConnections: WebsiteTabConnections,
+	selection: ActiveAddressSelection | undefined,
+	options: {
+		readonly simulationMode: boolean
+		readonly signerAddress: bigint | undefined
+		readonly rpcNetwork?: RpcNetwork
+		readonly promptForAccessesIfNeeded?: boolean
+	},
+) {
+	const useSignerAddress = selection?.type === 'signer' || (!options.simulationMode && selection === undefined)
+	await setUseSignersAddressAsActiveAddress(useSignerAddress, useSignerAddress ? selection?.type === 'signer' ? selection.address : options.signerAddress : undefined)
+	await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+		simulationMode: options.simulationMode,
+		activeAddress: selection?.type === 'signer' ? selection.address : selection?.entry.address,
+		...(options.rpcNetwork === undefined ? {} : { rpcNetwork: options.rpcNetwork }),
+		...(options.promptForAccessesIfNeeded === undefined ? {} : { promptForAccessesIfNeeded: options.promptForAccessesIfNeeded }),
+	})
+	if (options.simulationMode || options.signerAddress === undefined || selection === undefined) return
+	if (selection.type === 'signer') {
+		await rememberSigningAddressPreference({ signerAddress: options.signerAddress, selection: 'signer' })
+		return
+	}
+	if (selection.entry.type !== 'safe') throw new Error('Signing mode can only activate the external signer or an owned Gnosis Safe.')
+	await rememberSigningAddressPreference({
+		signerAddress: options.signerAddress,
+		selection: 'safe',
+		safeAddress: selection.entry.address,
+		chainId: selection.entry.chainId,
 	})
 }
 

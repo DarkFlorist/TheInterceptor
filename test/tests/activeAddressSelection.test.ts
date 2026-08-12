@@ -11,6 +11,7 @@ const UNKNOWN_OWNERS_SAFE_ADDRESS = 0x5000000000000000000000000000000000000005n
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
 const interceptorAccessSource = await Bun.file(new URL('../../app/ts/background/windows/interceptorAccess.ts', import.meta.url)).text()
 const providerMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/providerMessageHandlers.ts', import.meta.url)).text()
+const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
 
 const activeAddresses: AddressBookEntries = [
 	{ type: 'contact', name: 'Saved EOA', address: EOA_ADDRESS, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
@@ -59,5 +60,14 @@ describe('active address selection', () => {
 		assert.doesNotMatch(interceptorAccessSource, /address === signerAccounts\[0\]/u)
 		assert.match(providerMessageHandlersSource, /selection = getActiveAddressSelection\(preference\.safeAddress/u)
 		assert.doesNotMatch(providerMessageHandlersSource, /safeSignerAddresses\?\.includes\(signerAddress\)/u)
+	})
+
+	test('keeps activation choreography in the shared background orchestrator', () => {
+		assert.match(activeSettingsSource, /export async function activateAddressSelection[\s\S]*?setUseSignersAddressAsActiveAddress[\s\S]*?changeActiveAddressAndChain[\s\S]*?rememberSigningAddressPreference/u)
+		for (const consumerSource of [popupMessageHandlersSource, interceptorAccessSource, providerMessageHandlersSource]) {
+			assert.match(consumerSource, /activateAddressSelection\(/u)
+			assert.doesNotMatch(consumerSource, /setUseSignersAddressAsActiveAddress\(/u)
+			assert.doesNotMatch(consumerSource, /rememberSigningAddressPreference\(/u)
+		}
 	})
 })
