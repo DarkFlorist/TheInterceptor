@@ -6,7 +6,7 @@ import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, Int
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
-import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, SafeEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
+import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
@@ -20,7 +20,6 @@ import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
-import { EthereumAddress } from '../types/wire-types.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -273,43 +272,8 @@ export function repairLegacyAddressBookEntries(rawEntries: unknown): AddressBook
 	return repairedEntries.filter((entry): entry is AddressBookEntry => entry !== undefined)
 }
 
-export function migrateLegacySafeAddressBookEntries(rawEntries: unknown): AddressBookEntries | undefined {
-	if (!Array.isArray(rawEntries)) return undefined
-	let migrationNeeded = false
-	const migratedEntries: AddressBookEntry[] = []
-	for (const rawEntry of rawEntries) {
-		const isLegacySafe = typeof rawEntry === 'object'
-			&& rawEntry !== null
-			&& 'type' in rawEntry
-			&& rawEntry.type === 'safe'
-			&& 'safeSignerAddress' in rawEntry
-		if (!isLegacySafe) {
-			const repairedEntry = repairLegacyAddressBookEntry(rawEntry)
-			if (repairedEntry === undefined) return undefined
-			migratedEntries.push(repairedEntry)
-			continue
-		}
-		migrationNeeded = true
-		const parsedSafe = SafeEntry.safeParse(rawEntry)
-		const parsedLegacySigner = EthereumAddress.safeParse(rawEntry.safeSignerAddress)
-		if (!parsedSafe.success || !parsedLegacySigner.success) return undefined
-		const legacySigner = parsedLegacySigner.value
-		migratedEntries.push({
-			...parsedSafe.value,
-			safeSimulationSignerAddress: parsedSafe.value.safeSimulationSignerAddress ?? legacySigner,
-			safeSignerAddresses: Array.from(new Set([...(parsedSafe.value.safeSignerAddresses ?? []), legacySigner])),
-		})
-	}
-	return migrationNeeded ? migratedEntries : undefined
-}
-
 export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
 	const { userAddressBookEntriesV3: rawEntries } = await browser.storage.local.get('userAddressBookEntriesV3')
-	const migratedLegacySafeEntries = migrateLegacySafeAddressBookEntries(rawEntries)
-	if (migratedLegacySafeEntries !== undefined) {
-		await browserStorageLocalSet({ userAddressBookEntriesV3: migratedLegacySafeEntries })
-		return migratedLegacySafeEntries
-	}
 	const parsedEntries = await browserStorageLocalSafeParseGet('userAddressBookEntriesV3')
 	if (parsedEntries?.userAddressBookEntriesV3 !== undefined) return parsedEntries.userAddressBookEntriesV3
 	if (rawEntries === undefined) return DEFAULT_ACTIVE_ADDRESSES
@@ -324,8 +288,8 @@ export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
 	return DEFAULT_ACTIVE_ADDRESSES
 }
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
-export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => {
-	const entries = (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
+export function getAddressBookEntriesForChainIdMorePreciseFirst(addressBookEntries: AddressBookEntries, chainId: ChainIdWithUniversal) {
+	const entries = addressBookEntries.filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
 	// sort more precise entries first (one with accurate chain id)
 	entries.sort((x, y) => {
 		if (x.entrySource === 'OnChain' && y.entrySource !== 'OnChain') return 1
@@ -336,6 +300,7 @@ export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainI
 	})
 	return entries
 }
+export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => getAddressBookEntriesForChainIdMorePreciseFirst(await getUserAddressBookEntries(), chainId)
 
 const userAddressBookEntriesSemaphore = new Semaphore(1)
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
