@@ -264,7 +264,7 @@ header:has(form[role='search']) h1 {
 		:focus-within > &, :hover > & { opacity: 0 }
 	}
 
-	> [role=menu] {
+	> [role=group] {
 		background: var(--bg-status-color, var(--bg-color));
 		display: inline-grid;
 		grid-area: start / start / end / end;
@@ -277,7 +277,7 @@ header:has(form[role='search']) h1 {
 		opacity: 0;
 		:hover > &, :focus-within > & { opacity: 1 }
 
-		> button {
+		> :is(button, .inline-card-static-action) {
 			font: inherit;
 			appearance: none;
 			background: transparent;
@@ -288,8 +288,9 @@ header:has(form[role='search']) h1 {
 			display: grid;
 			grid-template-columns: minmax(0, min-content) 1fr min-content;
 			align-items: baseline;
-			cursor: pointer;
 			pointer-events: all;
+
+			&:is(button) { cursor: pointer; }
 
 			&:is(button + *) { margin-left: 0.25em }
 
@@ -412,7 +413,7 @@ header:has(form[role='search']) h1 {
 		}
 	}
 
-	> :has(data ~ button) {
+	> :has(data ~ :is(button, .multiline-card-static-action)) {
 		display: inline-grid;
 		align-items: baseline;
 		grid-template-columns: [left] minmax(0, min-content) [right];
@@ -488,6 +489,10 @@ header:has(form[role='search']) h1 {
 				}
 			}
 		}
+
+		> .multiline-card-static-action {
+			grid-area: top / left / bottom / right;
+		}
 	}
 }
 
@@ -557,10 +562,17 @@ header:has(form[role='search']) h1 {
 	line-height: 1.2;
 }
 
-.btn.is-danger {
-  background-color: var(--negative-color);
+.btn.is-danger,
+.button.is-danger {
+	  background-color: var(--negative-action-color);
   border-color: transparent;
   color: var(--white-color);
+}
+
+.btn.is-danger:not(:disabled):hover,
+.button.is-danger:not(:disabled):hover {
+	background-color: var(--highlighted-negative-action-color);
+	--btn-brightness: 1;
 }
 
 .dropdown-chevron {
@@ -593,10 +605,25 @@ input[type="number"]:focus {
     -moz-appearance: number-input;
 }
 
-.btn.is-primary {
-	background-color: var(--primary-color);
+.btn.is-primary,
+.button.is-primary {
+	background-color: var(--primary-action-color);
 	border-color: transparent;
 	color: var(--white-color);
+}
+
+.btn.is-primary:not(:disabled):hover,
+.button.is-primary:not(:disabled):hover {
+	background-color: var(--highlighted-primary-action-color);
+	--btn-brightness: 1;
+}
+
+.button.is-primary.is-danger {
+	background-color: var(--negative-action-color);
+}
+
+.button.is-primary.is-danger:not(:disabled):hover {
+	background-color: var(--highlighted-negative-action-color);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -604,5 +631,70 @@ input[type="number"]:focus {
 	.popup-data-reveal,
 	.popup-data-reveal-inline {
 		animation: none;
+	}
+}
+
+@media screen and (max-width: 400px) {
+	.address-book-editor-media {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.address-book-editor-media > .media-left {
+		display: none;
+	}
+
+	.log-table.address-book-editor-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.address-book-editor-grid > .log-cell {
+		justify-content: flex-start !important;
+	}
+
+	.safe-signer-editor-row {
+		grid-template-columns: 1em minmax(0, 1fr);
+	}
+
+	.safe-signer-editor-row > .btn {
+		grid-column: 2;
+		justify-self: start;
+	}
+
+	.responsive-notification .media {
+		display: none;
+	}
+
+	.responsive-notification-details {
+		display: block;
+		min-width: 0;
+	}
+
+	.responsive-notification-details summary {
+		color: var(--text-color);
+		cursor: pointer;
+		font-weight: 600;
+	}
+
+	.responsive-notification-details .paragraph {
+		color: var(--text-color);
+		margin-top: 0.5rem;
+	}
+}
+
+@media screen and (max-width: 260px) {
+	.address-book-editor-modal > .interceptor-modal-head > .unset-cursor {
+		display: none;
+	}
+
+	.address-book-editor-modal > .interceptor-modal-head {
+		column-gap: 0.25rem;
+	}
+
+	.address-book-editor-modal > .interceptor-modal-head .card-header-title {
+		overflow: visible;
+		padding: 0.75rem;
+		text-overflow: clip;
+		white-space: normal;
 	}
 }

@@ -708,12 +708,12 @@ strong { color: inherit }
 .btn:not(:disabled):focus { --btn-outline: 1px solid var(--s-fg) }
 
 /* Primary Button */
-.btn--primary { --btn-bg-color: var(--primary-color) }
-.btn--primary:not(:disabled):hover { --btn-saturation: 1.5 }
+.btn--primary { --btn-bg-color: var(--primary-action-color) }
+.btn--primary:not(:disabled):hover { --btn-bg-color: var(--highlighted-primary-action-color); --btn-brightness: 1; --btn-saturation: 1 }
 
 /* Danger Button */
-.btn--destructive { --btn-bg-color: var(--negative-color) }
-.btn--destructive:not(:disabled):hover { --btn-saturation: 1.5 }
+.btn--destructive { --btn-bg-color: var(--negative-action-color) }
+.btn--destructive:not(:disabled):hover { --btn-bg-color: var(--highlighted-negative-action-color); --btn-brightness: 1; --btn-saturation: 1 }
 
 .btn--outline {
 	--btn-bg-color: transparent;

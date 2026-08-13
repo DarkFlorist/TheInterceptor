@@ -183,13 +183,18 @@ type TransactionNamesParams = {
 	currentPendingTransaction: Signal<PendingTransactionOrSignableMessage| undefined>
 }
 
+export function getTransactionStatusLabel(status: PendingTransactionOrSignableMessage['transactionOrMessageCreationStatus']) {
+	if (status === 'FailedToSimulate') return 'Simulation failed'
+	return status
+}
+
 const TransactionNames = (param: TransactionNamesParams) => {
 	if (param.completeVisualizedSimulation.value.simulationResultState !== 'done' || param.completeVisualizedSimulation.value.simulationState.kind === 'passthrough') return <></>
 
 	const titleOfCurrentPendingTransaction = () => {
 		const currentPendingTransactionOrSignableMessage = param.currentPendingTransaction.value
 		if (currentPendingTransactionOrSignableMessage === undefined) return 'Loading...'
-		if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus
+		if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return getTransactionStatusLabel(currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus)
 		if (currentPendingTransactionOrSignableMessage.type === 'SignableMessage') return identifySignature(currentPendingTransactionOrSignableMessage.visualizedPersonalSignRequest).title
 		if (currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode === 'failed') return 'Failing transaction'
 		const lastTx = currentPendingTransactionOrSignableMessage.popupVisualisation.statusCode !== 'success' || currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState.success === false ? undefined : getResultsForTransaction(currentPendingTransactionOrSignableMessage.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.transactionIdentifier)
@@ -947,6 +952,7 @@ export function ConfirmTransaction() {
 							{ currentPendingTransactionOrSignableMessage.value.type === 'Transaction' && currentPendingTransactionOrSignableMessage.value.safeTransaction !== undefined
 								? <DinoSaysNotification
 									text = { `This transaction will be wrapped as Gnosis Safe transaction nonce ${ currentPendingTransactionOrSignableMessage.value.safeTransaction.safeTx.message.nonce.toString() } and signed by the configured Gnosis Safe signer. It will be added to the local optimistic Gnosis Safe stack, not broadcast automatically.` }
+									narrowSummary = { `Gnosis Safe transaction nonce ${ currentPendingTransactionOrSignableMessage.value.safeTransaction.safeTx.message.nonce.toString() }` }
 									close = { () => undefined }
 								/>
 								: <></>

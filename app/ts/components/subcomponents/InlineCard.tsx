@@ -39,7 +39,7 @@ export const InlineCard = (props: InlineCardProps) => {
 			{ props.warningMessage ? <WarningSign message = { props.warningMessage } /> : <></> }
 			<span role = 'img'><Icon /></span>
 			<data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data>
-			<span role = 'menu' aria-hidden = { props.nonInteractive } aria-label = { props.noExpandButtons || props.nonInteractive ? undefined : 'Spell-out actions' }>
+			<span role = 'group' aria-hidden = { props.nonInteractive } aria-label = { props.noExpandButtons || props.nonInteractive ? undefined : 'Spell-out actions' }>
 				{ props.nonInteractive ? <>
 					<span role = 'img'><Icon /></span>
 					<span><data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data></span>
@@ -48,14 +48,14 @@ export const InlineCard = (props: InlineCardProps) => {
 						<span role = 'img'><Icon /></span>
 						<span><data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data></span>
 					</span>
-					<button class = 'inline-card-copy-action' type = 'button' onClick = { copyTextToClipboard } value = { props.copyValue } tabIndex = { 1 } aria-label = { `Copy ${ props.label }` }>
+					<button class = 'inline-card-copy-action' type = 'button' onClick = { copyTextToClipboard } value = { props.copyValue } aria-label = { `Copy ${ props.label }` }>
 						<span title = 'Copy'>
 							<CopyIcon />
 							<span>copy</span>
 						</span>
 					</button>
 				</> : !props.noCopy ? (
-					<button type = 'button' onClick = { copyTextToClipboard } value = { props.copyValue } tabIndex = { 1 }>
+					<button type = 'button' onClick = { copyTextToClipboard } value = { props.copyValue }>
 						<span role = 'img'><Icon /></span>
 						<span><data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data></span>
 						<span title = 'Copy'>
@@ -64,14 +64,14 @@ export const InlineCard = (props: InlineCardProps) => {
 						</span>
 					</button>
 				) : <>
-					<button type = 'button' value = { props.copyValue } tabIndex = { 1 } style = { { pointerEvents: 'none' } }>
+					<span class = 'inline-card-static-action'>
 						<span role = 'img'><Icon /></span>
 						<span><data class = 'text-legible' style = { props.style } value = { props.label }>{ props.label }</data></span>
-					</button>
+					</span>
 				</>
 				}
 				{ props.onEditClicked ? (
-					<button type = 'button' value = { props.copyValue } onClick = { edit } tabIndex = { 1 }>
+					<button type = 'button' value = { props.copyValue } onClick = { edit }>
 						<span title = 'Edit'>
 							<EditIcon />
 							<span>edit</span>

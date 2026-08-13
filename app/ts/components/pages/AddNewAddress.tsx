@@ -138,6 +138,7 @@ function NameInput({ nameInput, setNameInput, disabled }: NameInputParams) {
 	return <input
 		class = 'input title is-5 is-spaced'
 		type = 'text'
+		aria-label = 'Name'
 		value = { nameInput }
 		placeholder = { 'What should we call this address?' }
 		onInput = { e => setNameInput((e.target as HTMLInputElement).value) }
@@ -152,13 +153,15 @@ type AddressInputParams = {
 	disabled: boolean
 	addressInput: string | undefined
 	setAddress: (input: string) => void
+	ariaLabel?: string
 }
 
-function AddressInput({ disabled, addressInput, setAddress }: AddressInputParams) {
+function AddressInput({ disabled, addressInput, setAddress, ariaLabel = 'Address' }: AddressInputParams) {
 	return <input
 		disabled = { disabled }
 		class = 'input subtitle is-7 is-spaced'
 		type = 'text'
+		aria-label = { ariaLabel }
 		value = { addressInput }
 		placeholder = { '0x0...' }
 		onInput = { e => setAddress((e.target as HTMLInputElement).value) }
@@ -192,6 +195,7 @@ function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 	return <input
 		class = 'input is-spaced'
 		type = 'text'
+		aria-label = 'ABI'
 		value = { abiInput }
 		placeholder = { 'no abi' }
 		onInput = { e => setAbiInput(e.currentTarget.value) }
@@ -295,15 +299,15 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 	const setAskForAddressAccess = async (askForAddressAccess: boolean) => updateIncompleteAddressBookEntry(previousEntry => modifyObject(previousEntry, { askForAddressAccess }))
 
 	const decimals = useComputed(() => modifyAddressWindowState.value.incompleteAddressBookEntry.decimals !== undefined ? modifyAddressWindowState.value.incompleteAddressBookEntry.decimals.toString() : undefined)
-	return <div class = 'media'>
+	return <div class = 'media address-book-editor-media'>
 		<div class = 'media-left'>
 			<figure class = 'image'>
 				<IncompleteAddressIcon addressInput = { modifyAddressWindowState.value.incompleteAddressBookEntry.address } logoUri = { logoUri }/>
 			</figure>
 		</div>
-		<div class = 'media-content' style = 'overflow-y: unset; overflow-x: unset;'>
+		<div class = 'media-content address-book-editor-content'>
 			<div class = 'container' style = 'margin-bottom: 10px;'>
-				<span class = 'log-table' style = 'column-gap: 5px; row-gap: 5px; grid-template-columns: max-content auto;'>
+				<span class = 'log-table address-book-editor-grid'>
 					<CellElement element = { <Text text = { 'Address type: ' }/> }/>
 					<div style = { { justifyContent: 'right', display: 'flex' } }> <DropDownMenu selected = { selectedAddresBookEntryType } dropDownOptions = { addressBookEntryOptions } onChangedCallBack = { onTypeChangedCallBack } buttonClassses = { 'btn btn--outline is-small' }/> </div>
 					<CellElement element = { <Text text = { 'Chain: ' }/> }/>
@@ -325,7 +329,7 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 									onInput = { () => { void setSafeSignerAddress(safeSignerAddress) } }
 								/>
 								<div>
-									<AddressInput disabled = { disableDueToSource } addressInput = { safeSignerAddress } setAddress = { (address) => { void setSafeSignerAddressAtIndex(index, address) } } />
+								<AddressInput disabled = { disableDueToSource } addressInput = { safeSignerAddress } setAddress = { (address) => { void setSafeSignerAddressAtIndex(index, address) } } ariaLabel = { `Gnosis Safe signer ${ index + 1 } address` } />
 								</div>
 								<button class = 'btn btn--outline is-small' type = 'button' disabled = { disableDueToSource } onClick = { () => { void removeSafeSignerAddress(index) } }>Remove</button>
 							</div>
@@ -336,11 +340,11 @@ function RenderIncompleteAddressBookEntry({ modifyAddressWindowState, rpcEntries
 					</> : <></> }
 					{ modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC20' || modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC1155' ? <>
 						<CellElement element = { <Text text = { 'Symbol: ' }/> }/>
-						<CellElement element = { <input disabled = { disableDueToSource } class = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' value = { modifyAddressWindowState.value.incompleteAddressBookEntry.symbol } placeholder = { '...' } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setSymbol(e.target.value) } } } /> } />
+						<CellElement element = { <input disabled = { disableDueToSource } class = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' aria-label = 'Token symbol' value = { modifyAddressWindowState.value.incompleteAddressBookEntry.symbol } placeholder = { '...' } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { setSymbol(e.target.value) } } } /> } />
 					</> : <></> }
 					{ modifyAddressWindowState.value.incompleteAddressBookEntry.type === 'ERC20' ? <>
 						<CellElement element = { <Text text = { 'Decimals: ' }/> }/>
-						<CellElement element = { <input disabled = { disableDueToSource } class = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' inputMode = 'numeric' pattern = '[0-9]*' value = { decimals.value } placeholder = { '...' } onInput = { e => setDecimals(e) }/> } />
+						<CellElement element = { <input disabled = { disableDueToSource } class = 'input subtitle is-7 is-spaced' style = 'width: 100%' type = 'text' inputMode = 'numeric' pattern = '[0-9]*' aria-label = 'Token decimals' value = { decimals.value } placeholder = { '...' } onInput = { e => setDecimals(e) }/> } />
 					</> : <></> }
 					<CellElement element = { <Text text = { 'Abi: ' }/> }/>
 					<CellElement element = { <>
@@ -621,7 +625,7 @@ export function AddNewAddress(param: AddAddressParam) {
 	const incompleteAddressBookEntry = useComputed(() => param.modifyAddressWindowState.value.incompleteAddressBookEntry )
 	return ( <>
 		<div class = 'modal-background'> </div>
-		<div class = 'modal-card'>
+			<div class = 'modal-card address-book-editor-modal'>
 			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
@@ -664,7 +668,7 @@ export function AddNewAddress(param: AddAddressParam) {
 					{ param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' }
 				</button> }
 				<button class = 'button is-success is-primary' onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled.value }> { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create' : 'Modify' } </button>
-				<button class = 'button is-primary' style = 'background-color: var(--negative-color)' onClick = { param.close } disabled = { isBlockExplorerLookupPending.value }>Cancel</button>
+				<button class = 'button is-primary is-danger' onClick = { param.close } disabled = { isBlockExplorerLookupPending.value }>Cancel</button>
 			</footer>
 		</div>
 	</> )

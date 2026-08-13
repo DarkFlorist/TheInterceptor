@@ -34,9 +34,13 @@ body { font-family: "Inter", sans-serif; }
 	--primary-color: #58a5b3;
 	--highlighted-primary-color: #79b7c2;
 	--disabled-primary-color: #3d737d;
+	--primary-action-color: #357783;
+	--highlighted-primary-action-color: #397f8c;
 
 	--positive-color: #4caf50;
 	--negative-color: #f6685e;
+	--negative-action-color: #b83e37;
+	--highlighted-negative-action-color: #c04941;
 
 	--error-box-color:#FFB6B6;
 	--error-box-text: #000000;
@@ -105,11 +109,11 @@ data {
 
 button:where(:not(.btn)) {
 	font-family: "Inter", sans-serif;
-	background-color: var(--primary-color);
+	background-color: var(--primary-action-color);
 }
 
 button:where(:not(.btn)):hover {
-	background-color: var(--highlighted-primary-color);
+	background-color: var(--highlighted-primary-action-color);
 }
 
 button:not(.btn):disabled, button:not(.btn)[disabled] {
@@ -668,6 +672,21 @@ html, body {
 .address-book-entry-remove {
 	margin-left: auto;
 	padding: 0;
+}
+
+.address-book-editor-content {
+	min-width: 0;
+	overflow: visible;
+}
+
+.log-table.address-book-editor-grid {
+	grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr);
+	column-gap: 5px;
+	row-gap: 5px;
+}
+
+.responsive-notification-details {
+	display: none;
 }
 
 .input:not([type='checkbox']):disabled, input:not([type='checkbox'])[disabled] {

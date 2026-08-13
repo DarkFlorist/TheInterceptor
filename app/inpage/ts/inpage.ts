@@ -108,6 +108,10 @@ export function normalizeSignerChainId(chainId: string) {
 	return /^[0-9]+$/.test(chainId) ? `0x${ BigInt(chainId).toString(16) }` : chainId
 }
 
+function chainIdToNetworkVersion(chainId: string) {
+	return BigInt(chainId).toString(10)
+}
+
 type InterceptorApprovedMessageCandidate = {
 	readonly interceptorApproved?: unknown
 	readonly method?: unknown
@@ -1370,7 +1374,7 @@ class InterceptorMessageListener {
 					this.activeChainId = reply
 					if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && inpageWindow.ethereum !== undefined) {
 						setCompatibilityProperty(inpageWindow.ethereum, 'chainId', reply, 'window.ethereum.chainId')
-						setCompatibilityProperty(inpageWindow.ethereum, 'networkVersion', Number(reply).toString(10), 'window.ethereum.networkVersion')
+						setCompatibilityProperty(inpageWindow.ethereum, 'networkVersion', chainIdToNetworkVersion(reply), 'window.ethereum.networkVersion')
 					}
 					for (const callback of this.onChainChangedCallBacks) {
 						callback(reply)
@@ -1474,9 +1478,9 @@ class InterceptorMessageListener {
 						}
 						case 'eth_chainId': {
 							if (typeof forwardRequest.result !== 'string') throw new Error('wrong type')
-							const chainId = forwardRequest.result as string
+							const chainId = forwardRequest.result
 							setCompatibilityProperty(inpageWindow.ethereum, 'chainId', chainId, 'window.ethereum.chainId')
-							setCompatibilityProperty(inpageWindow.ethereum, 'networkVersion', Number(chainId).toString(10), 'window.ethereum.networkVersion')
+							setCompatibilityProperty(inpageWindow.ethereum, 'networkVersion', chainIdToNetworkVersion(chainId), 'window.ethereum.networkVersion')
 							this.activeChainId = chainId
 							break
 						}

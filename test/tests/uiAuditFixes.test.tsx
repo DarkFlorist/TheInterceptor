@@ -1,0 +1,102 @@
+import * as assert from 'assert'
+import { describe, test } from 'bun:test'
+import { render } from 'preact'
+import { act } from 'preact/test-utils'
+import { InlineCard } from '../../app/ts/components/subcomponents/InlineCard.js'
+import { MultilineCard } from '../../app/ts/components/subcomponents/MultilineCard.js'
+import { installDomMock } from './domMock.js'
+import { readInterceptorAppCss } from './cssTestUtils.js'
+
+type TestNode = {
+	readonly childNodes?: readonly TestNode[]
+	readonly getAttribute?: (name: string) => string | null
+	readonly tagName?: string
+}
+
+function collectElements(node: TestNode | undefined, tagName: string, results: TestNode[] = []) {
+	if (node?.tagName === tagName.toUpperCase()) results.push(node)
+	for (const child of node?.childNodes ?? []) collectElements(child, tagName, results)
+	return results
+}
+
+function luminance(hex: string) {
+	const channels = [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255)
+		.map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+	const [red = 0, green = 0, blue = 0] = channels
+	return (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
+}
+
+function contrastRatio(first: string, second: string) {
+	const firstLuminance = luminance(first)
+	const secondLuminance = luminance(second)
+	return (Math.max(firstLuminance, secondLuminance) + 0.05) / (Math.min(firstLuminance, secondLuminance) + 0.05)
+}
+
+describe('UI audit fixes', () => {
+	test('keeps action colors readable with white text in default and hover states', async () => {
+		const css = await Bun.file('app/css/interceptor-theme.css').text()
+		const actionColors = ['primary-action-color', 'highlighted-primary-action-color', 'negative-action-color', 'highlighted-negative-action-color']
+		for (const variable of actionColors) {
+			const color = new RegExp(`--${ variable }:\\s*(#[0-9a-fA-F]{6})`).exec(css)?.[1]
+			assert.notEqual(color, undefined)
+			assert.ok(contrastRatio(color ?? '#ffffff', '#ffffff') >= 4.5, `${ variable } must have at least 4.5:1 contrast with white`)
+		}
+		const appCss = await readInterceptorAppCss()
+		assert.match(appCss, /\.btn\.is-primary,\s*\.button\.is-primary\s*\{[\s\S]*?background-color:\s*var\(--primary-action-color\);/)
+		assert.match(appCss, /\.btn\.is-danger,\s*\.button\.is-danger\s*\{[\s\S]*?background-color:\s*var\(--negative-action-color\);/)
+		assert.match(appCss, /\.button\.is-primary\.is-danger\s*\{[\s\S]*?background-color:\s*var\(--negative-action-color\);/)
+		const addAddressSource = await Bun.file('app/ts/components/pages/AddNewAddress.tsx').text()
+		const accessListSource = await Bun.file('app/ts/components/pages/InterceptorAccessList.tsx').text()
+		assert.doesNotMatch(`${ addAddressSource }\n${ accessListSource }`, /background-color: var\(--negative-color\)/)
+	})
+
+	test('labels address editor text inputs and applies a single-column narrow layout', async () => {
+		const source = await Bun.file('app/ts/components/pages/AddNewAddress.tsx').text()
+		assert.match(source, /aria-label = 'Name'/)
+		assert.match(source, /aria-label = \{ ariaLabel \}/)
+		assert.match(source, /aria-label = 'ABI'/)
+		assert.match(source, /ariaLabel = \{ `Gnosis Safe signer \$\{ index \+ 1 \} address` \}/)
+
+		const css = await readInterceptorAppCss()
+		assert.match(css, /\.log-table\.address-book-editor-grid\s*\{[\s\S]*?grid-template-columns:\s*minmax\(6rem, max-content\) minmax\(0, 1fr\);/)
+		assert.match(css, /@media screen and \(max-width: 400px\)[\s\S]*?\.log-table\.address-book-editor-grid\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/)
+		assert.match(css, /@media screen and \(max-width: 400px\)[\s\S]*?\.safe-signer-editor-row\s*\{[\s\S]*?grid-template-columns:\s*1em minmax\(0, 1fr\);/)
+		assert.match(css, /@media screen and \(max-width: 260px\)[\s\S]*?\.address-book-editor-modal > \.interceptor-modal-head \.card-header-title\s*\{[\s\S]*?white-space:\s*normal;/)
+	})
+
+	test('uses natural tab order and no fake buttons for inline and multiline card content', async () => {
+		const dom = installDomMock()
+		const Icon = () => <span>Icon</span>
+		try {
+			await act(() => render(<div>
+				<InlineCard icon = { Icon } label = 'Copy me' />
+				<InlineCard icon = { Icon } label = 'Static value' noCopy />
+				<MultilineCard
+					icon = { { icon: Icon, onClick: undefined } }
+					label = { { displayText: 'Static label', onClick: undefined } }
+					note = { { displayText: 'Static note', onClick: undefined } }
+				/>
+			</div>, dom.document.body))
+
+			const buttons = collectElements(dom.document.body, 'button')
+			assert.equal(buttons.length, 1)
+			assert.equal(buttons[0]?.getAttribute?.('tabindex'), null)
+			const actionGroups = collectElements(dom.document.body, 'span').filter((element) => element.getAttribute?.('role') === 'group')
+			assert.equal(actionGroups.length, 2)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('humanizes failed simulation state and provides compact expandable Safe details', async () => {
+		const confirmSource = await Bun.file('app/ts/components/pages/ConfirmTransaction.tsx').text()
+		assert.match(confirmSource, /if \(status === 'FailedToSimulate'\) return 'Simulation failed'/)
+		assert.match(confirmSource, /narrowSummary = \{ `Gnosis Safe transaction nonce/)
+
+		const css = await readInterceptorAppCss()
+		assert.match(css, /@media screen and \(max-width: 400px\)[\s\S]*?\.responsive-notification \.media\s*\{[\s\S]*?display:\s*none;/)
+		assert.match(css, /\.responsive-notification-details\s*\{[\s\S]*?display:\s*block;/)
+		assert.match(css, /\.responsive-notification-details summary\s*\{[\s\S]*?color:\s*var\(--text-color\);/)
+	})
+})
