@@ -29,6 +29,42 @@ function collectElements(node: TestNode | undefined, tagName: string, results: T
 }
 
 describe('AsyncActionButton', () => {
+	test('passes accessible labels and titles to the button', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(h(AsyncActionButton, {
+					state: 'inactive',
+					text: 'Clear stack',
+					pendingText: 'Clearing stack...',
+					onClick: () => undefined,
+					ariaLabel: 'Clear simulation stack',
+					pendingAriaLabel: 'Clearing simulation stack...',
+					title: 'Clear simulation stack',
+				}), dom.document.body)
+			})
+
+			const button = collectElements(dom.document.body, 'button')[0]
+			assert.equal(button?.getAttribute?.('aria-label'), 'Clear simulation stack')
+			assert.equal(button?.getAttribute?.('title'), 'Clear simulation stack')
+
+			await act(() => {
+				render(h(AsyncActionButton, {
+					state: 'pending',
+					text: 'Clear stack',
+					pendingText: 'Clearing stack...',
+					onClick: () => undefined,
+					ariaLabel: 'Clear simulation stack',
+					pendingAriaLabel: 'Clearing simulation stack...',
+				}), dom.document.body)
+			})
+			assert.equal(collectElements(dom.document.body, 'button')[0]?.getAttribute?.('aria-label'), 'Clearing simulation stack...')
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	test('keeps the pending indicator outside the original text layout', async () => {
 		const dom = installDomMock()
 		try {

@@ -177,6 +177,8 @@ export async function loadModules() {
 		safeExecutionRouting,
 		safeConfirmationResolver,
 		safeSimulation,
+		safeCore,
+		safeConfirmationPersistence,
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/EthereumClientService.js'),
 		import('../../app/ts/simulation/services/priceEstimator.js'),
@@ -197,6 +199,8 @@ export async function loadModules() {
 		import('../../app/ts/safe/safeExecutionRouting.js'),
 		import('../../app/ts/background/safeConfirmationResolver.js'),
 		import('../../app/ts/safe/safeSimulation.js'),
+		import('../../app/ts/safe/safeCore.js'),
+		import('../../app/ts/background/safeConfirmationPersistence.js'),
 	])
 	const flushPendingTerminalRepliesForSocket: typeof flushPendingTerminalRepliesForSocketType = terminalReplyDelivery.flushPendingTerminalRepliesForSocket
 
@@ -208,9 +212,10 @@ export async function loadModules() {
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
 		confirmDialog: popupMessageHandlers.confirmDialog,
+		getSafeSignerSelectionFromAccountRefresh: popupMessageHandlers.getSafeSignerSelectionFromAccountRefresh,
 		importSafeStack: popupMessageHandlers.importSafeStack,
 		requestSafeStackExport: popupMessageHandlers.requestSafeStackExport,
-		setActiveSafeSigner: popupMessageHandlers.setActiveSafeSigner,
+		setSafeSimulationSigner: popupMessageHandlers.setSafeSimulationSigner,
 		fetchSimulationStackRequestConfirmation: popupMessageHandlers.fetchSimulationStackRequestConfirmation,
 		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
 		formEthSendTransaction: confirmTransaction.formEthSendTransaction,
@@ -223,6 +228,8 @@ export async function loadModules() {
 		resolvePendingRequestsForMissingConfirmationWindows: confirmTransaction.resolvePendingRequestsForMissingConfirmationWindows,
 		resolveSafeConfirmation: safeConfirmationResolver.resolveSafeConfirmation,
 		createSafeExecutionPreSimulationTransaction: safeSimulation.createSafeExecutionPreSimulationTransaction,
+		createSafeContractValidationFailure: safeCore.createSafeContractValidationFailure,
+		resolveSafeSignerReply: safeConfirmationPersistence.resolveSafeSignerReply,
 		getPendingTransactionsAndMessages: storageVariables.getPendingTransactionsAndMessages,
 		getSafeTransactionStacks: storageVariables.getSafeTransactionStacks,
 		getInterceptorTransactionStack: storageVariables.getInterceptorTransactionStack,
@@ -351,6 +358,7 @@ export const fakeSafeContract = {
 	beforeVersionResponse: undefined as (() => Promise<void>) | undefined,
 	requestedRpcMethods: [] as string[],
 	failEthSimulate: false,
+	safeOwnerLookupFailure: undefined as 'expected' | 'unexpected' | undefined,
 }
 
 export function resetFakeSafeContractState() {
@@ -364,6 +372,7 @@ export function resetFakeSafeContractState() {
 	fakeSafeContract.beforeVersionResponse = undefined
 	fakeSafeContract.requestedRpcMethods.length = 0
 	fakeSafeContract.failEthSimulate = false
+	fakeSafeContract.safeOwnerLookupFailure = undefined
 }
 
 export const fakeRequestHandler = {
@@ -398,7 +407,10 @@ export const fakeRequestHandler = {
 						await fakeSafeContract.beforeVersionResponse?.()
 						return encodeFunctionReturn(SAFE_ABI, 'VERSION', [fakeSafeContract.version])
 					case safeSelectors.nonce: return encodeFunctionReturn(SAFE_ABI, 'nonce', [fakeSafeContract.nonce])
-					case safeSelectors.owners: return encodeFunctionReturn(SAFE_ABI, 'getOwners', [fakeSafeContract.owners.map(addressString)])
+					case safeSelectors.owners:
+						if (fakeSafeContract.safeOwnerLookupFailure === 'expected') throw modules.createSafeContractValidationFailure('Safe owner lookup unavailable')
+						if (fakeSafeContract.safeOwnerLookupFailure === 'unexpected') throw new Error('Unexpected Safe owner decoder failure')
+						return encodeFunctionReturn(SAFE_ABI, 'getOwners', [fakeSafeContract.owners.map(addressString)])
 					case safeSelectors.threshold: return encodeFunctionReturn(SAFE_ABI, 'getThreshold', [fakeSafeContract.threshold])
 					case safeSelectors.transactionHash: return encodeFunctionReturn(SAFE_ABI, 'getTransactionHash', [bytes32String(fakeSafeContract.transactionHash)])
 					default: throw new Error(`Unexpected eth_call selector: ${ selector }`)

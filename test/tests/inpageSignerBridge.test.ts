@@ -3078,6 +3078,39 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
+	test('settles a forwarded storage read directly from the signer reply', async () => {
+		const storageValue = `0x${ '42'.padStart(64, '0') }`
+		const storageParams = ['0xE592427A0AEce92De3Edee1F18E0157C05861564', '0x0', 'latest'] as const
+		const forwardedSignerRequests: SignerRequest[] = []
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method !== 'eth_getStorageAt') return false
+				sendBackgroundMessage({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'forwardToSigner',
+					method: request.method,
+					params: request.params,
+					replyWithSignersReply: true,
+				})
+				return true
+			},
+			handleSignerRequest: (request) => {
+				if (request.method !== 'eth_getStorageAt') return undefined
+				forwardedSignerRequests.push(request)
+				return storageValue
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?forwarded-storage-read', async () => {
+			const provider = fakeWindow.ethereum as {
+				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
+			}
+			assert.equal(await provider.request({ method: 'eth_getStorageAt', params: storageParams }), storageValue)
+		})
+		assert.deepEqual(forwardedSignerRequests, [{ method: 'eth_getStorageAt', params: storageParams }])
+	})
+
 	test('preserves string JSON-RPC error data from signer replies', async () => {
 		const previousWindow = (globalThis as { window?: unknown }).window
 		const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent

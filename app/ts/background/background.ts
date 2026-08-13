@@ -1,6 +1,6 @@
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
-import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
+import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { getSettings, updateWebsiteAccess } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
@@ -24,11 +24,12 @@ import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
+import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent } from './signerStateOwnership.js'
 import { handleWatchAssetRequest, initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
-import { getConfiguredSafeSigningEntry } from '../types/addressBookTypes.js'
+import { getSafeSigningEntry } from '../types/addressBookTypes.js'
 import { getSafeModeRpcPolicyReply } from '../safe/safeRequestPolicy.js'
 import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
 import { createMethodHandlerFor, hasOwnKey } from '../utils/methodHandlers.js'
@@ -162,7 +163,7 @@ async function handleRPCRequest(
 			if (rpcRequest.params[0] !== activeAddress) {
 				return getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, activeSafeSigner)
 			}
-			if (activeSafeSigner === undefined && forwardToSigner) {
+			if (!safeSigningMode && activeSafeSigner === undefined && forwardToSigner) {
 				return { type: 'forwardToSigner', replyWithSignersReply: true, ...request }
 			}
 			return getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, activeSafeSigner)
@@ -178,7 +179,7 @@ async function handleRPCRequest(
 			return { type: 'result' as const, method: rpcRequest.method, error: { code: 10000, message: 'wallet_addEthereumChain not implemented' } }
 		}),
 		eth_getStorageAt: rpcRequestHandler('eth_getStorageAt', async (_context, rpcRequest) => {
-			if (forwardToSigner && !simulationOverlayEnabled) return getForwardingMessage(rpcRequest)
+			if (forwardToSigner && !simulationOverlayEnabled) return { ...getForwardingMessage(rpcRequest), replyWithSignersReply: true as const }
 			return await withSimulationInput((simulationInput) => getStorageAt(ethereum, simulationInput, rpcRequest))
 		}),
 		eth_getLogs: rpcRequestHandler('eth_getLogs', async (_context, rpcRequest) => await withExecutionSimulationState((simulationState) => getLogs(ethereum, simulationState, rpcRequest))),
@@ -490,14 +491,16 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 			? undefined
 			: currentChainEntries.find((entry) => entry.address === activeAddress)
 		const simulationOverlayEnabled = settings.simulationMode || activeAddressBookEntry?.type === 'safe'
-		const configuredSafe = getConfiguredSafeSigningEntry(currentChainEntries, {
+		const configuredSafe = getSafeSigningEntry(currentChainEntries, {
 			...settings,
 			// The request's active address is captured before async handling begins. Do not reroute an in-flight request if the popup selects another account meanwhile.
 			activeSimulationAddress: activeAddress,
 			chainId: settings.activeRpcNetwork.chainId,
 		})
 		const safeSigningMode = configuredSafe !== undefined
-		const activeSafeSigner = configuredSafe?.safeSignerAddress
+		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
+		const selectedWalletAccount = getWalletSelectedAccount(signerTabState)
+		const walletSelectedSafeSigner = configuredSafe === undefined ? undefined : selectedWalletAccount
 		let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
 		let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
 		const getSimulationInput = async () => {
@@ -514,7 +517,7 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 			})()
 			return await executionSimulationStatePromise
 		}
-		const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, activeSafeSigner)
+		const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, walletSelectedSafeSigner)
 		await persistApprovedAccountsForAccountRequest(
 			ethereum,
 			tokenPriceService,

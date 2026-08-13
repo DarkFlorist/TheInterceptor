@@ -208,6 +208,24 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(dynamicRuleUpdates.length, 1)
 	})
 
+	test('broadcasts address-book saves for metadata consumers to refresh themselves', async () => {
+		const result = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: {
+				type: 'contact',
+				name: 'Updated Safe participant',
+				address: 1n,
+				entrySource: 'User',
+			},
+		})
+
+		assert.deepEqual(result, { type: 'AddOrModifyAddressBookEntryReply', ok: true })
+		assert.equal(sentMessages.some((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_addressBookEntriesChanged'
+		}), true)
+	})
+
 	test('delegates simulation reset through the injected lifecycle callback', async () => {
 		let resetCount = 0
 		const result = await dispatchPopupMessage(createDispatcherContext(async () => {
@@ -235,6 +253,20 @@ describe('popup message dispatcher seams', () => {
 		}), {
 			method: 'popup_requestIdentifyAddress',
 			data: { chainId: 10n, addressBookEntry: undefined },
+		})
+	})
+
+	test('routes Safe contract state through its dedicated protocol', async () => {
+		const context = createDispatcherContext(async () => undefined)
+		assert.deepEqual(await dispatchPopupMessage(context, {
+			method: 'popup_requestSafeContractState',
+			data: { address: 1n, chainId: 'AllChains' },
+		}), {
+			method: 'popup_requestSafeContractState',
+			data: {
+				chainId: 'AllChains',
+				result: { ok: false, message: 'Gnosis Safe wallets must use a specific chain to load their signers.' },
+			},
 		})
 	})
 

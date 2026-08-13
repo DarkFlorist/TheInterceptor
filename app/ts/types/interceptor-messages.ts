@@ -165,9 +165,10 @@ const NonForwardingRPCRequestReturnValue = funtypes.Intersect(
 )
 
 type ForwardToWallet = funtypes.Static<typeof ForwardToWallet>
+const ForwardToWalletRequest = funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams)
 const ForwardToWallet = funtypes.Intersect( // forward directly to wallet
 	funtypes.ReadonlyObject({ type: funtypes.Literal('forwardToSigner') }),
-	funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams),
+	ForwardToWalletRequest,
 )
 
 type ReplyWithSignersReplyForward = funtypes.Static<typeof ReplyWithSignersReplyForward>
@@ -175,18 +176,21 @@ const ReplyWithSignersReplyForward = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('forwardToSigner'),
 		replyWithSignersReply: funtypes.Literal(true),
-		method: funtypes.String,
 	}),
-	funtypes.Partial({
-		params: funtypes.Unknown,
-	})
+	funtypes.Union(
+		ForwardToWalletRequest,
+		funtypes.Intersect(
+			funtypes.ReadonlyObject({ method: funtypes.String }),
+			funtypes.Partial({ params: funtypes.Unknown }),
+		),
+	),
 )
 
 export type RPCReply = funtypes.Static<typeof RPCReply>
 export const RPCReply = funtypes.Union(
 	NonForwardingRPCRequestReturnValue,
-	ForwardToWallet,
 	ReplyWithSignersReplyForward,
+	ForwardToWallet,
 	funtypes.ReadonlyObject({ type: funtypes.Literal('doNotReply') }),
 )
 
@@ -434,7 +438,7 @@ export const ConnectedToSigner = funtypes.ReadonlyObject({
 type SignerReplyForwardRequest = funtypes.Static<typeof SignerReplyForwardRequest>
 const SignerReplyForwardRequest = funtypes.Intersect(
 	funtypes.ReadonlyObject({ requestId: funtypes.Number }),
-	funtypes.Union(ForwardToWallet, ReplyWithSignersReplyForward)
+	funtypes.Union(ReplyWithSignersReplyForward, ForwardToWallet)
 )
 
 export type SignerReply = funtypes.Static<typeof SignerReply>
@@ -626,6 +630,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		activeAddresses: AddressBookEntries,
 		richList: funtypes.ReadonlyArray(EnrichedRichListElement),
 		makeCurrentAddressRich: funtypes.Boolean,
+		hasSafeTransactionsToExport: funtypes.Boolean,
 		latestUnexpectedError: funtypes.Union(funtypes.Undefined, UnexpectedErrorOccured),
 		websiteAccessAddressMetadata: AddressBookEntries,
 		tabState: TabState,
@@ -637,7 +642,9 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		rpcEntries: RpcEntries,
 		interceptorDisabled: funtypes.Boolean,
 		preSimulationBlockTimeManipulation: BlockTimeManipulation,
-	})
+	}).And(funtypes.ReadonlyPartial({
+		walletSelectedAddressBookEntry: AddressBookEntry,
+	}))
 })
 
 export type HomePageBootstrap = funtypes.Static<typeof HomePageBootstrap>
@@ -646,13 +653,16 @@ export const HomePageBootstrap = funtypes.ReadonlyObject({
 	popupRefreshGeneration: PopupRefreshGeneration,
 	data: funtypes.ReadonlyObject({
 		activeAddresses: AddressBookEntries,
+		hasSafeTransactionsToExport: funtypes.Boolean,
 		tabState: TabState,
 		settings: Settings,
 		activeSigningAddressInThisTab: OptionalEthereumAddress,
 		tabId: funtypes.Union(funtypes.Number, funtypes.Undefined),
 		rpcEntries: RpcEntries,
 		interceptorDisabled: funtypes.Boolean,
-	})
+	}).And(funtypes.ReadonlyPartial({
+		walletSelectedAddressBookEntry: AddressBookEntry,
+	}))
 })
 
 type ActiveSigningAddressChanged = funtypes.Static<typeof ActiveSigningAddressChanged>

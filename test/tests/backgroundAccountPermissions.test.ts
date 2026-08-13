@@ -3,6 +3,255 @@ import { describe, test } from 'bun:test'
 import { addressString, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
+	test('rejects arbitrary EOAs and unverified or unowned Safes selected through popup signing-mode bypasses', async () => {
+		const { readStoredValue } = installBrowserMock()
+		const {
+			changeActiveAddress,
+			changeSimulationMode,
+			getSettings,
+			saveCurrentTabId,
+			setUseSignersAddressAsActiveAddress,
+			updateTabState,
+			updateUserAddressBookEntries,
+		} = await loadModules()
+		const signerAddress = 0x1111111111111111111111111111111111111111n
+		const arbitraryEoa = 0x2222222222222222222222222222222222222222n
+		const unownedSafe = 0x3333333333333333333333333333333333333333n
+		const unverifiedSafe = 0x4444444444444444444444444444444444444444n
+		const tabId = 199
+		await changeSimulationMode({ simulationMode: false, activeSigningAddress: signerAddress })
+		await setUseSignersAddressAsActiveAddress(true, signerAddress)
+		await updateUserAddressBookEntries(() => [
+			{
+				type: 'contact',
+				name: 'Arbitrary EOA',
+				address: arbitraryEoa,
+				entrySource: 'User',
+				useAsActiveAddress: true,
+				askForAddressAccess: true,
+			},
+			{
+				type: 'safe',
+				name: 'Unowned Safe',
+				address: unownedSafe,
+				chainId: 1n,
+				entrySource: 'User',
+				useAsActiveAddress: true,
+				safeSignerAddresses: [arbitraryEoa],
+			},
+			{
+				type: 'safe',
+				name: 'Unverified Safe',
+				address: unverifiedSafe,
+				chainId: 1n,
+				entrySource: 'User',
+				useAsActiveAddress: true,
+			},
+		])
+		await updateTabState(tabId, (previousState) => ({ ...previousState, signerAccounts: [signerAddress], activeSigningAddress: signerAddress }))
+		await saveCurrentTabId(tabId)
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await changeActiveAddress(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			method: 'popup_changeActiveAddress',
+			data: { activeAddress: arbitraryEoa, simulationMode: false },
+		})
+		await changeActiveAddress(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			method: 'popup_changeActiveAddress',
+			data: { activeAddress: unownedSafe, simulationMode: false },
+		})
+		await changeActiveAddress(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			method: 'popup_changeActiveAddress',
+			data: { activeAddress: unverifiedSafe, simulationMode: false },
+		})
+
+		const settings = await getSettings()
+		assert.equal(readStoredValue('activeSigningAddress'), signerAddress)
+		assert.notEqual(settings.activeSigningAddress, arbitraryEoa)
+		assert.equal(settings.useSignersAddressAsActiveAddress, true)
+	})
+
+	test('rejects a wrong-chain Safe selected through a simulation-mode popup bypass', async () => {
+		installBrowserMock()
+		const {
+			changeActiveAddress,
+			changeSimulationMode,
+			getSettings,
+			updateUserAddressBookEntries,
+		} = await loadModules()
+		const originalAddress = 0x3131313131313131313131313131313131313131n
+		const wrongChainSafe = 0x4141414141414141414141414141414141414141n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: originalAddress })
+		await updateUserAddressBookEntries(() => [{
+			type: 'safe',
+			name: 'Wrong-chain Safe',
+			address: wrongChainSafe,
+			chainId: 10n,
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			safeSignerAddresses: [],
+		}])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		assert.deepEqual(
+			await changeActiveAddress(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+				method: 'popup_changeActiveAddress',
+				data: { activeAddress: wrongChainSafe, simulationMode: true },
+			}),
+			{
+				type: 'ChangeActiveAddressReply',
+				ok: false,
+				message: 'The selected Gnosis Safe is configured for another chain.',
+			},
+		)
+		assert.equal((await getSettings()).activeSimulationAddress, originalAddress)
+	})
+
+	test('clears a stale signing-mode Safe when the popup selects a disconnected signer', async () => {
+		installBrowserMock()
+		const {
+			changeActiveAddress,
+			changeSimulationMode,
+			getActiveAddress,
+			getSettings,
+			saveCurrentTabId,
+			setUseSignersAddressAsActiveAddress,
+			updateTabState,
+			updateUserAddressBookEntries,
+		} = await loadModules()
+		const safeAddress = 0x4040404040404040404040404040404040404040n
+		const previousOwner = 0x4141414141414141414141414141414141414141n
+		const tabId = 198
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: safeAddress, activeSigningAddress: previousOwner })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateUserAddressBookEntries(() => [{
+			type: 'safe',
+			name: 'Disconnected Safe',
+			address: safeAddress,
+			chainId: 1n,
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			safeSignerAddresses: [previousOwner],
+		}])
+		await updateTabState(tabId, (previousState) => ({ ...previousState, signerAccounts: [], activeSigningAddress: undefined }))
+		await saveCurrentTabId(tabId)
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await changeActiveAddress(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			method: 'popup_changeActiveAddress',
+			data: { activeAddress: 'signer', simulationMode: false },
+		})
+
+		const settings = await getSettings()
+		assert.equal(settings.useSignersAddressAsActiveAddress, true)
+		assert.equal(await getActiveAddress(settings, tabId), undefined)
+	})
+
+	test('remembers whether a signer account last selected its Safe or the external EOA', async () => {
+		installBrowserMock()
+		const {
+			changeActiveAddress,
+			changeSimulationMode,
+			getSigningAddressPreferences,
+			saveCurrentTabId,
+			updateTabState,
+			updateUserAddressBookEntries,
+		} = await loadModules()
+		const signerAddress = 0x4242424242424242424242424242424242424242n
+		const safeAddress = 0x4343434343434343434343434343434343434343n
+		const tabId = 200
+		await changeSimulationMode({ simulationMode: false, activeSigningAddress: signerAddress })
+		await updateUserAddressBookEntries(() => [{
+			type: 'safe',
+			name: 'Signer Safe',
+			address: safeAddress,
+			chainId: 1n,
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			safeSignerAddresses: [signerAddress],
+		}])
+		await updateTabState(tabId, (previousState) => ({ ...previousState, signerAccounts: [signerAddress], activeSigningAddress: signerAddress }))
+		await saveCurrentTabId(tabId)
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await changeActiveAddress(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			method: 'popup_changeActiveAddress',
+			data: { activeAddress: safeAddress, simulationMode: false },
+		})
+		assert.deepEqual(await getSigningAddressPreferences(), [{ signerAddress, selection: 'safe', safeAddress, chainId: 1n }])
+
+		await changeActiveAddress(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			method: 'popup_changeActiveAddress',
+			data: { activeAddress: 'signer', simulationMode: false },
+		})
+		assert.deepEqual(await getSigningAddressPreferences(), [{ signerAddress, selection: 'signer' }])
+	})
+
+	test('rechecks Safe ownership against the live signer when website access is approved', async () => {
+		installBrowserMock()
+		const {
+			changeSimulationMode,
+			getPendingAccessRequests,
+			getSettings,
+			resolveInterceptorAccess,
+			setUseSignersAddressAsActiveAddress,
+			updatePendingAccessRequests,
+			updateTabState,
+			updateUserAddressBookEntries,
+			updateWebsiteAccess,
+		} = await loadModules()
+		const safeAddress = 0x5151515151515151515151515151515151515151n
+		const ownerAtPrompt = 0x6161616161616161616161616161616161616161n
+		const ownerAtApproval = 0x7171717171717171717171717171717171717171n
+		const tabId = 201
+		const socket = { tabId, connectionName: 0n }
+		const website = { websiteOrigin: 'https://safe-owner-change.example', icon: undefined, title: undefined }
+		const safeEntry = {
+			type: 'safe' as const,
+			name: 'Owned Safe',
+			address: safeAddress,
+			chainId: 1n,
+			entrySource: 'User' as const,
+			useAsActiveAddress: true,
+			safeSignerAddresses: [ownerAtPrompt],
+		}
+		await changeSimulationMode({ simulationMode: false, activeSigningAddress: ownerAtApproval })
+		await setUseSignersAddressAsActiveAddress(true, ownerAtApproval)
+		await updateWebsiteAccess(() => [])
+		await updateUserAddressBookEntries(() => [safeEntry])
+		await updateTabState(tabId, (previousState) => ({ ...previousState, signerAccounts: [ownerAtApproval], activeSigningAddress: ownerAtApproval }))
+		await updatePendingAccessRequests(async () => [{
+			website,
+			requestAccessToAddress: safeEntry,
+			originalRequestAccessToAddress: safeEntry,
+			associatedAddresses: [],
+			signerAccounts: [ownerAtPrompt],
+			signerName: 'MetaMask',
+			simulationMode: false,
+			popupOrTabId: { type: 'popup', id: 1 },
+			socket,
+			request: undefined,
+			activeAddress: safeAddress,
+			accessRequestId: 'safe-owner-changed-before-approval',
+		}])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const approve = async () => await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			userReply: 'Approved',
+			requestAccessToAddress: safeAddress,
+			originalRequestAccessToAddress: safeAddress,
+			accessRequestId: 'safe-owner-changed-before-approval',
+		}, noopPublishRpcConnectionStatus)
+
+		await assert.rejects(approve, /not available for the current signing wallet/)
+		assert.equal((await getSettings()).websiteAccess.some((entry) => entry.website.websiteOrigin === website.websiteOrigin), false)
+		assert.equal((await getPendingAccessRequests()).length, 1)
+
+		await updateTabState(tabId, (previousState) => ({ ...previousState, signerAccounts: [ownerAtPrompt], activeSigningAddress: ownerAtPrompt }))
+		await approve()
+		const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === website.websiteOrigin)
+		assert.deepEqual(access?.addressAccess, [{ address: safeAddress, access: true }])
+	})
+
 	test('replays account state after already-approved eth_requestAccounts with cached active signer address', async () => {
 		installBrowserMock()
 		const {
@@ -198,6 +447,7 @@ describe('background eth_accounts', () => {
 		const pendingRequest = (await getPendingAccessRequests())[0]
 		if (pendingRequest === undefined) throw new Error('Missing address access request')
 		assert.equal(pendingRequest.requestAccessToAddress?.address, account)
+		assert.deepEqual(pendingRequest.signerAccounts, [account])
 		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, undefined)
 
 		await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
@@ -1724,7 +1974,7 @@ describe('background eth_accounts', () => {
 		assert.equal(hasAddressAccess([], websiteOrigin, address), 'askAccess')
 	})
 
-	test('switches a configured Safe to signing mode after a silent signer account refresh times out', async () => {
+	test('keeps only an owned simulation Safe when switching to signing mode', async () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
@@ -1752,7 +2002,7 @@ describe('background eth_accounts', () => {
 			chainId: 1n,
 			entrySource: 'User',
 			useAsActiveAddress: true,
-			safeSignerAddress,
+			safeSignerAddresses: [0x7373737373737373737373737373737373737373n],
 			safeVersion: '1.4.1',
 		}])
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: safeAddress, access: true }] }])
@@ -1769,19 +2019,46 @@ describe('background eth_accounts', () => {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
-		await Promise.race([
-			enableSimulationMode(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
-				method: 'popup_enableSimulationMode',
-				data: false,
-			}, { passiveReplyTimeoutMs: 10 }),
-			new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('Safe signing mode remained pending after the signer refresh timeout')), 100)),
-		])
+		await enableSimulationMode(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			method: 'popup_enableSimulationMode',
+			data: false,
+		}, { passiveReplyTimeoutMs: 10 })
 
 		const settings = await getSettings()
 		assert.equal(settings.simulationMode, false)
-		assert.equal(settings.activeSimulationAddress, safeAddress)
-		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, safeAddress)
+		assert.equal(settings.activeSimulationAddress, undefined)
+		assert.equal(settings.useSignersAddressAsActiveAddress, true)
+		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, safeSignerAddress)
 		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_accounts').length, 1)
+
+		await updateUserAddressBookEntries((entries) => entries.map((entry) => entry.type === 'safe' ? { ...entry, safeSignerAddresses: [safeSignerAddress] } : entry))
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: safeAddress, activeSigningAddress: safeSignerAddress })
+		await setUseSignersAddressAsActiveAddress(false)
+		await enableSimulationMode(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			method: 'popup_enableSimulationMode',
+			data: false,
+		}, { passiveReplyTimeoutMs: 10 })
+
+		const ownedSafeSettings = await getSettings()
+		assert.equal(ownedSafeSettings.simulationMode, false)
+		assert.equal(ownedSafeSettings.activeSimulationAddress, safeAddress)
+		assert.equal(ownedSafeSettings.useSignersAddressAsActiveAddress, false)
+		assert.equal((await getActiveAddress(ownedSafeSettings, socket.tabId))?.address, safeAddress)
+
+		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [], activeSigningAddress: undefined }))
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: safeAddress, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await enableSimulationMode(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			method: 'popup_enableSimulationMode',
+			data: false,
+		})
+
+		const noSignerSettings = await getSettings()
+		assert.equal(noSignerSettings.simulationMode, false)
+		assert.equal(noSignerSettings.activeSimulationAddress, safeAddress)
+		assert.equal(noSignerSettings.activeSigningAddress, undefined)
+		assert.equal(noSignerSettings.useSignersAddressAsActiveAddress, true)
+		assert.equal((await getActiveAddress(noSignerSettings, socket.tabId)), undefined)
 	})
 
 	test('does not apply the passive reply timeout to interactive signer approval', async () => {
@@ -1835,7 +2112,9 @@ describe('background eth_accounts', () => {
 		const {
 			changeSimulationMode,
 			enableSimulationMode,
+			getActiveAddress,
 			getSettings,
+			getSigningAddressPreferences,
 			handleInterceptedRequest,
 			saveCurrentTabId,
 			setUseSignersAddressAsActiveAddress,
@@ -1859,7 +2138,7 @@ describe('background eth_accounts', () => {
 			chainId: 1n,
 			entrySource: 'User',
 			useAsActiveAddress: true,
-			safeSignerAddress,
+			safeSignerAddresses: [safeSignerAddress],
 			safeVersion: '1.4.1',
 		}])
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: safeAddress, access: true }] }])
@@ -1903,7 +2182,15 @@ describe('background eth_accounts', () => {
 		})
 		await accountReply
 
-		assert.equal((await getSettings()).simulationMode, false)
+		const signingSettings = await getSettings()
+		assert.equal(signingSettings.simulationMode, false)
+		assert.equal((await getActiveAddress(signingSettings, currentSocket.tabId))?.address, safeAddress)
+		assert.deepEqual(await getSigningAddressPreferences(), [{
+			signerAddress: safeSignerAddress,
+			selection: 'safe',
+			safeAddress,
+			chainId: 1n,
+		}])
 		assert.equal(currentMessages.filter((message) => message.method === 'request_signer_to_eth_accounts').length, 1)
 		assert.equal(unrelatedMessages.some((message) => message.method === 'request_signer_to_eth_accounts'), false)
 	})

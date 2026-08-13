@@ -8,6 +8,8 @@ import { addressString, bytes32String, dataStringWith0xStart, stringToUint8Array
 import { ensureHex } from '../utils/ethereumBytes.js'
 import { recoverAddress } from '../utils/ethereumPrimitives.js'
 import { getSafeTxHash } from '../utils/eip712.js'
+import { getErrorMessage } from '../utils/caughtErrors.js'
+import { createSafeValidationError, hasSafeValidationErrorCode } from './safeErrors.js'
 
 const SUPPORTED_SAFE_VERSIONS = ['1.3.0', '1.4.0', '1.4.1'] as const
 
@@ -106,30 +108,51 @@ export type SafeOwnerValidator = {
 	) => Promise<SafeOwnerSignature>
 }
 
+export type ValidatedSafeEoaOwner = {
+	readonly snapshot: SafeContractSnapshot
+	readonly ownerValidator: SafeOwnerValidator
+}
+
+export function createSafeOwnerValidationFailure(message: string) {
+	return createSafeValidationError(message, 'safe_owner_validation')
+}
+
+export function isSafeOwnerValidationFailure(error: unknown) {
+	return hasSafeValidationErrorCode(error, 'safe_owner_validation')
+}
+
+export function createSafeContractValidationFailure(message: string) {
+	return createSafeValidationError(message, 'safe_contract_validation')
+}
+
+export function isSafeContractValidationFailure(error: unknown) {
+	return hasSafeValidationErrorCode(error, 'safe_contract_validation')
+}
+
 function canonicalSafeOwners(owners: readonly bigint[]) {
 	return [...owners].sort((first, second) => first < second ? -1 : first > second ? 1 : 0)
 }
 
 export function assertSafeContractStateUnchanged(reviewedState: SafeContractState, currentState: SafeContractState) {
 	if (reviewedState.version !== currentState.version) {
-		throw new Error(`The Gnosis Safe version changed from ${ reviewedState.version } to ${ currentState.version } after this confirmation opened.`)
+		throw createSafeContractValidationFailure(`The Gnosis Safe version changed from ${ reviewedState.version } to ${ currentState.version } after this confirmation opened.`)
 	}
 	if (reviewedState.nonce !== currentState.nonce) {
-		throw new Error(`The Gnosis Safe nonce changed from ${ reviewedState.nonce.toString() } to ${ currentState.nonce.toString() } after this confirmation opened.`)
+		throw createSafeContractValidationFailure(`The Gnosis Safe nonce changed from ${ reviewedState.nonce.toString() } to ${ currentState.nonce.toString() } after this confirmation opened.`)
 	}
 	if (reviewedState.threshold !== currentState.threshold) {
-		throw new Error(`The Gnosis Safe threshold changed from ${ reviewedState.threshold.toString() } to ${ currentState.threshold.toString() } after this confirmation opened.`)
+		throw createSafeContractValidationFailure(`The Gnosis Safe threshold changed from ${ reviewedState.threshold.toString() } to ${ currentState.threshold.toString() } after this confirmation opened.`)
 	}
 	const reviewedOwners = canonicalSafeOwners(reviewedState.owners)
 	const currentOwners = canonicalSafeOwners(currentState.owners)
 	if (reviewedOwners.length !== currentOwners.length || reviewedOwners.some((owner, index) => owner !== currentOwners[index])) {
-		throw new Error('The Gnosis Safe owner set changed after this confirmation opened.')
+		throw createSafeContractValidationFailure('The Gnosis Safe owner set changed after this confirmation opened.')
 	}
 }
 
 async function getSafeContractStateAtBlock(ethereum: EthereumClientService, safeAddress: EthereumAddress, blockNumber: bigint): Promise<SafeContractState> {
 	const code = await ethereum.getCode(safeAddress, blockNumber, undefined)
-	if (code.length === 0) throw new Error('The Gnosis Safe address does not contain a deployed contract on the selected chain.')
+	if (code.length === 0) throw createSafeContractValidationFailure('The Gnosis Safe address does not contain a deployed contract on the selected chain.')
 	const [versionResult, nonceResult, ownersResult, thresholdResult] = await Promise.all([
 		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'VERSION', []), blockNumber),
 		callSafe(ethereum, safeAddress, encodeFunctionCall(SAFE_ABI, 'nonce', []), blockNumber),
@@ -141,7 +164,7 @@ async function getSafeContractStateAtBlock(ethereum: EthereumClientService, safe
 	const owners = decodeFunctionOutput(SAFE_ABI, 'getOwners', ownersResult)
 	const threshold = decodeFunctionOutput(SAFE_ABI, 'getThreshold', thresholdResult)
 	if (!SUPPORTED_SAFE_VERSIONS.some((supportedVersion) => supportedVersion === version)) {
-		throw new Error(`Gnosis Safe version ${ version } is not supported. Supported versions: ${ SUPPORTED_SAFE_VERSIONS.join(', ') }.`)
+		throw createSafeContractValidationFailure(`Gnosis Safe version ${ version } is not supported. Supported versions: ${ SUPPORTED_SAFE_VERSIONS.join(', ') }.`)
 	}
 	return { version, nonce, owners: owners.map((owner) => BigInt(owner)), threshold }
 }
@@ -164,14 +187,14 @@ export function createSafeOwnerValidator(
 	const eoaValidationByOwner = new Map<EthereumAddress, Promise<void>>()
 	const assertEoaOwner = async (owner: EthereumAddress) => {
 		if (!safeOwners.has(owner)) {
-			throw new Error(`${ addressString(owner) } is not an owner of Gnosis Safe ${ addressString(safeAddress) }.`)
+			throw createSafeOwnerValidationFailure(`${ addressString(owner) } is not an owner of Gnosis Safe ${ addressString(safeAddress) }.`)
 		}
 		let validation = eoaValidationByOwner.get(owner)
 		if (validation === undefined) {
 			validation = (async () => {
 				const ownerCode = await ethereum.getCode(owner, snapshot.blockNumber, undefined)
 				if (ownerCode.length > 0) {
-					throw new Error(`${ addressString(owner) } is a contract owner. This Gnosis Safe workflow currently supports EOA owners only.`)
+					throw createSafeOwnerValidationFailure(`${ addressString(owner) } is a contract owner. This Gnosis Safe workflow currently supports EOA owners only.`)
 				}
 			})()
 			eoaValidationByOwner.set(owner, validation)
@@ -183,15 +206,41 @@ export function createSafeOwnerValidator(
 		signature: string,
 		expectedSafeSigner?: EthereumAddress,
 	): Promise<SafeOwnerSignature> => {
-		const normalizedSignature = normalizeSafeSignature(signature)
-		const signer = await recoverNormalizedSafeSignatureOwner(safeTxHash, normalizedSignature)
+		let normalizedSignature: Hex
+		let signer: EthereumAddress
+		try {
+			normalizedSignature = normalizeSafeSignature(signature)
+			signer = await recoverNormalizedSafeSignatureOwner(safeTxHash, normalizedSignature)
+		} catch (error) {
+			throw createSafeOwnerValidationFailure(getErrorMessage(error) ?? 'The signer returned an invalid Gnosis Safe owner signature.')
+		}
 		if (expectedSafeSigner !== undefined && signer !== expectedSafeSigner) {
-			throw new Error(`The wallet signature was created by ${ addressString(signer) }, not the configured Gnosis Safe signer ${ addressString(expectedSafeSigner) }.`)
+			throw createSafeOwnerValidationFailure(`The wallet signature was created by ${ addressString(signer) }, not the expected wallet-selected Gnosis Safe owner ${ addressString(expectedSafeSigner) }.`)
 		}
 		await assertEoaOwner(signer)
 		return { signer, signature: normalizedSignature }
 	}
 	return { assertEoaOwner, validateSignature }
+}
+
+async function validateSafeOwnerIsEoaAtBlock(
+	ethereum: EthereumClientService,
+	safeAddress: EthereumAddress,
+	owner: EthereumAddress,
+	blockNumber: bigint,
+): Promise<ValidatedSafeEoaOwner> {
+	const snapshot = { blockNumber, state: await getSafeContractStateAtBlock(ethereum, safeAddress, blockNumber) }
+	const ownerValidator = createSafeOwnerValidator(ethereum, safeAddress, snapshot)
+	await ownerValidator.assertEoaOwner(owner)
+	return { snapshot, ownerValidator }
+}
+
+export async function validateSafeOwnerIsEoa(
+	ethereum: EthereumClientService,
+	safeAddress: EthereumAddress,
+	owner: EthereumAddress,
+): Promise<ValidatedSafeEoaOwner> {
+	return await validateSafeOwnerIsEoaAtBlock(ethereum, safeAddress, owner, await ethereum.getBlockNumber(undefined))
 }
 
 export function assertUniqueSafeTransactionStacks(stacks: readonly SafeTransactionStack[]) {
@@ -201,7 +250,7 @@ export function assertUniqueSafeTransactionStacks(stacks: readonly SafeTransacti
 
 export function assertInterceptorSafeTransactionPolicy(safeTx: SafeTx) {
 	if (safeTx.message.operation !== 0n) {
-		throw new Error('Interceptor Gnosis Safe stacks support CALL operations only. DELEGATECALL transactions cannot be signed.')
+		throw createSafeContractValidationFailure('Interceptor Gnosis Safe stacks support CALL operations only. DELEGATECALL transactions cannot be signed.')
 	}
 	if (
 		safeTx.message.safeTxGas !== 0n
@@ -210,7 +259,7 @@ export function assertInterceptorSafeTransactionPolicy(safeTx: SafeTx) {
 		|| safeTx.message.gasToken !== 0n
 		|| safeTx.message.refundReceiver !== 0n
 	) {
-		throw new Error('Interceptor Gnosis Safe stacks require zero gas reimbursement fields.')
+		throw createSafeContractValidationFailure('Interceptor Gnosis Safe stacks require zero gas reimbursement fields.')
 	}
 }
 
@@ -282,24 +331,92 @@ async function validateSafeTransactionForSigningAtBlock(
 	blockNumber: bigint,
 	expectedSafeVersion?: string,
 ) {
-	const chainId = ethereum.getChainId()
-	if (chainId === 0n) throw new Error('Gnosis Safe transactions require a chain ID.')
-	if (safeTx.domain.chainId !== chainId) throw new Error('The Gnosis Safe transaction chain ID does not match the selected chain.')
-	if (safeTx.domain.verifyingContract !== safeAddress) throw new Error('The Gnosis Safe transaction verifying contract does not match the active Gnosis Safe.')
-	assertInterceptorSafeTransactionPolicy(safeTx)
+	assertSafeTransactionContext(ethereum, safeAddress, safeTx)
+	const { snapshot, ownerValidator } = await validateSafeOwnerIsEoaAtBlock(ethereum, safeAddress, safeSignerAddress, blockNumber)
+	const context = validateSafeTransactionState(snapshot.state, safeTx, ownerValidator, expectedSafeVersion)
+	return await validateSafeTransactionHashAtBlock(ethereum, safeAddress, safeTx, blockNumber, context)
+}
+
+async function validateSafeTransactionForReviewAtBlock(
+	ethereum: EthereumClientService,
+	safeAddress: EthereumAddress,
+	safeTx: SafeTx,
+	blockNumber: bigint,
+	expectedSafeVersion?: string,
+) {
+	assertSafeTransactionContext(ethereum, safeAddress, safeTx)
 	const state = await getSafeContractStateAtBlock(ethereum, safeAddress, blockNumber)
+	const context = validateSafeTransactionState(state, safeTx, createSafeOwnerValidator(ethereum, safeAddress, { blockNumber, state }), expectedSafeVersion)
+	return await validateSafeTransactionHashAtBlock(ethereum, safeAddress, safeTx, blockNumber, context)
+}
+
+function assertSafeTransactionContext(
+	ethereum: EthereumClientService,
+	safeAddress: EthereumAddress,
+	safeTx: SafeTx,
+) {
+	const chainId = ethereum.getChainId()
+	if (chainId === 0n) throw createSafeContractValidationFailure('Gnosis Safe transactions require a chain ID.')
+	if (safeTx.domain.chainId !== chainId) throw createSafeContractValidationFailure('The Gnosis Safe transaction chain ID does not match the selected chain.')
+	if (safeTx.domain.verifyingContract !== safeAddress) throw createSafeContractValidationFailure('The Gnosis Safe transaction verifying contract does not match the active Gnosis Safe.')
+	assertInterceptorSafeTransactionPolicy(safeTx)
+}
+
+function validateSafeTransactionState(
+	state: SafeContractState,
+	safeTx: SafeTx,
+	ownerValidator: SafeOwnerValidator,
+	expectedSafeVersion?: string,
+) {
 	if (expectedSafeVersion !== undefined && state.version !== expectedSafeVersion) {
-		throw new Error(`The Gnosis Safe version is now ${ state.version }, but the address-book entry records ${ expectedSafeVersion }.`)
+		throw createSafeContractValidationFailure(`The Gnosis Safe version is now ${ state.version }, but the address-book entry records ${ expectedSafeVersion }.`)
 	}
 	if (safeTx.message.nonce < state.nonce) {
-		throw new Error(`The Gnosis Safe transaction nonce ${ safeTx.message.nonce.toString() } is older than the current nonce ${ state.nonce.toString() }.`)
+		throw createSafeContractValidationFailure(`The Gnosis Safe transaction nonce ${ safeTx.message.nonce.toString() } is older than the current nonce ${ state.nonce.toString() }.`)
 	}
-	const ownerValidator = createSafeOwnerValidator(ethereum, safeAddress, { blockNumber, state })
-	await ownerValidator.assertEoaOwner(safeSignerAddress)
+	return { safeState: state, ownerValidator }
+}
+
+async function validateSafeTransactionHashAtBlock(
+	ethereum: EthereumClientService,
+	safeAddress: EthereumAddress,
+	safeTx: SafeTx,
+	blockNumber: bigint,
+	context: { readonly safeState: SafeContractState, readonly ownerValidator: SafeOwnerValidator },
+) {
 	const localHash = BigInt(getSafeTxHash(safeTx))
 	const contractHash = await getSafeTransactionHashFromContract(ethereum, safeAddress, safeTx, blockNumber)
-	if (localHash !== contractHash) throw new Error('The locally computed Gnosis Safe transaction hash does not match the Gnosis Safe contract.')
-	return { safeTxHash: localHash, safeState: state, ownerValidator }
+	if (localHash !== contractHash) throw createSafeContractValidationFailure('The locally computed Gnosis Safe transaction hash does not match the Gnosis Safe contract.')
+	return { safeTxHash: localHash, ...context }
+}
+
+async function createSafeTransactionRequest(
+	ethereum: EthereumClientService,
+	safeAddress: EthereumAddress,
+	safeSignerAddress: EthereumAddress | undefined,
+	transaction: { readonly to: EthereumAddress, readonly value: bigint, readonly input: Uint8Array, readonly gas: bigint },
+	nonce: bigint,
+	validateOwner: boolean,
+): Promise<SafeTransactionSigningRequest> {
+	const safeTx = createSafeTx(ethereum.getChainId(), safeAddress, transaction, nonce)
+	const blockNumber = await ethereum.getBlockNumber(undefined)
+	let validation: Awaited<ReturnType<typeof validateSafeTransactionForReviewAtBlock>>
+	if (validateOwner) {
+		if (safeSignerAddress === undefined) throw createSafeOwnerValidationFailure('A wallet-selected Gnosis Safe owner is required before signing.')
+		validation = await validateSafeTransactionForSigningAtBlock(ethereum, safeAddress, safeSignerAddress, safeTx, blockNumber)
+	} else {
+		validation = await validateSafeTransactionForReviewAtBlock(ethereum, safeAddress, safeTx, blockNumber)
+	}
+	return {
+		safeAddress,
+		...(safeSignerAddress === undefined ? {} : { safeSignerAddress }),
+		safeVersion: validation.safeState.version,
+		threshold: validation.safeState.threshold,
+		reviewedSafeState: validation.safeState,
+		safeTxHash: validation.safeTxHash,
+		safeTx,
+		executionGasLimit: transaction.gas,
+	}
 }
 
 export async function createSafeTransactionSigningRequest(
@@ -309,18 +426,17 @@ export async function createSafeTransactionSigningRequest(
 	transaction: { readonly to: EthereumAddress, readonly value: bigint, readonly input: Uint8Array, readonly gas: bigint },
 	nonce: bigint,
 ): Promise<SafeTransactionSigningRequest> {
-	const safeTx = createSafeTx(ethereum.getChainId(), safeAddress, transaction, nonce)
-	const { safeTxHash, safeState } = await validateSafeTransactionForSigning(ethereum, safeAddress, safeSignerAddress, safeTx)
-	return {
-		safeAddress,
-		safeSignerAddress,
-		safeVersion: safeState.version,
-		threshold: safeState.threshold,
-		reviewedSafeState: safeState,
-		safeTxHash,
-		safeTx,
-		executionGasLimit: transaction.gas,
-	}
+	return await createSafeTransactionRequest(ethereum, safeAddress, safeSignerAddress, transaction, nonce, true)
+}
+
+export async function createSafeTransactionReviewRequest(
+	ethereum: EthereumClientService,
+	safeAddress: EthereumAddress,
+	safeSignerAddress: EthereumAddress | undefined,
+	transaction: { readonly to: EthereumAddress, readonly value: bigint, readonly input: Uint8Array, readonly gas: bigint },
+	nonce: bigint,
+): Promise<SafeTransactionSigningRequest> {
+	return await createSafeTransactionRequest(ethereum, safeAddress, safeSignerAddress, transaction, nonce, false)
 }
 
 export function safeTxToTypedDataJson(safeTx: SafeTx) {

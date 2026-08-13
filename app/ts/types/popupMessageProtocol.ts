@@ -27,7 +27,7 @@ export const popupMessageProtocol = {
 	popup_watchAssetDialog: { domain: 'confirmation' },
 	popup_enableSimulationMode: { domain: 'simulation' },
 	popup_addOrModifyAddressBookEntry: { domain: 'address-book' },
-	popup_setActiveSafeSigner: { domain: 'safe' },
+	popup_setSafeSimulationSigner: { domain: 'safe' },
 	popup_getAddressBookData: { domain: 'address-book' },
 	popup_removeAddressBookEntry: { domain: 'address-book' },
 	popup_openAddressBook: { domain: 'navigation' },
@@ -75,6 +75,7 @@ export const popupMessageProtocol = {
 	popup_requestCompleteVisualizedSimulation: { domain: 'simulation' },
 	popup_requestSimulationMetadata: { domain: 'simulation' },
 	popup_requestIdentifyAddress: { domain: 'address-book' },
+	popup_requestSafeContractState: { domain: 'safe' },
 	popup_isMainPopupWindowOpen: { domain: 'navigation' },
 	popup_isSimulationVisualizerOpen: { domain: 'navigation' },
 } satisfies Record<PopupMessage['method'], PopupMessageProtocolEntry>

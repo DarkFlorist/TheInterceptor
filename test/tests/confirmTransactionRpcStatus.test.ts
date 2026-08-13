@@ -511,7 +511,7 @@ describe('confirm transaction rpc status bootstrap', () => {
 			await clickElement(editAbiButton)
 		})
 
-		assert.equal(dom.document.body.textContent?.includes('Abi:'), true)
+		assert.equal(dom.document.body.textContent?.includes('Contract ABI'), true)
 		await unmountConfirmTransaction(dom)
 		dom.restore()
 	})

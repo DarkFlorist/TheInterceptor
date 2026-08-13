@@ -262,6 +262,11 @@ const fallbackWindow: TestWindow = {
 	addEventListener() { return undefined },
 	removeEventListener() { return undefined },
 }
+const fallbackRequestAnimationFrame: typeof globalThis.requestAnimationFrame = (callback) => {
+	const timeout = setTimeout(() => callback(performance.now()), 0)
+	return Number(timeout)
+}
+const fallbackCancelAnimationFrame: typeof globalThis.cancelAnimationFrame = (handle) => clearTimeout(handle)
 const domMockOwners = new Map<unknown, DomMockState>()
 
 function resolveRestorablePreviousValue(previousValue: unknown, fallbackValue: unknown, getPreviousValue: (state: DomMockState) => unknown): unknown {
@@ -350,8 +355,8 @@ export function installDomMock() {
 			restoreOwnedGlobal('window', globalThis.window === window || globalThis.window?.document === document, previousWindow, fallbackWindow, (owner) => owner.previousWindow)
 			restoreOwnedGlobal('setInterval', globalThis.setInterval === setIntervalMock, previousSetInterval, undefined, (owner) => owner.previousSetInterval)
 			restoreOwnedGlobal('clearInterval', globalThis.clearInterval === clearIntervalMock, previousClearInterval, undefined, (owner) => owner.previousClearInterval)
-			restoreOwnedGlobal('requestAnimationFrame', globalThis.requestAnimationFrame === requestAnimationFrameMock, previousRequestAnimationFrame, undefined, (owner) => owner.previousRequestAnimationFrame)
-			restoreOwnedGlobal('cancelAnimationFrame', globalThis.cancelAnimationFrame === cancelAnimationFrameMock, previousCancelAnimationFrame, undefined, (owner) => owner.previousCancelAnimationFrame)
+			restoreOwnedGlobal('requestAnimationFrame', globalThis.requestAnimationFrame === requestAnimationFrameMock, previousRequestAnimationFrame, fallbackRequestAnimationFrame, (owner) => owner.previousRequestAnimationFrame)
+			restoreOwnedGlobal('cancelAnimationFrame', globalThis.cancelAnimationFrame === cancelAnimationFrameMock, previousCancelAnimationFrame, fallbackCancelAnimationFrame, (owner) => owner.previousCancelAnimationFrame)
 			restoreOwnedGlobal('HTMLDialogElement', globalThis.HTMLDialogElement === OwnedTestDialogElement, previousHtmlDialogElement, undefined, (owner) => owner.previousHtmlDialogElement)
 			restoreOwnedGlobal('HTMLDivElement', globalThis.HTMLDivElement === OwnedTestElement, previousHtmlDivElement, undefined, (owner) => owner.previousHtmlDivElement)
 			restoreOwnedGlobal('Element', globalThis.Element === OwnedTestElement, previousElement, undefined, (owner) => owner.previousElement)

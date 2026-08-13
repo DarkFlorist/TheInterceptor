@@ -10,7 +10,50 @@ const popupHandlerRegistrySources = [
 	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/addressBook.ts', import.meta.url)),
 	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/settings.ts', import.meta.url)),
 	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/websiteAccess.ts', import.meta.url)),
+	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/safe.ts', import.meta.url)),
 ]
+const safeConfirmationResolverSource = await Bun.file(new URL('../../app/ts/background/safeConfirmationResolver.ts', import.meta.url)).text()
+const safeConfirmationPersistenceSource = await Bun.file(new URL('../../app/ts/background/safeConfirmationPersistence.ts', import.meta.url)).text()
+const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/background/safeTransactionConfirmation.ts', import.meta.url)).text()
+const safeSignerSelectionRefreshSource = await Bun.file(new URL('../../app/ts/background/safeSignerSelectionRefresh.ts', import.meta.url)).text()
+const safePendingFlowSource = await Bun.file(new URL('../../app/ts/safe/safePendingFlow.ts', import.meta.url)).text()
+const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
+const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
+const confirmTransactionPageSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
+const refreshPopupSimulationSource = popupMessageHandlersSource.slice(
+	popupMessageHandlersSource.indexOf('export async function refreshPopupConfirmTransactionSimulation'),
+	popupMessageHandlersSource.indexOf('export async function popupChangeActiveRpc'),
+)
+
+const hasDuplicatedSafePendingFlowDiscriminant = (source: string) => {
+	const aliases = new Map(Array.from(
+		source.matchAll(/^\s*const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*;?\s*$/gmu),
+		(match) => [match[1], match[2]] as const,
+	))
+	const resolveAlias = (identifier: string) => {
+		const visited = new Set<string>()
+		while (aliases.has(identifier) && !visited.has(identifier)) {
+			visited.add(identifier)
+			identifier = aliases.get(identifier) ?? identifier
+		}
+		return identifier
+	}
+	const normalizedSource = source.replace(/\s+/gu, ' ')
+	return [
+		/\b([A-Za-z_$][A-Za-z0-9_$]*)\.type === 'Transaction' && ([A-Za-z_$][A-Za-z0-9_$]*)\.safeExecutionOriginalRequestParameters(?: !== undefined|\?\.)/gu,
+		/\b([A-Za-z_$][A-Za-z0-9_$]*)\.type === 'SignableMessage' && ([A-Za-z_$][A-Za-z0-9_$]*)\.safeMessageCoSignSnapshot(?: !== undefined|\?\.)/gu,
+		/\b([A-Za-z_$][A-Za-z0-9_$]*)\.type === 'Transaction' && ([A-Za-z_$][A-Za-z0-9_$]*)\.safeTransaction(?: !== undefined|\?\.)/gu,
+	].some((discriminant) => Array.from(normalizedSource.matchAll(discriminant)).some((match) => {
+		const typeOwner = match[1]
+		const safeFieldOwner = match[2]
+		return typeOwner !== undefined && safeFieldOwner !== undefined && resolveAlias(typeOwner) === resolveAlias(safeFieldOwner)
+	}))
+}
+
+const hasRawSafeFieldAfterTransactionNarrowing = (source: string) => {
+	const normalizedSource = source.replace(/\s+/gu, ' ')
+	return /\b([A-Za-z_$][A-Za-z0-9_$]*)\.type !== 'Transaction'.{0,3000}\b\1\.(?:safeExecutionOriginalRequestParameters|safeTransaction)\b/u.test(normalizedSource)
+}
 
 const getDeclaredPopupHandlerMethods = async (source: Bun.BunFile) => {
 	const contents = await source.text()
@@ -29,6 +72,7 @@ test('popup handler registries agree with the protocol domain inventory', () => 
 		{ source: popupHandlerRegistrySources[1], domains: new Set(['address-book', 'navigation']) },
 		{ source: popupHandlerRegistrySources[2], domains: new Set(['settings', 'navigation']) },
 		{ source: popupHandlerRegistrySources[3], domains: new Set(['website-access', 'navigation']) },
+		{ source: popupHandlerRegistrySources[4], domains: new Set(['safe']) },
 	]
 	return Promise.all(expectedRegistryDomains.map(async ({ source, domains }) => {
 		if (source === undefined) throw new Error('Popup handler registry source is missing')
@@ -60,4 +104,43 @@ test('historical popup wire spellings are explicit protocol exceptions', () => {
 test('popup method guards reject inherited object keys', () => {
 	assert.equal(isPopupMessageMethod('toString'), false)
 	assert.equal(isPopupMessageMethod('__proto__'), false)
+})
+
+test('Safe signer refresh persistence is isolated from confirmation resolution', () => {
+	assert.match(safeSignerSelectionRefreshSource, /export async function refreshAndPersistSafeSignerSelection[\s\S]*?updatePendingTransactionOrMessage/u)
+	assert.match(confirmTransactionSource, /refreshAndPersistSafeSignerSelection\(/u)
+	assert.doesNotMatch(safeConfirmationResolverSource, /function shouldRefreshSafeSignerSelection/u)
+	assert.doesNotMatch(safeConfirmationResolverSource, /function mergeSafeSignerSelectionRefresh/u)
+	assert.doesNotMatch(safeSignerSelectionRefreshSource, /JSON\.stringify/u)
+	assert.doesNotMatch(confirmTransactionSource, /function shouldRefreshSafeSignerSelection/u)
+	assert.doesNotMatch(confirmTransactionSource, /function mergeSafeSignerSelectionRefresh/u)
+	assert.doesNotMatch(confirmTransactionSource, /function persistSafeSignerSelectionRefresh/u)
+})
+
+test('Safe pending flow discrimination has one owner', () => {
+	assert.match(safePendingFlowSource, /kind: 'directExecution'/u)
+	assert.match(safePendingFlowSource, /kind: 'messageCoSign'/u)
+	assert.match(safePendingFlowSource, /kind: 'proposal'/u)
+	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(`
+		candidate.type === 'Transaction'
+			&& candidate.safeTransaction?.safeAddress !== undefined
+	`), true)
+	assert.equal(hasRawSafeFieldAfterTransactionNarrowing(`
+		if (candidate.type !== 'Transaction') return
+		use(candidate.safeTransaction)
+	`), true)
+	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(`
+		const alias = candidate
+		candidate.type === 'Transaction'
+			&& alias.safeTransaction !== undefined
+	`), true)
+	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(safeConfirmationResolverSource), false)
+	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(safeConfirmationPersistenceSource), false)
+	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(safeTransactionConfirmationSource), false)
+	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(safeSignerSelectionRefreshSource), false)
+	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(confirmTransactionSource), false)
+	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(popupMessageHandlersSource), false)
+	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(confirmTransactionPageSource), false)
+	assert.equal(hasRawSafeFieldAfterTransactionNarrowing(refreshPopupSimulationSource), false)
+	assert.doesNotMatch(confirmTransactionPageSource, /currentPendingTransactionOrSignableMessage\.value\.(?:safeExecutionOriginalRequestParameters|safeTransaction)/u)
 })

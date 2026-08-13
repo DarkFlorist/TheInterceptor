@@ -116,7 +116,7 @@ export const SafeEntry = funtypes.ReadonlyObject({
 	entrySource: EntrySource,
 	useAsActiveAddress: funtypes.Boolean,
 }).And(funtypes.Partial({
-	safeSignerAddress: EthereumAddress,
+	safeSimulationSignerAddress: EthereumAddress,
 	safeSignerAddresses: funtypes.ReadonlyArray(EthereumAddress),
 	safeVersion: funtypes.String,
 	logoUri: funtypes.String,
@@ -137,13 +137,7 @@ export const AddressBookEntry: funtypes.Runtype<AddressBookEntry> = funtypes.Uni
 	SafeEntry,
 )
 
-export type SafeEntryWithSafeSigner = SafeEntry & { readonly safeSignerAddress: EthereumAddress }
-
-export function isSafeEntryWithSafeSigner(entry: AddressBookEntry | undefined): entry is SafeEntryWithSafeSigner {
-	return entry?.type === 'safe' && entry.safeSignerAddress !== undefined
-}
-
-export function getConfiguredSafeSigningEntry(
+export function getSafeSigningEntry(
 	entries: readonly AddressBookEntry[],
 	settings: {
 		readonly simulationMode: boolean
@@ -151,24 +145,25 @@ export function getConfiguredSafeSigningEntry(
 		readonly activeSimulationAddress: EthereumAddress | undefined
 		readonly chainId: bigint | undefined
 	},
-): SafeEntryWithSafeSigner | undefined {
+): SafeEntry | undefined {
 	if (
 		settings.simulationMode
 		|| settings.useSignersAddressAsActiveAddress
 		|| settings.activeSimulationAddress === undefined
 		|| settings.chainId === undefined
 	) return undefined
-	return entries.find((entry): entry is SafeEntryWithSafeSigner =>
+	return entries.find((entry): entry is SafeEntry =>
 		entry.address === settings.activeSimulationAddress
 		&& entry.chainId === settings.chainId
-		&& isSafeEntryWithSafeSigner(entry)
+		&& entry.type === 'safe'
 	)
 }
 
 export function getSafeSignerAddresses(entry: SafeEntry) {
-	const configuredSigners = Array.from(new Set(entry.safeSignerAddresses ?? []))
-	if (entry.safeSignerAddress === undefined || configuredSigners.includes(entry.safeSignerAddress)) return configuredSigners
-	return [...configuredSigners, entry.safeSignerAddress]
+	return Array.from(new Set([
+		...(entry.safeSignerAddresses ?? []),
+		...(entry.safeSimulationSignerAddress === undefined ? [] : [entry.safeSimulationSignerAddress]),
+	]))
 }
 
 export type AddressBookEntries = readonly AddressBookEntry[]
@@ -193,7 +188,7 @@ export const IncompleteAddressBookEntry = funtypes.ReadonlyObject({
 	declarativeNetRequestBlockMode: funtypes.Union(funtypes.Undefined, DeclarativeNetRequestBlockMode),
 	chainId: ChainIdWithUniversal,
 }).And(funtypes.ReadonlyPartial({
-	safeSignerAddress: funtypes.String,
+	safeSimulationSignerAddress: funtypes.String,
 	safeSignerAddresses: funtypes.ReadonlyArray(funtypes.String),
 	safeVersion: funtypes.String,
 }))

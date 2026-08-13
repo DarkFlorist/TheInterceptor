@@ -1,7 +1,6 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { isSafeEntryWithSafeSigner } from '../types/addressBookTypes.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -10,8 +9,10 @@ import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
-import { changeSimulationMode, getSettings, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
+import { changeSimulationMode, getSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
 import { getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, promoteRpcAsPrimary, updateTransactionState } from './storageVariables.js'
+import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
+import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 
 export async function resetSimulationStateFromConfig(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
 	await updateTransactionState(() => ({
@@ -57,14 +58,16 @@ export async function changeActiveAddressAndChain(
 		const selectedSafe = change.activeAddress === undefined
 			? undefined
 			: allEntries.find((entry) => entry.type === 'safe' && entry.address === change.activeAddress)
-		const safeEntryWithSafeSigner = change.activeAddress === undefined
+		const safeEntryOnActiveChain = change.activeAddress === undefined
 			? undefined
-			: activeChainEntries.find((entry) => entry.address === change.activeAddress && isSafeEntryWithSafeSigner(entry))
+			: activeChainEntries.find((entry) => entry.address === change.activeAddress && entry.type === 'safe')
 		await changeSimulationMode({
 			simulationMode: change.simulationMode,
 			...(selectedSafe === undefined && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
-			...(selectedSafe !== undefined && safeEntryWithSafeSigner === undefined ? { activeSigningAddress: undefined } : {}),
-			...('activeAddress' in change ? { activeSimulationAddress: safeEntryWithSafeSigner?.address } : {}),
+			...(selectedSafe !== undefined && safeEntryOnActiveChain === undefined ? { activeSigningAddress: undefined } : {}),
+			...(safeEntryOnActiveChain !== undefined
+				? { activeSimulationAddress: safeEntryOnActiveChain.address }
+				: change.activeAddress !== undefined ? { activeSimulationAddress: undefined } : {}),
 			...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
 		})
 	}
@@ -87,6 +90,41 @@ export async function changeActiveAddressAndChain(
 			}
 		}
 		await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
+	})
+}
+
+export async function activateAddressSelection(
+	ethereum: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	resetSimulationServices: ResetSimulationServices,
+	websiteTabConnections: WebsiteTabConnections,
+	selection: ActiveAddressSelection | undefined,
+	options: {
+		readonly simulationMode: boolean
+		readonly signerAddress: bigint | undefined
+		readonly rpcNetwork?: RpcNetwork
+		readonly promptForAccessesIfNeeded?: boolean
+	},
+) {
+	const useSignerAddress = selection?.type === 'signer' || (!options.simulationMode && selection === undefined)
+	await setUseSignersAddressAsActiveAddress(useSignerAddress, useSignerAddress ? selection?.type === 'signer' ? selection.address : options.signerAddress : undefined)
+	await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+		simulationMode: options.simulationMode,
+		activeAddress: selection?.type === 'signer' ? selection.address : selection?.entry.address,
+		...(options.rpcNetwork === undefined ? {} : { rpcNetwork: options.rpcNetwork }),
+		...(options.promptForAccessesIfNeeded === undefined ? {} : { promptForAccessesIfNeeded: options.promptForAccessesIfNeeded }),
+	})
+	if (options.simulationMode || options.signerAddress === undefined || selection === undefined) return
+	if (selection.type === 'signer') {
+		await rememberSigningAddressSelection({ signerAddress: options.signerAddress, selection: 'signer' })
+		return
+	}
+	if (selection.entry.type !== 'safe') throw new Error('Signing mode can only activate the external signer or an owned Gnosis Safe.')
+	await rememberSigningAddressSelection({
+		signerAddress: options.signerAddress,
+		selection: 'safe',
+		safeAddress: selection.entry.address,
+		chainId: selection.entry.chainId,
 	})
 }
 

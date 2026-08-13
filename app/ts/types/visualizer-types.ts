@@ -176,7 +176,10 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 	request: InterceptedRequest,
 	simulationMode: funtypes.Boolean,
 	messageIdentifier: EthereumQuantity,
-})
+}).And(funtypes.ReadonlyPartial({
+	// Older persisted stacks predate the distinction between the active Safe and its simulation signer.
+	activeAddress: EthereumAddress,
+}))
 
 export type SimulationStateInputBlock = funtypes.Static<typeof SimulationStateInputBlock>
 export const SimulationStateInputBlock = funtypes.ReadonlyObject({

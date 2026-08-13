@@ -295,6 +295,87 @@ describe('popup header markup', () => {
 		dom.restore()
 	})
 
+	test('Safe signing account mismatches render named small-address details', async () => {
+		const dom = installDomMock()
+		const pendingMessage: PopupPendingSignableMessage = {
+			type: 'SignableMessage',
+			popupOrTabId: { type: 'popup', id: 1 },
+			originalRequestParameters: { method: 'personal_sign', params: ['hello', fromEntry.address] },
+			simulationMode: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
+			created: personalSignRequest.created,
+			website,
+			activeAddress: fromEntry.address,
+			approvalStatus: {
+				status: 'SignerError',
+				code: -32010,
+				message: 'The Gnosis Safe transaction signing account does not match the active Gnosis Safe.',
+				safeSignerErrorDetails: {
+					kind: 'safeSigningAccountMismatch',
+					requestedSigningAccount: toEntry.address,
+					activeSafe: fromEntry.address,
+					requestedSafe: fromEntry.address,
+					safeOwners: [toEntry.address],
+					safeOwnerAddressBookEntries: [toEntry],
+				},
+			},
+			transactionOrMessageCreationStatus: 'Simulated',
+			visualizedPersonalSignRequest: personalSignRequest,
+		}
+
+		await act(() => {
+			render(h(CheckBoxes, {
+				currentPendingTransactionOrSignableMessage: new Signal(pendingMessage),
+				forceSend: new Signal(false),
+				addressBookEntries: [fromEntry],
+			}), dom.document.body)
+		})
+
+		const details = findFirstByClass(dom.document.body, 'safe-signer-error-details')
+		assert.notEqual(details, undefined)
+		assert.match(details?.textContent ?? '', /Signing accountReceiver/)
+		assert.match(details?.textContent ?? '', /Active SafeSender/)
+		assert.match(details?.textContent ?? '', /Safe ownersReceiver/)
+		dom.restore()
+	})
+
+	test('Safe owner mismatches render the expected and wallet accounts without addresses in prose', async () => {
+		const dom = installDomMock()
+		const message = 'Gnosis Safe owner mismatch: this request expects a different owner. Select the expected owner in MetaMask, then retry.'
+		const pendingMessage: PopupPendingSignableMessage = {
+			type: 'SignableMessage',
+			popupOrTabId: { type: 'popup', id: 1 },
+			originalRequestParameters: { method: 'personal_sign', params: ['hello', fromEntry.address] },
+			simulationMode: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
+			created: personalSignRequest.created,
+			website,
+			activeAddress: fromEntry.address,
+			approvalStatus: {
+				status: 'SignerError',
+				code: -32010,
+				message,
+				safeSignerErrorDetails: { kind: 'safeOwnerMismatch', expectedOwner: fromEntry.address, walletAccount: toEntry.address },
+			},
+			transactionOrMessageCreationStatus: 'Simulated',
+			visualizedPersonalSignRequest: personalSignRequest,
+		}
+
+		await act(() => {
+			render(h(CheckBoxes, {
+				currentPendingTransactionOrSignableMessage: new Signal(pendingMessage),
+				forceSend: new Signal(false),
+				addressBookEntries: [fromEntry, toEntry],
+			}), dom.document.body)
+		})
+
+		const details = findFirstByClass(dom.document.body, 'safe-signer-error-details')
+		assert.match(details?.textContent ?? '', /Expected ownerSender/)
+		assert.match(details?.textContent ?? '', /Wallet accountReceiver/)
+		assert.doesNotMatch(message, /0x[0-9a-f]/iu)
+		dom.restore()
+	})
+
 	test('PendingStackHeader renders its title inside the ellipsis target', async () => {
 		const dom = installDomMock()
 

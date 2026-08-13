@@ -9,7 +9,7 @@ import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import type { EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
-import { getConfiguredSafeSigningEntry, isSafeEntryWithSafeSigner, type AddressBookEntry } from '../types/addressBookTypes.js'
+import { getSafeSigningEntry, type AddressBookEntry } from '../types/addressBookTypes.js'
 import type { RpcEntry } from '../types/rpc.js'
 import { UnexpectedError } from './subcomponents/Error.js'
 import { addressEditEntry } from './ui-utils.js'
@@ -20,12 +20,15 @@ import { useLiveSimulationHomeData } from './hooks/useLiveSimulationHomeData.js'
 import { NetworkErrors } from './subcomponents/NetworkErrors.js'
 import { ProviderErrors } from './subcomponents/ProviderErrors.js'
 import { PopupModal, type PopupPage } from './PopupModal.js'
+import { getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../utils/activeAddressSelection.js'
+import { requestActiveAddressChange } from './activeAddressChange.js'
 export { NetworkErrors } from './subcomponents/NetworkErrors.js'
 
 export function App() {
 	const appPage = useSignal<PopupPage>({ page: 'Unknown' })
 	const {
 		activeAddresses,
+		walletSelectedAddressBookEntry,
 		activeSimulationAddress,
 		activeSigningAddress,
 		useSignersAddressAsActiveAddress,
@@ -50,10 +53,12 @@ export function App() {
 		makeCurrentAddressRich,
 		simulationMode,
 		numberOfAddressesMadeRich,
+		hasSafeTransactionsToExport,
 	} = useLiveSimulationHomeData({
 		answerMainPopupOpen: true,
 		answerSimulationDataConsumerOpen: true,
 		requestFreshHomeDataOnMount: true,
+		requestHomeDataOnSimulationStateChange: true,
 		onInitialSettings(settings: Settings) {
 			if (appPage.value.page !== 'Unknown') return
 			if (settings.openedPage.page === 'AddNewAddress' || settings.openedPage.page === 'ModifyAddress') {
@@ -65,11 +70,13 @@ export function App() {
 	})
 	const boundaryResetKey = useSignal(0)
 
-	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer') {
+	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer', persistedEntry?: AddressBookEntry) {
 		if (!isSettingsLoaded.value) return
+		const selectableAddresses = includePersistedAddressBookEntry(activeAddresses.value, persistedEntry)
+		if (!isActiveAddressSelectionAllowed(address, selectableAddresses, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])) return
+		await requestActiveAddressChange(address, simulationMode.value)
 		useSignersAddressAsActiveAddress.value = address === 'signer'
 		if (address === 'signer') {
-			sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: 'signer', simulationMode: simulationMode.value } })
 			if (simulationMode.value) {
 				activeSimulationAddress.value = tabState.value && tabState.value.signerAccounts.length > 0 ? tabState.value.signerAccounts[0] : undefined
 				return
@@ -77,12 +84,11 @@ export function App() {
 			activeSigningAddress.value = tabState.value && tabState.value.signerAccounts.length > 0 ? tabState.value.signerAccounts[0] : undefined
 			return
 		}
-		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: address, simulationMode: simulationMode.value } })
-		const selectedAddress = activeAddresses.value.find((entry) =>
+		const selectedAddress = selectableAddresses.find((entry) =>
 			entry.address === address && (entry.type !== 'safe' || entry.chainId === rpcNetwork.value?.chainId)
 		)
-		const selectedSafeOnAnyChain = activeAddresses.value.some((entry) => entry.type === 'safe' && entry.address === address)
-		if (simulationMode.value || isSafeEntryWithSafeSigner(selectedAddress)) {
+		const selectedSafeOnAnyChain = selectableAddresses.some((entry) => entry.type === 'safe' && entry.address === address)
+		if (simulationMode.value || selectedAddress?.type === 'safe') {
 			activeSimulationAddress.value = address
 			return
 		}
@@ -230,7 +236,7 @@ export function App() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_clearUnexpectedError' })
 	}
 
-	const activeSafe = useComputed(() => getConfiguredSafeSigningEntry(activeAddresses.value, {
+	const activeSafe = useComputed(() => getSafeSigningEntry(activeAddresses.value, {
 		simulationMode: simulationMode.value,
 		useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress.value,
 		activeSimulationAddress: activeSimulationAddress.value,
@@ -241,11 +247,7 @@ export function App() {
 		simulationMode.value || safeSigningMode.value ? activeSimulationAddress.value : activeSigningAddress.value
 	)
 	const selectableActiveAddresses = useComputed(() =>
-		simulationMode.value
-			? activeAddresses.value.filter((entry) => entry.type !== 'safe' || entry.chainId === rpcNetwork.value?.chainId)
-			: activeAddresses.value.filter((entry) =>
-				entry.chainId === rpcNetwork.value?.chainId && isSafeEntryWithSafeSigner(entry)
-			)
+		getSelectableActiveAddresses(activeAddresses.value, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])
 	)
 
 	return (
@@ -282,6 +284,7 @@ export function App() {
 						changeActiveAddress = { changeActiveAddress }
 						makeCurrentAddressRich = { makeCurrentAddressRich }
 						activeAddresses = { activeAddresses }
+						walletSelectedAddressBookEntry = { walletSelectedAddressBookEntry }
 						simulationMode = { simulationMode }
 						tabIconDetails = { tabIconDetails }
 						currentBlockNumber = { currentBlockNumber }
@@ -296,6 +299,7 @@ export function App() {
 						preSimulationBlockTimeManipulation = { preSimulationBlockTimeManipulation }
 						fixedAddressRichList = { fixedAddressRichList }
 						numberOfAddressesMadeRich = { numberOfAddressesMadeRich }
+						hasSafeTransactionsToExport = { hasSafeTransactionsToExport }
 						isInitialHomeDataLoaded = { isSettingsLoaded }
 						isFreshHomeDataLoaded = { isFreshHomeDataLoaded }
 					/>
@@ -309,6 +313,7 @@ export function App() {
 							websiteAccessAddressMetadata = { websiteAccessAddressMetadata }
 							renameAddressCallBack = { renameAddressCallBack }
 							setActiveAddressAndInformAboutIt = { setActiveAddressAndInformAboutIt }
+							allowCreateAndSwitch = { simulationMode.value }
 							signerAccounts = { tabState.value?.signerAccounts ?? [] }
 							activeAddresses = { selectableActiveAddresses }
 							signerName = { tabState.value?.signerName ?? 'NoSignerDetected' }

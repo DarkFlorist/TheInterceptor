@@ -2,7 +2,7 @@ import { useEffect } from 'preact/hooks'
 import { MessageToPopup, type HomePageBootstrap, type UpdateHomePage, type Settings } from '../../types/interceptor-messages.js'
 import type { RpcConnectionStatus, TabIconDetails, TabState } from '../../types/user-interface-types.js'
 import { PASSTHROUGH_STATE, type BlockTimeManipulation, type CompleteVisualizedSimulation, type NamedTokenId, type ResolvedSimulationResults, type ResolvedSimulationState, type SimulationResultState, type SimulationUpdatingState, type TokenPriceEstimate, type VisualizedSimulationState, toResolvedSimulationResults } from '../../types/visualizer-types.js'
-import type { AddressBookEntries } from '../../types/addressBookTypes.js'
+import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { RpcEntries, RpcNetwork } from '../../types/rpc.js'
 import type { WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import type { EnrichedRichListElement, UnexpectedErrorOccured } from '../../types/interceptor-reply-messages.js'
@@ -37,6 +37,7 @@ const CACHED_HOME_DATA_REQUESTS: Record<LiveHomeDataUpdateKind, CachedHomeDataRe
 
 export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions) {
 	const activeAddresses = useSignal<AddressBookEntries>([])
+	const walletSelectedAddressBookEntry = useSignal<AddressBookEntry | undefined>(undefined)
 	const activeSimulationAddress = useSignal<bigint | undefined>(undefined)
 	const activeSigningAddress = useSignal<bigint | undefined>(undefined)
 	const useSignersAddressAsActiveAddress = useSignal<boolean>(false)
@@ -63,6 +64,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 	const popupIconRefreshGeneration = useSignal(0)
 	const fixedAddressRichList = useSignal<readonly EnrichedRichListElement[]>([])
 	const makeCurrentAddressRich = useSignal<boolean>(false)
+	const hasSafeTransactionsToExport = useSignal<boolean>(false)
 	const simulationMode = useSignal<boolean>(false)
 	const numberOfAddressesMadeRich = useSignal(0)
 
@@ -137,6 +139,8 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			const wasLoaded = isSettingsLoaded.value
 			isSettingsLoaded.value = true
 			activeAddresses.value = data.activeAddresses
+			hasSafeTransactionsToExport.value = data.hasSafeTransactionsToExport
+			walletSelectedAddressBookEntry.value = data.walletSelectedAddressBookEntry
 			activeSigningAddress.value = data.activeSigningAddressInThisTab
 			currentTabId.value = data.tabId
 			rpcEntries.value = data.rpcEntries
@@ -163,8 +167,10 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			currentTabId.value = data.tabId
 			activeSigningAddress.value = data.activeSigningAddressInThisTab
 			activeAddresses.value = data.activeAddresses
+			walletSelectedAddressBookEntry.value = data.walletSelectedAddressBookEntry
 			interceptorDisabled.value = data.interceptorDisabled
 			makeCurrentAddressRich.value = data.makeCurrentAddressRich
+			hasSafeTransactionsToExport.value = data.hasSafeTransactionsToExport
 			fixedAddressRichList.value = data.richList
 			unexpectedError.value = data.latestUnexpectedError
 			if (!wasLoaded) options.onInitialSettings?.(data.settings)
@@ -279,6 +285,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 
 	return {
 		activeAddresses,
+		walletSelectedAddressBookEntry,
 		activeSimulationAddress,
 		activeSigningAddress,
 		useSignersAddressAsActiveAddress,
@@ -302,6 +309,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 		popupRefreshAppliedGeneration,
 		fixedAddressRichList,
 		makeCurrentAddressRich,
+		hasSafeTransactionsToExport,
 		simulationMode,
 		numberOfAddressesMadeRich,
 	}

@@ -4,10 +4,11 @@ import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js
 import { setLatestUnexpectedError } from './storageVariables.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
-import { changeActiveAddress, changeChainDialog, changePage, changePreSimulationBlockTimeManipulation, confirmDialog, enableSimulationMode, fetchSimulationStackRequestConfirmation, forceSetGasLimitForTransaction, importSafeStack, importSimulationStack, modifyMakeMeRich, openNewTab, openWebPage, popupReadyAndListening, refreshHomeData, refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation, removeTransactionOrSignedMessage, reportUnexpectedErrorInWindow, requestAccountsFromSigner, requestActiveAddresses, requestCompleteVisualizedSimulation, requestHomePageBootstrap, requestInterceptorSimulationInput, requestLatestUnexpectedError, requestMakeMeRichList, requestNewHomeData, requestSafeStackExport, requestSimulationMetadata, requestSimulationMode, setActiveSafeSigner, setTransactionOrMessageBlockTimeManipulator, simulateGnosisSafeTransactionOnPass, simulateGovernanceContractExecutionOnPass, watchAssetDialog } from './popupMessageHandlers.js'
+import { changeActiveAddress, changeChainDialog, changePage, changePreSimulationBlockTimeManipulation, confirmDialog, enableSimulationMode, fetchSimulationStackRequestConfirmation, forceSetGasLimitForTransaction, importSafeStack, importSimulationStack, modifyMakeMeRich, openNewTab, openWebPage, popupReadyAndListening, refreshHomeData, refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation, removeTransactionOrSignedMessage, reportUnexpectedErrorInWindow, requestAccountsFromSigner, requestActiveAddresses, requestCompleteVisualizedSimulation, requestHomePageBootstrap, requestInterceptorSimulationInput, requestLatestUnexpectedError, requestMakeMeRichList, requestNewHomeData, requestSafeStackExport, requestSimulationMetadata, requestSimulationMode, setSafeSimulationSigner, setTransactionOrMessageBlockTimeManipulator, simulateGnosisSafeTransactionOnPass, simulateGovernanceContractExecutionOnPass, watchAssetDialog } from './popupMessageHandlers.js'
 import { popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
 import { addressBookPopupMessageHandlers } from './popupMessageHandlerRegistries/addressBook.js'
 import { settingsPopupMessageHandlers } from './popupMessageHandlerRegistries/settings.js'
+import { safePopupMessageHandlers } from './popupMessageHandlerRegistries/safe.js'
 import { websiteAccessPopupMessageHandlers } from './popupMessageHandlerRegistries/websiteAccess.js'
 
 export type { PopupMessageDispatcherContext } from './popupMessageHandlerRegistry.js'
@@ -28,7 +29,7 @@ const popupMessageHandlers = {
 	popup_changeChainDialog: popupMessageHandler('popup_changeChainDialog', async (context, request) => await changeChainDialog(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
 	popup_watchAssetDialog: popupMessageHandler('popup_watchAssetDialog', async (context, request) => await watchAssetDialog(context.websiteTabConnections, request)),
 	popup_enableSimulationMode: popupMessageHandler('popup_enableSimulationMode', async (context, request) => await enableSimulationMode(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
-	popup_setActiveSafeSigner: popupMessageHandler('popup_setActiveSafeSigner', async (context, request) => await setActiveSafeSigner(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
+	popup_setSafeSimulationSigner: popupMessageHandler('popup_setSafeSimulationSigner', async (context, request) => await setSafeSimulationSigner(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
 	popup_requestNewHomeData: popupMessageHandler('popup_requestNewHomeData', async (context, request) => await requestNewHomeData(context.ethereum, context.websiteTabConnections, request.data.refreshSignerAccounts, request.data.includeWebsiteAccessAddressMetadata, context.simulationAbortController, bumpPopupRefreshGeneration())),
 	popup_requestHomePageBootstrap: popupMessageHandler('popup_requestHomePageBootstrap', async (context) => await requestHomePageBootstrap(context.websiteTabConnections, bumpPopupRefreshGeneration())),
 	popup_refreshHomeData: popupMessageHandler('popup_refreshHomeData', async (context) => await refreshHomeData(context.ethereum, context.tokenPriceService, context.websiteTabConnections, true, bumpPopupRefreshGeneration(), context.publishRpcConnectionStatus)),
@@ -56,6 +57,7 @@ const popupMessageHandlers = {
 	popup_isMainPopupWindowOpen: popupMessageHandler('popup_isMainPopupWindowOpen', async () => undefined),
 	popup_isSimulationVisualizerOpen: popupMessageHandler('popup_isSimulationVisualizerOpen', async () => undefined),
 	...addressBookPopupMessageHandlers,
+	...safePopupMessageHandlers,
 	...settingsPopupMessageHandlers,
 	...websiteAccessPopupMessageHandlers,
 } satisfies PopupMessageHandlerMap

@@ -197,7 +197,7 @@ async function getDelegationAddressesForSimulation(
 				displayMessage: `Failed to retrieve EIP-7702 delegation for ${ senderAddressString }: ${ errorMessage }`,
 				code: 'delegation_lookup_failed',
 				details: { senderAddress: senderAddressString },
-				suppressExpectedInfrastructure: false,
+				suppressExpectedHandledErrors: false,
 			})
 			return undefined
 		}

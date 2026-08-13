@@ -12,6 +12,7 @@ import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
+import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -49,6 +50,7 @@ type StartupStorageDefaults = {
 	activeRpcNetwork: RpcNetwork
 	makeCurrentAddressRich: boolean
 	fixedAddressRichList: readonly RichListElement[]
+	signingAddressPreferences: SigningAddressPreferences
 }
 
 async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDefaults>(key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
@@ -87,6 +89,24 @@ export function getInterceptorDisabledSites(settings: Settings): string[] {
 
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
 export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))?.openedPageV2 ?? { page: 'Home' }
+
+const signingAddressPreferencesSemaphore = new Semaphore(1)
+
+export async function getSigningAddressPreferences() {
+	return await getParsedStorageValueOrDefault('signingAddressPreferences', [])
+}
+
+export async function rememberSigningAddressPreference(preference: SigningAddressPreference) {
+	await signingAddressPreferencesSemaphore.execute(async () => {
+		const preferences = await getSigningAddressPreferences()
+		await browserStorageLocalSet({
+			signingAddressPreferences: [
+				...preferences.filter((existing) => existing.signerAddress !== preference.signerAddress),
+				preference,
+			],
+		})
+	})
+}
 
 export const setMakeCurrentAddressRich = async (makeCurrentAddressRich: boolean) => await browserStorageLocalSet({ makeCurrentAddressRich })
 export const getMakeCurrentAddressRich = async() => await getParsedStorageValueOrDefault('makeCurrentAddressRich', false)

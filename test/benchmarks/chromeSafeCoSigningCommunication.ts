@@ -66,6 +66,7 @@ const SIGNED_MESSAGE_STACK = {
 		signedMessageTransaction: {
 			website: { websiteOrigin: 'https://signed-message.example', icon: undefined, title: 'Signed message' },
 			created: new Date('2026-07-28T00:00:00.000Z'),
+			activeAddress: SAFE_ADDRESS,
 			fakeSignedFor: SAFE_ADDRESS,
 			originalRequestParameters: { method: 'personal_sign' as const, params: ['0x68656c6c6f', SAFE_ADDRESS] },
 			request: {
@@ -404,7 +405,8 @@ async function main() {
 					entrySource: 'User',
 					useAsActiveAddress: true,
 					askForAddressAccess: false,
-					safeSignerAddress: addressString(OWNER_ADDRESS),
+					safeSignerAddresses: [addressString(OWNER_ADDRESS)],
+					safeSimulationSignerAddress: addressString(OWNER_ADDRESS),
 					safeVersion: '1.4.1',
 				}],
 			}
@@ -443,7 +445,12 @@ async function main() {
 			await pageConnection.send('Page.enable')
 			await pageConnection.send('Page.addScriptToEvaluateOnNewDocument', { source: fakeSignerPreload })
 			await pageConnection.send('Page.navigate', { url: `http://127.0.0.1:${ server.port }/` })
-			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'requesting-access'`).catch(() => false), 30_000, 'Safe access request')
+			try {
+				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'requesting-access'`).catch(() => false), 30_000, 'Safe access request')
+			} catch (error) {
+				const accessDiagnostics = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, signerRequests: globalThis.__fakeSafeSignerRequests, url: location.href, body: document.body.textContent })')
+				throw new Error(`Safe access request did not open: ${ JSON.stringify(accessDiagnostics) }`, { cause: error })
+			}
 
 			const accessTarget = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/interceptorAccessV3.html`, 30_000)
 			accessTargetId = accessTarget.id
@@ -519,7 +526,7 @@ async function main() {
 			}
 			const signerRequest = await pageConnection.evaluate<{ method: string, params?: readonly unknown[] }>(`globalThis.__fakeSafeSignerRequests.find(({ method }) => method === 'eth_signTypedData_v4')`)
 			if (typeof signerRequest.params?.[0] !== 'string' || signerRequest.params[0].toLowerCase() !== addressString(OWNER_ADDRESS).toLowerCase()) {
-				throw new Error('Interceptor did not substitute the configured Safe EOA signer')
+				throw new Error('Interceptor did not substitute the wallet-selected Safe owner')
 			}
 			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__safeCoSigningResult?.status === 'fulfilled'`).catch(() => false), 10_000, 'Safe co-signature result')
 			const signingResult = await pageConnection.evaluate<{ status?: string, result?: string }>('globalThis.__safeCoSigningResult')
@@ -681,7 +688,7 @@ async function main() {
 			const simulationStackConnection = await connectTarget(chrome.browserDebugPort, simulationStackTargetId)
 			try {
 				await waitForText(simulationStackConnection, 'Simulation Stack')
-				await clickButtonWithText(simulationStackConnection, 'Import Gnosis Safe')
+				await clickButtonWithText(simulationStackConnection, 'Import Gnosis Safe transactions')
 				await waitForText(simulationStackConnection, 'Import Interceptor Gnosis Safe Stack')
 				await simulationStackConnection.evaluate(`(() => {
 					const input = document.querySelector('.simulation-stack-import-input')

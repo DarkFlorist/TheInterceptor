@@ -9,7 +9,7 @@ import { VisualizedPersonalSignRequest } from './personal-message-definitions.js
 import { OriginalSendRequestParameters, SendTransactionParams } from './JsonRpc-types.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { DecodedError } from './error.js'
-import { SafeContractStateSnapshot, SafeMessageCoSignSnapshot, SafeTransactionSigningRequest } from './safeTypes.js'
+import { SafeContractStateSnapshot, SafeMessageCoSignSnapshot, SafeSignerErrorDetails, SafeTransactionSigningRequest } from './safeTypes.js'
 
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
 export const PendingAccessRequest = funtypes.ReadonlyObject({
@@ -84,7 +84,7 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 		status: funtypes.Union(funtypes.Literal('SignerError')),
 		code: funtypes.Number,
 		message: funtypes.String,
-	}),
+	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: SafeSignerErrorDetails })),
 )
 
 type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>

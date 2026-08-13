@@ -1,7 +1,8 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { getSelectedPendingAccessRequest } from '../../app/ts/components/pages/InterceptorAccess.js'
-import { assertAccessDialogAddressIsAvailable, filterAccessDialogAddressesForChain } from '../../app/ts/background/windows/interceptorAccess.js'
+import { filterAccessDialogAddressesForChain } from '../../app/ts/background/windows/interceptorAccess.js'
+import { assertActiveAddressSelectionAllowed } from '../../app/ts/utils/activeAddressSelection.js'
 import type { PendingAccessRequest } from '../../app/ts/types/accessRequest.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
 
@@ -90,10 +91,10 @@ describe('InterceptorAccess modal request selection', () => {
 			filterAccessDialogAddressesForChain(entries, 1n).map(({ address }) => address),
 			[currentChainSafeAddress, contactAddress],
 		)
-		assert.doesNotThrow(() => assertAccessDialogAddressIsAvailable(entries, 1n, currentChainSafeAddress))
-		assert.doesNotThrow(() => assertAccessDialogAddressIsAvailable(entries, 1n, contactAddress))
+		assert.doesNotThrow(() => assertActiveAddressSelectionAllowed(currentChainSafeAddress, entries, true, 1n, []))
+		assert.doesNotThrow(() => assertActiveAddressSelectionAllowed(contactAddress, entries, true, 1n, []))
 		assert.throws(
-			() => assertAccessDialogAddressIsAvailable(entries, 1n, wrongChainSafeAddress),
+			() => assertActiveAddressSelectionAllowed(wrongChainSafeAddress, entries, true, 1n, []),
 			/configured for another chain/u,
 		)
 	})

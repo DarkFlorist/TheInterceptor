@@ -4,6 +4,7 @@ import { test } from 'bun:test'
 const backgroundSource = await Bun.file(new URL('../../app/ts/background/background.ts', import.meta.url)).text()
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
+const confirmTransactionComponentSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
 const safeSourceDirectory = new URL('../../app/ts/safe/', import.meta.url).pathname
 const safeSourceFiles: string[] = []
 for await (const file of new Bun.Glob('*.ts').scan({ cwd: safeSourceDirectory, absolute: true })) safeSourceFiles.push(file)
@@ -32,4 +33,9 @@ test('popup message handlers delegate Gnosis Safe stack import and export', () =
 
 test('the Gnosis Safe domain layer does not import background orchestration', () => {
 	for (const safeSource of safeSources) assert.doesNotMatch(safeSource, /from '\.\.\/background\//u)
+})
+
+test('the confirmation presentation imports shared Safe flow policy from the domain layer', () => {
+	assert.match(confirmTransactionComponentSource, /from '\.\.\/\.\.\/safe\/safePendingFlow\.js'/u)
+	assert.doesNotMatch(confirmTransactionComponentSource, /from '\.\.\/\.\.\/background\/safePendingFlow\.js'/u)
 })

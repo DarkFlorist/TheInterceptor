@@ -303,7 +303,7 @@ export function useRpcConnectionsList() {
 					source: 'settingsView',
 					code: 'rpc_list_initial_load_failed',
 					displayMessage: 'Failed to load RPC connections.',
-					suppressExpectedInfrastructure: false,
+					suppressExpectedHandledErrors: false,
 				})
 			}
 		}
