@@ -1,7 +1,8 @@
 import * as assert from 'assert'
 import { signal } from '@preact/signals'
 import { describe, test } from 'bun:test'
-import { getDynamicScrollOffset } from '../../app/ts/components/subcomponents/DynamicScroller.js'
+import { getClampedDynamicScrollStartIndex, getDynamicScrollOffset } from '../../app/ts/components/subcomponents/DynamicScroller.js'
+import { clearHintTimeouts } from '../../app/ts/components/subcomponents/Hint.js'
 import { scheduleTooltipDismissal, type TooltipConfig } from '../../app/ts/components/subcomponents/Tooltip.js'
 
 describe('tooltip dismissal', () => {
@@ -51,5 +52,18 @@ describe('dynamic scrolling offset', () => {
 
 	test('clamps the requested offset to the final full viewport', () => {
 		assert.equal(getDynamicScrollOffset(8, 40, 10, 4), 240)
+	})
+
+	test('clamps a stale start index when the item list shrinks', () => {
+		assert.equal(getClampedDynamicScrollStartIndex(8, 2, 4), 0)
+		assert.equal(getClampedDynamicScrollStartIndex(8, 10, 4), 6)
+	})
+})
+
+describe('hint cleanup', () => {
+	test('clears both pending hint timers on cleanup', () => {
+		const clearedTimers: Array<number | undefined> = []
+		clearHintTimeouts([7, 11], (timerId) => { clearedTimers.push(timerId) })
+		assert.deepEqual(clearedTimers, [7, 11])
 	})
 })

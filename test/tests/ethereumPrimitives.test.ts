@@ -3,6 +3,7 @@ import { describe, test } from 'bun:test'
 import type { Abi, Hex } from '../../app/ts/utils/ethereumPrimitives.js'
 import { bytesToHex, concat, decodeAbiParameters, decodeEventLog, decodeFunctionData, encodeAbiParameters, encodePacked, ens_normalize, formatAbiItem, formatUnits, getAddress, getCreate2Address, hashMessage, hashStruct, hashTypedData, isAddress, keccak256, namehash, parseAbiItem, parseAbiParameters, parseTransaction, privateKeyToAccount, recoverAddress, serializeTransaction, stringToBytes, toEventSelector, toFunctionSelector, toRlp } from '../../app/ts/utils/ethereumPrimitives.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
+import { stringToAddress } from '../../app/ts/utils/bigint.js'
 import { canVerifyStructArray, d2Array, d2ArrayFixed, d3ArrayFixed, hasFixedArray } from './data/eip712Data.js'
 
 const privateKey = '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
@@ -225,9 +226,11 @@ describe('local Ethereum primitive helpers', () => {
 		assert.throws(() => getAddress('0x1234'), /invalid/u)
 		assert.equal(isAddress(checksumDeadAddress), true)
 		assert.equal(isAddress(lowercaseDeadAddress), true)
-		assert.equal(isAddress('0x000000000000000000000000000000000000DEAD'), false)
+		assert.equal(isAddress('0x000000000000000000000000000000000000DEAD'), true)
 		assert.equal(isAddress('0X000000000000000000000000000000000000DEAD'), false)
 		assert.equal(isAddress(invalidChecksumDeadAddress), false)
+		assert.equal(isAddress('0xDE709F2102306220921060314715629080E2FB77'), true)
+		assert.equal(stringToAddress('0xDE709F2102306220921060314715629080E2FB77'), 0xde709f2102306220921060314715629080e2fb77n)
 		assert.equal(
 			getCreate2Address({
 				from: checksumDeadAddress,

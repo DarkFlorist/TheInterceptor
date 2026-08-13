@@ -1853,7 +1853,9 @@ describe('inpage signer bridge', () => {
 			assert.deepEqual((fakeWindow as { web3?: { accounts?: unknown } }).web3?.accounts, [signerAccount])
 
 			const accountEvents: unknown[] = []
+			const disconnectEvents: unknown[] = []
 			provider.on('accountsChanged', (accounts) => accountEvents.push(accounts))
+			provider.on('disconnect', (error) => disconnectEvents.push(error))
 			sendBackgroundMessage({
 				interceptorApproved: true,
 				type: 'result',
@@ -1868,6 +1870,7 @@ describe('inpage signer bridge', () => {
 			})
 			await waitFor(() => provider.selectedAddress === undefined && !provider.isConnected())
 			assert.deepEqual(accountEvents, [[]])
+			assert.deepEqual(disconnectEvents, [{ name: 'disconnect', code: 4900, message: 'Provider disconnected from all chains.' }])
 			assert.deepEqual(provider.send({ id: 4, method: 'eth_accounts', params: [] }).result, [])
 			assert.deepEqual((fakeWindow as { web3?: { accounts?: unknown } }).web3?.accounts, [])
 		})

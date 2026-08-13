@@ -161,7 +161,7 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 	const bytesRegex = /^bytes$/
 	const bytesMatch = typeStr.match(bytesRegex)
 	if (bytesMatch) {
-		return typeof value === 'string' && /^0x[a-fA-F0-9]*$/.test(value) ? { valid: true } : { valid: false, reason: `${ value } is invalid bytes string` }
+		return typeof value === 'string' && /^0x(?:[a-fA-F0-9]{2})*$/.test(value) ? { valid: true } : { valid: false, reason: `${ value } is invalid bytes string` }
 	}
 
 	// Other built-in types
