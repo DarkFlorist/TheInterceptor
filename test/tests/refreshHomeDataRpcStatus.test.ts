@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 
 type RuntimeMessage = {
 	method?: string
@@ -8,6 +9,9 @@ type RuntimeMessage = {
 	popupRefreshGeneration?: number
 	data?: {
 		activeSigningAddressInThisTab?: bigint
+		activeAddresses?: readonly { address: bigint }[]
+		hasSafeTransactionsToExport?: boolean
+		walletSelectedAddressBookEntry?: { address: bigint, name: string }
 		rpcConnectionStatus?: {
 			retrying: boolean
 		}
@@ -24,7 +28,7 @@ type PortMessage = {
 }
 
 type RegisteredContentScript = {
-	readonly id?: string
+	readonly id: string
 	readonly js?: readonly string[]
 }
 
@@ -64,11 +68,25 @@ function installBrowserMock() {
 				},
 			},
 			scripting: {
-				async unregisterContentScripts() {
-					registeredContentScripts.splice(0, registeredContentScripts.length)
+				async getRegisteredContentScripts() {
+					return [...registeredContentScripts]
+				},
+				async unregisterContentScripts(filter?: { readonly ids?: readonly string[] }) {
+					const ids = new Set(filter?.ids ?? registeredContentScripts.map(({ id }) => id))
+					for (let index = registeredContentScripts.length - 1; index >= 0; index--) {
+						const registration = registeredContentScripts[index]
+						if (registration !== undefined && ids.has(registration.id)) registeredContentScripts.splice(index, 1)
+					}
 				},
 				async registerContentScripts(scripts: readonly RegisteredContentScript[]) {
 					registeredContentScripts.push(...scripts)
+				},
+				async updateContentScripts(scripts: readonly RegisteredContentScript[]) {
+					for (const script of scripts) {
+						const index = registeredContentScripts.findIndex(({ id }) => id === script.id)
+						if (index === -1) registeredContentScripts.push(script)
+						else registeredContentScripts[index] = script
+					}
 				},
 			},
 			tabs: {
@@ -365,7 +383,7 @@ describe('refreshHomeData', () => {
 	test('home bootstrap uses mode-aware active address resolution without a simulation snapshot', async () => {
 		const browserMock = installBrowserMock()
 		const modules: TestModules = await loadModules()
-		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, requestHomePageBootstrap, requestNewHomeData, defaultActiveAddresses, defaultRpcs, websiteSocketToString, EthereumClientService } = modules
+		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, updateTransactionState, requestHomePageBootstrap, requestNewHomeData, defaultActiveAddresses, defaultRpcs, websiteSocketToString, EthereumClientService } = modules
 
 		const [defaultAddress] = defaultActiveAddresses
 		if (defaultAddress === undefined) throw new Error('missing default address')
@@ -379,6 +397,16 @@ describe('refreshHomeData', () => {
 			websiteAccess: [],
 			activeRpcNetwork: rpcNetwork,
 			simulationMode: false,
+			userAddressBookEntriesV3: [
+				defaultAddress,
+				{
+					type: 'contact',
+					name: 'Named signer contact',
+					address: signerAddress,
+					entrySource: 'User',
+					useAsActiveAddress: false,
+				},
+			],
 		})
 		await saveCurrentTabId(1)
 		await updateTabState(1, (previousState) => ({
@@ -386,6 +414,28 @@ describe('refreshHomeData', () => {
 			signerName: 'MetaMask',
 			signerAccounts: [signerAddress],
 			activeSigningAddress: undefined,
+		}))
+		await updateTransactionState((previousState) => ({
+			...previousState,
+			safeTransactionStacks: [{
+				chainId: rpcNetwork.chainId,
+				safeAddress: defaultAddress.address,
+				safeVersion: '1.4.1',
+				baseNonce: 0n,
+				threshold: 1n,
+				transactions: [{
+					safeTx: createSafeTx(rpcNetwork.chainId, defaultAddress.address, {
+						to: defaultAddress.address,
+						value: 0n,
+						input: new Uint8Array(),
+					}, 0n),
+					safeTxHash: 0n,
+					created: new Date('2024-01-01T00:00:00.000Z'),
+					websiteOrigin: 'https://example.com',
+					transactionIdentifier: 1n,
+					signatures: [],
+				}],
+			}],
 		}))
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port } = createPort(socket.tabId)
@@ -406,6 +456,9 @@ describe('refreshHomeData', () => {
 		const bootstrap = browserMock.sentMessages.findLast((message) => message.method === 'popup_homePageBootstrap')
 		assert.equal(bootstrap?.popupRefreshGeneration, 7)
 		assert.equal(bootstrap?.data?.activeSigningAddressInThisTab, signerAddress)
+		assert.equal(bootstrap?.data?.walletSelectedAddressBookEntry?.name, 'Named signer contact')
+		assert.equal(bootstrap?.data?.hasSafeTransactionsToExport, true)
+		assert.equal(bootstrap?.data?.activeAddresses?.some((entry) => entry.address === signerAddress), false)
 		assert.equal(bootstrap?.data?.settings?.simulationMode, false)
 		assert.equal(bootstrap?.data?.visualizedSimulatorState, undefined)
 
@@ -432,6 +485,7 @@ describe('refreshHomeData', () => {
 
 		const fullHomeData = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage')
 		assert.equal(fullHomeData?.data?.activeSigningAddressInThisTab, defaultAddress.address)
+		assert.equal(fullHomeData?.data?.walletSelectedAddressBookEntry?.name, 'Named signer contact')
 	})
 
 	test('home bootstrap hides cached signer addresses without a confirmed signer owner', async () => {

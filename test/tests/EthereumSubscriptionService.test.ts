@@ -1,7 +1,8 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { createExecutionSimulationState, DEFAULT_BLOCK_MANIPULATION, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { DEFAULT_BLOCK_MANIPULATION } from '../../app/ts/config/defaults.js'
 import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
 import { JsonRpcResponse, type EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import type { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
@@ -235,11 +236,11 @@ const blockNumber = 8443561n
 				},
 			]))
 
-			const firstChanges = await getEthFilterChanges('filter-1', ethereum, undefined, toResolvedExecutionSimulationState(simulationState))
+			const firstChanges = await getEthFilterChanges(filterSocket, 'filter-1', ethereum, undefined, toResolvedExecutionSimulationState(simulationState))
 			assert.equal(firstChanges?.length, 1)
 			assert.equal(firstChanges?.[0]?.address, matchingLog.address)
 
-			const secondChanges = await getEthFilterChanges('filter-1', ethereum, undefined, toResolvedExecutionSimulationState(simulationState))
+			const secondChanges = await getEthFilterChanges(filterSocket, 'filter-1', ethereum, undefined, toResolvedExecutionSimulationState(simulationState))
 			assert.deepEqual(secondChanges, [])
 
 			const updated = await getEthereumSubscriptionsAndFilters()
@@ -250,17 +251,17 @@ const blockNumber = 8443561n
 			assert.equal(updated[1]?.subscriptionOrFilterId, 'keep-me')
 		})
 
-		test('eth_getFilterChanges only returns newly simulated logs once', async () => {
+		test('eth_getFilterChanges treats a null address as unrestricted', async () => {
 			installBrowserMock()
 			const { createNewFilter, getEthFilterChanges, getEthereumSubscriptionsAndFilters } = await loadModules()
 			const ethereum = createEthereum()
 			const socket = { tabId: 1, connectionName: 1n } as const
-			const filterId = await createNewFilter({ method: 'eth_newFilter', params: [{}] }, socket, ethereum, undefined, PASSTHROUGH_STATE)
+			const filterId = await createNewFilter({ method: 'eth_newFilter', params: [{ address: null }] }, socket, ethereum, undefined, PASSTHROUGH_STATE)
 			const simulationState = await createExecutionSimulationState(ethereum, undefined, createSimulationInput(21_000n, 0n, 1n))
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 
-			const firstChanges = await getEthFilterChanges(filterId, ethereum, undefined, toResolvedExecutionSimulationState(simulationState))
-			const secondChanges = await getEthFilterChanges(filterId, ethereum, undefined, toResolvedExecutionSimulationState(simulationState))
+			const firstChanges = await getEthFilterChanges(socket, filterId, ethereum, undefined, toResolvedExecutionSimulationState(simulationState))
+			const secondChanges = await getEthFilterChanges(socket, filterId, ethereum, undefined, toResolvedExecutionSimulationState(simulationState))
 			const storedFilters = await getEthereumSubscriptionsAndFilters()
 			const storedFilter = storedFilters.find((filter) => filter.type === 'eth_newFilter' && filter.subscriptionOrFilterId === filterId)
 			if (storedFilter === undefined || storedFilter.type !== 'eth_newFilter') throw new Error('stored filter missing')
@@ -269,6 +270,57 @@ const blockNumber = 8443561n
 			assert.equal(firstChanges?.[0]?.blockNumber, blockNumber + 1n)
 			assert.deepEqual(secondChanges, [])
 			assert.equal(storedFilter.calledInlastBlock, blockNumber + 1n)
+		})
+
+		test('concurrent eth_getFilterChanges calls do not return the same logs twice', async () => {
+			installBrowserMock()
+			const { createNewFilter, getEthFilterChanges } = await loadModules()
+			const ethereum = createEthereum()
+			const socket = { tabId: 1, connectionName: 1n } as const
+			const filterId = await createNewFilter({ method: 'eth_newFilter', params: [{}] }, socket, ethereum, undefined, PASSTHROUGH_STATE)
+			const simulationState = await createExecutionSimulationState(ethereum, undefined, createSimulationInput(21_000n, 0n, 1n))
+			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+			const resolvedSimulationState = toResolvedExecutionSimulationState(simulationState)
+
+			const concurrentChanges = await Promise.all([
+				getEthFilterChanges(socket, filterId, ethereum, undefined, resolvedSimulationState),
+				getEthFilterChanges(socket, filterId, ethereum, undefined, resolvedSimulationState),
+			])
+
+			assert.deepEqual(concurrentChanges.map((logs) => logs?.length).sort(), [0, 1])
+		})
+
+		test('filter reads are restricted to the socket that created the filter', async () => {
+			installBrowserMock()
+			const { createNewFilter, getEthFilterChanges, getEthFilterLogs } = await loadModules()
+			const ethereum = createEthereum()
+			const creatorSocket = { tabId: 1, connectionName: 1n } as const
+			const otherSocketInSameTab = { tabId: 1, connectionName: 2n } as const
+			const filterId = await createNewFilter({ method: 'eth_newFilter', params: [{}] }, creatorSocket, ethereum, undefined, PASSTHROUGH_STATE)
+
+			assert.equal(await getEthFilterChanges(otherSocketInSameTab, filterId, ethereum, undefined, PASSTHROUGH_STATE), undefined)
+			assert.equal(await getEthFilterLogs(otherSocketInSameTab, filterId, ethereum, undefined, PASSTHROUGH_STATE), undefined)
+			assert.deepEqual(await getEthFilterChanges(creatorSocket, filterId, ethereum, undefined, PASSTHROUGH_STATE), [])
+		})
+
+		test('filter cursors do not rewind when the simulated head moves backwards', async () => {
+			installBrowserMock()
+			const { getEthFilterChanges, getEthereumSubscriptionsAndFilters, updateEthereumSubscriptionsAndFilters } = await loadModules()
+			const ethereum = createEthereum()
+			const socket = { tabId: 1, connectionName: 1n } as const
+			const futureCursor = blockNumber + 5n
+			await updateEthereumSubscriptionsAndFilters(() => ([{
+				type: 'eth_newFilter',
+				subscriptionOrFilterId: 'future-filter',
+				params: { method: 'eth_newFilter', params: [{}] },
+				subscriptionCreatorSocket: socket,
+				calledInlastBlock: futureCursor,
+			}]))
+
+			assert.deepEqual(await getEthFilterChanges(socket, 'future-filter', ethereum, undefined, PASSTHROUGH_STATE), [])
+			const [storedFilter] = await getEthereumSubscriptionsAndFilters()
+			if (storedFilter?.type !== 'eth_newFilter') throw new Error('stored filter missing')
+			assert.equal(storedFilter.calledInlastBlock, futureCursor)
 		})
 
 		test('newHeads emits each simulated execution block after a gas split', async () => {
@@ -295,7 +347,7 @@ const blockNumber = 8443561n
 					},
 				}],
 			])
-			await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, socket)
+			const subscriptionId = await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, socket)
 			const splitSimulationInput = [{
 				stateOverrides: {},
 				transactions: [
@@ -335,16 +387,19 @@ const blockNumber = 8443561n
 				if (message.type !== 'result' || !('method' in message) || message.method !== 'newHeads') return []
 				if (!('result' in message) || !('result' in message.result)) throw new Error('wrong subscription payload')
 				if (message.result.result === null) throw new Error('missing simulated block payload')
+				assert.equal(message.subscription, subscriptionId)
+				assert.equal(message.result.subscription, subscriptionId)
 				return [message.result.result.number]
 			})
 			assert.equal(emittedBlockNumbers.length, 3)
 			assert.deepEqual(emittedBlockNumbers, [blockNumber, blockNumber + 1n, blockNumber + 2n])
 		})
 
-		test('newHeads skips stale subscriptions without suppressing later live subscribers', async () => {
+		test('newHeads removes a stale socket while another socket in the same tab remains live', async () => {
 			installBrowserMock()
-			const { createEthereumSubscription, sendSubscriptionMessagesForNewBlock, updateEthereumSubscriptionsAndFilters } = await loadModules()
+			const { createEthereumSubscription, getEthereumSubscriptionsAndFilters, sendSubscriptionMessagesForNewBlock, updateEthereumSubscriptionsAndFilters } = await loadModules()
 			const ethereum = createEthereum()
+			const staleSocket = { tabId: 2, connectionName: 1n } as const
 			const liveSocket = { tabId: 2, connectionName: 2n } as const
 			const postedMessages: InterceptorMessageToInpage[] = []
 			const port = {
@@ -367,8 +422,8 @@ const blockNumber = 8443561n
 			])
 
 			await updateEthereumSubscriptionsAndFilters(() => [])
-			await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, { tabId: 1, connectionName: 1n })
-			await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, liveSocket)
+			const staleSubscriptionId = await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, staleSocket)
+			const liveSubscriptionId = await createEthereumSubscription({ method: 'eth_subscribe', params: ['newHeads'] }, liveSocket)
 
 			await sendSubscriptionMessagesForNewBlock(blockNumber, ethereum, false, websiteTabConnections, async () => PASSTHROUGH_STATE)
 
@@ -380,6 +435,8 @@ const blockNumber = 8443561n
 			})
 
 			assert.deepEqual(emittedBlockNumbers, [blockNumber])
+			assert.deepEqual((await getEthereumSubscriptionsAndFilters()).map((subscription) => subscription.subscriptionOrFilterId), [liveSubscriptionId])
+			assert.notEqual(staleSubscriptionId, liveSubscriptionId)
 		})
 
 		test('newHeads reuses one simulated state computation across multiple live subscribers', async () => {

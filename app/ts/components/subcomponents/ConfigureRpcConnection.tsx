@@ -3,8 +3,8 @@ import { useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useContext, useRef } from 'preact/hooks'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { TextInput } from './TextField.js'
-import { RpcEntry } from '../../types/rpc.js'
-import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import type { RpcEntries, RpcEntry } from '../../types/rpc.js'
+import { sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport } from '../../background/backgroundUtils.js'
 import { getSettings } from '../../background/settings.js'
 import { getChainName } from '../../utils/constants.js'
 import { useRpcConnectionsList } from '../pages/SettingsView.js'
@@ -14,6 +14,8 @@ import { JsonRpcResponseError } from '../../utils/errors.js'
 import { EthereumQuantity } from '../../types/wire-types.js'
 import { isBrowserFetchTransportError } from '../../utils/caughtErrors.js'
 import { AsyncStatusIcon } from './AsyncAction.js'
+import { parseRpcFormData } from '../../utils/rpcFormData.js'
+import { ErrorComponent } from './Error.js'
 
 type RpcProbeResult = {
 	chainId: bigint
@@ -118,31 +120,18 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 
 	const saveRpcEntry = async (rpcEntry: RpcEntry) => {
 		const { activeRpcNetwork } = await getSettings()
-
-		await sendPopupMessageToBackgroundPage({
-			method: 'popup_set_rpc_list',
-			data: [rpcEntry].concat(rpcEntries.value.filter(entry => entry.httpsRpc !== rpcEntry.httpsRpc))
-		})
-
-		if (activeRpcNetwork.httpsRpc !== rpcEntry.httpsRpc) return
-		console.warn(`Automatically switched to recently added or modified RPC (${ rpcEntry.httpsRpc })`)
-		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveRpc', data: rpcEntry })
+		await saveRpcEntryAndKeepActiveRpcConsistent(rpcEntry, rpcEntries.value, activeRpcNetwork,
+			async (entries) => await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_set_rpc_list', data: entries }),
+			async (entry) => await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_changeActiveRpc', data: entry })
+		)
 	}
 
 	const removeRpcEntryByUrl = async (url: string) => {
 		const { activeRpcNetwork } = await getSettings()
-
-		const reducedRpcEntries = rpcEntries.value.filter(entry => entry.httpsRpc !== url)
-
-		await sendPopupMessageToBackgroundPage({ method: 'popup_set_rpc_list', data: reducedRpcEntries })
-
-		// switch rpc when the active one is being removed
-		if (url !== activeRpcNetwork.httpsRpc || reducedRpcEntries[0] === undefined) return
-		console.warn('Switching RPC as a result of the removal of the currently active connection')
-
-		// at least find a connection of the same chainId
-		const rpcToSwitchTo = reducedRpcEntries.find(entry => entry.chainId === activeRpcNetwork.chainId) || reducedRpcEntries[0]
-		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveRpc', data: rpcToSwitchTo })
+		await removeRpcEntryAndKeepActiveRpcConsistent(url, rpcEntries.value, activeRpcNetwork,
+			async (entries) => await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_set_rpc_list', data: entries }),
+			async (entry) => await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_changeActiveRpc', data: entry })
+		)
 	}
 
 	return (
@@ -158,64 +147,88 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 	)
 }
 
+type PersistRpcEntries = (entries: RpcEntries) => Promise<void>
+type ChangeActiveRpc = (entry: RpcEntry) => Promise<void>
+type ActiveRpcSelection = { readonly httpsRpc: string | undefined, readonly chainId: bigint }
+
+export async function saveRpcEntryAndKeepActiveRpcConsistent(rpcEntry: RpcEntry, rpcEntries: RpcEntries, activeRpcNetwork: ActiveRpcSelection, persistRpcEntries: PersistRpcEntries, changeActiveRpc: ChangeActiveRpc) {
+	const updatedRpcEntries = [rpcEntry].concat(rpcEntries.filter(entry => entry.httpsRpc !== rpcEntry.httpsRpc))
+	if (activeRpcNetwork.httpsRpc === rpcEntry.httpsRpc) {
+		if (activeRpcNetwork.chainId !== rpcEntry.chainId) throw new Error('Switch to another RPC before changing the active connection chain ID.')
+		console.warn(`Automatically switched to recently added or modified RPC (${ rpcEntry.httpsRpc })`)
+		await changeActiveRpc(rpcEntry)
+	}
+	await persistRpcEntries(updatedRpcEntries)
+}
+
+export async function removeRpcEntryAndKeepActiveRpcConsistent(url: string, rpcEntries: RpcEntries, activeRpcNetwork: ActiveRpcSelection, persistRpcEntries: PersistRpcEntries, changeActiveRpc: ChangeActiveRpc) {
+	const reducedRpcEntries = rpcEntries.filter(entry => entry.httpsRpc !== url)
+	if (url === activeRpcNetwork.httpsRpc) {
+		const rpcToSwitchTo = reducedRpcEntries.find(entry => entry.chainId === activeRpcNetwork.chainId)
+		if (rpcToSwitchTo === undefined) throw new Error('Switch to another RPC on this chain before removing the active connection.')
+		console.warn('Switching RPC as a result of the removal of the currently active connection')
+		await changeActiveRpc(rpcToSwitchTo)
+	}
+	await persistRpcEntries(reducedRpcEntries)
+}
+
 type ConfigureRpcFormProps = {
 	defaultValues?: RpcEntry,
-	onCancel: () => void | undefined
-	onSave: (rpcEntry: RpcEntry) => void
-	onRemove?: (rpcUrl: string) => void
+	onCancel: () => void
+	onSave: (rpcEntry: RpcEntry) => Promise<void>
+	onRemove?: (rpcUrl: string) => Promise<void>
+}
+
+export async function completeRpcFormMutation(mutation: () => Promise<void>, onSuccess: () => void) {
+	await mutation()
+	onSuccess()
 }
 
 const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: ConfigureRpcFormProps) => {
 	const confirmRemoval = useSignal(false)
 	const { rpcQuery, resetRpcQuery } = useQueryRpc()
+	const { value: mutationState, waitFor: waitForMutation } = useAsyncState<void>()
+	const mutationPending = mutationState.value.state === 'pending'
+
+	const completeForm = (form: HTMLFormElement) => {
+		resetRpcQuery()
+		form.reset()
+		onCancel()
+	}
 
 	const handleFormSubmit = (event: Event) => {
 		// TODO: current version preact don't ship with SubmitEvent type
 		if (!(event instanceof SubmitEvent)) return
 		if (!(event.target instanceof HTMLFormElement)) return
+		const form = event.target
+		event.preventDefault()
 
 		if (event.submitter instanceof HTMLButtonElement) {
 			switch (event.submitter.value) {
 				case 'cancel':
 					onCancel()
 					resetRpcQuery()
-					event.target.reset()
+					form.reset()
 					return
 
 				case 'remove':
-					if (defaultValues !== undefined) onRemove?.(defaultValues.httpsRpc)
+					if (defaultValues !== undefined && onRemove !== undefined) {
+						void waitForMutation(async () => await completeRpcFormMutation(
+							async () => await onRemove(defaultValues.httpsRpc),
+							() => completeForm(form)
+						))
+					}
 					return
 
 				case 'save':
-					const formData = new FormData(event.target)
-					const parsedData = parseRpcFormData(formData)
-
-					if (parsedData.success) {
-						onSave(parsedData.value)
-						resetRpcQuery()
-						event.target.reset()
-						return
-					}
+					void waitForMutation(async () => await completeRpcFormMutation(async () => {
+						const parsedData = parseRpcFormData(new FormData(form))
+						if (!parsedData.success) throw new Error(parsedData.message)
+						await onSave(parsedData.value)
+					}, () => completeForm(form)))
+					return
 			}
 		}
-	}
-
-	const parseRpcFormData = (formData: FormData) => {
-		const chainIdFromForm = formData.get('chainId')?.toString().trim()
-		const blockExplorerUrlForm = formData.get('blockExplorerUrl')?.toString().trim()
-		const blockExplorerApiKeyForm = formData.get('blockExplorerApiKey')?.toString().trim()
-		const isBlockExplorerDefined = blockExplorerUrlForm !== undefined && blockExplorerApiKeyForm !== undefined && blockExplorerUrlForm.length > 0 && blockExplorerApiKeyForm.length > 0
-		const newRpcEntry = {
-			name: formData.get('name')?.toString().trim() || '',
-			chainId: chainIdFromForm ? `0x${ BigInt(chainIdFromForm).toString(16) }` : '',
-			httpsRpc: formData.get('httpsRpc')?.toString().trim() || '',
-			currencyName: formData.get('currencyName')?.toString().trim() || '',
-			currencyTicker: formData.get('currencyTicker')?.toString().trim() || '',
-			...isBlockExplorerDefined ? { blockExplorer: { apiUrl: blockExplorerUrlForm || '', apiKey: blockExplorerApiKeyForm } } : {},
-			minimized: true,
-			primary: false,
-		}
-		return RpcEntry.safeParse(newRpcEntry)
 	}
 
 	const chainIdDefault = useComputed(() => {
@@ -245,7 +258,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 		<form method = 'dialog' class = 'grid' style = '--gap-y: 1.5rem' onSubmit = { handleFormSubmit }>
 			<header class = 'grid' style = '--grid-cols: 1fr auto'>
 				<span style = { { fontWeight: 'bold', color: 'white' } }>Configure RPC Connection</span>
-				<button type = 'submit' value = 'cancel' class = 'btn btn--ghost' aria-label = 'close' formNoValidate>
+				<button type = 'submit' value = 'cancel' class = 'btn btn--ghost' aria-label = 'close' formNoValidate disabled = { mutationPending }>
 					<span class = 'button-icon' style = { { fontSize: '1.5em' } }>&times;</span>
 				</button>
 			</header>
@@ -262,6 +275,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 					<TextInput label = 'Block Explorer Api Key' name = 'blockExplorerApiKey' defaultValue = { blockExplorerApiKeyDefault.value } style = '--area: 8 / span 1' />
 				</div>
 			</main>
+			{ mutationState.value.state === 'rejected' ? <ErrorComponent text = { mutationState.value.error.message } containerStyle = { { margin: '0' } } /> : <></> }
 
 			<footer class = 'grid' style = '--grid-cols: max-content 1fr max-content max-content; --gap-x: 1rem; --btn-text-size: 0.9rem'>
 				{
@@ -270,15 +284,15 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 							<div style = '--area: 1 / span 3'>
 								<p>You are about to remove this server permanently. Are you sure you want to proceed?</p>
 							</div>
-							<button type = 'button' class = 'btn btn--ghost' style = '--area: 2 / 2' onClick = { () => { confirmRemoval.value = false } }>No</button>
-							<button type = 'submit' value = 'remove' class = 'btn btn--destructive' style = '--area: 2 / 3' formNoValidate>Yes, Confirm Remove</button>
+							<button type = 'button' class = 'btn btn--ghost' style = '--area: 2 / 2' onClick = { () => { confirmRemoval.value = false } } disabled = { mutationPending }>No</button>
+							<button type = 'submit' value = 'remove' class = 'btn btn--destructive' style = '--area: 2 / 3' formNoValidate disabled = { mutationPending }>{ mutationPending ? 'Removing...' : 'Yes, Confirm Remove' }</button>
 						</div>
 					) : (
 						<>
-							<button type = 'submit' value = 'cancel' class = 'btn btn--ghost' style = '--area: 1 / 3' formNoValidate>Cancel</button>
-							<button type = 'submit' value = 'save' class = 'btn btn--primary' style = '--area: 1 / 4'>Save RPC Connection</button>
+							<button type = 'submit' value = 'cancel' class = 'btn btn--ghost' style = '--area: 1 / 3' formNoValidate disabled = { mutationPending }>Cancel</button>
+							<button type = 'submit' value = 'save' class = 'btn btn--primary' style = '--area: 1 / 4' disabled = { mutationPending }>{ mutationPending ? 'Saving RPC Connection...' : 'Save RPC Connection' }</button>
 							{ defaultValues && onRemove ? (
-								<button type = 'button' class = 'btn btn--ghost' style = '--area: 1 / 1; --btn-text-color: var(--negative-color)' onClick = { () => { confirmRemoval.value = true } }><span class = 'grid' style = '--grid-cols: max-content 1fr; --gap-x: 0.5rem; --text-color: var(--negative-color)'><Trash /> Remove</span></button>
+								<button type = 'button' class = 'btn btn--ghost' style = '--area: 1 / 1; --btn-text-color: var(--negative-color)' onClick = { () => { confirmRemoval.value = true } } disabled = { mutationPending }><span class = 'grid' style = '--grid-cols: max-content 1fr; --gap-x: 0.5rem; --text-color: var(--negative-color)'><Trash /> Remove</span></button>
 							) : <></> }
 						</>
 					)

@@ -8,6 +8,8 @@ import type { SignMessageParams, SignTypedDataParams } from '../types/jsonRpc-si
 import { addressString } from './bigint.js'
 import { assertNever, modifyObject } from './typescript.js'
 
+export const MAX_EIP712_STRUCT_DEPTH = 10
+
 type TypeDefinition = ({ name: string, type: string, primaryType: true } | { name: string, typeName: string, baseType: string, type: TypeDefinition[], primaryType: false })
 type SolidityTypeTree = Record<string, TypeDefinition[]>
 const eip712DomainFieldTypes = {
@@ -50,8 +52,7 @@ const isValidSolidityType = (type: string, validStructNames: readonly string[]):
 	// Reject reserved-but-invalid type names, e.g. uint3, bytes33, fixed129x19, etc.
 	if (isInvalidReservedType(type)) return false
 
-	// If the type starts with a reserved built-in prefix,
-	// then it is a built-in type and is valid
+	// If the type starts with a reserved built-in prefix, then it is a built-in type and is valid
 	if (/^(u?int|bytes|u?fixed|address|bool|string|function)/.test(type)) return true
 	// Otherwise, it is a custom type; check if it is in the valid struct names list
 	return validStructNames.includes(type)
@@ -90,22 +91,15 @@ const validateTypeValue = (typeStr: string, value: typeJSONEncodeable, solidityT
 	if (typeStr.startsWith('tuple(')) return { valid: false, reason: 'tuples are not supported'}
 
 	// Check for array types (non-tuple arrays)
-	const arrayMatch = typeStr.match(/^([^\[]+)(\[(?!0\])[0-9]*\](\[(?!0\])[0-9]*\])*)$/)
+	const arrayMatch = typeStr.match(/^(.*)\[(\d*)\]$/)
 	if (arrayMatch) {
-		const base = arrayMatch[1] // "array"
-		const brackets = arrayMatch[2] // "[][][]"
-		if (base === undefined || brackets === undefined) return { valid: false, reason: 'base or brackets were undefined'}
-		const remaining = brackets.replace(/^(\[(?!0\])[0-9]*\])/, '')
-		const innerType = base + remaining
-		const arrayLength = (brackets: string | undefined) => {
-			if (brackets === undefined) return undefined
-			const lengthMatch = brackets.match(/\[(\d*)\]$/)
-			return lengthMatch && lengthMatch[1] !== '' && lengthMatch[1] !== undefined ? parseInt(lengthMatch[1]) : undefined
-		}
-		const expectedLength = arrayLength(arrayMatch[2])
+		const innerType = arrayMatch[1]
+		const lengthText = arrayMatch[2]
+		if (innerType === undefined || lengthText === undefined) return { valid: false, reason: 'array type was incomplete'}
+		const expectedLength = lengthText === '' ? undefined : Number.parseInt(lengthText, 10)
 		if (!Array.isArray(value)) return { valid: false, reason: `invalid array: ${ JSON.stringify(value) }` }
 
-		if (expectedLength !== undefined && value.length > expectedLength) return { valid: false, reason: `expected array of length ${ expectedLength }, got ${ value.length }` }
+		if (expectedLength !== undefined && value.length !== expectedLength) return { valid: false, reason: `expected array of length ${ expectedLength }, got ${ value.length }` }
 		for (const elem of value) {
 			const valid = validateTypeValue(innerType, elem, solidityTypeTree)
 			if (valid.valid === false) return valid
@@ -132,8 +126,7 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 		const bitWidth = parseInt(intMatch[2])
 		if (bitWidth < 8 || bitWidth > 256) return { valid: false, reason: `${ typeStr } is not a valid type, number widths must be in range [8,256]` }
 		if (!Number.isInteger(bitWidth / 8)) return { valid: false, reason: `${ typeStr } is not a valid type, number widths must be divisible by 8.` }
-		// For unsigned: range is 0 to 2^width - 1
-		// For signed: range is -2^(width-1) to 2^(width-1) - 1
+		// For unsigned: range is 0 to 2^width - 1 For signed: range is -2^(width-1) to 2^(width-1) - 1
 		const min = isUnsigned ? 0n : -(2n ** BigInt(bitWidth - 1))
 		const max = isUnsigned ? (2n ** BigInt(bitWidth)) - 1n : (2n ** BigInt(bitWidth - 1)) - 1n
 
@@ -168,7 +161,7 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 	const bytesRegex = /^bytes$/
 	const bytesMatch = typeStr.match(bytesRegex)
 	if (bytesMatch) {
-		return typeof value === 'string' && /^0x[a-fA-F0-9]*$/.test(value) ? { valid: true } : { valid: false, reason: `${ value } is invalid bytes string` }
+		return typeof value === 'string' && /^0x(?:[a-fA-F0-9]{2})*$/.test(value) ? { valid: true } : { valid: false, reason: `${ value } is invalid bytes string` }
 	}
 
 	// Other built-in types
@@ -182,6 +175,8 @@ const validatePrimitiveOrStruct = (typeStr: string, value: typeJSONEncodeable, s
 	if (typeTree !== undefined) {
 		if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
 			const entries = Object.entries(value)
+			const missingTypeDefinition = typeTree.find((typeDefinition) => !Object.prototype.hasOwnProperty.call(value, typeDefinition.name))
+			if (missingTypeDefinition !== undefined) return { valid: false, reason: `missing value for: ${ missingTypeDefinition.name }` }
 			for (const [entryName, entryValue] of entries) {
 				if (entryValue === undefined) return { valid: false, reason: 'entry is invalid' }
 				const typeDefinition = typeTree.find((leaf) => leaf.name === entryName)
@@ -219,7 +214,7 @@ const simplifyTypesToSolidityTypesOnly = (root: string, nonExtractedTypes: EIP71
 	const structNames = Object.keys(nonExtractedTypes)
 	const extracted: SolidityTypeTree = {}
 	const subSimplifyTypesToSolidityTypes = (root: string, nonExtractedTypes: EIP712Types, depth: number): { valid: true, TypeDefinitionArray: TypeDefinition[] } | { valid: false, reason: string } => {
-		if (depth > 10) return { valid: false, reason: 'stack too deep' }
+		if (depth > MAX_EIP712_STRUCT_DEPTH) return { valid: false, reason: 'stack too deep' }
 		const rootType = nonExtractedTypes[root]
 		const nonExtractedTypesArray = Object.entries(nonExtractedTypes)
 		if (rootType === undefined) return { valid: false, reason: 'stack too deep' }
@@ -251,32 +246,6 @@ const simplifyTypesToSolidityTypesOnly = (root: string, nonExtractedTypes: EIP71
 	return { valid: true, tree: extracted }
 }
 
-const isValidEIP712DomainOrder = (expected: readonly string[], test: readonly string[]): boolean => {
-	const matched = test.filter(t => expected.includes(t))
-	const expectedIndex = (field: string) => expected.indexOf(field)
-	const isOrdered = matched.every((field, idx, arr) => {
-		if (idx === 0) return true
-		const previous = arr[idx - 1]
-		if (previous === undefined) throw new Error('array underflow')
-		return expectedIndex(previous) <= expectedIndex(field)
-	})
-	if (!isOrdered) return false
-	// Find the index in test where matched expected fields end
-	const lastMatchedIndex = test.findIndex((t, i) => {
-		if (i === 0) return false
-		const previous = test[i - 1]
-		if (previous === undefined) throw new Error('array underflow')
-		return expected.includes(previous) && !expected.includes(t)
-	})
-	const extras = lastMatchedIndex === -1 ? [] : test.slice(lastMatchedIndex).filter(t => !expected.includes(t))
-	return extras.every((field, i, arr) => {
-		if (i === 0) return true
-		const previous = arr[i - 1]
-		if (previous === undefined) throw new Error('array underflow')
-		return previous <= field
-	})
-}
-
 export const verifyEip712Message = (maybeEip712Message: EIP712Message): { valid: true } | { valid: false, reason: string } => {
 	if (Object.values(maybeEip712Message).length !== 4) return { valid: false, reason: 'EIP712 message should only have 4 fields' }
 
@@ -305,8 +274,6 @@ export const verifyEip712Message = (maybeEip712Message: EIP712Message): { valid:
 	if ('name' in maybeEip712Message.domain && !String.safeParse(name).success) return { valid: false, reason: 'EIP712Domain.name is in wrong type' }
 	if ('salt' in maybeEip712Message.domain && !EthereumData.safeParse(salt).success) return { valid: false, reason: 'EIP712Domain.salt is in wrong type' }
 
-	if (!isValidEIP712DomainOrder(validEIP712DomainEntries.map((entry) => entry.name), eip712Domain.map((entry) => entry.name))) throw new Error('domain types are in wrong order')
-
 	// domain fields exist in valid in types
 	const domainArray = Object.entries(maybeEip712Message.domain)
 	if (domainArray.some(([name, _value]) => !validEIP712DomainEntries.some((validEntry) => validEntry.name === name))) return { valid: false, reason: 'domain has a type that is not in EIP712Domain type' }
@@ -316,6 +283,8 @@ export const verifyEip712Message = (maybeEip712Message: EIP712Message): { valid:
 		if (extractedTypes.valid === false) return extractedTypes
 		const extractedPrimary = extractedTypes.tree[primaryType]
 		if (extractedPrimary === undefined) return { valid: false, reason: 'Failed to extract primary type' }
+		const missingTypeDefinition = extractedPrimary.find((typeDefinition) => !Object.prototype.hasOwnProperty.call(message, typeDefinition.name))
+		if (missingTypeDefinition !== undefined) return { valid: false, reason: `Missing value for ${ missingTypeDefinition.name }` }
 		const fieldsArray = Object.entries(message)
 		for (const field of fieldsArray) {
 			if (field[0] === undefined) return { valid: false, reason: 'Field was invalid' }

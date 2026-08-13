@@ -388,6 +388,38 @@ const runtimeEntrypointPaths = [
 	path.join(appDirectory, 'js', 'utils', 'ethereumPrimitives.js'),
 ]
 
+const classicRuntimeEntrypointPaths = new Set([
+	path.join(appDirectory, 'inpage', 'js', 'document_start.js'),
+	path.join(appDirectory, 'inpage', 'js', 'inpage.js'),
+	path.join(appDirectory, 'inpage', 'js', 'listenContentScript.js'),
+	path.join(appDirectory, 'inpage', 'js', 'listenContentScriptBootstrap.js'),
+])
+
+export function assertClassicEntrypointHasNoModuleSyntax(filePath: string, source: string) {
+	try {
+		Function(source)
+	} catch(error) {
+		const relativePath = path.relative(path.join(directoryOfThisFile, '..'), filePath).replace(/\\/g, '/')
+		throw new Error(`Classic runtime entrypoint contains module syntax: ${ relativePath }`, { cause: error })
+	}
+}
+
+type RuntimeEntrypointCopy = {
+	bundledEntrypointPath: string
+	entrypointPath: string
+	requiresClassicSyntax: boolean
+}
+
+export function copyRuntimeEntrypoints(entrypoints: readonly RuntimeEntrypointCopy[]) {
+	for (const entrypoint of entrypoints) {
+		if (!entrypoint.requiresClassicSyntax) continue
+		assertClassicEntrypointHasNoModuleSyntax(entrypoint.entrypointPath, fs.readFileSync(entrypoint.bundledEntrypointPath, 'utf8'))
+	}
+	for (const entrypoint of entrypoints) {
+		fs.copyFileSync(entrypoint.bundledEntrypointPath, entrypoint.entrypointPath)
+	}
+}
+
 function getExistingRuntimeEntrypointPaths() {
 	return runtimeEntrypointPaths.filter((entrypointPath) => fs.existsSync(entrypointPath))
 }
@@ -398,27 +430,31 @@ async function bundleChromeRuntimeEntrypoints() {
 	const bundledOutputDirectory = path.join(appDirectory, '.runtime-bundles')
 	fs.rmSync(bundledOutputDirectory, { recursive: true, force: true })
 	ensureDirectoryExists(bundledOutputDirectory)
-	const buildResult = await Bun.build({
-		entrypoints: existingEntrypoints,
-		outdir: bundledOutputDirectory,
-		root: appDirectory,
-		target: 'browser',
-		format: 'esm',
-		splitting: false,
-		external: [...externalRuntimeModules],
-	})
-	if (!buildResult.success) {
-		throw new Error(`Failed to bundle Chrome runtime entrypoints with Bun:\n${ formatBunBuildLogs(buildResult.logs) }`)
-	}
-	for (const entrypointPath of existingEntrypoints) {
-		const relativeEntrypointPath = path.relative(appDirectory, entrypointPath)
-		const bundledEntrypointPath = path.join(bundledOutputDirectory, relativeEntrypointPath)
-		if (!fs.existsSync(bundledEntrypointPath)) {
-			throw new Error(`Bundled entrypoint was not written by Bun: ${ relativeEntrypointPath.replace(/\\/g, '/') }`)
+	try {
+		const buildResult = await Bun.build({
+			entrypoints: existingEntrypoints,
+			outdir: bundledOutputDirectory,
+			root: appDirectory,
+			target: 'browser',
+			format: 'esm',
+			splitting: false,
+			external: [...externalRuntimeModules],
+		})
+		if (!buildResult.success) {
+			throw new Error(`Failed to bundle Chrome runtime entrypoints with Bun:\n${ formatBunBuildLogs(buildResult.logs) }`)
 		}
-		fs.copyFileSync(bundledEntrypointPath, entrypointPath)
+		const entrypointsToCopy = existingEntrypoints.map((entrypointPath) => {
+			const relativeEntrypointPath = path.relative(appDirectory, entrypointPath)
+			const bundledEntrypointPath = path.join(bundledOutputDirectory, relativeEntrypointPath)
+			if (!fs.existsSync(bundledEntrypointPath)) {
+				throw new Error(`Bundled entrypoint was not written by Bun: ${ relativeEntrypointPath.replace(/\\/g, '/') }`)
+			}
+			return { bundledEntrypointPath, entrypointPath, requiresClassicSyntax: classicRuntimeEntrypointPaths.has(entrypointPath) }
+		})
+		copyRuntimeEntrypoints(entrypointsToCopy)
+	} finally {
+		fs.rmSync(bundledOutputDirectory, { recursive: true, force: true })
 	}
-	fs.rmSync(bundledOutputDirectory, { recursive: true, force: true })
 }
 
 function getRuntimeFiles() {

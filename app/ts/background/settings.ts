@@ -1,4 +1,3 @@
-import { ETHEREUM_COIN_ICON, MOCK_PRIVATE_KEYS_ADDRESS } from '../utils/constants.js'
 import type { ActiveAddress, ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -8,32 +7,14 @@ import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
 import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
-import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
+import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
-import { DEFAULT_BLOCK_MANIPULATION } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
+import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
 
-export const defaultActiveAddresses: AddressBookEntries = [
-	{
-		type: 'contact' as const,
-		entrySource: 'User' as const,
-		name: 'vitalik.eth',
-		address: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
-		askForAddressAccess: false,
-		useAsActiveAddress: true,
-		chainId: 'AllChains',
-	},
-	{
-		type: 'contact' as const,
-		entrySource: 'User' as const,
-		name: 'Public private key',
-		address: MOCK_PRIVATE_KEYS_ADDRESS,
-		askForAddressAccess: false,
-		useAsActiveAddress: true,
-		chainId: 'AllChains',
-	}
-]
+export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
 export const networkPriceSources = {
 	uniswapV2Like: [
@@ -44,18 +25,7 @@ export const networkPriceSources = {
 	]
 } as const
 
-export const defaultRpcs = [
-	{
-		name: 'Ethereum Mainnet',
-		chainId: 1n,
-		httpsRpc: 'https://ethereum.dark.florist',
-		currencyName: 'Ether',
-		currencyTicker: 'ETH',
-		currencyLogoUri: ETHEREUM_COIN_ICON,
-		primary: true,
-		minimized: true,
-	},
-] as const
+export const defaultRpcs = DEFAULT_RPCS
 
 export const defaultSimulationMode = true
 
@@ -80,11 +50,12 @@ type StartupStorageDefaults = {
 	activeRpcNetwork: RpcNetwork
 	makeCurrentAddressRich: boolean
 	fixedAddressRichList: readonly RichListElement[]
+	signingAddressPreferences: SigningAddressPreferences
 }
 
 async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDefaults>(key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
 	const rawValue = (await browser.storage.local.get(key))[key]
-	const parsedValue = await browserStorageLocalSafeParseGet(key)
+	const parsedValue: Readonly<Partial<StartupStorageDefaults>> | undefined = await browserStorageLocalSafeParseGet(key)
 	if (parsedValue !== undefined && key in parsedValue) return parsedValue[key] as StartupStorageDefaults[Key]
 	if (rawValue === undefined) return defaultValue
 	console.warn(`${ key } was corrupt:`)
@@ -118,6 +89,24 @@ export function getInterceptorDisabledSites(settings: Settings): string[] {
 
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
 export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))?.openedPageV2 ?? { page: 'Home' }
+
+const signingAddressPreferencesSemaphore = new Semaphore(1)
+
+export async function getSigningAddressPreferences() {
+	return await getParsedStorageValueOrDefault('signingAddressPreferences', [])
+}
+
+export async function rememberSigningAddressPreference(preference: SigningAddressPreference) {
+	await signingAddressPreferencesSemaphore.execute(async () => {
+		const preferences = await getSigningAddressPreferences()
+		await browserStorageLocalSet({
+			signingAddressPreferences: [
+				...preferences.filter((existing) => existing.signerAddress !== preference.signerAddress),
+				preference,
+			],
+		})
+	})
+}
 
 export const setMakeCurrentAddressRich = async (makeCurrentAddressRich: boolean) => await browserStorageLocalSet({ makeCurrentAddressRich })
 export const getMakeCurrentAddressRich = async() => await getParsedStorageValueOrDefault('makeCurrentAddressRich', false)
@@ -253,9 +242,10 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 }
 
 export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings) {
-	if (exportedSetings.version === '1.3') {
+	if (exportedSetings.version === '1.3' || exportedSetings.version === '1.4') {
 		await setPage(exportedSetings.settings.openedPage)
-	} else if (exportedSetings.version === '1.0') {
+	}
+	if (exportedSetings.version === '1.0') {
 		await changeSimulationMode({
 			simulationMode: exportedSetings.settings.simulationMode,
 			rpcNetwork: defaultRpcs[0],

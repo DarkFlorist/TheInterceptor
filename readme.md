@@ -49,5 +49,7 @@ Then depending on your browser:
 - Firefox: Browse to `about:debugging` and click `Load Temporary Add-on` and point to `\app\manifest.json`.
 - Brave: Browse to `brave://extensions/` and click `Load unpacked` and point to `\app\manifest.json`.
 
+The custom capability used by Gnosis Safe-aware applications is documented in [Gnosis Safe wallet capability](docs/gnosis-safe-wallet-capability.md).
+
 # Contact Us!
 You can reach us [Dark Florist](https://www.dark.florist/) via [Discord](https://discord.gg/b66SwRZAbu) and twitter [@DarkFlorist](https://twitter.com/DarkFlorist)!

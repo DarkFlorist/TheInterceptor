@@ -15,10 +15,14 @@ type RuntimeMessage = {
 type DomElement = {
 	tagName?: string
 	childNodes?: readonly DomElement[]
+	parentNode?: DomElement | null
+	textContent?: string | null
 	type?: string
 	value?: string
 	checked?: boolean
 	attributes?: Record<string, string | undefined>
+	l?: Record<string, (event: unknown) => unknown>
+	open?: boolean
 }
 
 function createBrowserMock() {
@@ -165,6 +169,12 @@ function isChecked(element: DomElement) {
 	return element.checked === true || element.attributes?.checked !== undefined
 }
 
+async function clickElement(element: DomElement) {
+	const clickHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Click'))?.[1]
+	if (clickHandler === undefined) throw new Error('Expected click handler')
+	await clickHandler({ currentTarget: element, stopPropagation() { return undefined } })
+}
+
 const websiteAccessEntries: readonly WebsiteAccess[] = [
 	{
 		website: { websiteOrigin: 'alpha.example', icon: 'alpha.png', title: 'Alpha' },
@@ -303,6 +313,27 @@ describe('WebsiteAccessView selection', () => {
 
 		assert.equal(dom.document.body.textContent.includes('app.sablier.com'), true)
 		assert.equal(dom.document.body.textContent.includes('Primary'), true)
+
+		const removeAddressDialog = collectElements(dom.document.body, 'dialog').filter((dialog) => dialog.textContent?.includes('Removing Address')).at(-1)
+		if (removeAddressDialog === undefined) throw new Error('Expected remove address dialog')
+		const dialogSiblings = removeAddressDialog.parentNode?.childNodes ?? []
+		const removeAddressButton = dialogSiblings[dialogSiblings.indexOf(removeAddressDialog) - 1]
+		if (removeAddressButton === undefined) throw new Error('Expected remove address button')
+
+		await act(async () => {
+			await clickElement(removeAddressButton)
+		})
+		assert.equal(removeAddressDialog.open, true)
+
+		const editAddressButton = collectElements(removeAddressDialog, 'button').find((button) => button.textContent?.trim() === 'edit')
+		if (editAddressButton === undefined) throw new Error('Expected address edit button in remove dialog')
+
+		await act(async () => {
+			await clickElement(editAddressButton)
+		})
+
+		assert.equal(removeAddressDialog.open, false)
+		assert.equal(dom.document.body.textContent.includes('Contract ABI'), true)
 		dom.restore()
 	})
 

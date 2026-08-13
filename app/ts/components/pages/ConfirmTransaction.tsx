@@ -39,8 +39,10 @@ import { bigintToDecimalString, dataStringWith0xStart } from '../../utils/bigint
 import { browserStorageLocalGet2 } from '../../utils/storageUtils.js'
 import { reportUnexpectedError } from '../../utils/errors.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
-import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
+import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
 import type { SignerName } from '../../types/signerTypes.js'
+import { assertNever } from '../../utils/typescript.js'
+import { getSafeTransactionPendingFlow } from '../../safe/safePendingFlow.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: ReadonlySignal<PendingTransactionOrSignableMessage[]>
@@ -125,7 +127,7 @@ export async function sendConfirmDialogMessage(message: TransactionConfirmation)
 			source: 'confirmTransaction',
 			code: 'confirm_dialog_delivery_failed',
 			displayMessage: getConfirmDialogDeliveryErrorMessage(error),
-			suppressExpectedInfrastructure: false,
+			suppressExpectedHandledErrors: false,
 		})
 		return errorMessage?.data
 	}
@@ -242,6 +244,7 @@ function FailedTransactionPreviewDetails({
 	simulationConductedTimestamp,
 	rpcConnectionStatus,
 	currentBlockNumber,
+	renameAddressCallBack,
 }: {
 	website: Website
 	transactionIdentifier: bigint
@@ -254,6 +257,7 @@ function FailedTransactionPreviewDetails({
 	simulationConductedTimestamp: Date
 	rpcConnectionStatus: Signal<RpcConnectionStatus>
 	currentBlockNumber: Signal<bigint | undefined>
+	renameAddressCallBack: RenameAddressCallBack
 }) {
 	const request = originalRequestParameters.method === 'eth_sendTransaction' ? originalRequestParameters.params[0] : undefined
 	const rawRequest = originalRequestParameters.method === 'eth_sendRawTransaction' ? originalRequestParameters.params[0] : undefined
@@ -281,9 +285,9 @@ function FailedTransactionPreviewDetails({
 					<dt>Transaction type</dt>
 					<dd>{ originalRequestParameters.method }</dd>
 					<dt>From</dt>
-					<dd>{ from === undefined ? 'Unknown' : <SmallAddress addressBookEntry = { from } renameAddressCallBack = { () => undefined } /> }</dd>
+					<dd>{ from === undefined ? 'Unknown' : <SmallAddress addressBookEntry = { from } renameAddressCallBack = { renameAddressCallBack } /> }</dd>
 					<dt>To</dt>
-					<dd>{ to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { to } renameAddressCallBack = { () => undefined } /> }</dd>
+					<dd>{ to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { to } renameAddressCallBack = { renameAddressCallBack } /> }</dd>
 					<dt>Value</dt>
 					<dd>{ request === undefined ? 'Unknown' : `${ bigintToDecimalString(request.value ?? 0n, 18n) } ether` }</dd>
 					<dt>Gas limit </dt>
@@ -295,7 +299,7 @@ function FailedTransactionPreviewDetails({
 			<div style = 'margin-top: 10px;'>
 				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Transaction Input</p>
 				{ rawRequest === undefined
-					? <TransactionInput parsedInputData = { undefined } input = { input } to = { to } addressMetaData = { addressMetaData } renameAddressCallBack = { () => undefined } />
+					? <TransactionInput parsedInputData = { undefined } input = { input } to = { to } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } />
 					: <div class = 'textbox'><pre>{ dataStringWith0xStart(rawRequest) }</pre></div>
 				}
 			</div>
@@ -375,6 +379,7 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 				simulationConductedTimestamp = { popupVisualisation.data.simulationState.simulationConductedTimestamp }
 				rpcConnectionStatus = { param.rpcConnectionStatus }
 				currentBlockNumber = { param.currentBlockNumber }
+				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 		</>
 	}
@@ -466,15 +471,70 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 type CheckBoxesParams = {
 	currentPendingTransactionOrSignableMessage: ReadonlySignal<PendingTransactionOrSignableMessage | undefined>,
 	forceSend: Signal<boolean>,
+	addressBookEntries?: readonly AddressBookEntry[],
 }
+
+function SafeSignerErrorAddress({ label, address, addressBookEntries }: { label: string, address: bigint, addressBookEntries: readonly AddressBookEntry[] }) {
+	return <>
+		<dt>{ label }</dt>
+		<dd><SmallAddress addressBookEntry = { getAddressBookEntryOrAFiller(addressBookEntries, address) } renameAddressCallBack = { () => undefined } noEditAddress = { true } /></dd>
+	</>
+}
+
+function SafeSignerErrorDetails({ details, addressBookEntries }: {
+	details: NonNullable<Extract<PendingTransactionOrSignableMessage['approvalStatus'], { status: 'SignerError' }>['safeSignerErrorDetails']>,
+	addressBookEntries: readonly AddressBookEntry[],
+}) {
+	switch (details.kind) {
+		case 'safeSigningAccountMismatch':
+			addressBookEntries = [...details.safeOwnerAddressBookEntries, ...addressBookEntries]
+			return <dl class = 'safe-signer-error-details'>
+				<SafeSignerErrorAddress label = 'Signing account' address = { details.requestedSigningAccount } addressBookEntries = { addressBookEntries } />
+				<SafeSignerErrorAddress label = 'Active Safe' address = { details.activeSafe } addressBookEntries = { addressBookEntries } />
+				{ details.requestedSafe === details.activeSafe ? <></> : <SafeSignerErrorAddress label = 'Transaction Safe' address = { details.requestedSafe } addressBookEntries = { addressBookEntries } /> }
+				<dt>Safe owners</dt>
+				<dd class = 'safe-signer-error-owner-list'>
+					{ details.safeOwnersUnavailableReason !== undefined
+						? <span>Owners unavailable: { details.safeOwnersUnavailableReason }</span>
+						: details.safeOwners.length === 0
+						? <span>No owners found</span>
+						: details.safeOwners.map((owner) => <SmallAddress key = { owner.toString() } addressBookEntry = { getAddressBookEntryOrAFiller(addressBookEntries, owner) } renameAddressCallBack = { () => undefined } noEditAddress = { true } />)
+					}
+				</dd>
+			</dl>
+		case 'safeOwnerMismatch':
+			return <dl class = 'safe-signer-error-details'>
+				<SafeSignerErrorAddress label = 'Expected owner' address = { details.expectedOwner } addressBookEntries = { addressBookEntries } />
+				<dt>Wallet account</dt>
+				<dd>{ details.walletAccount === undefined
+					? <span>No account selected</span>
+					: <SmallAddress addressBookEntry = { getAddressBookEntryOrAFiller(addressBookEntries, details.walletAccount) } renameAddressCallBack = { () => undefined } noEditAddress = { true } />
+				}</dd>
+			</dl>
+		default: assertNever(details)
+	}
+}
+
 export const CheckBoxes = (params: CheckBoxesParams) => {
 	const current = params.currentPendingTransactionOrSignableMessage.value
 	if (current === undefined) return <></>
 	if (current?.transactionOrMessageCreationStatus !== 'Simulated') return <></>
 	const margins = 'margin: 0px; margin-bottom: 10px; margin-left: 20px; margin-right: 20px;'
+	const visualizedAddressBookEntries = current.type === 'SignableMessage'
+		? [
+			current.visualizedPersonalSignRequest.account,
+			current.visualizedPersonalSignRequest.activeAddress,
+			...(current.visualizedPersonalSignRequest.type === 'SafeTx' ? [current.visualizedPersonalSignRequest.verifyingContract, ...current.visualizedPersonalSignRequest.parsedMessageDataAddressBookEntries] : []),
+		]
+		: []
+	const addressBookEntries = [...visualizedAddressBookEntries, ...(params.addressBookEntries ?? [])]
 	if (current.approvalStatus.status === 'SignerError') return <div style = 'display: grid'>
 		<div style = { margins }>
 			<ErrorComponent text = { current.approvalStatus.message } />
+			{ current.approvalStatus.safeSignerErrorDetails === undefined
+				? <></>
+				: <SafeSignerErrorDetails details = { current.approvalStatus.safeSignerErrorDetails } addressBookEntries = { addressBookEntries } />
+			}
 		</div>
 	</div>
 	if (current?.type === 'SignableMessage') {
@@ -616,7 +676,11 @@ export function ConfirmationActionButtons({ identified, signerName, simulationMo
 			class = 'button is-primary button-overflow dialog-action-button'
 			state = { approveButtonState }
 			text = { waitingForSigner
-				? <><span> <Spinner height = '1em' color = 'var(--text-color)' /> Waiting for <SignersLogoName signerName = { signerName } /> </span></>
+				? <span class = 'confirmation-waiting-for-signer'>
+					<AsyncStatusIcon state = 'pending'/>
+					<span>Waiting for{ ' ' }</span>
+					<SignersLogoName signerName = { signerName }/>
+				</span>
 				: simulationMode
 					? `${ identified.simulationAction }!`
 					: <SignerLogoText signerName = { signerName } text = { identified.signingAction } />
@@ -662,6 +726,10 @@ function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, rejec
 
 export function ConfirmTransaction() {
 	const currentPendingTransactionOrSignableMessage = useSignal<PendingTransactionOrSignableMessage | undefined>(undefined)
+	const currentSafeTransactionFlow = useComputed(() => {
+		const pending = currentPendingTransactionOrSignableMessage.value
+		return pending?.type === 'Transaction' ? getSafeTransactionPendingFlow(pending) : undefined
+	})
 	const pendingTransactionsAndSignableMessages = useSignal<readonly PendingTransactionOrSignableMessage[]>([])
 	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
 	const forceSend = useSignal<boolean>(false)
@@ -851,6 +919,7 @@ export function ConfirmTransaction() {
 	const isConfirmDisabled = useComputed(() => {
 		if (currentPendingTransactionOrSignableMessage.value === undefined) return true
 		if (currentPendingTransactionOrSignableMessage.value.transactionOrMessageCreationStatus !== 'Simulated') return true
+		if (currentPendingTransactionOrSignableMessage.value.approvalStatus.status !== 'WaitingForUser') return true
 		if (currentPendingTransactionOrSignableMessage.value.type !== 'Transaction') {
 			return shouldDisableSignableMessageConfirm({
 				isValidMessage: currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.isValidMessage === true,
@@ -862,7 +931,6 @@ export function ConfirmTransaction() {
 		if (forceSend.value) return false
 		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation === undefined) return true
 		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation.statusCode !== 'success') return true
-		if (currentPendingTransactionOrSignableMessage.value.approvalStatus.status === 'WaitingForSigner') return true
 		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation.data.visualizedSimulationState.success === false) return true
 		const lastTx = getResultsForTransaction(currentPendingTransactionOrSignableMessage.value.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.value.transactionIdentifier)
 		if (lastTx === undefined) return true
@@ -937,6 +1005,13 @@ export function ConfirmTransaction() {
 								/>
 								: <></>
 							}
+							{ currentSafeTransactionFlow.value?.kind === 'proposal'
+								? <DinoSaysNotification
+									text = { `This transaction will be wrapped as Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeTransaction.safeTx.message.nonce.toString() } and signed by the Gnosis Safe owner selected in your wallet. It will be added to the local optimistic Gnosis Safe stack, not broadcast automatically.` }
+									close = { () => undefined }
+								/>
+								: <></>
+							}
 							{ pendingTransactionAddedNotification.value === true
 								? <DinoSaysNotification
 									text = { `Hey! A new transaction request was queued. Accept or Reject the previous transaction${ pendingTransactionsAndSignableMessages.value.length > 1 ? 's' : '' } to see the new one.` }
@@ -970,7 +1045,7 @@ export function ConfirmTransaction() {
 							</> }
 						</div>
 						<nav class = 'window-footer popup-button-row' style = 'position: sticky; bottom: 0; width: 100%;'>
-							<CheckBoxes currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage } forceSend = { forceSend } />
+							<CheckBoxes currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage } forceSend = { forceSend } addressBookEntries = { completeVisualizedSimulation.value.addressBookEntries } />
 					<ConfirmationButtons
 						currentPendingTransactionOrSignableMessage = { currentPendingTransactionOrSignableMessage.value }
 						reject = { reject }

@@ -41,11 +41,14 @@ type AsyncActionButtonProps = {
 	pendingText: ComponentChildren
 	keepTextWhilePending?: boolean
 	pendingIndicatorPlacement?: 'inline' | 'overlay'
-	onClick: () => void | Promise<void>
+	onClick: (event: JSX.TargetedMouseEvent<HTMLButtonElement>) => void | Promise<void>
 	disabled?: boolean
 	class?: string
 	style?: JSX.CSSProperties | string
 	type?: 'button' | 'submit' | 'reset'
+	ariaLabel?: string
+	pendingAriaLabel?: string
+	title?: string
 }
 
 type PendingButtonContentProps = {
@@ -87,6 +90,8 @@ export function AsyncActionButton(props: AsyncActionButtonProps) {
 			onClick = { props.onClick }
 			disabled = { props.disabled || pending }
 			aria-busy = { pending }
+			aria-label = { pending ? props.pendingAriaLabel ?? props.ariaLabel : props.ariaLabel }
+			title = { props.title }
 		>
 			<PendingButtonContent pending = { pending } pendingIndicatorPlacement = { props.pendingIndicatorPlacement ?? 'inline' }>
 				{ displayedText }

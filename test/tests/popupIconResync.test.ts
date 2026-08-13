@@ -216,6 +216,7 @@ const defaultHomePage = (tabId: number, icon: { icon: string; iconReason: string
 		activeAddresses: [],
 		richList: [],
 		makeCurrentAddressRich: false,
+		hasSafeTransactionsToExport: false,
 		latestUnexpectedError: undefined,
 		websiteAccessAddressMetadata: [],
 		tabState: {
@@ -248,6 +249,7 @@ const defaultHomePageBootstrap = (tabId: number, icon: { icon: string; iconReaso
 		popupRefreshGeneration,
 		data: {
 			activeAddresses: homePage.data.activeAddresses,
+			hasSafeTransactionsToExport: homePage.data.hasSafeTransactionsToExport,
 			tabState: homePage.data.tabState,
 			settings: homePage.data.settings,
 			activeSigningAddressInThisTab: homePage.data.activeSigningAddressInThisTab,
@@ -683,7 +685,7 @@ describe('popup icon sync', () => {
 		}
 	})
 
-	test('does not request full home data after popup live simulation updates', async () => {
+	test('requests cached export availability without a full refresh after live simulation updates', async () => {
 		const dom = installDomMock()
 		const { messageListener, sentMessages } = installBrowserMock()
 		try {
@@ -702,6 +704,12 @@ describe('popup icon sync', () => {
 			})
 			const listener = messageListener()
 			assert.equal(typeof listener, 'function')
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 1),
+				}, undefined, () => undefined)
+			})
 			sentMessages.splice(0)
 
 			await act(() => {
@@ -712,7 +720,8 @@ describe('popup icon sync', () => {
 				}, undefined, () => undefined)
 			})
 
-			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestNewHomeData'), false)
+			assert.equal(sentMessages.some((message) => isHomeDataRequest(message, false, false)), true)
+			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_refreshHomeData'), false)
 		} finally {
 			dom.restore()
 		}

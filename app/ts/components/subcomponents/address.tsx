@@ -27,7 +27,8 @@ type AddressIconParams = {
 
 const AddressIconFrame = ({ isBig, children }: { isBig: boolean, children?: ComponentChildren }) => {
 	const cssProperties: JSX.CSSProperties = { backgroundColor: 'var(--unimportant-text-color)', fontSize: isBig ? '2.5em' : '1.5em' }
-	return <div style = { cssProperties } class = 'noselect nopointer'>{ children }</div>
+	const className = `address-icon-frame noselect nopointer${ children === undefined ? ' address-icon-frame--empty' : '' }`
+	return <div style = { cssProperties } class = { className } aria-hidden = 'true'>{ children }</div>
 }
 
 export function AddressIcon(param: AddressIconParams) {
@@ -59,11 +60,26 @@ type BigAddressParams = {
 	readonly style?: JSX.CSSProperties
 }
 
-export function BigAddress(params: BigAddressParams) {
-	const addressBookEntry = resolveSignal(params.addressBookEntry)
+function getBigAddressText(addressBookEntry: AddressBookEntry | undefined) {
 	const addressString = addressBookEntry && checksummedAddress(addressBookEntry.address)
 	const labelText = addressBookEntry?.name || addressString || 'No address found'
 	const noteText = addressString && addressString !== labelText ? addressString : '(Not in addressbook)'
+	return { addressString, labelText, noteText }
+}
+
+export function StaticBigAddress({ addressBookEntry }: { readonly addressBookEntry: SignalOrValue<AddressBookEntry | undefined> }) {
+	const currentAddressBookEntry = resolveSignal(addressBookEntry)
+	const { labelText, noteText } = getBigAddressText(currentAddressBookEntry)
+	return <span class = 'multiline-card multiline-card--static' role = 'figure' title = { labelText }>
+		<span role = 'img'>{ currentAddressBookEntry === undefined ? <></> : <Blockie address = { currentAddressBookEntry.address } /> }</span>
+		<span class = 'multiline-card-static-label'><data class = 'text-legible' value = { labelText }>{ labelText }</data></span>
+		<span class = 'multiline-card-static-note'><data class = 'text-legible' value = { noteText }>{ noteText }</data></span>
+	</span>
+}
+
+export function BigAddress(params: BigAddressParams) {
+	const addressBookEntry = resolveSignal(params.addressBookEntry)
+	const { addressString, labelText, noteText } = getBigAddressText(addressBookEntry)
 
 	const configPartialWithEditOnClick  = {
 		onClick: () => addressBookEntry && params.renameAddressCallBack(addressBookEntry),
@@ -131,10 +147,12 @@ type SmallAddressParams = {
 	readonly renameAddressCallBack: RenameAddressCallBack
 	readonly noCopying?: boolean
 	readonly noEditAddress?: boolean
+	readonly nonInteractive?: boolean
+	readonly copyOnActionOnly?: boolean
 	readonly style?: JSX.CSSProperties
 }
 
-export function SmallAddress({ addressBookEntry, renameAddressCallBack, noCopying, noEditAddress, style }: SmallAddressParams) {
+export function SmallAddress({ addressBookEntry, renameAddressCallBack, noCopying, noEditAddress, nonInteractive, copyOnActionOnly, style }: SmallAddressParams) {
 	const currentAddressBookEntry = resolveSignal(addressBookEntry)
 	if (currentAddressBookEntry === undefined) return <></>
 	const addressString = checksummedAddress(currentAddressBookEntry.address)
@@ -144,7 +162,7 @@ export function SmallAddress({ addressBookEntry, renameAddressCallBack, noCopyin
 		return <Blockie address = { currentAddressBookEntry.address } />
 	}
 
-	return <InlineCard label = { currentAddressBookEntry.name } copyValue = { addressString } icon = { generateIcon } noCopy = { noCopying } onEditClicked = { noEditAddress ? undefined : () => renameAddressCallBack(currentAddressBookEntry) } style = { style } />
+	return <InlineCard label = { currentAddressBookEntry.name } copyValue = { addressString } icon = { generateIcon } noCopy = { noCopying } onEditClicked = { noEditAddress ? undefined : () => renameAddressCallBack(currentAddressBookEntry) } nonInteractive = { nonInteractive } copyOnActionOnly = { copyOnActionOnly } style = { style } />
 }
 
 export function WebsiteOriginText({ website, class: cssClass, style }: {

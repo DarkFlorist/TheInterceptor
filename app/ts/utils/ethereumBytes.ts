@@ -46,6 +46,7 @@ export const getAddress = (address: string): Hex => {
 
 export const isAddress = (address: string): boolean => {
 	if (!ADDRESS_REGEX.test(address)) return false
-	if (address.toLowerCase() === address) return true
+	const addressBody = address.slice(2)
+	if (addressBody === addressBody.toLowerCase() || addressBody === addressBody.toUpperCase()) return true
 	return addr.addChecksum(address.toLowerCase()) === address
 }

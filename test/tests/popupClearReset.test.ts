@@ -176,8 +176,12 @@ async function loadModules() {
 	const storageUtils = await import('../../app/ts/utils/storageUtils.js')
 	const settings = await import('../../app/ts/background/settings.js')
 	const background = await import('../../app/ts/background/background.js')
+	const activeSettings = await import('../../app/ts/background/activeSettings.js')
+	const popupMessageRouting = await import('../../app/ts/background/popupMessageRouting.js')
+	const storageVariables = await import('../../app/ts/background/storageVariables.js')
 	const simulationUpdating = await import('../../app/ts/background/simulationUpdating.js')
 	const simulationMode = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
+	const defaults = await import('../../app/ts/config/defaults.js')
 	return {
 		...popupVisualisationUpdater,
 		...popupSimulationFingerprint,
@@ -185,8 +189,13 @@ async function loadModules() {
 		...storageUtils,
 		...settings,
 		...background,
+		...activeSettings,
+		...popupMessageRouting,
+		updateTransactionState: storageVariables.updateTransactionState,
+		getSafeTransactionStacks: storageVariables.getSafeTransactionStacks,
 		...simulationUpdating,
 		...simulationMode,
+		...defaults,
 	}
 }
 
@@ -314,6 +323,8 @@ const {
 	defaultActiveAddresses,
 	defaultRpcs,
 	resetSimulationStateFromConfig,
+	updateTransactionState,
+	getSafeTransactionStacks,
 	DEFAULT_BLOCK_MANIPULATION,
 } = await modulesPromise
 
@@ -445,10 +456,20 @@ describe('popup clear reset', () => {
 
 	test('clear the interceptor stack and refresh popup state during reset', async () => {
 		browserMock.reset()
+		await updateTransactionState(() => ({
+			interceptorTransactionStack: { operations: [{ type: 'TimeManipulation', blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] },
+			safeTransactionStacks: [{
+				chainId: 1n,
+				safeAddress: 0x1234n,
+				safeVersion: '1.4.1',
+				baseNonce: 0n,
+				threshold: 1n,
+				transactions: [],
+			}],
+		}))
 		await browserStorageLocalSet({
 			activeSimulationAddress: activeAddress,
 			popupVisualisation: stalePopupVisualisation,
-			interceptorTransactionStack: { operations: [{ type: 'TimeManipulation', blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] },
 		})
 
 		await resetSimulationStateFromConfig(fakeEthereum, fakeTokenPriceService)
@@ -456,6 +477,7 @@ describe('popup clear reset', () => {
 		const interceptorTransactionStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.deepEqual(interceptorTransactionStack, { operations: [] })
+		assert.deepEqual(await getSafeTransactionStacks(), [])
 		assert.ok(popupVisualisation)
 		assertDefinedEmptyPopupVisualisation(popupVisualisation, DEFAULT_BLOCK_MANIPULATION)
 

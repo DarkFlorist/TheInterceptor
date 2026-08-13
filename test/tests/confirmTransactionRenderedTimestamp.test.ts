@@ -4,6 +4,8 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { installDateMock, installDomMock } from './domMock.js'
+import { createSafeTx } from '../../app/ts/safe/safeCore.js'
+import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 const hexToBytes = (hex: string) => Uint8Array.from(Buffer.from(hex.slice(2), 'hex'))
@@ -171,6 +173,58 @@ const { UpdateConfirmTransactionDialogPendingTransactions } = await import('../.
 const { serialize } = await import('../../app/ts/types/wire-types.js')
 const { ConfirmTransaction } = await import('../../app/ts/components/pages/ConfirmTransaction.js')
 describe('ConfirmTransaction', () => {
+	test('shows the proposal notice only for the classifier-selected Safe proposal flow', async () => {
+		const dom = installDomMock()
+		const browser = createBrowserMock()
+		const pending = makePendingTransaction(new Date('2024-01-01T00:00:05.000Z'))
+		const safeTx = createSafeTx(1n, pending.activeAddress, {
+			to: pending.originalRequestParameters.params[0].to,
+			value: 0n,
+			input: new Uint8Array(),
+		}, 3n)
+		const proposal = {
+			...pending,
+			safeTransaction: {
+				safeAddress: pending.activeAddress,
+				safeSignerAddress: pending.originalRequestParameters.params[0].to,
+				safeVersion: '1.4.1' as const,
+				threshold: 1n,
+				reviewedSafeState: { version: '1.4.1' as const, nonce: 3n, owners: [pending.originalRequestParameters.params[0].to], threshold: 1n },
+				safeTxHash: BigInt(getSafeTxHash(safeTx)),
+				safeTx,
+				executionGasLimit: 21_000n,
+			},
+		}
+
+		await act(() => {
+			render(h(ConfirmTransaction, {}), dom.document.body)
+		})
+		const dispatchPending = async (pendingTransaction: typeof proposal) => await act(() => {
+			browser.dispatch({
+				role: 'all',
+				...serialize(UpdateConfirmTransactionDialogPendingTransactions, {
+					method: 'popup_update_confirm_transaction_dialog_pending_transactions',
+					data: {
+						pendingTransactionAndSignableMessages: [pendingTransaction],
+						currentBlockNumber: 123n,
+						rpcConnectionStatus: undefined,
+					},
+				}),
+			})
+		})
+
+		await dispatchPending(proposal)
+		assert.equal(dom.document.body.textContent?.includes('wrapped as Gnosis Safe transaction nonce 3'), true)
+		await dispatchPending({
+			...proposal,
+			safeExecutionOriginalRequestParameters: proposal.originalRequestParameters,
+		})
+		assert.equal(dom.document.body.textContent?.includes('wrapped as Gnosis Safe transaction nonce 3'), false)
+
+		await unmountConfirmTransaction(dom)
+		dom.restore()
+	})
+
 	test('updates the simulation age when a refreshed pending transaction arrives', async () => {
 		const dom = installDomMock()
 		const clock = installDateMock('2024-01-01T00:00:10.000Z')

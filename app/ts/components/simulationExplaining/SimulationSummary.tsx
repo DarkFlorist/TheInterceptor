@@ -26,6 +26,7 @@ import { createAsyncActionRunner, useAsyncState } from '../../utils/preact-utili
 import { useOptionalSignal } from '../../utils/OptionalSignal.js'
 import { type ReadonlySignal, type Signal, useComputed, useSignal } from '@preact/signals'
 import type { SignalOrValue } from '../../utils/signals.js'
+import { getGasFeePaidByTransactionSender, type TransactionGasAccounting } from '../../utils/transactionGasAccounting.js'
 import type { VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
 import { identifySignature } from './identifySignature.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
@@ -37,6 +38,11 @@ type Erc20BalanceChangeParams = {
 	negativeColor: string,
 	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack
+}
+
+export function getGasUsageText(gasSpent: bigint, gasLimit: bigint) {
+	if (gasLimit === 0n) return `${ gasSpent.toString(10) } / 0 gas (percentage unavailable)`
+	return `${ gasSpent.toString(10) } / ${ gasLimit.toString(10) } gas (${ Number(gasSpent * 10000n / gasLimit) / 100 }%)`
 }
 
 function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
@@ -559,19 +565,16 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 	</div>
 }
 
-export type TransactionGasses = {
-	gasSpent: bigint
-	realizedGasPrice: bigint
-}
+export type TransactionGasses = TransactionGasAccounting
 
 export function GasFee({ tx, rpcNetwork }: { tx: TransactionGasses, rpcNetwork: SignalOrValue<RpcNetwork> } ) {
 	return <>
 		<div class = 'log-cell'>
-			<p class = 'ellipsis' style = { 'color: var(--subtitle-text-color); margin-bottom: 0px' }> Gas fee:</p>
+			<p class = 'ellipsis' style = { 'color: var(--subtitle-text-color); margin-bottom: 0px' }> { tx.safeTransaction === undefined ? 'Gas fee:' : 'Gnosis Safe gas reimbursement:' }</p>
 		</div>
 		<div class = 'log-cell'>
 			<EtherAmount
-				amount = { tx.gasSpent * tx.realizedGasPrice  }
+				amount = { getGasFeePaidByTransactionSender(tx) }
 				style = { { color: 'var(--subtitle-text-color)' } }
 				fontSize = 'normal'
 			/>
@@ -1000,7 +1003,7 @@ export function RawTransactionDetailsCard({ isRawTransaction, transaction, renam
 						<dd>{ <Ether amount = { transaction.value } useFullTokenName = { true } rpcNetwork = { transaction.rpcNetwork } fontSize = 'normal'/> }</dd>
 						{ gasSpent === undefined ? <></> : <>
 							<dt>Gas used</dt>
-							<dd>{ `${ gasSpent.toString(10) } / ${ transaction.gas.toString(10) } gas (${ Number(gasSpent * 10000n / transaction.gas) / 100 }%)` }</dd>
+							<dd>{ getGasUsageText(gasSpent, transaction.gas) }</dd>
 						</> }
 						<dt>Gas limit </dt>
 						<dd style = 'display: flex; align-items: center; justify-content: center;'>

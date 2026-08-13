@@ -1,5 +1,6 @@
 import { useSignal } from '@preact/signals'
-import { bigintSecondsToDate, isHexEncodedNumber, stringToUint8Array } from '../../utils/bigint.js'
+import { bigintSecondsToDate } from '../../utils/bigint.js'
+import { EthereumData } from '../../types/wire-types.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { MOCK_PRIVATE_KEYS_ADDRESS, getChainName } from '../../utils/constants.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
@@ -91,8 +92,10 @@ type SignRequestParams = {
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 }
 
-const decodeMessage = (message: string) => {
-	if (isHexEncodedNumber(message)) return new TextDecoder().decode(stringToUint8Array(message))
+export const decodeMessage = (message: string) => {
+	if (!message.startsWith('0x')) return message
+	const parsedMessage = EthereumData.safeParse(message)
+	if (parsedMessage.success) return new TextDecoder().decode(parsedMessage.value)
 	return message
 }
 
@@ -190,23 +193,30 @@ type EIP712Entry = {
 }
 
 function EIP712Table({ enrichedEIP712Message, renameAddressCallBack, isSubTable }: EIP712Table) {
-	function EIP712Entry({ name, entry }: EIP712Entry) {
-		if (entry === undefined) return <></>
+	function EIP712Value({ entry }: { entry: TypeEnrichedEIP712MessageRecord }) {
+		if (entry.type === 'nestedArray') {
+			return <span style = 'display: inline-flex; flex-wrap: wrap;'>
+				[{
+					entry.value.map((nestedEntry, index) => <span key = { index } style = 'display: inline-flex;'>
+						{ index === 0 ? '' : ', ' }
+						<EIP712Value entry = { nestedEntry }/>
+					</span>)
+				}]
+			</span>
+		}
 		if (entry.type === 'record[]') {
-			return <>
-				<CellElement text = { `${ name }: ` }/>
-				<CellElement text = { entry.value.map((value, index) => <EIP712Table key = { index } enrichedEIP712Message = { value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>) } />
-			</>
+			return <>{ entry.value.map((value, index) => <EIP712Table key = { index } enrichedEIP712Message = { value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>) }</>
 		}
 		if (entry.type === 'record') {
-			return <>
-				<CellElement text = { `${ name }: ` }/>
-				<CellElement text = { <EIP712Table enrichedEIP712Message = { entry.value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/> }/>
-			</>
+			return <EIP712Table enrichedEIP712Message = { entry.value } renameAddressCallBack = { renameAddressCallBack } isSubTable = { true }/>
 		}
+		return <EnrichedSolidityTypeComponent valueType = { entry } renameAddressCallBack = { renameAddressCallBack }/>
+	}
+	function EIP712Entry({ name, entry }: EIP712Entry) {
+		if (entry === undefined) return <></>
 		return <>
 			<CellElement text = { `${ name }: ` }/>
-			<CellElement text = { <EnrichedSolidityTypeComponent valueType = { entry } renameAddressCallBack = { renameAddressCallBack }/> }/>
+			<CellElement text = { <EIP712Value entry = { entry }/> }/>
 		</>
 	}
 	return <span class = 'eip-712-table' style = { isSubTable ? 'justify-content: space-between;' : '' }>
@@ -311,7 +321,7 @@ function GnosisSafeExtraDetails({ visualizedPersonalSignRequestSafeTx, renameAdd
 				</>
 				: <></>
 			}
-			<CellElement text = 'Safe Transaction Gas: '/>
+			<CellElement text = 'Gnosis Safe Transaction Gas: '/>
 			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.safeTxGas }/>
 			<CellElement text = 'To: '/>
 			<CellElement text = { <SmallAddress addressBookEntry = { visualizedPersonalSignRequestSafeTx.to } renameAddressCallBack = { renameAddressCallBack } /> }/>
@@ -321,7 +331,7 @@ function GnosisSafeExtraDetails({ visualizedPersonalSignRequestSafeTx, renameAdd
 			<code><CellElement text = { visualizedPersonalSignRequestSafeTx.domainHash }/></code>
 			<CellElement text = 'Message Hash: '/>
 			<code><CellElement text = { visualizedPersonalSignRequestSafeTx.messageHash }/></code>
-			<CellElement text = 'Safe Transaction Hash: '/>
+			<CellElement text = 'Gnosis Safe Transaction Hash: '/>
 			<code><CellElement text = { visualizedPersonalSignRequestSafeTx.safeTxHash }/></code>
 		</span>
 		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Gnosis Safe meta transaction input: </p>

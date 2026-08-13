@@ -1,0 +1,96 @@
+import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import { getInputFieldFromDataOrInput } from '../simulation/services/SimulationModeEthereumClientService.js'
+import type { SendTransactionParams } from '../types/JsonRpc-types.js'
+import type { SafeEntry } from '../types/addressBookTypes.js'
+import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
+import { createSafeContractValidationFailure, getSafeContractState } from './safeCore.js'
+import { completeSafeExecutionWithConfiguredSigner } from './safeExecution.js'
+
+const SAFE_EXEC_TRANSACTION_SELECTOR = Uint8Array.from([0x6a, 0x76, 0x12, 0x02])
+
+export function areSafeExecutionSignerRequestsEqual(first: SendTransactionParams, second: SendTransactionParams) {
+	const firstTransaction = first.params[0]
+	const secondTransaction = second.params[0]
+	return firstTransaction.type === secondTransaction.type
+		&& firstTransaction.from === secondTransaction.from
+		&& firstTransaction.to === secondTransaction.to
+		&& firstTransaction.gas === secondTransaction.gas
+		&& firstTransaction.value === secondTransaction.value
+		&& firstTransaction.gasPrice === secondTransaction.gasPrice
+		&& firstTransaction.maxPriorityFeePerGas === secondTransaction.maxPriorityFeePerGas
+		&& firstTransaction.maxFeePerGas === secondTransaction.maxFeePerGas
+		&& areEqualUint8Arrays(firstTransaction.data, secondTransaction.data)
+		&& areEqualUint8Arrays(firstTransaction.input, secondTransaction.input)
+}
+
+export function isSafeExecutionRequestForActiveSafe(transactionParams: SendTransactionParams, safeEntry: SafeEntry | undefined) {
+	if (safeEntry === undefined) return false
+	const transaction = transactionParams.params[0]
+	if (transaction.from !== safeEntry.address || transaction.to !== safeEntry.address) return false
+	const input = getInputFieldFromDataOrInput(transaction)
+	return SAFE_EXEC_TRANSACTION_SELECTOR.every((byte, index) => input[index] === byte)
+}
+
+export async function getSafeExecutionReviewedState(
+	ethereumClientService: EthereumClientService,
+	transactionParams: SendTransactionParams,
+	safeEntry: SafeEntry | undefined,
+) {
+	if (!isSafeExecutionRequestForActiveSafe(transactionParams, safeEntry) || safeEntry === undefined) return undefined
+	const transaction = transactionParams.params[0]
+	if (transaction.value !== undefined && transaction.value !== 0n) {
+		throw createSafeContractValidationFailure('A direct Gnosis Safe execution transaction must have zero outer ETH value. The value transferred by the Gnosis Safe belongs inside execTransaction.')
+	}
+	const safeState = await getSafeContractState(ethereumClientService, safeEntry.address)
+	if (safeEntry.safeVersion !== undefined && safeEntry.safeVersion !== safeState.version) {
+		throw createSafeContractValidationFailure(`The Gnosis Safe version is now ${ safeState.version }, but the address-book entry records ${ safeEntry.safeVersion }.`)
+	}
+	return safeState
+}
+
+export function getSafeExecutionSignerRoute(transactionParams: SendTransactionParams, safeEntry: SafeEntry | undefined, walletSignerAddress: bigint | undefined) {
+	if (safeEntry === undefined || walletSignerAddress === undefined || !isSafeExecutionRequestForActiveSafe(transactionParams, safeEntry)) return undefined
+	return {
+		executor: walletSignerAddress,
+		transactionParams: {
+			...transactionParams,
+			params: [{
+				...transactionParams.params[0],
+				from: walletSignerAddress,
+			}] as const,
+		},
+	}
+}
+
+export async function prepareSafeExecutionSignerRoute(
+	ethereumClientService: EthereumClientService,
+	transactionParams: SendTransactionParams,
+	safeEntry: SafeEntry | undefined,
+	walletSignerAddress: bigint | undefined,
+) {
+	const route = getSafeExecutionSignerRoute(transactionParams, safeEntry, walletSignerAddress)
+	if (route === undefined || safeEntry === undefined || walletSignerAddress === undefined) return undefined
+	const transaction = route.transactionParams.params[0]
+	const input = getInputFieldFromDataOrInput(transaction)
+	const safeState = await getSafeExecutionReviewedState(ethereumClientService, transactionParams, safeEntry)
+	if (safeState === undefined) return undefined
+	const completedInput = await completeSafeExecutionWithConfiguredSigner(
+		ethereumClientService.getChainId(),
+		safeEntry.address,
+		walletSignerAddress,
+		safeState,
+		input,
+	)
+	return {
+		...route,
+		safeState,
+		transactionParams: {
+			...route.transactionParams,
+			params: [{
+				...transaction,
+				...(transaction.data === undefined ? {} : { data: completedInput }),
+				...(transaction.input === undefined ? {} : { input: completedInput }),
+			}] as const,
+		},
+	}
+}
