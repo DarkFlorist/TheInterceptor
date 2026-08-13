@@ -200,6 +200,7 @@ describe('add new address save flow', () => {
 		assert.deepEqual(getAddressIdentificationKey(state), {
 			address: 0xde709f2102306220921060314715629080e2fb77n,
 			chainId: 1n,
+			requestSafeContractState: false,
 			windowStateId: 'uppercase-address',
 		})
 	})

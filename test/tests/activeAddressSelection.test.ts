@@ -145,7 +145,7 @@ describe('active address selection', () => {
 		assert.match(providerSigningSelectionSource, /export async function getSigningAddressSelectionTransition/u)
 		assert.match(providerMessageHandlersSource, /getSigningAddressSelectionTransition\(/u)
 		assert.doesNotMatch(providerMessageHandlersSource, /getSigningAddressPreferences/u)
-		assert.doesNotMatch(providerMessageHandlersSource, /shouldRestoreRememberedSelection/u)
+		assert.doesNotMatch(providerMessageHandlersSource, /shouldActivateWalletAccountSelection/u)
 		assert.doesNotMatch(backgroundUtilsSource, /signingAddressPreferences/u)
 	})
 })

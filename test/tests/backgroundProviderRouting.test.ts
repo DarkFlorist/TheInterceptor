@@ -927,12 +927,13 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal(tabState.activeSigningAddress, currentAccount)
 	})
 
-	test('keeps a signing-mode Safe selected across wallet chain changes but falls back for an unremembered account', async () => {
+	test('falls back from an active Safe to a newly selected wallet account without a saved preference', async () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
 			getActiveAddress,
 			getSettings,
+			getSigningAddressPreferences,
 			getTabState,
 			handleInterceptedRequest,
 			rememberSigningAddressPreference,
@@ -1014,6 +1015,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal((await getActiveAddress(await getSettings(), socket.tabId))?.address, safeAddress)
 
 		const otherSignerAddress = 0x5353535353535353535353535353535353535353n
+		assert.equal((await getSigningAddressPreferences()).some((preference) => preference.signerAddress === otherSignerAddress), false)
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
 			interceptorRequest: true,
 			interceptorInternalRequest: true,

@@ -18,7 +18,7 @@ export async function rememberSigningAddressSelection(preference: SigningAddress
 	await rememberSigningAddressPreference(preference)
 }
 
-async function getRememberedSigningSelection(signerAddress: bigint, settings: Settings): Promise<ActiveAddressSelection> {
+async function getWalletAccountSigningSelection(signerAddress: bigint, settings: Settings): Promise<ActiveAddressSelection> {
 	const preference = (await getSigningAddressPreferences()).find((candidate) => candidate.signerAddress === signerAddress)
 	const activeChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 	const signerSelection = getActiveAddressSelection('signer', activeChainEntries, false, settings.activeRpcNetwork.chainId, [signerAddress])
@@ -43,26 +43,26 @@ export async function getSigningAddressSelectionTransition(
 	const selectedSafe = await getConfiguredSigningSafe(settings)
 	const configuredActiveAddress = settings.simulationMode ? settings.activeSimulationAddress : previousTabState.activeSigningAddress
 	const signerAddress = currentTabState.signerAccounts[0]
-	const rememberedSelection = !settings.simulationMode && signerAddress !== undefined
-		? await getRememberedSigningSelection(signerAddress, settings)
+	const walletAccountSelection = !settings.simulationMode && signerAddress !== undefined
+		? await getWalletAccountSigningSelection(signerAddress, settings)
 		: undefined
-	const rememberedSelectionIsActive = rememberedSelection?.type === 'signer'
+	const walletAccountSelectionIsActive = walletAccountSelection?.type === 'signer'
 		? settings.useSignersAddressAsActiveAddress && selectedSafe === undefined && configuredActiveAddress === signerAddress
-		: rememberedSelection !== undefined && !settings.useSignersAddressAsActiveAddress && selectedSafe?.address === rememberedSelection.entry.address
+		: walletAccountSelection !== undefined && !settings.useSignersAddressAsActiveAddress && selectedSafe?.address === walletAccountSelection.entry.address
 	const signerAccountChanged = previousTabState.activeSigningAddress !== currentTabState.activeSigningAddress
 	const shouldClearDisconnectedSigner = !settings.simulationMode
 		&& signerAddress === undefined
 		&& (!settings.useSignersAddressAsActiveAddress || selectedSafe !== undefined || configuredActiveAddress !== undefined)
-	const shouldRestoreRememberedSelection = rememberedSelection !== undefined
-		&& !rememberedSelectionIsActive
+	const shouldActivateWalletAccountSelection = walletAccountSelection !== undefined
+		&& !walletAccountSelectionIsActive
 		&& (signerAccountChanged || selectedSafe === undefined)
-	const shouldUpdateUnrememberedSignerAddress = rememberedSelection === undefined && selectedSafe === undefined && (
-		settings.useSignersAddressAsActiveAddress && configuredActiveAddress !== signerAddress
-		|| !settings.simulationMode && signerAccountChanged
-	)
-	const shouldActivate = shouldClearDisconnectedSigner || shouldRestoreRememberedSelection || shouldUpdateUnrememberedSignerAddress
+	const shouldUpdateSimulationSignerAddress = settings.simulationMode
+		&& selectedSafe === undefined
+		&& settings.useSignersAddressAsActiveAddress
+		&& configuredActiveAddress !== signerAddress
+	const shouldActivate = shouldClearDisconnectedSigner || shouldActivateWalletAccountSelection || shouldUpdateSimulationSignerAddress
 	if (!shouldActivate || shouldClearDisconnectedSigner) return { shouldActivate, selection: undefined, signerAddress }
-	if (rememberedSelection !== undefined) return { shouldActivate, selection: rememberedSelection, signerAddress }
+	if (walletAccountSelection !== undefined) return { shouldActivate, selection: walletAccountSelection, signerAddress }
 	const activeChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 	return {
 		shouldActivate,
