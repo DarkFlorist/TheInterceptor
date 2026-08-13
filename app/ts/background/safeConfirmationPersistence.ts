@@ -14,7 +14,7 @@ import { createSafeExecutionPreSimulationTransaction } from '../safe/safeSimulat
 import { reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
 import { isSafeSignerSelectionFailure, validateSafeMessageCoSignature } from './safeConfirmationResolver.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
-import { getSafePendingFlow } from './safePendingFlow.js'
+import { getSafePendingFlow } from '../safe/safePendingFlow.js'
 
 export type SafeSignerReplyResolution =
 	| { readonly status: 'not-safe' }

@@ -14,7 +14,7 @@ import type { SafeSignerErrorDetails } from '../types/safeTypes.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { createSafeValidationError, hasSafeValidationErrorCode } from '../safe/safeErrors.js'
 import { getCurrentSafeEntry, getCurrentSafeEntryAndAddressBookEntries, getSafeMessageCoSignContext, handleSafeExecutionRefreshFailure, refreshSafeExecutionSignerSelection, refreshSafeSignerSelection, SAFE_SIGNER_SELECTION_ERROR_CODE, type SafeMessageCoSignContext } from './safeSignerSelectionRefresh.js'
-import { getSafeFlowSignerAddress, getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from './safePendingFlow.js'
+import { getSafeFlowSignerAddress, getSafePendingFlow, type DirectSafeExecutionFlow, type SafeMessageCoSignFlow, type SafePendingFlow, type SafeProposalFlow } from '../safe/safePendingFlow.js'
 
 export { SAFE_SIGNER_SELECTION_ERROR_CODE } from './safeSignerSelectionRefresh.js'
 

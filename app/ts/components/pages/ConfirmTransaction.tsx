@@ -42,7 +42,7 @@ import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
 import type { SignerName } from '../../types/signerTypes.js'
 import { assertNever } from '../../utils/typescript.js'
-import { getSafeTransactionPendingFlow } from '../../background/safePendingFlow.js'
+import { getSafeTransactionPendingFlow } from '../../safe/safePendingFlow.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: ReadonlySignal<PendingTransactionOrSignableMessage[]>

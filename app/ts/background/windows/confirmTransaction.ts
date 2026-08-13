@@ -39,7 +39,7 @@ import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalan
 import { prepareSafeTransactionConfirmation } from '../safeTransactionConfirmation.js'
 import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, isExpectedSafeMessageCoSignSnapshotFailure, isSafeMessageAccountMismatchFailure, isSafeSignerSelectionFailure, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
 import { refreshAndPersistSafeSignerSelection } from '../safeSignerSelectionRefresh.js'
-import { getSafePendingFlow } from '../safePendingFlow.js'
+import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
 import { resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
