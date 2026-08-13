@@ -201,28 +201,615 @@ svg[role="img"] {
 	white-space: nowrap;
 }
 
-.safe-signer-editor-title,
-.safe-signer-editor-row,
-.safe-signer-editor-add {
-	grid-column: 1 / -1;
+.safe-signer-address {
+	border-top: 1px solid var(--unimportant-text-color);
+	display: grid;
+	gap: 8px;
+	margin-top: 8px;
+	min-width: 0;
+	padding-top: 8px;
+}
+
+.safe-signer-home-heading {
+	align-items: center;
+	display: flex;
+	gap: 8px;
+}
+
+.safe-signer-home-heading > :first-child {
+	color: var(--subtitle-text-color);
+	flex: 1 1 auto;
+	margin: 0;
 	min-width: 0;
 }
 
-.safe-signer-editor-title {
-	margin-top: 0.4em;
+.safe-signer-home-heading > .btn {
+	flex: 0 0 auto;
+	white-space: nowrap;
+}
+
+.safe-signer-address > .dropdown,
+.safe-signer-address > .dropdown > .dropdown-trigger {
+	min-width: 0;
+	width: 100%;
+}
+
+.safe-signer-address .dropdown-trigger > button {
+	height: auto;
+	min-height: 0;
+	padding: 7px 9px;
 	text-align: left;
+	white-space: normal;
 }
 
-.safe-signer-editor-row {
+.safe-signer-address .dropdown button > .truncate {
+	display: block;
+	max-width: 100%;
+	min-width: 0;
+	overflow: visible;
+	white-space: normal;
+	width: 100%;
+}
+
+.safe-signer-address .dropdown-menu,
+.safe-signer-address .dropdown-content {
+	box-sizing: border-box;
+	max-width: 100%;
+	width: 100%;
+}
+
+.safe-signer-address .dropdown-menu {
+	min-width: 0;
+}
+
+.safe-signer-address .dropdown-content {
+	padding: 6px;
+}
+
+.safe-signer-address .dropdown-item {
+	box-sizing: border-box;
+	padding: 7px;
+	text-align: left;
+	white-space: normal;
+	width: 100%;
+}
+
+.safe-signer-home-option {
+	display: block;
+	min-width: 0;
+	width: 100%;
+}
+
+.safe-signer-home-option > .multiline-card {
+	max-width: 100%;
+	min-width: 0;
+	width: 100%;
+}
+
+.address-editor {
 	display: grid;
-	grid-template-columns: 1em minmax(0, 1fr) auto;
-	align-items: center;
-	gap: 0.4em;
+	gap: 12px;
+	min-width: 0;
 }
 
-.safe-signer-editor-add {
+.address-editor-heading {
+	color: var(--text-color);
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 18px;
+	margin: 0;
+}
+
+.address-editor-fields {
+	container-type: inline-size;
+	display: grid;
+	gap: 12px;
+	min-width: 0;
+}
+
+.address-editor-field {
+	display: grid;
+	align-content: start;
+	gap: 4px;
+	color: var(--subtitle-text-color);
+	font-size: 12px;
+	font-weight: 500;
+	line-height: 16px;
+	min-width: 0;
+}
+
+.address-editor-field > :where(.dropdown, .chainSelector, .input) {
+	max-width: 100%;
+	min-width: 0;
+	width: 100%;
+}
+
+.address-editor-field .dropdown-menu {
+	box-sizing: border-box;
+	left: auto;
+	min-width: 100%;
+	right: 0;
+	width: 100%;
+}
+
+.address-editor-field .dropdown-content {
+	box-sizing: border-box;
+	position: static;
+	width: 100%;
+}
+
+.address-editor-field :where(.btn, .input) {
+	font-size: 14px;
+	min-height: 32px;
+}
+
+.address-editor .input,
+.address-editor .address-editor-field .btn {
+	background: color-mix(in srgb, var(--text-color) 5%, transparent);
+	border: 1px solid var(--white-alpha-20);
+	border-radius: 6px;
+	box-shadow: none;
+	box-sizing: border-box;
+	color: var(--text-color);
+	line-height: 20px;
+	padding: 5px 10px;
+}
+
+.address-editor .input:hover,
+.address-editor .address-editor-field .btn:hover {
+	background: var(--white-alpha-10);
+	border: 1px solid var(--highlighted-primary-color);
+}
+
+.address-editor .input:focus,
+.address-editor .address-editor-field .btn:focus {
+	border: 1px solid var(--primary-color);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 22%, transparent);
+}
+
+.address-editor-identity {
+	display: grid;
+	align-items: start;
+	gap: 12px;
+	min-width: 0;
+}
+
+.address-editor-primary-identity {
+	display: grid;
+	grid-template-columns: 44px minmax(0, 1fr);
+	align-items: start;
+	gap: 12px;
+	min-width: 0;
+	width: 100%;
+}
+
+.address-editor-address-icon {
+	display: grid;
+	place-items: center;
+	min-height: 44px;
+	padding-top: 17px;
+}
+
+.address-editor-identity-controls {
+	display: grid;
+	gap: 8px;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	min-width: 0;
+}
+
+.address-editor-name-field {
+	grid-column: 1 / -1;
+}
+
+.address-editor-chain-field {
+	grid-column: 2;
+	grid-row: 2;
+}
+
+.address-editor-type-field {
+	grid-column: 1;
+	grid-row: 2;
+}
+
+.address-editor-name-input {
+	font-size: 16px !important;
+	font-weight: 600;
+	line-height: 22px !important;
+}
+
+.address-icon-frame {
+	border-radius: 6px;
+	box-sizing: border-box;
+	height: 1em;
+	overflow: hidden;
+	width: 1em;
+}
+
+.address-icon-frame--empty {
+	background: color-mix(in srgb, var(--text-color) 5%, transparent) !important;
+	border: 1px solid var(--layout-line-color);
+}
+
+.address-editor-address-input {
+	field-sizing: content;
+	font-family: monospace;
+	font-size: 12px !important;
+	line-height: 16px !important;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+	resize: none;
+	white-space: pre-wrap;
+	word-break: break-all;
+}
+
+.address-editor .input:disabled {
+	color: var(--disabled-text-color);
+	opacity: 1;
+}
+
+.address-editor-field--wide {
+	width: 100%;
+}
+
+.address-editor-readonly-address {
+	color: var(--text-color);
+	display: block;
+	font-family: monospace;
+	font-size: 12px;
+	line-height: 16px;
+	min-width: 0;
+	overflow-wrap: anywhere;
+	padding: 2px 0;
+	white-space: normal;
+}
+
+.address-editor-address-field {
+	align-items: center;
+	background: color-mix(in srgb, var(--text-color) 5%, transparent);
+	border: 1px solid var(--layout-line-color);
+	border-radius: 6px;
+	display: grid;
+	flex: 1 1 100%;
+	gap: 10px;
+	grid-template-columns: max-content minmax(0, 1fr);
+	padding: 7px 10px;
+	width: 100%;
+}
+
+.address-editor-address-field > span {
+	color: var(--subtitle-text-color);
+}
+
+.address-editor-address-field > .input {
+	min-height: 30px;
+}
+
+@container (max-width: 280px) {
+	.address-editor-identity-controls {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.address-editor-chain-field,
+	.address-editor-type-field {
+		grid-column: 1;
+	}
+
+	.address-editor-chain-field { grid-row: 3; }
+	.address-editor-type-field { grid-row: 2; }
+
+	.address-editor-address-field {
+		align-items: start;
+		gap: 4px;
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.address-editor-address-input {
+		field-sizing: fixed;
+		min-height: 44px !important;
+	}
+}
+
+@container (max-width: 180px) {
+	.address-editor-address-input {
+		min-height: 76px !important;
+	}
+}
+
+.address-editor-section {
+	display: grid;
+	gap: 8px;
+	background: color-mix(in srgb, var(--text-color) 5%, transparent);
+	border: 1px solid var(--layout-line-color);
+	border-radius: 8px;
+	min-width: 0;
+	padding: 10px 12px;
+}
+
+.address-editor-section-heading {
 	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+}
+
+.address-editor-section-heading > :first-child {
+	flex: 1 1 8rem;
+	min-width: 0;
+}
+
+.address-editor-section-heading > .btn {
+	white-space: nowrap;
+}
+
+.safe-signer-owner-picker {
+	display: grid;
+	gap: 6px;
+	color: var(--subtitle-text-color);
+	font-size: 12px;
+	font-weight: 500;
+	min-width: 0;
+}
+
+.safe-signer-owner-list {
+	display: grid;
+	gap: 4px;
+}
+
+.safe-signer-owner-option {
+	align-items: center;
+	background: color-mix(in srgb, var(--text-color) 4%, transparent);
+	border: 1px solid var(--layout-line-color);
+	border-radius: 6px;
+	cursor: pointer;
+	display: grid;
+	gap: 8px;
+	grid-template-columns: max-content minmax(0, 1fr);
+	min-width: 0;
+	padding: 5px 8px;
+}
+
+.safe-signer-owner-option:has(input:checked) {
+	background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+	border-color: var(--primary-color);
+}
+
+.safe-signer-owner-option > input {
+	accent-color: var(--primary-color);
+	margin: 0;
+}
+
+.safe-signer-owner-option > .inline-card {
+	max-width: 100%;
+	min-width: 0;
+}
+
+.address-editor-token-fields {
+	display: grid;
+	grid-template-columns: minmax(0, 2fr) minmax(96px, 1fr);
+	gap: 12px;
+}
+
+.address-editor-disclosure,
+.address-editor-preferences {
+	background: color-mix(in srgb, var(--text-color) 5%, transparent);
+	border: 1px solid var(--layout-line-color);
+	border-radius: 8px;
+	min-width: 0;
+}
+
+.address-editor-disclosure > summary,
+.address-editor-preference-disclosure > summary {
+	align-items: center;
+	color: var(--text-color);
+	cursor: pointer;
+	display: flex;
+	font-size: 13px;
+	font-weight: 600;
+	justify-content: space-between;
+	line-height: 18px;
+	list-style: none;
+	padding: 10px 12px;
+}
+
+.address-editor-disclosure > summary::-webkit-details-marker,
+.address-editor-preference-disclosure > summary::-webkit-details-marker {
+	display: none;
+}
+
+.address-editor-disclosure-chevron {
+	color: var(--subtitle-text-color);
+	display: inline-flex;
+	flex: 0 0 auto;
+	height: 16px;
+	transition: transform 120ms ease;
+	width: 16px;
+}
+
+.address-editor-disclosure-chevron > svg {
+	display: block;
+	height: 100%;
+	width: 100%;
+}
+
+.address-editor-disclosure[open] > summary > .address-editor-disclosure-chevron,
+.address-editor-preference-disclosure[open] > summary > .address-editor-disclosure-chevron {
+	transform: rotate(180deg);
+}
+
+.address-editor-disclosure-content {
+	border-top: 1px solid var(--layout-line-color);
+	display: grid;
+	gap: 8px;
+	padding: 10px 12px 12px;
+}
+
+.address-editor-preferences {
+	display: grid;
+}
+
+.address-editor-preferences-heading {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	justify-content: space-between;
+	padding: 10px 12px;
+}
+
+.address-editor-setting {
+	align-items: center;
+	color: var(--text-color);
+	cursor: pointer;
+	display: flex;
+	font-size: 13px;
+	gap: 12px;
+	justify-content: space-between;
+	line-height: 18px;
+}
+
+.address-editor-setting > span {
+	display: grid;
+	min-width: 0;
+}
+
+.address-editor-setting small {
+	color: var(--subtitle-text-color);
+	font-size: 12px;
+	font-weight: 400;
+	line-height: 16px;
+}
+
+.address-editor-setting--primary {
+	white-space: nowrap;
+}
+
+.address-editor-preference-disclosure {
+	border-top: 1px solid var(--layout-line-color);
+}
+
+.address-editor-preference-content {
+	display: grid;
+	gap: 10px;
+	padding: 0 12px 12px;
+}
+
+.address-editor input[role=switch] {
+	appearance: none;
+	background: var(--white-alpha-20);
+	border: 1px solid var(--layout-line-color);
+	border-radius: 999px;
+	box-sizing: border-box;
+	cursor: pointer;
+	display: block;
+	flex: 0 0 auto;
+	height: 20px;
+	margin: 0;
+	padding: 2px;
+	width: 36px;
+}
+
+.address-editor input[role=switch]::before {
+	background: var(--text-color);
+	border-radius: 50%;
+	content: '';
+	display: block;
+	height: 14px;
+	transform: translateX(0);
+	transition: transform 120ms ease;
+	width: 14px;
+}
+
+.safe-signer-error-details {
+	align-items: center;
+	background: color-mix(in srgb, var(--text-color) 5%, transparent);
+	border: 1px solid var(--layout-line-color);
+	border-radius: 6px;
+	display: grid;
+	gap: 6px 10px;
+	grid-template-columns: max-content minmax(0, 1fr);
+	margin-top: 8px;
+	padding: 8px;
+}
+
+.safe-signer-error-details > dt {
+	color: var(--subtitle-text-color);
+	font-size: 12px;
+}
+
+.safe-signer-error-details > dd,
+.safe-signer-error-owner-list {
+	display: grid;
+	gap: 5px;
+	justify-items: end;
+	margin: 0;
+	min-width: 0;
+}
+
+.safe-signer-error-details .inline-card {
+	max-width: 100%;
+	min-width: 0;
+}
+
+.address-editor input[role=switch]:checked {
+	background: var(--primary-color);
+	border-color: var(--primary-color);
+}
+
+.address-editor input[role=switch]:checked::before {
+	background: var(--black-color);
+	transform: translateX(16px);
+}
+
+.address-editor-errors:empty {
+	display: none;
+}
+
+.address-editor-errors {
+	display: grid;
+	gap: 8px;
+	padding-top: 10px;
+}
+
+.address-editor-modal {
+	border: 1px solid var(--layout-line-color);
+	border-radius: 10px;
+	box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+	max-width: min(468px, calc(100% - 32px));
+}
+
+.address-editor-modal .interceptor-modal-head {
+	border-bottom: 1px solid var(--layout-line-color);
+	min-height: 48px;
+	padding: 0 8px 0 16px;
+}
+
+.address-editor-modal .card-header-title {
+	font-size: 16px;
+	font-weight: 600;
+	line-height: 20px;
+	padding: 0;
+}
+
+.address-editor-modal .modal-card-body {
+	background: var(--card-bg-color);
+	padding: 16px;
+}
+
+.window-footer.address-editor-footer {
+	background: var(--card-bg-color);
+	border-top: 1px solid var(--layout-line-color) !important;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
 	justify-content: flex-end;
+	min-height: 56px;
+	padding: 10px 16px !important;
+}
+
+.address-editor-footer .btn {
+	font-size: 14px;
+	min-height: 34px;
+	white-space: nowrap;
 }
 
 input[type=checkbox]:not([role=switch]) {
@@ -674,17 +1261,6 @@ html, body {
 	padding: 0;
 }
 
-.address-book-editor-content {
-	min-width: 0;
-	overflow: visible;
-}
-
-.log-table.address-book-editor-grid {
-	grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr);
-	column-gap: 5px;
-	row-gap: 5px;
-}
-
 .responsive-notification-details {
 	display: none;
 }
@@ -740,10 +1316,6 @@ li {
 	font-size: 0.8rem;
 	min-height: 30px;
 	padding: 0 10px;
-}
-
-.simulation-summary-section-card > summary::after {
-	display: none;
 }
 
 .simulation-summary-section-card > summary .details--arrow {
@@ -953,8 +1525,20 @@ li {
 	cursor: pointer;
 }
 
+a.dropdown-item:hover,
+button.dropdown-item:hover,
+a.dropdown-item:focus-visible,
+button.dropdown-item:focus-visible {
+	background-color: color-mix(in srgb, var(--primary-color) 18%, var(--card-content-bg-color));
+	color: var(--text-color);
+	outline: 1px solid var(--primary-color);
+	outline-offset: -1px;
+}
+
 a.dropdown-item.is-active, button.dropdown-item.is-active {
-	background-color: var(--primary-color);
+	background-color: color-mix(in srgb, var(--primary-color) 38%, var(--card-content-bg-color));
+	box-shadow: inset 3px 0 0 var(--primary-color);
+	color: var(--text-color);
 }
 
 .card-header-icon {

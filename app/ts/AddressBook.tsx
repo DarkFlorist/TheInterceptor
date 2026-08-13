@@ -313,7 +313,7 @@ export function AddressBook() {
 				askForAddressAccess: true,
 				entrySource: 'FilledIn',
 				abi: undefined,
-				safeSignerAddress: undefined,
+				safeSimulationSignerAddress: undefined,
 				safeSignerAddresses: [],
 				safeVersion: undefined,
 				useAsActiveAddress: filter === 'My Active Addresses' || filter === 'My Safes',

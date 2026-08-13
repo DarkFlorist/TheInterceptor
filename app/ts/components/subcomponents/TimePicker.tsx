@@ -13,6 +13,12 @@ export type TimePickerMode = typeof timePickerModeDownOptions[number]
 
 export const parseTimePickerDeltaValue = (value: string) => /^[0-9]+$/.test(value) ? BigInt(value) : undefined
 
+export const hasValidTimePickerValue = (mode: TimePickerMode, absoluteTime: Date | undefined, deltaValue: bigint | undefined) => {
+	if (mode === 'Until') return absoluteTime !== undefined
+	if (mode === 'For') return deltaValue !== undefined
+	return true
+}
+
 export const getTimeManipulatorFromSignals = (timeSelectorMode: TimePickerMode, timeSelectorAbsoluteTime: Date | undefined, timeSelectorDeltaValue: bigint, timeSelectorDeltaUnit: DeltaUnit) => {
 	switch(timeSelectorMode) {
 		case 'No Delay': return { type: 'No Delay' } as const
@@ -123,17 +129,18 @@ export const TimePicker = ({ mode, absoluteTime, deltaValue, deltaUnit, onChange
 	}
 
 	const hasValuesChanged = useComputed(() => {
+		if (!hasValidTimePickerValue(temporaryMode.value, temporaryAbsoluteTime.value, temporaryDeltaValue.value)) return false
 		if (mode.value !== temporaryMode.value) return true
 		if (mode.value === 'For') {
-			if (temporaryDeltaValue.value === undefined) return false
 			return deltaUnit.value !== temporaryDeltaUnit.value || deltaValue.value !== temporaryDeltaValue.value
 		}
-		if (mode.value === 'Until') return absoluteTime.value !== temporaryAbsoluteTime.value && temporaryAbsoluteTime.value !== undefined
+		if (mode.value === 'Until') return absoluteTime.value !== temporaryAbsoluteTime.value
 		return false
 	})
 
 	const commitOptions = () => {
 		if (disabled) return
+		if (!hasValidTimePickerValue(temporaryMode.value, temporaryAbsoluteTime.value, temporaryDeltaValue.value)) return
 		batch(() => {
 			mode.value = temporaryMode.value
 			deltaUnit.value = temporaryDeltaUnit.value
@@ -152,7 +159,7 @@ export const TimePicker = ({ mode, absoluteTime, deltaValue, deltaUnit, onChange
 				<DropDownMenu selected = { temporaryMode } dropDownOptions = { timePickerModeDownOptionsSignal } onChangedCallBack = { changeMode } buttonClassses = { 'btn btn--outline is-small' } disabled = { disabled }/>
 				<TimePickerModeViews mode = { temporaryMode } absoluteTime = { temporaryAbsoluteTime } deltaValue = { temporaryDeltaValue } deltaUnit = { temporaryDeltaUnit } timePickerDeltaOptionsSignal = { timePickerDeltaOptionsSignal } changeDeltaUnit = { changeDeltaUnit } absoluteTimeChanged = { absoluteTimeChanged } changeDeltaValue = { changeDeltaValue } disabled = { disabled }/>
 
-				<button class = 'btn is-small is-primary' disabled = { disabled } onClick = { commitOptions } style = { { visibility: hasValuesChanged.value ? 'visible' : 'hidden' } }>
+				<button class = 'btn is-small is-primary' disabled = { disabled || !hasValuesChanged.value } onClick = { commitOptions } style = { { visibility: hasValuesChanged.value ? 'visible' : 'hidden' } }>
 					Commit
 				</button>
 			</div>

@@ -127,6 +127,12 @@ async function clickElement(element: { l?: Record<string, (event: unknown) => un
 	await clickHandler({ currentTarget: element })
 }
 
+async function changeElement(element: { l?: Record<string, (event: unknown) => unknown> }) {
+	const changeHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Change'))?.[1]
+	if (changeHandler === undefined) throw new Error('Expected change handler')
+	await changeHandler({ currentTarget: element })
+}
+
 function isDisabled(element: TestDomNode | undefined) {
 	if (element === undefined) return false
 	return 'disabled' in element || element.attributes?.disabled !== undefined
@@ -198,6 +204,21 @@ function createIdentifyAddressReply(address: bigint, name: string) {
 				decimals: 18n,
 				entrySource: 'OnChain',
 				chainId: 1n,
+			},
+		},
+	})
+}
+
+function createSafeContractStateReply(owners: readonly bigint[]) {
+	return PopupRequestsReplies.popup_requestSafeContractState.serialize({
+		method: 'popup_requestSafeContractState',
+		data: {
+			chainId: 1n,
+			result: {
+				ok: true,
+				owners,
+				ownerAddressBookEntries: owners.map((address, index) => ({ type: 'contact', name: `Safe Owner ${ index + 1 }`, address, entrySource: 'User', askForAddressAccess: true, useAsActiveAddress: true, chainId: 1n })),
+				version: '1.4.1',
 			},
 		},
 	})
@@ -657,7 +678,7 @@ describe('popup async action UI', () => {
 
 		const buttons = collectElements(dom.document.body, 'button')
 		const fetchButton = buttons.find((button) => button.textContent?.includes('Fetch from Block Explorer'))
-		const modifyButton = buttons.find((button) => button.textContent?.includes('Modify'))
+		const modifyButton = buttons.find((button) => button.textContent?.includes('Save changes'))
 		const cancelButton = buttons.find((button) => button.textContent?.includes('Cancel'))
 		if (fetchButton === undefined || modifyButton === undefined || cancelButton === undefined) throw new Error('Expected address modal buttons to render')
 
@@ -841,6 +862,164 @@ describe('popup async action UI', () => {
 		assert.equal(identifyRequestCount, 3)
 		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.name, 'Retried token')
 		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.decimals, 18n)
+		dom.restore()
+	})
+
+	test('shows cached Safe owners but blocks saving when automatic owner retrieval fails', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const safeAddress = '0x3000000000000000000000000000000000000003'
+		const signerAddress = '0x1111111111111111111111111111111111111111'
+		let saveMessage: unknown
+		runtimeSendMessage = async (message) => {
+			if (getRuntimeMethod(message) === 'popup_requestIdentifyAddress') {
+				return PopupRequestsReplies.popup_requestIdentifyAddress.serialize({
+					method: 'popup_requestIdentifyAddress',
+					data: { chainId: 1n, addressBookEntry: undefined },
+				})
+			}
+			if (getRuntimeMethod(message) === 'popup_addOrModifyAddressBookEntry') {
+				saveMessage = message
+				return PopupRequestsReplies.popup_addOrModifyAddressBookEntry.serialize({ type: 'AddOrModifyAddressBookEntryReply', ok: true })
+			}
+			return undefined
+		}
+		const modifyAddressWindowState = signal({
+			windowStateId: 'safe-window',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: false,
+				type: 'safe' as const,
+				address: safeAddress,
+				askForAddressAccess: true,
+				name: 'Treasury Safe',
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				entrySource: 'User' as const,
+				abi: undefined,
+				useAsActiveAddress: true,
+				declarativeNetRequestBlockMode: undefined,
+				chainId: 1n,
+				safeSimulationSignerAddress: signerAddress,
+				safeSignerAddresses: [signerAddress],
+				safeVersion: '1.4.1',
+			},
+		})
+
+		await act(async () => {
+			render(h(modules.AddNewAddress, {
+				close: () => undefined,
+				setActiveAddressAndInformAboutIt: undefined,
+				modifyAddressWindowState,
+				activeAddress: undefined,
+				rpcEntries: signal([]),
+			}), dom.document.body)
+			await settleAsyncUpdates()
+		})
+		assert.equal(dom.document.body.textContent?.includes(signerAddress), true)
+		const modifyButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.trim() === 'Save changes')
+		if (modifyButton === undefined) throw new Error('Expected Save changes button')
+		assert.equal(isDisabled(modifyButton), true)
+		await act(async () => { await clickElement(modifyButton) })
+		assert.equal(saveMessage, undefined)
+		render(null, dom.document.body)
+		dom.restore()
+	})
+
+	test('refreshes visible Safe owners with pending feedback', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		const firstOwner = 0x1111111111111111111111111111111111111111n
+		const alternateOwner = 0x3333333333333333333333333333333333333333n
+		const refreshedOwner = 0x2222222222222222222222222222222222222222n
+		const firstReply = createDeferred<ReturnType<typeof createSafeContractStateReply>>()
+		const refreshReply = createDeferred<ReturnType<typeof createSafeContractStateReply>>()
+		let requestCount = 0
+		runtimeSendMessage = async (message) => {
+			if (getRuntimeMethod(message) === 'popup_requestIdentifyAddress') return createIdentifyAddressReply(0x3000000000000000000000000000000000000003n, 'Treasury Safe')
+			if (getRuntimeMethod(message) !== 'popup_requestSafeContractState') return undefined
+			requestCount += 1
+			return requestCount === 1 ? await firstReply.promise : await refreshReply.promise
+		}
+		const modifyAddressWindowState = signal({
+			windowStateId: 'safe-refresh-window',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: false,
+				type: 'safe' as const,
+				address: '0x3000000000000000000000000000000000000003',
+				askForAddressAccess: true,
+				name: 'Treasury Safe',
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				entrySource: 'User' as const,
+				abi: undefined,
+				useAsActiveAddress: true,
+				declarativeNetRequestBlockMode: undefined,
+				chainId: 1n,
+				safeSimulationSignerAddress: undefined,
+				safeSignerAddresses: [],
+				safeVersion: undefined,
+			},
+		})
+
+		await act(async () => {
+			render(h(modules.AddNewAddress, {
+				close: () => undefined,
+				setActiveAddressAndInformAboutIt: undefined,
+				modifyAddressWindowState,
+				activeAddress: undefined,
+				rpcEntries: signal([{
+					name: 'Ethereum',
+					chainId: 1n,
+					httpsRpc: 'https://example.invalid',
+					currencyName: 'Ether',
+					currencyTicker: 'ETH',
+					primary: true,
+					minimized: false,
+				}]),
+			}), dom.document.body)
+			await settleAsyncUpdates()
+		})
+		const retrieveButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Retrieving...'))
+		if (retrieveButton === undefined) throw new Error('Expected pending Safe signer retrieval button')
+		assert.equal(isDisabled(retrieveButton), true)
+		assert.equal(requestCount, 1)
+		await act(async () => {
+			firstReply.resolve(createSafeContractStateReply([firstOwner, alternateOwner]))
+			await firstReply.promise
+			await settleAsyncUpdates()
+		})
+		assert.equal(dom.document.body.textContent?.includes('Safe Owner 1'), true)
+		const ownerOptions = collectElements(dom.document.body, 'input').filter((input) => input.getAttribute?.('name') === 'safe-simulation-signer')
+		assert.equal(ownerOptions.length, 2)
+		assert.equal(dom.document.body.textContent?.includes('Safe Owner 2'), true)
+		const alternateOwnerOption = ownerOptions.find((input) => input.getAttribute?.('value') === '0x3333333333333333333333333333333333333333')
+		if (alternateOwnerOption === undefined) throw new Error('Expected alternate Safe owner radio option')
+		const alternateOwnerLabel = alternateOwnerOption.parentNode
+		if (alternateOwnerLabel === undefined || alternateOwnerLabel === null) throw new Error('Expected alternate Safe owner label')
+		assert.equal(collectElements(alternateOwnerLabel, 'button').length, 0)
+		await act(async () => { await changeElement(alternateOwnerOption) })
+		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.safeSimulationSignerAddress, '0x3333333333333333333333333333333333333333')
+		const refreshButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Refresh owners'))
+		if (refreshButton === undefined) throw new Error('Expected Safe signer refresh button')
+		await act(async () => {
+			void clickElement(refreshButton)
+			await Promise.resolve()
+		})
+		assert.equal(dom.document.body.textContent?.includes('Refreshing...'), true)
+		assert.equal(isDisabled(refreshButton), true)
+
+		await act(async () => {
+			refreshReply.resolve(createSafeContractStateReply([refreshedOwner]))
+			await refreshReply.promise
+			await settleAsyncUpdates()
+		})
+		assert.equal(requestCount, 2)
+		assert.equal(modifyAddressWindowState.value.incompleteAddressBookEntry.safeSimulationSignerAddress, '0x2222222222222222222222222222222222222222')
+		render(null, dom.document.body)
 		dom.restore()
 	})
 

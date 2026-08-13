@@ -1,14 +1,15 @@
 import type { SafeTransactionStack, SafeTransactionStacks } from '../types/safeTypes.js'
 import type { InterceptorTransactionStack } from '../types/visualizer-types.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
+import { createSafeContractValidationFailure } from './safeCore.js'
 
 export function reconcileSafeTransactionStack(stack: SafeTransactionStack, currentNonce: bigint) {
 	const endNonce = stack.baseNonce + BigInt(stack.transactions.length)
 	if (currentNonce < stack.baseNonce) {
-		throw new Error(`The current Gnosis Safe nonce ${ currentNonce.toString() } precedes this stack's base nonce ${ stack.baseNonce.toString() }.`)
+		throw createSafeContractValidationFailure(`The current Gnosis Safe nonce ${ currentNonce.toString() } precedes this stack's base nonce ${ stack.baseNonce.toString() }.`)
 	}
 	if (currentNonce > endNonce) {
-		throw new Error(`The current Gnosis Safe nonce ${ currentNonce.toString() } is beyond this stack's final nonce ${ endNonce.toString() }.`)
+		throw createSafeContractValidationFailure(`The current Gnosis Safe nonce ${ currentNonce.toString() } is beyond this stack's final nonce ${ endNonce.toString() }.`)
 	}
 	const executedTransactionCount = Number(currentNonce - stack.baseNonce)
 	if (executedTransactionCount === 0) return stack

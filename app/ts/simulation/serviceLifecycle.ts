@@ -13,6 +13,20 @@ export type SimulationServices = {
 	tokenPriceService: TokenPriceService
 }
 
+export function createEthereumClientService(
+	rpcNetwork: RpcEntry,
+	newBlockAttemptCallback: NewBlockAttemptCallback,
+	onErrorBlockCallback: OnErrorBlockCallback,
+	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
+) {
+	return new EthereumClientService(
+		new EthereumJSONRpcRequestHandler(rpcNetwork.httpsRpc, true, rpcRequestLifecycleCallbacks),
+		newBlockAttemptCallback,
+		onErrorBlockCallback,
+		rpcNetwork,
+	)
+}
+
 export function createSimulationServices(
 	rpcNetwork: RpcEntry,
 	newBlockAttemptCallback: NewBlockAttemptCallback,
@@ -20,11 +34,11 @@ export function createSimulationServices(
 	tokenPriceCacheAge = 60000,
 	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
 ): SimulationServices {
-	const ethereum = new EthereumClientService(
-		new EthereumJSONRpcRequestHandler(rpcNetwork.httpsRpc, true, rpcRequestLifecycleCallbacks),
+	const ethereum = createEthereumClientService(
+		rpcNetwork,
 		newBlockAttemptCallback,
 		onErrorBlockCallback,
-		rpcNetwork,
+		rpcRequestLifecycleCallbacks,
 	)
 	return {
 		ethereum,

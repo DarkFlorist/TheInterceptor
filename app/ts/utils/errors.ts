@@ -3,10 +3,10 @@ import { appendInterceptorErrorDiagnostic, setLatestUnexpectedError } from '../b
 import { InterceptorError, type JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
 import type { InterceptorErrorCategory, InterceptorErrorDiagnostic, InterceptorErrorSeverity } from '../types/errorDiagnostics.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
-import { getErrorMessage, getInterceptorInternalErrorCode, isBrowserFetchTransportError } from './caughtErrors.js'
+import { getErrorMessage, getInterceptorInternalErrorClassification, isBrowserFetchTransportError } from './caughtErrors.js'
 import { NEW_BLOCK_ABORT } from './constants.js'
 import { createErrorDebugId, createUnexpectedErrorPopupMessage } from './unexpectedErrorPopupMessage.js'
-export { createInterceptorInternalError, getErrorMessage } from './caughtErrors.js'
+export { createInterceptorInternalError, getErrorMessage, hasInterceptorInternalErrorCode } from './caughtErrors.js'
 
 export const GENERIC_UNEXPECTED_ERROR_MESSAGE = 'An internal Interceptor error occurred. Please see The Interceptor console for technical details.'
 
@@ -19,7 +19,7 @@ type ErrorReportMetadata = {
 	severity?: InterceptorErrorSeverity
 	details?: unknown
 	userVisible?: boolean
-	suppressExpectedInfrastructure?: boolean
+	suppressExpectedHandledErrors?: boolean
 }
 
 type LocalRecoveryMetadata = {
@@ -82,8 +82,7 @@ export class JsonRpcResponseError extends Error {
 }
 
 export function isFailedToFetchError(error: unknown) {
-	const code = getInterceptorInternalErrorCode(error)
-	if (code === 'fetch_timeout' || code === 'fetch_aborted' || code === 'fetch_transport_failed') return true
+	if (getInterceptorInternalErrorClassification(error) === 'failedToFetch') return true
 	return isBrowserFetchTransportError(error)
 }
 
@@ -94,15 +93,22 @@ export const isWrappedNewBlockAbort = (error: unknown) => {
 	return message !== undefined && message !== NEW_BLOCK_ABORT && message.includes(NEW_BLOCK_ABORT)
 }
 
-export type CaughtErrorClassification = 'newBlockAbort' | 'failedToFetch' | 'unexpected'
+export type CaughtErrorClassification = 'newBlockAbort' | 'failedToFetch' | 'handled' | 'unexpected'
 
 export function classifyCaughtError(error: unknown): CaughtErrorClassification {
 	if (isNewBlockAbort(error)) return 'newBlockAbort'
 	if (isFailedToFetchError(error)) return 'failedToFetch'
+	const internalClassification = getInterceptorInternalErrorClassification(error)
+	if (internalClassification !== undefined) return internalClassification
 	return 'unexpected'
 }
 
-export const isExpectedInfrastructureError = (error: unknown) => classifyCaughtError(error) !== 'unexpected'
+export const isExpectedInfrastructureError = (error: unknown) => {
+	const classification = classifyCaughtError(error)
+	return classification === 'newBlockAbort' || classification === 'failedToFetch'
+}
+
+export const shouldSuppressUnexpectedErrorReport = (error: unknown) => classifyCaughtError(error) !== 'unexpected'
 
 function getForwardedDiagnostics(error: unknown): string | undefined {
 	const maybeInterceptorError = InterceptorError.safeParse(error)
@@ -205,7 +211,7 @@ async function appendErrorDiagnostic(report: InterceptorErrorReport) {
 }
 
 export async function reportUnexpectedError(error: unknown, metadata: ErrorReportMetadata = {}): Promise<UnexpectedErrorOccured | undefined> {
-	if ((metadata.suppressExpectedInfrastructure ?? true) && isExpectedInfrastructureError(error)) return
+	if ((metadata.suppressExpectedHandledErrors ?? true) && shouldSuppressUnexpectedErrorReport(error)) return
 	const defaultCode = isWrappedNewBlockAbort(error) ? 'wrapped_new_block_abort' : 'unexpected_error'
 	const report = createErrorReport(error, metadata, ERROR_REPORTING_POLICY.unexpected, defaultCode, metadata.displayMessage ?? normalizeUnexpectedError(error).message)
 	logUnexpectedError(error, report)

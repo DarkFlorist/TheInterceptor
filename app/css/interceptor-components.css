@@ -738,7 +738,6 @@ strong { color: inherit }
 details {
 	--s-text-size: var(--text-size, 0.85rem);
 	--s-base-color: color(srgb .4 .4 .4);
-	--s-rule-color: transparent;
 	outline: none;
 }
 
@@ -754,22 +753,10 @@ summary {
 
 summary:hover {
 	--s-base-color: color( srgb .6 .6 .6);
-	--s-rule-color: currentColor;
 }
 
 summary:focus {
 	--s-base-color: var(--text-color);
-}
-
-summary:after {
-	content: ' ';
-	margin: 0;
-	flex-grow: 1;
-	border-bottom: 1px solid var(--s-rule-color);
-}
-
-summary:where(details[open] > *) {
-	--s-rule-color: currentColor;
 }
 
 .svg-icon {

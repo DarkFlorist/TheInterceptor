@@ -2,7 +2,7 @@ import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForTargetByUrl } from './chromeHarness.js'
+import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker } from './chromeHarness.js'
 import { launchFirefoxSession } from './firefoxHarness.js'
 
 export type SafeUiPageName = 'addressBook' | 'popup' | 'confirmTransaction' | 'simulationStack' | 'settingsView'
@@ -33,8 +33,7 @@ async function launchChromiumScreenshotBrowser(extensionDirectory: string | unde
 		openPage: async (pageName, initializationExpression) => {
 			const pageUrl = `chrome-extension://${ extensionId }/html3/${ pageName }V3.html`
 			const targetId = await createTargetPage(session.browserConnection, pageUrl)
-			const target = await waitForTargetByUrl(session.browserDebugPort, pageUrl)
-			const connection = await connectTarget(session.browserDebugPort, target.id)
+			const connection = await connectTarget(session.browserDebugPort, targetId)
 			if (initializationExpression !== undefined) await connection.evaluate(initializationExpression)
 			return {
 				evaluate: async <T = unknown>(expression: string) => await connection.evaluate<T>(expression),

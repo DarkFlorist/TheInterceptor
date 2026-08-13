@@ -47,6 +47,7 @@ function createPopupModalProps(page: PopupPage): ComponentProps<typeof PopupModa
 		websiteAccessAddressMetadata: signal<AddressBookEntries>([]),
 		renameAddressCallBack: () => undefined,
 		setActiveAddressAndInformAboutIt: async () => undefined,
+		allowCreateAndSwitch: true,
 		signerAccounts: [],
 		activeAddresses: signal<AddressBookEntries>([]),
 		signerName: 'NoSignerDetected',
@@ -147,6 +148,41 @@ describe('lazy popup pages', () => {
 			await act(async () => await waitForRealLazyPage(() => dom.document.body.textContent.includes('Import Interceptor Simulation Stack')))
 			assert.notEqual(findByClass(findByClass(dom.document.body, 'modal'), 'is-active'), undefined)
 			assert.match(dom.document.body.textContent, /Import Interceptor Simulation Stack/u)
+		} finally {
+			render(null, dom.document.body)
+			restoreBrowserGlobals()
+			dom.restore()
+		}
+	})
+
+	test('hides create-and-switch actions when signing mode restricts address selection', async () => {
+		const dom = installDomMock()
+		const restoreBrowserGlobals = installBrowserExtensionGlobals()
+		const state = signal({
+			windowStateId: 'signing-address-create',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: true,
+				type: 'contact' as const,
+				address: '0x1000000000000000000000000000000000000001',
+				askForAddressAccess: true,
+				name: 'Saved EOA',
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				entrySource: 'User' as const,
+				abi: undefined,
+				useAsActiveAddress: true,
+				declarativeNetRequestBlockMode: undefined,
+				chainId: 1n,
+			},
+		})
+		try {
+			await act(() => {
+				render(<PopupModal { ...createPopupModalProps({ page: 'AddNewAddress', state }) } allowCreateAndSwitch = { false } />, dom.document.body)
+			})
+			await act(async () => await waitForRealLazyPage(() => dom.document.body.textContent.includes('Create address')))
+			assert.equal(dom.document.body.textContent.includes('Create and switch'), false)
 		} finally {
 			render(null, dom.document.body)
 			restoreBrowserGlobals()

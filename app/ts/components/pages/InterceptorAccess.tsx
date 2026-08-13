@@ -23,6 +23,7 @@ import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { respondToAccessRequest } from './interceptorAccessResponse.js'
+import { getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../../utils/activeAddressSelection.js'
 
 function Title({ icon, title} : {icon: string | undefined, title: string}) {
 	const websiteIcon = sanitizeStoredWebsiteIcon(icon)
@@ -221,6 +222,16 @@ export function InterceptorAccess() {
 	const informationUpdatedTimestamp = useSignal<number>(0)
 	const timeTicker = useSignal<number>(0)
 	const rpcEntries = useSignal<RpcEntries>([])
+	const activeRpcChainId = useSignal<bigint | undefined>(undefined)
+	const selectedPendingAccessRequest = useComputed(() => getSelectedPendingAccessRequest(
+		pendingAccessRequests.value,
+		appPage.value.page === 'Home' ? undefined : appPage.value.accessRequestId,
+	))
+	const selectableActiveAddresses = useComputed(() => {
+		const accessRequest = selectedPendingAccessRequest.value
+		if (accessRequest === undefined) return []
+		return getSelectableActiveAddresses(activeAddresses.value, accessRequest.simulationMode, activeRpcChainId.value, accessRequest.signerAccounts)
+	})
 
 	useEffect(() => {
 		function popupMessageListener(msg: unknown): false {
@@ -233,6 +244,7 @@ export function InterceptorAccess() {
 			}
 			if (parsed.method === 'popup_requestSettingsReply') {
 				rpcEntries.value = parsed.data.rpcEntries
+				activeRpcChainId.value = parsed.data.activeRpcNetwork.chainId
 				return false
 			}
 			if (parsed.method === 'popup_addressBookEntriesChanged') {
@@ -297,9 +309,11 @@ export function InterceptorAccess() {
 		} } )
 	}
 
-	async function setActiveAddressAndInformAboutIt(accessRequestId: string, address: bigint | 'signer') {
+	async function setActiveAddressAndInformAboutIt(accessRequestId: string, address: bigint | 'signer', persistedEntry?: AddressBookEntry) {
 		const accessRequest = pendingAccessRequests.value.find((request) => request.accessRequestId === accessRequestId)
 		if (accessRequest === undefined) throw Error('accessRequest is undefined')
+		const selectableAddresses = includePersistedAddressBookEntry(activeAddresses.value, persistedEntry)
+		if (!isActiveAddressSelectionAllowed(address, selectableAddresses, accessRequest.simulationMode, activeRpcChainId.value, accessRequest.signerAccounts)) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessChangeAddress', data: {
 			socket: accessRequest.socket,
 			website: accessRequest.website,
@@ -342,33 +356,30 @@ export function InterceptorAccess() {
 	}
 
 	if (pendingAccessRequests.value.length === 0) return <main></main>
-	const selectedPendingAccessRequest = getSelectedPendingAccessRequest(
-		pendingAccessRequests.value,
-		appPage.value.page === 'Home' ? undefined : appPage.value.accessRequestId,
-	)
-	const isModalActive = appPage.value.page !== 'Home' && selectedPendingAccessRequest !== undefined
+	const selectedAccessRequest = selectedPendingAccessRequest.value
+	const isModalActive = appPage.value.page !== 'Home' && selectedAccessRequest !== undefined
 
 	return <main>
 		<Hint>
 			<div class = { `modal ${ isModalActive ? 'is-active' : ''}` }>
-				{ (appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress') && selectedPendingAccessRequest !== undefined
+				{ (appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress') && selectedAccessRequest !== undefined
 					? <AddNewAddress
-						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(selectedPendingAccessRequest.accessRequestId, address) }
+						setActiveAddressAndInformAboutIt = { selectedAccessRequest.simulationMode ? (address: bigint | 'signer', persistedEntry?: AddressBookEntry) => setActiveAddressAndInformAboutIt(selectedAccessRequest.accessRequestId, address, persistedEntry) : undefined }
 						modifyAddressWindowState = { appPage.value.state }
 						close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
-						activeAddress = { selectedPendingAccessRequest.requestAccessToAddress?.address }
+						activeAddress = { selectedAccessRequest.requestAccessToAddress?.address }
 						rpcEntries = { rpcEntries }
 					/>
 					: <></>
 				}
 
-				{ appPage.value.page === 'ChangeActiveAddress' && selectedPendingAccessRequest !== undefined
+				{ appPage.value.page === 'ChangeActiveAddress' && selectedAccessRequest !== undefined
 					? <ChangeActiveAddress
-						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(selectedPendingAccessRequest.accessRequestId, address) }
-						signerAccounts = { selectedPendingAccessRequest.signerAccounts }
+						setActiveAddressAndInformAboutIt = { (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(selectedAccessRequest.accessRequestId, address) }
+						signerAccounts = { selectedAccessRequest.signerAccounts }
 						close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
-						activeAddresses = { activeAddresses }
-						signerName = { selectedPendingAccessRequest.signerName }
+						activeAddresses = { selectableActiveAddresses }
+						signerName = { selectedAccessRequest.signerName }
 						renameAddressCallBack = { (entry: AddressBookEntry) => renameAddressCallBack(appPage.value.accessRequestId, entry) }
 						addNewAddress = { () => addNewAddress(appPage.value.accessRequestId) }
 					/>

@@ -1,10 +1,26 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { SAFE_SIGNER_SELECTION_ERROR_CODE } from '../../app/ts/background/safeConfirmationResolver.js'
-import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
+import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 
-test('shows a Safe signer mismatch in the confirmation popup and never forwards it', async () => {
-	fakeSafeContract.owners = [recipientAddress]
+test('maps signer account refresh replies into Safe confirmation selections', () => {
+	const walletError = Object.assign(new Error('Wallet account verification failed.'), { code: 4001 })
+	assert.deepEqual(modules.getSafeSignerSelectionFromAccountRefresh({ accounts: [safeTestOwnerAddress], error: undefined }), {
+		selectedSigner: safeTestOwnerAddress,
+		verificationError: undefined,
+	})
+	assert.deepEqual(modules.getSafeSignerSelectionFromAccountRefresh({ accounts: [], error: walletError }), {
+		selectedSigner: undefined,
+		verificationError: walletError.message,
+	})
+	assert.deepEqual(modules.getSafeSignerSelectionFromAccountRefresh(undefined), {
+		selectedSigner: undefined,
+		verificationError: 'The connected signer wallet is unavailable.',
+	})
+})
+
+test('recovers a Safe proposal after the wallet switches from a non-owner to a current owner', async () => {
+	fakeSafeContract.owners = [safeTestOwnerAddress]
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
@@ -13,14 +29,14 @@ test('shows a Safe signer mismatch in the confirmation popup and never forwards 
 		rpcNetwork: fakeRpcNetwork,
 	})
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
-		safeSignerAddress: recipientAddress,
+		safeSimulationSignerAddress: activeAddress,
 		safeVersion: '1.4.1',
 	})])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
 		signerName: 'MetaMask',
-		signerAccounts: [activeAddress],
-		activeSigningAddress: activeAddress,
+		signerAccounts: [recipientAddress],
+		activeSigningAddress: recipientAddress,
 		signerChain: fakeRpcNetwork.chainId,
 	}))
 	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
@@ -72,30 +88,114 @@ test('shows a Safe signer mismatch in the confirmation popup and never forwards 
 		websiteTabConnections,
 	), { type: 'doNotReply' })
 
-	const [pendingMismatch] = await modules.getPendingTransactionsAndMessages()
-	assert.equal(pendingMismatch?.transactionOrMessageCreationStatus, 'Simulated')
-	assert.equal(pendingMismatch?.approvalStatus.status, 'SignerError')
-	if (pendingMismatch?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe signer mismatch')
-	assert.equal(pendingMismatch.approvalStatus.code, SAFE_SIGNER_SELECTION_ERROR_CODE)
-	assert.match(pendingMismatch.approvalStatus.message, /Gnosis Safe signer mismatch/u)
-	assert.match(pendingMismatch.approvalStatus.message, /Select 0x[0-9A-Fa-f]{40} in MetaMask, then retry\./u)
-	assert.match(pendingMismatch.approvalStatus.message.toLowerCase(), new RegExp(addressString(recipientAddress).toLowerCase(), 'u'))
-	assert.match(pendingMismatch.approvalStatus.message.toLowerCase(), new RegExp(addressString(activeAddress).toLowerCase(), 'u'))
-	assert.equal(pendingMismatch.type === 'Transaction' && pendingMismatch.safeTransaction !== undefined, true)
+	const [pendingProposal] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(pendingProposal?.transactionOrMessageCreationStatus, 'Simulated')
+	assert.equal(pendingProposal?.approvalStatus.status, 'SignerError')
+	assert.equal(pendingProposal?.approvalStatus.status === 'SignerError' ? pendingProposal.approvalStatus.code : undefined, -32010)
+	assert.equal(pendingProposal?.safeTransaction?.safeSignerAddress, recipientAddress)
+	assert.equal(await modules.resolvePendingTransactionOrMessage(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		websiteTabConnections,
+		{
+			method: 'popup_confirmDialog',
+			data: { action: 'accept', uniqueRequestIdentifier },
+		},
+		{ selectedSigner: recipientAddress, verificationError: undefined },
+	), false)
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [safeTestOwnerAddress],
+		activeSigningAddress: safeTestOwnerAddress,
+	}))
+	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+	const [recoveredProposal] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(recoveredProposal?.approvalStatus.status, 'WaitingForUser')
+	assert.equal(recoveredProposal?.safeTransaction?.safeSignerAddress, safeTestOwnerAddress)
 
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier },
-	}), false)
-	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+	}), true)
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), true)
 
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateUserAddressBookEntries(() => modules.defaultActiveAddresses)
 })
 
-test('does not turn unexpected signer-selection storage failures into Safe signer errors', async () => {
+test('keeps a disconnected Safe proposal reviewable and attaches the owner after wallet connection', async () => {
+	fakeSafeContract.owners = [safeTestOwnerAddress]
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [],
+		activeSigningAddress: undefined,
+		signerChain: fakeRpcNetwork.chainId,
+	}))
+	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	const { prepareSafeTransactionConfirmation } = await import('../../app/ts/background/safeTransactionConfirmation.js')
+	const transactionParams = SendTransactionParams.parse({
+		method: 'eth_sendTransaction',
+		params: [{
+			from: addressString(activeAddress),
+			to: addressString(recipientAddress),
+			value: '0x0',
+			data: '0x',
+			gas: '0x5208',
+		}],
+	})
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
+	const preparation = await prepareSafeTransactionConfirmation(simulator.ethereum, transactionParams, false, activeAddress, undefined)
+	const website = { websiteOrigin: 'https://disconnected-safe.example', icon: undefined, title: 'Disconnected Safe' }
+	const transactionToSimulate = await modules.formEthSendTransaction(
+		simulator.ethereum,
+		undefined,
+		preparation.transactionExecutor,
+		website,
+		preparation.effectiveTransactionParams,
+		new Date(),
+		1n,
+		false,
+		preparation.gasPayment,
+	)
+	const finalized = await preparation.finalize(transactionToSimulate, uniqueRequestIdentifier.requestSocket.tabId)
+	assert.equal(finalized.transactionToSimulate.success, true)
+	assert.equal(finalized.safeTransaction?.safeSignerAddress, undefined)
+	assert.equal(finalized.approvalStatus?.status, 'SignerError')
+	if (finalized.safeTransaction === undefined) throw new Error('Missing unsigned Safe proposal review')
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			simulationMode: false,
+			transactionToSimulate: finalized.transactionToSimulate,
+			safeTransaction: finalized.safeTransaction,
+			approvalStatus: finalized.approvalStatus ?? { status: 'WaitingForUser' as const },
+		}],
+	})
+
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [safeTestOwnerAddress],
+		activeSigningAddress: safeTestOwnerAddress,
+	}))
+	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+	const [recoveredProposal] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(recoveredProposal?.approvalStatus.status, 'WaitingForUser')
+	assert.equal(recoveredProposal?.type === 'Transaction' ? recoveredProposal.safeTransaction?.safeSignerAddress : undefined, safeTestOwnerAddress)
+})
+
+test('does not turn unexpected signer-selection storage or RPC failures into Safe signer errors', async () => {
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
-		safeSignerAddress: recipientAddress,
+		safeSimulationSignerAddress: recipientAddress,
 		safeVersion: '1.4.1',
 	})])
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
@@ -131,19 +231,405 @@ test('does not turn unexpected signer-selection storage failures into Safe signe
 
 	try {
 		await assert.rejects(
-			modules.resolveSafeConfirmation(simulator.ethereum, safePending, 'accept'),
+			modules.resolveSafeConfirmation(ethereum, safePending, 'accept', { selectedSigner: recipientAddress, verificationError: undefined }),
 			/tab state unavailable/u,
 		)
 	} finally {
 		browserMock.setStorageGetHandler(undefined)
 	}
+
+	fakeSafeContract.safeOwnerLookupFailure = 'unexpected'
+	try {
+		await assert.rejects(
+			modules.resolveSafeConfirmation(ethereum, safePending, 'accept', { selectedSigner: recipientAddress, verificationError: undefined }),
+			/Unexpected Safe owner decoder failure/u,
+		)
+	} finally {
+		fakeSafeContract.safeOwnerLookupFailure = undefined
+	}
+	fakeSafeContract.safeOwnerLookupFailure = 'expected'
+	try {
+		const expectedFailure = await modules.resolveSafeConfirmation(ethereum, safePending, 'accept', { selectedSigner: recipientAddress, verificationError: undefined })
+		assert.equal(expectedFailure.status, 'blocked')
+		assert.match(expectedFailure.status === 'blocked' ? expectedFailure.approvalStatus.message : '', /Safe owner lookup unavailable/u)
+	} finally {
+		fakeSafeContract.safeOwnerLookupFailure = undefined
+	}
+})
+
+test('rebuilds an ordinary Safe proposal when the wallet switches between current owners', async () => {
+	const reviewedOwner = recipientAddress
+	const selectedOwner = safeTestOwnerAddress
+	fakeSafeContract.owners = [reviewedOwner, selectedOwner]
+	fakeSafeContract.threshold = 2n
+	fakeSafeContract.nonce = 0n
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
+		safeVersion: '1.4.1',
+	})])
+	await modules.updateSafeTransactionStacks(() => [])
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
+	const safePending = {
+		...pendingTransaction,
+		simulationMode: false,
+		approvalStatus: { status: 'WaitingForUser' as const },
+		safeTransaction: {
+			safeAddress: activeAddress,
+			safeSignerAddress: reviewedOwner,
+			safeVersion: '1.4.1',
+			threshold: 2n,
+			reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [reviewedOwner, selectedOwner], threshold: 2n },
+			safeTxHash: BigInt(getSafeTxHash(safeTx)),
+			safeTx,
+			executionGasLimit: 21_000n,
+		},
+	} as const
+	fakeSafeContract.safeOwnerLookupFailure = 'unexpected'
+	try {
+		await assert.rejects(
+			modules.resolveSafeConfirmation(
+				simulator.ethereum,
+				safePending,
+				'accept',
+				{ selectedSigner: selectedOwner, verificationError: undefined },
+			),
+			/Unexpected Safe owner decoder failure/u,
+		)
+	} finally {
+		fakeSafeContract.safeOwnerLookupFailure = undefined
+	}
+
+	const resolution = await modules.resolveSafeConfirmation(
+		simulator.ethereum,
+		safePending,
+		'accept',
+		{ selectedSigner: selectedOwner, verificationError: undefined },
+	)
+	assert.equal(resolution.status, 'ready')
+	if (resolution.status !== 'ready') throw new Error('The current Safe owner did not recover the proposal')
+	assert.equal(resolution.pendingChanged, true)
+	assert.equal(resolution.pending.type === 'Transaction' ? resolution.pending.safeTransaction?.safeSignerAddress : undefined, selectedOwner)
+	assert.equal(resolution.signerFacingRequest?.params[0], selectedOwner)
+
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [safePending] })
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [selectedOwner],
+		activeSigningAddress: selectedOwner,
+	}))
+	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+	const [refreshedPending] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(refreshedPending?.approvalStatus.status, 'WaitingForUser')
+	assert.equal(refreshedPending?.safeTransaction?.safeSignerAddress, selectedOwner)
+})
+
+test('does not overwrite a request forwarded while its Safe signer refresh is in flight', async () => {
+	const reviewedOwner = recipientAddress
+	const selectedOwner = safeTestOwnerAddress
+	fakeSafeContract.owners = [reviewedOwner, selectedOwner]
+	fakeSafeContract.threshold = 2n
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			simulationMode: false,
+			approvalStatus: { status: 'WaitingForUser' as const },
+			safeTransaction: {
+				safeAddress: activeAddress,
+				safeSignerAddress: reviewedOwner,
+				safeVersion: '1.4.1',
+				threshold: 2n,
+				reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [reviewedOwner, selectedOwner], threshold: 2n },
+				safeTxHash: BigInt(getSafeTxHash(safeTx)),
+				safeTx,
+				executionGasLimit: 21_000n,
+			},
+		}],
+	})
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [selectedOwner],
+		activeSigningAddress: selectedOwner,
+	}))
+	let allowRefreshToContinue: (() => void) | undefined
+	const refreshCanContinue = new Promise<void>((resolve) => { allowRefreshToContinue = resolve })
+	let markRefreshStarted: (() => void) | undefined
+	const refreshStarted = new Promise<void>((resolve) => { markRefreshStarted = resolve })
+	fakeSafeContract.beforeVersionResponse = async () => {
+		markRefreshStarted?.()
+		await refreshCanContinue
+	}
+
+	try {
+		const refresh = modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+		await refreshStarted
+		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => ({
+			...current,
+			approvalStatus: { status: 'WaitingForSigner' as const },
+		}))
+		allowRefreshToContinue?.()
+		await refresh
+	} finally {
+		fakeSafeContract.beforeVersionResponse = undefined
+		allowRefreshToContinue?.()
+	}
+
+	const [forwardedPending] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(forwardedPending?.approvalStatus.status, 'WaitingForSigner')
+	assert.equal(forwardedPending?.type === 'Transaction' ? forwardedPending.safeTransaction?.safeSignerAddress : undefined, reviewedOwner)
+})
+
+test('does not overwrite a newer Safe proposal while signer refresh is in flight', async () => {
+	const reviewedOwner = recipientAddress
+	const selectedOwner = safeTestOwnerAddress
+	fakeSafeContract.owners = [reviewedOwner, selectedOwner]
+	const originalSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	const newerSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 1n,
+		input: new Uint8Array(),
+	}, 1n)
+	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(originalSafeTx))
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			simulationMode: false,
+			approvalStatus: { status: 'WaitingForUser' as const },
+			safeTransaction: {
+				safeAddress: activeAddress,
+				safeSignerAddress: reviewedOwner,
+				safeVersion: '1.4.1',
+				threshold: 1n,
+				reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [reviewedOwner, selectedOwner], threshold: 1n },
+				safeTxHash: BigInt(getSafeTxHash(originalSafeTx)),
+				safeTx: originalSafeTx,
+				executionGasLimit: 21_000n,
+			},
+		}],
+	})
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [selectedOwner],
+		activeSigningAddress: selectedOwner,
+	}))
+	let allowRefreshToContinue: (() => void) | undefined
+	const refreshCanContinue = new Promise<void>((resolve) => { allowRefreshToContinue = resolve })
+	let markRefreshStarted: (() => void) | undefined
+	const refreshStarted = new Promise<void>((resolve) => { markRefreshStarted = resolve })
+	fakeSafeContract.beforeVersionResponse = async () => {
+		markRefreshStarted?.()
+		await refreshCanContinue
+	}
+
+	try {
+		const refresh = modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+		await refreshStarted
+		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => current.type !== 'Transaction' || current.safeTransaction === undefined
+			? current
+			: {
+				...current,
+				safeTransaction: {
+					...current.safeTransaction,
+					safeTx: newerSafeTx,
+					safeTxHash: BigInt(getSafeTxHash(newerSafeTx)),
+				},
+			})
+		allowRefreshToContinue?.()
+		await refresh
+	} finally {
+		fakeSafeContract.beforeVersionResponse = undefined
+		allowRefreshToContinue?.()
+	}
+
+	const [newerPending] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(newerPending?.type === 'Transaction' ? newerPending.safeTransaction?.safeTx.message.nonce : undefined, 1n)
+	assert.equal(newerPending?.type === 'Transaction' ? newerPending.safeTransaction?.safeTx.message.value : undefined, 1n)
+	assert.equal(newerPending?.type === 'Transaction' ? newerPending.safeTransaction?.safeSignerAddress : undefined, reviewedOwner)
+})
+
+test('does not overwrite an edited Safe proposal request while signer refresh is in flight', async () => {
+	const reviewedOwner = recipientAddress
+	const selectedOwner = safeTestOwnerAddress
+	fakeSafeContract.owners = [reviewedOwner, selectedOwner]
+	fakeSafeContract.threshold = 1n
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			simulationMode: false,
+			approvalStatus: { status: 'WaitingForUser' as const },
+			safeTransaction: {
+				safeAddress: activeAddress,
+				safeSignerAddress: reviewedOwner,
+				safeVersion: '1.4.1',
+				threshold: 1n,
+				reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [reviewedOwner, selectedOwner], threshold: 1n },
+				safeTxHash: BigInt(getSafeTxHash(safeTx)),
+				safeTx,
+				executionGasLimit: 21_000n,
+			},
+		}],
+	})
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [selectedOwner],
+		activeSigningAddress: selectedOwner,
+	}))
+	let allowRefreshToContinue: (() => void) | undefined
+	const refreshCanContinue = new Promise<void>((resolve) => { allowRefreshToContinue = resolve })
+	let markRefreshStarted: (() => void) | undefined
+	const refreshStarted = new Promise<void>((resolve) => { markRefreshStarted = resolve })
+	fakeSafeContract.beforeVersionResponse = async () => {
+		markRefreshStarted?.()
+		await refreshCanContinue
+	}
+
+	try {
+		const refresh = modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+		await refreshStarted
+		await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => current.type !== 'Transaction'
+			|| current.originalRequestParameters.method !== 'eth_sendTransaction'
+			? current
+			: {
+				...current,
+				originalRequestParameters: {
+					...current.originalRequestParameters,
+					params: [{ ...current.originalRequestParameters.params[0], gas: 99_999n }],
+				},
+			})
+		allowRefreshToContinue?.()
+		await refresh
+	} finally {
+		fakeSafeContract.beforeVersionResponse = undefined
+		allowRefreshToContinue?.()
+	}
+
+	const [editedPending] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(editedPending?.type === 'Transaction' && editedPending.originalRequestParameters.method === 'eth_sendTransaction'
+		? editedPending.originalRequestParameters.params[0].gas
+		: undefined, 99_999n)
+	assert.equal(editedPending?.type === 'Transaction' ? editedPending.safeTransaction?.safeSignerAddress : undefined, reviewedOwner)
+})
+
+test('blocks signer refresh when the reviewed Safe owner set changed', async () => {
+	const reviewedOwner = recipientAddress
+	const selectedOwner = safeTestOwnerAddress
+	fakeSafeContract.owners = [selectedOwner]
+	fakeSafeContract.threshold = 1n
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			simulationMode: false,
+			approvalStatus: { status: 'WaitingForUser' as const },
+			safeTransaction: {
+				safeAddress: activeAddress,
+				safeSignerAddress: reviewedOwner,
+				safeVersion: '1.4.1',
+				threshold: 1n,
+				reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [reviewedOwner, selectedOwner], threshold: 1n },
+				safeTxHash: BigInt(getSafeTxHash(safeTx)),
+				safeTx,
+				executionGasLimit: 21_000n,
+			},
+		}],
+	})
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [selectedOwner],
+		activeSigningAddress: selectedOwner,
+	}))
+
+	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+
+	const [blockedPending] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(blockedPending?.approvalStatus.status, 'SignerError')
+	if (blockedPending?.approvalStatus.status !== 'SignerError') throw new Error('Missing changed-owner signer refresh error')
+	assert.match(blockedPending.approvalStatus.message, /owner set changed/u)
+	assert.equal(blockedPending.type === 'Transaction' ? blockedPending.safeTransaction?.safeSignerAddress : undefined, reviewedOwner)
+})
+
+test('keeps signer refresh failures visible in the Safe proposal instead of aborting the refresh loop', async () => {
+	const reviewedOwner = recipientAddress
+	const selectedOwner = safeTestOwnerAddress
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	const failedTransaction = {
+		website: pendingTransaction.website,
+		created: pendingTransaction.created,
+		originalRequestParameters: pendingTransaction.originalRequestParameters,
+		transactionIdentifier: pendingTransaction.transactionIdentifier,
+		success: false as const,
+		error: { code: -32_000, message: 'Previous simulation failed.' },
+	}
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			simulationMode: false,
+			transactionOrMessageCreationStatus: 'FailedToSimulate' as const,
+			transactionToSimulate: failedTransaction,
+			safeTransaction: {
+				safeAddress: activeAddress,
+				safeSignerAddress: reviewedOwner,
+				safeVersion: '1.4.1',
+				threshold: 1n,
+				reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [reviewedOwner, selectedOwner], threshold: 1n },
+				safeTxHash: BigInt(getSafeTxHash(safeTx)),
+				safeTx,
+			},
+		}],
+	})
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [selectedOwner],
+		activeSigningAddress: selectedOwner,
+	}))
+
+	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+
+	const [failedProposal] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(failedProposal?.approvalStatus.status, 'SignerError')
+	assert.equal(failedProposal?.approvalStatus.status === 'SignerError' ? failedProposal.approvalStatus.code : undefined, -32010)
+	assert.match(failedProposal?.approvalStatus.status === 'SignerError' ? failedProposal.approvalStatus.message : '', /missing its execution gas limit/u)
+	assert.equal(await getLatestUnexpectedError(), undefined)
 })
 
 test('refreshes the selected signer before forwarding a Safe transaction', async () => {
 	const configuredSigner = recipientAddress
 	const freshlySelectedSigner = activeAddress
+	fakeSafeContract.owners = [configuredSigner]
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
-		safeSignerAddress: configuredSigner,
+		safeSimulationSignerAddress: configuredSigner,
 	})])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
@@ -157,6 +643,7 @@ test('refreshes the selected signer before forwarding a Safe transaction', async
 		value: 0n,
 		input: new Uint8Array(),
 	}, 0n)
+	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
 	await modules.browserStorageLocalSet2({
 		pendingTransactionsAndMessages: [{
 			...pendingTransaction,
@@ -166,7 +653,7 @@ test('refreshes the selected signer before forwarding a Safe transaction', async
 				safeSignerAddress: configuredSigner,
 				safeVersion: '1.4.1',
 				threshold: 2n,
-				reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [], threshold: 2n },
+				reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [configuredSigner], threshold: 2n },
 				safeTxHash: BigInt(getSafeTxHash(safeTx)),
 				safeTx,
 			},
@@ -270,7 +757,7 @@ test('rebases a later pending Safe proposal after an earlier nonce is rejected',
 	const safeSignerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [safeSignerAddress]
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
-		safeSignerAddress,
+		safeSignerAddresses: [safeSignerAddress],
 	})])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
@@ -367,7 +854,7 @@ test('rejects a stale forwarded Safe nonce before persistence and rebases it whe
 	const safeSignerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [safeSignerAddress]
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
-		safeSignerAddress,
+		safeSignerAddresses: [safeSignerAddress],
 	})])
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
@@ -451,9 +938,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 	const ownerAccount = safeTestOwnerAccount
 	const safeSignerAddress = safeTestOwnerAddress
 	fakeSafeContract.owners = [safeSignerAddress]
-	const safeAddressBookEntry = createSafeAddressBookEntry({
-		safeSignerAddress,
-	})
+	const safeAddressBookEntry = createSafeAddressBookEntry({ safeSimulationSignerAddress: safeSignerAddress })
 	await modules.updateUserAddressBookEntries(() => [safeAddressBookEntry])
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
 		to: recipientAddress,
@@ -504,21 +989,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 		}],
 	})
 
-	await modules.updateUserAddressBookEntries(() => [{
-		...safeAddressBookEntry,
-		safeSignerAddress: 0x2222222222222222222222222222222222222222n,
-	}])
-	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
-		method: 'popup_confirmDialog',
-		data: { action: 'signerIncluded', signerReply: signature, uniqueRequestIdentifier },
-	}), false)
-	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
-
-	await modules.updateUserAddressBookEntries(() => [safeAddressBookEntry])
-	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({
-		...pending,
-		approvalStatus: { status: 'WaitingForSigner' as const },
-	}))
+	await modules.updateUserAddressBookEntries(() => [{ ...safeAddressBookEntry, safeSimulationSignerAddress: recipientAddress }])
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'signerIncluded', signerReply: signature, uniqueRequestIdentifier },
@@ -590,4 +1061,61 @@ test('invalid Safe owner signatures retain the request as a signer error without
 	if (retainedRequest?.approvalStatus.status !== 'SignerError') throw new Error('missing Safe signature error')
 	assert.match(retainedRequest.approvalStatus.message, /owner signature was rejected/u)
 	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+})
+
+test('propagates unexpected Safe signer-reply RPC and storage failures', async () => {
+	const ownerAccount = safeTestOwnerAccount
+	const safeSignerAddress = safeTestOwnerAddress
+	fakeSafeContract.owners = [safeSignerAddress]
+	fakeSafeContract.threshold = 2n
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	const signature = await ownerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+	const safePending = {
+		...pendingTransaction,
+		simulationMode: false,
+		approvalStatus: { status: 'WaitingForSigner' as const },
+		safeTransaction: {
+			safeAddress: activeAddress,
+			safeSignerAddress,
+			safeVersion: '1.4.1',
+			threshold: 2n,
+			reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeSignerAddress], threshold: 2n },
+			safeTxHash: BigInt(getSafeTxHash(safeTx)),
+			safeTx,
+		},
+	} as const
+
+	fakeSafeContract.safeOwnerLookupFailure = 'unexpected'
+	try {
+		await assert.rejects(
+			modules.resolveSafeSignerReply(ethereum, simulator.tokenPriceService, safePending, signature),
+			/Unexpected Safe owner decoder failure/u,
+		)
+	} finally {
+		fakeSafeContract.safeOwnerLookupFailure = undefined
+	}
+	fakeSafeContract.safeOwnerLookupFailure = 'expected'
+	try {
+		const expectedFailure = await modules.resolveSafeSignerReply(ethereum, simulator.tokenPriceService, safePending, signature)
+		assert.equal(expectedFailure.status, 'error')
+		assert.match(expectedFailure.status === 'error' ? expectedFailure.approvalStatus.message : '', /Safe owner lookup unavailable/u)
+	} finally {
+		fakeSafeContract.safeOwnerLookupFailure = undefined
+	}
+
+	browserMock.setStorageSetHandler(async () => {
+		throw new Error('Safe stack storage unavailable')
+	})
+	try {
+		await assert.rejects(
+			modules.resolveSafeSignerReply(ethereum, simulator.tokenPriceService, safePending, signature),
+			/Safe stack storage unavailable/u,
+		)
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
 })

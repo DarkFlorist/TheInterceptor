@@ -85,6 +85,7 @@ type PopupModalProps = {
 	websiteAccessAddressMetadata: InterceptorAccessListParams['websiteAccessAddressMetadata']
 	renameAddressCallBack: InterceptorAccessListParams['renameAddressCallBack']
 	setActiveAddressAndInformAboutIt: NonNullable<AddAddressParam['setActiveAddressAndInformAboutIt']>
+	allowCreateAndSwitch: boolean
 	signerAccounts: ChangeActiveAddressParam['signerAccounts']
 	activeAddresses: ChangeActiveAddressParam['activeAddresses']
 	signerName: SignerName
@@ -123,7 +124,7 @@ export function PopupModal(props: PopupModalProps) {
 		: <></> }
 		{ page.page === 'AddNewAddress' || page.page === 'ModifyAddress' ?
 			<ErrorBoundary key = { props.boundaryResetKey.value } onError = { props.onRenderError }><LazyAddNewAddress
-				setActiveAddressAndInformAboutIt = { props.setActiveAddressAndInformAboutIt }
+				setActiveAddressAndInformAboutIt = { props.allowCreateAndSwitch ? props.setActiveAddressAndInformAboutIt : undefined }
 				modifyAddressWindowState = { page.state }
 				close = { props.goHome }
 				activeAddress = { props.activeAddress }

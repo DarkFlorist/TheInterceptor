@@ -5,11 +5,11 @@ import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphor
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAssociatedAddresses, persistWebsiteAccessChange, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
 import { handleInterceptedRequest, refuseAccess } from '../background.js'
-import { changeActiveAddressAndChain } from '../activeSettings.js'
+import { activateAddressSelection } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntry, getActiveAddresses } from '../metadataUtils.js'
 import { getSettings } from '../settings.js'
-import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests, getUserAddressBookEntries } from '../storageVariables.js'
+import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
 import type { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
@@ -23,6 +23,7 @@ import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOr
 import { isAccountConnectionMethod } from '../accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
 import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, signerConnectionReplacedError, signerUnavailableError, tabHasApprovedWebsiteConnection, waitForConfirmedSignerStateToken } from '../signerStateOwnership.js'
+import { assertActiveAddressSelectionAllowed, includePersistedAddressBookEntry } from '../../utils/activeAddressSelection.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab
@@ -87,6 +88,7 @@ const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceSer
 			pendingRequest.request,
 			pendingRequest.website,
 			undefined,
+			pendingRequest,
 		)
 	}
 })
@@ -111,6 +113,7 @@ export async function resolveInterceptorAccess(ethereum: EthereumClientService, 
 				pendingRequest.request,
 				pendingRequest.website,
 				publishRpcConnectionStatus,
+				pendingRequest,
 			),
 			replayRequestSocket: pendingRequest.request !== undefined && isAccountConnectionMethod(pendingRequest.request.method)
 				? pendingRequest.request.uniqueRequestIdentifier.requestSocket
@@ -156,16 +159,22 @@ export function filterAccessDialogAddressesForChain(activeAddresses: AddressBook
 	return activeAddresses.filter((entry) => entry.type !== 'safe' || entry.chainId === chainId)
 }
 
-export function assertAccessDialogAddressIsAvailable(activeAddresses: AddressBookEntries, chainId: bigint, address: bigint) {
-	const matchingSafeEntries = activeAddresses.filter((entry) => entry.type === 'safe' && entry.address === address)
-	if (matchingSafeEntries.length > 0 && !matchingSafeEntries.some((entry) => entry.chainId === chainId)) {
-		throw new Error('The selected Gnosis Safe is configured for another chain.')
-	}
-}
-
 async function getAccessDialogActiveAddresses() {
 	const settings = await getSettings()
 	return filterAccessDialogAddressesForChain(await getActiveAddresses(), settings.activeRpcNetwork.chainId)
+}
+
+async function withCurrentSignerState(pendingAccessRequest: PendingAccessRequest): Promise<PendingAccessRequest> {
+	const tabState = await getTabState(pendingAccessRequest.socket.tabId)
+	return {
+		...pendingAccessRequest,
+		signerAccounts: tabState.signerAccounts,
+		signerName: tabState.signerName,
+	}
+}
+
+async function withCurrentSignerStates(pendingAccessRequests: readonly PendingAccessRequest[]) {
+	return await Promise.all(pendingAccessRequests.map(withCurrentSignerState))
 }
 
 async function changeAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true) {
@@ -186,7 +195,7 @@ export async function updateInterceptorAccessViewWithPendingRequests() {
 	const pendingAccessRequests = await getPendingAccessRequests()
 	if (pendingAccessRequests.length > 0) await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: {
 		activeAddresses: await getAccessDialogActiveAddresses(),
-		pendingAccessRequests,
+		pendingAccessRequests: await withCurrentSignerStates(pendingAccessRequests),
 	} })
 }
 
@@ -389,6 +398,7 @@ export async function requestAccessFromUser(
 			throw new Error('Opened dialog does not exist when expected in requestAccessFromUser function')
 		}
 		const accessRequestId =  `${ accessAddress?.address } || ${ website.websiteOrigin }`
+		const tabState = await getTabState(socket.tabId)
 		const pendingRequest = {
 			popupOrTabId: openedDialog.popupOrTab,
 			socket,
@@ -398,8 +408,8 @@ export async function requestAccessFromUser(
 			requestAccessToAddress: accessAddress,
 			originalRequestAccessToAddress: accessAddress,
 			associatedAddresses: requestAccessToAddress !== undefined ? await getAssociatedAddresses(settings, website.websiteOrigin, requestAccessToAddress) : [],
-			signerAccounts: [],
-			signerName: request !== undefined ? (await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)).signerName : 'NoSignerDetected',
+			signerAccounts: tabState.signerAccounts,
+			signerName: tabState.signerName,
 			simulationMode: settings.simulationMode,
 			activeAddress: activeAddress,
 		}
@@ -430,14 +440,14 @@ export async function requestAccessFromUser(
 		if (pendingRequests.current.findIndex((x) => x.accessRequestId === accessRequestId) === 0) {
 			await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: {
 				activeAddresses: await getAccessDialogActiveAddresses(),
-				pendingAccessRequests: pendingRequests.current,
+				pendingAccessRequests: await withCurrentSignerStates(pendingRequests.current),
 			} })
 		}
 		await sendPopupMessageToOpenWindows({
 			method: 'popup_interceptor_access_dialog_pending_changed',
 			data: {
 				activeAddresses: await getAccessDialogActiveAddresses(),
-				pendingAccessRequests: pendingRequests.current,
+				pendingAccessRequests: await withCurrentSignerStates(pendingRequests.current),
 			}
 		})
 		if (openedDialog !== undefined) await tryFocusingTabOrWindow(openedDialog.popupOrTab)
@@ -459,7 +469,7 @@ export async function requestAccessFromUser(
 	)
 }
 
-async function resolve(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website, publishRpcConnectionStatus: PublishRpcConnectionStatus | undefined) {
+async function resolve(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website, publishRpcConnectionStatus: PublishRpcConnectionStatus | undefined, pendingAccessRequest: PendingAccessRequest) {
 	let promptForFollowUpAccesses = false
 	if (accessReply.userReply === 'noResponse') {
 		if (request !== undefined) refuseAccess(websiteTabConnections, request)
@@ -470,6 +480,9 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 		promptForFollowUpAccesses = shouldPromptForFollowUpAccesses
 		const accountRequestSocket = replyCompletesAccountRequest ? request.uniqueRequestIdentifier.requestSocket : undefined
 		const applyAccessReply = async () => {
+			if (accessReply.userReply === 'Approved' && accessReply.requestAccessToAddress !== undefined) {
+				await assertAddressSelectionAllowedForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress)
+			}
 			if (!userRequestedAddressChange) {
 				await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, false)
 				return
@@ -477,9 +490,14 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 			if (accessReply.requestAccessToAddress === undefined) throw new Error('Changed request to page level')
 			await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, false)
 			const settings = await getSettings()
-			await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			const signerAddress = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts[0]
+			const activeAddresses = await getActiveAddresses()
+			const requestEntry = pendingAccessRequest.requestAccessToAddress
+			const selectableAddresses = includePersistedAddressBookEntry(activeAddresses, requestEntry)
+			const selection = assertActiveAddressSelectionAllowed(accessReply.requestAccessToAddress, selectableAddresses, settings.simulationMode, settings.activeRpcNetwork.chainId, signerAddress === undefined ? [] : [signerAddress])
+			await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, selection, {
 				simulationMode: settings.simulationMode,
-				activeAddress: accessReply.requestAccessToAddress,
+				signerAddress,
 				promptForAccessesIfNeeded: false,
 			})
 		}
@@ -495,7 +513,7 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 	const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => previousPendingAccessRequests.filter((pending) => !isAffectedEntry(pending)))
 
 	if (pendingRequests.current.length > 0) {
-		sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getAccessDialogActiveAddresses(), pendingAccessRequests: pendingRequests.current } })
+		sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getAccessDialogActiveAddresses(), pendingAccessRequests: await withCurrentSignerStates(pendingRequests.current) } })
 		return { pendingRequestsToReplay: [], promptForFollowUpAccesses }
 	}
 
@@ -512,12 +530,13 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 }
 
 export async function requestAddressChange(websiteTabConnections: WebsiteTabConnections, message: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
-	if (message.method === 'popup_interceptorAccessChangeAddress' && message.data.newActiveAddress !== 'signer') {
-		const settings = await getSettings()
-		assertAccessDialogAddressIsAvailable(await getUserAddressBookEntries(), settings.activeRpcNetwork.chainId, message.data.newActiveAddress)
-	}
 	const newRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
 		if (message.data.requestAccessToAddress === undefined) throw new Error('Requesting account change on site level access request')
+		const pendingAccessRequest = previousPendingAccessRequests.find((request) => request.accessRequestId === message.data.accessRequestId)
+		if (pendingAccessRequest === undefined) throw new Error('Access request missing!')
+		if (message.method === 'popup_interceptorAccessChangeAddress') {
+			await assertAddressSelectionAllowedForAccessRequest(pendingAccessRequest, message.data.newActiveAddress)
+		}
 		async function getProposedAddress() {
 			if (message.method === 'popup_interceptorAccessRefresh') {
 				const tabState = await getTabState(message.data.socket.tabId)
@@ -540,7 +559,17 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 			return request
 		})
 	})
-	return await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getAccessDialogActiveAddresses(), pendingAccessRequests: newRequests.current } })
+	return await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getAccessDialogActiveAddresses(), pendingAccessRequests: await withCurrentSignerStates(newRequests.current) } })
+}
+
+async function assertAddressSelectionAllowedForAccessRequest(pendingAccessRequest: PendingAccessRequest, address: bigint | 'signer') {
+	const settings = await getSettings()
+	const simulationMode = pendingAccessRequest.simulationMode && settings.simulationMode
+	const signerAccounts = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts
+	const activeAddresses = await getActiveAddresses()
+	const requestedEntry = pendingAccessRequest.requestAccessToAddress
+	const selectableAddresses = includePersistedAddressBookEntry(activeAddresses, requestedEntry)
+	assertActiveAddressSelectionAllowed(address, selectableAddresses, simulationMode, settings.activeRpcNetwork.chainId, signerAccounts)
 }
 
 export async function interceptorAccessMetadataRefresh() {
@@ -551,11 +580,12 @@ export async function interceptorAccessMetadataRefresh() {
 			activeAddresses: await getAccessDialogActiveAddresses(),
 			pendingAccessRequests: await Promise.all((await getPendingAccessRequests()).map(async (request) => {
 				const requestAccessToAddress = request.requestAccessToAddress === undefined ? undefined : request.requestAccessToAddress
-				const signerName = request.request !== undefined ? (await getTabState(request.request?.uniqueRequestIdentifier.requestSocket.tabId)).signerName : 'NoSignerDetected'
+				const tabState = await getTabState(request.socket.tabId)
 				const associatedAddresses = await getAssociatedAddresses(settings, request.website.websiteOrigin, requestAccessToAddress)
 				return {
 					...request,
-					signerName,
+					signerAccounts: tabState.signerAccounts,
+					signerName: tabState.signerName,
 					associatedAddresses,
 					requestAccessToAddress
 				}

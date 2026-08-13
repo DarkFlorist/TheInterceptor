@@ -103,7 +103,7 @@ const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
 const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
 const REQUEST_SCOPED_PROVIDER_EVENT_METHODS = new Set(['accountsChanged', 'connect', 'disconnect', 'chainChanged'])
 
-export function normalizeSignerChainId(chainId: string) {
+function normalizeSignerChainId(chainId: string) {
 	// Coinbase historically emitted decimal chain IDs. Only normalize the entire value so malformed IDs are not silently truncated by Number.parseInt.
 	return /^[0-9]+$/.test(chainId) ? `0x${ BigInt(chainId).toString(16) }` : chainId
 }
@@ -1363,7 +1363,7 @@ class InterceptorMessageListener {
 					if (!this.connected) return
 					this.connected = false
 					for (const callback of this.onDisconnectCallBacks) {
-						callback({ name: 'disconnect', code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'User refused access to the wallet' })
+						callback({ name: 'disconnect', code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'Provider disconnected from all chains.' })
 					}
 					return
 				}

@@ -64,7 +64,7 @@ export const doesUniqueRequestIdentifiersMatch = (a: UniqueRequestIdentifier, b:
 
 export async function fetchWithTimeout(resource: RequestInfo | URL, init: RequestInit | undefined, timeoutMs: number, requestAbortController: AbortController | undefined = undefined) {
 	const timeoutAbortController = new AbortController()
-	const timeoutId = setTimeout(() => timeoutAbortController.abort(createInterceptorInternalError('Fetch request timed out.', 'fetch_timeout')), timeoutMs)
+	const timeoutId = setTimeout(() => timeoutAbortController.abort(createInterceptorInternalError('Fetch request timed out.', 'fetch_timeout', 'failedToFetch')), timeoutMs)
 	const requestAndTimeoutSignal = requestAbortController === undefined ? timeoutAbortController.signal : anySignal([timeoutAbortController.signal, requestAbortController.signal])
 	try {
 		if (requestAndTimeoutSignal.aborted) throw requestAndTimeoutSignal.reason
@@ -72,8 +72,8 @@ export async function fetchWithTimeout(resource: RequestInfo | URL, init: Reques
 	} catch(error: unknown) {
 		if (requestAbortController?.signal.aborted) throw requestAbortController.signal.reason
 		if (timeoutAbortController.signal.aborted) throw timeoutAbortController.signal.reason
-		if (error instanceof DOMException && error.message === 'The user aborted a request.') throw createInterceptorInternalError('Fetch request aborted.', 'fetch_aborted')
-		if (isBrowserFetchTransportError(error)) throw createInterceptorInternalError(getErrorMessage(error) ?? 'Fetch request failed.', 'fetch_transport_failed')
+		if (error instanceof DOMException && error.message === 'The user aborted a request.') throw createInterceptorInternalError('Fetch request aborted.', 'fetch_aborted', 'failedToFetch')
+		if (isBrowserFetchTransportError(error)) throw createInterceptorInternalError(getErrorMessage(error) ?? 'Fetch request failed.', 'fetch_transport_failed', 'failedToFetch')
 		throw error
 	} finally {
 		clearTimeout(timeoutId)

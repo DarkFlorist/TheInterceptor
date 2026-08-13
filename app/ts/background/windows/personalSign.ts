@@ -30,8 +30,11 @@ export function getSigningQuarantineCodes(messageChainId: bigint | undefined, ac
 	return { quarantine: quarantineReasons.length > 0, quarantineReasons }
 }
 
+export const getSignedMessageActiveAddress = (signedMessageTransaction: SignedMessageTransaction) =>
+	signedMessageTransaction.activeAddress ?? signedMessageTransaction.fakeSignedFor
+
 export async function craftPersonalSignPopupMessage(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, signedMessageTransaction: SignedMessageTransaction, rpcNetwork: RpcNetwork): Promise<VisualizedPersonalSignRequest> {
-	const activeAddressWithMetadata = await identifyAddress(ethereumClientService, requestAbortController, signedMessageTransaction.fakeSignedFor)
+	const activeAddressWithMetadata = await identifyAddress(ethereumClientService, requestAbortController, getSignedMessageActiveAddress(signedMessageTransaction))
 	const signerName = (await getTabState(signedMessageTransaction.request.uniqueRequestIdentifier.requestSocket.tabId)).signerName
 	const basicParams = {
 		website: signedMessageTransaction.website,

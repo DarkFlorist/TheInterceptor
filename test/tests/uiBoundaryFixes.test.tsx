@@ -6,7 +6,7 @@ import { act } from 'preact/test-utils'
 import { findChainEntryByName, findRpcEntryByUrl, getRpcEntryLabel } from '../../app/ts/components/subcomponents/ChainSelector.js'
 import { DropDownMenu } from '../../app/ts/components/subcomponents/DropDownMenu.js'
 import { InlineCard } from '../../app/ts/components/subcomponents/InlineCard.js'
-import { parseTimePickerDeltaValue, TimePicker } from '../../app/ts/components/subcomponents/TimePicker.js'
+import { hasValidTimePickerValue, parseTimePickerDeltaValue, TimePicker } from '../../app/ts/components/subcomponents/TimePicker.js'
 import { rpcEntriesToChainEntriesWithAllChainsEntry } from '../../app/ts/components/ui-utils.js'
 import { parseRpcFormData } from '../../app/ts/utils/rpcFormData.js'
 import { removeAddressBookEntryAndClose } from '../../app/ts/AddressBook.js'
@@ -76,6 +76,21 @@ describe('UI boundary fixes', () => {
 			const buttons = collectElements(dom.document.body, 'button')
 			assert.equal(buttons.length, 3)
 			assert.equal(buttons.every((button) => button.getAttribute?.('type') === 'button'), true)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('combines a dropdown field label with its selected value', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => {
+				render(<DropDownMenu selected = { signal('safe') } dropDownOptions = { signal<readonly string[]>(['safe']) } onChangedCallBack = { () => undefined } buttonClassses = 'button-class' ariaLabel = 'Address type' />, dom.document.body)
+			})
+
+			const trigger = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-haspopup') === 'true')
+			assert.equal(trigger?.getAttribute?.('aria-label'), 'Address type: safe')
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
@@ -274,6 +289,14 @@ describe('UI boundary fixes', () => {
 			render(null, dom.document.body)
 			dom.restore()
 		}
+	})
+
+	test('requires a value before committing Until or For time picker modes', () => {
+		assert.equal(hasValidTimePickerValue('Until', undefined, 1n), false)
+		assert.equal(hasValidTimePickerValue('Until', new Date('2024-01-01T00:00:00.000Z'), undefined), true)
+		assert.equal(hasValidTimePickerValue('For', undefined, undefined), false)
+		assert.equal(hasValidTimePickerValue('For', undefined, 0n), true)
+		assert.equal(hasValidTimePickerValue('No Delay', undefined, undefined), true)
 	})
 
 	test('keeps a block explorer URL when its API key is empty', () => {

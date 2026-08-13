@@ -7,9 +7,11 @@ export function getIssueWithAddressString(address: string): string | undefined {
 
 	if (address.match(/^(0x)?[0-9a-fA-F]{40}$/)) {
 		const checkSummedAddress = getAddress(address.toLowerCase())
+		const addressBody = address.slice(2)
+		const isUniformlyCased = addressBody === addressBody.toLowerCase() || addressBody === addressBody.toUpperCase()
 
 		// It is a checksummed address with a bad checksum
-		if (checkSummedAddress !== address && address.toLowerCase() !== address) {
+		if (checkSummedAddress !== address && !isUniformlyCased) {
 			return `Bad address checksum, did you mean ${ checkSummedAddress } ?`
 		}
 	} else {
