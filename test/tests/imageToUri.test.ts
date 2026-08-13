@@ -158,14 +158,14 @@ describe('imageToUri', () => {
 		assert.equal(result.failureReason, 'image data could not be decoded')
 	})
 
-	test('classifies oversized data uris', async () => {
-		installSuccessfulFileReader('data:image/png;base64,dG9vLWJpZw==')
-		fetchImplementation = async () => new Response(new Blob(['too-big'], { type: 'image/png' }), { status: 200, headers: { 'content-type': 'image/png' } })
+	test('accepts an under-limit image when its encoded data uri is longer than the source bytes', async () => {
+		installSuccessfulFileReader('data:image/png;base64,b2s=')
+		fetchImplementation = async () => new Response(new Blob(['ok'], { type: 'image/png' }), { status: 200, headers: { 'content-type': 'image/png' } })
 
-		const result = await imageToUri('https://example.test/too-big.png', 5)
+		const result = await imageToUri('https://example.test/under-limit.png', 2)
 
-		assert.equal(result.data, undefined)
-		assert.equal(result.failureReason, 'image data exceeded 5 bytes')
+		assert.equal(result.data, 'data:image/png;base64,b2s=')
+		assert.equal(result.failureReason, undefined)
 	})
 
 	test('rejects oversized image responses before decoding them when content-length exceeds the limit', async () => {

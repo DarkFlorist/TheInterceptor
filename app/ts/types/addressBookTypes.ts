@@ -1,8 +1,10 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
+import { EthereumAddress, EthereumQuantity, EthereumQuantityUint8, LiteralConverterParserFactory } from './wire-types.js'
 
 export type ChainIdWithUniversal = funtypes.Static<typeof ChainIdWithUniversal>
 export const ChainIdWithUniversal = funtypes.Union(EthereumQuantity, funtypes.Literal('AllChains'))
+
+export const doAddressBookChainIdsMatch = (left: ChainIdWithUniversal | undefined, right: ChainIdWithUniversal | undefined) => (left ?? 1n) === (right ?? 1n)
 
 export type EntrySource = funtypes.Static<typeof EntrySource>
 export const EntrySource = funtypes.Union(
@@ -37,6 +39,18 @@ const nftAddressBookEntryOptionalFields = {
 
 export type Erc20TokenEntry = funtypes.Static<typeof Erc20TokenEntry>
 export const Erc20TokenEntry = funtypes.ReadonlyObject({
+	type: funtypes.Literal('ERC20'),
+	name: funtypes.String,
+	address: EthereumAddress,
+	symbol: funtypes.String,
+	decimals: EthereumQuantityUint8,
+	entrySource: EntrySource,
+}).And(funtypes.Partial({
+	...sharedAddressBookEntryOptionalFields,
+}))
+
+export type LegacyErc20TokenEntry = funtypes.Static<typeof LegacyErc20TokenEntry>
+export const LegacyErc20TokenEntry = funtypes.ReadonlyObject({
 	type: funtypes.Literal('ERC20'),
 	name: funtypes.String,
 	address: EthereumAddress,
@@ -93,22 +107,70 @@ export const ContractEntry = funtypes.ReadonlyObject({
 	...protocolAddressBookEntryOptionalFields,
 }))
 
-export type AddressBookEntryCategory = 'contact' | 'activeAddress' | 'ERC20' | 'ERC721' | 'contract' | 'ERC1155'
+export type SafeEntry = funtypes.Static<typeof SafeEntry>
+export const SafeEntry = funtypes.ReadonlyObject({
+	type: funtypes.Literal('safe'),
+	name: funtypes.String,
+	address: EthereumAddress,
+	chainId: EthereumQuantity,
+	entrySource: EntrySource,
+	useAsActiveAddress: funtypes.Boolean,
+}).And(funtypes.Partial({
+	safeSimulationSignerAddress: EthereumAddress,
+	safeSignerAddresses: funtypes.ReadonlyArray(EthereumAddress),
+	safeVersion: funtypes.String,
+	logoUri: funtypes.String,
+	abi: funtypes.String,
+	askForAddressAccess: funtypes.Union(funtypes.Boolean, funtypes.Literal(undefined).withParser(LiteralConverterParserFactory(undefined, true))),
+	declarativeNetRequestBlockMode: DeclarativeNetRequestBlockMode,
+}))
 
-export type AddressBookEntry = funtypes.Static<typeof AddressBookEntry>
-export const AddressBookEntry = funtypes.Union(
+export type AddressBookEntryCategory = 'contact' | 'activeAddress' | 'ERC20' | 'ERC721' | 'contract' | 'ERC1155' | 'safe'
+
+export type AddressBookEntry = ContactEntry | Erc20TokenEntry | Erc721Entry | Erc1155Entry | ContractEntry | SafeEntry
+export const AddressBookEntry: funtypes.Runtype<AddressBookEntry> = funtypes.Union(
 	ContactEntry,
 	Erc20TokenEntry,
 	Erc721Entry,
 	Erc1155Entry,
 	ContractEntry,
+	SafeEntry,
 )
 
-export type AddressBookEntries = funtypes.Static<typeof AddressBookEntries>
-export const AddressBookEntries = funtypes.ReadonlyArray(AddressBookEntry)
+export function getSafeSigningEntry(
+	entries: readonly AddressBookEntry[],
+	settings: {
+		readonly simulationMode: boolean
+		readonly useSignersAddressAsActiveAddress: boolean
+		readonly activeSimulationAddress: EthereumAddress | undefined
+		readonly chainId: bigint | undefined
+	},
+): SafeEntry | undefined {
+	if (
+		settings.simulationMode
+		|| settings.useSignersAddressAsActiveAddress
+		|| settings.activeSimulationAddress === undefined
+		|| settings.chainId === undefined
+	) return undefined
+	return entries.find((entry): entry is SafeEntry =>
+		entry.address === settings.activeSimulationAddress
+		&& entry.chainId === settings.chainId
+		&& entry.type === 'safe'
+	)
+}
+
+export function getSafeSignerAddresses(entry: SafeEntry) {
+	return Array.from(new Set([
+		...(entry.safeSignerAddresses ?? []),
+		...(entry.safeSimulationSignerAddress === undefined ? [] : [entry.safeSimulationSignerAddress]),
+	]))
+}
+
+export type AddressBookEntries = readonly AddressBookEntry[]
+export const AddressBookEntries: funtypes.Runtype<AddressBookEntries> = funtypes.ReadonlyArray(AddressBookEntry)
 
 export type AddressBookEntryType = funtypes.Static<typeof AddressBookEntryType>
-export const AddressBookEntryType = funtypes.Union(funtypes.Literal('contact'), funtypes.Literal('contract'), funtypes.Literal('ERC20'), funtypes.Literal('ERC1155'), funtypes.Literal('ERC721'))
+export const AddressBookEntryType = funtypes.Union(funtypes.Literal('contact'), funtypes.Literal('contract'), funtypes.Literal('ERC20'), funtypes.Literal('ERC1155'), funtypes.Literal('ERC721'), funtypes.Literal('safe'))
 
 export type IncompleteAddressBookEntry = funtypes.Static<typeof IncompleteAddressBookEntry>
 export const IncompleteAddressBookEntry = funtypes.ReadonlyObject({
@@ -118,11 +180,15 @@ export const IncompleteAddressBookEntry = funtypes.ReadonlyObject({
 	askForAddressAccess: funtypes.Boolean,
 	name: funtypes.Union(funtypes.String, funtypes.Undefined),
 	symbol: funtypes.Union(funtypes.String, funtypes.Undefined),
-	decimals: funtypes.Union(EthereumQuantity, funtypes.Undefined),
+	decimals: funtypes.Union(EthereumQuantityUint8, funtypes.Undefined),
 	logoUri: funtypes.Union(funtypes.String, funtypes.Undefined),
 	entrySource: EntrySource,
 	abi: funtypes.Union(funtypes.String, funtypes.Undefined),
 	useAsActiveAddress: funtypes.Union(funtypes.Undefined, funtypes.Boolean),
 	declarativeNetRequestBlockMode: funtypes.Union(funtypes.Undefined, DeclarativeNetRequestBlockMode),
 	chainId: ChainIdWithUniversal,
-})
+}).And(funtypes.ReadonlyPartial({
+	safeSimulationSignerAddress: funtypes.String,
+	safeSignerAddresses: funtypes.ReadonlyArray(funtypes.String),
+	safeVersion: funtypes.String,
+}))

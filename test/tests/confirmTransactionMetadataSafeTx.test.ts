@@ -147,6 +147,8 @@ async function loadModules() {
 	const priceEstimator = await import('../../app/ts/simulation/services/priceEstimator.js')
 	const settings = await import('../../app/ts/background/settings.js')
 	const storageUtils = await import('../../app/ts/utils/storageUtils.js')
+	const storageVariables = await import('../../app/ts/background/storageVariables.js')
+	const popupVisualisationUpdater = await import('../../app/ts/background/popupVisualisationUpdater.js')
 	const wireTypes = await import('../../app/ts/types/wire-types.js')
 
 	return {
@@ -158,6 +160,8 @@ async function loadModules() {
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		browserStorageLocalSet: storageUtils.browserStorageLocalSet,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
+		getPopupVisualisationState: storageVariables.getPopupVisualisationState,
+		refreshPopupVisualisationForOpenConsumer: popupVisualisationUpdater.refreshPopupVisualisationForOpenConsumer,
 		serialize: wireTypes.serialize,
 		EthereumBlockHeader: wireTypes.EthereumBlockHeader,
 		EthereumQuantity: wireTypes.EthereumQuantity,
@@ -340,6 +344,7 @@ function createPendingSafeTxMessage(modules: TestModules, rpcNetwork: RpcEntry):
 		signedMessageTransaction: {
 			website: visualizedPersonalSignRequest.website,
 			created: visualizedPersonalSignRequest.created,
+			activeAddress: activeAddress.address,
 			fakeSignedFor: activeAddress.address,
 			originalRequestParameters,
 			request: {
@@ -381,6 +386,100 @@ function assertPopupPendingSafeTxShape(sentMessages: readonly RuntimeMessage[]) 
 }
 
 describe('SafeTx confirm transaction metadata', () => {
+	test('uses the stored visualisation when a confirmation refresh fails unexpectedly', async () => {
+		await browserMock.reset()
+		const modules = await modulesPromise
+		const fakeRpcNetwork: RpcEntry = {
+			name: 'Test Chain',
+			chainId: 1337n,
+			httpsRpc: 'https://example.invalid',
+			currencyName: 'Ether',
+			currencyTicker: 'ETH',
+			currencyLogoUri: undefined,
+			primary: true,
+			minimized: true,
+		}
+		const ethereum = new modules.EthereumClientService({
+			rpcUrl: fakeRpcNetwork.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest() { throw new Error('RPC should not be called') },
+		}, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
+		const storedVisualisation = await modules.getPopupVisualisationState()
+		const refreshError = new Error('Unexpected visualizer failure')
+		let reportedError: unknown
+
+		const result = await modules.refreshPopupVisualisationForOpenConsumer(ethereum, tokenPriceService, {
+			async update() { throw refreshError },
+			async getStored() { return storedVisualisation },
+			async reportError(error) {
+				reportedError = error
+				return undefined
+			},
+		})
+
+		assert.equal(result, storedVisualisation)
+		assert.equal(reportedError, refreshError)
+	})
+
+	test('still updates confirmation metadata when visualisation refresh falls back', async () => {
+		await browserMock.reset()
+		const modules = await modulesPromise
+		const fakeRpcNetwork: RpcEntry = {
+			name: 'Test Chain',
+			chainId: 1337n,
+			httpsRpc: 'https://example.invalid',
+			currencyName: 'Ether',
+			currencyTicker: 'ETH',
+			currencyLogoUri: undefined,
+			primary: true,
+			minimized: true,
+		}
+		const fakeBlock = makeFakeBlock(122n)
+		const ethereum = new modules.EthereumClientService({
+			rpcUrl: fakeRpcNetwork.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest(rpcRequest: { method: string }) {
+				switch (rpcRequest.method) {
+					case 'eth_getBlockByNumber': return serializeForRpc(modules.EthereumBlockHeader, fakeBlock)
+					case 'eth_blockNumber': return serializeForRpc(modules.EthereumQuantity, fakeBlock.number)
+					default: throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
+				}
+			},
+		}, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const tokenPriceService = new modules.TokenPriceService(ethereum, 0)
+		await modules.browserStorageLocalSet({
+			simulationMode: true,
+			activeRpcNetwork: fakeRpcNetwork,
+			userAddressBookEntriesV3: modules.defaultActiveAddresses,
+		})
+		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [createPendingSafeTxMessage(modules, fakeRpcNetwork)] })
+		const storedVisualisation = { ...await modules.getPopupVisualisationState(), simulationId: 77 }
+		const refreshError = new Error('Unexpected visualizer failure')
+		let reportedError: unknown
+		let reportCalls = 0
+
+		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined, {
+			visualisation: {
+				async update() { throw refreshError },
+				async getStored() { return storedVisualisation },
+				async reportError(error) {
+					reportCalls += 1
+					reportedError = error
+					return undefined
+				},
+			},
+		})
+
+		const dialogUpdate = browserMock.sentMessages.find((message) => message.method === 'popup_update_confirm_transaction_dialog')
+		if (!isRecord(dialogUpdate?.data)) throw new Error('Missing confirm transaction dialog update')
+		const visualizedSimulatorState = dialogUpdate.data.visualizedSimulatorState
+		if (!isRecord(visualizedSimulatorState)) throw new Error('Missing stored visualisation in confirm transaction dialog update')
+		assert.equal(visualizedSimulatorState.simulationId, 77)
+		assert.equal(reportedError, refreshError)
+		assert.equal(reportCalls, 1)
+	})
+
 	test('refresh confirm metadata sends popup-safe SafeTx payload', async () => {
 		await browserMock.reset()
 		const modules = await modulesPromise
@@ -426,6 +525,8 @@ describe('SafeTx confirm transaction metadata', () => {
 		await modules.refreshPopupConfirmTransactionMetadata(ethereum, tokenPriceService, undefined)
 
 		assertPopupPendingSafeTxShape(browserMock.sentMessages)
+		assert.equal((await modules.getPopupVisualisationState()).simulationId, 1)
+		assert.equal(browserMock.sentMessages.some((message) => message.method === 'popup_isSimulationVisualizerOpen'), false)
 	})
 
 	test('initial confirm render sends popup-safe SafeTx payload', async () => {

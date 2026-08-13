@@ -25,7 +25,7 @@ export type InterceptorAccessListParams = {
 
 export type AddAddressParam = {
 	close: () => void
-	setActiveAddressAndInformAboutIt: ((address: bigint | 'signer') => Promise<void>) | undefined
+	setActiveAddressAndInformAboutIt: ((address: bigint | 'signer', persistedEntry?: AddressBookEntry) => Promise<void>) | undefined
 	modifyAddressWindowState: Signal<ModifyAddressWindowState>
 	activeAddress: bigint | undefined
 	rpcEntries: Signal<RpcEntries>
@@ -35,6 +35,7 @@ export type HomeParams = {
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>
 	activeAddresses: Signal<AddressBookEntries>
+	walletSelectedAddressBookEntry: Signal<AddressBookEntry | undefined>
 	tabState: Signal<TabState | undefined>
 	activeSimulationAddress: Signal<bigint | undefined>
 	activeSigningAddress: Signal<bigint | undefined>
@@ -55,12 +56,13 @@ export type HomeParams = {
 	preSimulationBlockTimeManipulation: Signal<BlockTimeManipulation | undefined>
 	fixedAddressRichList: Signal<readonly EnrichedRichListElement[]>
 	numberOfAddressesMadeRich: Signal<number>
+	hasSafeTransactionsToExport: Signal<boolean>
 	isInitialHomeDataLoaded: Signal<boolean>
 	isFreshHomeDataLoaded: Signal<boolean>
 }
 
 export type ChangeActiveAddressParam = {
-	activeAddresses: Signal<AddressBookEntries>
+	activeAddresses: ReadonlySignal<AddressBookEntries>
 	close: () => void,
 	setActiveAddressAndInformAboutIt: (address: bigint | 'signer') => void,
 	signerAccounts: readonly bigint[] | undefined,
@@ -73,6 +75,7 @@ export type FirstCardParams = {
 	activeAddress: Signal<AddressBookEntry | undefined>
 	useSignersAddressAsActiveAddress: Signal<boolean>
 	activeAddresses: Signal<AddressBookEntries | undefined>
+	walletSelectedAddressBookEntry: Signal<AddressBookEntry | undefined>
 	changeActiveRpc: (rpcEntry: RpcEntry) => void
 	rpcNetwork: Signal<RpcNetwork | undefined>
 	simulationMode: Signal<boolean>
@@ -103,6 +106,8 @@ export type SimulationStateParam = {
 	simulationResultState: Signal<SimulationResultState | undefined>
 	openSimulationStack: (target?: TransactionOrMessageIdentifier) => void
 	numberOfAddressesMadeRich: Signal<number>
+	hasSafeTransactionsToExport: ReadonlySignal<boolean>
+	safeSigningMode: boolean
 }
 
 export type LogAnalysisParams = {
@@ -269,6 +274,7 @@ export type PendingFetchSimulationStackRequestPromise = funtypes.Static<typeof P
 export const PendingFetchSimulationStackRequestPromise = funtypes.ReadonlyObject({
 	website: Website,
 	popupOrTabId: PopupOrTabId,
+	simulationOverlayEnabled: funtypes.Boolean,
 	simulationStackVersion: SimulationStackVersion,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
 })

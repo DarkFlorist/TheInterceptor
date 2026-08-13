@@ -101,6 +101,15 @@ const WalletPermission = funtypes.ReadonlyObject({
 	caveats: funtypes.ReadonlyArray(funtypes.Unknown),
 	invoker: funtypes.String,
 })
+const WalletCapabilities = funtypes.ReadonlyRecord(
+	funtypes.String,
+	funtypes.ReadonlyRecord(funtypes.String, funtypes.Unknown),
+)
+// Keep the discriminant in a separate intersection member. Combining this method with the nested capability record makes funtypes inspect typed arrays as records while formatting parse failures, masking the useful validation error.
+const WalletCapabilitiesReply = funtypes.Intersect(
+	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getCapabilities') }),
+	funtypes.ReadonlyObject({ result: WalletCapabilities }),
+)
 const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBlockByNumber'), result: GetBlockReturn }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBlockByHash'), result: GetBlockReturn }),
@@ -121,6 +130,7 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts'), result: funtypes.ReadonlyArray(EthereumAddress) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_requestPermissions'), result: funtypes.ReadonlyArray(WalletPermission) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions'), result: funtypes.ReadonlyArray(WalletPermission) }),
+	WalletCapabilitiesReply,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_revokePermissions'), result: funtypes.Null }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_maxPriorityFeePerGas'), result: EthereumQuantity }),
@@ -143,7 +153,7 @@ type SubscriptionReturnValue = funtypes.Static<typeof SubscriptionReturnValue>
 const SubscriptionReturnValue = funtypes.ReadonlyObject({
 	method: funtypes.Literal('newHeads'),
 	result: funtypes.ReadonlyObject({
-		subscription: funtypes.Literal('newHeads'),
+		subscription: funtypes.String,
 		result: EthereumBlockHeaderWithTransactionHashes
 	})
 })
@@ -155,9 +165,10 @@ const NonForwardingRPCRequestReturnValue = funtypes.Intersect(
 )
 
 type ForwardToWallet = funtypes.Static<typeof ForwardToWallet>
+const ForwardToWalletRequest = funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams)
 const ForwardToWallet = funtypes.Intersect( // forward directly to wallet
 	funtypes.ReadonlyObject({ type: funtypes.Literal('forwardToSigner') }),
-	funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams),
+	ForwardToWalletRequest,
 )
 
 type ReplyWithSignersReplyForward = funtypes.Static<typeof ReplyWithSignersReplyForward>
@@ -165,18 +176,21 @@ const ReplyWithSignersReplyForward = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('forwardToSigner'),
 		replyWithSignersReply: funtypes.Literal(true),
-		method: funtypes.String,
 	}),
-	funtypes.Partial({
-		params: funtypes.Unknown,
-	})
+	funtypes.Union(
+		ForwardToWalletRequest,
+		funtypes.Intersect(
+			funtypes.ReadonlyObject({ method: funtypes.String }),
+			funtypes.Partial({ params: funtypes.Unknown }),
+		),
+	),
 )
 
 export type RPCReply = funtypes.Static<typeof RPCReply>
 export const RPCReply = funtypes.Union(
 	NonForwardingRPCRequestReturnValue,
-	ForwardToWallet,
 	ReplyWithSignersReplyForward,
+	ForwardToWallet,
 	funtypes.ReadonlyObject({ type: funtypes.Literal('doNotReply') }),
 )
 
@@ -296,6 +310,7 @@ export const ModifyMakeMeRich = funtypes.ReadonlyObject({
 export type AddressBookCategory = funtypes.Static<typeof AddressBookCategory>
 export const AddressBookCategory = funtypes.Union(
 	funtypes.Literal('My Active Addresses'),
+	funtypes.Literal('My Safes'),
 	funtypes.Literal('My Contacts'),
 	funtypes.Literal('ERC20 Tokens'),
 	funtypes.Literal('ERC1155 Tokens'),
@@ -427,7 +442,7 @@ export const ConnectedToSigner = funtypes.ReadonlyObject({
 type SignerReplyForwardRequest = funtypes.Static<typeof SignerReplyForwardRequest>
 const SignerReplyForwardRequest = funtypes.Intersect(
 	funtypes.ReadonlyObject({ requestId: funtypes.Number }),
-	funtypes.Union(ForwardToWallet, ReplyWithSignersReplyForward)
+	funtypes.Union(ReplyWithSignersReplyForward, ForwardToWallet)
 )
 
 export type SignerReply = funtypes.Static<typeof SignerReply>
@@ -619,6 +634,7 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		activeAddresses: AddressBookEntries,
 		richList: funtypes.ReadonlyArray(EnrichedRichListElement),
 		makeCurrentAddressRich: funtypes.Boolean,
+		hasSafeTransactionsToExport: funtypes.Boolean,
 		latestUnexpectedError: funtypes.Union(funtypes.Undefined, UnexpectedErrorOccured),
 		websiteAccessAddressMetadata: AddressBookEntries,
 		tabState: TabState,
@@ -630,7 +646,9 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		rpcEntries: RpcEntries,
 		interceptorDisabled: funtypes.Boolean,
 		preSimulationBlockTimeManipulation: BlockTimeManipulation,
-	})
+	}).And(funtypes.ReadonlyPartial({
+		walletSelectedAddressBookEntry: AddressBookEntry,
+	}))
 })
 
 export type HomePageBootstrap = funtypes.Static<typeof HomePageBootstrap>
@@ -639,13 +657,16 @@ export const HomePageBootstrap = funtypes.ReadonlyObject({
 	popupRefreshGeneration: PopupRefreshGeneration,
 	data: funtypes.ReadonlyObject({
 		activeAddresses: AddressBookEntries,
+		hasSafeTransactionsToExport: funtypes.Boolean,
 		tabState: TabState,
 		settings: Settings,
 		activeSigningAddressInThisTab: OptionalEthereumAddress,
 		tabId: funtypes.Union(funtypes.Number, funtypes.Undefined),
 		rpcEntries: RpcEntries,
 		interceptorDisabled: funtypes.Boolean,
-	})
+	}).And(funtypes.ReadonlyPartial({
+		walletSelectedAddressBookEntry: AddressBookEntry,
+	}))
 })
 
 type ActiveSigningAddressChanged = funtypes.Static<typeof ActiveSigningAddressChanged>

@@ -668,6 +668,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 				gas: '0xc350',
 				maxFeePerGas: '0x2',
 				maxPriorityFeePerGas: '0x1',
+				accessList: [{ address: accessListAddress, storageKeys: [accessListStorageKey] }],
 				authorizationList: [signedAuthorizationToRpc(clearDelegationAuthorization)],
 			}],
 		})
@@ -689,6 +690,10 @@ describe('EIP-7702 rescue transaction parsing', () => {
 			if (transaction.success === false) throw new Error('transaction creation unexpectedly failed')
 			assert.equal(transaction.transaction.type, '7702')
 			if (transaction.transaction.type !== '7702') throw new Error('Expected a 7702 transaction')
+			assert.deepEqual(transaction.transaction.accessList, [{
+				address: EthereumAddress.parse(accessListAddress),
+				storageKeys: [EthereumBytes32.parse(accessListStorageKey)],
+			}])
 			const [authorization] = transaction.transaction.authorizationList
 			if (authorization === undefined) throw new Error('Expected authorization to be parsed')
 			assert.equal(authorization.authority, EthereumAddress.parse(victim.address))

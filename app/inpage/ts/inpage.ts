@@ -103,6 +103,15 @@ const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
 const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
 const REQUEST_SCOPED_PROVIDER_EVENT_METHODS = new Set(['accountsChanged', 'connect', 'disconnect', 'chainChanged'])
 
+function normalizeSignerChainId(chainId: string) {
+	// Coinbase historically emitted decimal chain IDs. Only normalize the entire value so malformed IDs are not silently truncated by Number.parseInt.
+	return /^[0-9]+$/.test(chainId) ? `0x${ BigInt(chainId).toString(16) }` : chainId
+}
+
+function chainIdToNetworkVersion(chainId: string) {
+	return BigInt(chainId).toString(10)
+}
+
 type InterceptorApprovedMessageCandidate = {
 	readonly interceptorApproved?: unknown
 	readonly method?: unknown
@@ -242,7 +251,7 @@ interface ProviderMessage {
 }
 
 type JsonRpcResponse = IJsonRpcSuccess<unknown> | IJsonRpcError
-type LegacyJsonRpcCallback = (error: IJsonRpcError | null, response: JsonRpcResponse | JsonRpcResponse[] | null) => void
+type LegacyJsonRpcCallback = (error: Error | null, response: JsonRpcResponse | JsonRpcResponse[] | null) => void
 
 type SignerAccountsReply =
 	| { readonly type: 'success', readonly accounts: readonly string[], readonly requestAccounts: boolean }
@@ -769,8 +778,7 @@ class InterceptorMessageListener {
 			})
 			register('chainChanged', (chainId: string) => {
 				if (this.signerWindowEthereumProvider !== provider) return
-				// TODO: this is a hack to get coinbase working that calls this numbers in base 10 instead of in base 16
-				const params = /\d/.test(chainId) ? [`0x${parseInt(chainId).toString(16)}`, this.signerProviderGeneration] : [chainId, this.signerProviderGeneration]
+				const params = [normalizeSignerChainId(chainId), this.signerProviderGeneration]
 				this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params })
 			})
 			this.subscribedSignerProviders.add(provider)
@@ -976,23 +984,18 @@ class InterceptorMessageListener {
 					}
 				}
 			}
-			return {
-				jsonrpc: '2.0',
-				id: param.id,
-				error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR }
-			}
+			throw error
 		}
 	}
 
 	private readonly WindowEthereumSendAsync = async (payload: SingleSendAsyncParam | SingleSendAsyncParam[], callback: LegacyJsonRpcCallback) => {
-		if (Array.isArray(payload)) {
-			const responses = await Promise.all(payload.map((param) => this.getWindowEthereumSendAsyncResponse(param)))
-			callback(null, responses)
-			return
-		}
-		const response = await this.getWindowEthereumSendAsyncResponse(payload)
-		if ('error' in response) {
-			callback(response, null)
+		let response: JsonRpcResponse | JsonRpcResponse[]
+		try {
+			response = Array.isArray(payload)
+				? await Promise.all(payload.map((param) => this.getWindowEthereumSendAsyncResponse(param)))
+				: await this.getWindowEthereumSendAsyncResponse(payload)
+		} catch (error: unknown) {
+			callback(error instanceof Error ? error : new Error(`Unexpected sendAsync failure: ${ String(error) }`), null)
 			return
 		}
 		callback(null, response)
@@ -1360,7 +1363,7 @@ class InterceptorMessageListener {
 					if (!this.connected) return
 					this.connected = false
 					for (const callback of this.onDisconnectCallBacks) {
-						callback({ name: 'disconnect', code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'User refused access to the wallet' })
+						callback({ name: 'disconnect', code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'Provider disconnected from all chains.' })
 					}
 					return
 				}
@@ -1371,7 +1374,7 @@ class InterceptorMessageListener {
 					this.activeChainId = reply
 					if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && inpageWindow.ethereum !== undefined) {
 						setCompatibilityProperty(inpageWindow.ethereum, 'chainId', reply, 'window.ethereum.chainId')
-						setCompatibilityProperty(inpageWindow.ethereum, 'networkVersion', Number(reply).toString(10), 'window.ethereum.networkVersion')
+						setCompatibilityProperty(inpageWindow.ethereum, 'networkVersion', chainIdToNetworkVersion(reply), 'window.ethereum.networkVersion')
 					}
 					for (const callback of this.onChainChangedCallBacks) {
 						callback(reply)
@@ -1475,9 +1478,9 @@ class InterceptorMessageListener {
 						}
 						case 'eth_chainId': {
 							if (typeof forwardRequest.result !== 'string') throw new Error('wrong type')
-							const chainId = forwardRequest.result as string
+							const chainId = forwardRequest.result
 							setCompatibilityProperty(inpageWindow.ethereum, 'chainId', chainId, 'window.ethereum.chainId')
-							setCompatibilityProperty(inpageWindow.ethereum, 'networkVersion', Number(chainId).toString(10), 'window.ethereum.networkVersion')
+							setCompatibilityProperty(inpageWindow.ethereum, 'networkVersion', chainIdToNetworkVersion(chainId), 'window.ethereum.networkVersion')
 							this.activeChainId = chainId
 							break
 						}
@@ -1579,9 +1582,7 @@ class InterceptorMessageListener {
 			this.enableMetamaskCompatibilityMode(connection.metamaskCompatibilityMode)
 			if (signerName !== 'NoSigner') await this.requestChainIdFromSigner()
 		}
-		// A fresh status report must not wait behind an older bridge request whose reply may have been lost
-		// during a background-worker or content-port replacement. The generation checks on both sides make
-		// late replies from superseded reports harmless.
+		// A fresh status report must not wait behind an older bridge request whose reply may have been lost during a background-worker or content-port replacement. The generation checks on both sides make late replies from superseded reports harmless.
 		const transition = completeTransition().catch((error: unknown) => {
 			this.reportSignerDiscoveryError('report signer connection status', error)
 		})

@@ -8,7 +8,7 @@ import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchEr
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { modifyObject } from '../utils/typescript.js'
-import { getUpdatedSimulationState } from './background.js'
+import { getUpdatedSimulationState } from './simulationUpdating.js'
 import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { getAddressesbeingMadeRich, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
@@ -88,6 +88,21 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 		await reportUnexpectedError(error)
 	}
 	return await getPopupVisualisationState()
+}
+
+export type OpenConsumerVisualisationDependencies = {
+	readonly update?: typeof updatePopupVisualisationState
+	readonly getStored?: typeof getPopupVisualisationState
+	readonly reportError?: typeof reportUnexpectedError
+}
+
+export async function refreshPopupVisualisationForOpenConsumer(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, dependencies: OpenConsumerVisualisationDependencies = {}) {
+	try {
+		await (dependencies.update ?? updatePopupVisualisationState)(ethereum, tokenPriceService, undefined, true)
+	} catch (error) {
+		if (!isExpectedInfrastructureError(error)) await (dependencies.reportError ?? reportUnexpectedError)(error)
+	}
+	return await (dependencies.getStored ?? getPopupVisualisationState)()
 }
 
 const updateSimulationVisualisationSemaphore = new Semaphore(1)

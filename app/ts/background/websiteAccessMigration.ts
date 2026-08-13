@@ -19,8 +19,7 @@ function normalizeCanonicalWebsiteOrigin(websiteOrigin: string): string | undefi
 }
 
 function normalizeLegacyWebsiteOrigin(websiteOrigin: string): string | undefined {
-	// Older releases represented every file URL as an empty origin. Retain that
-	// marker so it can be rebound to one exact file path after explicit approval.
+	// Older releases represented every file URL as an empty origin. Retain that marker so it can be rebound to one exact file path after explicit approval.
 	if (websiteOrigin === '') return websiteOrigin
 	try {
 		const legacyUrl = new URL(`https://${ websiteOrigin }`)

@@ -286,6 +286,94 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 }
 
 describe('inpage signer bridge', () => {
+	test('returns JSON-RPC failures through the sendAsync response argument', async () => {
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method !== 'eth_chainId' || request.internal === true) return false
+				sendBackgroundMessage({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: request.method,
+					error: { code: -32000, message: 'RPC failed' },
+				})
+				return true
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?send-async-json-rpc-error', async () => {
+			const sendAsync = Reflect.get(fakeWindow.ethereum, 'sendAsync')
+			if (typeof sendAsync !== 'function') throw new Error('sendAsync is unavailable')
+			const callbackArguments = await new Promise<readonly [unknown, unknown]>((resolve) => {
+				void sendAsync({ id: 71, method: 'eth_chainId', params: [] }, (error: unknown, response: unknown) => resolve([error, response]))
+			})
+
+			assert.equal(callbackArguments[0], null)
+			const response = callbackArguments[1]
+			if (!isRecord(response) || !isRecord(response.error)) throw new Error('Malformed JSON-RPC error response')
+			assert.equal(response.id, 71)
+			assert.equal(response.error.code, -32000)
+			assert.equal(response.error.message, 'RPC failed')
+		})
+	})
+
+	test('returns bridge transport failures through the sendAsync error argument', async () => {
+		const { fakeWindow, signerRequests } = createFakeWindow()
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?send-async-transport-error', async () => {
+			await waitFor(() => signerRequests.includes('eth_chainId'))
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			const sendAsync = Reflect.get(fakeWindow.ethereum, 'sendAsync')
+			if (typeof sendAsync !== 'function') throw new Error('sendAsync is unavailable')
+			const postMessageDescriptor = Object.getOwnPropertyDescriptor(MessagePort.prototype, 'postMessage')
+			if (postMessageDescriptor === undefined) throw new Error('MessagePort.postMessage descriptor is unavailable')
+			Object.defineProperty(MessagePort.prototype, 'postMessage', {
+				...postMessageDescriptor,
+				value: () => { throw new Error('bridge transport failed') },
+			})
+			let callbackArguments: readonly [unknown, unknown]
+			try {
+				callbackArguments = await new Promise<readonly [unknown, unknown]>((resolve) => {
+					void sendAsync({ id: 72, method: 'eth_chainId', params: [] }, (error: unknown, response: unknown) => resolve([error, response]))
+				})
+			} finally {
+				Object.defineProperty(MessagePort.prototype, 'postMessage', postMessageDescriptor)
+			}
+
+			assert.equal(callbackArguments[0] instanceof Error, true)
+			if (!(callbackArguments[0] instanceof Error)) throw new Error('Expected a transport Error')
+			assert.equal(callbackArguments[0].message, 'bridge transport failed')
+			assert.equal(callbackArguments[1], null)
+		})
+	})
+
+	test('does not invoke a sendAsync callback twice when the dapp callback throws', async () => {
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method !== 'eth_chainId' || request.internal === true) return false
+				sendBackgroundMessage({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: request.method,
+					error: { code: -32000, message: 'RPC failed' },
+				})
+				return true
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?send-async-callback-error', async () => {
+			const sendAsync = Reflect.get(fakeWindow.ethereum, 'sendAsync')
+			if (typeof sendAsync !== 'function') throw new Error('sendAsync is unavailable')
+			let callbackCount = 0
+			await assert.rejects(async () => await sendAsync({ id: 73, method: 'eth_chainId', params: [] }, () => {
+				callbackCount += 1
+				throw new Error('dapp callback failed')
+			}), /dapp callback failed/)
+			assert.equal(callbackCount, 1)
+		})
+	})
+
 	test('annotates only public eth_requestAccounts requests for replay after disconnect', async () => {
 		const bridgeRequests: InpageRequest[] = []
 		const account = '0x1111111111111111111111111111111111111111'
@@ -550,6 +638,41 @@ describe('inpage signer bridge', () => {
 			error: { code: 4900, message: 'No signer wallet is available to this page. Enable your wallet extension for this site, then try again.' },
 		}])
 		assert.deepEqual(connectedToSignerParams, [[false, 'NoSigner', 1]])
+	})
+
+	test('preserves large chain IDs in the legacy networkVersion compatibility property', async () => {
+		const largeChainId = '0x20000000000001'
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundReply) => {
+				if (request.method === 'connected_to_signer') {
+					sendBackgroundReply({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: { metamaskCompatibilityMode: true },
+					})
+					return true
+				}
+				if (request.method !== 'eth_chainId') return false
+				sendBackgroundReply({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: request.method,
+					result: largeChainId,
+				})
+				return true
+			},
+		})
+		Reflect.deleteProperty(fakeWindow, 'ethereum')
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?large-network-version', async () => {
+			const provider = Reflect.get(fakeWindow, 'ethereum')
+			if (!isRecord(provider) || typeof provider.request !== 'function') throw new Error('Interceptor provider was not installed')
+			assert.equal(await provider.request({ method: 'eth_chainId' }), largeChainId)
+			assert.equal(provider.networkVersion, '9007199254740993')
+		})
 	})
 
 	test('reports a fresh signer epoch when the background requests reconnect status', async () => {
@@ -1730,7 +1853,9 @@ describe('inpage signer bridge', () => {
 			assert.deepEqual((fakeWindow as { web3?: { accounts?: unknown } }).web3?.accounts, [signerAccount])
 
 			const accountEvents: unknown[] = []
+			const disconnectEvents: unknown[] = []
 			provider.on('accountsChanged', (accounts) => accountEvents.push(accounts))
+			provider.on('disconnect', (error) => disconnectEvents.push(error))
 			sendBackgroundMessage({
 				interceptorApproved: true,
 				type: 'result',
@@ -1745,6 +1870,7 @@ describe('inpage signer bridge', () => {
 			})
 			await waitFor(() => provider.selectedAddress === undefined && !provider.isConnected())
 			assert.deepEqual(accountEvents, [[]])
+			assert.deepEqual(disconnectEvents, [{ name: 'disconnect', code: 4900, message: 'Provider disconnected from all chains.' }])
 			assert.deepEqual(provider.send({ id: 4, method: 'eth_accounts', params: [] }).result, [])
 			assert.deepEqual((fakeWindow as { web3?: { accounts?: unknown } }).web3?.accounts, [])
 		})
@@ -1873,18 +1999,11 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
-	test('delivers request-scoped connect and accountsChanged before eth_requestAccounts resumes even when address is cached', async () => {
+	test('delivers request-scoped accountsChanged without connect before eth_requestAccounts resumes even when address is cached', async () => {
 		const signerAccount = '0x1111111111111111111111111111111111111111'
 		const { fakeWindow, sendBackgroundMessage, signerRequests } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageForRequest) => {
 				if (request.method !== 'eth_requestAccounts') return false
-				sendBackgroundMessageForRequest({
-					interceptorApproved: true,
-					requestId: request.requestId,
-					type: 'result',
-					method: 'connect',
-					result: ['0x1'],
-				})
 				sendBackgroundMessageForRequest({
 					interceptorApproved: true,
 					requestId: request.requestId,
@@ -1943,11 +2062,11 @@ describe('inpage signer bridge', () => {
 
 			assert.deepEqual(accountReply, [signerAccount])
 			assert.deepEqual(accountEvents, [[signerAccount]])
-			assert.deepEqual(events, ['connect', 'accountsChanged', 'resolved'])
+			assert.deepEqual(events, ['accountsChanged', 'resolved'])
 		})
 	})
 
-	test('delivers request-scoped connect and accountsChanged before wallet_requestPermissions resumes', async () => {
+	test('delivers request-scoped accountsChanged without connect before wallet_requestPermissions resumes', async () => {
 		const signerAccount = '0x1212121212121212121212121212121212121212'
 		const permissions = [{
 			parentCapability: 'eth_accounts',
@@ -1960,13 +2079,6 @@ describe('inpage signer bridge', () => {
 		const { fakeWindow, signerRequests } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessageForRequest) => {
 				if (request.method !== 'wallet_requestPermissions') return false
-				sendBackgroundMessageForRequest({
-					interceptorApproved: true,
-					requestId: request.requestId,
-					type: 'result',
-					method: 'connect',
-					result: ['0x1'],
-				})
 				sendBackgroundMessageForRequest({
 					interceptorApproved: true,
 					requestId: request.requestId,
@@ -2008,7 +2120,7 @@ describe('inpage signer bridge', () => {
 			})
 
 			assert.deepEqual(permissionReply, permissions)
-			assert.deepEqual(events, ['connect', 'accountsChanged', 'resolved'])
+			assert.deepEqual(events, ['accountsChanged', 'resolved'])
 		})
 	})
 
@@ -2898,6 +3010,12 @@ describe('inpage signer bridge', () => {
 			await waitFor(() => backgroundMessages.some((message) => message.method === 'eth_accounts_reply' && (message.params?.[0] as { requestAccounts: boolean } | undefined)?.requestAccounts === false))
 			signerEvents.chainChanged!('0x2a')
 			await waitFor(() => backgroundMessages.some((message) => message.method === 'signer_chainChanged' && message.params?.[0] === '0x2a'))
+			const chainChangeCount = backgroundMessages.filter((message) => message.method === 'signer_chainChanged').length
+			signerEvents.chainChanged!('42')
+			await waitFor(() => backgroundMessages.filter((message) => message.method === 'signer_chainChanged' && message.params?.[0] === '0x2a').length >= 2)
+			assert.equal(backgroundMessages.filter((message) => message.method === 'signer_chainChanged').length > chainChangeCount, true)
+			signerEvents.chainChanged!('1garbage')
+			await waitFor(() => backgroundMessages.some((message) => message.method === 'signer_chainChanged' && message.params?.[0] === '1garbage'))
 		})
 	})
 
@@ -2958,6 +3076,39 @@ describe('inpage signer bridge', () => {
 				;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = previousCustomEvent
 			}
 		}
+	})
+
+	test('settles a forwarded storage read directly from the signer reply', async () => {
+		const storageValue = `0x${ '42'.padStart(64, '0') }`
+		const storageParams = ['0xE592427A0AEce92De3Edee1F18E0157C05861564', '0x0', 'latest'] as const
+		const forwardedSignerRequests: SignerRequest[] = []
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method !== 'eth_getStorageAt') return false
+				sendBackgroundMessage({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'forwardToSigner',
+					method: request.method,
+					params: request.params,
+					replyWithSignersReply: true,
+				})
+				return true
+			},
+			handleSignerRequest: (request) => {
+				if (request.method !== 'eth_getStorageAt') return undefined
+				forwardedSignerRequests.push(request)
+				return storageValue
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?forwarded-storage-read', async () => {
+			const provider = fakeWindow.ethereum as {
+				request: (payload: { method: string, params?: readonly unknown[] }) => Promise<unknown>
+			}
+			assert.equal(await provider.request({ method: 'eth_getStorageAt', params: storageParams }), storageValue)
+		})
+		assert.deepEqual(forwardedSignerRequests, [{ method: 'eth_getStorageAt', params: storageParams }])
 	})
 
 	test('preserves string JSON-RPC error data from signer replies', async () => {

@@ -5,7 +5,7 @@ import { BlockTimeManipulation, CompleteVisualizedSimulation, EthereumSubscripti
 import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addressBookTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { SignerName } from '../types/signerTypes.js'
+import { SignerName, SigningAddressPreferences } from '../types/signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
@@ -13,6 +13,7 @@ import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { ICON_ACCESS_DENIED } from './constants.js'
+import { hasOwnKey } from './methodHandlers.js'
 
 type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
 const IdsOfOpenedTabs = funtypes.Intersect(
@@ -50,9 +51,16 @@ export const RichListElement = funtypes.ReadonlyObject({
 	type: funtypes.Union(funtypes.Literal('CurrentActiveAddress'), funtypes.Literal('PreviousActiveAddress'), funtypes.Literal('UserAdded')),
 })
 
-const LocalStorageItemsRuntype = funtypes.ReadonlyPartial({
-	activeSigningAddress: EthereumAddressOrMissing,
-	activeSimulationAddress: EthereumAddressOrMissing,
+// ReadonlyPartial drops a property whose serialized value represents `undefined`. These presence-aware alternatives preserve the distinction between "not stored" and "explicitly cleared", which the settings migration and update paths rely on.
+const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSimulationAddress') => funtypes.Union(
+	funtypes.ReadonlyObject({ [propertyName]: EthereumAddressOrMissing })
+		.withConstraint((item) => hasOwnKey(item, propertyName)),
+	funtypes.ReadonlyPartial({ [propertyName]: funtypes.Unknown })
+		.withConstraint((item) => !hasOwnKey(item, propertyName)),
+)
+const OptionalActiveSigningAddressStorageProperty = presenceAwareOptionalAddress('activeSigningAddress')
+const OptionalActiveSimulationAddressStorageProperty = presenceAwareOptionalAddress('activeSimulationAddress')
+const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	openedPageV2: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
 	websiteAccess: WebsiteAccessArray,
@@ -64,6 +72,7 @@ const LocalStorageItemsRuntype = funtypes.ReadonlyPartial({
 	interceptorTransactionStack: funtypes.Union(funtypes.Undefined, InterceptorTransactionStack),
 	popupVisualisation: funtypes.Union(funtypes.Undefined, CompleteVisualizedSimulation),
 	signerName: SignerName,
+	signingAddressPreferences: SigningAddressPreferences,
 	currentTabId: funtypes.Union(funtypes.Undefined, funtypes.Number),
 	rpcConnectionStatus: RpcConnectionStatus,
 	ethereumSubscriptionsAndFilters: EthereumSubscriptionsAndFilters,
@@ -86,7 +95,7 @@ const LocalStorageItemsRuntype = funtypes.ReadonlyPartial({
 	pendingWatchAssetRequests: funtypes.ReadonlyArray(StoredWatchAssetRequest),
 	popupRefreshGeneration: funtypes.Number,
 	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
-})
+}), OptionalActiveSigningAddressStorageProperty, OptionalActiveSimulationAddressStorageProperty)
 type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
 
@@ -105,6 +114,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('interceptorTransactionStack'),
 	funtypes.Literal('popupVisualisation'),
 	funtypes.Literal('signerName'),
+	funtypes.Literal('signingAddressPreferences'),
 	funtypes.Literal('currentTabId'),
 	funtypes.Literal('rpcConnectionStatus'),
 	funtypes.Literal('ethereumSubscriptionsAndFilters'),

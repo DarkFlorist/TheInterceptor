@@ -1,17 +1,15 @@
 import { type EthereumClientService, getNextBlockTimeStampOverride } from './EthereumClientService.js'
 import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
-import { type EthereumUnsignedTransaction, type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction, type EthereumBlockHeaderTransaction } from '../../types/wire-types.js'
-import { addressString, bigintSecondsToDate, bigintToUint8Array, bytes32String, calculateWeightedPercentile, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
-import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR, ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
-import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock, BlockTimeManipulationDeltaUnit, ExecutionSimulatedTransaction, ExecutionSimulationState, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState, WebsiteCreatedEthereumTransaction } from '../../types/visualizer-types.js'
+import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
+import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
+import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock, ExecutionSimulatedTransaction, ExecutionSimulationState, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState } from '../../types/visualizer-types.js'
 import type { Abi } from '../../utils/ethereumPrimitives.js'
-import { privateKeyToAccount, stringToBytes, keccak256, hashMessage, hashTypedData } from '../../utils/ethereumPrimitives.js'
-import { EthereumUnsignedTransactionToUnsignedTransaction, type IUnsignedTransaction1559, type IUnsignedTransaction7702, rlpEncode, serializeSignedTransactionToBytes } from '../../utils/ethereum.js'
+import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
+import { type IUnsignedTransaction1559, type IUnsignedTransaction7702, rlpEncode } from '../../utils/ethereum.js'
 import type { EthGetLogsResponse, EthGetLogsRequest, EthGetStorageAtResponse, EthTransactionReceiptResponse, PartialEthereumTransaction, EthGetFeeHistoryResponse, FeeHistory } from '../../types/JsonRpc-types.js'
-import { handleERC1155TransferBatch, handleERC1155TransferSingle } from '../logHandlers.js'
 import { assertNever, modifyObject } from '../../utils/typescript.js'
-import type { PersonalSignParams, SignMessageParams } from '../../types/jsonRpc-signing-types.js'
-import type { EthSimulateV1BlockHeader, EthSimulateV1BlockTag, EthSimulateV1CallResult, EthSimulateV1Params, EthSimulateV1Result, EthereumEvent, StateOverrides } from '../../types/ethSimulate-types.js'
+import type { EthSimulateV1BlockHeader, EthSimulateV1BlockTag, EthSimulateV1CallResult, EthSimulateV1Params, EthSimulateV1Result, StateOverrides } from '../../types/ethSimulate-types.js'
 import type { BlockCalls as SimulateBlockCalls } from '../../types/ethSimulate-types.js'
 import { stripLeadingZeros } from '../../utils/typed-arrays.js'
 import { getMakeCurrentAddressRich, getSettings } from '../../background/settings.js'
@@ -20,78 +18,23 @@ import { deduplicateByFunction, last } from '../../utils/array.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
 import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
 import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
-import { decodeCallDataLoose, decodeEventLoose, decodeFunctionOutput, decodeFunctionOutputSafely, encodeFunctionCall, type AbiLike } from '../../utils/abiRuntime.js'
+import { decodeFunctionOutput, decodeFunctionOutputSafely, encodeFunctionCall } from '../../utils/abiRuntime.js'
 import { Erc20ABI, Erc1155ABI } from '../../utils/abi.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
-import { createEip1559Or7702Transaction, hasEip7702AuthorizationSignature, hasPartialEip7702AuthorizationSignature, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
+import { createEip1559Or7702Transaction, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
-import { parseTransactionIfPossible } from '../../utils/calldata.js'
+import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
+import { getGasEstimateFromSimulation, jsonRpcErrorToGasEstimate } from './simulationGasEstimation.js'
+import { calculateRealizedEffectiveGasPrice, getBlockTimeManipulationSeconds, getNextBaseFeePerGas } from './simulationBlockParameters.js'
+import { getSignedTransactionForSimulation, mockSignTransaction } from './simulationTransactionSigning.js'
+import { getMessageHashForPersonalSign, simulatePersonalSign } from './simulationPersonalSigning.js'
+import { type BalanceQuery, getTokenBalanceQueriesForTransaction } from './simulationTokenBalanceQueries.js'
+
+export { getSignedTransactionForSimulation, mockSignTransaction }
+export { getMessageHashForPersonalSign, simulatePersonalSign }
 
 type SuccessfulExecutionSimulationState = Extract<ExecutionSimulationState, { success: true }>
-
-type GasEstimate = { error: ErrorWithCodeAndOptionalData } | { gas: bigint }
-
-const gasEstimationError = (message: string): GasEstimate => ({ error: {
-	code: ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED,
-	message,
-	data: '0x',
-} })
-
-const jsonRpcErrorToGasEstimate = (error: JsonRpcResponseError): GasEstimate => {
-	const safeParsedData = EthereumData.safeParse(error.data)
-	return { error: { code: error.code, message: error.message, data: safeParsedData.success ? dataStringWith0xStart(safeParsedData.value) : '0x' } }
-}
-
-const failedSimulationToGasEstimate = (result: Extract<EthSimulateV1CallResult, { status: 'failure' }>): GasEstimate => ({
-	error: { ...result.error, data: dataStringWith0xStart(result.returnData) },
-})
-
-// This is a wallet policy buffer, not an Ethereum protocol gas cost. The node-provided
-// peak is increased by 25% so small state changes between estimation and mining do not
-// make the submitted transaction run out of gas.
-const addGasEstimateSafetyBuffer = (gas: bigint) => (gas * 125n + 99n) / 100n
-
-const getGasEstimateFromSimulation = async (
-	initialResult: EthSimulateV1CallResult,
-	maxGas: bigint,
-	simulateWithGasLimit: (gasLimit: bigint) => Promise<EthSimulateV1CallResult | undefined>,
-): Promise<GasEstimate> => {
-	if (initialResult.status === 'failure') return failedSimulationToGasEstimate(initialResult)
-	const nodeReportedPeakGas = initialResult.maxUsedGas
-	if (nodeReportedPeakGas !== undefined) {
-		if (nodeReportedPeakGas > maxGas) return gasEstimationError(
-			`Node-reported peak gas ${ nodeReportedPeakGas.toString() } exceeds the available block gas ${ maxGas.toString() }`,
-		)
-		return { gas: min(addGasEstimateSafetyBuffer(nodeReportedPeakGas), maxGas) }
-	}
-
-	// maxUsedGas is a widely implemented eth_simulateV1 extension, but it is not yet
-	// required by the RPC specification. For nodes that omit it, discover a working
-	// limit by rerunning the exact call. This delegates fork-specific gas rules to the
-	// execution client instead of duplicating mutable protocol constants here.
-	let candidate = min(addGasEstimateSafetyBuffer(initialResult.gasUsed), maxGas)
-	while (true) {
-		try {
-			const verificationResult = await simulateWithGasLimit(candidate)
-			if (verificationResult === undefined) return gasEstimationError('ETH Simulate Failed to estimate gas')
-			if (verificationResult.status === 'success') return { gas: min(addGasEstimateSafetyBuffer(candidate), maxGas) }
-			if (candidate === maxGas) return failedSimulationToGasEstimate(verificationResult)
-		} catch (error: unknown) {
-			if (!(error instanceof JsonRpcResponseError)) throw error
-			if (candidate === maxGas) return jsonRpcErrorToGasEstimate(error)
-		}
-		const largerCandidate = min(max(candidate * 2n, 1n), maxGas)
-		if (largerCandidate === candidate) return gasEstimationError(
-			`Unable to find a successful gas limit within the available block gas ${ maxGas.toString() }`,
-		)
-		candidate = largerCandidate
-	}
-}
-
-const MOCK_PUBLIC_PRIVATE_KEY = 0x1n // key used to sign mock transactions
-const MOCK_SIMULATION_PRIVATE_KEY = 0x2n // key used to sign simulated transatons
-const ADDRESS_FOR_PRIVATE_KEY_ONE = 0x7E5F4552091A69125d5DfCb7b8C2659029395Bdfn
 const GET_CODE_CONTRACT = 0x1ce438391307f908756fefe0fe220c0f0d51508an
 const getCodeAbi = [
 	{
@@ -106,8 +49,6 @@ const getCodeAbi = [
 const getCodeStateOverrides = (): StateOverrides => ({
 	[addressString(GET_CODE_CONTRACT)]: { code: getCodeByteCode() },
 })
-
-export const DEFAULT_BLOCK_MANIPULATION = { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' } as const
 
 type GroupedEthSimulateV1BlockResult = {
 	inputBlock: SimulationStateInputMinimalDataBlock
@@ -258,12 +199,14 @@ const resolveSimulationBlockTag = (
 	return blockTag
 }
 
+const isNodeOnlyBlockTag = (blockTag: EthereumBlockTag): blockTag is 'earliest' | 'safe' | 'finalized' => blockTag === 'earliest' || blockTag === 'safe' || blockTag === 'finalized'
+
 const canQueryNodeDirectlyFromInput = (
 	baseBlockNumber: bigint,
 	executionBlockCount: number,
 	blockTag: EthereumBlockTag = 'latest',
 ) => {
-	if (blockTag === 'finalized') return true
+	if (isNodeOnlyBlockTag(blockTag)) return true
 	if (executionBlockCount === 0) return true
 	if (typeof blockTag === 'bigint' && blockTag <= baseBlockNumber) return true
 	return false
@@ -307,7 +250,7 @@ export function getInputFieldFromDataOrInput(request: { input?: Uint8Array} | { 
 }
 
 export const getSimulatedTransactionCount = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, address: bigint, blockTag: EthereumBlockTag = 'latest') => {
-	if (blockTag === 'finalized' || simulationState.kind === 'passthrough') return await ethereumClientService.getTransactionCount(address, blockTag, requestAbortController)
+	if (isNodeOnlyBlockTag(blockTag) || simulationState.kind === 'passthrough') return await ethereumClientService.getTransactionCount(address, blockTag, requestAbortController)
 	const currentState = simulationState.value
 	if (currentState.success === false) throw new JsonRpcResponseError(currentState.jsonRpcError)
 	const blockNumToUseForSim = blockTag === 'latest' || blockTag === 'pending' ? currentState.blockNumber + BigInt(currentState.simulatedBlocks.length) : blockTag
@@ -334,6 +277,18 @@ export const getSimulatedTransactionCount = async (ethereumClientService: Ethere
 type Simulated1559BlockCall = Pick<IUnsignedTransaction1559, 'type' | 'from' | 'chainId' | 'nonce' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'to' | 'value' | 'input'> & Partial<Pick<IUnsignedTransaction1559, 'gasLimit' | 'accessList'>>
 type Simulated7702BlockCall = Pick<IUnsignedTransaction7702, 'type' | 'from' | 'chainId' | 'nonce' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'to' | 'value' | 'input' | 'authorizationList'> & Partial<Pick<IUnsignedTransaction7702, 'gasLimit' | 'accessList'>>
 type SimulatedBlockCall = Simulated1559BlockCall | Simulated7702BlockCall
+type SimulatedCallParams = Pick<IUnsignedTransaction1559, 'to' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'input' | 'value'> & Partial<Pick<IUnsignedTransaction1559, 'from' | 'gasLimit' | 'accessList'>>
+
+export const createSimulationCallParams = (callParams: PartialEthereumTransaction, from: bigint): SimulatedCallParams => ({
+	from,
+	maxFeePerGas: callParams.gasPrice ?? callParams.maxFeePerGas ?? 0n,
+	maxPriorityFeePerGas: callParams.gasPrice === undefined ? callParams.maxPriorityFeePerGas ?? 0n : 0n,
+	...(callParams.gas === undefined ? {} : { gasLimit: callParams.gas }),
+	to: callParams.to === undefined ? null : callParams.to,
+	value: callParams.value ?? 0n,
+	input: getInputFieldFromDataOrInput(callParams),
+	accessList: callParams.accessList ?? [],
+})
 
 type SimulateBlockCallOptions = {
 	extraOverrides?: StateOverrides
@@ -344,13 +299,6 @@ type SimulateBlockCallOptions = {
 const isInactivePrecompileRelocationError = (error: unknown) => error instanceof JsonRpcResponseError
 	&& error.message.toLowerCase().includes('not a precompile')
 
-type IUnsigned7702Authorization = IUnsignedTransaction7702['authorizationList'][number]
-type ISigned7702Authorization = IUnsigned7702Authorization & {
-	readonly yParity: 'even' | 'odd'
-	readonly r: bigint
-	readonly s: bigint
-}
-
 const getTransactionNonceContribution = (transaction: EthereumSendableSignedTransaction, address: bigint) => {
 	const senderContribution = transaction.from === address ? 1n : 0n
 	if (transaction.type !== '7702') return senderContribution
@@ -358,12 +306,6 @@ const getTransactionNonceContribution = (transaction: EthereumSendableSignedTran
 		(contribution, authorization) => authorization.authority === address ? contribution + 1n : contribution,
 		senderContribution,
 	)
-}
-
-const mockSign7702Authorization = (authorization: IUnsigned7702Authorization): ISigned7702Authorization => {
-	if (hasEip7702AuthorizationSignature(authorization)) return authorization
-	if (hasPartialEip7702AuthorizationSignature(authorization)) throw new Error('EIP-7702 authorization signature is missing required fields')
-	return { ...authorization, r: 0n, s: 0n, yParity: 'even' }
 }
 
 const createSimulatedBlockCall = (transaction: SimulatedBlockCall): SimulateBlockCalls['calls'][number] => {
@@ -451,15 +393,14 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 		from: sendAddress,
 		chainId: ethereumClientService.getChainId(),
 		nonce: await transactionCount,
-		// Ideally, we would estimate using the correct base fee and priority fee values.
-		// However, doing so would require the account to hold enough ETH to cover the gas cost of an entire block, which is not a reasonable expectation.
+		// Ideally, we would estimate using the correct base fee and priority fee values. However, doing so would require the account to hold enough ETH to cover the gas cost of an entire block, which is not a reasonable expectation.
 		maxFeePerGas: 0n,
 		maxPriorityFeePerGas: 0n ,
 		...(data.gas === undefined ? {} : { gasLimit: data.gas }),
 		to: data.to === undefined ? null : data.to,
 		value: data.value === undefined ? 0n : data.value,
 		input: getInputFieldFromDataOrInput(data),
-		accessList: []
+		accessList: data.accessList ?? []
 	}
 	const estimateGasTransaction = await createEip1559Or7702Transaction(estimateGasTransactionBase, data)
 	try {
@@ -480,54 +421,10 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 	}
 }
 
-// calculates gas price for receipts
-export const calculateRealizedEffectiveGasPrice = (transaction: EthereumUnsignedTransaction, blocksBaseFeePerGas: bigint) => {
-	if ('gasPrice' in transaction) return transaction.gasPrice
-	return min(blocksBaseFeePerGas + transaction.maxPriorityFeePerGas, transaction.maxFeePerGas)
-}
-
-export const mockSignTransaction = (transaction: EthereumUnsignedTransaction) : EthereumSendableSignedTransaction => {
-	const unsignedTransaction = EthereumUnsignedTransactionToUnsignedTransaction(transaction)
-	if (unsignedTransaction.type === 'legacy') {
-		const signatureParams = { r: 0n, s: 0n, v: 0n }
-		const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams })))
-		if (transaction.type !== 'legacy') throw new Error('types do not match')
-		return { ...transaction, ...signatureParams, hash }
-	}
-	if (unsignedTransaction.type === '7702') {
-		const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
-		const authorizationList = unsignedTransaction.authorizationList.map(mockSign7702Authorization)
-		const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams, authorizationList })))
-		if (transaction.type !== '7702') throw new Error('types do not match')
-		return { ...transaction, ...signatureParams, hash, authorizationList }
-	}
-	const signatureParams = { r: 0n, s: 0n, yParity: 'even' as const }
-	const hash = EthereumQuantity.parse(keccak256(serializeSignedTransactionToBytes({ ...unsignedTransaction, ...signatureParams })))
-	if (transaction.type === 'legacy' || transaction.type === '7702') throw new Error('types do not match')
-	return { ...transaction, ...signatureParams, hash }
-}
-
-export const getSignedTransactionForSimulation = (transactionToSimulate: WebsiteCreatedEthereumTransaction) => (
-	transactionToSimulate.signedTransaction ?? mockSignTransaction(transactionToSimulate.transaction)
-)
-
 export const getAddressToMakeRich = async () => {
 	const settings = await getSettings()
 	if (!settings.simulationMode) return undefined
 	return await getMakeCurrentAddressRich() ? settings.activeSimulationAddress : undefined
-}
-
-export const getBlockTimeManipulationSeconds = (deltaToAdd: EthereumQuantity, deltaUnit: BlockTimeManipulationDeltaUnit) => {
-	switch(deltaUnit) {
-		case 'Seconds': return deltaToAdd
-		case 'Minutes': return deltaToAdd * 60n
-		case 'Hours': return deltaToAdd * 60n * 60n
-		case 'Days': return deltaToAdd * 60n * 60n * 24n
-		case 'Weeks': return deltaToAdd * 60n * 60n * 24n * 7n
-		case 'Months': return deltaToAdd * 60n * 60n * 24n * 30n
-		case 'Years': return deltaToAdd * 60n * 60n * 24n * 365n
-		default: assertNever(deltaUnit)
-	}
 }
 
 export const groupEthSimulateV1ResultByInputBlocks = (prepared: PreparedEthSimulateV1Input, result: EthSimulateV1Result): GroupedEthSimulateV1Result => {
@@ -936,7 +833,7 @@ export const getBaseFeeAdjustedTransactions = (
 }
 
 const canQueryNodeDirectly = async (simulationState: SimulationState, blockTag: EthereumBlockTag = 'latest') => {
-	if (blockTag === 'finalized'
+	if (isNodeOnlyBlockTag(blockTag)
 		|| (simulationState.success && simulationState.simulatedBlocks.length === 0)
 		|| (simulationState.success && typeof blockTag === 'bigint' && blockTag <= simulationState.blockNumber)
 	){
@@ -946,7 +843,7 @@ const canQueryNodeDirectly = async (simulationState: SimulationState, blockTag: 
 }
 
 export const getDeployedContractAddress = (from: EthereumAddress, nonce: EthereumQuantity): EthereumAddress => {
-	return BigInt(`0x${ keccak256(rlpEncode([stripLeadingZeros(bigintToUint8Array(from, 20)), stripLeadingZeros(bigintToUint8Array(nonce, 32))])).slice(26) }`)
+	return BigInt(`0x${ keccak256(rlpEncode([bigintToUint8Array(from, 20), stripLeadingZeros(bigintToUint8Array(nonce, 32))])).slice(26) }`)
 }
 
 export const getSimulatedTransactionReceipt = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedExecutionSimulationState, hash: bigint): Promise<EthTransactionReceiptResponse> => {
@@ -1063,14 +960,6 @@ export const getSimulatedCode = async (ethereumClientService: EthereumClientServ
 		throw error
 	}
 }
-// ported from: https://github.com/ethereum/go-ethereum/blob/509a64ffb9405942396276ae111d06f9bded9221/consensus/misc/eip1559/eip1559.go#L55
-const getNextBaseFeePerGas = (parentGasUsed: bigint, parentGasLimit: bigint, parentBaseFeePerGas: bigint) => {
-	const parentGasTarget = parentGasLimit / ETHEREUM_EIP1559_ELASTICITY_MULTIPLIER
-	if (parentGasUsed === parentGasTarget) return parentBaseFeePerGas
-	if (parentGasUsed > parentGasTarget) return parentBaseFeePerGas + max(1n, parentBaseFeePerGas * (parentGasUsed - parentGasTarget) / parentGasTarget / ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR)
-	return max(0n, parentBaseFeePerGas - parentBaseFeePerGas * (parentGasTarget - parentGasUsed) / parentGasTarget / ETHEREUM_EIP1559_BASEFEECHANGEDENOMINATOR)
-}
-
 const getSimulatedMockBlockFromPreparedContext = async (
 	context: PreparedSimulationExecutionContext,
 	blockIndex: number,
@@ -1346,13 +1235,13 @@ const simulatedCallWithPreparedInputContext = async (
 	ethereumClientService: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 	context: PreparedSimulationExecutionContext | undefined,
-	params: Pick<IUnsignedTransaction1559, 'to' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'input' | 'value'> & Partial<Pick<IUnsignedTransaction1559, 'from' | 'gasLimit'>>,
+	params: SimulatedCallParams,
 	blockTag: EthereumBlockTag = 'latest',
 	extraOverrides: StateOverrides = {},
 ) => {
-	if (blockTag === 'finalized') {
+	if (isNodeOnlyBlockTag(blockTag)) {
 		try {
-			return { result: await ethereumClientService.call(params, 'finalized', requestAbortController) }
+			return { result: await ethereumClientService.call(params, blockTag, requestAbortController) }
 		} catch(error: unknown) {
 			if (error instanceof JsonRpcResponseError) {
 				const safeParsedData = EthereumData.safeParse(error.data)
@@ -1388,7 +1277,7 @@ export const simulatedCallFromInput = async (
 	ethereumClientService: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 	simulationStateInput: ResolvedSimulationInput,
-	params: Pick<IUnsignedTransaction1559, 'to' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'input' | 'value'> & Partial<Pick<IUnsignedTransaction1559, 'from' | 'gasLimit'>>,
+	params: SimulatedCallParams,
 	blockTag: EthereumBlockTag = 'latest',
 ) => {
 	return await simulatedCallWithPreparedInputContext(
@@ -1475,10 +1364,7 @@ export const getSimulatedStorageAtFromInput = async (
 		},
 	)
 
-	// Precompile availability varies by chain and fork. Relocation asks the node
-	// whether a reserved address is active and prevents precompile dispatch from
-	// taking precedence over the injected storage-reader code. Inactive reserved
-	// addresses are retried without relocation.
+	// Precompile availability varies by chain and fork. Relocation asks the node whether a reserved address is active and prevents precompile dispatch from taking precedence over the injected storage-reader code. Inactive reserved addresses are retried without relocation.
 	let result
 	if (address >= 0n && address <= PRECOMPILE_RESERVED_ADDRESS_MAX) {
 		try {
@@ -1555,7 +1441,7 @@ export const simulateEstimateGasFromInput = async (
 		to: data.to === undefined ? null : data.to,
 		value: data.value === undefined ? 0n : data.value,
 		input: getInputFieldFromDataOrInput(data),
-		accessList: []
+		accessList: data.accessList ?? []
 	}
 	const estimateGasTransaction = await createEip1559Or7702Transaction(estimateGasTransactionBase, data)
 	try {
@@ -1619,7 +1505,7 @@ export async function getSimulatedBlock(ethereumClientService: EthereumClientSer
 export async function getSimulatedBlock(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>
 export async function getSimulatedBlock(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, blockTag: EthereumBlockTag, fullObjects: false): Promise<EthereumBlockHeaderWithTransactionHashes>
 export async function getSimulatedBlock(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, blockTag: EthereumBlockTag = 'latest', fullObjects = true): Promise<EthereumBlockHeader | EthereumBlockHeaderWithTransactionHashes>  {
-	if (simulationState.kind === 'passthrough' || blockTag === 'finalized' || await canQueryNodeDirectly(simulationState.value, blockTag)) {
+	if (simulationState.kind === 'passthrough' || isNodeOnlyBlockTag(blockTag) || await canQueryNodeDirectly(simulationState.value, blockTag)) {
 		return await ethereumClientService.getBlock(requestAbortController, blockTag, fullObjects)
 	}
 	const currentState = simulationState.value
@@ -1663,6 +1549,7 @@ const getLogsOfPreparedSimulatedExecutionBlock = (executionBlock: PreparedSimula
 
 	return events.filter((x) =>
 		(logFilter.address === undefined
+			|| logFilter.address === null
 			|| x.address === logFilter.address
 			|| (Array.isArray(logFilter.address) && logFilter.address.includes(x.address))
 		)
@@ -1670,8 +1557,13 @@ const getLogsOfPreparedSimulatedExecutionBlock = (executionBlock: PreparedSimula
 	)
 }
 
-const resolveLogsBlockTag = (blockTag: EthereumBlockTag, latestBlockNumber: bigint) => {
+const resolveLogsBlockTag = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, blockTag: EthereumBlockTag, latestBlockNumber: bigint) => {
 	if (blockTag === 'latest' || blockTag === 'pending') return latestBlockNumber
+	if (isNodeOnlyBlockTag(blockTag)) {
+		const block = await ethereumClientService.getBlock(requestAbortController, blockTag, false)
+		if (block === null) throw new Error(`Block '${ blockTag }' was not found`)
+		return block.number
+	}
 	return blockTag
 }
 
@@ -1686,16 +1578,14 @@ export const getSimulatedLogs = async (ethereumClientService: EthereumClientServ
 	if (toBlock === 'pending' || fromBlock === 'pending') return await ethereumClientService.getLogs(logFilter, requestAbortController)
 	if ((fromBlock === 'latest' && toBlock !== 'latest') || (fromBlock !== 'latest' && toBlock !== 'latest' && fromBlock > toBlock )) throw new Error(`From block '${ fromBlock }' is later than to block '${ toBlock }' `)
 
-	if (toBlock === 'finalized' || fromBlock === 'finalized') return await ethereumClientService.getLogs(logFilter, requestAbortController)
 	const simulatedHead = currentState.blockNumber + BigInt(executionBlocks.length)
 	if ('blockHash' in logFilter) {
 		const executionBlock = executionBlocks.find((block) => logFilter.blockHash === block.blockHash)
 		if (executionBlock !== undefined) return getLogsOfPreparedSimulatedExecutionBlock(executionBlock, logFilter)
 		return await ethereumClientService.getLogs(logFilter, requestAbortController)
 	}
-	const fromBlockNum = resolveLogsBlockTag(fromBlock, simulatedHead)
-	const toBlockNum = resolveLogsBlockTag(toBlock, simulatedHead)
-	if (typeof fromBlockNum !== 'bigint' || typeof toBlockNum !== 'bigint') return await ethereumClientService.getLogs(logFilter, requestAbortController)
+	const fromBlockNum = await resolveLogsBlockTag(ethereumClientService, requestAbortController, fromBlock, simulatedHead)
+	const toBlockNum = await resolveLogsBlockTag(ethereumClientService, requestAbortController, toBlock, simulatedHead)
 	if (fromBlockNum > toBlockNum) return []
 	const nodeLogs = fromBlockNum <= currentState.blockNumber
 		? await ethereumClientService.getLogs({
@@ -1758,10 +1648,10 @@ export const getSimulatedTransactionByHash = async (ethereumClientService: Ether
 	return await ethereumClientService.getTransactionByHash(hash, requestAbortController)
 }
 
-const simulatedCall = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, params: Pick<IUnsignedTransaction1559, 'to' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'input' | 'value'> & Partial<Pick<IUnsignedTransaction1559, 'from' | 'gasLimit'>>, blockTag: EthereumBlockTag = 'latest', extraOverrides: StateOverrides = {}) => {
-	if (blockTag === 'finalized') {
+export const simulatedCall = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, params: Pick<IUnsignedTransaction1559, 'to' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'input' | 'value'> & Partial<Pick<IUnsignedTransaction1559, 'from' | 'gasLimit'>>, blockTag: EthereumBlockTag = 'latest', extraOverrides: StateOverrides = {}) => {
+	if (isNodeOnlyBlockTag(blockTag)) {
 		try {
-			return { result: await ethereumClientService.call(params, 'finalized', requestAbortController) }
+			return { result: await ethereumClientService.call(params, blockTag, requestAbortController) }
 		} catch(error: unknown) {
 			if (error instanceof JsonRpcResponseError) {
 				const safeParsedData = EthereumData.safeParse(error.data)
@@ -1822,39 +1712,6 @@ const getSimulatedBlockHeaderTemplate = (simulationState: SimulationState, block
 	return simulationState.simulatedBlocks[blockDelta]?.blockHeader
 }
 
-export const getMessageHashForPersonalSign = (params: PersonalSignParams) => hashMessage({ raw: stringToUint8Array(params.params[0]) })
-
-export const simulatePersonalSign = async (params: SignMessageParams, signingAddress: EthereumAddress) => {
-	const account = privateKeyToAccount(bytes32String(signingAddress === ADDRESS_FOR_PRIVATE_KEY_ONE ? MOCK_PUBLIC_PRIVATE_KEY : MOCK_SIMULATION_PRIVATE_KEY))
-	switch (params.method) {
-		case 'eth_signTypedData': throw new Error('No support for eth_signTypedData')
-		case 'eth_signTypedData_v1':
-		case 'eth_signTypedData_v2':
-		case 'eth_signTypedData_v3':
-		case 'eth_signTypedData_v4': {
-			const messageHash = hashTypedData(params.params[1])
-			const signature = await account.signTypedData(params.params[1])
-			return { signature, messageHash }
-		}
-		case 'personal_sign': return {
-			signature: await account.signMessage({ message: { raw: stringToUint8Array(params.params[0]) } }),
-			messageHash: getMessageHashForPersonalSign(params)
-		}
-		default: assertNever(params)
-	}
-}
-
-type BalanceQuery = {
-	type: 'ERC20',
-	token: bigint,
-	owner: bigint,
-} | {
-	type: 'ERC1155',
-	token: bigint,
-	owner: bigint,
-	tokenId: bigint,
-}
-
 const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationStateInput: SimulationStateInputMinimalData, balanceQueries: BalanceQuery[]): Promise<TokenBalancesAfter> => {
 	if (balanceQueries.length === 0) return []
 	const deduplicatedBalanceQueries = deduplicateByFunction(balanceQueries, (query: BalanceQuery) => `${ query.type }-${ query.token }-${ query.owner }${ query.type === 'ERC1155' ? `${ query.tokenId }` : '' }`)
@@ -1906,78 +1763,6 @@ const getSimulatedTokenBalances = async (ethereumClientService: EthereumClientSe
 	})
 }
 
-export const parseEventIfPossible = (abi: AbiLike, log: EthereumEvent) => {
-	try {
-		return decodeEventLoose(abi, { topics: log.topics.map((x) => bytes32String(x)), data: dataStringWith0xStart(log.data) })
-	} catch (error) {
-		return undefined
-	}
-}
-
-export const parseTransactionInputIfPossible = (abi: AbiLike, data: EthereumData, value: EthereumQuantity) => {
-	try {
-		return decodeCallDataLoose(abi, dataStringWith0xStart(data), value)
-	} catch (error) {
-		return undefined
-	}
-}
-
-const getAddressesInteractedWithErc20s = (events: readonly EthereumEvent[]): { token: bigint, owner: bigint, tokenId: undefined, type: 'ERC20' }[] => {
-	const tokenOwners: { token: bigint, owner: bigint, tokenId: undefined, type: 'ERC20' }[] = []
-	for (const log of events) {
-		const parsed = parseEventIfPossible(Erc20ABI, log)
-		if (parsed === undefined) continue
-		const base = { token: log.address, tokenId: undefined, type: 'ERC20' as const }
-		switch (parsed.name) {
-			case 'Withdrawal':
-			case 'Deposit': {
-				const owner = parsed.args[0]
-				tokenOwners.push({ ...base, owner: EthereumAddress.parse(owner) })
-				break
-			}
-			case 'Approval':
-			case 'Transfer': {
-				const owner = parsed.args[0]
-				const other = parsed.args[1]
-				tokenOwners.push({ ...base, owner: EthereumAddress.parse(owner) })
-				tokenOwners.push({ ...base, owner: EthereumAddress.parse(other) })
-				break
-			}
-			default: throw new Error(`wrong name: ${ parsed.name }`)
-		}
-	}
-	return tokenOwners
-}
-
-const getAddressesAndTokensIdsInteractedWithErc1155s = (events: readonly EthereumEvent[]): { token: bigint, owner: bigint, tokenId: bigint, type: 'ERC1155' }[] => {
-	const tokenOwners: { token: bigint, owner: bigint, tokenId: bigint, type: 'ERC1155' }[] = []
-	for (const log of events) {
-		const parsed = parseEventIfPossible(Erc1155ABI, log)
-		if (parsed === undefined) continue
-		const base = { token: log.address, type: 'ERC1155' as const }
-		switch (parsed.name) {
-			case 'TransferSingle': {
-				const parsedLog = handleERC1155TransferSingle(log)[0]
-				if (parsedLog === undefined) break
-				if (parsedLog.type !== 'ERC1155') continue
-				tokenOwners.push({ ...base, owner: parsedLog.from, tokenId: parsedLog.tokenId })
-				tokenOwners.push({ ...base, owner: parsedLog.to, tokenId: parsedLog.tokenId })
-				break
-			}
-			case 'TransferBatch': {
-				for (const parsedLog of handleERC1155TransferBatch(log)) {
-					if (parsedLog.type !== 'ERC1155') continue
-					tokenOwners.push({ ...base, owner: parsedLog.from, tokenId: parsedLog.tokenId })
-					tokenOwners.push({ ...base, owner: parsedLog.to, tokenId: parsedLog.tokenId })
-				}
-				break
-			}
-			default: throw new Error(`wrong name: ${ parsed.name }`)
-		}
-	}
-	return tokenOwners
-}
-
 type TokenBalancesBlocksAfter = {
 	blocks: {
 		transactions: { tokenBalancesAfter: TokenBalancesAfter }[]
@@ -1991,18 +1776,7 @@ export const getTokenBalancesAfterForTransaction = async (
 	callResult: EthSimulateV1CallResult,
 	transaction: EthereumSendableSignedTransaction,
 ): Promise<TokenBalancesAfter> => {
-	const events = callResult.status === 'success' ? callResult.logs : []
-	const attemptedTransfer = parseTransactionIfPossible(transaction)
-	const attemptedErc20BalanceQuery = attemptedTransfer?.name === 'transfer' && transaction.to !== null
-		? [{ token: transaction.to, owner: transaction.from, tokenId: undefined, type: 'ERC20' as const }]
-		: []
-	const erc20sAddresses = [
-		{ token: ETHEREUM_LOGS_LOGGER_ADDRESS, owner: transaction.from, tokenId: undefined, type: 'ERC20' as const }, // add original sender for eth always, as there's always gas payment
-		...attemptedErc20BalanceQuery,
-		...getAddressesInteractedWithErc20s(events)
-	]
-	const erc1155AddressIds = getAddressesAndTokensIdsInteractedWithErc1155s(events)
-	return getSimulatedTokenBalances(ethereumClientService, requestAbortController, simulationStateInput, [...erc20sAddresses, ...erc1155AddressIds])
+	return getSimulatedTokenBalances(ethereumClientService, requestAbortController, simulationStateInput, getTokenBalanceQueriesForTransaction(callResult, transaction))
 }
 
 const sliceSimulationStateInput = (simulationStateInput: SimulationStateInput, blockIndex: number, transactionIndex: number) => {
@@ -2066,36 +1840,12 @@ const getTokenBalancesAfter = async (
 	}
 }
 
-// takes the most recent block that the application is querying and does the calculation based on that
 export const getSimulatedFeeHistory = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, request: FeeHistory): Promise<EthGetFeeHistoryResponse> => {
-	//const numberOfBlocks = Number(request.params[0]) // number of blocks, not used atm as we just return one block
 	const blockTag = request.params[1]
-	const rewardPercentiles = request.params[2]
 	const currentRealBlockNumber = await ethereumClientService.getBlockNumber(requestAbortController)
 	const clampedBlockTag = typeof blockTag === 'bigint' && blockTag > currentRealBlockNumber ? currentRealBlockNumber : blockTag
-	const newestBlock = await ethereumClientService.getBlock(requestAbortController, clampedBlockTag, true)
-	if (newestBlock === null) throw new Error('The latest block is null')
-	const newestBlockBaseFeePerGas = newestBlock.baseFeePerGas
-	if (newestBlockBaseFeePerGas === undefined) throw new Error(`base fee per gas is missing for the block (it's too old)`)
-	return {
-		baseFeePerGas: [newestBlockBaseFeePerGas, getNextBaseFeePerGas(newestBlock.gasUsed, newestBlock.gasLimit, newestBlockBaseFeePerGas)],
-		gasUsedRatio: [Number(newestBlock.gasUsed) / Number(newestBlock.gasLimit)],
-		oldestBlock: newestBlock.number,
-		...rewardPercentiles === undefined ? {} : {
-			reward: [rewardPercentiles.map((percentile) => {
-				// we are using transaction.gas as a weighting factor while this should be `gasUsed`. Getting `gasUsed` requires getting transaction receipts, which we don't want to be doing
-				const getDataPoint = (tx: EthereumBlockHeaderTransaction) => {
-					if ('maxPriorityFeePerGas' in tx && 'maxFeePerGas' in tx && 'gas' in tx) return { dataPoint: min(tx.maxPriorityFeePerGas, tx.maxFeePerGas - (newestBlockBaseFeePerGas ?? 0n)), weight: tx.gas }
-					if ('gasPrice' in tx && 'gas' in tx) return { dataPoint: tx.gasPrice - (newestBlockBaseFeePerGas ?? 0n), weight: tx.gas }
-					return { dataPoint: 0n, weight: 0n }
-				}
-
-				const effectivePriorityAndGasWeights = newestBlock.transactions.map((tx) => getDataPoint(tx))
-
-				// we can have negative values here, as The Interceptor creates maxFeePerGas = 0 transactions that are intended to have zero base fee, which is not possible in reality
-				const zeroOutNegativeValues = effectivePriorityAndGasWeights.map((point) => modifyObject(point, { dataPoint: max(0n, point.dataPoint) }))
-				return calculateWeightedPercentile(zeroOutNegativeValues, BigInt(percentile))
-			})]
-		}
-	}
+	const clampedRequest: FeeHistory = request.params.length === 2
+		? { ...request, params: [request.params[0], clampedBlockTag] }
+		: { ...request, params: [request.params[0], clampedBlockTag, request.params[2]] }
+	return await ethereumClientService.getFeeHistory(clampedRequest, requestAbortController)
 }

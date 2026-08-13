@@ -152,7 +152,7 @@ describe('wallet_watchAsset', () => {
 	})
 
 	test('rejects invalid decimal hints before identifying or storing token data', async () => {
-		for (const decimals of [-1, 1.5, 37, Number.MAX_SAFE_INTEGER + 1]) {
+		for (const decimals of [-1, 1.5, 256, Number.MAX_SAFE_INTEGER + 1]) {
 			const requestWithInvalidDecimals = { ...interceptedRequest, params: [{ type: 'ERC20', options: { address: tokenAddress, chainId: 1, decimals } }] }
 			const parsed = WalletWatchAsset.parse(requestWithInvalidDecimals)
 			let identifyCount = 0
@@ -165,14 +165,14 @@ describe('wallet_watchAsset', () => {
 			expect(reply).toEqual({
 				type: 'result',
 				method: 'wallet_watchAsset',
-				error: { code: -32602, message: 'The asset decimals must be an integer from 0 to 36.' },
+				error: { code: -32602, message: 'The asset decimals must be an integer from 0 to 255.' },
 			})
 			expect(identifyCount).toBe(0)
 		}
 	})
 
 	test('accepts ERC-20 decimal boundary hints', () => {
-		for (const decimals of [0, 36]) {
+		for (const decimals of [0, 37, 255]) {
 			const parsed = WalletWatchAsset.parse({ ...interceptedRequest, params: [{ type: 'ERC20', options: { address: tokenAddress, chainId: 1, decimals } }] })
 			expect(validateWatchAssetParameters(parsed, 1n)).toBeUndefined()
 		}
@@ -452,6 +452,22 @@ describe('wallet_watchAsset', () => {
 		expect(queuedRequests[0]?.requestedAsset.type).toBe('ERC1046')
 		expect(queuedRequests[0]?.token).toMatchObject({ type: 'ERC20', name: 'Metadata Token', symbol: 'META', decimals: 6n })
 		expect(queuedRequests[0]?.proposedImageUrl).toBe('https://tokens.example/token.png')
+	})
+
+	test('rejects ERC1046 metadata decimals outside the uint8 range', async () => {
+		const rawRequest = { ...interceptedRequest, params: [{ type: 'ERC1046' as const, options: { address: tokenAddress, chainId: 1 } }] }
+		const parsed = WalletWatchAsset.parse(rawRequest)
+		let scheduled = false
+		const reply = await handleWatchAssetRequest(ethereum, websiteTabConnections, rawRequest, website, parsed, {
+			identifyAddress: async (_ethereum, _abortController, address) => ({ type: 'contract', address }),
+			loadErc20: async () => ({ success: true, metadata: { name: undefined, symbol: undefined, decimals: undefined } }),
+			loadErc1046: async () => ({ success: true, metadata: { metadataUri: 'https://tokens.example/token.json', name: 'Metadata Token', symbol: 'META', decimals: 256, description: undefined, imageUrl: undefined } }),
+			getAddressBookEntries: async () => [],
+			scheduleDialog: () => { scheduled = true },
+		})
+
+		expect(reply).toEqual({ type: 'result', method: 'wallet_watchAsset', error: { code: -32602, message: 'The ERC1046 metadata decimals must be an integer between 0 and 255.' } })
+		expect(scheduled).toBeFalse()
 	})
 
 	test('returns MetaMask-compatible NFT ownership errors to the webpage', async () => {

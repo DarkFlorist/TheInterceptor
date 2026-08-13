@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { readInterceptorAppCss } from './cssTestUtils.js'
 
 function expectRule(css: string, selector: string) {
 	const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -10,7 +11,7 @@ function expectRule(css: string, selector: string) {
 
 describe('narrow text layout CSS', () => {
 	test('keeps checkbox labels and dropdown text constrained inside narrow containers', async () => {
-		const css = await Bun.file('app/css/interceptor.css').text()
+		const css = await readInterceptorAppCss()
 
 		const formControl = expectRule(css, '.form-control')
 		assert.match(formControl, /grid-template-columns\s*:\s*1em minmax\(0,\s*1fr\)\s*;/)
@@ -19,6 +20,114 @@ describe('narrow text layout CSS', () => {
 
 		const checkboxText = expectRule(css, '.form-control .checkbox-text')
 		assert.match(checkboxText, /overflow-wrap\s*:\s*anywhere\s*;/)
+
+		const safeSignerOption = expectRule(css, '.safe-signer-option')
+		assert.match(safeSignerOption, /align-items\s*:\s*center\s*;/)
+		assert.match(safeSignerOption, /width\s*:\s*100%\s*;/)
+		assert.match(css, /\.safe-signer-option:has\(\[type=radio\]:not\(:disabled\)\)\s*\{[\s\S]*?cursor\s*:\s*pointer\s*;/)
+		assert.match(css, /\.safe-signer-option \[type=radio\]:not\(:disabled\)\s*\{[\s\S]*?cursor\s*:\s*pointer\s*;/)
+		assert.match(css, /\.safe-signer-option:has\(\[type=radio\]:checked\):before\s*\{[\s\S]*?background\s*:\s*var\(--white-color\)\s*;/)
+
+		const safeSignerAddress = expectRule(css, '.safe-signer-option-address')
+		assert.match(safeSignerAddress, /grid-column\s*:\s*2\s*;/)
+		assert.match(safeSignerAddress, /display\s*:\s*flex\s*;/)
+		assert.match(safeSignerAddress, /overflow\s*:\s*hidden\s*;/)
+
+		const safeSignerAddressText = expectRule(css, '.safe-signer-option-address > code')
+		assert.match(safeSignerAddressText, /text-overflow\s*:\s*ellipsis\s*;/)
+		assert.match(safeSignerAddressText, /white-space\s*:\s*nowrap\s*;/)
+
+		const retrievalStatus = expectRule(css, '.popup-home-retrieval-status')
+		assert.match(retrievalStatus, /align-items\s*:\s*center\s*;/)
+		assert.match(retrievalStatus, /grid-template-columns\s*:\s*minmax\(0,\s*1fr\) max-content\s*;/)
+
+		const retrievalSource = expectRule(css, '.popup-home-retrieval-source')
+		assert.match(retrievalSource, /align-items\s*:\s*center\s*;/)
+		assert.match(retrievalSource, /display\s*:\s*inline-flex\s*;/)
+
+		const safeSignerConnectionMessage = expectRule(css, '.safe-signer-connection-message')
+		assert.match(safeSignerConnectionMessage, /max-width\s*:\s*100%\s*;/)
+		assert.match(safeSignerConnectionMessage, /overflow-wrap\s*:\s*anywhere\s*;/)
+
+		const safeSignerHomeDropdown = expectRule(css, '.safe-signer-address .dropdown-menu,\n.safe-signer-address .dropdown-content')
+		assert.match(safeSignerHomeDropdown, /box-sizing\s*:\s*border-box\s*;/)
+		assert.match(safeSignerHomeDropdown, /max-width\s*:\s*100%\s*;/)
+		assert.match(safeSignerHomeDropdown, /width\s*:\s*100%\s*;/)
+		const safeSignerHomeMenu = expectRule(css, '.safe-signer-address .dropdown-menu')
+		assert.match(safeSignerHomeMenu, /min-width\s*:\s*0\s*;/)
+		const safeSignerHomeOption = expectRule(css, '.safe-signer-home-option')
+		assert.match(safeSignerHomeOption, /min-width\s*:\s*0\s*;/)
+		assert.match(safeSignerHomeOption, /width\s*:\s*100%\s*;/)
+		const staticBigAddress = expectRule(css, '.multiline-card--static')
+		assert.match(staticBigAddress, /max-width\s*:\s*100%\s*;/)
+		assert.match(staticBigAddress, /width\s*:\s*100%\s*;/)
+		const staticBigAddressText = expectRule(css, '.multiline-card--static data')
+		assert.match(staticBigAddressText, /overflow-wrap\s*:\s*anywhere\s*;/)
+		assert.match(staticBigAddressText, /word-break\s*:\s*break-all\s*;/)
+
+		const dropdownHover = expectRule(css, 'a.dropdown-item:hover,\nbutton.dropdown-item:hover,\na.dropdown-item:focus-visible,\nbutton.dropdown-item:focus-visible')
+		assert.match(dropdownHover, /background-color\s*:\s*color-mix\(/)
+		assert.match(dropdownHover, /color\s*:\s*var\(--text-color\)\s*;/)
+
+		const safeSignerOwnerList = expectRule(css, '.safe-signer-owner-list')
+		assert.match(safeSignerOwnerList, /display\s*:\s*grid\s*;/)
+		const safeSignerOwnerOption = expectRule(css, '.safe-signer-owner-option')
+		assert.match(safeSignerOwnerOption, /grid-template-columns\s*:\s*max-content minmax\(0,\s*1fr\)\s*;/)
+		assert.match(safeSignerOwnerOption, /min-width\s*:\s*0\s*;/)
+
+		const addressEditorFields = expectRule(css, '.address-editor-fields')
+		assert.match(addressEditorFields, /display\s*:\s*grid\s*;/)
+		assert.match(addressEditorFields, /min-width\s*:\s*0\s*;/)
+		const readonlyAddress = expectRule(css, '.address-editor-readonly-address')
+		assert.match(readonlyAddress, /overflow-wrap\s*:\s*anywhere\s*;/)
+		assert.match(readonlyAddress, /white-space\s*:\s*normal\s*;/)
+		const addressField = expectRule(css, '.address-editor-address-field')
+		assert.match(addressField, /flex\s*:\s*1 1 100%\s*;/)
+		assert.match(addressField, /grid-template-columns\s*:\s*max-content minmax\(0,\s*1fr\)\s*;/)
+		assert.match(addressField, /width\s*:\s*100%\s*;/)
+		const addressInput = expectRule(css, '.address-editor-address-input')
+		assert.match(addressInput, /field-sizing\s*:\s*content\s*;/)
+		assert.match(addressInput, /overflow-wrap\s*:\s*anywhere\s*;/)
+		assert.match(addressInput, /white-space\s*:\s*pre-wrap\s*;/)
+		assert.match(addressInput, /word-break\s*:\s*break-all\s*;/)
+		const addressFields = expectRule(css, '.address-editor-fields')
+		assert.match(addressFields, /container-type\s*:\s*inline-size\s*;/)
+		const identity = expectRule(css, '.address-editor-identity')
+		assert.match(identity, /display\s*:\s*grid\s*;/)
+		assert.match(identity, /min-width\s*:\s*0\s*;/)
+		const primaryIdentity = expectRule(css, '.address-editor-primary-identity')
+		assert.match(primaryIdentity, /grid-template-columns\s*:\s*44px minmax\(0,\s*1fr\)\s*;/)
+		assert.match(primaryIdentity, /width\s*:\s*100%\s*;/)
+		const addressIconFrame = expectRule(css, '.address-icon-frame')
+		assert.match(addressIconFrame, /height\s*:\s*1em\s*;/)
+		assert.match(addressIconFrame, /width\s*:\s*1em\s*;/)
+		const emptyAddressIconFrame = expectRule(css, '.address-icon-frame--empty')
+		assert.match(emptyAddressIconFrame, /border\s*:\s*1px solid var\(--layout-line-color\)\s*;/)
+		const identityControls = expectRule(css, '.address-editor-identity-controls')
+		assert.match(identityControls, /display\s*:\s*grid\s*;/)
+		assert.match(identityControls, /grid-template-columns\s*:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)\s*;/)
+		assert.match(identityControls, /min-width\s*:\s*0\s*;/)
+		assert.match(expectRule(css, '.address-editor-name-field'), /grid-column\s*:\s*1 \/ -1\s*;/)
+		assert.match(expectRule(css, '.address-editor-chain-field'), /grid-column\s*:\s*2\s*;/)
+		assert.match(expectRule(css, '.address-editor-type-field'), /grid-row\s*:\s*2\s*;/)
+		const addressEditorDropdownMenu = expectRule(css, '.address-editor-field .dropdown-menu')
+		assert.match(addressEditorDropdownMenu, /left\s*:\s*auto\s*;/)
+		assert.match(addressEditorDropdownMenu, /right\s*:\s*0\s*;/)
+		assert.match(addressEditorDropdownMenu, /width\s*:\s*100%\s*;/)
+		const addressEditorDropdownContent = expectRule(css, '.address-editor-field .dropdown-content')
+		assert.match(addressEditorDropdownContent, /position\s*:\s*static\s*;/)
+		assert.match(addressEditorDropdownContent, /width\s*:\s*100%\s*;/)
+		const addressEditorDisclosureChevron = expectRule(css, '.address-editor-disclosure-chevron')
+		assert.match(addressEditorDisclosureChevron, /display\s*:\s*inline-flex\s*;/)
+		assert.match(addressEditorDisclosureChevron, /height\s*:\s*16px\s*;/)
+		assert.doesNotMatch(css, /summary::?after\s*\{/)
+		const addressEditorSection = expectRule(css, '.address-editor-section')
+		assert.match(addressEditorSection, /border-radius\s*:\s*8px\s*;/)
+		const addressEditorSectionHeading = expectRule(css, '.address-editor-section-heading')
+		assert.match(addressEditorSectionHeading, /align-items\s*:\s*center\s*;/)
+		const safeSignerOwnerAddress = expectRule(css, '.safe-signer-owner-option > .inline-card')
+		assert.match(safeSignerOwnerAddress, /max-width\s*:\s*100%\s*;/)
+		assert.match(safeSignerOwnerAddress, /min-width\s*:\s*0\s*;/)
 
 		const dropdownText = expectRule(css, '.dropdown button > .truncate')
 		assert.match(dropdownText, /min-width\s*:\s*0\s*;/)
@@ -91,7 +200,7 @@ describe('narrow text layout CSS', () => {
 	})
 
 	test('lets simulation stack rows use the available page width', async () => {
-		const css = await Bun.file('app/css/interceptor.css').text()
+		const css = await readInterceptorAppCss()
 
 		const simulationStackPage = expectRule(css, '.simulation-stack-page')
 		assert.match(simulationStackPage, /--grid-column\s*:\s*1 \/ -1\s*;/)
@@ -101,6 +210,20 @@ describe('narrow text layout CSS', () => {
 
 		const simulationStackHeader = expectRule(css, '.simulation-stack-page-header')
 		assert.match(simulationStackHeader, /padding\s*:\s*1rem clamp\(0\.75rem,\s*2vw,\s*1\.5rem\)\s*;/)
+		assert.match(simulationStackHeader, /display\s*:\s*grid\s*;/)
+
+		const simulationStackActions = expectRule(css, '.simulation-stack-page-actions')
+		assert.match(simulationStackActions, /border-radius\s*:\s*8px\s*;/)
+		assert.match(simulationStackActions, /display\s*:\s*grid\s*;/)
+
+		const simulationStackActionGroup = expectRule(css, '.simulation-stack-action-group')
+		assert.match(simulationStackActionGroup, /display\s*:\s*flex\s*;/)
+		assert.match(simulationStackActionGroup, /flex-wrap\s*:\s*wrap\s*;/)
+
+		const simulationStackActionControls = expectRule(css, '.simulation-stack-action-controls')
+		assert.match(simulationStackActionControls, /flex-wrap\s*:\s*wrap\s*;/)
+		assert.match(css, /\.simulation-stack-page-clear > \.simulation-stack-clear-label\s*\{[\s\S]*?display\s*:\s*none\s*;/)
+		assert.doesNotMatch(css, /\.simulation-stack-page-clear > span:last-child/)
 
 		const simulationStackHeaderDirectChild = expectRule(css, '.simulation-stack-page > .simulation-stack-page-header')
 		assert.match(simulationStackHeaderDirectChild, /background-color\s*:\s*var\(--bg-color\)\s*;/)
@@ -134,7 +257,7 @@ describe('narrow text layout CSS', () => {
 	})
 
 	test('uses flexible button height and stacks address book card actions at ultra-narrow widths', async () => {
-		const css = await Bun.file('app/css/interceptor.css').text()
+		const css = await readInterceptorAppCss()
 
 		const button = expectRule(css, ':where(.btn)')
 		assert.match(button, /box-sizing\s*:\s*border-box\s*;/)

@@ -10,17 +10,27 @@ type RuntimeMessage = {
 
 type BrowserMockOptions = {
 	readonly registerError?: Error
+	readonly updateError?: Error
 	readonly executeScriptError?: Error
 	readonly tabUrl?: string
 	readonly hasVisibleTabUrl?: boolean
 	readonly tabUrlAfterStorageRead?: string
+	readonly registeredContentScriptIds?: readonly string[]
 }
 
-function installBrowserMock({ registerError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead }: BrowserMockOptions = {}) {
+type RegisteredContentScript = {
+	readonly id: string
+	readonly excludeMatches?: readonly string[]
+}
+
+function installBrowserMock({ registerError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [] }: BrowserMockOptions = {}) {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
 	const executedScriptFiles: string[] = []
+	const registeredContentScripts = new Map(registeredContentScriptIds.map((id) => [id, { id }]))
 	let executeScriptCalls = 0
+	const scriptingOperations: string[] = []
+	const unregisteredContentScriptIdBatches: string[][] = []
 	let currentTabUrl = tabUrl
 	let committedListener: ((details: browser.webNavigation._OnCommittedDetails) => unknown) | undefined
 	const getStorageItems = (keys?: string | string[] | Record<string, unknown> | null) => {
@@ -58,10 +68,22 @@ function installBrowserMock({ registerError, executeScriptError, tabUrl = 'https
 				},
 			},
 			scripting: {
-				async unregisterContentScripts() { return undefined },
-				async registerContentScripts() {
+				async unregisterContentScripts(filter?: { readonly ids?: readonly string[] }) {
+					scriptingOperations.push('unregister')
+					const ids = filter?.ids === undefined ? [...registeredContentScripts.keys()] : [...filter.ids]
+					unregisteredContentScriptIdBatches.push(ids)
+					for (const id of ids) registeredContentScripts.delete(id)
+				},
+				async getRegisteredContentScripts() { return [...registeredContentScripts.values()] },
+				async registerContentScripts(scripts: readonly RegisteredContentScript[]) {
+					scriptingOperations.push('register')
 					if (registerError !== undefined) throw registerError
-					return undefined
+					for (const script of scripts) registeredContentScripts.set(script.id, script)
+				},
+				async updateContentScripts(scripts: readonly RegisteredContentScript[]) {
+					scriptingOperations.push('update')
+					if (updateError !== undefined) throw updateError
+					for (const script of scripts) registeredContentScripts.set(script.id, script)
 				},
 			},
 			tabs: {
@@ -108,6 +130,9 @@ function installBrowserMock({ registerError, executeScriptError, tabUrl = 'https
 	return {
 		storageState,
 		sentMessages,
+		getRegisteredContentScripts() { return [...registeredContentScripts.values()] },
+		getScriptingOperations() { return [...scriptingOperations] },
+		getUnregisteredContentScriptIdBatches() { return unregisteredContentScriptIdBatches.map((ids) => [...ids]) },
 		getExecuteScriptCalls() { return executeScriptCalls },
 		getExecutedScriptFiles() { return [...executedScriptFiles] },
 		getCommittedListener() {
@@ -144,19 +169,30 @@ function getManifestV2WebAccessibleResources() {
 }
 
 describe('content script injection strategy', () => {
-	test('keeps manifest v3 exclusions scoped to the approved scheme and exact host', async () => {
+	test('creates valid, exact manifest v3 exclusions without admitting malformed stored origins', async () => {
 		installBrowserMock()
-		const { websiteOriginToMatchPattern } = await loadModules()
+		const { getManifestV3ExcludeMatches } = await loadModules()
 
-		assert.equal(websiteOriginToMatchPattern('http://example.test'), 'http://example.test/*')
-		assert.equal(websiteOriginToMatchPattern('https://example.test'), 'https://example.test/*')
-		assert.equal(websiteOriginToMatchPattern('https://subdomain.example.test'), 'https://subdomain.example.test/*')
-		assert.equal(websiteOriginToMatchPattern('https://example.test:8443'), 'https://example.test:8443/*')
-		assert.notEqual(websiteOriginToMatchPattern('https://example.test'), websiteOriginToMatchPattern('http://example.test'))
-		assert.equal(websiteOriginToMatchPattern('example.test'), '*://example.test/*')
-		assert.equal(websiteOriginToMatchPattern('example.test:443'), '*://example.test:443/*')
-		assert.equal(websiteOriginToMatchPattern(''), 'file://*/*')
-		assert.equal(websiteOriginToMatchPattern('https://'), undefined)
+		assert.deepEqual(getManifestV3ExcludeMatches([
+			'',
+			'example.com',
+			'localhost:3000',
+			'127.0.0.1:8545',
+			'[::1]:8545',
+			'https://secure.example',
+			'https://subdomain.example',
+			'https://localhost:4443',
+			'https://invalid.example/path',
+		]), [
+			'file:///*',
+			'*://example.com/*',
+			'*://localhost:3000/*',
+			'*://127.0.0.1:8545/*',
+			'*://[::1]:8545/*',
+			'https://secure.example/*',
+			'https://subdomain.example/*',
+			'https://localhost:4443/*',
+		])
 	})
 
 	test('preserves legacy manifest v2 interceptor-disabled behavior without treating it as an access grant', async () => {
@@ -203,6 +239,32 @@ describe('content script injection strategy', () => {
 		assert.equal(latestUnexpectedError?.data.message, 'registration failed')
 		assert.equal(latestUnexpectedError?.data.code, 'content_script_registration_failed')
 		assert.equal(sentMessages.at(-1)?.method, 'popup_UnexpectedErrorOccured')
+	})
+
+	test('registers missing scripts, updates existing definitions, and then prunes obsolete registrations', async () => {
+		const { getRegisteredContentScripts, getScriptingOperations, getUnregisteredContentScriptIdBatches } = installBrowserMock({ registeredContentScriptIds: ['inpage', 'obsolete-inpage'] })
+		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
+
+		await updateContentScriptInjectionStrategyManifestV3()
+
+		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2'])
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
+		assert.deepEqual(getScriptingOperations(), ['register', 'update', 'unregister'])
+		assert.deepEqual(getUnregisteredContentScriptIdBatches(), [['obsolete-inpage']])
+	})
+
+	test('keeps existing and obsolete manifest v3 content scripts registered when an update fails', async () => {
+		const { getRegisteredContentScripts, getScriptingOperations, getUnregisteredContentScriptIdBatches } = installBrowserMock({
+			registeredContentScriptIds: ['inpage', 'inpage2', 'obsolete-inpage'],
+			updateError: new Error('update failed'),
+		})
+		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
+
+		await withSilencedConsole(async () => await updateContentScriptInjectionStrategyManifestV3())
+
+		assert.deepEqual(getScriptingOperations(), ['update'])
+		assert.deepEqual(getUnregisteredContentScriptIdBatches(), [])
+		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2', 'obsolete-inpage'])
 	})
 
 	test('keeps missing-tab manifest v2 injection failures ignored', async () => {

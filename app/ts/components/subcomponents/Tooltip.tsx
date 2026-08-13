@@ -8,17 +8,32 @@ export type TooltipConfig = {
 	duration?: number
 }
 
+type TooltipTimer = ReturnType<typeof globalThis.setTimeout>
+
+export function scheduleTooltipDismissal(
+	config: Signal<TooltipConfig | undefined>,
+	activeConfig: TooltipConfig,
+	schedule: (callback: () => void, duration: number) => TooltipTimer = globalThis.setTimeout,
+	cancel: (timer: TooltipTimer) => void = globalThis.clearTimeout,
+) {
+	const timer = schedule(() => {
+		if (config.peek() === activeConfig) config.value = undefined
+	}, activeConfig.duration ?? 1500)
+	return () => cancel(timer)
+}
+
 export function Tooltip({ config }: { config: Signal<TooltipConfig | undefined> }) {
 	const popoverRef = useRef<HTMLDivElement>(null)
 
 	useSignalEffect(() => {
-		if (!config.value) {
+		const activeConfig = config.value
+		if (activeConfig === undefined) {
 			popoverRef.current?.hidePopover()
 			return
 		}
 
 		popoverRef.current?.showPopover()
-		setTimeout(() => { config.value = undefined }, config.value.duration || 1500)
+		return scheduleTooltipDismissal(config, activeConfig)
 	})
 
 	return (

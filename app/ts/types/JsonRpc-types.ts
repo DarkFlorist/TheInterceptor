@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { EthereumAccessList, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignatureParity, LiteralConverterParserFactory } from './wire-types.js'
+import { CanonicalEthereumQuantity, EthereumAccessList, EthereumAddress, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, EthereumBlockTag, EthereumBytes256, EthereumBytes32, EthereumData, EthereumInput, EthereumQuantity, EthereumSignatureParity, LiteralConverterParserFactory } from './wire-types.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
 import { EthSimulateV1Params } from './ethSimulate-types.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
@@ -7,8 +7,7 @@ import { ErrorWithCodeAndOptionalData } from './error.js'
 import { checksummedAddress } from '../utils/bigint.js'
 
 export type EthGetStorageAtResponse = funtypes.Static<typeof EthGetStorageAtResponse>
-// Some clients return bare `0x` for an empty storage slot. Accept it as zero;
-// RPC replies still serialize through EthereumBytes32's canonical 32-byte form.
+// Some clients return bare `0x` for an empty storage slot. Accept it as zero; RPC replies still serialize through EthereumBytes32's canonical 32-byte form.
 const EmptyEthGetStorageAtResponse = funtypes.String.withParser({
 	parse: value => value === '0x'
 		? { success: true, value: 0n }
@@ -23,16 +22,14 @@ export const EthGetStorageAtResponse = funtypes.Union(
 )
 
 export type EthGetLogsRequest = funtypes.Static<typeof EthGetLogsRequest>
-export const EthGetLogsRequest = funtypes.Intersect(
-	funtypes.Union(
-		funtypes.ReadonlyObject({ blockHash: EthereumBytes32 }).asReadonly(),
-		funtypes.Partial({ fromBlock: EthereumBlockTag, toBlock: EthereumBlockTag }).asReadonly(),
-	),
-	funtypes.Partial({
-		address: funtypes.Union(EthereumAddress, funtypes.ReadonlyArray(EthereumAddress), funtypes.Null),
-		topics: funtypes.ReadonlyArray(funtypes.Union(EthereumBytes32, funtypes.ReadonlyArray(EthereumBytes32), funtypes.Null)),
-	}).asReadonly()
-)
+export const EthGetLogsRequest = funtypes.ReadonlyPartial({
+	blockHash: EthereumBytes32,
+	blockhash: funtypes.Never,
+	fromBlock: EthereumBlockTag,
+	toBlock: EthereumBlockTag,
+	address: funtypes.Union(EthereumAddress, funtypes.ReadonlyArray(EthereumAddress), funtypes.Null),
+	topics: funtypes.ReadonlyArray(funtypes.Union(EthereumBytes32, funtypes.ReadonlyArray(EthereumBytes32), funtypes.Null)),
+}).withConstraint((logFilter) => logFilter.blockHash === undefined || (logFilter.fromBlock === undefined && logFilter.toBlock === undefined))
 
 export type EthGetLogsResponse = funtypes.Static<typeof EthGetLogsResponse>
 export const EthGetLogsResponse = funtypes.ReadonlyArray(
@@ -253,9 +250,9 @@ export const EstimateGasParams = funtypes.ReadonlyObject({
 export type EthCallParams = funtypes.Static<typeof EthCallParams>
 export const EthCallParams = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_call'),
-	params: funtypes.ReadonlyTuple(
-		PartialEthereumTransaction,
-		EthereumBlockTag
+	params: funtypes.Union(
+		funtypes.ReadonlyTuple(PartialEthereumTransaction),
+		funtypes.ReadonlyTuple(PartialEthereumTransaction, EthereumBlockTag),
 	)
 }).asReadonly()
 
@@ -326,6 +323,19 @@ export type WalletRevokePermissions = funtypes.Static<typeof WalletRevokePermiss
 export const WalletRevokePermissions = funtypes.ReadonlyObject({
 	method: funtypes.Literal('wallet_revokePermissions'),
 	params: funtypes.ReadonlyTuple(WalletRevokePermissionsParams)
+}).asReadonly()
+
+// EIP-5792 standardizes capability discovery; this versioned capability defines Interceptor's experimental contract until equivalent semantics have their own ERC.
+export const GNOSIS_SAFE_EXECUTION_CAPABILITY = 'gnosisSafeExecution'
+export const GNOSIS_SAFE_EXECUTION_CAPABILITY_VERSION = '1.0.0'
+
+export type WalletGetCapabilities = funtypes.Static<typeof WalletGetCapabilities>
+export const WalletGetCapabilities = funtypes.ReadonlyObject({
+	method: funtypes.Literal('wallet_getCapabilities'),
+	params: funtypes.Union(
+		funtypes.ReadonlyTuple(EthereumAddress),
+		funtypes.ReadonlyTuple(EthereumAddress, funtypes.ReadonlyArray(CanonicalEthereumQuantity)),
+	),
 }).asReadonly()
 
 export type GetTransactionCount = funtypes.Static<typeof GetTransactionCount>
@@ -413,26 +423,37 @@ export const EthMaxPriorityFeePerGasParams = funtypes.ReadonlyObject({
 
 //https://docs.infura.io/networks/ethereum/json-rpc-methods/eth_feehistory
 const EthereumQuantityBetween1And1024 = EthereumQuantity.withConstraint((x) => x >= 1n && x <= 1024n)
+const FeeHistoryRewardPercentiles = funtypes.ReadonlyArray(funtypes.Number).withConstraint((percentiles) => {
+	let previousPercentile = 0
+	for (const percentile of percentiles) {
+		if (!Number.isFinite(percentile) || percentile < 0 || percentile > 100 || percentile < previousPercentile) return false
+		previousPercentile = percentile
+	}
+	return true
+})
 
 export type FeeHistory = funtypes.Static<typeof FeeHistory>
 export const FeeHistory = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_feeHistory'),
 	params: funtypes.Union(
 		funtypes.ReadonlyTuple(EthereumQuantityBetween1And1024, EthereumBlockTag),
-		funtypes.ReadonlyTuple(EthereumQuantityBetween1And1024, EthereumBlockTag, funtypes.ReadonlyArray(funtypes.Number))
+		funtypes.ReadonlyTuple(EthereumQuantityBetween1And1024, EthereumBlockTag, FeeHistoryRewardPercentiles)
 	)
 })
+
+const EthNewFilterOptions = funtypes.ReadonlyPartial({
+	fromBlock: EthereumBlockTag,
+	toBlock: EthereumBlockTag,
+	address: funtypes.Union(EthereumAddress, funtypes.ReadonlyArray(EthereumAddress), funtypes.Null),
+	topics: funtypes.ReadonlyArray(funtypes.Union(EthereumBytes32, funtypes.ReadonlyArray(EthereumBytes32), funtypes.Null)),
+	blockHash: EthereumBytes32,
+	blockhash: funtypes.Never,
+}).withConstraint((logFilter) => logFilter.blockHash === undefined || (logFilter.fromBlock === undefined && logFilter.toBlock === undefined))
 
 export type EthNewFilter = funtypes.Static<typeof EthNewFilter>
 export const EthNewFilter = funtypes.ReadonlyObject({
 	method: funtypes.Literal('eth_newFilter'),
-	params: funtypes.ReadonlyTuple(funtypes.ReadonlyPartial({
-		fromBlock: EthereumBlockTag,
-		toBlock: EthereumBlockTag,
-		address: EthereumAddress,
-		topics: funtypes.ReadonlyArray(funtypes.Union(EthereumBytes32, funtypes.ReadonlyArray(EthereumBytes32), funtypes.Null)),
-		blockhash: EthereumBytes32,
-	}))
+	params: funtypes.ReadonlyTuple(EthNewFilterOptions)
 })
 
 export type UninstallFilter = funtypes.Static<typeof UninstallFilter>
@@ -482,6 +503,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	SwitchEthereumChainParams,
 	RequestPermissions,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions') }),
+	WalletGetCapabilities,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_requestAccounts') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice') }),
@@ -503,8 +525,7 @@ export const EthereumJsonRpcRequest = funtypes.Union(
 	InterceptorError,
 )
 
-// Methods accepted by the provider. This mirrors EthereumJsonRpcRequest, plus
-// methods handled before normal RPC dispatch such as wallet_revokePermissions.
+// Methods accepted by the provider. This mirrors EthereumJsonRpcRequest, plus methods handled before normal RPC dispatch such as wallet_revokePermissions.
 export type SupportedEthereumJsonRpcRequestMethods = funtypes.Static<typeof SupportedEthereumJsonRpcRequestMethods>
 export const SupportedEthereumJsonRpcRequestMethods = funtypes.ReadonlyObject({
 	method: funtypes.Union(WalletRevokePermissions.fields.method, EthereumJsonRpcRequest.alternatives[0].fields.method, ...EthereumJsonRpcRequest.alternatives.map(x => x.fields.method)),

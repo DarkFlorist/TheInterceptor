@@ -7,6 +7,8 @@ import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getSimulatedBlockFromInput, getSimulatedBlockNumber, getSimulatedBlockNumberFromInput, getSimulatedLogs } from './SimulationModeEthereumClientService.js'
 import { sendSubscriptionReplyOrCallBack } from '../../background/messageSending.js'
 import type { WebsiteSocket } from '../../utils/requests.js'
+import { websiteSocketToString } from '../../background/backgroundUtils.js'
+import { createScopedKeyedSerialExecutor } from '../../utils/semaphore.js'
 
 const dec2hex = (dec: number) => dec.toString(16).padStart(2, '0')
 
@@ -40,6 +42,10 @@ export async function removeEthereumSubscription(socket: WebsiteSocket, subscrip
 	}
 	return false
 }
+
+const isSameWebsiteSocket = (left: WebsiteSocket, right: WebsiteSocket) => left.tabId === right.tabId && left.connectionName === right.connectionName
+const filterChangesScope = {}
+const runFilterChangeSerially = createScopedKeyedSerialExecutor<typeof filterChangesScope, string>()
 
 export async function sendSubscriptionMessagesForNewBlock(
 	blockNumber: bigint,
@@ -77,7 +83,8 @@ export async function sendSubscriptionMessagesForNewBlock(
 		return await simulatedBlocksPromise
 	}
 	for (const subscriptionOrFilter of ethereumSubscriptionsAndFilters) {
-		if (websiteTabConnections.get(subscriptionOrFilter.subscriptionCreatorSocket.tabId) === undefined) { // connection removed
+		const tabConnection = websiteTabConnections.get(subscriptionOrFilter.subscriptionCreatorSocket.tabId)
+		if (tabConnection?.connections[websiteSocketToString(subscriptionOrFilter.subscriptionCreatorSocket)] === undefined) { // connection removed
 			await removeEthereumSubscription(subscriptionOrFilter.subscriptionCreatorSocket, subscriptionOrFilter.subscriptionOrFilterId)
 			continue
 		}
@@ -88,7 +95,7 @@ export async function sendSubscriptionMessagesForNewBlock(
 				sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionOrFilter.subscriptionCreatorSocket, {
 					type: 'result',
 					method: 'newHeads' as const,
-					result: { subscription: subscriptionOrFilter.type, result: newBlock } as const,
+					result: { subscription: subscriptionOrFilter.subscriptionOrFilterId, result: newBlock } as const,
 					subscription: subscriptionOrFilter.subscriptionOrFilterId,
 				})
 
@@ -98,7 +105,7 @@ export async function sendSubscriptionMessagesForNewBlock(
 						sendSubscriptionReplyOrCallBack(websiteTabConnections, subscriptionOrFilter.subscriptionCreatorSocket, {
 							type: 'result',
 							method: 'newHeads' as const,
-							result: { subscription: subscriptionOrFilter.type, result: simulatedBlock },
+							result: { subscription: subscriptionOrFilter.subscriptionOrFilterId, result: simulatedBlock },
 							subscription: subscriptionOrFilter.subscriptionOrFilterId,
 						})
 					}
@@ -135,25 +142,32 @@ export async function createNewFilter(params: EthNewFilter, subscriptionCreatorS
 	return subscriptionOrFilterId
 }
 
-export async function getEthFilterChanges(filterId: string, ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedExecutionSimulationState) {
-	const filtersAndSubscriptions = await getEthereumSubscriptionsAndFilters()
-	const filter = filtersAndSubscriptions.find((subscriptionOrfilter) => subscriptionOrfilter.subscriptionOrFilterId === filterId)
-	if (filter === undefined || filter.type !== 'eth_newFilter') return undefined
-	if (filter.params.params[0].blockhash !== undefined) throw new Error('blockhash not supported for this method')
-	const calledInlastBlock = await getSimulatedBlockNumber(ethereumClientService, requestAbortController, simulationState)
-	const logs = calledInlastBlock > filter.calledInlastBlock
-		? await getSimulatedLogs(ethereumClientService, requestAbortController, simulationState, { ...filter.params.params[0], fromBlock: filter.calledInlastBlock + 1n, toBlock: calledInlastBlock })
-		: []
-	await updateEthereumSubscriptionsAndFilters((subscriptionsAndfilters) => {
-		return subscriptionsAndfilters.map((subscriptionOrfilter) => subscriptionOrfilter.subscriptionOrFilterId === filterId ? { ...subscriptionOrfilter, calledInlastBlock } : subscriptionOrfilter)
+export async function getEthFilterChanges(socket: WebsiteSocket, filterId: string, ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedExecutionSimulationState) {
+	return await runFilterChangeSerially(filterChangesScope, `${ websiteSocketToString(socket) }:${ filterId }`, async () => {
+		const filtersAndSubscriptions = await getEthereumSubscriptionsAndFilters()
+		const filter = filtersAndSubscriptions.find((subscriptionOrfilter) => subscriptionOrfilter.subscriptionOrFilterId === filterId && isSameWebsiteSocket(subscriptionOrfilter.subscriptionCreatorSocket, socket))
+		if (filter === undefined || filter.type !== 'eth_newFilter') return undefined
+		if (filter.params.params[0].blockHash !== undefined) throw new Error('blockHash not supported for this method')
+		const calledInlastBlock = await getSimulatedBlockNumber(ethereumClientService, requestAbortController, simulationState)
+		const logs = calledInlastBlock > filter.calledInlastBlock
+			? await getSimulatedLogs(ethereumClientService, requestAbortController, simulationState, { ...filter.params.params[0], fromBlock: filter.calledInlastBlock + 1n, toBlock: calledInlastBlock })
+			: []
+		await updateEthereumSubscriptionsAndFilters((subscriptionsAndfilters) => {
+			return subscriptionsAndfilters.map((subscriptionOrfilter) => subscriptionOrfilter.subscriptionOrFilterId === filterId
+				&& isSameWebsiteSocket(subscriptionOrfilter.subscriptionCreatorSocket, socket)
+				&& subscriptionOrfilter.type === 'eth_newFilter'
+				&& calledInlastBlock > subscriptionOrfilter.calledInlastBlock
+				? { ...subscriptionOrfilter, calledInlastBlock }
+				: subscriptionOrfilter)
+		})
+		return logs
 	})
-	return logs
 }
 
-export async function getEthFilterLogs(filterId: string, ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedExecutionSimulationState) {
+export async function getEthFilterLogs(socket: WebsiteSocket, filterId: string, ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedExecutionSimulationState) {
 	const filtersAndSubscriptions = await getEthereumSubscriptionsAndFilters()
-	const filter = filtersAndSubscriptions.find((filter) => filter.subscriptionOrFilterId === filterId)
+	const filter = filtersAndSubscriptions.find((filter) => filter.subscriptionOrFilterId === filterId && isSameWebsiteSocket(filter.subscriptionCreatorSocket, socket))
 	if (filter === undefined || filter.type !== 'eth_newFilter') return undefined
-	if (filter.params.params[0].blockhash !== undefined) throw new Error('blockhash not supported for this method')
+	if (filter.params.params[0].blockHash !== undefined) throw new Error('blockHash not supported for this method')
 	return await getSimulatedLogs(ethereumClientService, requestAbortController, simulationState, filter.params.params[0])
 }

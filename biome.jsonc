@@ -6,7 +6,7 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": ["app/**/*.ts", "app/**/*.tsx", "test/**/*.ts", "build/**/*.mts"],
+		"includes": ["app/**/*.ts", "app/**/*.tsx", "app/css/interceptor-*.css", "test/**/*.ts", "build/**/*.mts"],
 		"ignoreUnknown": true
 	},
 	"formatter": {

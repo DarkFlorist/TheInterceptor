@@ -1,4 +1,4 @@
-import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForAnyExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl } from './chromeHarness.js'
+import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl } from './chromeHarness.js'
 import { startChromeCommunicationPageServer } from './chromeCommunicationPageServer.js'
 import type { CdpConnection } from './chromeHarness.js'
 import { authorization as eip7702Authorization, Transaction } from 'micro-eth-signer'
@@ -8,6 +8,9 @@ type CommunicationPageState = {
 	accounts?: readonly string[]
 	error?: string
 	errorCode?: number
+	connectEvents: number
+	accountsChangedEvents: number
+	eventOrder: readonly string[]
 }
 
 const COMMUNICATION_PAGE_STATE_GLOBAL = '__interceptorChromeCommunicationState' as const
@@ -101,7 +104,7 @@ async function main() {
 	let accessTargetId: string | undefined
 	let confirmTargetId: string | undefined
 	try {
-		const workerTarget = await waitForAnyExtensionServiceWorker(chrome.browserDebugPort, 30_000)
+		const workerTarget = await waitForInterceptorExtensionServiceWorker(chrome.browserDebugPort, 30_000)
 		const extensionId = extractExtensionId(workerTarget.url)
 		const workerConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
 		try {
@@ -111,7 +114,7 @@ async function main() {
 			workerConnection.close()
 		}
 
-		pageTargetId = await createTargetPage(chrome.browserConnection, server.baseUrl)
+		pageTargetId = await createTargetPage(chrome.browserConnection, `${ server.baseUrl }?flow=wallet-request-permissions`)
 		const pageConnection = await connectTarget(chrome.browserDebugPort, pageTargetId)
 		try {
 			await waitForCommunicationPagePhase(pageConnection, 'requesting-access', 30_000)
@@ -127,6 +130,9 @@ async function main() {
 
 			await waitForCommunicationPagePhase(pageConnection, 'access-granted', 30_000)
 			const accessGrantedState = await getCommunicationPageState(pageConnection)
+			if (accessGrantedState?.connectEvents !== 0) throw new Error(`Account authorization emitted ${ accessGrantedState?.connectEvents ?? 'an unknown number of' } connect events`)
+			if (accessGrantedState.accountsChangedEvents !== 1) throw new Error(`Account authorization emitted ${ accessGrantedState.accountsChangedEvents } accountsChanged events instead of one`)
+			if (accessGrantedState.eventOrder.join(',') !== 'accountsChanged,permissionsResolved,accountsResolved') throw new Error(`Unexpected account authorization event order: ${ accessGrantedState.eventOrder.join(',') }`)
 
 			await pageConnection.evaluate(`(() => {
 				globalThis.__raw7702Result = { status: 'pending' }

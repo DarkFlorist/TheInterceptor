@@ -96,9 +96,13 @@ function getExactAndLegacyWebsiteAccess(websiteAccess: WebsiteAccessArray, websi
 	return { exactAccess, legacyAccess }
 }
 
-export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, ignoreConnectionApproval = false) {
+type VerifyAccessOptions = {
+	readonly ignoreConnectionApproval?: boolean
+}
+
+export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, options: VerifyAccessOptions = {}): ApprovalState {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
-	if (connection?.approved && !ignoreConnectionApproval
+	if (connection?.approved && options.ignoreConnectionApproval !== true
 		&& (requestAccessForAddress === undefined || connection.approvedAddress === requestAccessForAddress.address)) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
 	if (access === 'hasAccess') {
@@ -151,8 +155,7 @@ export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: stri
 	const { exactAccess, legacyAccess } = getExactAndLegacyWebsiteAccess(websiteAccess, websiteOrigin)
 	if (exactAccess?.interceptorDisabled === true || legacyAccess?.interceptorDisabled === true) return 'interceptorDisabled'
 	if (exactAccess?.access === true) return 'hasAccess'
-	// Legacy grants are scheme-ambiguous, but applying a legacy denial to both
-	// schemes cannot expose an account that the user did not authorize.
+	// Legacy grants are scheme-ambiguous, but applying a legacy denial to both schemes cannot expose an account that the user did not authorize.
 	if (exactAccess?.access === false || legacyAccess?.access === false) return 'noAccess'
 	return 'askAccess'
 }
@@ -198,8 +201,7 @@ export async function setAccess(website: Website, access: boolean, address: bigi
 	return await updateWebsiteAccess((previousWebsiteAccess) => applyWebsiteAccessDecision(previousWebsiteAccess, website, access, address))
 }
 
-// gets active address if the website has been give access for it, otherwise returns undefined
-// this is to guard websites from seeing addresses without access
+// gets active address if the website has been give access for it, otherwise returns undefined this is to guard websites from seeing addresses without access
 async function getActiveAddressForDomain(websiteTabConnections: WebsiteTabConnections, websiteOrigin: string, settings: Settings, socket: WebsiteSocket) {
 	const activeAddress = await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, socket.tabId, async () => await getActiveAddress(settings, socket.tabId))
 	if (activeAddress === undefined) return undefined
@@ -225,13 +227,19 @@ export function sendProviderConnectionEventsToPort(
 	socket: WebsiteSocket,
 	settings: Settings,
 	accounts: readonly bigint[],
-	options: { readonly requestId?: number, readonly includeChainChanged?: boolean } = {},
 ) {
-	const requestScope = options.requestId === undefined ? {} : { requestId: options.requestId }
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId], ...requestScope })
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: accounts, ...requestScope })
-	if (options.includeChainChanged === false) return
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'chainChanged', result: settings.activeRpcNetwork.chainId, ...requestScope })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId] })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: accounts })
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'chainChanged', result: settings.activeRpcNetwork.chainId })
+}
+
+export function sendAccountsChangedToPort(
+	websiteTabConnections: WebsiteTabConnections,
+	socket: WebsiteSocket,
+	accounts: readonly bigint[],
+	requestId: number,
+) {
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: accounts, requestId })
 }
 
 function disconnectFromPort(
@@ -239,8 +247,7 @@ function disconnectFromPort(
 	socket: WebsiteSocket,
 ): false {
 	setWebsitePortApproval(websiteTabConnections, socket, false)
-	// Account access can be revoked without the provider losing chain connectivity.
-	// Notify account listeners before the legacy disconnect event so dapps clear stale account state.
+	// Account access can be revoked without the provider losing chain connectivity. Notify account listeners before the legacy disconnect event so dapps clear stale account state.
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: [] })
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'disconnect', result: [] })
 	return false
@@ -349,7 +356,6 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 		// check if the rules would change, if not, just bail out
 		const decralativeNetRequestBlockIdentifier = `${ tabIdsToBlock.join('|') }|a|${ sitesToBlock.join('|') }`
 		if (decralativeNetRequestBlockIdentifier === previousDecralativeNetRequestBlockIdentifier) return
-		previousDecralativeNetRequestBlockIdentifier = decralativeNetRequestBlockIdentifier
 
 		if (browser.runtime.getManifest().manifest_version === 3) {
 			const dynamicRuleIds = (await browser.declarativeNetRequest.getDynamicRules()).map((rule) => rule.id)
@@ -383,6 +389,7 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 			// enable `declarativeNetRequestFeedback` permission to manifest and uncomment to enable debugging
 			// const a = (data: any) => { console.log(data) }
 			// (browser.declarativeNetRequest as any).onRuleMatchedDebug.addListener(a)
+			previousDecralativeNetRequestBlockIdentifier = decralativeNetRequestBlockIdentifier
 		} else {
 			browser.webRequest.onBeforeRequest.removeListener(webRequestListener)
 			webRequestListener = (details: browser.webRequest._OnBeforeRequestDetails) => {
@@ -395,8 +402,12 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 				if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return { cancel: true }
 				return {}
 			}
-			if (sitesToBlock.length === 0 && tabIdsToBlock.length === 0) return
+			if (sitesToBlock.length === 0 && tabIdsToBlock.length === 0) {
+				previousDecralativeNetRequestBlockIdentifier = decralativeNetRequestBlockIdentifier
+				return
+			}
 			browser.webRequest.onBeforeRequest.addListener(webRequestListener, { urls: ['<all_urls>'] }, ['blocking'])
+			previousDecralativeNetRequestBlockIdentifier = decralativeNetRequestBlockIdentifier
 		}
 	})
 }
@@ -415,6 +426,7 @@ export async function updateWebsiteApprovalAccesses(
 	websiteTabConnections: WebsiteTabConnections,
 	settings: Settings,
 	promptForAccessesIfNeeded: boolean,
+	throwOnError = false,
 ): Promise<number> {
 	const popupRefreshGeneration = bumpPopupRefreshGeneration()
 	const allTabStates = await getAllTabStates()
@@ -423,6 +435,7 @@ export async function updateWebsiteApprovalAccesses(
 	try {
 		await updateDeclarativeNetRequestBlocks(websiteTabConnections)
 	} catch (error) {
+		if (throwOnError) throw error
 		await reportUnexpectedError(error)
 	}
 	// update port connections and disconnect from ports that should not have access anymore
@@ -438,6 +451,7 @@ export async function updateWebsiteApprovalAccesses(
 	try {
 		await Promise.all(updatePromises)
 	} catch (error) {
+		if (throwOnError) throw error
 		await reportUnexpectedError(error)
 	}
 	const iconRefreshPromises = [...iconRefreshTargets.values()].map(({ tabId, websiteOrigin }) =>
@@ -446,9 +460,30 @@ export async function updateWebsiteApprovalAccesses(
 	try {
 		await Promise.all(iconRefreshPromises)
 	} catch (error) {
+		if (throwOnError) throw error
 		await reportUnexpectedError(error)
 	}
 	return popupRefreshGeneration
+}
+
+export async function finalizeWebsiteAccessChange(
+	ethereum: EthereumClientService | undefined,
+	tokenPriceService: TokenPriceService | undefined,
+	resetSimulationServices: ResetSimulationServices | undefined,
+	websiteTabConnections: WebsiteTabConnections,
+	settings: Settings,
+	promptForAccessesIfNeeded: boolean,
+): Promise<Settings> {
+	await updateWebsiteApprovalAccesses(
+		ethereum,
+		tokenPriceService,
+		resetSimulationServices,
+		websiteTabConnections,
+		settings,
+		promptForAccessesIfNeeded,
+	)
+	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
+	return settings
 }
 
 export async function persistWebsiteAccessChange(
@@ -462,15 +497,12 @@ export async function persistWebsiteAccessChange(
 	promptForAccessesIfNeeded: boolean,
 ): Promise<Settings> {
 	await setAccess(website, access, address)
-	const refreshedSettings = await getSettings()
-	await updateWebsiteApprovalAccesses(
+	return await finalizeWebsiteAccessChange(
 		ethereum,
 		tokenPriceService,
 		resetSimulationServices,
 		websiteTabConnections,
-		refreshedSettings,
+		await getSettings(),
 		promptForAccessesIfNeeded,
 	)
-	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
-	return refreshedSettings
 }

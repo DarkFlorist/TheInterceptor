@@ -66,7 +66,7 @@ function installBrowserMock() {
 async function loadModules() {
 	return {
 		...await import('../../app/ts/background/storageVariables.js'),
-		...await import('../../app/ts/background/simulationModeHanders.js'),
+		...await import('../../app/ts/background/simulationModeHandlers.js'),
 		...await import('../../app/ts/utils/errors.js'),
 	}
 }
@@ -74,9 +74,9 @@ async function loadModules() {
 describe('unexpected error security', () => {
 	test('keep spoofed InterceptorError diagnostics out of popup state', async () => {
 		const { storageState, popupMessages } = installBrowserMock()
-		const { getLatestUnexpectedError, handleIterceptorError } = await loadModules()
+		const { getLatestUnexpectedError, handleInterceptorError } = await loadModules()
 
-		await withSilencedConsole(async () => await handleIterceptorError({ method: 'InterceptorError', params: ['phishing text'] }))
+		await withSilencedConsole(async () => await handleInterceptorError({ method: 'InterceptorError', params: ['phishing text'] }))
 
 		assert.equal(storageState.latestUnexpectedError, undefined)
 		assert.equal(await getLatestUnexpectedError(), undefined)

@@ -75,8 +75,8 @@ async function withCapturedConsoleWarn<T>(runWithCapturedWarn: (warnings: unknow
 describe('EthereumJSONRpcRequestHandler caching', () => {
 	test('does not cache transient HTTP failures', async () => {
 		const fetchMock = installFetchMock([
-			new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED, message: 'rate limited' } }), { status: HTTP_STATUS_TOO_MANY_REQUESTS, headers: responseHeaders }),
 			new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, error: { code: JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED, message: 'rate limited' } }), { status: HTTP_STATUS_TOO_MANY_REQUESTS, headers: responseHeaders }),
+			new Response(JSON.stringify({ jsonrpc: '2.0', id: 3, error: { code: JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED, message: 'rate limited' } }), { status: HTTP_STATUS_TOO_MANY_REQUESTS, headers: responseHeaders }),
 		])
 		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
 
@@ -91,7 +91,7 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 
 	test('caches deterministic non-ok JSON-RPC failures', async () => {
 		const fetchMock = installFetchMock([
-			new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: JSON_RPC_ERROR_CODE_INVALID_PARAMS, message: 'invalid params' } }), { status: HTTP_STATUS_BAD_REQUEST, headers: responseHeaders }),
+			new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, error: { code: JSON_RPC_ERROR_CODE_INVALID_PARAMS, message: 'invalid params' } }), { status: HTTP_STATUS_BAD_REQUEST, headers: responseHeaders }),
 		])
 		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
 
@@ -106,14 +106,43 @@ describe('EthereumJSONRpcRequestHandler caching', () => {
 
 	test('does not cache transient JSON-RPC server errors returned with ok responses', async () => {
 		const fetchMock = installFetchMock([
-			new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'internal error' } }), { status: HTTP_STATUS_OK, headers: responseHeaders }),
 			new Response(JSON.stringify({ jsonrpc: '2.0', id: 2, error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'internal error' } }), { status: HTTP_STATUS_OK, headers: responseHeaders }),
+			new Response(JSON.stringify({ jsonrpc: '2.0', id: 3, error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'internal error' } }), { status: HTTP_STATUS_OK, headers: responseHeaders }),
 		])
 		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
 
 		try {
 			await assert.rejects(requestHandler.jsonRpcRequest({ method: 'eth_getBalance', params: [testAddress, 'latest'] }), JsonRpcResponseError)
 			await assert.rejects(requestHandler.jsonRpcRequest({ method: 'eth_getBalance', params: [testAddress, 'latest'] }), JsonRpcResponseError)
+			assert.equal(fetchMock.getCalls(), 2)
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
+	test('rejects a response whose ID does not match the request', async () => {
+		const fetchMock = installFetchMock([
+			new Response(JSON.stringify({ jsonrpc: '2.0', id: 999, result: '0x1' }), { status: HTTP_STATUS_OK, headers: responseHeaders }),
+		])
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid')
+
+		try {
+			await assert.rejects(requestHandler.jsonRpcRequest({ method: 'eth_chainId' }), /did not match request ID 2/)
+		} finally {
+			fetchMock.restore()
+		}
+	})
+
+	test('rejects and does not cache a response with a null ID', async () => {
+		const fetchMock = installFetchMock([
+			new Response(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'unknown request' } }), { status: HTTP_STATUS_OK, headers: responseHeaders }),
+			new Response(JSON.stringify({ jsonrpc: '2.0', id: 3, result: '0x1' }), { status: HTTP_STATUS_OK, headers: responseHeaders }),
+		])
+		const requestHandler = new EthereumJSONRpcRequestHandler('https://example.invalid', true)
+
+		try {
+			await assert.rejects(requestHandler.jsonRpcRequest({ method: 'eth_chainId' }), /RPC response ID null did not match request ID 2/)
+			assert.equal(await requestHandler.jsonRpcRequest({ method: 'eth_chainId' }), '0x1')
 			assert.equal(fetchMock.getCalls(), 2)
 		} finally {
 			fetchMock.restore()

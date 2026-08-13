@@ -11,30 +11,39 @@ const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cann
 const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
 const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
 
-export const websiteOriginToMatchPattern = (origin: string) => {
-	const normalizedOrigin = normalizeStoredWebsiteOrigin(origin)
-	if (normalizedOrigin === undefined) return undefined
-	if (!isCanonicalWebsiteOrigin(normalizedOrigin)) {
-		if (normalizedOrigin === '') return 'file://*/*'
-		return `*://${ normalizedOrigin }/*`
+function getManifestV3ExcludeMatchesForOrigin(origin: string) {
+	if (/^https?:\/\//iu.test(origin)) {
+		try {
+			const url = new URL(origin)
+			if (url.pathname !== '/' || url.search !== '' || url.hash !== '') return []
+		} catch {
+			return []
+		}
 	}
+	const normalizedOrigin = normalizeStoredWebsiteOrigin(origin)
+	if (normalizedOrigin === undefined) return []
+	if (normalizedOrigin === '') return ['file:///*']
+	if (!isCanonicalWebsiteOrigin(normalizedOrigin)) return [`*://${ normalizedOrigin }/*`]
 	const url = new URL(normalizedOrigin)
-	if (url.protocol === 'file:') return `${ origin }*`
-	return `${ url.protocol }//${ url.host }/*`
+	if (url.protocol === 'file:') return [`${ normalizedOrigin }*`]
+	return [`${ url.protocol }//${ url.host }/*`]
+}
+
+export function getManifestV3ExcludeMatches(origins: readonly string[]) {
+	const patterns = new Set<string>()
+	for (const origin of origins) {
+		for (const pattern of getManifestV3ExcludeMatchesForOrigin(origin)) patterns.add(pattern)
+	}
+	return [...patterns]
 }
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
-	const excludeMatches = getInterceptorDisabledSites(await getSettings()).flatMap((origin) => {
-		const matchPattern = websiteOriginToMatchPattern(origin)
-		return matchPattern === undefined ? [] : [matchPattern]
-	})
+	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(await getSettings()))
 	try {
 		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
-		// 'MAIN'` is not supported in `browser.` but its in `chrome.`. This code is only going to be run in manifest v3 environment (chrome) so this should be fine, just ugly
-		type FixedRegisterContentScripts = (scripts: (RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean })[]) => Promise<void>
-		const fixedRegisterContentScripts = ((browser.scripting.registerContentScripts as unknown) as FixedRegisterContentScripts)
-		await browser.scripting.unregisterContentScripts()
-		await fixedRegisterContentScripts([{
+		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
+		type FixedContentScript = RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
+		const contentScripts: FixedContentScript[] = [{
 			id: 'inpage2',
 			allFrames: true,
 			matches: injectableSitesWildcard,
@@ -51,7 +60,16 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 			runAt: 'document_start',
 			world: 'MAIN',
 			matchOriginAsFallback: true
-		}])
+		}]
+		const registeredContentScripts = await browser.scripting.getRegisteredContentScripts()
+		const registeredContentScriptIds = new Set(registeredContentScripts.map(({ id }) => id))
+		const desiredContentScriptIds = new Set(contentScripts.map(({ id }) => id))
+		const missingContentScripts = contentScripts.filter(({ id }) => !registeredContentScriptIds.has(id))
+		const existingContentScripts = contentScripts.filter(({ id }) => registeredContentScriptIds.has(id))
+		const obsoleteContentScriptIds = registeredContentScripts.map(({ id }) => id).filter((id) => !desiredContentScriptIds.has(id))
+		if (missingContentScripts.length > 0) await browser.scripting.registerContentScripts(missingContentScripts)
+		if (existingContentScripts.length > 0) await browser.scripting.updateContentScripts(existingContentScripts)
+		if (obsoleteContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
 	} catch (error: unknown) {
 		await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
 	}

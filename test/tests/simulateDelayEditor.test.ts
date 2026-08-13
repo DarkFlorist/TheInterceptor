@@ -61,7 +61,8 @@ Object.defineProperty(globalThis, 'chrome', { value: { runtime: { id: 'test-exte
 const { getCurrentSimulationInput } = await import('../../app/ts/background/simulationUpdating.js')
 const { getInterceptorTransactionStack, updateInterceptorTransactionStack } = await import('../../app/ts/background/storageVariables.js')
 const { setTransactionOrMessageBlockTimeManipulator } = await import('../../app/ts/background/popupMessageHandlers.js')
-const { DEFAULT_BLOCK_MANIPULATION, mockSignTransaction } = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
+const { mockSignTransaction } = await import('../../app/ts/simulation/services/SimulationModeEthereumClientService.js')
+const { DEFAULT_BLOCK_MANIPULATION } = await import('../../app/ts/config/defaults.js')
 const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
 
 const baseTransaction = {
@@ -184,6 +185,24 @@ describe('simulate delay editor', () => {
 			DEFAULT_BLOCK_MANIPULATION,
 			newDelay,
 		])
+	})
+
+	test('excludes transactions whose simulation options require another chain', async () => {
+		await resetStack()
+		await updateInterceptorTransactionStack(() => ({
+			operations: [{
+				type: 'Transaction',
+				preSimulationTransaction: {
+					...tx1,
+					simulationOptions: {
+						requiredChainId: 2n,
+						simulateWithZeroBaseFee: true,
+					},
+				},
+			}],
+		}))
+
+		assert.deepEqual(await getCurrentSimulationInput(), [])
 	})
 })
 
