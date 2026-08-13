@@ -23,7 +23,7 @@ import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { respondToAccessRequest } from './interceptorAccessResponse.js'
-import { getSelectableActiveAddresses, isActiveAddressSelectionAllowed } from '../../utils/activeAddressSelection.js'
+import { getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../../utils/activeAddressSelection.js'
 
 function Title({ icon, title} : {icon: string | undefined, title: string}) {
 	const websiteIcon = sanitizeStoredWebsiteIcon(icon)
@@ -309,10 +309,11 @@ export function InterceptorAccess() {
 		} } )
 	}
 
-	async function setActiveAddressAndInformAboutIt(accessRequestId: string, address: bigint | 'signer') {
+	async function setActiveAddressAndInformAboutIt(accessRequestId: string, address: bigint | 'signer', persistedEntry?: AddressBookEntry) {
 		const accessRequest = pendingAccessRequests.value.find((request) => request.accessRequestId === accessRequestId)
 		if (accessRequest === undefined) throw Error('accessRequest is undefined')
-		if (!isActiveAddressSelectionAllowed(address, activeAddresses.value, accessRequest.simulationMode, activeRpcChainId.value, accessRequest.signerAccounts)) return
+		const selectableAddresses = includePersistedAddressBookEntry(activeAddresses.value, persistedEntry)
+		if (!isActiveAddressSelectionAllowed(address, selectableAddresses, accessRequest.simulationMode, activeRpcChainId.value, accessRequest.signerAccounts)) return
 		await sendPopupMessageToBackgroundPage({ method: 'popup_interceptorAccessChangeAddress', data: {
 			socket: accessRequest.socket,
 			website: accessRequest.website,
@@ -363,7 +364,7 @@ export function InterceptorAccess() {
 			<div class = { `modal ${ isModalActive ? 'is-active' : ''}` }>
 				{ (appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress') && selectedAccessRequest !== undefined
 					? <AddNewAddress
-						setActiveAddressAndInformAboutIt = { selectedAccessRequest.simulationMode ? (address: bigint | 'signer') => setActiveAddressAndInformAboutIt(selectedAccessRequest.accessRequestId, address) : undefined }
+						setActiveAddressAndInformAboutIt = { selectedAccessRequest.simulationMode ? (address: bigint | 'signer', persistedEntry?: AddressBookEntry) => setActiveAddressAndInformAboutIt(selectedAccessRequest.accessRequestId, address, persistedEntry) : undefined }
 						modifyAddressWindowState = { appPage.value.state }
 						close = { () => { appPage.value = { page: 'Home', accessRequestId: '' } } }
 						activeAddress = { selectedAccessRequest.requestAccessToAddress?.address }

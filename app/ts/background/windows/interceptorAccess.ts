@@ -23,7 +23,7 @@ import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOr
 import { isAccountConnectionMethod } from '../accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
 import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, signerConnectionReplacedError, signerUnavailableError, tabHasApprovedWebsiteConnection, waitForConfirmedSignerStateToken } from '../signerStateOwnership.js'
-import { assertActiveAddressSelectionAllowed } from '../../utils/activeAddressSelection.js'
+import { assertActiveAddressSelectionAllowed, includePersistedAddressBookEntry } from '../../utils/activeAddressSelection.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab
@@ -493,9 +493,7 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 			const signerAddress = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts[0]
 			const activeAddresses = await getActiveAddresses()
 			const requestEntry = pendingAccessRequest.requestAccessToAddress
-			const selectableAddresses = requestEntry === undefined || activeAddresses.some((entry) => entry.address === requestEntry.address && entry.chainId === requestEntry.chainId)
-				? activeAddresses
-				: [...activeAddresses, requestEntry]
+			const selectableAddresses = includePersistedAddressBookEntry(activeAddresses, requestEntry)
 			const selection = assertActiveAddressSelectionAllowed(accessReply.requestAccessToAddress, selectableAddresses, settings.simulationMode, settings.activeRpcNetwork.chainId, signerAddress === undefined ? [] : [signerAddress])
 			await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, selection, {
 				simulationMode: settings.simulationMode,
@@ -570,9 +568,7 @@ async function assertAddressSelectionAllowedForAccessRequest(pendingAccessReques
 	const signerAccounts = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts
 	const activeAddresses = await getActiveAddresses()
 	const requestedEntry = pendingAccessRequest.requestAccessToAddress
-	const selectableAddresses = requestedEntry === undefined || activeAddresses.some((entry) => entry.address === requestedEntry.address && entry.chainId === requestedEntry.chainId)
-		? activeAddresses
-		: [...activeAddresses, requestedEntry]
+	const selectableAddresses = includePersistedAddressBookEntry(activeAddresses, requestedEntry)
 	assertActiveAddressSelectionAllowed(address, selectableAddresses, simulationMode, settings.activeRpcNetwork.chainId, signerAccounts)
 }
 

@@ -16,6 +16,7 @@ const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/act
 const backgroundUtilsSource = await Bun.file(new URL('../../app/ts/background/backgroundUtils.ts', import.meta.url)).text()
 const providerSigningSelectionSource = await Bun.file(new URL('../../app/ts/background/signingAddressSelection.ts', import.meta.url)).text()
 const signerMetadataSource = await Bun.file(new URL('../../app/ts/utils/signerMetadata.ts', import.meta.url)).text()
+const interceptorAccessUiSource = await Bun.file(new URL('../../app/ts/components/pages/InterceptorAccess.tsx', import.meta.url)).text()
 
 const activeAddresses: AddressBookEntries = [
 	{ type: 'contact', name: 'Saved EOA', address: EOA_ADDRESS, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
@@ -65,6 +66,15 @@ describe('active address selection', () => {
 		assert.equal(selectableAddresses.at(-1), persistedEntry)
 	})
 
+	test('replaces stale metadata for a just-persisted entry', () => {
+		const staleEntry = { type: 'safe', name: 'Stale Safe', address: SAFE_ADDRESS, chainId: 1n, entrySource: 'User', safeSignerAddresses: [] } as const
+		const persistedEntry = { ...staleEntry, name: 'Updated Safe', safeSignerAddresses: [EOA_ADDRESS] }
+		const selectableAddresses = includePersistedAddressBookEntry([staleEntry], persistedEntry)
+
+		assert.deepEqual(selectableAddresses, [persistedEntry])
+		assert.equal(isActiveAddressSelectionAllowed(SAFE_ADDRESS, selectableAddresses, false, 1n, [EOA_ADDRESS]), true)
+	})
+
 	test('waits for the background to accept an active-address change', async () => {
 		let sentMessage: unknown
 		await requestActiveAddressChange(EOA_ADDRESS, true, async (message) => {
@@ -109,7 +119,10 @@ describe('active address selection', () => {
 		assert.match(popupMessageHandlersSource, /selection = getActiveAddressSelection\(/u)
 		assert.doesNotMatch(popupMessageHandlersSource, /activeChainSigningSafe\.safeSignerAddresses/u)
 		assert.match(interceptorAccessSource, /assertActiveAddressSelectionAllowed\(address, selectableAddresses/u)
+		assert.equal(interceptorAccessSource.match(/includePersistedAddressBookEntry\(activeAddresses, request(?:ed)?Entry\)/gu)?.length, 2)
 		assert.doesNotMatch(interceptorAccessSource, /address === signerAccounts\[0\]/u)
+		assert.match(interceptorAccessUiSource, /includePersistedAddressBookEntry\(activeAddresses\.value, persistedEntry\)/u)
+		assert.match(interceptorAccessUiSource, /\(address: bigint \| 'signer', persistedEntry\?: AddressBookEntry\) => setActiveAddressAndInformAboutIt\(selectedAccessRequest\.accessRequestId, address, persistedEntry\)/u)
 		assert.match(providerSigningSelectionSource, /selection = getActiveAddressSelection\(preference\.safeAddress/u)
 		assert.doesNotMatch(providerMessageHandlersSource, /safeSignerAddresses\?\.includes\(signerAddress\)/u)
 	})
