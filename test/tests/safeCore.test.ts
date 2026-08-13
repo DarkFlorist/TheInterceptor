@@ -4,7 +4,7 @@ import { AddressBookEntry, getSafeSignerAddresses } from '../../app/ts/types/add
 import { EIP712Message } from '../../app/ts/types/eip721.js'
 import { SafeTx } from '../../app/ts/types/personal-message-definitions.js'
 import { SafeStackExport } from '../../app/ts/types/safeTypes.js'
-import { SAFE_ABI, assertInterceptorSafeTransactionPolicy, createSafeOwnerValidator, createSafeTx, getSafeContractSnapshot, getSafeContractState, isSafeContractValidationFailure, isSafeOwnerValidationFailure, normalizeSafeSignature, recoverSafeSignatureOwner, safeTxToTypedDataJson, validateSafeOwnerIsEoa } from '../../app/ts/safe/safeCore.js'
+import { SAFE_ABI, assertInterceptorSafeTransactionPolicy, createSafeOwnerValidator, createSafeTx, getSafeContractSnapshot, getSafeContractState, isSafeContractValidationFailure, isSafeOwnerValidationFailure, normalizeSafeSignature, recoverSafeSignatureOwner, safeTxToTypedDataJson, validateSafeOwnerIsEoa, validateSafeTransactionForSigning } from '../../app/ts/safe/safeCore.js'
 import { completeSafeExecutionWithConfiguredSigner, SAFE_EXECUTION_ABI } from '../../app/ts/safe/safeExecution.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumPrimitives.js'
@@ -41,11 +41,56 @@ describe('Safe transaction support', () => {
 		assert.throws(() => assertInterceptorSafeTransactionPolicy({
 			...safeTx,
 			message: { ...safeTx.message, operation: 1n },
-		}), /CALL operations only/u)
+		}), (error) => isSafeContractValidationFailure(error) && /CALL operations only/u.test(error.message))
 		assert.throws(() => assertInterceptorSafeTransactionPolicy({
 			...safeTx,
 			message: { ...safeTx.message, safeTxGas: 1n },
-		}), /zero gas reimbursement fields/u)
+		}), (error) => isSafeContractValidationFailure(error) && /zero gas reimbursement fields/u.test(error.message))
+	})
+
+	test('classifies stale or mismatched Safe transaction state as an expected validation failure', async () => {
+		const safeAddress = 0x1234n
+		const owner = 0x5678n
+		const selectors = {
+			version: encodeFunctionCall(SAFE_ABI, 'VERSION', []).slice(0, 10),
+			nonce: encodeFunctionCall(SAFE_ABI, 'nonce', []).slice(0, 10),
+			owners: encodeFunctionCall(SAFE_ABI, 'getOwners', []).slice(0, 10),
+			threshold: encodeFunctionCall(SAFE_ABI, 'getThreshold', []).slice(0, 10),
+			transactionHash: encodeFunctionCall(SAFE_ABI, 'getTransactionHash', [
+				'0x0000000000000000000000000000000000009abc', 0n, '0x', 0n, 0n, 0n, 0n,
+				'0x0000000000000000000000000000000000000000', '0x0000000000000000000000000000000000000000', 3n,
+			]).slice(0, 10),
+		}
+		const ethereum = {
+			getChainId: () => 1n,
+			getBlockNumber: async () => 123n,
+			getCode: async (address: bigint) => address === safeAddress ? new Uint8Array([1]) : new Uint8Array(),
+			call: async (transaction: { readonly input: Uint8Array }) => {
+				switch (bytesToHex(transaction.input).slice(0, 10)) {
+					case selectors.version: return encodeFunctionReturn(SAFE_ABI, 'VERSION', ['1.4.1'])
+					case selectors.nonce: return encodeFunctionReturn(SAFE_ABI, 'nonce', [3n])
+					case selectors.owners: return encodeFunctionReturn(SAFE_ABI, 'getOwners', [['0x0000000000000000000000000000000000005678']])
+					case selectors.threshold: return encodeFunctionReturn(SAFE_ABI, 'getThreshold', [1n])
+					case selectors.transactionHash: return encodeFunctionReturn(SAFE_ABI, 'getTransactionHash', ['0x0000000000000000000000000000000000000000000000000000000000000000'])
+					default: throw new Error('Unexpected Safe call')
+				}
+			},
+		}
+		const currentSafeTx = createSafeTx(1n, safeAddress, { to: 0x9abcn, value: 0n, input: new Uint8Array() }, 3n)
+		const expectedFailure = (pattern: RegExp) => (error: unknown) => isSafeContractValidationFailure(error) && pattern.test(error.message)
+
+		await assert.rejects(validateSafeTransactionForSigning(
+			ethereum, safeAddress, owner, { ...currentSafeTx, domain: { ...currentSafeTx.domain, chainId: 2n } }, '1.4.1',
+		), expectedFailure(/chain ID does not match/u))
+		await assert.rejects(validateSafeTransactionForSigning(
+			ethereum, safeAddress, owner, currentSafeTx, '1.3.0',
+		), expectedFailure(/address-book entry records 1\.3\.0/u))
+		await assert.rejects(validateSafeTransactionForSigning(
+			ethereum, safeAddress, owner, { ...currentSafeTx, message: { ...currentSafeTx.message, nonce: 2n } }, '1.4.1',
+		), expectedFailure(/older than the current nonce/u))
+		await assert.rejects(validateSafeTransactionForSigning(
+			ethereum, safeAddress, owner, currentSafeTx, '1.4.1',
+		), expectedFailure(/locally computed Gnosis Safe transaction hash/u))
 	})
 
 	test('normalizes and recovers an EOA Safe owner signature', async () => {

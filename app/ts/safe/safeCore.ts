@@ -8,6 +8,7 @@ import { addressString, bytes32String, dataStringWith0xStart, stringToUint8Array
 import { ensureHex } from '../utils/ethereumBytes.js'
 import { recoverAddress } from '../utils/ethereumPrimitives.js'
 import { getSafeTxHash } from '../utils/eip712.js'
+import { getErrorMessage } from '../utils/caughtErrors.js'
 import { createSafeValidationError, hasSafeValidationErrorCode } from './safeErrors.js'
 
 const SUPPORTED_SAFE_VERSIONS = ['1.3.0', '1.4.0', '1.4.1'] as const
@@ -112,7 +113,7 @@ export type ValidatedSafeEoaOwner = {
 	readonly ownerValidator: SafeOwnerValidator
 }
 
-function createSafeOwnerValidationFailure(message: string) {
+export function createSafeOwnerValidationFailure(message: string) {
 	return createSafeValidationError(message, 'safe_owner_validation')
 }
 
@@ -205,10 +206,16 @@ export function createSafeOwnerValidator(
 		signature: string,
 		expectedSafeSigner?: EthereumAddress,
 	): Promise<SafeOwnerSignature> => {
-		const normalizedSignature = normalizeSafeSignature(signature)
-		const signer = await recoverNormalizedSafeSignatureOwner(safeTxHash, normalizedSignature)
+		let normalizedSignature: Hex
+		let signer: EthereumAddress
+		try {
+			normalizedSignature = normalizeSafeSignature(signature)
+			signer = await recoverNormalizedSafeSignatureOwner(safeTxHash, normalizedSignature)
+		} catch (error) {
+			throw createSafeOwnerValidationFailure(getErrorMessage(error) ?? 'The signer returned an invalid Gnosis Safe owner signature.')
+		}
 		if (expectedSafeSigner !== undefined && signer !== expectedSafeSigner) {
-			throw new Error(`The wallet signature was created by ${ addressString(signer) }, not the expected wallet-selected Gnosis Safe owner ${ addressString(expectedSafeSigner) }.`)
+			throw createSafeOwnerValidationFailure(`The wallet signature was created by ${ addressString(signer) }, not the expected wallet-selected Gnosis Safe owner ${ addressString(expectedSafeSigner) }.`)
 		}
 		await assertEoaOwner(signer)
 		return { signer, signature: normalizedSignature }
@@ -243,7 +250,7 @@ export function assertUniqueSafeTransactionStacks(stacks: readonly SafeTransacti
 
 export function assertInterceptorSafeTransactionPolicy(safeTx: SafeTx) {
 	if (safeTx.message.operation !== 0n) {
-		throw new Error('Interceptor Gnosis Safe stacks support CALL operations only. DELEGATECALL transactions cannot be signed.')
+		throw createSafeContractValidationFailure('Interceptor Gnosis Safe stacks support CALL operations only. DELEGATECALL transactions cannot be signed.')
 	}
 	if (
 		safeTx.message.safeTxGas !== 0n
@@ -252,7 +259,7 @@ export function assertInterceptorSafeTransactionPolicy(safeTx: SafeTx) {
 		|| safeTx.message.gasToken !== 0n
 		|| safeTx.message.refundReceiver !== 0n
 	) {
-		throw new Error('Interceptor Gnosis Safe stacks require zero gas reimbursement fields.')
+		throw createSafeContractValidationFailure('Interceptor Gnosis Safe stacks require zero gas reimbursement fields.')
 	}
 }
 
@@ -349,9 +356,9 @@ function assertSafeTransactionContext(
 	safeTx: SafeTx,
 ) {
 	const chainId = ethereum.getChainId()
-	if (chainId === 0n) throw new Error('Gnosis Safe transactions require a chain ID.')
-	if (safeTx.domain.chainId !== chainId) throw new Error('The Gnosis Safe transaction chain ID does not match the selected chain.')
-	if (safeTx.domain.verifyingContract !== safeAddress) throw new Error('The Gnosis Safe transaction verifying contract does not match the active Gnosis Safe.')
+	if (chainId === 0n) throw createSafeContractValidationFailure('Gnosis Safe transactions require a chain ID.')
+	if (safeTx.domain.chainId !== chainId) throw createSafeContractValidationFailure('The Gnosis Safe transaction chain ID does not match the selected chain.')
+	if (safeTx.domain.verifyingContract !== safeAddress) throw createSafeContractValidationFailure('The Gnosis Safe transaction verifying contract does not match the active Gnosis Safe.')
 	assertInterceptorSafeTransactionPolicy(safeTx)
 }
 
@@ -362,10 +369,10 @@ function validateSafeTransactionState(
 	expectedSafeVersion?: string,
 ) {
 	if (expectedSafeVersion !== undefined && state.version !== expectedSafeVersion) {
-		throw new Error(`The Gnosis Safe version is now ${ state.version }, but the address-book entry records ${ expectedSafeVersion }.`)
+		throw createSafeContractValidationFailure(`The Gnosis Safe version is now ${ state.version }, but the address-book entry records ${ expectedSafeVersion }.`)
 	}
 	if (safeTx.message.nonce < state.nonce) {
-		throw new Error(`The Gnosis Safe transaction nonce ${ safeTx.message.nonce.toString() } is older than the current nonce ${ state.nonce.toString() }.`)
+		throw createSafeContractValidationFailure(`The Gnosis Safe transaction nonce ${ safeTx.message.nonce.toString() } is older than the current nonce ${ state.nonce.toString() }.`)
 	}
 	return { safeState: state, ownerValidator }
 }
@@ -379,7 +386,7 @@ async function validateSafeTransactionHashAtBlock(
 ) {
 	const localHash = BigInt(getSafeTxHash(safeTx))
 	const contractHash = await getSafeTransactionHashFromContract(ethereum, safeAddress, safeTx, blockNumber)
-	if (localHash !== contractHash) throw new Error('The locally computed Gnosis Safe transaction hash does not match the Gnosis Safe contract.')
+	if (localHash !== contractHash) throw createSafeContractValidationFailure('The locally computed Gnosis Safe transaction hash does not match the Gnosis Safe contract.')
 	return { safeTxHash: localHash, ...context }
 }
 
@@ -395,7 +402,7 @@ async function createSafeTransactionRequest(
 	const blockNumber = await ethereum.getBlockNumber(undefined)
 	let validation: Awaited<ReturnType<typeof validateSafeTransactionForReviewAtBlock>>
 	if (validateOwner) {
-		if (safeSignerAddress === undefined) throw new Error('A wallet-selected Gnosis Safe owner is required before signing.')
+		if (safeSignerAddress === undefined) throw createSafeOwnerValidationFailure('A wallet-selected Gnosis Safe owner is required before signing.')
 		validation = await validateSafeTransactionForSigningAtBlock(ethereum, safeAddress, safeSignerAddress, safeTx, blockNumber)
 	} else {
 		validation = await validateSafeTransactionForReviewAtBlock(ethereum, safeAddress, safeTx, blockNumber)

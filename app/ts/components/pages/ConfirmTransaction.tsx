@@ -42,6 +42,7 @@ import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
 import type { SignerName } from '../../types/signerTypes.js'
 import { assertNever } from '../../utils/typescript.js'
+import { getSafeTransactionPendingFlow } from '../../background/safePendingFlow.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: ReadonlySignal<PendingTransactionOrSignableMessage[]>
@@ -725,6 +726,10 @@ function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, rejec
 
 export function ConfirmTransaction() {
 	const currentPendingTransactionOrSignableMessage = useSignal<PendingTransactionOrSignableMessage | undefined>(undefined)
+	const currentSafeTransactionFlow = useComputed(() => {
+		const pending = currentPendingTransactionOrSignableMessage.value
+		return pending?.type === 'Transaction' ? getSafeTransactionPendingFlow(pending) : undefined
+	})
 	const pendingTransactionsAndSignableMessages = useSignal<readonly PendingTransactionOrSignableMessage[]>([])
 	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
 	const forceSend = useSignal<boolean>(false)
@@ -1000,9 +1005,9 @@ export function ConfirmTransaction() {
 								/>
 								: <></>
 							}
-							{ currentPendingTransactionOrSignableMessage.value.type === 'Transaction' && currentPendingTransactionOrSignableMessage.value.safeTransaction !== undefined
+							{ currentSafeTransactionFlow.value?.kind === 'proposal'
 								? <DinoSaysNotification
-									text = { `This transaction will be wrapped as Gnosis Safe transaction nonce ${ currentPendingTransactionOrSignableMessage.value.safeTransaction.safeTx.message.nonce.toString() } and signed by the Gnosis Safe owner selected in your wallet. It will be added to the local optimistic Gnosis Safe stack, not broadcast automatically.` }
+									text = { `This transaction will be wrapped as Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeTransaction.safeTx.message.nonce.toString() } and signed by the Gnosis Safe owner selected in your wallet. It will be added to the local optimistic Gnosis Safe stack, not broadcast automatically.` }
 									close = { () => undefined }
 								/>
 								: <></>

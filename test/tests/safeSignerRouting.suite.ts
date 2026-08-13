@@ -260,6 +260,28 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 
 	const [reviewedCoSignRequest] = await modules.getPendingTransactionsAndMessages()
 	assert.notEqual(reviewedCoSignRequest?.type === 'SignableMessage' ? reviewedCoSignRequest.safeMessageCoSignSnapshot : undefined, undefined)
+	if (reviewedCoSignRequest?.type !== 'SignableMessage') throw new Error('Missing reviewed Safe co-signing request')
+	fakeSafeContract.safeOwnerLookupFailure = 'unexpected'
+	try {
+		await assert.rejects(
+			modules.resolveSafeConfirmation(simulator.ethereum, reviewedCoSignRequest, 'accept'),
+			/Unexpected Safe owner decoder failure/u,
+		)
+		await assert.rejects(
+			modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, reviewedCoSignRequest, '0x1234'),
+			/Unexpected Safe owner decoder failure/u,
+		)
+	} finally {
+		fakeSafeContract.safeOwnerLookupFailure = undefined
+	}
+	fakeSafeContract.safeOwnerLookupFailure = 'expected'
+	try {
+		const expectedFailure = await modules.resolveSafeConfirmation(simulator.ethereum, reviewedCoSignRequest, 'accept')
+		assert.equal(expectedFailure.status, 'blocked')
+		assert.match(expectedFailure.status === 'blocked' ? expectedFailure.approvalStatus.message : '', /Safe owner lookup unavailable/u)
+	} finally {
+		fakeSafeContract.safeOwnerLookupFailure = undefined
+	}
 	await modules.updateTabState(socket.tabId, (state) => ({
 		...state,
 		signerAccounts: [alternateOwnerAddress],
@@ -267,13 +289,20 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 	}))
 	fakeSafeContract.safeOwnerLookupFailure = 'unexpected'
 	try {
-		await withSilencedConsole(async () => modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, socket.tabId))
+		await assert.rejects(
+			modules.resolveSafeConfirmation(
+				simulator.ethereum,
+				reviewedCoSignRequest,
+				'accept',
+				{ selectedSigner: alternateOwnerAddress, verificationError: undefined },
+			),
+			/Unexpected Safe owner decoder failure/u,
+		)
 	} finally {
 		fakeSafeContract.safeOwnerLookupFailure = undefined
 	}
-	const [failedCoSignRefresh] = await modules.getPendingTransactionsAndMessages()
-	assert.equal(failedCoSignRefresh?.approvalStatus.status, 'SignerError')
-	assert.equal((await getLatestUnexpectedError())?.data.code, 'safe_cosign_signer_refresh_failed')
+	const [unchangedCoSignRequest] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(unchangedCoSignRequest?.approvalStatus.status, 'WaitingForUser')
 	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, socket.tabId)
 	const [refreshedCoSignRequest] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(refreshedCoSignRequest?.type === 'SignableMessage' ? refreshedCoSignRequest.safeMessageCoSignSnapshot?.safeSignerAddress : undefined, alternateOwnerAddress)
@@ -367,6 +396,114 @@ test('returns a Safe signer error when the wallet-selected co-signer is not a cu
 	if (reply.type !== 'result' || !('error' in reply)) throw new Error('Missing Safe signer selection error')
 	assert.equal(reply.error.code, -32010)
 	assert.match(reply.error.message, /is not an owner of Gnosis Safe/u)
+})
+
+test('treats a missing Safe version as an expected co-signing validation failure', async () => {
+	fakeSafeContract.owners = [recipientAddress]
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: undefined })])
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	const signRequest = {
+		method: 'eth_signTypedData_v4' as const,
+		params: [activeAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const,
+	}
+	const { createSafeMessageCoSignSnapshot, isSafeSignerSelectionFailure } = await import('../../app/ts/background/safeConfirmationResolver.js')
+	await assert.rejects(
+		createSafeMessageCoSignSnapshot(simulator.ethereum, activeAddress, recipientAddress, signRequest, safeTx),
+		(error: unknown) => isSafeSignerSelectionFailure(error) && error instanceof Error && /Re-save the active Gnosis Safe/u.test(error.message),
+	)
+})
+
+test('rejects non-v4 Safe co-signing as a handled signer-selection failure', async () => {
+	fakeSafeContract.owners = [recipientAddress]
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [recipientAddress],
+		activeSigningAddress: recipientAddress,
+		signerChain: fakeRpcNetwork.chainId,
+	}))
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	const signRequest = {
+		method: 'eth_signTypedData_v3' as const,
+		params: [activeAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const,
+	}
+	const request = {
+		interceptorRequest: true as const,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier,
+		...signRequest,
+	}
+	const unexpectedErrorBeforeRequest = await getLatestUnexpectedError()
+
+	const reply = await modules.openConfirmTransactionDialogForMessage(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		request,
+		signRequest,
+		false,
+		activeAddress,
+		{ websiteOrigin: 'https://safe-v3.example', icon: undefined, title: 'Safe v3' },
+		new Map(),
+	)
+	assert.equal(reply.type, 'result')
+	if (reply.type !== 'result' || !('error' in reply)) throw new Error('Missing handled non-v4 Safe co-signing error')
+	assert.equal(reply.error.code, -32010)
+	assert.match(reply.error.message, /requires eth_signTypedData_v4/u)
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeRequest)
+})
+
+test('shows Safe transaction context failures in the co-signing dialog without reporting them as unexpected', async () => {
+	fakeSafeContract.owners = [recipientAddress]
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
+		...state,
+		signerAccounts: [recipientAddress],
+		activeSigningAddress: recipientAddress,
+		signerChain: fakeRpcNetwork.chainId,
+	}))
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId + 1n, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	const signRequest = {
+		method: 'eth_signTypedData_v4' as const,
+		params: [activeAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))] as const,
+	}
+	const request = {
+		interceptorRequest: true as const,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier,
+		...signRequest,
+	}
+	const unexpectedErrorBeforeRequest = await getLatestUnexpectedError()
+
+	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		request,
+		signRequest,
+		false,
+		activeAddress,
+		{ websiteOrigin: 'https://safe-context.example', icon: undefined, title: 'Safe context' },
+		new Map(),
+	), { type: 'doNotReply' })
+	const [pendingMessage] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(pendingMessage?.approvalStatus.status, 'SignerError')
+	if (pendingMessage?.approvalStatus.status !== 'SignerError') throw new Error('Missing Safe context validation error')
+	assert.match(pendingMessage.approvalStatus.message, /chain ID does not match/u)
+	assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeRequest)
 })
 
 test('shows a Safe signing-account mismatch in the confirmation dialog without reporting an unexpected error', async () => {
@@ -483,25 +620,16 @@ test('shows a Safe signing-account mismatch in the confirmation dialog without r
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	fakeSafeContract.safeOwnerLookupFailure = 'unexpected'
 	try {
-		await withSilencedConsole(async () => {
-			assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(
-				simulator.ethereum,
-				simulator.tokenPriceService,
-				request,
-				signRequest,
-				false,
-				activeAddress,
-				{ websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' },
-				websiteTabConnections,
-			), { type: 'doNotReply' })
-		})
+		const { createSafeMessageCoSignSnapshot } = await import('../../app/ts/background/safeConfirmationResolver.js')
+		await assert.rejects(
+			createSafeMessageCoSignSnapshot(simulator.ethereum, activeAddress, walletOwner, signRequest, safeTx),
+			/Unexpected Safe owner decoder failure/u,
+		)
 	} finally {
 		fakeSafeContract.safeOwnerLookupFailure = undefined
 	}
-	const [pendingMessageAfterUnexpectedLookupFailure] = await modules.getPendingTransactionsAndMessages()
-	if (pendingMessageAfterUnexpectedLookupFailure?.approvalStatus.status !== 'SignerError') throw new Error('Missing reviewable mismatch after unexpected owner lookup failure')
-	assert.equal(pendingMessageAfterUnexpectedLookupFailure.approvalStatus.safeSignerErrorDetails?.kind, 'safeSigningAccountMismatch')
-	assert.equal((await getLatestUnexpectedError())?.data.code, 'safe_signer_owner_lookup_failed')
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	assert.deepEqual(await getLatestUnexpectedError(), unexpectedErrorBeforeRequest)
 })
 
 test('signs Safe transaction typed data normally when the active signing address is an EOA', async () => {
@@ -964,6 +1092,40 @@ test('routes a completed active Safe execution through its configured signer and
 	assert.equal(pendingExecution.originalRequestParameters.method, 'eth_sendTransaction')
 	if (pendingExecution.originalRequestParameters.method !== 'eth_sendTransaction') throw new Error('Unexpected direct Safe execution method')
 	assert.equal(pendingExecution.originalRequestParameters.params[0].from, safeSignerAddress)
+	const { refreshAndPersistSafeSignerSelection } = await import('../../app/ts/background/safeSignerSelectionRefresh.js')
+	await assert.rejects(
+		refreshAndPersistSafeSignerSelection(
+			simulator.ethereum,
+			pendingExecution,
+			alternateSignerAddress,
+			async () => { throw new Error('Direct Safe simulation refresh unavailable') },
+		),
+		/Direct Safe simulation refresh unavailable/u,
+	)
+	assert.deepEqual((await modules.getPendingTransactionsAndMessages())[0], pendingExecution)
+	fakeSafeContract.safeOwnerLookupFailure = 'unexpected'
+	try {
+		await assert.rejects(
+			modules.resolveSafeConfirmation(
+				simulator.ethereum,
+				pendingExecution,
+				'accept',
+				{ selectedSigner: safeSignerAddress, verificationError: undefined },
+			),
+			/Unexpected Safe owner decoder failure/u,
+		)
+		await assert.rejects(
+			modules.resolveSafeConfirmation(
+				simulator.ethereum,
+				pendingExecution,
+				'accept',
+				{ selectedSigner: alternateSignerAddress, verificationError: undefined },
+			),
+			/Unexpected Safe owner decoder failure/u,
+		)
+	} finally {
+		fakeSafeContract.safeOwnerLookupFailure = undefined
+	}
 
 	fakeSafeContract.version = 'invalid-version'
 	const unexpectedErrorBeforeUnsupportedVersion = (await getLatestUnexpectedError())?.data.code

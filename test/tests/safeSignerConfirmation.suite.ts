@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
-import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, pendingTransaction, recipientAddress, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 
 test('maps signer account refresh replies into Safe confirmation selections', () => {
 	const walletError = Object.assign(new Error('Wallet account verification failed.'), { code: 4001 })
@@ -193,7 +193,7 @@ test('keeps a disconnected Safe proposal reviewable and attaches the owner after
 	assert.equal(recoveredProposal?.type === 'Transaction' ? recoveredProposal.safeTransaction?.safeSignerAddress : undefined, safeTestOwnerAddress)
 })
 
-test('does not turn unexpected signer-selection storage failures into Safe signer errors', async () => {
+test('does not turn unexpected signer-selection storage or RPC failures into Safe signer errors', async () => {
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
 		safeSimulationSignerAddress: recipientAddress,
 		safeVersion: '1.4.1',
@@ -231,11 +231,29 @@ test('does not turn unexpected signer-selection storage failures into Safe signe
 
 	try {
 		await assert.rejects(
-			modules.resolveSafeConfirmation(simulator.ethereum, safePending, 'accept'),
+			modules.resolveSafeConfirmation(ethereum, safePending, 'accept', { selectedSigner: recipientAddress, verificationError: undefined }),
 			/tab state unavailable/u,
 		)
 	} finally {
 		browserMock.setStorageGetHandler(undefined)
+	}
+
+	fakeSafeContract.safeOwnerLookupFailure = 'unexpected'
+	try {
+		await assert.rejects(
+			modules.resolveSafeConfirmation(ethereum, safePending, 'accept', { selectedSigner: recipientAddress, verificationError: undefined }),
+			/Unexpected Safe owner decoder failure/u,
+		)
+	} finally {
+		fakeSafeContract.safeOwnerLookupFailure = undefined
+	}
+	fakeSafeContract.safeOwnerLookupFailure = 'expected'
+	try {
+		const expectedFailure = await modules.resolveSafeConfirmation(ethereum, safePending, 'accept', { selectedSigner: recipientAddress, verificationError: undefined })
+		assert.equal(expectedFailure.status, 'blocked')
+		assert.match(expectedFailure.status === 'blocked' ? expectedFailure.approvalStatus.message : '', /Safe owner lookup unavailable/u)
+	} finally {
+		fakeSafeContract.safeOwnerLookupFailure = undefined
 	}
 })
 
@@ -270,6 +288,20 @@ test('rebuilds an ordinary Safe proposal when the wallet switches between curren
 			executionGasLimit: 21_000n,
 		},
 	} as const
+	fakeSafeContract.safeOwnerLookupFailure = 'unexpected'
+	try {
+		await assert.rejects(
+			modules.resolveSafeConfirmation(
+				simulator.ethereum,
+				safePending,
+				'accept',
+				{ selectedSigner: selectedOwner, verificationError: undefined },
+			),
+			/Unexpected Safe owner decoder failure/u,
+		)
+	} finally {
+		fakeSafeContract.safeOwnerLookupFailure = undefined
+	}
 
 	const resolution = await modules.resolveSafeConfirmation(
 		simulator.ethereum,
@@ -589,7 +621,7 @@ test('keeps signer refresh failures visible in the Safe proposal instead of abor
 	assert.equal(failedProposal?.approvalStatus.status, 'SignerError')
 	assert.equal(failedProposal?.approvalStatus.status === 'SignerError' ? failedProposal.approvalStatus.code : undefined, -32010)
 	assert.match(failedProposal?.approvalStatus.status === 'SignerError' ? failedProposal.approvalStatus.message : '', /missing its execution gas limit/u)
-	assert.equal((await getLatestUnexpectedError())?.data.code, 'safe_proposal_signer_refresh_failed')
+	assert.equal(await getLatestUnexpectedError(), undefined)
 })
 
 test('refreshes the selected signer before forwarding a Safe transaction', async () => {
@@ -1029,4 +1061,61 @@ test('invalid Safe owner signatures retain the request as a signer error without
 	if (retainedRequest?.approvalStatus.status !== 'SignerError') throw new Error('missing Safe signature error')
 	assert.match(retainedRequest.approvalStatus.message, /owner signature was rejected/u)
 	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
+})
+
+test('propagates unexpected Safe signer-reply RPC and storage failures', async () => {
+	const ownerAccount = safeTestOwnerAccount
+	const safeSignerAddress = safeTestOwnerAddress
+	fakeSafeContract.owners = [safeSignerAddress]
+	fakeSafeContract.threshold = 2n
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	const signature = await ownerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+	const safePending = {
+		...pendingTransaction,
+		simulationMode: false,
+		approvalStatus: { status: 'WaitingForSigner' as const },
+		safeTransaction: {
+			safeAddress: activeAddress,
+			safeSignerAddress,
+			safeVersion: '1.4.1',
+			threshold: 2n,
+			reviewedSafeState: { version: '1.4.1', nonce: 0n, owners: [safeSignerAddress], threshold: 2n },
+			safeTxHash: BigInt(getSafeTxHash(safeTx)),
+			safeTx,
+		},
+	} as const
+
+	fakeSafeContract.safeOwnerLookupFailure = 'unexpected'
+	try {
+		await assert.rejects(
+			modules.resolveSafeSignerReply(ethereum, simulator.tokenPriceService, safePending, signature),
+			/Unexpected Safe owner decoder failure/u,
+		)
+	} finally {
+		fakeSafeContract.safeOwnerLookupFailure = undefined
+	}
+	fakeSafeContract.safeOwnerLookupFailure = 'expected'
+	try {
+		const expectedFailure = await modules.resolveSafeSignerReply(ethereum, simulator.tokenPriceService, safePending, signature)
+		assert.equal(expectedFailure.status, 'error')
+		assert.match(expectedFailure.status === 'error' ? expectedFailure.approvalStatus.message : '', /Safe owner lookup unavailable/u)
+	} finally {
+		fakeSafeContract.safeOwnerLookupFailure = undefined
+	}
+
+	browserMock.setStorageSetHandler(async () => {
+		throw new Error('Safe stack storage unavailable')
+	})
+	try {
+		await assert.rejects(
+			modules.resolveSafeSignerReply(ethereum, simulator.tokenPriceService, safePending, signature),
+			/Safe stack storage unavailable/u,
+		)
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
 })

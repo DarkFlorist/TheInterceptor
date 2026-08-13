@@ -9,11 +9,12 @@ import { getHtmlFile } from './backgroundUtils.js'
 import { getSafeTransactionStacks, updateTransactionState } from './storageVariables.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { openPopupOrTab } from '../utils/popupOrTab.js'
-import { assertSafeContractStateUnchanged, createSafeOwnerValidator, getSafeContractSnapshot } from '../safe/safeCore.js'
+import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, createSafeOwnerValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
 import { createSafeExecutionPreSimulationTransaction } from '../safe/safeSimulation.js'
 import { reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
-import { validateSafeMessageCoSignature } from './safeConfirmationResolver.js'
+import { isSafeSignerSelectionFailure, validateSafeMessageCoSignature } from './safeConfirmationResolver.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
+import { getSafePendingFlow } from './safePendingFlow.js'
 
 export type SafeSignerReplyResolution =
 	| { readonly status: 'not-safe' }
@@ -31,21 +32,20 @@ export async function resolveSafeSignerReply(
 	pending: PendingTransactionOrSignableMessage,
 	signerReply: unknown,
 ): Promise<SafeSignerReplyResolution> {
-	if (
-		pending.type === 'Transaction'
-		&& pending.safeTransaction !== undefined
-		&& pending.transactionOrMessageCreationStatus === 'Simulated'
-	) return await persistSignedSafeTransaction(ethereum, tokenPriceService, pending, pending.safeTransaction, signerReply)
+	const flow = getSafePendingFlow(pending)
+	if (flow?.kind === 'proposal' && flow.pending.transactionOrMessageCreationStatus === 'Simulated') {
+		return await persistSignedSafeTransaction(ethereum, tokenPriceService, flow.pending, flow.pending.safeTransaction, signerReply)
+	}
 
 	if (
-		pending.type === 'SignableMessage'
-		&& pending.transactionOrMessageCreationStatus === 'Simulated'
-		&& pending.visualizedPersonalSignRequest.type === 'SafeTx'
-		&& pending.safeMessageCoSignSnapshot !== undefined
+		flow?.kind === 'messageCoSign'
+		&& flow.pending.transactionOrMessageCreationStatus === 'Simulated'
+		&& flow.pending.visualizedPersonalSignRequest.type === 'SafeTx'
 	) {
 		try {
-			return { status: 'success', result: await validateSafeMessageCoSignature(ethereum, pending, signerReply) }
+			return { status: 'success', result: await validateSafeMessageCoSignature(ethereum, flow.pending, signerReply) }
 		} catch (error) {
+			if (!isSafeContractValidationFailure(error) && !isSafeOwnerValidationFailure(error) && !isSafeSignerSelectionFailure(error)) throw error
 			return signerError(`Gnosis Safe co-signature was rejected: ${ getErrorMessage(error) ?? 'The signer returned an invalid Gnosis Safe signature.' }`)
 		}
 	}
@@ -67,10 +67,10 @@ async function persistSignedSafeTransaction(
 	let currentSafeNonce: bigint
 	try {
 		if (safeSigningRequest.safeSignerAddress === undefined) {
-			throw new Error('Connect a signer wallet and select a current Gnosis Safe owner before signing.')
+			throw createSafeContractValidationFailure('Connect a signer wallet and select a current Gnosis Safe owner before signing.')
 		}
 		if (safeSigningRequest.reviewedSafeState === undefined) {
-			throw new Error('Review this Gnosis Safe proposal again so its current owners, threshold, nonce, and signer can be verified.')
+			throw createSafeContractValidationFailure('Review this Gnosis Safe proposal again so its current owners, threshold, nonce, and signer can be verified.')
 		}
 		const { blockNumber, state: safeState } = await getSafeContractSnapshot(ethereum, safeSigningRequest.safeAddress)
 		currentSafeNonce = safeState.nonce
@@ -82,16 +82,18 @@ async function persistSignedSafeTransaction(
 		const alreadyPersisted = existingStack?.transactions.some((transaction) => transaction.safeTxHash === safeSigningRequest.safeTxHash) === true
 		const expectedNonce = safeState.nonce + BigInt(existingStack?.transactions.length ?? 0)
 		if (!alreadyPersisted && safeSigningRequest.safeTx.message.nonce !== expectedNonce) {
-			throw new Error(`This proposal uses Gnosis Safe nonce ${ safeSigningRequest.safeTx.message.nonce.toString() }, but the next available nonce is ${ expectedNonce.toString() }. Review and sign the rebased proposal again.`)
+			throw createSafeContractValidationFailure(`This proposal uses Gnosis Safe nonce ${ safeSigningRequest.safeTx.message.nonce.toString() }, but the next available nonce is ${ expectedNonce.toString() }. Review and sign the rebased proposal again.`)
 		}
+		if (typeof signerReply !== 'string') throw createSafeOwnerValidationFailure('The signer returned a non-string Gnosis Safe owner signature.')
 		ownerSignature = await createSafeOwnerValidator(
 			ethereum, safeSigningRequest.safeAddress, { blockNumber, state: safeState },
 		).validateSignature(
 			safeSigningRequest.safeTxHash,
-			funtypes.String.parse(signerReply),
+			signerReply,
 			safeSigningRequest.safeSignerAddress,
 		)
 	} catch (error) {
+		if (!isSafeContractValidationFailure(error) && !isSafeOwnerValidationFailure(error)) throw error
 		return signerError(`Gnosis Safe proposal or owner signature was rejected: ${ getErrorMessage(error) ?? 'The signer returned an invalid proposal signature.' }`)
 	}
 
@@ -135,7 +137,7 @@ async function persistSignedSafeTransaction(
 				} else {
 					const expectedNonce = existingStack.baseNonce + BigInt(existingStack.transactions.length)
 					if (safeSigningRequest.safeTx.message.nonce !== expectedNonce) {
-						throw new Error(`Gnosis Safe transaction nonce ${ safeSigningRequest.safeTx.message.nonce.toString() } does not follow local stack nonce ${ expectedNonce.toString() }.`)
+						throw createSafeContractValidationFailure(`Gnosis Safe transaction nonce ${ safeSigningRequest.safeTx.message.nonce.toString() } does not follow local stack nonce ${ expectedNonce.toString() }.`)
 					}
 					safeTransactionStacks = reconciledState.safeTransactionStacks.map((stack) => stack === existingStack
 						? { ...stack, transactions: [...stack.transactions, stackTransaction] }
@@ -156,6 +158,7 @@ async function persistSignedSafeTransaction(
 			return { safeTransactionStacks, interceptorTransactionStack }
 		})
 	} catch (error) {
+		if (!isSafeContractValidationFailure(error)) throw error
 		return signerError(`Gnosis Safe proposal could not be persisted: ${ getErrorMessage(error) ?? 'The local Gnosis Safe proposal stack changed.' }`)
 	}
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, true, false)

@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { activeAddress, addressString, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, modules, pendingTransaction, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, browserMock, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, modules, pendingTransaction, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 test('rejects EIP-7702 authorization lists before creating a Safe proposal', async () => {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
@@ -442,6 +442,109 @@ test('does not fall back to ordinary gas estimation when Safe simulation state i
 	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_estimateGas'), false)
 })
 
+test('propagates unexpected Safe proposal RPC and reconciliation storage failures', async () => {
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	const { prepareSafeTransactionConfirmation } = await import('../../app/ts/background/safeTransactionConfirmation.js')
+	const transactionParams = SendTransactionParams.parse({
+		method: 'eth_sendTransaction',
+		params: [{
+			from: addressString(activeAddress),
+			to: addressString(recipientAddress),
+			value: '0x0',
+			data: '0x',
+		}],
+	})
+
+	fakeSafeContract.safeOwnerLookupFailure = 'expected'
+	try {
+		const expectedFailure = await prepareSafeTransactionConfirmation(simulator.ethereum, transactionParams, false, activeAddress, recipientAddress)
+		assert.match(expectedFailure.preparationMessage ?? '', /Safe owner lookup unavailable/u)
+	} finally {
+		fakeSafeContract.safeOwnerLookupFailure = undefined
+	}
+	fakeSafeContract.safeOwnerLookupFailure = 'unexpected'
+	try {
+		await assert.rejects(
+			prepareSafeTransactionConfirmation(simulator.ethereum, transactionParams, false, activeAddress, recipientAddress),
+			/Unexpected Safe owner decoder failure/u,
+		)
+	} finally {
+		fakeSafeContract.safeOwnerLookupFailure = undefined
+	}
+	browserMock.setStorageSetHandler(async () => {
+		throw new Error('Safe reconciliation storage unavailable')
+	})
+	try {
+		await assert.rejects(
+			prepareSafeTransactionConfirmation(simulator.ethereum, transactionParams, false, activeAddress, recipientAddress),
+			/Safe reconciliation storage unavailable/u,
+		)
+	} finally {
+		browserMock.setStorageSetHandler(undefined)
+	}
+})
+
+test('reserves proposal nonces without counting overlapping direct Safe execution metadata', async () => {
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	fakeSafeContract.nonce = 0n
+	fakeSafeContract.owners = [recipientAddress]
+	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	const transactionParams = SendTransactionParams.parse({
+		method: 'eth_sendTransaction',
+		params: [{
+			from: addressString(activeAddress),
+			to: addressString(recipientAddress),
+			value: '0x0',
+			data: '0x',
+		}],
+	})
+	const proposalSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	const overlappingDirectSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 1n)
+	const safeRequest = (safeTx: typeof proposalSafeTx) => ({
+		safeAddress: activeAddress,
+		safeSignerAddress: recipientAddress,
+		safeVersion: '1.4.1' as const,
+		threshold: 1n,
+		reviewedSafeState: { version: '1.4.1' as const, nonce: 0n, owners: [recipientAddress], threshold: 1n },
+		safeTxHash: BigInt(getSafeTxHash(safeTx)),
+		safeTx,
+		executionGasLimit: 21_000n,
+	})
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: 401 },
+			safeTransaction: safeRequest(proposalSafeTx),
+		}, {
+			...pendingTransaction,
+			uniqueRequestIdentifier: { ...uniqueRequestIdentifier, requestId: 402 },
+			safeExecutionOriginalRequestParameters: transactionParams,
+			safeTransaction: safeRequest(overlappingDirectSafeTx),
+		}],
+	})
+	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(overlappingDirectSafeTx))
+	const preparation = await (await import('../../app/ts/background/safeTransactionConfirmation.js')).prepareSafeTransactionConfirmation(
+		simulator.ethereum,
+		transactionParams,
+		false,
+		activeAddress,
+		recipientAddress,
+	)
+	const finalized = await preparation.finalize(pendingTransaction.transactionToSimulate, uniqueRequestIdentifier.requestSocket.tabId)
+	assert.equal(finalized.safeTransaction?.safeTx.message.nonce, 1n)
+})
+
 test('refreshes pending Safe intent without charging gas to the Safe', async () => {
 	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
@@ -503,6 +606,68 @@ test('refreshes pending Safe intent without charging gas to the Safe', async () 
 	assert.equal(refreshed.transactionToSimulate.transaction.maxPriorityFeePerGas, 0n)
 	assert.equal(refreshed.safeTransaction?.executionGasLimit, 32_813n)
 	assert.deepEqual(refreshed.transactionToSimulate.transaction.input, hexToBytes('0xa9059cbb'))
+	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_getBalance'), false)
+	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_estimateGas'), false)
+	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_simulateV1'), true)
+})
+
+test('refreshes direct Safe execution without charging gas to the signer', async () => {
+	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
+		simulationMode: false,
+		rpcNetwork: fakeRpcNetwork,
+	})
+	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	const transactionParams = SendTransactionParams.parse({
+		method: 'eth_sendTransaction',
+		params: [{
+			from: addressString(recipientAddress),
+			to: addressString(activeAddress),
+			value: '0x0',
+			data: '0x',
+			maxFeePerGas: '0x1234',
+			maxPriorityFeePerGas: '0x42',
+		}],
+	})
+	const staleProposalSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 1n,
+		input: hexToBytes('0x1234'),
+	}, 7n)
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			activeAddress: recipientAddress,
+			originalRequestParameters: transactionParams,
+			simulationMode: false,
+			transactionToSimulate: {
+				...pendingTransaction.transactionToSimulate,
+				originalRequestParameters: transactionParams,
+			},
+			safeExecutionOriginalRequestParameters: transactionParams,
+			safeExecutionSignerAddress: recipientAddress,
+			safeTransaction: {
+				safeAddress: activeAddress,
+				safeSignerAddress: recipientAddress,
+				safeVersion: '1.4.1',
+				threshold: 1n,
+				reviewedSafeState: { version: '1.4.1', nonce: 7n, owners: [recipientAddress], threshold: 1n },
+				safeTxHash: BigInt(getSafeTxHash(staleProposalSafeTx)),
+				safeTx: staleProposalSafeTx,
+				executionGasLimit: 21_000n,
+			},
+		}],
+	})
+	fakeSafeContract.requestedRpcMethods.splice(0, fakeSafeContract.requestedRpcMethods.length)
+
+	await modules.refreshPopupConfirmTransactionSimulation(simulator.ethereum, simulator.tokenPriceService)
+
+	const [refreshed] = await modules.getPendingTransactionsAndMessages()
+	if (refreshed?.type !== 'Transaction' || refreshed.transactionOrMessageCreationStatus !== 'Simulated') {
+		throw new Error('Direct Safe execution was not refreshed')
+	}
+	assert.equal(refreshed.transactionToSimulate.transaction.maxFeePerGas, 0n)
+	assert.equal(refreshed.transactionToSimulate.transaction.maxPriorityFeePerGas, 0n)
+	assert.deepEqual(refreshed.transactionToSimulate.transaction.input, new Uint8Array())
 	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_getBalance'), false)
 	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_estimateGas'), false)
 	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_simulateV1'), true)
