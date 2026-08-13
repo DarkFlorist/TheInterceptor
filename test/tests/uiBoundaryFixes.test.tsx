@@ -6,7 +6,7 @@ import { act } from 'preact/test-utils'
 import { findChainEntryByName, findRpcEntryByUrl, getRpcEntryLabel } from '../../app/ts/components/subcomponents/ChainSelector.js'
 import { DropDownMenu } from '../../app/ts/components/subcomponents/DropDownMenu.js'
 import { InlineCard } from '../../app/ts/components/subcomponents/InlineCard.js'
-import { parseTimePickerDeltaValue, TimePicker } from '../../app/ts/components/subcomponents/TimePicker.js'
+import { hasValidTimePickerValue, parseTimePickerDeltaValue, TimePicker } from '../../app/ts/components/subcomponents/TimePicker.js'
 import { rpcEntriesToChainEntriesWithAllChainsEntry } from '../../app/ts/components/ui-utils.js'
 import { parseRpcFormData } from '../../app/ts/utils/rpcFormData.js'
 import { removeAddressBookEntryAndClose } from '../../app/ts/AddressBook.js'
@@ -289,6 +289,14 @@ describe('UI boundary fixes', () => {
 			render(null, dom.document.body)
 			dom.restore()
 		}
+	})
+
+	test('requires a value before committing Until or For time picker modes', () => {
+		assert.equal(hasValidTimePickerValue('Until', undefined, 1n), false)
+		assert.equal(hasValidTimePickerValue('Until', new Date('2024-01-01T00:00:00.000Z'), undefined), true)
+		assert.equal(hasValidTimePickerValue('For', undefined, undefined), false)
+		assert.equal(hasValidTimePickerValue('For', undefined, 0n), true)
+		assert.equal(hasValidTimePickerValue('No Delay', undefined, undefined), true)
 	})
 
 	test('keeps a block explorer URL when its API key is empty', () => {

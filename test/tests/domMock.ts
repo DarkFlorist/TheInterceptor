@@ -95,7 +95,11 @@ class TestElement extends TestNode {
 	readonly nodeType = 1
 	tagName: string
 	nodeName: string
+	clientHeight = 40
+	onscroll: unknown = undefined
+	scrollTop = 0
 	attributes: AttributeMap = {}
+	readonly eventListeners = new Map<string, Set<(event: Event) => unknown>>()
 	style = {
 		setProperty: (name: string, value: string) => {
 			this.style[name] = value
@@ -124,16 +128,47 @@ class TestElement extends TestNode {
 		delete this.attributes[name]
 	}
 
-	addEventListener() { return undefined }
-	removeEventListener() { return undefined }
+	addEventListener(type: string, listener: (event: Event) => unknown) {
+		const listeners = this.eventListeners.get(type) ?? new Set()
+		listeners.add(listener)
+		this.eventListeners.set(type, listeners)
+	}
+
+	removeEventListener(type: string, listener: (event: Event) => unknown) {
+		this.eventListeners.get(type)?.delete(listener)
+	}
+
+	dispatchEvent(event: Event) {
+		if (event.target === null) Object.defineProperty(event, 'target', { configurable: true, value: this })
+		Object.defineProperty(event, 'currentTarget', { configurable: true, value: this })
+		for (const listener of this.eventListeners.get(event.type) ?? []) listener.call(this, event)
+		if (event.bubbles && !event.cancelBubble && this.parentNode instanceof TestElement) this.parentNode.dispatchEvent(event)
+		return !event.defaultPrevented
+	}
 	focus() { return undefined }
 	blur() { return undefined }
 	showPopover() { return undefined }
 	hidePopover() { return undefined }
 	togglePopover() { return undefined }
+	getBoundingClientRect() { return { height: this.clientHeight, width: 100, x: 0, y: 0, top: 0, right: 100, bottom: this.clientHeight, left: 0 } }
 
 	getAttribute(name: string) {
 		return this.attributes[name] ?? null
+	}
+
+	hasAttribute(name: string) {
+		return this.attributes[name] !== undefined
+	}
+
+	closest(selector: string): TestElement | null {
+		const attributeMatch = selector.match(/^\[([^\]]+)\]$/u)
+		if (attributeMatch?.[1] === undefined) return null
+		let element: TestElement | null = this
+		while (element !== null) {
+			if (element.hasAttribute(attributeMatch[1])) return element
+			element = element.parentNode instanceof TestElement ? element.parentNode : null
+		}
+		return null
 	}
 
 	override get textContent() {
@@ -173,11 +208,16 @@ class TestDialogElement extends TestElement {
 
 class TestDocument {
 	body: TestElement
-	readonly dialogElementConstructor: typeof TestDialogElement
+	readonly elementConstructor: new (ownerDocument: TestDocument, tagName: string) => TestElement
+	readonly dialogElementConstructor: new (ownerDocument: TestDocument, tagName: string) => TestElement
 
-	constructor(dialogElementConstructor: typeof TestDialogElement = TestDialogElement) {
+	constructor(
+		elementConstructor: new (ownerDocument: TestDocument, tagName: string) => TestElement = TestElement,
+		dialogElementConstructor: new (ownerDocument: TestDocument, tagName: string) => TestElement = TestDialogElement,
+	) {
+		this.elementConstructor = elementConstructor
 		this.dialogElementConstructor = dialogElementConstructor
-		this.body = new TestElement(this, 'body')
+		this.body = new this.elementConstructor(this, 'body')
 	}
 
 	addEventListener() { return undefined }
@@ -185,7 +225,7 @@ class TestDocument {
 
 	createElement(tagName: string) {
 		if (tagName.toLowerCase() === 'dialog') return new this.dialogElementConstructor(this, tagName)
-		return new TestElement(this, tagName)
+		return new this.elementConstructor(this, tagName)
 	}
 
 	createElementNS(_namespace: string, tagName: string) {
@@ -212,6 +252,8 @@ type DomMockState = {
 	previousRequestAnimationFrame: unknown
 	previousCancelAnimationFrame: unknown
 	previousHtmlDialogElement: unknown
+	previousHtmlDivElement: unknown
+	previousElement: unknown
 }
 
 const fallbackDocument = new TestDocument()
@@ -243,8 +285,22 @@ function restoreOwnedGlobal(name: string, isOwnedByThisMock: boolean, previousVa
 }
 
 export function installDomMock() {
-	class OwnedTestDialogElement extends TestDialogElement {}
-	const document = new TestDocument(OwnedTestDialogElement)
+	class OwnedTestElement extends TestElement {}
+	class OwnedTestDialogElement extends OwnedTestElement {
+		open = false
+		returnValue = ''
+
+		showModal() {
+			this.open = true
+		}
+
+		close(returnValue = '') {
+			this.open = false
+			this.returnValue = returnValue
+			this.dispatchEvent(new Event('close'))
+		}
+	}
+	const document = new TestDocument(OwnedTestElement, OwnedTestDialogElement)
 	const window: TestWindow = {
 		document,
 		addEventListener() { return undefined },
@@ -264,6 +320,8 @@ export function installDomMock() {
 	const previousRequestAnimationFrame = globalThis.requestAnimationFrame
 	const previousCancelAnimationFrame = globalThis.cancelAnimationFrame
 	const previousHtmlDialogElement = globalThis.HTMLDialogElement
+	const previousHtmlDivElement = globalThis.HTMLDivElement
+	const previousElement = globalThis.Element
 	const state: DomMockState = {
 		restored: false,
 		previousDocument,
@@ -273,8 +331,10 @@ export function installDomMock() {
 		previousRequestAnimationFrame,
 		previousCancelAnimationFrame,
 		previousHtmlDialogElement,
+		previousHtmlDivElement,
+		previousElement,
 	}
-	for (const ownedValue of [document, window, setIntervalMock, clearIntervalMock, requestAnimationFrameMock, cancelAnimationFrameMock, OwnedTestDialogElement]) domMockOwners.set(ownedValue, state)
+	for (const ownedValue of [document, window, setIntervalMock, clearIntervalMock, requestAnimationFrameMock, cancelAnimationFrameMock, OwnedTestDialogElement, OwnedTestElement]) domMockOwners.set(ownedValue, state)
 
 	defineGlobalValue('document', document)
 	defineGlobalValue('window', window)
@@ -283,6 +343,8 @@ export function installDomMock() {
 	defineGlobalValue('requestAnimationFrame', requestAnimationFrameMock)
 	defineGlobalValue('cancelAnimationFrame', cancelAnimationFrameMock)
 	defineGlobalValue('HTMLDialogElement', OwnedTestDialogElement)
+	defineGlobalValue('HTMLDivElement', OwnedTestElement)
+	defineGlobalValue('Element', OwnedTestElement)
 
 	return {
 		document,
@@ -296,6 +358,8 @@ export function installDomMock() {
 			restoreOwnedGlobal('requestAnimationFrame', globalThis.requestAnimationFrame === requestAnimationFrameMock, previousRequestAnimationFrame, fallbackRequestAnimationFrame, (owner) => owner.previousRequestAnimationFrame)
 			restoreOwnedGlobal('cancelAnimationFrame', globalThis.cancelAnimationFrame === cancelAnimationFrameMock, previousCancelAnimationFrame, fallbackCancelAnimationFrame, (owner) => owner.previousCancelAnimationFrame)
 			restoreOwnedGlobal('HTMLDialogElement', globalThis.HTMLDialogElement === OwnedTestDialogElement, previousHtmlDialogElement, undefined, (owner) => owner.previousHtmlDialogElement)
+			restoreOwnedGlobal('HTMLDivElement', globalThis.HTMLDivElement === OwnedTestElement, previousHtmlDivElement, undefined, (owner) => owner.previousHtmlDivElement)
+			restoreOwnedGlobal('Element', globalThis.Element === OwnedTestElement, previousElement, undefined, (owner) => owner.previousElement)
 		},
 	}
 }

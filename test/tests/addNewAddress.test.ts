@@ -176,6 +176,34 @@ describe('add new address save flow', () => {
 		assert.equal(isIdentificationRequestCurrent(changedAddressState, requestedIdentification), false)
 	})
 
+	test('accepts an uppercase address in the add-address identification path', () => {
+		const state: ModifyAddressWindowState = {
+			windowStateId: 'uppercase-address',
+			errorState: undefined,
+			incompleteAddressBookEntry: {
+				addingAddress: true,
+				type: 'contact',
+				address: '0xDE709F2102306220921060314715629080E2FB77',
+				askForAddressAccess: true,
+				name: 'Uppercase address',
+				symbol: undefined,
+				decimals: undefined,
+				logoUri: undefined,
+				entrySource: 'User',
+				abi: undefined,
+				useAsActiveAddress: undefined,
+				declarativeNetRequestBlockMode: undefined,
+				chainId: 1n,
+			},
+		}
+
+		assert.deepEqual(getAddressIdentificationKey(state), {
+			address: 0xde709f2102306220921060314715629080e2fb77n,
+			chainId: 1n,
+			windowStateId: 'uppercase-address',
+		})
+	})
+
 	test('rechecks the same address after its selected chain changes', () => {
 		const state: ModifyAddressWindowState = {
 			windowStateId: 'current-window',

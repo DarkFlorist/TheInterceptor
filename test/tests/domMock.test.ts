@@ -9,6 +9,8 @@ test('installDomMock restore keeps newer interleaved mock globals active', () =>
 	const firstRequestAnimationFrame = globalThis.requestAnimationFrame
 	const firstCancelAnimationFrame = globalThis.cancelAnimationFrame
 	const firstHtmlDialogElement = globalThis.HTMLDialogElement
+	const firstHtmlDivElement = globalThis.HTMLDivElement
+	const firstElement = globalThis.Element
 
 	const second = installDomMock()
 	const secondSetInterval = globalThis.setInterval
@@ -16,6 +18,8 @@ test('installDomMock restore keeps newer interleaved mock globals active', () =>
 	const secondRequestAnimationFrame = globalThis.requestAnimationFrame
 	const secondCancelAnimationFrame = globalThis.cancelAnimationFrame
 	const secondHtmlDialogElement = globalThis.HTMLDialogElement
+	const secondHtmlDivElement = globalThis.HTMLDivElement
+	const secondElement = globalThis.Element
 
 	first.restore()
 
@@ -26,6 +30,10 @@ test('installDomMock restore keeps newer interleaved mock globals active', () =>
 	assert.equal(globalThis.requestAnimationFrame, secondRequestAnimationFrame)
 	assert.equal(globalThis.cancelAnimationFrame, secondCancelAnimationFrame)
 	assert.equal(globalThis.HTMLDialogElement, secondHtmlDialogElement)
+	assert.equal(globalThis.HTMLDivElement, secondHtmlDivElement)
+	assert.equal(globalThis.Element, secondElement)
+	assert.equal(second.document.body instanceof globalThis.HTMLDivElement, true)
+	assert.equal(second.document.body instanceof globalThis.Element, true)
 
 	second.restore()
 
@@ -43,4 +51,8 @@ test('installDomMock restore keeps newer interleaved mock globals active', () =>
 	assert.notEqual(globalThis.cancelAnimationFrame, secondCancelAnimationFrame)
 	assert.notEqual(globalThis.HTMLDialogElement, firstHtmlDialogElement)
 	assert.notEqual(globalThis.HTMLDialogElement, secondHtmlDialogElement)
+	assert.notEqual(globalThis.HTMLDivElement, firstHtmlDivElement)
+	assert.notEqual(globalThis.HTMLDivElement, secondHtmlDivElement)
+	assert.notEqual(globalThis.Element, firstElement)
+	assert.notEqual(globalThis.Element, secondElement)
 })
