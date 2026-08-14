@@ -133,7 +133,7 @@ test('shows stale local Safe stack failures in the transaction confirmation', as
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
+		data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
 	}), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	assert.equal((await modules.getPendingTransactionsAndMessages())[0]?.transactionOrMessageCreationStatus, 'FailedToSimulate')
