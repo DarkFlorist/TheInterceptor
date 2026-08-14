@@ -9,17 +9,17 @@ import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
-import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
-import { modifyObject } from '../utils/typescript.js'
+import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
-import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
+import { getLegacyWebsiteOriginForCanonicalOrigin, getWebsiteHostWithPortFromStoredOrigin } from './websiteAccessMigration.js'
+import { applyInterceptorDisabledDecision, applyWebsiteAccessDecision } from './websiteAccessDecision.js'
 
 function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
@@ -27,11 +27,12 @@ function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, sock
 	return tabConnection?.connections[identifier]
 }
 
-function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
+function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean, approvedAddress?: bigint) {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection === undefined) return
 	if (approved) connection.wantsToConnect = true
 	connection.approved = approved
+	connection.approvedAddress = approved ? approvedAddress : undefined
 }
 
 export function clearWebsiteConnectionIntent(websiteTabConnections: WebsiteTabConnections, websiteOrigin: string) {
@@ -86,13 +87,23 @@ export async function withSuppressedUnscopedConnectionEventsForSocketAsync<T>(so
 
 export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled'
 
+function getExactAndLegacyWebsiteAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string) {
+	const exactAccess = websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+	const legacyWebsiteOrigin = getLegacyWebsiteOriginForCanonicalOrigin(websiteOrigin)
+	const legacyAccess = legacyWebsiteOrigin === undefined
+		? undefined
+		: websiteAccess.find((entry) => entry.website.websiteOrigin === legacyWebsiteOrigin)
+	return { exactAccess, legacyAccess }
+}
+
 type VerifyAccessOptions = {
 	readonly ignoreConnectionApproval?: boolean
 }
 
 export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, options: VerifyAccessOptions = {}): ApprovalState {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
-	if (connection?.approved && options.ignoreConnectionApproval !== true) return 'hasAccess'
+	if (connection?.approved && options.ignoreConnectionApproval !== true
+		&& (requestAccessForAddress === undefined || connection.approvedAddress === requestAccessForAddress.address)) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
 	if (access === 'hasAccess') {
 		const popupRefreshGeneration = bumpPopupRefreshGeneration()
@@ -141,34 +152,32 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 }
 
 export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : ApprovalState {
-	for (const web of websiteAccess) {
-		if (web.website.websiteOrigin === websiteOrigin) {
-			if (web.interceptorDisabled) return 'interceptorDisabled'
-			if (web.access === true) return 'hasAccess'
-			if (web.access === false) return 'noAccess'
-			return 'askAccess'
-		}
-	}
+	const { exactAccess, legacyAccess } = getExactAndLegacyWebsiteAccess(websiteAccess, websiteOrigin)
+	if (exactAccess?.interceptorDisabled === true || legacyAccess?.interceptorDisabled === true) return 'interceptorDisabled'
+	if (exactAccess?.access === true) return 'hasAccess'
+	// Legacy grants are scheme-ambiguous, but applying a legacy denial to both schemes cannot expose an account that the user did not authorize.
+	if (exactAccess?.access === false || legacyAccess?.access === false) return 'noAccess'
 	return 'askAccess'
 }
 
 export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: AddressBookEntry) : ApprovalState {
-	for (const web of websiteAccess) {
-		if (web.website.websiteOrigin === websiteOrigin) {
-			if (web.interceptorDisabled) return 'interceptorDisabled'
-			if (web.access === false) return 'noAccess'
-			if (web.access !== true) return 'askAccess'
-			if (web.addressAccess !== undefined) {
-				for (const addressAccess of web.addressAccess) {
-					if (addressAccess.address === address.address) {
-						return addressAccess.access ? 'hasAccess' : 'noAccess'
-					}
+	const { exactAccess, legacyAccess } = getExactAndLegacyWebsiteAccess(websiteAccess, websiteOrigin)
+	if (exactAccess?.interceptorDisabled === true || legacyAccess?.interceptorDisabled === true) return 'interceptorDisabled'
+	if (exactAccess?.access === false) return 'noAccess'
+	if (exactAccess?.access === true) {
+		if (exactAccess.addressAccess !== undefined) {
+			for (const addressAccess of exactAccess.addressAccess) {
+				if (addressAccess.address === address.address) {
+					return addressAccess.access ? 'hasAccess' : 'noAccess'
 				}
 			}
-			if (address.askForAddressAccess === false) return 'hasAccess'
-			return 'askAccess'
 		}
+		if (legacyAccess?.addressAccess?.some((entry) => entry.address === address.address && entry.access === false) === true) return 'noAccess'
+		if (address.askForAddressAccess === false) return 'hasAccess'
+		return 'askAccess'
 	}
+	if (legacyAccess?.access === false) return 'noAccess'
+	if (legacyAccess?.addressAccess?.some((entry) => entry.address === address.address && entry.access === false) === true) return 'noAccess'
 	return 'askAccess'
 }
 
@@ -185,33 +194,11 @@ function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: Addre
 }
 
 export async function setInterceptorDisabledForWebsite(website: Website, interceptorDisabled: boolean) {
-	return await updateWebsiteAccess((previousWebsiteAccess) => {
-		const index = previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === website.websiteOrigin)
-		const previousAccess = index !== -1 ? previousWebsiteAccess[index] : undefined;
-		if (previousAccess === undefined) return [...previousWebsiteAccess, { website, addressAccess: [], interceptorDisabled } ]
-		return replaceElementInReadonlyArray(previousWebsiteAccess, index, { ...previousAccess, interceptorDisabled })
-	})
+	return await updateWebsiteAccess((previousWebsiteAccess) => applyInterceptorDisabledDecision(previousWebsiteAccess, website, interceptorDisabled))
 }
 
 export async function setAccess(website: Website, access: boolean, address: bigint | undefined) {
-	return await updateWebsiteAccess((previousWebsiteAccess) => {
-		const foundEntry = previousWebsiteAccess.find((entry) => entry.website.websiteOrigin === website.websiteOrigin)
-		if (foundEntry === undefined) return [...previousWebsiteAccess, { website, access, addressAccess: address === undefined || !access ? undefined : [ { address, access } ] }]
-		return previousWebsiteAccess.map((prevAccess) => {
-			if (prevAccess.website.websiteOrigin === website.websiteOrigin) {
-				const websiteData = mergeStoredWebsiteMetadata(prevAccess.website, website)
-				if (address === undefined) return modifyObject(prevAccess, { website: websiteData, access })
-				const addressAccess = { address, access }
-				const updatedEntry = modifyObject(prevAccess, { website: websiteData, access: prevAccess.access ? prevAccess.access : access })
-				if (prevAccess.addressAccess === undefined) return modifyObject(updatedEntry, { addressAccess: [addressAccess] })
-				if (prevAccess.addressAccess.find((x) => x.address === address) === undefined) {
-					return modifyObject(updatedEntry, { addressAccess: [ ...prevAccess.addressAccess, addressAccess ] })
-				}
-				return modifyObject(updatedEntry, { addressAccess: prevAccess.addressAccess.map((x) => (x.address === address ? addressAccess : x)) })
-			}
-			return prevAccess
-		})
-	})
+	return await updateWebsiteAccess((previousWebsiteAccess) => applyWebsiteAccessDecision(previousWebsiteAccess, website, access, address))
 }
 
 // gets active address if the website has been give access for it, otherwise returns undefined this is to guard websites from seeing addresses without access
@@ -229,7 +216,7 @@ function connectToPort(
 	settings: Settings,
 	connectWithActiveAddress: bigint | undefined,
 ): true {
-	setWebsitePortApproval(websiteTabConnections, socket, true)
+	setWebsitePortApproval(websiteTabConnections, socket, true, connectWithActiveAddress)
 	if (!shouldSendUnscopedConnectionEvents(socket)) return true
 	sendProviderConnectionEventsToPort(websiteTabConnections, socket, settings, connectWithActiveAddress === undefined ? [] : [connectWithActiveAddress])
 	return true
@@ -264,6 +251,15 @@ function disconnectFromPort(
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: [] })
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'disconnect', result: [] })
 	return false
+}
+
+export function suspendWebsitePortApprovalsForTab(websiteTabConnections: WebsiteTabConnections, tabId: number) {
+	const tabConnection = websiteTabConnections.get(tabId)
+	if (tabConnection === undefined) return
+	for (const connection of Object.values(tabConnection.connections)) {
+		if (!connection.approved) continue
+		disconnectFromPort(websiteTabConnections, connection.socket)
+	}
 }
 
 export async function getAssociatedAddresses(settings: Settings, websiteOrigin: string, activeAddress: AddressBookEntry | undefined) : Promise<AddressBookEntries> {
@@ -339,7 +335,12 @@ const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
 const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections) => {
 	const approvedTabIds = getApprovedTabs(websiteTabConnections)
 	const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
-	const sitesToBlock = (await getWebsiteAccess()).filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
+	const sitesToBlock = (await getWebsiteAccess())
+		.filter((access) => access.declarativeNetRequestBlockMode === 'block-all')
+		.flatMap((access) => {
+			const host = getWebsiteHostWithPortFromStoredOrigin(access.website.websiteOrigin)
+			return host === undefined ? [] : [host]
+		})
 	return {
 		tabIdsToBlock,
 		sitesToBlock
@@ -413,7 +414,7 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 
 export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {
 	const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
-	if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return true
+	if (sitesToBlock.find((blockUrl) => blockUrl === getHostWithPort(websiteOrigin)) !== undefined) return true
 	if (tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined) return true
 	return false
 }

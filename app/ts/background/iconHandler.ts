@@ -12,6 +12,7 @@ import { getRpcWarningState } from '../utils/rpcConnectionUi.js'
 import { getPrettySignerName } from '../utils/signerMetadata.js'
 import { imageToUri } from '../utils/imageToUri.js'
 import { sanitizeStoredWebsiteIcon } from '../utils/websiteIcons.js'
+import { isInterceptorDisabledForWebsiteOrigin } from './websiteAccessDecision.js'
 
 const ALLOWED_FAVICON_PROTOCOLS = new Set(['http:', 'https:', 'data:'])
 const WAIT_FOR_LOADED_TAB_TIMEOUT_MESSAGE = 'Timed out waiting for tab to finish loading.'
@@ -117,7 +118,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 	const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason, popupRefreshGeneration)
 
 	const settings = await getSettings()
-	if (hasAccess(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return setIcon(ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${ websiteOrigin } by user request.`)
+	if (isInterceptorDisabledForWebsiteOrigin(settings.websiteAccess, websiteOrigin)) return setIcon(ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${ websiteOrigin } by user request.`)
 	const activeAddress = await getActiveAddress(settings, tabId)
 	if (activeAddress === undefined) return setIcon(ICON_NOT_ACTIVE, 'No active address selected.')
 	const addressAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress)

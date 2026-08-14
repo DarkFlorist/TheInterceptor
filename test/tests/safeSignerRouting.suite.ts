@@ -31,8 +31,8 @@ test('accepts a signer reply from the current approved child-frame port', async 
 			providerGeneration: 8,
 		},
 		connections: {
-			[modules.websiteSocketToString(topSocket)]: { port: topPort, socket: topSocket, websiteOrigin, approved: true, wantsToConnect: true },
-			[modules.websiteSocketToString(childSocket)]: { port: childPort, socket: childSocket, websiteOrigin, approved: true, wantsToConnect: true },
+			[modules.websiteSocketToString(topSocket)]: { port: topPort, socket: topSocket, websiteOrigin, approved: true, approvedAddress: activeAddress, wantsToConnect: true },
+			[modules.websiteSocketToString(childSocket)]: { port: childPort, socket: childSocket, websiteOrigin, approved: true, approvedAddress: activeAddress, wantsToConnect: true },
 		},
 	}]])
 	await modules.browserStorageLocalSet2({
@@ -91,6 +91,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 				socket,
 				websiteOrigin: 'https://example.com',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -125,7 +126,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 	fakeSafeContract.owners = [0x1111111111111111111111111111111111111111n]
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
+		data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
 	}), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [changedOwnersProposal] = await modules.getPendingTransactionsAndMessages()
@@ -140,7 +141,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 	}))
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
+		data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
 	}), true)
 
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
@@ -231,6 +232,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 				socket,
 				websiteOrigin: 'https://sealwort.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -309,7 +311,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 	assert.equal(refreshedCoSignRequest?.approvalStatus.status, 'WaitingForUser')
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier },
+		data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
 	}), true)
 
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
@@ -366,6 +368,7 @@ test('returns a Safe signer error when the wallet-selected co-signer is not a cu
 				socket: uniqueRequestIdentifier.requestSocket,
 				websiteOrigin: 'https://sealwort.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -543,6 +546,7 @@ test('shows a Safe signing-account mismatch in the confirmation dialog without r
 				socket,
 				websiteOrigin: 'https://sealwort.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -661,6 +665,7 @@ test('signs Safe transaction typed data normally when the active signing address
 				socket,
 				websiteOrigin: 'https://sealwort.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -734,6 +739,7 @@ test('uses the configured Safe simulation signer without changing the active Saf
 				socket: uniqueRequestIdentifier.requestSocket,
 				websiteOrigin: 'https://simulation-signer.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -1039,6 +1045,7 @@ test('routes a completed active Safe execution through its configured signer and
 				socket,
 				websiteOrigin: 'https://sealwort.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},
@@ -1135,7 +1142,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
 		},
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	)), false)
@@ -1148,7 +1155,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
 		},
 		{ selectedSigner: alternateSignerAddress, verificationError: undefined },
 	)), false)
@@ -1160,7 +1167,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
 		},
 		{ selectedSigner: alternateSignerAddress, verificationError: undefined },
 	), false)
@@ -1186,7 +1193,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
 		},
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	), false)
@@ -1208,7 +1215,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
 		},
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	), false)
@@ -1229,7 +1236,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
 		},
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	), true)
@@ -1328,6 +1335,7 @@ test('blocks direct Safe execution when the configured signer cannot satisfy the
 				socket,
 				websiteOrigin: 'https://sealwort.example',
 				approved: true,
+				approvedAddress: activeAddress,
 				wantsToConnect: true,
 			},
 		},

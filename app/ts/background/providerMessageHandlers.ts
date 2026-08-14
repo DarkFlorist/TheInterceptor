@@ -3,10 +3,10 @@ import type { TabState, WebsiteTabConnections } from '../types/user-interface-ty
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
+import { getRpcNetworkForChain, getTabState, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { getPendingSignerChainChangeTokenForCallback, isPendingSignerChainChangeReply, resolveSignerChainChange } from './windows/changeChain.js'
-import { type ApprovalState, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
+import { type ApprovalState, suspendWebsitePortApprovalsForTab, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { reportUnexpectedError } from '../utils/errors.js'
@@ -78,6 +78,12 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 		}
 		const signerAccounts = signerAccountsReply.accounts
 		const activeSigningAddress = signerAccounts.length > 0 ? signerAccounts[0] : undefined
+		const settings = await getSettings()
+		const previousActiveSigningAddress = (await getTabState(tabId)).activeSigningAddress
+		const signerAddressControlsWebsiteAccess = !settings.simulationMode || settings.useSignersAddressAsActiveAddress
+		if (!signerAccountsReply.requestAccounts && signerAddressControlsWebsiteAccess && previousActiveSigningAddress !== activeSigningAddress) {
+			suspendWebsitePortApprovalsForTab(websiteTabConnections, tabId)
+		}
 		const tabStateChange = await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, {
 			...signerAccounts.length > 0 ? { signerAccountError: undefined } : {},
 			signerAccounts,
@@ -95,7 +101,6 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 			},
 		})
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
-		const settings = await getSettings()
 		const transition = await getSigningAddressSelectionTransition(settings, tabStateChange.previousState, tabStateChange.newState)
 		if (transition.shouldActivate) {
 			const changeActiveAddress = async () => {

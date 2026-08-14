@@ -130,6 +130,7 @@ type SocketConnection = {
 	socket: WebsiteSocket,
 	websiteOrigin: string,
 	approved: boolean, // if user has approved connection
+	approvedAddress?: bigint,
 	wantsToConnect: boolean,
 }
 

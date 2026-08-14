@@ -14,7 +14,7 @@ import { createRpcConnectionStatusPublisher, slowRpcRequestKey, type DefinedRpcC
 import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getWebsiteOrigin, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
@@ -136,7 +136,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 		printError(`Could not connect to a port: ${ port.name}`)
 		return
 	}
-	const websiteOrigin = getHostWithPort(port.sender.url)
+	const websiteOrigin = getWebsiteOrigin(port.sender.url)
 	const identifier = websiteSocketToString(socket)
 	const websitePromise = (async () => {
 		const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
@@ -324,7 +324,7 @@ const onTabUpdated = async (tabId: number, changeInfo: browser.tabs._OnUpdatedCh
 	await waitForBackgroundStartup()
 	if (changeInfo.status !== 'complete') return
 	if (tab.url === undefined) return
-	const websiteOrigin = getHostWithPort(tab.url)
+	const websiteOrigin = getWebsiteOrigin(tab.url)
 	const website = { websiteOrigin, ...await retrieveWebsiteDetails(tabId, websiteOrigin) }
 	await updateKnownWebsiteMetadata(website)
 	await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website, tabIconDetails: DEFAULT_TAB_CONNECTION }))

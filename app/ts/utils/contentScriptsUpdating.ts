@@ -1,6 +1,7 @@
 import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
-import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
+import { checkAndThrowRuntimeLastError, getTabIfExists, getWebsiteOrigin, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
+import { getLegacyWebsiteOriginForCanonicalOrigin, isCanonicalWebsiteOrigin, normalizeStoredWebsiteOrigin } from '../background/websiteAccessMigration.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
@@ -11,23 +12,21 @@ const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPatt
 const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
 
 function getManifestV3ExcludeMatchesForOrigin(origin: string) {
-	if (origin === '') return ['file:///*']
-	try {
-		const hasExplicitScheme = origin.includes('://')
-		const url = new URL(hasExplicitScheme ? origin : `http://${ origin }`)
-		if (url.protocol === 'file:') return url.hostname === '' ? ['file:///*'] : []
-		if (url.protocol !== 'http:' && url.protocol !== 'https:') return []
-		if (url.username !== '' || url.password !== '' || url.pathname !== '/' || url.search !== '' || url.hash !== '') return []
-		const hostname = url.hostname
-		if (hostname === '') return []
-		const isIpAddressOrLocalhost = hostname === 'localhost' || hostname.startsWith('[') || /^\d+(?:\.\d+){3}$/.test(hostname)
-		const hostPattern = isIpAddressOrLocalhost ? url.host : `*.${ url.host }`
-		if (hasExplicitScheme) return [`${ url.protocol.slice(0, -1) }://${ hostPattern }/*`]
-		if (url.port === '') return [`*://${ hostPattern }/*`]
-		return [`http://${ hostPattern }/*`, `https://${ hostPattern }/*`]
-	} catch {
-		return []
+	if (/^https?:\/\//iu.test(origin)) {
+		try {
+			const url = new URL(origin)
+			if (url.pathname !== '/' || url.search !== '' || url.hash !== '') return []
+		} catch {
+			return []
+		}
 	}
+	const normalizedOrigin = normalizeStoredWebsiteOrigin(origin)
+	if (normalizedOrigin === undefined) return []
+	if (normalizedOrigin === '') return ['file:///*']
+	if (!isCanonicalWebsiteOrigin(normalizedOrigin)) return [`*://${ normalizedOrigin }/*`]
+	const url = new URL(normalizedOrigin)
+	if (url.protocol === 'file:') return [`${ normalizedOrigin }*`]
+	return [`${ url.protocol }//${ url.host }/*`]
 }
 
 export function getManifestV3ExcludeMatches(origins: readonly string[]) {
@@ -83,8 +82,11 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 	const thisTab = await getTabIfExists(content.tabId)
 	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false
 	const urls = [content.url, thisTab.url]
-	const hostnames = urls.map((url) => getHostWithPort(url))
-	const noMatches = disabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
+	const origins = urls.map((url) => getWebsiteOrigin(url))
+	const noMatches = disabledSites.every((disabledSite) => origins.every((origin) => {
+		if (disabledSite === origin) return false
+		return getLegacyWebsiteOriginForCanonicalOrigin(origin) !== disabledSite
+	}))
 	if (!noMatches) return false
 	try {
 		await browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/dist/browser-polyfill.js', allFrames: false, runAt: 'document_start' })

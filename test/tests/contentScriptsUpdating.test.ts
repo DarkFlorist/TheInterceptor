@@ -128,6 +128,7 @@ function installBrowserMock({ registerError, updateError, executeScriptError, ta
 	Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true, value: { runtime: { id: 'test-extension' } } })
 
 	return {
+		storageState,
 		sentMessages,
 		getRegisteredContentScripts() { return [...registeredContentScripts.values()] },
 		getScriptingOperations() { return [...scriptingOperations] },
@@ -168,7 +169,7 @@ function getManifestV2WebAccessibleResources() {
 }
 
 describe('content script injection strategy', () => {
-	test('creates valid manifest v3 exclusions without admitting malformed stored origins', async () => {
+	test('creates valid, exact manifest v3 exclusions without admitting malformed stored origins', async () => {
 		installBrowserMock()
 		const { getManifestV3ExcludeMatches } = await loadModules()
 
@@ -179,20 +180,34 @@ describe('content script injection strategy', () => {
 			'127.0.0.1:8545',
 			'[::1]:8545',
 			'https://secure.example',
+			'https://subdomain.example',
 			'https://localhost:4443',
 			'https://invalid.example/path',
 		]), [
 			'file:///*',
-			'*://*.example.com/*',
-			'http://localhost:3000/*',
-			'https://localhost:3000/*',
-			'http://127.0.0.1:8545/*',
-			'https://127.0.0.1:8545/*',
-			'http://[::1]:8545/*',
-			'https://[::1]:8545/*',
-			'https://*.secure.example/*',
+			'*://example.com/*',
+			'*://localhost:3000/*',
+			'*://127.0.0.1:8545/*',
+			'*://[::1]:8545/*',
+			'https://secure.example/*',
+			'https://subdomain.example/*',
 			'https://localhost:4443/*',
 		])
+	})
+
+	test('preserves legacy manifest v2 interceptor-disabled behavior without treating it as an access grant', async () => {
+		const { getCommittedListener, getExecuteScriptCalls, storageState } = installBrowserMock()
+		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+		storageState.websiteAccess = [{
+			website: { websiteOrigin: 'example.com', icon: undefined, title: 'Legacy disabled site' },
+			access: true,
+			interceptorDisabled: true,
+		}]
+
+		await updateContentScriptInjectionStrategyManifestV2()
+		await getCommittedListener()(committedDetails)
+
+		assert.equal(getExecuteScriptCalls(), 0)
 	})
 
 	test('exposes every manifest v2 injected file to Firefox', async () => {

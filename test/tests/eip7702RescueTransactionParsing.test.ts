@@ -347,7 +347,7 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 			new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
 			{} as never,
 			browserMock.websiteTabConnections,
-			{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept' } },
+				{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept', quarantineAccepted: false } },
 		)
 
 		const [postedMessage] = browserMock.postedMessages
@@ -378,6 +378,251 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 }
 
 describe('EIP-7702 rescue transaction parsing', () => {
+	test('binds signer-mode transaction sender, chain, nonce, type, fees, and access list to the reviewed request', async () => {
+		const browserMock = installBrowserMock()
+		try {
+			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const sender = 0x0000000000000000000000000000000000000001n
+			const request = SendTransactionParams.parse({
+				method: 'eth_sendTransaction',
+				params: [{
+					type: '0x1',
+					from: `0x${ sender.toString(16).padStart(40, '0') }`,
+					chainId: '0x1',
+					nonce: '0x9',
+					gas: '0xc350',
+					gasPrice: '0x7',
+					to: recipientAddress,
+					value: '0x3',
+					data: '0x1234',
+					accessList: [{
+						address: accessListAddress,
+						storageKeys: [accessListStorageKey],
+					}],
+				}],
+			})
+
+			const result = await formEthSendTransaction(
+				new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
+				undefined,
+				sender,
+				{ websiteOrigin: 'https://example.test', icon: undefined, title: undefined },
+				request,
+				new Date('2024-01-01T00:00:00.000Z'),
+				1n,
+				false,
+			)
+
+			assert.equal(result.success, true)
+			if (!result.success) throw new Error('Expected transaction creation to succeed')
+			assert.equal(result.transaction.type, '2930')
+			assert.deepEqual(result.originalRequestParameters, {
+				method: 'eth_sendTransaction',
+				params: [{
+					type: '2930',
+					from: sender,
+					chainId: 1n,
+					nonce: 9n,
+					gas: 50_000n,
+					gasPrice: 7n,
+					to: EthereumAddress.parse(recipientAddress),
+					value: 3n,
+					data: new Uint8Array([0x12, 0x34]),
+					accessList: [{
+						address: EthereumAddress.parse(accessListAddress),
+						storageKeys: [EthereumBytes32.parse(accessListStorageKey)],
+					}],
+				}],
+			})
+		} finally {
+			browserMock.restore()
+		}
+	})
+
+	test('infers EIP-2930 when gasPrice and an access list are supplied without an explicit type', async () => {
+		const browserMock = installBrowserMock()
+		try {
+			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const sender = 0x0000000000000000000000000000000000000001n
+			const request = SendTransactionParams.parse({
+				method: 'eth_sendTransaction',
+				params: [{
+					from: `0x${ sender.toString(16).padStart(40, '0') }`,
+					chainId: '0x1',
+					nonce: '0x9',
+					gas: '0xc350',
+					gasPrice: '0x7',
+					to: recipientAddress,
+					accessList: [{
+						address: accessListAddress,
+						storageKeys: [accessListStorageKey],
+					}],
+				}],
+			})
+
+			const result = await formEthSendTransaction(
+				new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
+				undefined,
+				sender,
+				{ websiteOrigin: 'https://example.test', icon: undefined, title: undefined },
+				request,
+				new Date('2024-01-01T00:00:00.000Z'),
+				1n,
+				false,
+			)
+
+			assert.equal(result.success, true)
+			if (!result.success) throw new Error('Expected transaction creation to succeed')
+			assert.equal(result.transaction.type, '2930')
+			assert.equal(result.originalRequestParameters.params[0].type, '2930')
+			assert.deepEqual(result.originalRequestParameters.params[0].accessList, [{
+				address: EthereumAddress.parse(accessListAddress),
+				storageKeys: [EthereumBytes32.parse(accessListStorageKey)],
+			}])
+		} finally {
+			browserMock.restore()
+		}
+	})
+
+	test('rejects signer-mode transactions for another account or chain before confirmation', async () => {
+		const browserMock = installBrowserMock()
+		try {
+			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const ethereum = new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork)
+			const activeAddress = 0x0000000000000000000000000000000000000001n
+			const otherAddress = 0x0000000000000000000000000000000000000002n
+			const base = {
+				type: '0x2',
+				gas: '0x5208',
+				maxFeePerGas: '0x2',
+				maxPriorityFeePerGas: '0x1',
+				to: recipientAddress,
+			}
+			const wrongAccount = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ ...base, from: `0x${ otherAddress.toString(16).padStart(40, '0') }`, chainId: '0x1' }] })
+			const wrongChain = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ ...base, from: `0x${ activeAddress.toString(16).padStart(40, '0') }`, chainId: '0x2' }] })
+			const form = async (request: SendTransactionParams) => await formEthSendTransaction(
+				ethereum,
+				undefined,
+				activeAddress,
+				{ websiteOrigin: 'https://example.test', icon: undefined, title: undefined },
+				request,
+				new Date('2024-01-01T00:00:00.000Z'),
+				1n,
+				false,
+			)
+
+			await assert.rejects(async () => await form(wrongAccount), /sender is not the active authorized address/)
+			await assert.rejects(async () => await form(wrongChain), /chain does not match the active chain/)
+		} finally {
+			browserMock.restore()
+		}
+	})
+
+	test('rejects simulation-mode transactions for an account other than the active authorized account', async () => {
+		const browserMock = installBrowserMock()
+		try {
+			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const activeAddress = 0x0000000000000000000000000000000000000001n
+			const otherAddress = 0x0000000000000000000000000000000000000002n
+			const request = SendTransactionParams.parse({
+				method: 'eth_sendTransaction',
+				params: [{
+					from: `0x${ otherAddress.toString(16).padStart(40, '0') }`,
+					chainId: '0x1',
+					gas: '0x5208',
+					maxFeePerGas: '0x2',
+					maxPriorityFeePerGas: '0x1',
+					to: recipientAddress,
+				}],
+			})
+
+			await assert.rejects(async () => await formEthSendTransaction(
+				new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
+				undefined,
+				activeAddress,
+				{ websiteOrigin: 'https://example.test', icon: undefined, title: undefined },
+				request,
+				new Date('2024-01-01T00:00:00.000Z'),
+				1n,
+				true,
+			), /sender is not the active authorized address/)
+		} finally {
+			browserMock.restore()
+		}
+	})
+
+	test('rejects fields that are incompatible with an explicit transaction type', async () => {
+		const browserMock = installBrowserMock()
+		try {
+			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const activeAddress = 0x0000000000000000000000000000000000000001n
+			const base = {
+				from: `0x${ activeAddress.toString(16).padStart(40, '0') }`,
+				chainId: '0x1',
+				gas: '0x5208',
+				to: recipientAddress,
+			}
+			const incompatibleRequests = [
+				{ transaction: { ...base, type: '0x0', maxFeePerGas: '0x2', maxPriorityFeePerGas: '0x1' }, expectedError: /dynamic fee fields/ },
+				{ transaction: { ...base, type: '0x0', gasPrice: '0x1', accessList: [] }, expectedError: /cannot include an access list/ },
+				{ transaction: { ...base, type: '0x1', maxFeePerGas: '0x2', maxPriorityFeePerGas: '0x1', accessList: [] }, expectedError: /dynamic fee fields/ },
+				{ transaction: { ...base, type: '0x2', gasPrice: '0x1' }, expectedError: /cannot include gasPrice/ },
+				{ transaction: { ...base, type: '0x4', gasPrice: '0x1', authorizationList: [] }, expectedError: /cannot include gasPrice/ },
+			]
+			const ethereum = new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork)
+
+			for (const incompatibleRequest of incompatibleRequests) {
+				const request = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [incompatibleRequest.transaction] })
+				await assert.rejects(async () => await formEthSendTransaction(
+					ethereum,
+					undefined,
+					activeAddress,
+					{ websiteOrigin: 'https://example.test', icon: undefined, title: undefined },
+					request,
+					new Date('2024-01-01T00:00:00.000Z'),
+					1n,
+					false,
+				), incompatibleRequest.expectedError)
+			}
+		} finally {
+			browserMock.restore()
+		}
+	})
+
+	test('rejects unsupported blob transaction fields instead of dropping them from the reviewed request', async () => {
+		const browserMock = installBrowserMock()
+		try {
+			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const activeAddress = 0x0000000000000000000000000000000000000001n
+			const request = SendTransactionParams.parse({
+				method: 'eth_sendTransaction',
+				params: [{
+					from: `0x${ activeAddress.toString(16).padStart(40, '0') }`,
+					chainId: '0x1',
+					gas: '0x5208',
+					maxFeePerGas: '0x2',
+					maxPriorityFeePerGas: '0x1',
+					maxFeePerBlobGas: '0x3',
+					blobVersionedHashes: [accessListStorageKey],
+					to: recipientAddress,
+				}],
+			})
+
+			await assert.rejects(async () => await formEthSendTransaction(
+				new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
+				undefined,
+				activeAddress,
+				{ websiteOrigin: 'https://example.test', icon: undefined, title: undefined },
+				request,
+				new Date('2024-01-01T00:00:00.000Z'),
+				1n,
+				false,
+			), /EIP-4844 eth_sendTransaction requests are not supported/)
+		} finally {
+			browserMock.restore()
+		}
+	})
+
 	test('parses eth_sendTransaction authorization lists', () => {
 		const parsed = SendTransactionParams.parse({
 			method: 'eth_sendTransaction',

@@ -1,22 +1,33 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { browserMock, createDisconnectedPort, createRecordingPort, isRecord, modules, pendingTransaction, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { activeAddress, browserMock, createDisconnectedPort, createRecordingPort, isRecord, modules, pendingTransaction, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })
 	const disconnectedPort = createDisconnectedPort()
 	const socketKey = modules.websiteSocketToString(uniqueRequestIdentifier.requestSocket)
 	const connectionCases = [
-		{ connections: new Map(), expectedPostAttempts: 0 },
+		{ connections: new Map(), expectedPostAttempts: 0, expectedPendingUpdates: 1 },
 		{ connections: new Map([[uniqueRequestIdentifier.requestSocket.tabId, { connections: {
 			[socketKey]: {
 				port: disconnectedPort.port,
 				socket: uniqueRequestIdentifier.requestSocket,
 				websiteOrigin: 'https://example.com',
 				approved: true,
+				approvedAddress: activeAddress + 1n,
 				wantsToConnect: true,
 			},
-		} }]]), expectedPostAttempts: 1 },
+		} }]]), expectedPostAttempts: 0, expectedPendingUpdates: 1 },
+		{ connections: new Map([[uniqueRequestIdentifier.requestSocket.tabId, { connections: {
+			[socketKey]: {
+				port: disconnectedPort.port,
+				socket: uniqueRequestIdentifier.requestSocket,
+				websiteOrigin: 'https://example.com',
+				approved: true,
+				approvedAddress: activeAddress,
+				wantsToConnect: true,
+			},
+		} }]]), expectedPostAttempts: 1, expectedPendingUpdates: 2 },
 	]
 
 	for (const connectionCase of connectionCases) {
@@ -29,7 +40,7 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 
 		const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connectionCase.connections, {
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier },
+			data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
 		})
 		const retainedRequests = await modules.getPendingTransactionsAndMessages()
 		const retainedRequest = retainedRequests[0]
@@ -40,7 +51,7 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 		if (retainedRequest?.approvalStatus.status !== 'SignerError') throw new Error('missing signer delivery error')
 		assert.match(retainedRequest.approvalStatus.message, /request reached your wallet/)
 		const pendingUpdates = browserMock.sentMessages.filter((message) => message.method === 'popup_update_confirm_transaction_dialog_pending_transactions')
-		assert.equal(pendingUpdates.length, 2)
+		assert.equal(pendingUpdates.length, connectionCase.expectedPendingUpdates)
 		const finalUpdateData = pendingUpdates.at(-1)?.data
 		if (!isRecord(finalUpdateData) || !Array.isArray(finalUpdateData.pendingTransactionAndSignableMessages)) throw new Error('missing final pending transaction popup update')
 		const finalUpdatedRequest = finalUpdateData.pendingTransactionAndSignableMessages[0]

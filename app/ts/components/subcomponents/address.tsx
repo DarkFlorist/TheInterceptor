@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact'
 import type { JSX } from 'preact/jsx-runtime'
 import { checksummedAddress } from '../../utils/bigint.js'
+import { getWebsiteOriginForDisplay } from '../../utils/requests.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
@@ -165,10 +166,11 @@ export function SmallAddress({ addressBookEntry, renameAddressCallBack, noCopyin
 	return <InlineCard label = { currentAddressBookEntry.name } copyValue = { addressString } icon = { generateIcon } noCopy = { noCopying } onEditClicked = { noEditAddress ? undefined : () => renameAddressCallBack(currentAddressBookEntry) } nonInteractive = { nonInteractive } copyOnActionOnly = { copyOnActionOnly } style = { style } />
 }
 
-export function WebsiteOriginText({ website, class: cssClass, style }: {
+export function WebsiteOriginText({ website, class: cssClass, style, displayFullOrigin }: {
 	website: SignalOrValue<Website | undefined>
 	class?: string
 	style?: JSX.CSSProperties | string
+	displayFullOrigin?: boolean
 }) {
 	const currentWebsite = resolveSignal(website)
 	if (currentWebsite === undefined) return <></>
@@ -180,7 +182,7 @@ export function WebsiteOriginText({ website, class: cssClass, style }: {
 		</span>
 
 		<div class = 'media-content website-origin-text-body'>
-			<p class = 'title is-5 is-spaced address-text website-origin-text-origin'>{ websiteOrigin }</p>
+			<p class = 'title is-5 is-spaced address-text website-origin-text-origin'>{ displayFullOrigin ? websiteOrigin : getWebsiteOriginForDisplay(websiteOrigin) }</p>
 			<p class = 'subtitle is-7 website-origin-text-title'> { title } </p>
 		</div>
 	</div>

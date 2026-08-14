@@ -2,7 +2,7 @@ import type { EthereumClientService } from '../../simulation/services/EthereumCl
 import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { simulatePersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
 import { getSignedTransactionForSimulation } from '../../simulation/services/simulationTransactionSigning.js'
-import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
+import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
@@ -10,17 +10,17 @@ import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type WebsiteCreate
 import type { SendRawTransactionParams, SendTransactionParams } from '../../types/JsonRpc-types.js'
 import { refreshConfirmTransactionSimulation } from '../confirmTransactionSimulation.js'
 import { getUpdatedSimulationState } from '../simulationUpdating.js'
-import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
 import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
-import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
+import { EthereumBytes32, EthereumQuantity, serialize, type EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
 import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
-import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
+import { getRequestedSignMessageAccount, type SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { SafeSignerErrorDetails } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
 import { getSettings } from '../settings.js'
@@ -33,7 +33,7 @@ import type { TokenPriceService } from '../../simulation/services/priceEstimator
 import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.js'
-import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization.js'
+import { normalizeEip7702AuthorizationList } from '../../utils/eip7702Authorization.js'
 import { identifyAddress } from '../metadataUtils.js'
 import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
 import { prepareSafeTransactionConfirmation } from '../safeTransactionConfirmation.js'
@@ -340,6 +340,35 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		&& pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated'
 	) return false
 	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) {
+		if (pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated') {
+			throw new Error('Only fully simulated requests can be forwarded to the signer')
+		}
+		const requestSocket = pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket
+		const currentConnection = websiteTabConnections.get(requestSocket.tabId)?.connections[websiteSocketToString(requestSocket)]
+		const safeFlow = getSafePendingFlow(pendingTransactionOrMessage)
+		const authorizedWebsiteAddress = safeFlow?.kind === 'directExecution'
+			? safeFlow.pending.safeExecutionOriginalRequestParameters.params[0].from ?? pendingTransactionOrMessage.activeAddress
+			: pendingTransactionOrMessage.activeAddress
+		if (currentConnection?.approved !== true || currentConnection.approvedAddress !== authorizedWebsiteAddress) {
+			await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, {
+				approvalStatus: {
+					status: 'SignerError',
+					code: METAMASK_ERROR_BLANKET_ERROR,
+					message: 'The website connection was interrupted before the request reached your wallet. Reload the website and try again.',
+				}
+			}))
+			await updateConfirmTransactionView(ethereum, tokenPriceService)
+			return false
+		}
+		if (pendingTransactionOrMessage.type === 'Transaction'
+			&& pendingTransactionOrMessage.transactionToSimulate.transaction.from !== pendingTransactionOrMessage.activeAddress) {
+			throw new Error('The reviewed transaction sender is not the active authorized account')
+		}
+		if (pendingTransactionOrMessage.type === 'SignableMessage'
+			&& pendingTransactionOrMessage.visualizedPersonalSignRequest.quarantine
+			&& !confirmation.data.quarantineAccepted) {
+			throw new Error('Quarantined signature requests require explicit user acknowledgement')
+		}
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' } }))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
 		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
@@ -513,16 +542,98 @@ export const formSendRawTransaction = async(_ethereumClientService: EthereumClie
 	}
 }
 
+export function toCanonicalSendTransactionParams(transaction: EthereumUnsignedTransaction): SendTransactionParams {
+	const common = {
+		type: transaction.type,
+		from: transaction.from,
+		chainId: transaction.chainId,
+		nonce: transaction.nonce,
+		gas: transaction.gas,
+		to: transaction.to,
+		value: transaction.value,
+		data: transaction.input,
+	}
+	switch (transaction.type) {
+		case 'legacy':
+			return { method: 'eth_sendTransaction', params: [{ ...common, gasPrice: transaction.gasPrice }] }
+		case '2930':
+			return { method: 'eth_sendTransaction', params: [{ ...common, gasPrice: transaction.gasPrice, accessList: transaction.accessList }] }
+		case '1559':
+			return { method: 'eth_sendTransaction', params: [{ ...common, maxFeePerGas: transaction.maxFeePerGas, maxPriorityFeePerGas: transaction.maxPriorityFeePerGas, accessList: transaction.accessList }] }
+		case '4844':
+			return { method: 'eth_sendTransaction', params: [{
+				...common,
+				maxFeePerGas: transaction.maxFeePerGas,
+				maxPriorityFeePerGas: transaction.maxPriorityFeePerGas,
+				accessList: transaction.accessList,
+				maxFeePerBlobGas: transaction.maxFeePerBlobGas,
+				blobVersionedHashes: transaction.blobVersionedHashes,
+			}] }
+		case '7702':
+			return { method: 'eth_sendTransaction', params: [{
+				...common,
+				maxFeePerGas: transaction.maxFeePerGas,
+				maxPriorityFeePerGas: transaction.maxPriorityFeePerGas,
+				accessList: transaction.accessList,
+				authorizationList: transaction.authorizationList.map((authorization) => ({
+					chainId: authorization.chainId,
+					address: authorization.address,
+					nonce: authorization.nonce,
+					...(authorization.r === undefined ? {} : { r: authorization.r }),
+					...(authorization.s === undefined ? {} : { s: authorization.s }),
+					...(authorization.yParity === undefined ? {} : { yParity: authorization.yParity }),
+				})),
+			}] }
+		default:
+			return assertNever(transaction)
+	}
+}
+
+type SupportedSendTransactionType = Exclude<EthereumUnsignedTransaction['type'], '4844'>
 export type TransactionGasPayment = 'transaction-sender' | 'external-executor'
 
+function getSupportedSendTransactionType(transactionDetails: SendTransactionParams['params'][0]): SupportedSendTransactionType {
+	const requestedType = transactionDetails.type
+		?? (transactionDetails.authorizationList !== undefined
+			? '7702'
+			: transactionDetails.gasPrice !== undefined
+				? transactionDetails.accessList === undefined ? 'legacy' : '2930'
+				: '1559')
+	if (requestedType === '4844') throw new Error('EIP-4844 eth_sendTransaction requests are not supported')
+
+	const hasDynamicFeeFields = transactionDetails.maxFeePerGas !== undefined || transactionDetails.maxPriorityFeePerGas !== undefined
+	if ((requestedType === 'legacy' || requestedType === '2930') && hasDynamicFeeFields) {
+		const transactionTypeName = requestedType === 'legacy' ? 'Legacy' : 'EIP-2930'
+		throw new Error(`${ transactionTypeName } transactions cannot include dynamic fee fields`)
+	}
+	if ((requestedType === '1559' || requestedType === '7702') && transactionDetails.gasPrice !== undefined) {
+		throw new Error(`EIP-${ requestedType } transactions cannot include gasPrice`)
+	}
+	if (requestedType === 'legacy' && transactionDetails.accessList !== undefined) {
+		throw new Error('Legacy transactions cannot include an access list')
+	}
+	if (requestedType !== '7702' && transactionDetails.authorizationList !== undefined) {
+		throw new Error('An authorization list requires an EIP-7702 transaction')
+	}
+	return requestedType
+}
+
 export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true, gasPayment: TransactionGasPayment = 'transaction-sender'): Promise<WebsiteCreatedEthereumTransactionOrFailed> => {
+	const transactionDetails = sendTransactionParams.params[0]
+	if (activeAddress === undefined) throw new Error('Access to active address is denied')
+	if (transactionDetails.from !== undefined && transactionDetails.from !== activeAddress) throw new Error('The transaction sender is not the active authorized address')
+	if (transactionDetails.chainId !== undefined && transactionDetails.chainId !== ethereumClientService.getChainId()) throw new Error('The transaction chain does not match the active chain')
+	if (transactionDetails.maxFeePerBlobGas !== undefined || transactionDetails.blobVersionedHashes !== undefined) {
+		throw new Error('EIP-4844 eth_sendTransaction requests are not supported')
+	}
+	const requestedType = getSupportedSendTransactionType(transactionDetails)
 	const simulationState = simulationMode || gasPayment === 'external-executor'
 		? await getUpdatedSimulationState(ethereumClientService)
 		: PASSTHROUGH_STATE
-	const transactionDetails = sendTransactionParams.params[0]
-	if (activeAddress === undefined) throw new Error('Access to active address is denied')
-	const from = simulationMode && transactionDetails.from !== undefined ? transactionDetails.from : activeAddress
-	const transactionCountPromise = silenceChromeUnCaughtPromise(getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, from))
+	const from = activeAddress
+	const transactionCountPromise = transactionDetails.nonce === undefined
+		? silenceChromeUnCaughtPromise(getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, from))
+		: Promise.resolve(transactionDetails.nonce)
 	const parentBlockPromise = gasPayment === 'transaction-sender'
 		? silenceChromeUnCaughtPromise(ethereumClientService.getBlock(requestAbortController)) // the latest real block is the parent of the transaction being prepared
 		: undefined
@@ -551,14 +662,44 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		from,
 		chainId: ethereumClientService.getChainId(),
 		nonce: await transactionCountPromise,
-		maxFeePerGas: getInitialMaxFeePerGas(),
-		maxPriorityFeePerGas,
 		to: transactionDetails.to === undefined ? null : transactionDetails.to,
 		value,
 		input: getInputFieldFromDataOrInput(transactionDetails),
-		accessList: transactionDetails.accessList ?? [],
 	}
-	const transactionWithoutGas = await createEip1559Or7702Transaction(transactionWithoutGasBase, transactionDetails)
+	const accessList = transactionDetails.accessList ?? []
+	const desiredGasPrice = gasPayment === 'external-executor'
+		? 0n
+		: transactionDetails.gasPrice ?? getInitialMaxFeePerGas()
+	const transactionWithoutGas = requestedType === 'legacy'
+		? { ...transactionWithoutGasBase, type: 'legacy' as const, gasPrice: desiredGasPrice }
+		: requestedType === '2930'
+			? { ...transactionWithoutGasBase, type: '2930' as const, gasPrice: desiredGasPrice, accessList }
+			: requestedType === '7702'
+				? {
+					...transactionWithoutGasBase,
+					type: '7702' as const,
+					maxFeePerGas: getInitialMaxFeePerGas(),
+					maxPriorityFeePerGas,
+					accessList,
+					authorizationList: await normalizeEip7702AuthorizationList(transactionDetails.authorizationList ?? []),
+				}
+				: {
+					...transactionWithoutGasBase,
+					type: '1559' as const,
+					maxFeePerGas: getInitialMaxFeePerGas(),
+					maxPriorityFeePerGas,
+					accessList,
+				}
+	const finalizeTransaction = async (gas: bigint): Promise<EthereumUnsignedTransaction> => {
+		switch (transactionWithoutGas.type) {
+			case 'legacy':
+			case '2930':
+				return { ...transactionWithoutGas, gas }
+			case '1559':
+			case '7702':
+				return { ...transactionWithoutGas, ...await getFeePerGas(gas), gas }
+		}
+	}
 	const extraParams = {
 		website,
 		created,
@@ -582,7 +723,8 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 					success: false,
 				}
 			}
-			return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(estimateGas.gas), gas: estimateGas.gas }, ...extraParams, success: true }
+			const transaction = await finalizeTransaction(estimateGas.gas)
+			return { transaction, ...extraParams, originalRequestParameters: toCanonicalSendTransactionParams(transaction), success: true }
 		} catch(error: unknown) {
 			if (isNewBlockAbort(error)) throw error
 			if (error instanceof JsonRpcResponseError) return { ...extraParams, error: { code: error.code, message: error.message, data: typeof error.data === 'string' ? error.data : '0x' }, success: false }
@@ -591,7 +733,8 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 			return { ...extraParams, error: { code: 123456, message: 'Unknown Error', data: '0x' }, success: false }
 		}
 	}
-	return { transaction: { ...transactionWithoutGas, ...await getFeePerGas(transactionDetails.gas), gas: transactionDetails.gas }, ...extraParams, success: true }
+	const transaction = await finalizeTransaction(transactionDetails.gas)
+	return { transaction, ...extraParams, originalRequestParameters: toCanonicalSendTransactionParams(transaction), success: true }
 }
 
 const getPendingTransactionWindow = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections) => {
@@ -614,10 +757,13 @@ export async function openConfirmTransactionDialogForMessage(
 	activeAddress: bigint | undefined,
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
-) {
+	) {
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	const activeAddressEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()))
 		.find((entry) => entry.address === activeAddress)
+	if (activeAddressEntry?.type !== 'safe' && getRequestedSignMessageAccount(transactionParams) !== activeAddress) {
+		return formRejectMessage(METAMASK_ERROR_NOT_AUTHORIZED, 'The requested signing account has not been authorized by the user.')
+	}
 	const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 	const simulationSignerAddress = activeAddressEntry?.type === 'safe'
 		? simulationMode ? activeAddressEntry.safeSimulationSignerAddress : getWalletSelectedAccount(signerTabState)
@@ -779,7 +925,7 @@ export async function openConfirmTransactionDialogForTransaction(
 			const pendingTransaction = {
 				type: 'Transaction' as const,
 				popupOrTabId: openedDialog,
-				originalRequestParameters: effectiveTransactionParams,
+				originalRequestParameters: transactionToSimulate.originalRequestParameters,
 				uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 				simulationMode,
 				activeAddress: transactionExecutor,

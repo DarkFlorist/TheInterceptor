@@ -387,7 +387,7 @@ export async function requestAccessFromUser(
 				throw new Error('Opened dialog does not exist when expected in requestAccessFromUser function')
 			}
 			if (openedDialog) {
-				removeWindowTabListeners(onCloseWindowCallback, onCloseTabCallback)
+				removeWindowTabListeners(openedDialog.onClosePopup, openedDialog.onCloseTab)
 				await closePopupOrTabById(openedDialog.popupOrTab)
 			}
 			openedDialog = { popupOrTab, onClosePopup: onCloseWindowCallback, onCloseTab: onCloseTabCallback,  }
