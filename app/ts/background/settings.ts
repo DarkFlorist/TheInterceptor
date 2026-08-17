@@ -42,7 +42,8 @@ export const getDefaultBlockExplorer = (): BlockExplorer => ({ apiUrl: 'https://
 export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId.toString())
 
 type StartupStorageDefaults = {
-	activeSimulationAddressV2: Settings['activeSimulationAddress']
+	activeSimulationAddress: Settings['activeSimulationAddress']
+	hasIndependentActiveSimulationAddress: boolean
 	activeSigningSafeAddress: Settings['activeSigningSafeAddress']
 	openedPageV2: Page
 	useSignersAddressAsActiveAddress: boolean
@@ -68,15 +69,17 @@ async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDe
 export async function getSettings() : Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
-	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeSimulationAddressV2', defaultActiveAddresses[0].address))
+	const hasIndependentActiveSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('hasIndependentActiveSimulationAddress', false))
+	const storedActiveSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeSimulationAddress', defaultActiveAddresses[0].address))
 	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeSigningSafeAddress', undefined))
 	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('openedPageV2', defaultPage))
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('useSignersAddressAsActiveAddress', false))
 	const websiteAccessPromise = silenceChromeUnCaughtPromise(getWebsiteAccess())
 	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('simulationMode', defaultSimulationMode))
 	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeRpcNetwork', defaultRpcs[0]))
-	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
-		activeSimulationAddressPromise,
+	const [hasIndependentActiveSimulationAddress, storedActiveSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
+		hasIndependentActiveSimulationAddressPromise,
+		storedActiveSimulationAddressPromise,
 		activeSigningSafeAddressPromise,
 		openedPagePromise,
 		useSignersAddressAsActiveAddressPromise,
@@ -84,6 +87,7 @@ export async function getSettings() : Promise<Settings> {
 		activeRpcNetworkPromise,
 		simulationModePromise,
 	])
+	const activeSimulationAddress = hasIndependentActiveSimulationAddress ? storedActiveSimulationAddress : defaultActiveAddresses[0].address
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
 
@@ -178,7 +182,7 @@ export async function changeSimulationMode(changes: { simulationMode: boolean, r
 	return await browserStorageLocalSet({
 		simulationMode: changes.simulationMode,
 		...changes.rpcNetwork ? { activeRpcNetwork: changes.rpcNetwork }: {},
-		...'activeSimulationAddress' in changes ? { activeSimulationAddressV2: changes.activeSimulationAddress }: {},
+		...'activeSimulationAddress' in changes ? { activeSimulationAddress: changes.activeSimulationAddress, hasIndependentActiveSimulationAddress: true }: {},
 		...'activeSigningAddress' in changes ? { activeSigningAddress: changes.activeSigningAddress }: {},
 		...'activeSigningSafeAddress' in changes ? { activeSigningSafeAddress: changes.activeSigningSafeAddress }: {},
 	})

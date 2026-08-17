@@ -218,7 +218,7 @@ describe('settings import', () => {
 
 		assert.equal(settings.activeSimulationAddress, defaultActiveAddresses[0]?.address)
 		assert.equal(settings.activeSigningSafeAddress, undefined)
-		assert.deepEqual(await browser.storage.local.get(['activeSimulationAddressV2', 'activeSigningSafeAddress']), {})
+		assert.deepEqual(await browser.storage.local.get(['hasIndependentActiveSimulationAddress', 'activeSigningSafeAddress']), {})
 	})
 
 	test('restores metamask compatibility mode from version 1.4 exports', async () => {

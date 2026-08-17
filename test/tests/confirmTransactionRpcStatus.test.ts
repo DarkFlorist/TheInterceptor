@@ -264,7 +264,8 @@ describe('confirm transaction rpc status bootstrap', () => {
 		if (rpcNetwork === undefined) throw new Error('missing default rpc')
 
 		await browserStorageLocalSet({
-			activeSimulationAddressV2: defaultAddress.address,
+			activeSimulationAddress: defaultAddress.address,
+			hasIndependentActiveSimulationAddress: true,
 			openedPageV2: { page: 'Home' },
 			useSignersAddressAsActiveAddress: false,
 			websiteAccess: [],
