@@ -17,7 +17,7 @@ import type { TabState, WebsiteTabConnections } from '../types/user-interface-ty
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState } from '../types/visualizer-types.js'
 import { isJSON } from '../utils/json.js'
-import { doAddressBookChainIdsMatch, getSafeSigningEntry, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
+import { doAddressBookChainIdsMatch, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
 import { checksummedAddress, generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
@@ -50,13 +50,14 @@ import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply
 import { createSafeContractValidationFailure, getSafeContractSnapshot, validateSafeOwnerIsEoa } from '../safe/safeCore.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getSafePendingFlow } from '../safe/safePendingFlow.js'
-import { assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
+import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
 export { getLastKnownCurrentTabId } from './currentTab.js'
 export { exportSettings, importSettings, setNewRpcList, settingsOpened } from './popupMessageHandlers/settings.js'
 export { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, disableInterceptor, reloadConnectedTabs, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from './popupMessageHandlers/websiteAccess.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
 import { disableInterceptorForPage } from './popupMessageHandlers/websiteAccess.js'
+import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -688,20 +689,14 @@ export async function enableSimulationMode(
 		if (!params.data) {
 			const targetChainId = networkToSwitch?.chainId ?? settings.activeRpcNetwork.chainId
 			const activeChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(targetChainId)
-			const configuredSigningSafeCandidate = getSafeSigningEntry(activeChainEntries, {
-				simulationMode: false,
-				activeSigningSafeAddress: settings.activeSigningSafeAddress,
-				chainId: targetChainId,
-			})
-			const configuredSigningSelection = configuredSigningSafeCandidate === undefined
-				? undefined
-				: getActiveAddressSelection(configuredSigningSafeCandidate.address, activeChainEntries, false, targetChainId, signerAccount === undefined ? [] : [signerAccount])
-			const configuredSigningSafe = configuredSigningSelection?.type === 'addressBookEntry' && configuredSigningSelection.entry.type === 'safe'
-				? configuredSigningSelection.entry
-				: undefined
-			const signingSelection = configuredSigningSafe === undefined
+			const configuredSigningSafe = await getConfiguredSigningSafeForChain(
+				settings.activeSigningSafeAddress,
+				targetChainId,
+				signerAccount === undefined ? [] : [signerAccount],
+			)
+			const signingSelection: ActiveAddressSelection | undefined = configuredSigningSafe === undefined
 				? signerAccount === undefined ? undefined : getActiveAddressSelection('signer', activeChainEntries, false, targetChainId, [signerAccount])
-				: configuredSigningSelection
+				: { type: 'addressBookEntry', entry: configuredSigningSafe }
 			await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, signingSelection, {
 				simulationMode: false,
 				signerAddress: signerAccount,

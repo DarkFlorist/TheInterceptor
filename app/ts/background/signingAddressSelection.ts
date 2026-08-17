@@ -6,11 +6,16 @@ import type { SigningAddressPreference } from '../types/signerTypes.js'
 import { getSigningAddressPreferences, rememberSigningAddressPreference } from './settings.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 
-export async function getConfiguredSigningSafe(settings: Settings, signerAccounts: readonly bigint[]) {
-	if (settings.simulationMode || settings.activeSigningSafeAddress === undefined) return undefined
-	const activeChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
-	const selection = getActiveAddressSelection(settings.activeSigningSafeAddress, activeChainEntries, false, settings.activeRpcNetwork.chainId, signerAccounts)
+export async function getConfiguredSigningSafeForChain(activeSigningSafeAddress: bigint | undefined, chainId: bigint, signerAccounts: readonly bigint[]) {
+	if (activeSigningSafeAddress === undefined) return undefined
+	const activeChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)
+	const selection = getActiveAddressSelection(activeSigningSafeAddress, activeChainEntries, false, chainId, signerAccounts)
 	return selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? selection.entry : undefined
+}
+
+export async function getConfiguredSigningSafe(settings: Settings, signerAccounts: readonly bigint[]) {
+	if (settings.simulationMode) return undefined
+	return await getConfiguredSigningSafeForChain(settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerAccounts)
 }
 
 export async function rememberSigningAddressSelection(preference: SigningAddressPreference) {

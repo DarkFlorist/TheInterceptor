@@ -7,13 +7,13 @@ export type ActiveAddressSelection =
 
 export type OptimisticActiveAddressSelection =
 	| { readonly mode: 'simulation', readonly activeSimulationAddress: bigint | undefined, readonly useSignersAddressAsActiveAddress: boolean }
-	| { readonly mode: 'signing', readonly activeSigningAddress: bigint | undefined }
+	| { readonly mode: 'signing', readonly displayedSigningAddress: bigint | undefined }
 
 export function getOptimisticActiveAddressSelection(address: bigint | 'signer', simulationMode: boolean, signerAccounts: readonly bigint[]): OptimisticActiveAddressSelection {
 	const resolvedAddress = address === 'signer' ? signerAccounts[0] : address
 	return simulationMode
 		? { mode: 'simulation', activeSimulationAddress: resolvedAddress, useSignersAddressAsActiveAddress: address === 'signer' }
-		: { mode: 'signing', activeSigningAddress: resolvedAddress }
+		: { mode: 'signing', displayedSigningAddress: resolvedAddress }
 }
 
 export function getWalletSelectedAccount(tabState: Pick<TabState, 'activeSigningAddress' | 'signerAccounts'> | undefined) {

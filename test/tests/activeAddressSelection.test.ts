@@ -48,7 +48,7 @@ describe('active address selection', () => {
 		})
 		assert.deepEqual(getOptimisticActiveAddressSelection(SAFE_ADDRESS, false, [EOA_ADDRESS]), {
 			mode: 'signing',
-			activeSigningAddress: SAFE_ADDRESS,
+			displayedSigningAddress: SAFE_ADDRESS,
 		})
 	})
 

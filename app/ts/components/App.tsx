@@ -30,7 +30,7 @@ export function App() {
 		activeAddresses,
 		walletSelectedAddressBookEntry,
 		activeSimulationAddress,
-		activeSigningAddress,
+		displayedSigningAddress,
 		useSignersAddressAsActiveAddress,
 		simVisResults,
 		websiteAccess,
@@ -81,7 +81,7 @@ export function App() {
 			useSignersAddressAsActiveAddress.value = optimisticSelection.useSignersAddressAsActiveAddress
 			return
 		}
-		activeSigningAddress.value = optimisticSelection.activeSigningAddress
+		displayedSigningAddress.value = optimisticSelection.displayedSigningAddress
 	}
 
 	function isSignerConnected() {
@@ -218,7 +218,7 @@ export function App() {
 	}
 
 	const activeAddress = useComputed(() =>
-		simulationMode.value ? activeSimulationAddress.value : activeSigningAddress.value
+		simulationMode.value ? activeSimulationAddress.value : displayedSigningAddress.value
 	)
 	const selectableActiveAddresses = useComputed(() =>
 		getSelectableActiveAddresses(activeAddresses.value, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])
@@ -253,7 +253,7 @@ export function App() {
 						rpcNetwork = { rpcNetwork }
 						simVisResults = { simVisResults }
 						useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
-						activeSigningAddress = { activeSigningAddress }
+						displayedSigningAddress = { displayedSigningAddress }
 						activeSimulationAddress = { activeSimulationAddress }
 						changeActiveAddress = { changeActiveAddress }
 						makeCurrentAddressRich = { makeCurrentAddressRich }

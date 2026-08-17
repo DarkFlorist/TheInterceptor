@@ -277,7 +277,7 @@ function scheduleStackTargetTimeout(callback: () => void, delayMs: number) {
 export function SimulationStackPage() {
 	const {
 		activeSimulationAddress,
-		activeSigningAddress,
+		displayedSigningAddress,
 		activeAddresses,
 		simVisResults,
 		rpcNetwork,
@@ -307,7 +307,7 @@ export function SimulationStackPage() {
 	const highlightedStackTargetId = useSignal<string | undefined>(undefined)
 	const handledStackTargetHash = useSignal<string | undefined>(undefined)
 	const addressMetaData = useComputed(() => simVisResults.value.kind === 'simulated' ? simVisResults.value.value.addressBookEntries : [])
-	const visualizedAddress = useComputed(() => simulationMode.value ? activeSimulationAddress.value : activeSigningAddress.value)
+	const visualizedAddress = useComputed(() => simulationMode.value ? activeSimulationAddress.value : displayedSigningAddress.value)
 	const madeRichAddressBookEntries = useComputed(() => getMadeRichAddressBookEntries(
 		fixedAddressRichList.value,
 		makeCurrentAddressRich.value,
@@ -322,7 +322,7 @@ export function SimulationStackPage() {
 	// Safe import and copy are signing-mode controls: intentionally hide both unless a Safe is the active account on this chain.
 	const showSafeSigningActions = useComputed(() => getSafeSigningEntry(activeAddresses.value, {
 		simulationMode: simulationMode.value,
-		activeSigningSafeAddress: activeSigningAddress.value,
+		activeSigningSafeAddress: displayedSigningAddress.value,
 		chainId: rpcNetwork.value?.chainId,
 	}) !== undefined)
 
