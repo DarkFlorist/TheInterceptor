@@ -10,7 +10,7 @@ import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { changeSimulationMode, getSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
-import { acknowledgeActiveAddressSelectionResetNotice } from './activeAddressStateMigration.js'
+import { acknowledgeActiveAddressSelectionResetNotice } from './activeAddressSelectionResetNotice.js'
 import { getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, promoteRpcAsPrimary, updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'

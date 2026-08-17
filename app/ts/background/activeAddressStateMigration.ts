@@ -1,5 +1,6 @@
 import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
 import { browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { createIndependentActiveSimulationAddressStorageUpdate } from './activeSimulationAddressStorage.js'
 
 async function hasStoredActiveSimulationAddress() {
 	const storedValue = await browserStorageLocalSafeParseGet('activeSimulationAddress')
@@ -14,26 +15,7 @@ export async function initializeIndependentActiveAddressState() {
 	const { hasIndependentActiveSimulationAddress } = await browser.storage.local.get('hasIndependentActiveSimulationAddress')
 	if (hasIndependentActiveSimulationAddress !== undefined) return
 	await browserStorageLocalSet({
-		activeSimulationAddress: defaultActiveAddress.address,
-		hasIndependentActiveSimulationAddress: true,
+		...createIndependentActiveSimulationAddressStorageUpdate(defaultActiveAddress.address),
 		activeAddressSelectionResetNoticePending: await hasStoredActiveSimulationAddress(),
 	})
-}
-
-export async function getActiveAddressSelectionResetNoticePending() {
-	const { activeAddressSelectionResetNoticePending: rawValue } = await browser.storage.local.get('activeAddressSelectionResetNoticePending')
-	const parsedValue = await browserStorageLocalSafeParseGet('activeAddressSelectionResetNoticePending')
-	if (parsedValue !== undefined && 'activeAddressSelectionResetNoticePending' in parsedValue) {
-		const { activeAddressSelectionResetNoticePending } = parsedValue
-		return activeAddressSelectionResetNoticePending === true
-	}
-	if (rawValue === undefined) return false
-	console.warn('activeAddressSelectionResetNoticePending was corrupt:')
-	console.warn(rawValue)
-	await browserStorageLocalSet({ activeAddressSelectionResetNoticePending: false })
-	return false
-}
-
-export async function acknowledgeActiveAddressSelectionResetNotice() {
-	await browserStorageLocalSet({ activeAddressSelectionResetNoticePending: false })
 }

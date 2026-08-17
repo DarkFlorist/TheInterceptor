@@ -133,6 +133,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 export async function loadModules() {
 	return {
 		...await import('../../app/ts/background/accessManagement.js'),
+		...await import('../../app/ts/background/activeAddressSelectionResetNotice.js'),
 		...await import('../../app/ts/background/activeAddressStateMigration.js'),
 		...await import('../../app/ts/background/activeSettings.js'),
 		...await import('../../app/ts/background/background.js'),
