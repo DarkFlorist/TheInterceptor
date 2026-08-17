@@ -1,5 +1,6 @@
 import 'webextension-polyfill'
-import { getSettings, initializeIndependentActiveAddressState, updateKnownWebsiteMetadata } from './settings.js'
+import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
+import { initializeIndependentActiveAddressState } from './activeAddressStateMigration.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
 import { handleInterceptedRequest } from './background.js'
 import { getUpdatedSimulationState } from './simulationUpdating.js'

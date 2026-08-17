@@ -10,7 +10,7 @@ import { addressBookPopupMessageHandlers } from './popupMessageHandlerRegistries
 import { settingsPopupMessageHandlers } from './popupMessageHandlerRegistries/settings.js'
 import { safePopupMessageHandlers } from './popupMessageHandlerRegistries/safe.js'
 import { websiteAccessPopupMessageHandlers } from './popupMessageHandlerRegistries/websiteAccess.js'
-import { acknowledgeActiveAddressSelectionResetNotice } from './settings.js'
+import { acknowledgeActiveAddressSelectionResetNotice } from './activeAddressStateMigration.js'
 
 export type { PopupMessageDispatcherContext } from './popupMessageHandlerRegistry.js'
 

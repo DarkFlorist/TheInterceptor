@@ -43,8 +43,6 @@ export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId
 
 type StartupStorageDefaults = {
 	activeSimulationAddress: Settings['activeSimulationAddress']
-	hasIndependentActiveSimulationAddress: boolean
-	activeAddressSelectionResetNoticePending: boolean
 	activeSigningSafeAddress: Settings['activeSigningSafeAddress']
 	openedPageV2: Page
 	useSignersAddressAsActiveAddress: boolean
@@ -65,32 +63,6 @@ async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDe
 	console.warn(rawValue)
 	await browserStorageLocalSet({ [key]: defaultValue } as unknown as Parameters<typeof browserStorageLocalSet>[0])
 	return defaultValue
-}
-
-async function hasStoredActiveSimulationAddress() {
-	const storedValue = await browserStorageLocalSafeParseGet('activeSimulationAddress')
-	if (storedValue === undefined) return false
-	const { activeSimulationAddress } = storedValue
-	return activeSimulationAddress !== undefined
-}
-
-export async function initializeIndependentActiveAddressState() {
-	if (defaultActiveAddresses[0] === undefined) throw new Error('Default active address was missing')
-	const { hasIndependentActiveSimulationAddress } = await browser.storage.local.get('hasIndependentActiveSimulationAddress')
-	if (hasIndependentActiveSimulationAddress !== undefined) return
-	await browserStorageLocalSet({
-		activeSimulationAddress: defaultActiveAddresses[0].address,
-		hasIndependentActiveSimulationAddress: true,
-		activeAddressSelectionResetNoticePending: await hasStoredActiveSimulationAddress(),
-	})
-}
-
-export async function getActiveAddressSelectionResetNoticePending() {
-	return (await getParsedStorageValueOrDefault('activeAddressSelectionResetNoticePending', false)) === true
-}
-
-export async function acknowledgeActiveAddressSelectionResetNotice() {
-	await browserStorageLocalSet({ activeAddressSelectionResetNoticePending: false })
 }
 
 export async function getSettings() : Promise<Settings> {
