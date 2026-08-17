@@ -15,7 +15,7 @@ const safeEntry = {
 const signingSettings = {
 	simulationMode: false,
 	useSignersAddressAsActiveAddress: false,
-	activeSimulationAddress: safeEntry.address,
+	activeSigningSafeAddress: safeEntry.address,
 	chainId: safeEntry.chainId,
 }
 
@@ -25,9 +25,9 @@ describe('Gnosis Safe signing-mode selection', () => {
 		assert.equal(getSafeSigningEntry([safeEntry], { ...signingSettings, chainId: 2n }), undefined)
 	})
 
-	test('does not select a Safe in simulation or signer-address mode', () => {
+	test('does not select a Safe in simulation or without a signing Safe address', () => {
 		assert.equal(getSafeSigningEntry([safeEntry], { ...signingSettings, simulationMode: true }), undefined)
-		assert.equal(getSafeSigningEntry([safeEntry], { ...signingSettings, useSignersAddressAsActiveAddress: true }), undefined)
+		assert.equal(getSafeSigningEntry([safeEntry], { ...signingSettings, activeSigningSafeAddress: undefined }), undefined)
 	})
 
 	test('does not require a simulation signer in signing mode', () => {

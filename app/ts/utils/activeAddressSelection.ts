@@ -5,6 +5,17 @@ export type ActiveAddressSelection =
 	| { readonly type: 'signer', readonly address: bigint | undefined }
 	| { readonly type: 'addressBookEntry', readonly entry: AddressBookEntry }
 
+export type OptimisticActiveAddressSelection =
+	| { readonly mode: 'simulation', readonly activeSimulationAddress: bigint | undefined, readonly useSignersAddressAsActiveAddress: boolean }
+	| { readonly mode: 'signing', readonly activeSigningAddress: bigint | undefined }
+
+export function getOptimisticActiveAddressSelection(address: bigint | 'signer', simulationMode: boolean, signerAccounts: readonly bigint[]): OptimisticActiveAddressSelection {
+	const resolvedAddress = address === 'signer' ? signerAccounts[0] : address
+	return simulationMode
+		? { mode: 'simulation', activeSimulationAddress: resolvedAddress, useSignersAddressAsActiveAddress: address === 'signer' }
+		: { mode: 'signing', activeSigningAddress: resolvedAddress }
+}
+
 export function getWalletSelectedAccount(tabState: Pick<TabState, 'activeSigningAddress' | 'signerAccounts'> | undefined) {
 	return tabState?.activeSigningAddress ?? tabState?.signerAccounts[0]
 }

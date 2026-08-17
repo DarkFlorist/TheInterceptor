@@ -370,11 +370,12 @@ function createSimulatedCompleteVisualizedSimulation(serializableSettings: Setti
 function createStackHomePageUpdate(tabId: number, popupRefreshGeneration: number, iconReason: string, transactionIdentifiers: readonly bigint[] = [1n], numberOfAddressesMadeRich = 0, richList: readonly EnrichedRichListElement[] = []): UpdateHomePage {
 	const update = createHomePageUpdate(tabId, popupRefreshGeneration, iconReason, numberOfAddressesMadeRich, richList)
 	const safeAddress = 0x3000000000000000000000000000000000000003n
-	const serializableSettings = { ...createSerializableSettings(), activeSimulationAddress: safeAddress, simulationMode: false }
+	const serializableSettings = { ...createSerializableSettings(), activeSigningSafeAddress: safeAddress, simulationMode: false }
 	return {
 		...update,
 		data: {
 			...update.data,
+			activeSigningAddressInThisTab: safeAddress,
 			activeAddresses: [{ type: 'safe', name: 'Test Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSimulationSignerAddress: 0x1000000000000000000000000000000000000001n }],
 			visualizedSimulatorState: createSimulatedCompleteVisualizedSimulation(serializableSettings, transactionIdentifiers, numberOfAddressesMadeRich),
 			settings: serializableSettings,
@@ -392,7 +393,8 @@ function createNonSafeStackHomePageUpdate(tabId: number, popupRefreshGeneration:
 		data: {
 			...update.data,
 			activeAddresses: [{ type: 'contact', name: 'Not a Safe', address: nonSafeAddress, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true }],
-			settings: { ...update.data.settings, activeSimulationAddress: nonSafeAddress },
+			activeSigningAddressInThisTab: nonSafeAddress,
+			settings: { ...update.data.settings, activeSigningSafeAddress: undefined },
 		},
 	}
 }

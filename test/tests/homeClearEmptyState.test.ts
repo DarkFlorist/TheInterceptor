@@ -825,7 +825,7 @@ describe('Home popup clear empty state', () => {
 						activeSigningAddress: SAFE_SIGNER_ADDRESS,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(undefined),
-					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					activeSigningAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
 					useSignersAddressAsActiveAddress: new Signal(true),
 					simulationMode: new Signal(false),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Connected through MetaMask.' }),
@@ -881,7 +881,7 @@ describe('Home popup clear empty state', () => {
 						activeSigningAddress: SAFE_SIGNER_ADDRESS,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
-					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					activeSigningAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
 					simulationMode: new Signal(false),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
 				})), dom.document.body)
@@ -940,7 +940,7 @@ describe('Home popup clear empty state', () => {
 						activeSigningAddress: undefined,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
-					activeSigningAddress: new Signal<bigint | undefined>(undefined),
+					activeSigningAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
 					simulationMode: new Signal(false),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
 				})), dom.document.body)
@@ -1345,7 +1345,7 @@ test('warns when the wallet-selected account is not among the known Safe owners'
 					activeSigningAddress: 0x6000000000000000000000000000000000000006n,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
-				activeSigningAddress: new Signal<bigint | undefined>(0x6000000000000000000000000000000000000006n),
+				activeSigningAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
 					simulationMode: new Signal(false),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
 				})), dom.document.body)
@@ -1400,7 +1400,7 @@ test('warns when the wallet-selected account is not among the known Safe owners'
 				render(h(Home, createHomeParams({
 					activeAddresses: new Signal([safeEntry, safeSignerEntry]),
 					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
-					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					activeSigningAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
 					simulationMode: new Signal(false),
 					tabState: new Signal<TabState | undefined>({
 						tabId: 1,

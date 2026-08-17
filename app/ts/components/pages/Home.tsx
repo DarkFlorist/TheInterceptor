@@ -905,17 +905,17 @@ export function Home(param: HomeParams) {
 	)
 	const activeSafe = useComputed(() => getSafeSigningEntry(param.activeAddresses.value, {
 		simulationMode: param.simulationMode.value,
-		useSignersAddressAsActiveAddress: param.useSignersAddressAsActiveAddress.value,
-		activeSimulationAddress: param.activeSimulationAddress.value,
+		activeSigningSafeAddress: param.activeSigningAddress.value,
 		chainId: param.rpcNetwork.value?.chainId,
 	}))
 	const safeSigningMode = useComputed(() => activeSafe.value !== undefined)
 	const currentActiveAddress = useComputed(() =>
-		param.simulationMode.value || safeSigningMode.value ? activeSimulationAddress.value : activeSigningAddress.value
+		param.simulationMode.value ? activeSimulationAddress.value : activeSigningAddress.value
 	)
+	const visualizedAddress = param.simulationMode.value ? param.activeSimulationAddress : param.activeSigningAddress
 
 	useEffect(() => {
-		if ((!param.simulationMode.value && !safeSigningMode.value) || activeSimulationAddress.value === undefined) {
+		if ((!param.simulationMode.value && !safeSigningMode.value) || currentActiveAddress.value === undefined) {
 			showPopupVisualisation.value = false
 			return
 		}
@@ -923,7 +923,7 @@ export function Home(param: HomeParams) {
 		return scheduleAfterPaint(() => {
 			showPopupVisualisation.value = true
 		})
-	}, [param.simulationMode.value, safeSigningMode.value, activeSimulationAddress.value])
+	}, [param.simulationMode.value, safeSigningMode.value, currentActiveAddress.value])
 
 	useSignalEffect(() => {
 		param.simVisResults.value
@@ -987,7 +987,7 @@ export function Home(param: HomeParams) {
 			isFreshHomeDataLoaded = { param.isFreshHomeDataLoaded }
 		/>
 
-		{ (param.simulationMode.value || safeSigningMode.value) && activeSimulationAddress.value !== undefined
+		{ (param.simulationMode.value || safeSigningMode.value) && currentActiveAddress.value !== undefined
 			? showPopupVisualisation.value
 				? <PopupVisualisation
 					simulationAndVisualisationResults = { param.simVisResults }
@@ -995,7 +995,7 @@ export function Home(param: HomeParams) {
 					disableReset = { disableResetUntilHomeDataLoaded }
 					resetSimulation = { resetSimulationAfterHomeDataLoaded }
 					currentBlockNumber = { param.currentBlockNumber }
-					activeSimulationAddress = { param.activeSimulationAddress }
+					activeSimulationAddress = { visualizedAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
 					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 					removedTransactionOrSignedMessages = { removedTransactionOrSignedMessages.value }

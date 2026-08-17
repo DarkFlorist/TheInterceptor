@@ -277,6 +277,7 @@ function scheduleStackTargetTimeout(callback: () => void, delayMs: number) {
 export function SimulationStackPage() {
 	const {
 		activeSimulationAddress,
+		activeSigningAddress,
 		activeAddresses,
 		simVisResults,
 		rpcNetwork,
@@ -292,7 +293,6 @@ export function SimulationStackPage() {
 		numberOfAddressesMadeRich,
 		hasSafeTransactionsToExport,
 		simulationMode,
-		useSignersAddressAsActiveAddress,
 	} = useLiveSimulationHomeData({
 		answerMainPopupOpen: false,
 		answerSimulationDataConsumerOpen: true,
@@ -321,8 +321,7 @@ export function SimulationStackPage() {
 	// Safe import and copy are signing-mode controls: intentionally hide both unless a Safe is the active account on this chain.
 	const showSafeSigningActions = useComputed(() => getSafeSigningEntry(activeAddresses.value, {
 		simulationMode: simulationMode.value,
-		useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress.value,
-		activeSimulationAddress: activeSimulationAddress.value,
+		activeSigningSafeAddress: activeSigningAddress.value,
 		chainId: rpcNetwork.value?.chainId,
 	}) !== undefined)
 

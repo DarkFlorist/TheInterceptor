@@ -690,8 +690,7 @@ export async function enableSimulationMode(
 			activeChainEntries,
 			{
 				simulationMode: params.data,
-				useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
-				activeSimulationAddress: settings.activeSimulationAddress,
+				activeSigningSafeAddress: settings.activeSigningSafeAddress,
 				chainId: targetChainId,
 			},
 		)
@@ -709,7 +708,6 @@ export async function enableSimulationMode(
 			await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, signingSelection, {
 				simulationMode: false,
 				signerAddress: signerAccount,
-				preserveSimulationSelection: configuredSigningSafeCandidate === undefined,
 				...(chainToSwitch === undefined || networkToSwitch === undefined ? {} : { rpcNetwork: networkToSwitch }),
 			})
 			return

@@ -116,7 +116,7 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 	})
 }
 
-async function changeSignerChain(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, signerStateToken: SignerStateToken, signerChain: bigint, approval: ApprovalState, _activeAddress: bigint | undefined) {
+async function changeSignerChain(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, signerStateToken: SignerStateToken, signerChain: bigint, approval: ApprovalState, activeAddress: bigint | undefined) {
 	if (approval !== 'hasAccess') return
 	const tabStateChange = await updateTabState(signerStateToken.socket.tabId, (previousState: TabState) => {
 		return previousState.signerChain === signerChain ? previousState : modifyObject(previousState, { signerChain })
@@ -125,7 +125,7 @@ async function changeSignerChain(ethereum: EthereumClientService, tokenPriceServ
 	const oldSignerChain = tabStateChange.previousState.signerChain
 	// update active address if we are using signers address
 	const settings = await getSettings()
-	const selectedSafe = await getConfiguredSigningSafe(settings)
+	const selectedSafe = await getConfiguredSigningSafe(settings, tabStateChange.newState.signerAccounts)
 	if (selectedSafe !== undefined) {
 		if (oldSignerChain !== signerChain) {
 			await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
@@ -138,6 +138,7 @@ async function changeSignerChain(ethereum: EthereumClientService, tokenPriceServ
 		return changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			simulationMode: settings.simulationMode,
 			rpcNetwork,
+			activeAddress,
 		})
 	}
 	if (oldSignerChain !== signerChain) sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })

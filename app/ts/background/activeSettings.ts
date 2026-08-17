@@ -38,7 +38,6 @@ export async function changeActiveAddressAndChain(
 		activeAddress?: bigint,
 		rpcNetwork?: RpcNetwork,
 		promptForAccessesIfNeeded?: boolean,
-		preserveActiveSimulationAddress?: boolean,
 	},
 ) {
 	if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList()
@@ -66,9 +65,7 @@ export async function changeActiveAddressAndChain(
 			simulationMode: change.simulationMode,
 			...(selectedSafe === undefined && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
 			...(selectedSafe !== undefined && safeEntryOnActiveChain === undefined ? { activeSigningAddress: undefined } : {}),
-			...(safeEntryOnActiveChain !== undefined
-				? { activeSimulationAddress: safeEntryOnActiveChain.address }
-				: change.activeAddress !== undefined && change.preserveActiveSimulationAddress !== true ? { activeSimulationAddress: undefined } : {}),
+			...('activeAddress' in change ? { activeSigningSafeAddress: safeEntryOnActiveChain?.address } : {}),
 			...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
 		})
 	}
@@ -105,11 +102,10 @@ export async function activateAddressSelection(
 		readonly signerAddress: bigint | undefined
 		readonly rpcNetwork?: RpcNetwork
 		readonly promptForAccessesIfNeeded?: boolean
-		readonly preserveSimulationSelection?: boolean
 	},
 ) {
 	const useSignerAddress = selection?.type === 'signer' || (!options.simulationMode && selection === undefined)
-	if (options.preserveSimulationSelection !== true) {
+	if (options.simulationMode) {
 		await setUseSignersAddressAsActiveAddress(useSignerAddress, useSignerAddress ? selection?.type === 'signer' ? selection.address : options.signerAddress : undefined)
 	}
 	await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
@@ -117,7 +113,6 @@ export async function activateAddressSelection(
 		activeAddress: selection?.type === 'signer' ? selection.address : selection?.entry.address,
 		...(options.rpcNetwork === undefined ? {} : { rpcNetwork: options.rpcNetwork }),
 		...(options.promptForAccessesIfNeeded === undefined ? {} : { promptForAccessesIfNeeded: options.promptForAccessesIfNeeded }),
-		...(options.preserveSimulationSelection === true ? { preserveActiveSimulationAddress: true } : {}),
 	})
 	if (options.simulationMode || options.signerAddress === undefined || selection === undefined) return
 	if (selection.type === 'signer') {

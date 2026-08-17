@@ -494,7 +494,7 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 		const configuredSafe = getSafeSigningEntry(currentChainEntries, {
 			...settings,
 			// The request's active address is captured before async handling begins. Do not reroute an in-flight request if the popup selects another account meanwhile.
-			activeSimulationAddress: activeAddress,
+			activeSigningSafeAddress: activeAddress,
 			chainId: settings.activeRpcNetwork.chainId,
 		})
 		const safeSigningMode = configuredSafe !== undefined

@@ -52,13 +52,14 @@ export const RichListElement = funtypes.ReadonlyObject({
 })
 
 // ReadonlyPartial drops a property whose serialized value represents `undefined`. These presence-aware alternatives preserve the distinction between "not stored" and "explicitly cleared", which the settings migration and update paths rely on.
-const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSimulationAddress') => funtypes.Union(
+const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSigningSafeAddress' | 'activeSimulationAddress') => funtypes.Union(
 	funtypes.ReadonlyObject({ [propertyName]: EthereumAddressOrMissing })
 		.withConstraint((item) => hasOwnKey(item, propertyName)),
 	funtypes.ReadonlyPartial({ [propertyName]: funtypes.Unknown })
 		.withConstraint((item) => !hasOwnKey(item, propertyName)),
 )
 const OptionalActiveSigningAddressStorageProperty = presenceAwareOptionalAddress('activeSigningAddress')
+const OptionalActiveSigningSafeAddressStorageProperty = presenceAwareOptionalAddress('activeSigningSafeAddress')
 const OptionalActiveSimulationAddressStorageProperty = presenceAwareOptionalAddress('activeSimulationAddress')
 const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	openedPageV2: Page,
@@ -95,13 +96,14 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	pendingWatchAssetRequests: funtypes.ReadonlyArray(StoredWatchAssetRequest),
 	popupRefreshGeneration: funtypes.Number,
 	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
-}), OptionalActiveSigningAddressStorageProperty, OptionalActiveSimulationAddressStorageProperty)
+}), OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalActiveSimulationAddressStorageProperty)
 type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
 
 type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
 const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('activeSigningAddress'),
+	funtypes.Literal('activeSigningSafeAddress'),
 	funtypes.Literal('activeSimulationAddress'),
 	funtypes.Literal('openedPageV2'),
 	funtypes.Literal('useSignersAddressAsActiveAddress'),

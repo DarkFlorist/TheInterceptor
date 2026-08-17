@@ -43,6 +43,7 @@ export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId
 
 type StartupStorageDefaults = {
 	activeSimulationAddress: Settings['activeSimulationAddress']
+	activeSigningSafeAddress: Settings['activeSigningSafeAddress']
 	openedPageV2: Page
 	useSignersAddressAsActiveAddress: boolean
 	websiteAccess: WebsiteAccessArray
@@ -68,6 +69,7 @@ export async function getSettings() : Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
 	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeSimulationAddress', defaultActiveAddresses[0].address))
+	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeSigningSafeAddress', undefined))
 	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('openedPageV2', defaultPage))
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('useSignersAddressAsActiveAddress', false))
 	const websiteAccessPromise = silenceChromeUnCaughtPromise(getWebsiteAccess())
@@ -75,6 +77,7 @@ export async function getSettings() : Promise<Settings> {
 	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeRpcNetwork', defaultRpcs[0]))
 	return {
 		activeSimulationAddress: await activeSimulationAddressPromise,
+		activeSigningSafeAddress: await activeSigningSafeAddressPromise,
 		openedPage: await openedPagePromise,
 		useSignersAddressAsActiveAddress: await useSignersAddressAsActiveAddressPromise,
 		websiteAccess: await websiteAccessPromise,
@@ -170,12 +173,13 @@ export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsAct
 	})
 }
 
-export async function changeSimulationMode(changes: { simulationMode: boolean, rpcNetwork?: RpcNetwork, activeSimulationAddress?: EthereumAddress, activeSigningAddress?: EthereumAddress }) {
+export async function changeSimulationMode(changes: { simulationMode: boolean, rpcNetwork?: RpcNetwork, activeSimulationAddress?: EthereumAddress, activeSigningAddress?: EthereumAddress, activeSigningSafeAddress?: EthereumAddress }) {
 	return await browserStorageLocalSet({
 		simulationMode: changes.simulationMode,
 		...changes.rpcNetwork ? { activeRpcNetwork: changes.rpcNetwork }: {},
 		...'activeSimulationAddress' in changes ? { activeSimulationAddress: changes.activeSimulationAddress }: {},
 		...'activeSigningAddress' in changes ? { activeSigningAddress: changes.activeSigningAddress }: {},
+		...'activeSigningSafeAddress' in changes ? { activeSigningSafeAddress: changes.activeSigningSafeAddress }: {},
 	})
 }
 
@@ -225,10 +229,11 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 	const settings = await getSettings()
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
-		version: '1.4' as const,
+		version: '1.5' as const,
 		exportedDate: exportDate,
 		settings: {
 			activeSimulationAddress: settings.activeSimulationAddress,
+			activeSigningSafeAddress: settings.activeSigningSafeAddress,
 			openedPage: settings.openedPage,
 			useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
 			websiteAccess: settings.websiteAccess,
@@ -242,7 +247,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 }
 
 export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings) {
-	if (exportedSetings.version === '1.3' || exportedSetings.version === '1.4') {
+	if (exportedSetings.version === '1.3' || exportedSetings.version === '1.4' || exportedSetings.version === '1.5') {
 		await setPage(exportedSetings.settings.openedPage)
 	}
 	if (exportedSetings.version === '1.0') {
@@ -251,6 +256,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 			rpcNetwork: defaultRpcs[0],
 			activeSimulationAddress: exportedSetings.settings.activeSimulationAddress,
 			activeSigningAddress: undefined,
+			activeSigningSafeAddress: undefined,
 		})
 	} else {
 		await changeSimulationMode({
@@ -258,6 +264,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 			rpcNetwork: exportedSetings.settings.rpcNetwork,
 			activeSimulationAddress: exportedSetings.settings.activeSimulationAddress,
 			activeSigningAddress: undefined,
+			activeSigningSafeAddress: exportedSetings.version === '1.5' ? exportedSetings.settings.activeSigningSafeAddress : undefined,
 		})
 	}
 	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
@@ -266,7 +273,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') {
 		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
 	}
-	if (exportedSetings.version === '1.4') {
+	if (exportedSetings.version === '1.4' || exportedSetings.version === '1.5') {
 		await updateUserAddressBookEntries(() => exportedSetings.settings.addressBookEntries)
 	} else {
 		await updateUserAddressBookEntries((previousEntries) => {

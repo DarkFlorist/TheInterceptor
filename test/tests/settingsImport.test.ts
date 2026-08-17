@@ -149,6 +149,37 @@ describe('settings import', () => {
 		assert.deepEqual(await getPage(), { page: 'Settings' })
 	})
 
+	test('round-trips the independent signing Safe selection in version 1.5 exports', async () => {
+		const signingSafeAddress = 0x4444444444444444444444444444444444444444n
+		const { changeSimulationMode, exportSettingsAndAddressBook, getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		await changeSimulationMode({
+			simulationMode: false,
+			activeSimulationAddress: 0x5555555555555555555555555555555555555555n,
+			activeSigningSafeAddress: signingSafeAddress,
+		})
+
+		const exportedSettings = await exportSettingsAndAddressBook()
+		assert.equal(exportedSettings.version, '1.5')
+		if (exportedSettings.version !== '1.5') throw new Error('Expected current settings export version')
+		assert.equal(exportedSettings.settings.activeSigningSafeAddress, signingSafeAddress)
+
+		browserMock.reset()
+		await importSettingsAndAddressBook(exportedSettings)
+		assert.equal((await getSettings()).activeSigningSafeAddress, signingSafeAddress)
+	})
+
+	test('clears a pre-existing signing Safe when importing a legacy export', async () => {
+		const { changeSimulationMode, getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		await changeSimulationMode({
+			simulationMode: false,
+			activeSigningSafeAddress: 0x6666666666666666666666666666666666666666n,
+		})
+
+		await importSettingsAndAddressBook(buildVersion14Import(false, false))
+
+		assert.equal((await getSettings()).activeSigningSafeAddress, undefined)
+	})
+
 	test('restores metamask compatibility mode from version 1.4 exports', async () => {
 		const { getMetamaskCompatibilityMode, getUseTabsInsteadOfPopup, importSettingsAndAddressBook, setMetamaskCompatibilityMode, setUseTabsInsteadOfPopup } = await settingsModulePromise
 		await setUseTabsInsteadOfPopup(true)

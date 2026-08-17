@@ -20,36 +20,35 @@ type ConfiguredActiveAddressResolution =
 	| { readonly useConfiguredAddress: true, readonly activeAddress: AddressBookEntry | undefined }
 
 async function resolveConfiguredActiveAddress(settings: Settings, signerAccounts: readonly bigint[], addressBookEntries: AddressBookEntries | undefined): Promise<ConfiguredActiveAddressResolution> {
-	if (settings.useSignersAddressAsActiveAddress || settings.activeSimulationAddress === undefined) {
-		return { useConfiguredAddress: false }
-	}
+	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningSafeAddress
+	if ((settings.simulationMode && settings.useSignersAddressAsActiveAddress) || configuredAddress === undefined) return { useConfiguredAddress: false }
 	if (addressBookEntries === undefined) throw new Error('Address-book entries are required to resolve a configured active address.')
 	const chainEntries = getAddressBookEntriesForChainIdMorePreciseFirst(addressBookEntries, settings.activeRpcNetwork.chainId)
 	if (!settings.simulationMode) {
-		const configuredSafe = chainEntries.find((entry) => entry.type === 'safe' && entry.address === settings.activeSimulationAddress)
 		const selection = getActiveAddressSelection(
-			settings.activeSimulationAddress,
+			configuredAddress,
 			chainEntries,
 			false,
 			settings.activeRpcNetwork.chainId,
 			signerAccounts,
 		)
-		return configuredSafe !== undefined
-			? { useConfiguredAddress: true, activeAddress: selection?.type === 'addressBookEntry' ? selection.entry : undefined }
+		return selection?.type === 'addressBookEntry'
+			? { useConfiguredAddress: true, activeAddress: selection.entry }
 			: { useConfiguredAddress: false }
 	}
-	const configuredEntry = chainEntries.find((entry) => entry.address === settings.activeSimulationAddress)
+	const configuredEntry = chainEntries.find((entry) => entry.address === configuredAddress)
 	if (configuredEntry !== undefined) return { useConfiguredAddress: true, activeAddress: configuredEntry }
 	const isSafeOnAnotherChain = addressBookEntries
-		.some((entry) => entry.type === 'safe' && entry.address === settings.activeSimulationAddress)
+		.some((entry) => entry.type === 'safe' && entry.address === configuredAddress)
 	return {
 		useConfiguredAddress: true,
-		activeAddress: isSafeOnAnotherChain ? undefined : await getActiveAddressEntry(settings.activeSimulationAddress),
+		activeAddress: isSafeOnAnotherChain ? undefined : await getActiveAddressEntry(configuredAddress),
 	}
 }
 
 async function getConfiguredActiveAddressBookEntries(settings: Settings) {
-	if (settings.useSignersAddressAsActiveAddress || settings.activeSimulationAddress === undefined) return undefined
+	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningSafeAddress
+	if ((settings.simulationMode && settings.useSignersAddressAsActiveAddress) || configuredAddress === undefined) return undefined
 	return await getUserAddressBookEntries()
 }
 

@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { assertActiveAddressSelectionAllowed, getActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../../app/ts/utils/activeAddressSelection.js'
+import { assertActiveAddressSelectionAllowed, getActiveAddressSelection, getOptimisticActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../../app/ts/utils/activeAddressSelection.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
 import { requestActiveAddressChange } from '../../app/ts/components/activeAddressChange.js'
 
@@ -33,6 +33,23 @@ describe('active address selection', () => {
 		assert.equal(getWalletSelectedAccount({ activeSigningAddress: undefined, signerAccounts: [1n, 2n] }), 1n)
 		assert.equal(getWalletSelectedAccount({ activeSigningAddress: 2n, signerAccounts: [1n, 2n] }), 2n)
 		assert.doesNotMatch(signerMetadataSource, /getWalletSelectedAccount/u)
+	})
+
+	test('keeps optimistic simulation and signing selections in separate state', () => {
+		assert.deepEqual(getOptimisticActiveAddressSelection(EOA_ADDRESS, true, [SAFE_ADDRESS]), {
+			mode: 'simulation',
+			activeSimulationAddress: EOA_ADDRESS,
+			useSignersAddressAsActiveAddress: false,
+		})
+		assert.deepEqual(getOptimisticActiveAddressSelection('signer', true, [EOA_ADDRESS]), {
+			mode: 'simulation',
+			activeSimulationAddress: EOA_ADDRESS,
+			useSignersAddressAsActiveAddress: true,
+		})
+		assert.deepEqual(getOptimisticActiveAddressSelection(SAFE_ADDRESS, false, [EOA_ADDRESS]), {
+			mode: 'signing',
+			activeSigningAddress: SAFE_ADDRESS,
+		})
 	})
 	test('does not allow selecting an EOA or Safe in signing mode without a wallet account', () => {
 		assert.deepEqual(

@@ -9,7 +9,7 @@ import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import type { EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
-import { getSafeSigningEntry, type AddressBookEntry } from '../types/addressBookTypes.js'
+import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { RpcEntry } from '../types/rpc.js'
 import { UnexpectedError } from './subcomponents/Error.js'
 import { addressEditEntry } from './ui-utils.js'
@@ -20,7 +20,7 @@ import { useLiveSimulationHomeData } from './hooks/useLiveSimulationHomeData.js'
 import { NetworkErrors } from './subcomponents/NetworkErrors.js'
 import { ProviderErrors } from './subcomponents/ProviderErrors.js'
 import { PopupModal, type PopupPage } from './PopupModal.js'
-import { getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../utils/activeAddressSelection.js'
+import { getOptimisticActiveAddressSelection, getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../utils/activeAddressSelection.js'
 import { requestActiveAddressChange } from './activeAddressChange.js'
 export { NetworkErrors } from './subcomponents/NetworkErrors.js'
 
@@ -75,28 +75,13 @@ export function App() {
 		const selectableAddresses = includePersistedAddressBookEntry(activeAddresses.value, persistedEntry)
 		if (!isActiveAddressSelectionAllowed(address, selectableAddresses, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])) return
 		await requestActiveAddressChange(address, simulationMode.value)
-		useSignersAddressAsActiveAddress.value = address === 'signer'
-		if (address === 'signer') {
-			if (simulationMode.value) {
-				activeSimulationAddress.value = tabState.value && tabState.value.signerAccounts.length > 0 ? tabState.value.signerAccounts[0] : undefined
-				return
-			}
-			activeSigningAddress.value = tabState.value && tabState.value.signerAccounts.length > 0 ? tabState.value.signerAccounts[0] : undefined
+		const optimisticSelection = getOptimisticActiveAddressSelection(address, simulationMode.value, tabState.value?.signerAccounts ?? [])
+		if (optimisticSelection.mode === 'simulation') {
+			activeSimulationAddress.value = optimisticSelection.activeSimulationAddress
+			useSignersAddressAsActiveAddress.value = optimisticSelection.useSignersAddressAsActiveAddress
 			return
 		}
-		const selectedAddress = selectableAddresses.find((entry) =>
-			entry.address === address && (entry.type !== 'safe' || entry.chainId === rpcNetwork.value?.chainId)
-		)
-		const selectedSafeOnAnyChain = selectableAddresses.some((entry) => entry.type === 'safe' && entry.address === address)
-		if (simulationMode.value || selectedAddress?.type === 'safe') {
-			activeSimulationAddress.value = address
-			return
-		}
-		if (selectedSafeOnAnyChain) {
-			activeSigningAddress.value = tabState.value?.signerAccounts[0]
-			return
-		}
-		activeSigningAddress.value = address
+		activeSigningAddress.value = optimisticSelection.activeSigningAddress
 	}
 
 	function isSignerConnected() {
@@ -236,15 +221,8 @@ export function App() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_clearUnexpectedError' })
 	}
 
-	const activeSafe = useComputed(() => getSafeSigningEntry(activeAddresses.value, {
-		simulationMode: simulationMode.value,
-		useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress.value,
-		activeSimulationAddress: activeSimulationAddress.value,
-		chainId: rpcNetwork.value?.chainId,
-	}))
-	const safeSigningMode = useComputed(() => activeSafe.value !== undefined)
 	const activeAddress = useComputed(() =>
-		simulationMode.value || safeSigningMode.value ? activeSimulationAddress.value : activeSigningAddress.value
+		simulationMode.value ? activeSimulationAddress.value : activeSigningAddress.value
 	)
 	const selectableActiveAddresses = useComputed(() =>
 		getSelectableActiveAddresses(activeAddresses.value, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])

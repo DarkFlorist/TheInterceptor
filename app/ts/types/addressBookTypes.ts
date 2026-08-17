@@ -141,19 +141,17 @@ export function getSafeSigningEntry(
 	entries: readonly AddressBookEntry[],
 	settings: {
 		readonly simulationMode: boolean
-		readonly useSignersAddressAsActiveAddress: boolean
-		readonly activeSimulationAddress: EthereumAddress | undefined
+		readonly activeSigningSafeAddress: EthereumAddress | undefined
 		readonly chainId: bigint | undefined
 	},
 ): SafeEntry | undefined {
 	if (
 		settings.simulationMode
-		|| settings.useSignersAddressAsActiveAddress
-		|| settings.activeSimulationAddress === undefined
+		|| settings.activeSigningSafeAddress === undefined
 		|| settings.chainId === undefined
 	) return undefined
 	return entries.find((entry): entry is SafeEntry =>
-		entry.address === settings.activeSimulationAddress
+		entry.address === settings.activeSigningSafeAddress
 		&& entry.chainId === settings.chainId
 		&& entry.type === 'safe'
 	)
