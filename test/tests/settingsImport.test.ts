@@ -130,14 +130,15 @@ describe('settings import', () => {
 		browserMock.reset()
 	})
 
-	test('restores simulation settings and the opened page from version 1.3 exports', async () => {
-		const { getPage, getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+	test('resets the simulation address and restores the opened page from version 1.3 exports', async () => {
+		const { defaultActiveAddresses, getPage, getSettings, importSettingsAndAddressBook } = await settingsModulePromise
 
 		await importSettingsAndAddressBook(buildVersion13Import())
 
 		const settings = await getSettings()
 		assert.equal(settings.simulationMode, false)
-		assert.equal(settings.activeSimulationAddress, 0x3333333333333333333333333333333333333333n)
+		assert.equal(settings.activeSimulationAddress, defaultActiveAddresses[0]?.address)
+		assert.equal(settings.activeSigningSafeAddress, undefined)
 		assert.deepEqual(settings.activeRpcNetwork, testRpcNetwork)
 		assert.deepEqual(await getPage(), { page: 'Settings' })
 	})
@@ -181,7 +182,7 @@ describe('settings import', () => {
 		assert.equal((await getSettings()).activeSigningSafeAddress, undefined)
 	})
 
-	test('migrates a version 1.4 signing Safe without overwriting the simulation address', async () => {
+	test('resets a legacy version 1.4 unified address instead of inferring a signing Safe', async () => {
 		const safeAddress = 0x7777777777777777777777777777777777777777n
 		const legacyExport = buildVersion14Import(false, false)
 		if (legacyExport.version !== '1.4') throw new Error('Expected version 1.4 test settings')
@@ -194,16 +195,16 @@ describe('settings import', () => {
 				addressBookEntries: [{ type: 'safe', name: 'Legacy Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true }],
 			},
 		}
-		const { getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		const { defaultActiveAddresses, getSettings, importSettingsAndAddressBook } = await settingsModulePromise
 
 		await importSettingsAndAddressBook(signingSafeExport)
 
 		const settings = await getSettings()
-		assert.equal(settings.activeSimulationAddress, safeAddress)
-		assert.equal(settings.activeSigningSafeAddress, safeAddress)
+		assert.equal(settings.activeSimulationAddress, defaultActiveAddresses[0]?.address)
+		assert.equal(settings.activeSigningSafeAddress, undefined)
 	})
 
-	test('migrates a Safe signing selection from storage created before separate signing state', async () => {
+	test('ignores the legacy unified storage address without writing migration state', async () => {
 		const safeAddress = 0x8888888888888888888888888888888888888888n
 		await browserStorageLocalSet({
 			activeSimulationAddress: safeAddress,
@@ -211,13 +212,13 @@ describe('settings import', () => {
 			useSignersAddressAsActiveAddress: false,
 			userAddressBookEntriesV3: [{ type: 'safe', name: 'Stored Legacy Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true }],
 		})
-		const { getSettings } = await settingsModulePromise
+		const { defaultActiveAddresses, getSettings } = await settingsModulePromise
 
 		const settings = await getSettings()
 
-		assert.equal(settings.activeSimulationAddress, safeAddress)
-		assert.equal(settings.activeSigningSafeAddress, safeAddress)
-		assert.equal('activeSigningSafeAddress' in await browser.storage.local.get('activeSigningSafeAddress'), true)
+		assert.equal(settings.activeSimulationAddress, defaultActiveAddresses[0]?.address)
+		assert.equal(settings.activeSigningSafeAddress, undefined)
+		assert.deepEqual(await browser.storage.local.get(['activeSimulationAddressV2', 'activeSigningSafeAddress']), {})
 	})
 
 	test('restores metamask compatibility mode from version 1.4 exports', async () => {

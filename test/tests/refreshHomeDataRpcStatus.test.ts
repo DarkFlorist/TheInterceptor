@@ -149,7 +149,7 @@ describe('refreshHomeData', () => {
 		if (rpcNetwork === undefined) throw new Error('missing default rpc')
 
 		await browserStorageLocalSet({
-			activeSimulationAddress: defaultAddress.address,
+			activeSimulationAddressV2: defaultAddress.address,
 			openedPageV2: { page: 'Home' },
 			useSignersAddressAsActiveAddress: false,
 			websiteAccess: [],
@@ -208,7 +208,7 @@ describe('refreshHomeData', () => {
 		const rpcNetwork = defaultRpcs[0]
 		if (rpcNetwork === undefined) throw new Error('missing default rpc')
 		await browserStorageLocalSet({
-			activeSimulationAddress: defaultAddress.address,
+			activeSimulationAddressV2: defaultAddress.address,
 			openedPageV2: { page: 'Home' },
 			useSignersAddressAsActiveAddress: false,
 			websiteAccess: [],
@@ -294,7 +294,7 @@ describe('refreshHomeData', () => {
 		const rpcNetwork = defaultRpcs[0]
 		if (rpcNetwork === undefined) throw new Error('missing default rpc')
 		await browserStorageLocalSet({
-			activeSimulationAddress: defaultAddress.address,
+			activeSimulationAddressV2: defaultAddress.address,
 			openedPageV2: { page: 'Home' },
 			useSignersAddressAsActiveAddress: false,
 			websiteAccess: [],
@@ -363,7 +363,7 @@ describe('refreshHomeData', () => {
 		if (rpcNetwork === undefined) throw new Error('missing default rpc')
 		const signerAddress = 0x5555555555555555555555555555555555555555n
 		await browserStorageLocalSet({
-			activeSimulationAddress: defaultAddress.address,
+			activeSimulationAddressV2: defaultAddress.address,
 			openedPageV2: { page: 'Home' },
 			useSignersAddressAsActiveAddress: false,
 			websiteAccess: [],
@@ -471,7 +471,7 @@ describe('refreshHomeData', () => {
 		if (rpcNetwork === undefined) throw new Error('missing default rpc')
 		const staleSignerAddress = 0x6666666666666666666666666666666666666666n
 		await browserStorageLocalSet({
-			activeSimulationAddress: defaultAddress.address,
+			activeSimulationAddressV2: defaultAddress.address,
 			openedPageV2: { page: 'Home' },
 			useSignersAddressAsActiveAddress: false,
 			websiteAccess: [],
@@ -504,7 +504,7 @@ describe('refreshHomeData', () => {
 		if (rpcNetwork === undefined) throw new Error('missing default rpc')
 		const website = { websiteOrigin: 'https://disabled.example', icon: undefined, title: 'Disabled Example' }
 		await browserStorageLocalSet({
-			activeSimulationAddress: defaultAddress.address,
+			activeSimulationAddressV2: defaultAddress.address,
 			openedPageV2: { page: 'Home' },
 			useSignersAddressAsActiveAddress: false,
 			websiteAccess: [{
@@ -565,7 +565,7 @@ describe('refreshHomeData', () => {
 		const rpcNetwork = defaultRpcs[0]
 		if (rpcNetwork === undefined) throw new Error('missing default rpc')
 		await browserStorageLocalSet({
-			activeSimulationAddress: defaultAddress.address,
+			activeSimulationAddressV2: defaultAddress.address,
 			openedPageV2: { page: 'Home' },
 			useSignersAddressAsActiveAddress: false,
 			websiteAccess: [],
@@ -655,7 +655,7 @@ describe('refreshHomeData', () => {
 		const rpcNetwork = defaultRpcs[0]
 		if (rpcNetwork === undefined) throw new Error('missing default rpc')
 		await browserStorageLocalSet({
-			activeSimulationAddress: defaultAddress.address,
+			activeSimulationAddressV2: defaultAddress.address,
 			openedPageV2: { page: 'Home' },
 			useSignersAddressAsActiveAddress: false,
 			websiteAccess: [],
@@ -707,7 +707,7 @@ describe('refreshHomeData', () => {
 		const rpcNetwork = defaultRpcs[0]
 		if (rpcNetwork === undefined) throw new Error('missing default rpc')
 		await browserStorageLocalSet({
-			activeSimulationAddress: defaultAddress.address,
+			activeSimulationAddressV2: defaultAddress.address,
 			openedPageV2: { page: 'Home' },
 			useSignersAddressAsActiveAddress: false,
 			websiteAccess: [{
