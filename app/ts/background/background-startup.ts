@@ -1,5 +1,5 @@
 import 'webextension-polyfill'
-import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
+import { getSettings, initializeIndependentActiveAddressState, updateKnownWebsiteMetadata } from './settings.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
 import { handleInterceptedRequest } from './background.js'
 import { getUpdatedSimulationState } from './simulationUpdating.js'
@@ -271,6 +271,7 @@ async function startup() {
 	await tabStateInitializationPromise
 	await migrateAddressBook()
 	await migrateWebsiteAccess()
+	await initializeIndependentActiveAddressState()
 	await initializePopupRefreshGeneration()
 	bumpPopupRefreshGeneration()
 	const settings = await getSettings()

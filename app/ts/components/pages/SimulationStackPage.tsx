@@ -294,6 +294,7 @@ export function SimulationStackPage() {
 		numberOfAddressesMadeRich,
 		hasSafeTransactionsToExport,
 		simulationMode,
+		tabState,
 	} = useLiveSimulationHomeData({
 		answerMainPopupOpen: false,
 		answerSimulationDataConsumerOpen: true,
@@ -314,6 +315,7 @@ export function SimulationStackPage() {
 		activeSimulationAddress.value,
 		displayedSigningAddress.value,
 		rpcNetwork.value?.chainId,
+		tabState.value?.signerAccounts ?? [],
 	))
 	const visualizedAddress = useComputed(() => modeActiveAddress.value.activeAddress)
 	const madeRichAddressBookEntries = useComputed(() => getMadeRichAddressBookEntries(

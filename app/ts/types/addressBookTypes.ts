@@ -137,26 +137,6 @@ export const AddressBookEntry: funtypes.Runtype<AddressBookEntry> = funtypes.Uni
 	SafeEntry,
 )
 
-export function getSafeSigningEntry(
-	entries: readonly AddressBookEntry[],
-	settings: {
-		readonly simulationMode: boolean
-		readonly activeSigningSafeAddress: EthereumAddress | undefined
-		readonly chainId: bigint | undefined
-	},
-): SafeEntry | undefined {
-	if (
-		settings.simulationMode
-		|| settings.activeSigningSafeAddress === undefined
-		|| settings.chainId === undefined
-	) return undefined
-	return entries.find((entry): entry is SafeEntry =>
-		entry.address === settings.activeSigningSafeAddress
-		&& entry.chainId === settings.chainId
-		&& entry.type === 'safe'
-	)
-}
-
 export function getSafeSignerAddresses(entry: SafeEntry) {
 	return Array.from(new Set([
 		...(entry.safeSignerAddresses ?? []),

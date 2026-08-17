@@ -20,6 +20,7 @@ type LiveSimulationHomeDataOptions = {
 	requireActiveSimulationAddress?: boolean
 	requestHomeDataOnSimulationStateChange?: boolean
 	onInitialSettings?: (settings: Settings) => void
+	onActiveAddressSelectionResetNotice?: () => void
 }
 
 type CachedHomeDataRequest = {
@@ -67,6 +68,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 	const hasSafeTransactionsToExport = useSignal<boolean>(false)
 	const simulationMode = useSignal<boolean>(false)
 	const numberOfAddressesMadeRich = useSignal(0)
+	const hasProcessedResetNoticeBootstrap = useSignal(false)
 
 	const requestFreshHomeData = async () => {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_refreshHomeData' })
@@ -132,6 +134,10 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			simulationMode.value = settings.simulationMode
 		}
 		const updateHomePageBootstrap = ({ data, popupRefreshGeneration: updateGeneration }: HomePageBootstrap) => {
+			if (!hasProcessedResetNoticeBootstrap.value) {
+				hasProcessedResetNoticeBootstrap.value = true
+				if (data.activeAddressSelectionResetNotice === true) options.onActiveAddressSelectionResetNotice?.()
+			}
 			if (isFreshHomeDataLoaded.value) return
 			if (options.filterByTabId !== false && data.tabId !== currentTabId.value && currentTabId.value !== undefined) return
 			const minimumValidGeneration = Math.max(popupRefreshGeneration.value, pendingPopupRefreshGeneration.value)

@@ -1,16 +1,14 @@
 import type { Settings } from '../types/interceptor-messages.js'
 import type { TabState } from '../types/user-interface-types.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
-import { getActiveAddressSelection } from '../utils/activeAddressSelection.js'
+import { getActiveAddressSelection, resolveSigningSafe } from '../utils/activeAddressSelection.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
 import type { AddressBookEntries } from '../types/addressBookTypes.js'
 import { getSigningAddressPreferences, rememberSigningAddressPreference } from './settings.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 
 export function resolveConfiguredSigningSafe(activeSigningSafeAddress: bigint | undefined, chainId: bigint, signerAccounts: readonly bigint[], activeChainEntries: AddressBookEntries) {
-	if (activeSigningSafeAddress === undefined) return undefined
-	const selection = getActiveAddressSelection(activeSigningSafeAddress, activeChainEntries, false, chainId, signerAccounts)
-	return selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? selection.entry : undefined
+	return resolveSigningSafe(activeSigningSafeAddress, chainId, signerAccounts, activeChainEntries)
 }
 
 export async function getConfiguredSigningSafeForChain(activeSigningSafeAddress: bigint | undefined, chainId: bigint, signerAccounts: readonly bigint[]) {

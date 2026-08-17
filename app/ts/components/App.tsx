@@ -61,8 +61,10 @@ export function App() {
 		answerSimulationDataConsumerOpen: true,
 		requestFreshHomeDataOnMount: true,
 		requestHomeDataOnSimulationStateChange: true,
+		onActiveAddressSelectionResetNotice() {
+			showActiveAddressSelectionResetNotice.value = true
+		},
 		onInitialSettings(settings: Settings) {
-			showActiveAddressSelectionResetNotice.value = settings.activeAddressSelectionReset === true
 			if (appPage.value.page !== 'Unknown') return
 			if (settings.openedPage.page === 'AddNewAddress' || settings.openedPage.page === 'ModifyAddress') {
 				appPage.value = { ...settings.openedPage, state: new Signal(settings.openedPage.state) }
@@ -72,6 +74,11 @@ export function App() {
 		},
 	})
 	const boundaryResetKey = useSignal(0)
+	async function dismissActiveAddressSelectionResetNotice() {
+		if (!showActiveAddressSelectionResetNotice.value) return
+		showActiveAddressSelectionResetNotice.value = false
+		await sendPopupMessageToBackgroundPage({ method: 'popup_acknowledgeActiveAddressSelectionResetNotice' })
+	}
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer', persistedEntry?: AddressBookEntry) {
 		if (!isSettingsLoaded.value) return
@@ -227,6 +234,7 @@ export function App() {
 		activeSimulationAddress.value,
 		displayedSigningAddress.value,
 		rpcNetwork.value?.chainId,
+		tabState.value?.signerAccounts ?? [],
 	))
 	const selectableActiveAddresses = useComputed(() =>
 		getSelectableActiveAddresses(activeAddresses.value, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])
@@ -257,7 +265,7 @@ export function App() {
 					{ showActiveAddressSelectionResetNotice.value
 						? <DinoSaysNotification
 							text = 'Simulation and signing addresses are now kept separately. Your previous shared selection was reset; choose the addresses you want to use in each mode.'
-							close = { () => { showActiveAddressSelectionResetNotice.value = false } }
+							close = { dismissActiveAddressSelectionResetNotice }
 						/>
 						: <></> }
 					<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>

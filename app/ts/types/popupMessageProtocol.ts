@@ -50,6 +50,7 @@ export const popupMessageProtocol = {
 	popup_openWebPage: { domain: 'navigation' },
 	popup_setDisableInterceptor: { domain: 'website-access' },
 	popup_clearUnexpectedError: { domain: 'diagnostics' },
+	popup_acknowledgeActiveAddressSelectionResetNotice: { domain: 'home' },
 	popup_setEnsNameForHash: { domain: 'address-book' },
 	popup_openWebsiteAccess: { domain: 'navigation' },
 	popup_openSimulationStack: { domain: 'navigation' },

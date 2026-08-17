@@ -248,6 +248,7 @@ const defaultHomePageBootstrap = (tabId: number, icon: { icon: string; iconReaso
 		method: 'popup_homePageBootstrap',
 		popupRefreshGeneration,
 		data: {
+			...('activeAddressSelectionResetNotice' in homePage.data ? { activeAddressSelectionResetNotice: homePage.data.activeAddressSelectionResetNotice } : {}),
 			activeAddresses: homePage.data.activeAddresses,
 			hasSafeTransactionsToExport: homePage.data.hasSafeTransactionsToExport,
 			tabState: homePage.data.tabState,
@@ -261,10 +262,10 @@ const defaultHomePageBootstrap = (tabId: number, icon: { icon: string; iconReaso
 }
 
 describe('popup icon sync', () => {
-	test('shows the legacy address reset notice only when reset state is reported and allows local dismissal', async () => {
-		for (const activeAddressSelectionReset of [false, true]) {
+	test('shows the legacy address reset notice only when bootstrap reports it and acknowledges dismissal', async () => {
+		for (const activeAddressSelectionResetNotice of [false, true]) {
 			const dom = installDomMock()
-			const { messageListener } = installBrowserMock()
+			const { messageListener, sentMessages } = installBrowserMock()
 			try {
 				Object.defineProperty(globalThis, 'window', {
 					value: {
@@ -284,21 +285,72 @@ describe('popup icon sync', () => {
 					listener?.({
 						role: 'all',
 						...defaultHomePageBootstrap(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 1, {
-							settings: { ...defaultSettings, activeAddressSelectionReset },
+							activeAddressSelectionResetNotice,
 						}),
 					}, undefined, () => undefined)
 				})
 
 				const noticeText = 'Your previous shared selection was reset'
-				assert.equal(dom.document.body.textContent?.includes(noticeText), activeAddressSelectionReset)
-				if (!activeAddressSelectionReset) continue
+				assert.equal(dom.document.body.textContent?.includes(noticeText), activeAddressSelectionResetNotice)
+				if (!activeAddressSelectionResetNotice) continue
 				const dismissButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'remove')
 				if (dismissButton === undefined) throw new Error('Expected the reset notice dismissal button')
 				await act(async () => await clickElement(dismissButton))
 				assert.equal(dom.document.body.textContent?.includes(noticeText), false)
+				assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_acknowledgeActiveAddressSelectionResetNotice'), true)
 			} finally {
 				dom.restore()
 			}
+		}
+	})
+
+	test('processes the reset notice when fresh home data arrives before bootstrap', async () => {
+		const dom = installDomMock()
+		const { messageListener } = installBrowserMock()
+		try {
+			Object.defineProperty(globalThis, 'window', {
+				value: {
+					document: dom.document,
+					addEventListener: () => undefined,
+					removeEventListener: () => undefined,
+				},
+				configurable: true,
+				writable: true,
+			})
+
+			await act(() => {
+				render(h(App, {}), dom.document.body)
+			})
+			const listener = messageListener()
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 2),
+				}, undefined, () => undefined)
+				listener?.({
+					role: 'all',
+					...defaultHomePageBootstrap(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 1, {
+						activeAddressSelectionResetNotice: true,
+					}),
+				}, undefined, () => undefined)
+			})
+
+			const noticeText = 'Your previous shared selection was reset'
+			assert.equal(dom.document.body.textContent?.includes(noticeText), true)
+			const dismissButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'remove')
+			if (dismissButton === undefined) throw new Error('Expected the reset notice dismissal button')
+			await act(async () => await clickElement(dismissButton))
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePageBootstrap(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 1, {
+						activeAddressSelectionResetNotice: true,
+					}),
+				}, undefined, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent?.includes(noticeText), false)
+		} finally {
+			dom.restore()
 		}
 	})
 
@@ -332,8 +384,9 @@ describe('popup icon sync', () => {
 				listener?.({
 					role: 'all',
 					...defaultHomePageBootstrap(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 1, {
+						activeAddressSelectionResetNotice: true,
 						activeAddresses: [loadedAddressBookEntry],
-						settings: { ...defaultSettings, activeAddressSelectionReset: true, activeSimulationAddress: loadedAddress, simulationMode: true },
+						settings: { ...defaultSettings, activeSimulationAddress: loadedAddress, simulationMode: true },
 					}),
 				}, undefined, () => undefined)
 			})
@@ -345,6 +398,7 @@ describe('popup icon sync', () => {
 			})
 
 			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_changeActiveAddress'), true)
+			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_acknowledgeActiveAddressSelectionResetNotice'), false)
 			assert.equal(dom.document.body.textContent?.includes('Your previous shared selection was reset'), false)
 		} finally {
 			dom.restore()

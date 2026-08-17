@@ -21,26 +21,34 @@ export function resolveActiveAddressForMode(
 	activeSimulationAddress: bigint | undefined,
 	displayedSigningAddress: bigint | undefined,
 	activeChainId: bigint | undefined,
+	signerAccounts: readonly bigint[],
 ): ModeActiveAddressResolution {
 	const configuredAddress = simulationMode ? activeSimulationAddress : displayedSigningAddress
 	if (configuredAddress === undefined) return { activeAddress: undefined, activeAddressBookEntry: undefined, safeSigningMode: false }
-	const currentChainSafe = activeAddresses.find((entry) =>
-		entry.type === 'safe' && entry.address === configuredAddress && entry.chainId === activeChainId
+	if (!simulationMode) {
+		const activeSigningSafe = resolveSigningSafe(configuredAddress, activeChainId, signerAccounts, activeAddresses)
+		if (activeSigningSafe !== undefined) return { activeAddress: configuredAddress, activeAddressBookEntry: activeSigningSafe, safeSigningMode: true }
+		if (activeAddresses.some((entry) => entry.type === 'safe' && entry.address === configuredAddress)) {
+			return { activeAddress: undefined, activeAddressBookEntry: undefined, safeSigningMode: false }
+		}
+	}
+	const activeAddressBookEntry = activeAddresses.find((entry) =>
+		entry.address === configuredAddress && (entry.type !== 'safe' || entry.chainId === activeChainId)
 	)
-	const activeAddressBookEntry = !simulationMode && currentChainSafe !== undefined
-		? currentChainSafe
-		: activeAddresses.find((entry) =>
-			entry.address === configuredAddress && (entry.type !== 'safe' || entry.chainId === activeChainId)
-		)
-	const isSafeOnAnotherChain = (simulationMode ? activeAddressBookEntry === undefined : currentChainSafe === undefined)
+	const isSafeOnAnotherChain = simulationMode && activeAddressBookEntry === undefined
 		&& activeAddresses.some((entry) => entry.type === 'safe' && entry.address === configuredAddress)
 	if (isSafeOnAnotherChain) return { activeAddress: undefined, activeAddressBookEntry: undefined, safeSigningMode: false }
-	const activeSigningSafe = !simulationMode && activeAddressBookEntry?.type === 'safe' ? activeAddressBookEntry : undefined
 	return {
 		activeAddress: configuredAddress,
 		activeAddressBookEntry,
-		safeSigningMode: activeSigningSafe !== undefined,
+		safeSigningMode: false,
 	}
+}
+
+export function resolveSigningSafe(configuredSafeAddress: bigint | undefined, activeChainId: bigint | undefined, signerAccounts: readonly bigint[], activeAddresses: AddressBookEntries) {
+	if (configuredSafeAddress === undefined || activeChainId === undefined) return undefined
+	const selection = getActiveAddressSelection(configuredSafeAddress, activeAddresses, false, activeChainId, signerAccounts)
+	return selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? selection.entry : undefined
 }
 
 export function getOptimisticActiveAddressSelection(address: bigint | 'signer', simulationMode: boolean, signerAccounts: readonly bigint[]): OptimisticActiveAddressSelection {

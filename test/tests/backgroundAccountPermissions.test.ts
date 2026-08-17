@@ -106,6 +106,99 @@ describe('background eth_accounts', () => {
 		assert.equal((await getSettings()).activeSimulationAddress, originalAddress)
 	})
 
+	test('acknowledges the reset notice only after a successful simulation address selection', async () => {
+		installBrowserMock()
+		const {
+			changeActiveAddress,
+			changeSimulationMode,
+			getActiveAddressSelectionResetNoticePending,
+			saveCurrentTabId,
+			updateTabState,
+			updateUserAddressBookEntries,
+		} = await loadModules()
+		const simulationAddress = 0x5151515151515151515151515151515151515151n
+		const signerAddress = 0x5252525252525252525252525252525252525252n
+		const safeAddress = 0x5353535353535353535353535353535353535353n
+		const tabId = 196
+		await changeSimulationMode({ simulationMode: true })
+		await updateUserAddressBookEntries(() => [
+			{ type: 'contact', name: 'Simulation address', address: simulationAddress, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
+			{ type: 'safe', name: 'Signing Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [signerAddress] },
+		])
+		await updateTabState(tabId, (previousState) => ({ ...previousState, signerAccounts: [signerAddress], activeSigningAddress: signerAddress }))
+		await saveCurrentTabId(tabId)
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await browser.storage.local.set({ activeAddressSelectionResetNoticePending: true })
+		assert.deepEqual(await changeActiveAddress(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			method: 'popup_changeActiveAddress',
+			data: { activeAddress: simulationAddress, simulationMode: true },
+		}), { type: 'ChangeActiveAddressReply', ok: true })
+		assert.equal(await getActiveAddressSelectionResetNoticePending(), false)
+
+		await browser.storage.local.set({ activeAddressSelectionResetNoticePending: true })
+		assert.equal((await changeActiveAddress(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			method: 'popup_changeActiveAddress',
+			data: { activeAddress: 0x5454545454545454545454545454545454545454n, simulationMode: true },
+		})).ok, false)
+		assert.equal(await getActiveAddressSelectionResetNoticePending(), true)
+
+		assert.deepEqual(await changeActiveAddress(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			method: 'popup_changeActiveAddress',
+			data: { activeAddress: safeAddress, simulationMode: false },
+		}), { type: 'ChangeActiveAddressReply', ok: true })
+		assert.equal(await getActiveAddressSelectionResetNoticePending(), true)
+	})
+
+	test('acknowledges the reset notice when the access dialog changes the simulation address', async () => {
+		installBrowserMock()
+		const {
+			changeSimulationMode,
+			getActiveAddressSelectionResetNoticePending,
+			getSettings,
+			resolveInterceptorAccess,
+			updatePendingAccessRequests,
+			updateUserAddressBookEntries,
+			updateWebsiteAccess,
+		} = await loadModules()
+		const originalAddress = 0x6161616161616161616161616161616161616161n
+		const selectedAddress = 0x6262626262626262626262626262626262626262n
+		const originalEntry = { type: 'contact' as const, name: 'Original', address: originalAddress, entrySource: 'User' as const, useAsActiveAddress: true, askForAddressAccess: true }
+		const selectedEntry = { type: 'contact' as const, name: 'Selected', address: selectedAddress, entrySource: 'User' as const, useAsActiveAddress: true, askForAddressAccess: true }
+		const tabId = 197
+		const socket = { tabId, connectionName: 0n }
+		const website = { websiteOrigin: 'https://simulation-address-change.example', icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: originalAddress })
+		await updateWebsiteAccess(() => [])
+		await updateUserAddressBookEntries(() => [originalEntry, selectedEntry])
+		await updatePendingAccessRequests(async () => [{
+			website,
+			requestAccessToAddress: originalEntry,
+			originalRequestAccessToAddress: originalEntry,
+			associatedAddresses: [],
+			signerAccounts: [],
+			signerName: 'NoSigner',
+			simulationMode: true,
+			popupOrTabId: { type: 'popup', id: 1 },
+			socket,
+			request: undefined,
+			activeAddress: originalAddress,
+			accessRequestId: 'simulation-address-change',
+		}])
+		await browser.storage.local.set({ activeAddressSelectionResetNoticePending: true })
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			userReply: 'Approved',
+			requestAccessToAddress: selectedAddress,
+			originalRequestAccessToAddress: originalAddress,
+			accessRequestId: 'simulation-address-change',
+		}, noopPublishRpcConnectionStatus)
+
+		assert.equal((await getSettings()).activeSimulationAddress, selectedAddress)
+		assert.equal(await getActiveAddressSelectionResetNoticePending(), false)
+	})
+
 	test('clears a stale signing-mode Safe when the popup selects a disconnected signer', async () => {
 		installBrowserMock()
 		const {

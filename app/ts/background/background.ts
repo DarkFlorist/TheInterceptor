@@ -29,12 +29,12 @@ import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequest
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent } from './signerStateOwnership.js'
 import { handleWatchAssetRequest, initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
-import { getSafeSigningEntry } from '../types/addressBookTypes.js'
 import { getSafeModeRpcPolicyReply } from '../safe/safeRequestPolicy.js'
 import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
 import { createMethodHandlerFor, hasOwnKey } from '../utils/methodHandlers.js'
 import { getWalletCapabilities } from './walletCapabilities.js'
 import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
+import { resolveConfiguredSigningSafe } from './signingAddressSelection.js'
 
 if (initializeWatchAssetWindowListeners()) {
 	void processWatchAssetQueue(undefined).catch(async (error: unknown) => {
@@ -487,19 +487,14 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		const settings = await getSettings()
 		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
-		const activeAddressBookEntry = activeAddress === undefined
-			? undefined
-			: currentChainEntries.find((entry) => entry.address === activeAddress)
-		const simulationOverlayEnabled = settings.simulationMode || activeAddressBookEntry?.type === 'safe'
-		const configuredSafe = getSafeSigningEntry(currentChainEntries, {
-			...settings,
-			// The request's active address is captured before async handling begins. Do not reroute an in-flight request if the popup selects another account meanwhile.
-			activeSigningSafeAddress: activeAddress,
-			chainId: settings.activeRpcNetwork.chainId,
-		})
-		const safeSigningMode = configuredSafe !== undefined
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 		const selectedWalletAccount = getWalletSelectedAccount(signerTabState)
+		// The request's active address is captured before async handling begins. Do not reroute an in-flight request if the popup selects another account meanwhile.
+		const configuredSafe = settings.simulationMode
+			? undefined
+			: resolveConfiguredSigningSafe(activeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
+		const safeSigningMode = configuredSafe !== undefined
+		const simulationOverlayEnabled = settings.simulationMode || safeSigningMode
 		const walletSelectedSafeSigner = configuredSafe === undefined ? undefined : selectedWalletAccount
 		let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
 		let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined

@@ -169,7 +169,6 @@ describe('settings import', () => {
 		await importSettingsAndAddressBook(exportedSettings)
 		const importedSettings = await getSettings()
 		assert.equal(importedSettings.activeSigningSafeAddress, signingSafeAddress)
-		assert.equal(importedSettings.activeAddressSelectionReset, false)
 	})
 
 	test('clears a pre-existing signing Safe when importing a legacy export', async () => {
@@ -206,7 +205,7 @@ describe('settings import', () => {
 		assert.equal(settings.activeSigningSafeAddress, undefined)
 	})
 
-	test('ignores the legacy unified storage address without writing migration state', async () => {
+	test('resets legacy unified storage once at initialization and persists a pending notice', async () => {
 		const safeAddress = 0x8888888888888888888888888888888888888888n
 		await browserStorageLocalSet({
 			activeSimulationAddress: safeAddress,
@@ -214,35 +213,44 @@ describe('settings import', () => {
 			useSignersAddressAsActiveAddress: false,
 			userAddressBookEntriesV3: [{ type: 'safe', name: 'Stored Legacy Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true }],
 		})
-		const { defaultActiveAddresses, getSettings } = await settingsModulePromise
+		const { acknowledgeActiveAddressSelectionResetNotice, defaultActiveAddresses, getActiveAddressSelectionResetNoticePending, getSettings, initializeIndependentActiveAddressState } = await settingsModulePromise
 
+		await initializeIndependentActiveAddressState()
 		const settings = await getSettings()
+		const initializedStorage = await browser.storage.local.get()
+		await getSettings()
 
 		assert.equal(settings.activeSimulationAddress, defaultActiveAddresses[0]?.address)
 		assert.equal(settings.activeSigningSafeAddress, undefined)
-		assert.equal(settings.activeAddressSelectionReset, true)
-		assert.deepEqual(await browser.storage.local.get(['hasIndependentActiveSimulationAddress', 'activeSigningSafeAddress']), {})
+		assert.deepEqual(await browser.storage.local.get(), initializedStorage)
+		assert.equal(await getActiveAddressSelectionResetNoticePending(), true)
+		assert.deepEqual(await browser.storage.local.get('hasIndependentActiveSimulationAddress'), { hasIndependentActiveSimulationAddress: true })
+		await initializeIndependentActiveAddressState()
+		assert.equal(await getActiveAddressSelectionResetNoticePending(), true)
+		await acknowledgeActiveAddressSelectionResetNotice()
+		assert.equal(await getActiveAddressSelectionResetNoticePending(), false)
 	})
 
-	test('does not report an address reset for an explicitly cleared legacy address', async () => {
+	test('does not queue a reset notice for an explicitly cleared legacy address', async () => {
 		await browserStorageLocalSet({ activeSimulationAddress: undefined })
-		const { getSettings } = await settingsModulePromise
+		const { defaultActiveAddresses, getActiveAddressSelectionResetNoticePending, getSettings, initializeIndependentActiveAddressState } = await settingsModulePromise
 
+		await initializeIndependentActiveAddressState()
 		const settings = await getSettings()
 
-		assert.equal(settings.activeAddressSelectionReset, false)
+		assert.equal(settings.activeSimulationAddress, defaultActiveAddresses[0]?.address)
+		assert.equal(await getActiveAddressSelectionResetNoticePending(), false)
 	})
 
-	test('does not repair a corrupt legacy address into a reset notice on a later read', async () => {
+	test('resets a corrupt legacy address without queuing a notice', async () => {
 		await browser.storage.local.set({ activeSimulationAddress: 'corrupt' })
-		const { getSettings } = await settingsModulePromise
+		const { defaultActiveAddresses, getActiveAddressSelectionResetNoticePending, getSettings, initializeIndependentActiveAddressState } = await settingsModulePromise
 
-		const firstSettings = await getSettings()
-		const secondSettings = await getSettings()
+		await initializeIndependentActiveAddressState()
+		const settings = await getSettings()
 
-		assert.equal(firstSettings.activeAddressSelectionReset, false)
-		assert.equal(secondSettings.activeAddressSelectionReset, false)
-		assert.deepEqual(await browser.storage.local.get('activeSimulationAddress'), { activeSimulationAddress: 'corrupt' })
+		assert.equal(settings.activeSimulationAddress, defaultActiveAddresses[0]?.address)
+		assert.equal(await getActiveAddressSelectionResetNoticePending(), false)
 	})
 
 	test('preserves an independent address when its schema marker is corrupt', async () => {
@@ -250,15 +258,15 @@ describe('settings import', () => {
 		await browserStorageLocalSet({ activeSimulationAddress, hasIndependentActiveSimulationAddress: true })
 		await browser.storage.local.set({ hasIndependentActiveSimulationAddress: 'corrupt' })
 		const storedState = await browser.storage.local.get(['activeSimulationAddress', 'hasIndependentActiveSimulationAddress'])
-		const { getSettings } = await settingsModulePromise
+		const { getActiveAddressSelectionResetNoticePending, getSettings, initializeIndependentActiveAddressState } = await settingsModulePromise
 
+		await initializeIndependentActiveAddressState()
 		const firstSettings = await getSettings()
 		const secondSettings = await getSettings()
 
 		assert.equal(firstSettings.activeSimulationAddress, activeSimulationAddress)
 		assert.equal(secondSettings.activeSimulationAddress, activeSimulationAddress)
-		assert.equal(firstSettings.activeAddressSelectionReset, false)
-		assert.equal(secondSettings.activeAddressSelectionReset, false)
+		assert.equal(await getActiveAddressSelectionResetNoticePending(), false)
 		assert.deepEqual(await browser.storage.local.get(['activeSimulationAddress', 'hasIndependentActiveSimulationAddress']), storedState)
 	})
 

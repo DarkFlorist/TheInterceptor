@@ -1,6 +1,8 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getSafeSigningEntry } from '../../app/ts/types/addressBookTypes.js'
+import { resolveSigningSafe } from '../../app/ts/utils/activeAddressSelection.js'
+
+const ownerAddress = 0x5678n
 
 const safeEntry = {
 	type: 'safe' as const,
@@ -9,29 +11,23 @@ const safeEntry = {
 	chainId: 1n,
 	entrySource: 'User' as const,
 	useAsActiveAddress: true,
-	safeSimulationSignerAddress: 0x5678n,
-}
-
-const signingSettings = {
-	simulationMode: false,
-	useSignersAddressAsActiveAddress: false,
-	activeSigningSafeAddress: safeEntry.address,
-	chainId: safeEntry.chainId,
+	safeSimulationSignerAddress: ownerAddress,
+	safeSignerAddresses: [ownerAddress],
 }
 
 describe('Gnosis Safe signing-mode selection', () => {
-	test('selects the configured Safe only on its recorded chain', () => {
-		assert.equal(getSafeSigningEntry([safeEntry], signingSettings), safeEntry)
-		assert.equal(getSafeSigningEntry([safeEntry], { ...signingSettings, chainId: 2n }), undefined)
+	test('selects the configured Safe only for an owner on its recorded chain', () => {
+		assert.equal(resolveSigningSafe(safeEntry.address, safeEntry.chainId, [ownerAddress], [safeEntry]), safeEntry)
+		assert.equal(resolveSigningSafe(safeEntry.address, 2n, [ownerAddress], [safeEntry]), undefined)
+		assert.equal(resolveSigningSafe(safeEntry.address, safeEntry.chainId, [0x9999n], [safeEntry]), undefined)
 	})
 
-	test('does not select a Safe in simulation or without a signing Safe address', () => {
-		assert.equal(getSafeSigningEntry([safeEntry], { ...signingSettings, simulationMode: true }), undefined)
-		assert.equal(getSafeSigningEntry([safeEntry], { ...signingSettings, activeSigningSafeAddress: undefined }), undefined)
+	test('does not select a Safe without a configured signing Safe address', () => {
+		assert.equal(resolveSigningSafe(undefined, safeEntry.chainId, [ownerAddress], [safeEntry]), undefined)
 	})
 
 	test('does not require a simulation signer in signing mode', () => {
 		const safeWithoutSimulationSigner = { ...safeEntry, safeSimulationSignerAddress: undefined }
-		assert.deepEqual(getSafeSigningEntry([safeWithoutSimulationSigner], signingSettings), safeWithoutSimulationSigner)
+		assert.deepEqual(resolveSigningSafe(safeEntry.address, safeEntry.chainId, [ownerAddress], [safeWithoutSimulationSigner]), safeWithoutSimulationSigner)
 	})
 })

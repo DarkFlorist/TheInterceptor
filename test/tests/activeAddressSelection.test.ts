@@ -14,6 +14,7 @@ const interceptorAccessSource = await Bun.file(new URL('../../app/ts/background/
 const providerMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/providerMessageHandlers.ts', import.meta.url)).text()
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
 const backgroundUtilsSource = await Bun.file(new URL('../../app/ts/background/backgroundUtils.ts', import.meta.url)).text()
+const backgroundSource = await Bun.file(new URL('../../app/ts/background/background.ts', import.meta.url)).text()
 const providerSigningSelectionSource = await Bun.file(new URL('../../app/ts/background/signingAddressSelection.ts', import.meta.url)).text()
 const signerMetadataSource = await Bun.file(new URL('../../app/ts/utils/signerMetadata.ts', import.meta.url)).text()
 const interceptorAccessUiSource = await Bun.file(new URL('../../app/ts/components/pages/InterceptorAccess.tsx', import.meta.url)).text()
@@ -56,17 +57,17 @@ describe('active address selection', () => {
 	})
 
 	test('resolves one mode-aware address and Safe-signing state for every popup consumer', () => {
-		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, true, EOA_ADDRESS, SAFE_ADDRESS, 1n), {
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, true, EOA_ADDRESS, SAFE_ADDRESS, 1n, [EOA_ADDRESS]), {
 			activeAddress: EOA_ADDRESS,
 			activeAddressBookEntry: activeAddresses[0],
 			safeSigningMode: false,
 		})
-		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, false, EOA_ADDRESS, SAFE_ADDRESS, 1n), {
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, false, EOA_ADDRESS, SAFE_ADDRESS, 1n, [EOA_ADDRESS]), {
 			activeAddress: SAFE_ADDRESS,
 			activeAddressBookEntry: activeAddresses[1],
 			safeSigningMode: true,
 		})
-		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, false, EOA_ADDRESS, OTHER_CHAIN_SAFE_ADDRESS, 1n), {
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, false, EOA_ADDRESS, OTHER_CHAIN_SAFE_ADDRESS, 1n, [EOA_ADDRESS]), {
 			activeAddress: undefined,
 			activeAddressBookEntry: undefined,
 			safeSigningMode: false,
@@ -81,10 +82,18 @@ describe('active address selection', () => {
 
 	test('prefers the current-chain Safe over an earlier contact with the same signing address', () => {
 		const contactWithSafeAddress = { type: 'contact', name: 'Safe address contact', address: SAFE_ADDRESS, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true } as const
-		assert.deepEqual(resolveActiveAddressForMode([contactWithSafeAddress, ...activeAddresses], false, EOA_ADDRESS, SAFE_ADDRESS, 1n), {
+		assert.deepEqual(resolveActiveAddressForMode([contactWithSafeAddress, ...activeAddresses], false, EOA_ADDRESS, SAFE_ADDRESS, 1n, [EOA_ADDRESS]), {
 			activeAddress: SAFE_ADDRESS,
 			activeAddressBookEntry: activeAddresses[1],
 			safeSigningMode: true,
+		})
+	})
+
+	test('does not present an unowned Safe as the active signing account', () => {
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, false, EOA_ADDRESS, SAFE_ADDRESS, 1n, [OTHER_CHAIN_SAFE_ADDRESS]), {
+			activeAddress: undefined,
+			activeAddressBookEntry: undefined,
+			safeSigningMode: false,
 		})
 	})
 
@@ -198,8 +207,10 @@ describe('active address selection', () => {
 
 	test('keeps background active-address resolution on the shared selection policy', () => {
 		assert.match(backgroundUtilsSource, /resolveConfiguredSigningSafe\(/u)
+		assert.match(backgroundSource, /resolveConfiguredSigningSafe\(/u)
+		assert.doesNotMatch(backgroundSource, /getSafeSigningEntry/u)
 		assert.doesNotMatch(backgroundUtilsSource, /getActiveAddressSelection\(/u)
-		assert.match(providerSigningSelectionSource, /export function resolveConfiguredSigningSafe[\s\S]*?getActiveAddressSelection\(/u)
+		assert.match(providerSigningSelectionSource, /export function resolveConfiguredSigningSafe[\s\S]*?resolveSigningSafe\(/u)
 		assert.doesNotMatch(backgroundUtilsSource, /safeSignerAddresses/u)
 		assert.match(backgroundUtilsSource, /const addressBookEntries = await getConfiguredActiveAddressBookEntries\(settings\)[\s\S]*?tabStates\.map/u)
 		assert.doesNotMatch(backgroundUtilsSource, /tabStates\.map\(async \(state\) => \{[\s\S]*?getConfiguredActiveAddressBookEntries/u)

@@ -896,6 +896,7 @@ export function Home(param: HomeParams) {
 		param.activeSimulationAddress.value,
 		param.displayedSigningAddress.value,
 		param.rpcNetwork.value?.chainId,
+		param.tabState.value?.signerAccounts ?? [],
 	))
 	const safeSigningMode = useComputed(() => modeActiveAddress.value.safeSigningMode)
 	const currentActiveAddress = useComputed(() => {

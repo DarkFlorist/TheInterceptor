@@ -1327,7 +1327,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 		}
 	})
 
-test('warns when the wallet-selected account is not among the known Safe owners', async () => {
+	test('does not present a stale unowned Safe as the current signing account', async () => {
 		const dom = installDomMock()
 		try {
 			await act(() => {
@@ -1355,22 +1355,8 @@ test('warns when the wallet-selected account is not among the known Safe owners'
 			assert.equal(popupText.includes('Gnosis Safe signers'), false)
 			assert.equal(popupText.includes('CONNECTED'), true)
 			assert.equal(popupText.includes('NOT CONNECTED'), false)
-			assert.equal(popupText.includes('MetaMask has'), true)
-			assert.equal(popupText.includes('0x6000000000000000000000000000000000000006'), true)
-			assert.equal(popupText.includes('selected. You cannot sign the current Gnosis Safe with it.'), true)
-			const selectedSignerCard = collectElements(dom.document.body, 'span').find((element) =>
-				element.getAttribute?.('class') === 'inline-card' && element.getAttribute?.('title') === '0x6000000000000000000000000000000000000006'
-			)
-			if (selectedSignerCard === undefined) throw new Error('Missing unknown wallet-selected signer address card')
-			assert.equal(collectElements(selectedSignerCard, 'svg').length > 0, true)
-			assert.equal(collectElements(dom.document.body, 'img').some((element) =>
-				element.getAttribute?.('src') === '../img/warning-sign-black.svg'
-			), true)
-			const retrievalStatus = collectElements(dom.document.body, 'p').find((element) =>
-				element.getAttribute?.('class') === 'popup-home-retrieval-status'
-			)
-			if (retrievalStatus === undefined) throw new Error('Missing aligned wallet retrieval status')
-			assert.equal(collectElements(retrievalStatus, 'span').some((element) => element.getAttribute?.('class') === 'popup-home-retrieval-source'), true)
+			assert.equal(popupText.includes('MetaMask has'), false)
+			assert.equal(popupText.includes('selected. You cannot sign the current Gnosis Safe with it.'), false)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
