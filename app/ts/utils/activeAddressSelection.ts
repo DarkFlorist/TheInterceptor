@@ -9,6 +9,40 @@ export type OptimisticActiveAddressSelection =
 	| { readonly mode: 'simulation', readonly activeSimulationAddress: bigint | undefined, readonly useSignersAddressAsActiveAddress: boolean }
 	| { readonly mode: 'signing', readonly displayedSigningAddress: bigint | undefined }
 
+export type ModeActiveAddressResolution = {
+	readonly activeAddress: bigint | undefined
+	readonly activeAddressBookEntry: AddressBookEntry | undefined
+	readonly safeSigningMode: boolean
+}
+
+export function resolveActiveAddressForMode(
+	activeAddresses: AddressBookEntries,
+	simulationMode: boolean,
+	activeSimulationAddress: bigint | undefined,
+	displayedSigningAddress: bigint | undefined,
+	activeChainId: bigint | undefined,
+): ModeActiveAddressResolution {
+	const configuredAddress = simulationMode ? activeSimulationAddress : displayedSigningAddress
+	if (configuredAddress === undefined) return { activeAddress: undefined, activeAddressBookEntry: undefined, safeSigningMode: false }
+	const currentChainSafe = activeAddresses.find((entry) =>
+		entry.type === 'safe' && entry.address === configuredAddress && entry.chainId === activeChainId
+	)
+	const activeAddressBookEntry = !simulationMode && currentChainSafe !== undefined
+		? currentChainSafe
+		: activeAddresses.find((entry) =>
+			entry.address === configuredAddress && (entry.type !== 'safe' || entry.chainId === activeChainId)
+		)
+	const isSafeOnAnotherChain = (simulationMode ? activeAddressBookEntry === undefined : currentChainSafe === undefined)
+		&& activeAddresses.some((entry) => entry.type === 'safe' && entry.address === configuredAddress)
+	if (isSafeOnAnotherChain) return { activeAddress: undefined, activeAddressBookEntry: undefined, safeSigningMode: false }
+	const activeSigningSafe = !simulationMode && activeAddressBookEntry?.type === 'safe' ? activeAddressBookEntry : undefined
+	return {
+		activeAddress: configuredAddress,
+		activeAddressBookEntry,
+		safeSigningMode: activeSigningSafe !== undefined,
+	}
+}
+
 export function getOptimisticActiveAddressSelection(address: bigint | 'signer', simulationMode: boolean, signerAccounts: readonly bigint[]): OptimisticActiveAddressSelection {
 	const resolvedAddress = address === 'signer' ? signerAccounts[0] : address
 	return simulationMode

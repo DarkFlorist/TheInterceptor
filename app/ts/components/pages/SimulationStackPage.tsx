@@ -2,7 +2,7 @@ import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals
 import type { JSX } from 'preact'
 import { requestPopupInterceptorSimulationInput, sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
-import { getSafeSigningEntry, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
+import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { EditEnsNamedHashWindowState, ModifyAddressWindowState, SimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { addressEditEntry } from '../ui-utils.js'
 import { ErrorBoundary, ErrorComponent, UnexpectedError } from '../subcomponents/Error.js'
@@ -29,6 +29,7 @@ import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { CopySafeTransactionsButton } from '../subcomponents/CopySafeTransactionsButton.js'
 import { Tooltip } from '../subcomponents/Tooltip.js'
 import { useCopyFeedback } from '../hooks/useCopyFeedback.js'
+import { resolveActiveAddressForMode } from '../../utils/activeAddressSelection.js'
 
 type ModalState =
 	{ page: 'modifyAddress', state: Signal<ModifyAddressWindowState> } |
@@ -307,7 +308,14 @@ export function SimulationStackPage() {
 	const highlightedStackTargetId = useSignal<string | undefined>(undefined)
 	const handledStackTargetHash = useSignal<string | undefined>(undefined)
 	const addressMetaData = useComputed(() => simVisResults.value.kind === 'simulated' ? simVisResults.value.value.addressBookEntries : [])
-	const visualizedAddress = useComputed(() => simulationMode.value ? activeSimulationAddress.value : displayedSigningAddress.value)
+	const modeActiveAddress = useComputed(() => resolveActiveAddressForMode(
+		activeAddresses.value,
+		simulationMode.value,
+		activeSimulationAddress.value,
+		displayedSigningAddress.value,
+		rpcNetwork.value?.chainId,
+	))
+	const visualizedAddress = useComputed(() => modeActiveAddress.value.activeAddress)
 	const madeRichAddressBookEntries = useComputed(() => getMadeRichAddressBookEntries(
 		fixedAddressRichList.value,
 		makeCurrentAddressRich.value,
@@ -320,11 +328,7 @@ export function SimulationStackPage() {
 		return isEmptySimulation(simVisResults.value.value)
 	})
 	// Safe import and copy are signing-mode controls: intentionally hide both unless a Safe is the active account on this chain.
-	const showSafeSigningActions = useComputed(() => getSafeSigningEntry(activeAddresses.value, {
-		simulationMode: simulationMode.value,
-		activeSigningSafeAddress: displayedSigningAddress.value,
-		chainId: rpcNetwork.value?.chainId,
-	}) !== undefined)
+	const showSafeSigningActions = useComputed(() => modeActiveAddress.value.safeSigningMode)
 
 	useSignalEffect(() => {
 		simVisResults.value

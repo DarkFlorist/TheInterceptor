@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { assertActiveAddressSelectionAllowed, getActiveAddressSelection, getOptimisticActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode } from '../../app/ts/utils/activeAddressSelection.js'
+import { assertActiveAddressSelectionAllowed, getActiveAddressSelection, getOptimisticActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode, resolveActiveAddressForMode } from '../../app/ts/utils/activeAddressSelection.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
 import { requestActiveAddressChange } from '../../app/ts/components/activeAddressChange.js'
 
@@ -17,6 +17,9 @@ const backgroundUtilsSource = await Bun.file(new URL('../../app/ts/background/ba
 const providerSigningSelectionSource = await Bun.file(new URL('../../app/ts/background/signingAddressSelection.ts', import.meta.url)).text()
 const signerMetadataSource = await Bun.file(new URL('../../app/ts/utils/signerMetadata.ts', import.meta.url)).text()
 const interceptorAccessUiSource = await Bun.file(new URL('../../app/ts/components/pages/InterceptorAccess.tsx', import.meta.url)).text()
+const appSource = await Bun.file(new URL('../../app/ts/components/App.tsx', import.meta.url)).text()
+const homeSource = await Bun.file(new URL('../../app/ts/components/pages/Home.tsx', import.meta.url)).text()
+const simulationStackPageSource = await Bun.file(new URL('../../app/ts/components/pages/SimulationStackPage.tsx', import.meta.url)).text()
 
 const activeAddresses: AddressBookEntries = [
 	{ type: 'contact', name: 'Saved EOA', address: EOA_ADDRESS, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
@@ -49,6 +52,39 @@ describe('active address selection', () => {
 		assert.deepEqual(getOptimisticActiveAddressSelection(SAFE_ADDRESS, false, [EOA_ADDRESS]), {
 			mode: 'signing',
 			displayedSigningAddress: SAFE_ADDRESS,
+		})
+	})
+
+	test('resolves one mode-aware address and Safe-signing state for every popup consumer', () => {
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, true, EOA_ADDRESS, SAFE_ADDRESS, 1n), {
+			activeAddress: EOA_ADDRESS,
+			activeAddressBookEntry: activeAddresses[0],
+			safeSigningMode: false,
+		})
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, false, EOA_ADDRESS, SAFE_ADDRESS, 1n), {
+			activeAddress: SAFE_ADDRESS,
+			activeAddressBookEntry: activeAddresses[1],
+			safeSigningMode: true,
+		})
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, false, EOA_ADDRESS, OTHER_CHAIN_SAFE_ADDRESS, 1n), {
+			activeAddress: undefined,
+			activeAddressBookEntry: undefined,
+			safeSigningMode: false,
+		})
+		for (const consumerSource of [appSource, homeSource, simulationStackPageSource]) {
+			assert.match(consumerSource, /resolveActiveAddressForMode\(/u)
+		}
+		assert.doesNotMatch(appSource, /simulationMode\.value \? activeSimulationAddress\.value : displayedSigningAddress\.value/u)
+		assert.doesNotMatch(homeSource, /param\.simulationMode\.value \? param\.activeSimulationAddress : param\.displayedSigningAddress/u)
+		assert.doesNotMatch(simulationStackPageSource, /simulationMode\.value \? activeSimulationAddress\.value : displayedSigningAddress\.value/u)
+	})
+
+	test('prefers the current-chain Safe over an earlier contact with the same signing address', () => {
+		const contactWithSafeAddress = { type: 'contact', name: 'Safe address contact', address: SAFE_ADDRESS, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true } as const
+		assert.deepEqual(resolveActiveAddressForMode([contactWithSafeAddress, ...activeAddresses], false, EOA_ADDRESS, SAFE_ADDRESS, 1n), {
+			activeAddress: SAFE_ADDRESS,
+			activeAddressBookEntry: activeAddresses[1],
+			safeSigningMode: true,
 		})
 	})
 

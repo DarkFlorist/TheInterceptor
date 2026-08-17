@@ -11,7 +11,7 @@ import { requestPopupSafeContractState, sendPopupMessageToBackgroundPage, sendPo
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
-import { getSafeSigningEntry, getSafeSignerAddresses, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
+import { getSafeSignerAddresses, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon, ChevronIcon, OpenInNewIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { type Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
@@ -22,7 +22,7 @@ import { bigintSecondsToDate, checksummedAddress, stringToAddress } from '../../
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
-import { getSelectableActiveAddresses, getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
+import { getSelectableActiveAddresses, getWalletSelectedAccount, resolveActiveAddressForMode } from '../../utils/activeAddressSelection.js'
 import { updateRichListAddress } from '../../utils/richList.js'
 import { CopySafeTransactionsButton } from '../subcomponents/CopySafeTransactionsButton.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
@@ -890,29 +890,20 @@ export function Home(param: HomeParams) {
 	const tabWebsite = useComputed(() => param.tabState.value?.website)
 	const disableResetUntilHomeDataLoaded = useComputed(() => disableReset.value || !param.isInitialHomeDataLoaded.value)
 
-	const activeSimulationAddress = useComputed(() => {
-		const address = param.activeSimulationAddress.value
-		if (address === undefined) return undefined
-		const matchingEntry = param.activeAddresses.value.find((entry) =>
-			entry.address === address && (entry.type !== 'safe' || entry.chainId === param.rpcNetwork.value?.chainId)
-		)
-		if (matchingEntry !== undefined) return matchingEntry
-		const isSafeOnAnotherChain = param.activeAddresses.value.some((entry) => entry.type === 'safe' && entry.address === address)
-		return isSafeOnAnotherChain ? undefined : getActiveAddressEntry(address, param.activeAddresses.value)
+	const modeActiveAddress = useComputed(() => resolveActiveAddressForMode(
+		param.activeAddresses.value,
+		param.simulationMode.value,
+		param.activeSimulationAddress.value,
+		param.displayedSigningAddress.value,
+		param.rpcNetwork.value?.chainId,
+	))
+	const safeSigningMode = useComputed(() => modeActiveAddress.value.safeSigningMode)
+	const currentActiveAddress = useComputed(() => {
+		const resolution = modeActiveAddress.value
+		if (resolution.activeAddress === undefined) return undefined
+		return resolution.activeAddressBookEntry ?? getActiveAddressEntry(resolution.activeAddress, param.activeAddresses.value)
 	})
-	const displayedSigningAddressEntry = useComputed(() =>
-		param.displayedSigningAddress.value !== undefined ? getActiveAddressEntry(param.displayedSigningAddress.value, param.activeAddresses.value) : undefined
-	)
-	const activeSafe = useComputed(() => getSafeSigningEntry(param.activeAddresses.value, {
-		simulationMode: param.simulationMode.value,
-		activeSigningSafeAddress: param.displayedSigningAddress.value,
-		chainId: param.rpcNetwork.value?.chainId,
-	}))
-	const safeSigningMode = useComputed(() => activeSafe.value !== undefined)
-	const currentActiveAddress = useComputed(() =>
-		param.simulationMode.value ? activeSimulationAddress.value : displayedSigningAddressEntry.value
-	)
-	const visualizedAddress = param.simulationMode.value ? param.activeSimulationAddress : param.displayedSigningAddress
+	const visualizedAddress = useComputed(() => modeActiveAddress.value.activeAddress)
 
 	useEffect(() => {
 		if ((!param.simulationMode.value && !safeSigningMode.value) || currentActiveAddress.value === undefined) {

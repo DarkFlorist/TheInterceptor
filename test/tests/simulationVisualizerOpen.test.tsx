@@ -987,6 +987,7 @@ describe('simulation visualizer open replies', () => {
 			const update = createStackHomePageUpdate(23, 1, 'Stack tab')
 			const activeSafe = update.data.activeAddresses[0]
 			if (activeSafe?.type !== 'safe') throw new Error('Expected a Safe fixture')
+			const contactWithSafeAddress = { type: 'contact', name: 'Safe address contact', address: activeSafe.address, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true } as const
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createNonSafeStackHomePageUpdate(23, 2, 'Non-Safe stack tab')) }, {}, () => undefined)
@@ -996,7 +997,7 @@ describe('simulation visualizer open replies', () => {
 			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), false)
 
 			await act(() => {
-				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, popupRefreshGeneration: 3, data: { ...update.data, activeAddresses: [{ ...activeSafe, safeSimulationSignerAddress: undefined }], hasSafeTransactionsToExport: false } }) }, {}, () => undefined)
+				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, popupRefreshGeneration: 3, data: { ...update.data, activeAddresses: [contactWithSafeAddress, { ...activeSafe, safeSimulationSignerAddress: undefined }], hasSafeTransactionsToExport: false } }) }, {}, () => undefined)
 			})
 
 			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), true)

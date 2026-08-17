@@ -619,7 +619,9 @@ export const Settings = funtypes.ReadonlyObject({
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
 	websiteAccess: WebsiteAccessArray,
 	simulationMode: funtypes.Boolean,
-})
+}).And(funtypes.ReadonlyPartial({
+	activeAddressSelectionReset: funtypes.Boolean,
+}))
 
 export type UpdateHomePage = funtypes.Static<typeof UpdateHomePage>
 export const UpdateHomePage = funtypes.ReadonlyObject({

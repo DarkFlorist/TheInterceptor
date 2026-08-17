@@ -167,7 +167,9 @@ describe('settings import', () => {
 
 		browserMock.reset()
 		await importSettingsAndAddressBook(exportedSettings)
-		assert.equal((await getSettings()).activeSigningSafeAddress, signingSafeAddress)
+		const importedSettings = await getSettings()
+		assert.equal(importedSettings.activeSigningSafeAddress, signingSafeAddress)
+		assert.equal(importedSettings.activeAddressSelectionReset, false)
 	})
 
 	test('clears a pre-existing signing Safe when importing a legacy export', async () => {
@@ -218,7 +220,46 @@ describe('settings import', () => {
 
 		assert.equal(settings.activeSimulationAddress, defaultActiveAddresses[0]?.address)
 		assert.equal(settings.activeSigningSafeAddress, undefined)
+		assert.equal(settings.activeAddressSelectionReset, true)
 		assert.deepEqual(await browser.storage.local.get(['hasIndependentActiveSimulationAddress', 'activeSigningSafeAddress']), {})
+	})
+
+	test('does not report an address reset for an explicitly cleared legacy address', async () => {
+		await browserStorageLocalSet({ activeSimulationAddress: undefined })
+		const { getSettings } = await settingsModulePromise
+
+		const settings = await getSettings()
+
+		assert.equal(settings.activeAddressSelectionReset, false)
+	})
+
+	test('does not repair a corrupt legacy address into a reset notice on a later read', async () => {
+		await browser.storage.local.set({ activeSimulationAddress: 'corrupt' })
+		const { getSettings } = await settingsModulePromise
+
+		const firstSettings = await getSettings()
+		const secondSettings = await getSettings()
+
+		assert.equal(firstSettings.activeAddressSelectionReset, false)
+		assert.equal(secondSettings.activeAddressSelectionReset, false)
+		assert.deepEqual(await browser.storage.local.get('activeSimulationAddress'), { activeSimulationAddress: 'corrupt' })
+	})
+
+	test('preserves an independent address when its schema marker is corrupt', async () => {
+		const activeSimulationAddress = 0x7777777777777777777777777777777777777777n
+		await browserStorageLocalSet({ activeSimulationAddress, hasIndependentActiveSimulationAddress: true })
+		await browser.storage.local.set({ hasIndependentActiveSimulationAddress: 'corrupt' })
+		const storedState = await browser.storage.local.get(['activeSimulationAddress', 'hasIndependentActiveSimulationAddress'])
+		const { getSettings } = await settingsModulePromise
+
+		const firstSettings = await getSettings()
+		const secondSettings = await getSettings()
+
+		assert.equal(firstSettings.activeSimulationAddress, activeSimulationAddress)
+		assert.equal(secondSettings.activeSimulationAddress, activeSimulationAddress)
+		assert.equal(firstSettings.activeAddressSelectionReset, false)
+		assert.equal(secondSettings.activeAddressSelectionReset, false)
+		assert.deepEqual(await browser.storage.local.get(['activeSimulationAddress', 'hasIndependentActiveSimulationAddress']), storedState)
 	})
 
 	test('restores metamask compatibility mode from version 1.4 exports', async () => {

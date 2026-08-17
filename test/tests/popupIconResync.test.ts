@@ -11,7 +11,7 @@ import { POPUP_PERFORMANCE_MARKS, clearPerformanceMarks } from '../../app/ts/uti
 
 type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => void
 
-function installBrowserMock() {
+function installBrowserMock(replyToMessage: (message: unknown) => unknown | Promise<unknown> = () => undefined) {
 	const sentMessages: unknown[] = []
 	let messageListener: RuntimeMessageListener | undefined
 
@@ -20,7 +20,7 @@ function installBrowserMock() {
 			lastError: null,
 			async sendMessage(message: unknown) {
 				sentMessages.push(message)
-				return undefined
+				return await replyToMessage(message)
 			},
 			getManifest: () => ({ manifest_version: 3 }),
 			onMessage: {
@@ -261,6 +261,97 @@ const defaultHomePageBootstrap = (tabId: number, icon: { icon: string; iconReaso
 }
 
 describe('popup icon sync', () => {
+	test('shows the legacy address reset notice only when reset state is reported and allows local dismissal', async () => {
+		for (const activeAddressSelectionReset of [false, true]) {
+			const dom = installDomMock()
+			const { messageListener } = installBrowserMock()
+			try {
+				Object.defineProperty(globalThis, 'window', {
+					value: {
+						document: dom.document,
+						addEventListener: () => undefined,
+						removeEventListener: () => undefined,
+					},
+					configurable: true,
+					writable: true,
+				})
+
+				await act(() => {
+					render(h(App, {}), dom.document.body)
+				})
+				const listener = messageListener()
+				await act(() => {
+					listener?.({
+						role: 'all',
+						...defaultHomePageBootstrap(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 1, {
+							settings: { ...defaultSettings, activeAddressSelectionReset },
+						}),
+					}, undefined, () => undefined)
+				})
+
+				const noticeText = 'Your previous shared selection was reset'
+				assert.equal(dom.document.body.textContent?.includes(noticeText), activeAddressSelectionReset)
+				if (!activeAddressSelectionReset) continue
+				const dismissButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'remove')
+				if (dismissButton === undefined) throw new Error('Expected the reset notice dismissal button')
+				await act(async () => await clickElement(dismissButton))
+				assert.equal(dom.document.body.textContent?.includes(noticeText), false)
+			} finally {
+				dom.restore()
+			}
+		}
+	})
+
+	test('hides the legacy address reset notice after an explicit simulation address selection', async () => {
+		const dom = installDomMock()
+		let pasteListener: ((event: Event) => void) | undefined
+		const { messageListener, sentMessages } = installBrowserMock((message) =>
+			typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_changeActiveAddress'
+				? { type: 'ChangeActiveAddressReply', ok: true }
+				: undefined
+		)
+		try {
+			Object.defineProperty(globalThis, 'ClipboardEvent', { value: TestClipboardEvent, configurable: true, writable: true })
+			Object.defineProperty(globalThis, 'window', {
+				value: {
+					document: dom.document,
+					addEventListener: (type: string, listener: (event: Event) => void) => {
+						if (type === 'paste') pasteListener = listener
+					},
+					removeEventListener: () => undefined,
+				},
+				configurable: true,
+				writable: true,
+			})
+
+			await act(() => {
+				render(h(App, {}), dom.document.body)
+			})
+			const listener = messageListener()
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePageBootstrap(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 1, {
+						activeAddresses: [loadedAddressBookEntry],
+						settings: { ...defaultSettings, activeAddressSelectionReset: true, activeSimulationAddress: loadedAddress, simulationMode: true },
+					}),
+				}, undefined, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent?.includes('Your previous shared selection was reset'), true)
+
+			await act(async () => {
+				pasteListener?.(new TestClipboardEvent(loadedAddress))
+				await new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+			})
+
+			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_changeActiveAddress'), true)
+			assert.equal(dom.document.body.textContent?.includes('Your previous shared selection was reset'), false)
+		} finally {
+			dom.restore()
+			Reflect.deleteProperty(globalThis, 'ClipboardEvent')
+		}
+	})
+
 	test('renders loading instead of default popup data while requesting bootstrap and fresh home data', async () => {
 		clearPerformanceMarks()
 		const dom = installDomMock()

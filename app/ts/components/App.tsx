@@ -20,12 +20,14 @@ import { useLiveSimulationHomeData } from './hooks/useLiveSimulationHomeData.js'
 import { NetworkErrors } from './subcomponents/NetworkErrors.js'
 import { ProviderErrors } from './subcomponents/ProviderErrors.js'
 import { PopupModal, type PopupPage } from './PopupModal.js'
-import { getOptimisticActiveAddressSelection, getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode } from '../utils/activeAddressSelection.js'
+import { getOptimisticActiveAddressSelection, getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode, resolveActiveAddressForMode } from '../utils/activeAddressSelection.js'
 import { requestActiveAddressChange } from './activeAddressChange.js'
+import { DinoSaysNotification } from './subcomponents/DinoSays.js'
 export { NetworkErrors } from './subcomponents/NetworkErrors.js'
 
 export function App() {
 	const appPage = useSignal<PopupPage>({ page: 'Unknown' })
+	const showActiveAddressSelectionResetNotice = useSignal(false)
 	const {
 		activeAddresses,
 		walletSelectedAddressBookEntry,
@@ -60,6 +62,7 @@ export function App() {
 		requestFreshHomeDataOnMount: true,
 		requestHomeDataOnSimulationStateChange: true,
 		onInitialSettings(settings: Settings) {
+			showActiveAddressSelectionResetNotice.value = settings.activeAddressSelectionReset === true
 			if (appPage.value.page !== 'Unknown') return
 			if (settings.openedPage.page === 'AddNewAddress' || settings.openedPage.page === 'ModifyAddress') {
 				appPage.value = { ...settings.openedPage, state: new Signal(settings.openedPage.state) }
@@ -79,6 +82,7 @@ export function App() {
 		if (optimisticSelection.mode === 'simulation') {
 			activeSimulationAddress.value = optimisticSelection.activeSimulationAddress
 			useSignersAddressAsActiveAddress.value = optimisticSelection.useSignersAddressAsActiveAddress
+			showActiveAddressSelectionResetNotice.value = false
 			return
 		}
 		displayedSigningAddress.value = optimisticSelection.displayedSigningAddress
@@ -217,9 +221,13 @@ export function App() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_clearUnexpectedError' })
 	}
 
-	const activeAddress = useComputed(() =>
-		simulationMode.value ? activeSimulationAddress.value : displayedSigningAddress.value
-	)
+	const modeActiveAddress = useComputed(() => resolveActiveAddressForMode(
+		activeAddresses.value,
+		simulationMode.value,
+		activeSimulationAddress.value,
+		displayedSigningAddress.value,
+		rpcNetwork.value?.chainId,
+	))
 	const selectableActiveAddresses = useComputed(() =>
 		getSelectableActiveAddresses(activeAddresses.value, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])
 	)
@@ -246,6 +254,12 @@ export function App() {
 					</nav>
 
 				<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>
+					{ showActiveAddressSelectionResetNotice.value
+						? <DinoSaysNotification
+							text = 'Simulation and signing addresses are now kept separately. Your previous shared selection was reset; choose the addresses you want to use in each mode.'
+							close = { () => { showActiveAddressSelectionResetNotice.value = false } }
+						/>
+						: <></> }
 					<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 					<ProviderErrors tabState = { tabState }/>
 					<Home
@@ -292,7 +306,7 @@ export function App() {
 							activeAddresses = { selectableActiveAddresses }
 							signerName = { tabState.value?.signerName ?? 'NoSignerDetected' }
 							addNewAddress = { addNewAddress }
-							activeAddress = { activeAddress.value }
+							activeAddress = { modeActiveAddress.value.activeAddress }
 							rpcEntries = { rpcEntries }
 						/>
 				</div>

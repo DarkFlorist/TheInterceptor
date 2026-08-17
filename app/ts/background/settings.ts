@@ -66,20 +66,37 @@ async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDe
 	return defaultValue
 }
 
+async function hasStoredActiveSimulationAddress() {
+	const storedValue = await browserStorageLocalSafeParseGet('activeSimulationAddress')
+	if (storedValue === undefined) return false
+	const { activeSimulationAddress } = storedValue
+	return activeSimulationAddress !== undefined
+}
+
+async function hasActiveSimulationAddressSchemaMarker() {
+	const { hasIndependentActiveSimulationAddress } = await browser.storage.local.get('hasIndependentActiveSimulationAddress')
+	return hasIndependentActiveSimulationAddress !== undefined
+}
+
 export async function getSettings() : Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
-	const hasIndependentActiveSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('hasIndependentActiveSimulationAddress', false))
-	const storedActiveSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeSimulationAddress', defaultActiveAddresses[0].address))
+	const hasIndependentActiveSimulationAddress = await silenceChromeUnCaughtPromise(hasActiveSimulationAddressSchemaMarker())
+	const activeSimulationAddressPromise = hasIndependentActiveSimulationAddress
+		? silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeSimulationAddress', defaultActiveAddresses[0].address))
+		: Promise.resolve(defaultActiveAddresses[0].address)
+	const activeAddressSelectionResetPromise = hasIndependentActiveSimulationAddress
+		? Promise.resolve(false)
+		: silenceChromeUnCaughtPromise(hasStoredActiveSimulationAddress())
 	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeSigningSafeAddress', undefined))
 	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('openedPageV2', defaultPage))
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('useSignersAddressAsActiveAddress', false))
 	const websiteAccessPromise = silenceChromeUnCaughtPromise(getWebsiteAccess())
 	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('simulationMode', defaultSimulationMode))
 	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeRpcNetwork', defaultRpcs[0]))
-	const [hasIndependentActiveSimulationAddress, storedActiveSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
-		hasIndependentActiveSimulationAddressPromise,
-		storedActiveSimulationAddressPromise,
+	const [activeSimulationAddress, activeAddressSelectionReset, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
+		activeSimulationAddressPromise,
+		activeAddressSelectionResetPromise,
 		activeSigningSafeAddressPromise,
 		openedPagePromise,
 		useSignersAddressAsActiveAddressPromise,
@@ -87,8 +104,7 @@ export async function getSettings() : Promise<Settings> {
 		activeRpcNetworkPromise,
 		simulationModePromise,
 	])
-	const activeSimulationAddress = hasIndependentActiveSimulationAddress ? storedActiveSimulationAddress : defaultActiveAddresses[0].address
-	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
+	return { activeSimulationAddress, activeSigningSafeAddress, activeAddressSelectionReset, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
 
 export function getInterceptorDisabledSites(settings: Settings): string[] {
