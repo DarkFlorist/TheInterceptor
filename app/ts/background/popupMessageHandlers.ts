@@ -229,7 +229,7 @@ export async function changeActiveAddress(ethereum: EthereumClientService, token
 	if (selection === undefined) {
 		if (!addressChange.data.simulationMode) {
 			if (addressChange.data.activeAddress === 'signer') {
-				await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, undefined, {
+				await activateUserSelectedAddress(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, undefined, {
 					simulationMode: false,
 					signerAddress: undefined,
 				})
