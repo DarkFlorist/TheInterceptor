@@ -57,19 +57,19 @@ describe('active address selection', () => {
 	})
 
 	test('resolves one mode-aware address and Safe-signing state for every popup consumer', () => {
-		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, true, EOA_ADDRESS, SAFE_ADDRESS, 1n, [EOA_ADDRESS]), {
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, true, EOA_ADDRESS, SAFE_ADDRESS, 1n, [EOA_ADDRESS], EOA_ADDRESS), {
 			activeAddress: EOA_ADDRESS,
 			activeAddressBookEntry: activeAddresses[0],
 			safeSigningMode: false,
 		})
-		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, false, EOA_ADDRESS, SAFE_ADDRESS, 1n, [EOA_ADDRESS]), {
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, false, EOA_ADDRESS, SAFE_ADDRESS, 1n, [EOA_ADDRESS], EOA_ADDRESS), {
 			activeAddress: SAFE_ADDRESS,
 			activeAddressBookEntry: activeAddresses[1],
 			safeSigningMode: true,
 		})
-		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, false, EOA_ADDRESS, OTHER_CHAIN_SAFE_ADDRESS, 1n, [EOA_ADDRESS]), {
-			activeAddress: undefined,
-			activeAddressBookEntry: undefined,
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, false, EOA_ADDRESS, OTHER_CHAIN_SAFE_ADDRESS, 1n, [EOA_ADDRESS], EOA_ADDRESS), {
+			activeAddress: EOA_ADDRESS,
+			activeAddressBookEntry: activeAddresses[0],
 			safeSigningMode: false,
 		})
 		for (const consumerSource of [appSource, homeSource, simulationStackPageSource]) {
@@ -82,15 +82,23 @@ describe('active address selection', () => {
 
 	test('prefers the current-chain Safe over an earlier contact with the same signing address', () => {
 		const contactWithSafeAddress = { type: 'contact', name: 'Safe address contact', address: SAFE_ADDRESS, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true } as const
-		assert.deepEqual(resolveActiveAddressForMode([contactWithSafeAddress, ...activeAddresses], false, EOA_ADDRESS, SAFE_ADDRESS, 1n, [EOA_ADDRESS]), {
+		assert.deepEqual(resolveActiveAddressForMode([contactWithSafeAddress, ...activeAddresses], false, EOA_ADDRESS, SAFE_ADDRESS, 1n, [EOA_ADDRESS], EOA_ADDRESS), {
 			activeAddress: SAFE_ADDRESS,
 			activeAddressBookEntry: activeAddresses[1],
 			safeSigningMode: true,
 		})
 	})
 
-	test('does not present an unowned Safe as the active signing account', () => {
-		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, false, EOA_ADDRESS, SAFE_ADDRESS, 1n, [OTHER_CHAIN_SAFE_ADDRESS]), {
+	test('falls back to the wallet account instead of presenting an unowned Safe as the active signing account', () => {
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, false, EOA_ADDRESS, SAFE_ADDRESS, 1n, [OTHER_CHAIN_SAFE_ADDRESS], EOA_ADDRESS), {
+			activeAddress: EOA_ADDRESS,
+			activeAddressBookEntry: activeAddresses[0],
+			safeSigningMode: false,
+		})
+	})
+
+	test('does not present an invalid signing Safe when no wallet fallback is available', () => {
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, false, EOA_ADDRESS, SAFE_ADDRESS, 1n, [], undefined), {
 			activeAddress: undefined,
 			activeAddressBookEntry: undefined,
 			safeSigningMode: false,
@@ -216,8 +224,10 @@ describe('active address selection', () => {
 	})
 
 	test('keeps background active-address resolution on the shared selection policy', () => {
-		assert.match(backgroundUtilsSource, /resolveSigningSafe\(/u)
-		assert.match(backgroundSource, /resolveSigningSafe\(/u)
+		assert.match(backgroundUtilsSource, /resolveActiveAddressForMode\(/u)
+		assert.match(backgroundSource, /resolveActiveAddressForMode\(/u)
+		assert.doesNotMatch(backgroundUtilsSource, /resolveSigningSafe\(/u)
+		assert.doesNotMatch(backgroundSource, /resolveSigningSafe\(/u)
 		assert.doesNotMatch(backgroundSource, /getSafeSigningEntry/u)
 		assert.doesNotMatch(backgroundUtilsSource, /getActiveAddressSelection\(/u)
 		assert.doesNotMatch(providerSigningSelectionSource, /resolveConfiguredSigningSafe/u)

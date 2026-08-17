@@ -24,7 +24,7 @@ import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
-import { getWalletSelectedAccount, resolveSigningSafe } from '../utils/activeAddressSelection.js'
+import { getWalletSelectedAccount, resolveActiveAddressForMode } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent } from './signerStateOwnership.js'
@@ -489,12 +489,10 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 		const selectedWalletAccount = getWalletSelectedAccount(signerTabState)
 		// The request's active address is captured before async handling begins. Do not reroute an in-flight request if the popup selects another account meanwhile.
-		const configuredSafe = settings.simulationMode
-			? undefined
-			: resolveSigningSafe(activeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
-		const safeSigningMode = configuredSafe !== undefined
+		const activeAddressResolution = resolveActiveAddressForMode(currentChainEntries, settings.simulationMode, activeAddress, activeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, selectedWalletAccount)
+		const safeSigningMode = activeAddressResolution.safeSigningMode
 		const simulationOverlayEnabled = settings.simulationMode || safeSigningMode
-		const walletSelectedSafeSigner = configuredSafe === undefined ? undefined : selectedWalletAccount
+		const walletSelectedSafeSigner = safeSigningMode ? selectedWalletAccount : undefined
 		let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
 		let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
 		const getSimulationInput = async () => {

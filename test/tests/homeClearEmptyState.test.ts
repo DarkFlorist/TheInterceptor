@@ -1327,7 +1327,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 		}
 	})
 
-	test('does not present a stale unowned Safe as the current signing account', async () => {
+	test('presents the wallet account instead of a stale unowned Safe as the current signing account', async () => {
 		const dom = installDomMock()
 		try {
 			await act(() => {
@@ -1352,6 +1352,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 			})
 
 			const popupText = dom.document.body.textContent ?? ''
+			assert.equal(popupText.includes('0x6000000000000000000000000000000000000006'), true)
 			assert.equal(popupText.includes('Gnosis Safe signers'), false)
 			assert.equal(popupText.includes('CONNECTED'), true)
 			assert.equal(popupText.includes('NOT CONNECTED'), false)

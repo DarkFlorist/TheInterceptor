@@ -897,6 +897,7 @@ export function Home(param: HomeParams) {
 		param.displayedSigningAddress.value,
 		param.rpcNetwork.value?.chainId,
 		param.tabState.value?.signerAccounts ?? [],
+		param.displayedSigningAddress.value === undefined ? undefined : getWalletSelectedAccount(param.tabState.value),
 	))
 	const safeSigningMode = useComputed(() => modeActiveAddress.value.safeSigningMode)
 	const currentActiveAddress = useComputed(() => {

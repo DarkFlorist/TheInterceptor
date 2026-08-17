@@ -20,7 +20,7 @@ import { useLiveSimulationHomeData } from './hooks/useLiveSimulationHomeData.js'
 import { NetworkErrors } from './subcomponents/NetworkErrors.js'
 import { ProviderErrors } from './subcomponents/ProviderErrors.js'
 import { PopupModal, type PopupPage } from './PopupModal.js'
-import { getOptimisticActiveAddressSelection, getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode, resolveActiveAddressForMode } from '../utils/activeAddressSelection.js'
+import { getOptimisticActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode, resolveActiveAddressForMode } from '../utils/activeAddressSelection.js'
 import { requestActiveAddressChange } from './activeAddressChange.js'
 import { DinoSaysNotification } from './subcomponents/DinoSays.js'
 export { NetworkErrors } from './subcomponents/NetworkErrors.js'
@@ -235,6 +235,7 @@ export function App() {
 		displayedSigningAddress.value,
 		rpcNetwork.value?.chainId,
 		tabState.value?.signerAccounts ?? [],
+		displayedSigningAddress.value === undefined ? undefined : getWalletSelectedAccount(tabState.value),
 	))
 	const selectableActiveAddresses = useComputed(() =>
 		getSelectableActiveAddresses(activeAddresses.value, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])

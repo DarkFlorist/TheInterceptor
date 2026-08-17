@@ -29,7 +29,7 @@ import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { CopySafeTransactionsButton } from '../subcomponents/CopySafeTransactionsButton.js'
 import { Tooltip } from '../subcomponents/Tooltip.js'
 import { useCopyFeedback } from '../hooks/useCopyFeedback.js'
-import { resolveActiveAddressForMode } from '../../utils/activeAddressSelection.js'
+import { getWalletSelectedAccount, resolveActiveAddressForMode } from '../../utils/activeAddressSelection.js'
 
 type ModalState =
 	{ page: 'modifyAddress', state: Signal<ModifyAddressWindowState> } |
@@ -316,6 +316,7 @@ export function SimulationStackPage() {
 		displayedSigningAddress.value,
 		rpcNetwork.value?.chainId,
 		tabState.value?.signerAccounts ?? [],
+		displayedSigningAddress.value === undefined ? undefined : getWalletSelectedAccount(tabState.value),
 	))
 	const visualizedAddress = useComputed(() => modeActiveAddress.value.activeAddress)
 	const madeRichAddressBookEntries = useComputed(() => getMadeRichAddressBookEntries(
