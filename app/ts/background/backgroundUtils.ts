@@ -8,8 +8,7 @@ import { reportUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
-import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
-import { resolveConfiguredSigningSafe } from './signingAddressSelection.js'
+import { getWalletSelectedAccount, resolveSigningSafe } from '../utils/activeAddressSelection.js'
 
 function isIgnorableExtensionMessagingError(error: Error) {
 	return isIgnorablePortLifecycleError(error)
@@ -26,7 +25,7 @@ async function resolveConfiguredActiveAddress(settings: Settings, signerAccounts
 	if (addressBookEntries === undefined) throw new Error('Address-book entries are required to resolve a configured active address.')
 	const chainEntries = getAddressBookEntriesForChainIdMorePreciseFirst(addressBookEntries, settings.activeRpcNetwork.chainId)
 	if (!settings.simulationMode) {
-		const configuredSigningSafe = resolveConfiguredSigningSafe(configuredAddress, settings.activeRpcNetwork.chainId, signerAccounts, chainEntries)
+		const configuredSigningSafe = resolveSigningSafe(configuredAddress, settings.activeRpcNetwork.chainId, signerAccounts, chainEntries)
 		return configuredSigningSafe !== undefined
 			? { useConfiguredAddress: true, activeAddress: configuredSigningSafe }
 			: { useConfiguredAddress: false }

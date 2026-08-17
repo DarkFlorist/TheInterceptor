@@ -3,16 +3,11 @@ import type { TabState } from '../types/user-interface-types.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { getActiveAddressSelection, resolveSigningSafe } from '../utils/activeAddressSelection.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
-import type { AddressBookEntries } from '../types/addressBookTypes.js'
 import { getSigningAddressPreferences, rememberSigningAddressPreference } from './settings.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 
-export function resolveConfiguredSigningSafe(activeSigningSafeAddress: bigint | undefined, chainId: bigint, signerAccounts: readonly bigint[], activeChainEntries: AddressBookEntries) {
-	return resolveSigningSafe(activeSigningSafeAddress, chainId, signerAccounts, activeChainEntries)
-}
-
 export async function getConfiguredSigningSafeForChain(activeSigningSafeAddress: bigint | undefined, chainId: bigint, signerAccounts: readonly bigint[]) {
-	return resolveConfiguredSigningSafe(activeSigningSafeAddress, chainId, signerAccounts, await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId))
+	return resolveSigningSafe(activeSigningSafeAddress, chainId, signerAccounts, await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId))
 }
 
 export async function getConfiguredSigningSafe(settings: Settings, signerAccounts: readonly bigint[]) {

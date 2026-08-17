@@ -24,7 +24,7 @@ import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
-import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
+import { getWalletSelectedAccount, resolveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent } from './signerStateOwnership.js'
@@ -34,7 +34,6 @@ import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
 import { createMethodHandlerFor, hasOwnKey } from '../utils/methodHandlers.js'
 import { getWalletCapabilities } from './walletCapabilities.js'
 import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
-import { resolveConfiguredSigningSafe } from './signingAddressSelection.js'
 
 if (initializeWatchAssetWindowListeners()) {
 	void processWatchAssetQueue(undefined).catch(async (error: unknown) => {
@@ -492,7 +491,7 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 		// The request's active address is captured before async handling begins. Do not reroute an in-flight request if the popup selects another account meanwhile.
 		const configuredSafe = settings.simulationMode
 			? undefined
-			: resolveConfiguredSigningSafe(activeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
+			: resolveSigningSafe(activeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
 		const safeSigningMode = configuredSafe !== undefined
 		const simulationOverlayEnabled = settings.simulationMode || safeSigningMode
 		const walletSelectedSafeSigner = configuredSafe === undefined ? undefined : selectedWalletAccount

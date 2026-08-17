@@ -216,11 +216,12 @@ describe('active address selection', () => {
 	})
 
 	test('keeps background active-address resolution on the shared selection policy', () => {
-		assert.match(backgroundUtilsSource, /resolveConfiguredSigningSafe\(/u)
-		assert.match(backgroundSource, /resolveConfiguredSigningSafe\(/u)
+		assert.match(backgroundUtilsSource, /resolveSigningSafe\(/u)
+		assert.match(backgroundSource, /resolveSigningSafe\(/u)
 		assert.doesNotMatch(backgroundSource, /getSafeSigningEntry/u)
 		assert.doesNotMatch(backgroundUtilsSource, /getActiveAddressSelection\(/u)
-		assert.match(providerSigningSelectionSource, /export function resolveConfiguredSigningSafe[\s\S]*?resolveSigningSafe\(/u)
+		assert.doesNotMatch(providerSigningSelectionSource, /resolveConfiguredSigningSafe/u)
+		assert.match(providerSigningSelectionSource, /getConfiguredSigningSafeForChain[\s\S]*?resolveSigningSafe\(/u)
 		assert.doesNotMatch(backgroundUtilsSource, /safeSignerAddresses/u)
 		assert.match(backgroundUtilsSource, /const addressBookEntries = await getConfiguredActiveAddressBookEntries\(settings\)[\s\S]*?tabStates\.map/u)
 		assert.doesNotMatch(backgroundUtilsSource, /tabStates\.map\(async \(state\) => \{[\s\S]*?getConfiguredActiveAddressBookEntries/u)
