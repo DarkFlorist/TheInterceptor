@@ -1974,6 +1974,45 @@ describe('background eth_accounts', () => {
 		assert.equal(hasAddressAccess([], websiteOrigin, address), 'askAccess')
 	})
 
+	test('preserves the configured simulation address across a signing-mode round trip', async () => {
+		installBrowserMock()
+		const {
+			changeSimulationMode,
+			enableSimulationMode,
+			getSettings,
+			saveCurrentTabId,
+			setUseSignersAddressAsActiveAddress,
+			updateTabState,
+		} = await loadModules()
+		const simulationAddress = 0x6161616161616161616161616161616161616161n
+		const signerAddress = 0x6262626262626262626262626262626262626262n
+		const tabId = 197
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: simulationAddress, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateTabState(tabId, (previousState) => ({
+			...previousState,
+			signerAccounts: [signerAddress],
+			activeSigningAddress: signerAddress,
+			signerChain: 1n,
+		}))
+		await saveCurrentTabId(tabId)
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await enableSimulationMode(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			method: 'popup_enableSimulationMode',
+			data: false,
+		})
+		await enableSimulationMode(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			method: 'popup_enableSimulationMode',
+			data: true,
+		})
+
+		const settings = await getSettings()
+		assert.equal(settings.simulationMode, true)
+		assert.equal(settings.activeSimulationAddress, simulationAddress)
+		assert.equal(settings.useSignersAddressAsActiveAddress, false)
+	})
+
 	test('keeps only an owned simulation Safe when switching to signing mode', async () => {
 		installBrowserMock()
 		const {

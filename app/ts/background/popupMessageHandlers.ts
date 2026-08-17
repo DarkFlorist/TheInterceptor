@@ -709,6 +709,7 @@ export async function enableSimulationMode(
 			await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, signingSelection, {
 				simulationMode: false,
 				signerAddress: signerAccount,
+				preserveSimulationSelection: configuredSigningSafeCandidate === undefined,
 				...(chainToSwitch === undefined || networkToSwitch === undefined ? {} : { rpcNetwork: networkToSwitch }),
 			})
 			return
