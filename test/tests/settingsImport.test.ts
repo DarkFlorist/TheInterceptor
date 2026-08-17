@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
+import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
 
 type StorageKeyInput = string | string[] | Record<string, unknown> | undefined | null
 
@@ -178,6 +179,45 @@ describe('settings import', () => {
 		await importSettingsAndAddressBook(buildVersion14Import(false, false))
 
 		assert.equal((await getSettings()).activeSigningSafeAddress, undefined)
+	})
+
+	test('migrates a version 1.4 signing Safe without overwriting the simulation address', async () => {
+		const safeAddress = 0x7777777777777777777777777777777777777777n
+		const legacyExport = buildVersion14Import(false, false)
+		if (legacyExport.version !== '1.4') throw new Error('Expected version 1.4 test settings')
+		const signingSafeExport: ExportedSettings = {
+			...legacyExport,
+			settings: {
+				...legacyExport.settings,
+				activeSimulationAddress: safeAddress,
+				simulationMode: false,
+				addressBookEntries: [{ type: 'safe', name: 'Legacy Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true }],
+			},
+		}
+		const { getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+
+		await importSettingsAndAddressBook(signingSafeExport)
+
+		const settings = await getSettings()
+		assert.equal(settings.activeSimulationAddress, safeAddress)
+		assert.equal(settings.activeSigningSafeAddress, safeAddress)
+	})
+
+	test('migrates a Safe signing selection from storage created before separate signing state', async () => {
+		const safeAddress = 0x8888888888888888888888888888888888888888n
+		await browserStorageLocalSet({
+			activeSimulationAddress: safeAddress,
+			simulationMode: false,
+			useSignersAddressAsActiveAddress: false,
+			userAddressBookEntriesV3: [{ type: 'safe', name: 'Stored Legacy Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true }],
+		})
+		const { getSettings } = await settingsModulePromise
+
+		const settings = await getSettings()
+
+		assert.equal(settings.activeSimulationAddress, safeAddress)
+		assert.equal(settings.activeSigningSafeAddress, safeAddress)
+		assert.equal('activeSigningSafeAddress' in await browser.storage.local.get('activeSigningSafeAddress'), true)
 	})
 
 	test('restores metamask compatibility mode from version 1.4 exports', async () => {

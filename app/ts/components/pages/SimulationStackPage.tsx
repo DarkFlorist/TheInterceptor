@@ -44,12 +44,12 @@ function isEmptySimulation(simulationAndVisualisationResults: SimulationAndVisua
 function getMadeRichAddressBookEntries(
 	richList: readonly EnrichedRichListElement[],
 	makeCurrentAddressRich: boolean,
-	activeSimulationAddress: bigint | undefined,
+	activeAddress: bigint | undefined,
 	activeAddresses: AddressBookEntries,
 ) {
 	const entries = richList.filter((element) => element.makingRich).map((element) => element.addressBookEntry)
-	if (!makeCurrentAddressRich || activeSimulationAddress === undefined || entries.some((entry) => entry.address === activeSimulationAddress)) return entries
-	return [...entries, getActiveAddressEntry(activeSimulationAddress, activeAddresses)]
+	if (!makeCurrentAddressRich || activeAddress === undefined || entries.some((entry) => entry.address === activeAddress)) return entries
+	return [...entries, getActiveAddressEntry(activeAddress, activeAddresses)]
 }
 
 function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSimulation, disableReset, showSafeSigningActions, hasSafeTransactionsToExport }: {
@@ -307,10 +307,11 @@ export function SimulationStackPage() {
 	const highlightedStackTargetId = useSignal<string | undefined>(undefined)
 	const handledStackTargetHash = useSignal<string | undefined>(undefined)
 	const addressMetaData = useComputed(() => simVisResults.value.kind === 'simulated' ? simVisResults.value.value.addressBookEntries : [])
+	const visualizedAddress = useComputed(() => simulationMode.value ? activeSimulationAddress.value : activeSigningAddress.value)
 	const madeRichAddressBookEntries = useComputed(() => getMadeRichAddressBookEntries(
 		fixedAddressRichList.value,
 		makeCurrentAddressRich.value,
-		activeSimulationAddress.value,
+		visualizedAddress.value,
 		activeAddresses.value,
 	))
 	const isEmpty = useComputed(() => {
@@ -441,7 +442,7 @@ export function SimulationStackPage() {
 							<TransactionsAndSignedMessages
 								simulationAndVisualisationResults = { simVisResults }
 								removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
-								activeAddress = { activeSimulationAddress }
+								activeAddress = { visualizedAddress }
 								renameAddressCallBack = { renameAddressCallBack }
 								editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 								addressMetaData = { addressMetaData }
@@ -450,7 +451,7 @@ export function SimulationStackPage() {
 							<SimulationSummary
 								simulationAndVisualisationResults = { simVisResults }
 								currentBlockNumber = { currentBlockNumber }
-								activeAddress = { activeSimulationAddress }
+								activeAddress = { visualizedAddress }
 								renameAddressCallBack = { renameAddressCallBack }
 								editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 								rpcConnectionStatus = { rpcConnectionStatus }
@@ -468,7 +469,7 @@ export function SimulationStackPage() {
 						setActiveAddressAndInformAboutIt = { undefined }
 						modifyAddressWindowState = { modalState.value.state }
 						close = { () => { modalState.value = { page: 'noModal' } } }
-						activeAddress = { activeSimulationAddress.value }
+						activeAddress = { visualizedAddress.value }
 						rpcEntries = { rpcEntries }
 					/>
 				</ErrorBoundary>

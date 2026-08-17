@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
+import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
 import { addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createSafeTx, EthereumJsonRpcRequest, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, safeTxToTypedDataJson, } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
@@ -1034,12 +1035,14 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 	})
 
 	test('restores each signer account\'s last Safe-or-EOA choice when MetaMask accounts change', async () => {
-		installBrowserMock()
+		const { runtimeMessages } = installBrowserMock()
 		const {
 			changeSimulationMode,
+			createInternalMessageListener,
 			getActiveAddress,
 			getSettings,
 			handleInterceptedRequest,
+			INTERNAL_CHANNEL_NAME,
 			rememberSigningAddressPreference,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
@@ -1084,10 +1087,27 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			params: [{ signerProviderGeneration: 1, type: 'success', accounts: [addressString(account)], requestAccounts: false }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
+		const settingsSeenByAccountChangeWaiters: Array<bigint | undefined> = []
+		const completionChannel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
+		const completionListener = createInternalMessageListener((message) => {
+			if (message.method !== 'window_signer_accounts_changed') return
+			void getSettings().then((currentSettings) => settingsSeenByAccountChangeWaiters.push(currentSettings.activeSigningSafeAddress))
+		})
+		completionChannel.addEventListener('message', completionListener)
 		await selectSignerAccount(safeOwner, 209)
+		const completionDeadline = Date.now() + 100
+		while (settingsSeenByAccountChangeWaiters.length === 0 && Date.now() < completionDeadline) await new Promise((resolve) => setTimeout(resolve, 0))
+		completionChannel.removeEventListener('message', completionListener)
+		completionChannel.close()
+		assert.deepEqual(settingsSeenByAccountChangeWaiters, [safeAddress])
 		let settings = await getSettings()
 		assert.equal(settings.activeSigningSafeAddress, safeAddress)
 		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, safeAddress)
+		const signingAddressUpdate = runtimeMessages
+			.map((message) => MessageToPopup.safeParse(message))
+			.findLast((parsed) => parsed.success && parsed.value.method === 'popup_activeSigningAddressChanged')
+		if (signingAddressUpdate?.success !== true || signingAddressUpdate.value.method !== 'popup_activeSigningAddressChanged') throw new Error('Expected signing-address popup update')
+		assert.equal(signingAddressUpdate.value.data.activeSigningAddress, safeAddress)
 
 		await selectSignerAccount(directEoa, 210)
 		settings = await getSettings()

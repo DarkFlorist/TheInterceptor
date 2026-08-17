@@ -676,6 +676,33 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
+	test('stack visualizer uses the signing Safe as the visualized address in signing mode', async () => {
+		const dom = installDomMock()
+		const { listeners } = installBrowserMock()
+		const update = createStackHomePageUpdate(13, 1, 'Safe signing stack', [1n], 1)
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+
+			await act(() => {
+				listener({
+					role: 'all',
+					...serialize(UpdateHomePage, {
+						...update,
+						data: { ...update.data, makeCurrentAddressRich: true },
+					}),
+				}, {}, () => undefined)
+			})
+
+			assert.equal(collectElements(dom.document.body, 'p').some((paragraph) => paragraph.getAttribute?.('aria-label') === 'Address being made rich is Test Safe.'), true)
+		} finally {
+			dom.restore()
+		}
+	})
+
 	test('stack visualizer keeps the page header first when an unexpected error is visible', async () => {
 		const dom = installDomMock()
 		const { listeners } = installBrowserMock()

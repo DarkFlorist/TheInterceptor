@@ -20,6 +20,13 @@ export function getWalletSelectedAccount(tabState: Pick<TabState, 'activeSigning
 	return tabState?.activeSigningAddress ?? tabState?.signerAccounts[0]
 }
 
+export function isSignerConnectedForMode(simulationMode: boolean, activeSimulationAddress: bigint | undefined, tabState: Pick<TabState, 'signerAccounts'> | undefined) {
+	const signerAddress = tabState?.signerAccounts[0]
+	return simulationMode
+		? activeSimulationAddress !== undefined && signerAddress === activeSimulationAddress
+		: signerAddress !== undefined
+}
+
 export function includePersistedAddressBookEntry(activeAddresses: AddressBookEntries, persistedEntry: AddressBookEntry | undefined): AddressBookEntries {
 	if (persistedEntry === undefined) return activeAddresses
 	return [

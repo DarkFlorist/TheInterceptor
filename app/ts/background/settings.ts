@@ -7,7 +7,7 @@ import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
 import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
-import type { AddressBookEntry } from '../types/addressBookTypes.js'
+import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
@@ -65,25 +65,43 @@ async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDe
 	return defaultValue
 }
 
+function getLegacySigningSafeAddress(
+	activeSimulationAddress: EthereumAddress | undefined,
+	simulationMode: boolean,
+	useSignersAddressAsActiveAddress: boolean,
+	chainId: bigint,
+	addressBookEntries: AddressBookEntries,
+) {
+	if (simulationMode || useSignersAddressAsActiveAddress || activeSimulationAddress === undefined) return undefined
+	return addressBookEntries.find((entry) => entry.type === 'safe' && entry.chainId === chainId && entry.address === activeSimulationAddress)?.address
+}
+
 export async function getSettings() : Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
 	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeSimulationAddress', defaultActiveAddresses[0].address))
 	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeSigningSafeAddress', undefined))
+	const rawActiveSigningSafeAddressPromise = silenceChromeUnCaughtPromise(browser.storage.local.get('activeSigningSafeAddress'))
 	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('openedPageV2', defaultPage))
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('useSignersAddressAsActiveAddress', false))
 	const websiteAccessPromise = silenceChromeUnCaughtPromise(getWebsiteAccess())
 	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('simulationMode', defaultSimulationMode))
 	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeRpcNetwork', defaultRpcs[0]))
-	return {
-		activeSimulationAddress: await activeSimulationAddressPromise,
-		activeSigningSafeAddress: await activeSigningSafeAddressPromise,
-		openedPage: await openedPagePromise,
-		useSignersAddressAsActiveAddress: await useSignersAddressAsActiveAddressPromise,
-		websiteAccess: await websiteAccessPromise,
-		activeRpcNetwork: await activeRpcNetworkPromise,
-		simulationMode: await simulationModePromise,
-	}
+	const [activeSimulationAddress, storedActiveSigningSafeAddress, rawActiveSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
+		activeSimulationAddressPromise,
+		activeSigningSafeAddressPromise,
+		rawActiveSigningSafeAddressPromise,
+		openedPagePromise,
+		useSignersAddressAsActiveAddressPromise,
+		websiteAccessPromise,
+		activeRpcNetworkPromise,
+		simulationModePromise,
+	])
+	const activeSigningSafeAddress = 'activeSigningSafeAddress' in rawActiveSigningSafeAddress
+		? storedActiveSigningSafeAddress
+		: getLegacySigningSafeAddress(activeSimulationAddress, simulationMode, useSignersAddressAsActiveAddress, activeRpcNetwork.chainId, await getUserAddressBookEntries())
+	if (!('activeSigningSafeAddress' in rawActiveSigningSafeAddress)) await browserStorageLocalSet({ activeSigningSafeAddress })
+	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
 
 export function getInterceptorDisabledSites(settings: Settings): string[] {
@@ -247,6 +265,15 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 }
 
 export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings) {
+	const legacySigningSafeAddress = exportedSetings.version === '1.4'
+		? getLegacySigningSafeAddress(
+			exportedSetings.settings.activeSimulationAddress,
+			exportedSetings.settings.simulationMode,
+			exportedSetings.settings.useSignersAddressAsActiveAddress,
+			exportedSetings.settings.rpcNetwork.chainId,
+			exportedSetings.settings.addressBookEntries,
+		)
+		: undefined
 	if (exportedSetings.version === '1.3' || exportedSetings.version === '1.4' || exportedSetings.version === '1.5') {
 		await setPage(exportedSetings.settings.openedPage)
 	}
@@ -264,7 +291,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 			rpcNetwork: exportedSetings.settings.rpcNetwork,
 			activeSimulationAddress: exportedSetings.settings.activeSimulationAddress,
 			activeSigningAddress: undefined,
-			activeSigningSafeAddress: exportedSetings.version === '1.5' ? exportedSetings.settings.activeSigningSafeAddress : undefined,
+			activeSigningSafeAddress: exportedSetings.version === '1.5' ? exportedSetings.settings.activeSigningSafeAddress : legacySigningSafeAddress,
 		})
 	}
 	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)

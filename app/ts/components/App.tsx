@@ -20,7 +20,7 @@ import { useLiveSimulationHomeData } from './hooks/useLiveSimulationHomeData.js'
 import { NetworkErrors } from './subcomponents/NetworkErrors.js'
 import { ProviderErrors } from './subcomponents/ProviderErrors.js'
 import { PopupModal, type PopupPage } from './PopupModal.js'
-import { getOptimisticActiveAddressSelection, getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../utils/activeAddressSelection.js'
+import { getOptimisticActiveAddressSelection, getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode } from '../utils/activeAddressSelection.js'
 import { requestActiveAddressChange } from './activeAddressChange.js'
 export { NetworkErrors } from './subcomponents/NetworkErrors.js'
 
@@ -85,11 +85,7 @@ export function App() {
 	}
 
 	function isSignerConnected() {
-		return tabState.value !== undefined && tabState.value.signerAccounts.length > 0
-			&& (
-				simulationMode.value && activeSimulationAddress.value !== undefined && tabState.value.signerAccounts[0] === activeSimulationAddress.value
-				|| !simulationMode.value && activeSigningAddress.value !== undefined && tabState.value.signerAccounts[0] === activeSigningAddress.value
-			)
+		return isSignerConnectedForMode(simulationMode.value, activeSimulationAddress.value, tabState.value)
 	}
 
 	async function setActiveRpcAndInformAboutIt(entry: RpcEntry) {

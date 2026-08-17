@@ -684,24 +684,21 @@ export async function enableSimulationMode(
 		if (tabId !== undefined) sendCallbackToConfirmedSignerOwner(websiteTabConnections, tabId, { method: 'request_signer_chainId', result: [] })
 		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain
 		const networkToSwitch = chainToSwitch === undefined ? (await getRpcList())[0] : await getPrimaryRpcForChain(chainToSwitch)
-		const targetChainId = networkToSwitch?.chainId ?? settings.activeRpcNetwork.chainId
-		const activeChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(targetChainId)
-		const configuredSigningSafeCandidate = getSafeSigningEntry(
-			activeChainEntries,
-			{
-				simulationMode: params.data,
+		const signerAccount = await getSignerAccount()
+		if (!params.data) {
+			const targetChainId = networkToSwitch?.chainId ?? settings.activeRpcNetwork.chainId
+			const activeChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(targetChainId)
+			const configuredSigningSafeCandidate = getSafeSigningEntry(activeChainEntries, {
+				simulationMode: false,
 				activeSigningSafeAddress: settings.activeSigningSafeAddress,
 				chainId: targetChainId,
-			},
-		)
-		const signerAccount = await getSignerAccount()
-		const configuredSigningSelection = configuredSigningSafeCandidate === undefined
-			? undefined
-			: getActiveAddressSelection(configuredSigningSafeCandidate.address, activeChainEntries, false, targetChainId, signerAccount === undefined ? [] : [signerAccount])
-		const configuredSigningSafe = configuredSigningSelection?.type === 'addressBookEntry' && configuredSigningSelection.entry.type === 'safe'
-			? configuredSigningSelection.entry
-			: undefined
-		if (!params.data) {
+			})
+			const configuredSigningSelection = configuredSigningSafeCandidate === undefined
+				? undefined
+				: getActiveAddressSelection(configuredSigningSafeCandidate.address, activeChainEntries, false, targetChainId, signerAccount === undefined ? [] : [signerAccount])
+			const configuredSigningSafe = configuredSigningSelection?.type === 'addressBookEntry' && configuredSigningSelection.entry.type === 'safe'
+				? configuredSigningSelection.entry
+				: undefined
 			const signingSelection = configuredSigningSafe === undefined
 				? signerAccount === undefined ? undefined : getActiveAddressSelection('signer', activeChainEntries, false, targetChainId, [signerAccount])
 				: configuredSigningSelection
@@ -714,7 +711,7 @@ export async function enableSimulationMode(
 		}
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			simulationMode: params.data,
-			activeAddress: configuredSigningSafe?.address ?? signerAccount,
+			activeAddress: signerAccount,
 			...chainToSwitch === undefined ? {} : { rpcNetwork: networkToSwitch },
 		})
 	} else {

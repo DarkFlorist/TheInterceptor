@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { assertActiveAddressSelectionAllowed, getActiveAddressSelection, getOptimisticActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../../app/ts/utils/activeAddressSelection.js'
+import { assertActiveAddressSelectionAllowed, getActiveAddressSelection, getOptimisticActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode } from '../../app/ts/utils/activeAddressSelection.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
 import { requestActiveAddressChange } from '../../app/ts/components/activeAddressChange.js'
 
@@ -50,6 +50,13 @@ describe('active address selection', () => {
 			mode: 'signing',
 			activeSigningAddress: SAFE_ADDRESS,
 		})
+	})
+
+	test('treats an owner wallet as connected while a Safe is the displayed signing account', () => {
+		assert.equal(isSignerConnectedForMode(false, undefined, { signerAccounts: [EOA_ADDRESS] }), true)
+		assert.equal(isSignerConnectedForMode(false, undefined, { signerAccounts: [] }), false)
+		assert.equal(isSignerConnectedForMode(true, EOA_ADDRESS, { signerAccounts: [EOA_ADDRESS] }), true)
+		assert.equal(isSignerConnectedForMode(true, SAFE_ADDRESS, { signerAccounts: [EOA_ADDRESS] }), false)
 	})
 	test('does not allow selecting an EOA or Safe in signing mode without a wallet account', () => {
 		assert.deepEqual(

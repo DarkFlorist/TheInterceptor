@@ -85,15 +85,6 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 		}))
 		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
 		await refreshPendingSafeSignerSelectionErrors(ethereum, tokenPriceService, tabId)
-		await sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: { tabId, activeSigningAddress } })
-		sendInternalWindowMessage({
-			method: 'window_signer_accounts_changed',
-			data: {
-				socket: signerStateToken.socket,
-				signerStateOwnerGeneration: signerStateToken.ownerGeneration,
-				signerProviderGeneration: signerStateToken.signerProviderGeneration,
-			},
-		})
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
 		const settings = await getSettings()
 		const transition = await getSigningAddressSelectionTransition(settings, tabStateChange.previousState, tabStateChange.newState)
@@ -112,6 +103,18 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 			}
 			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 		}
+		const updatedSettings = transition.shouldActivate ? await getSettings() : settings
+		const displayedSigningSafe = await getConfiguredSigningSafe(updatedSettings, signerAccounts)
+		await sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: { tabId, activeSigningAddress: displayedSigningSafe?.address ?? activeSigningAddress } })
+		// Account-change waiters must only resume after the matching Safe-or-EOA selection is fully restored.
+		sendInternalWindowMessage({
+			method: 'window_signer_accounts_changed',
+			data: {
+				socket: signerStateToken.socket,
+				signerStateOwnerGeneration: signerStateToken.ownerGeneration,
+				signerProviderGeneration: signerStateToken.signerProviderGeneration,
+			},
+		})
 		return returnValue
 	})
 }
