@@ -22,7 +22,7 @@ import { bigintSecondsToDate, checksummedAddress, stringToAddress } from '../../
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
-import { getSelectableActiveAddresses, getWalletSelectedAccount, resolveActiveAddressForMode } from '../../utils/activeAddressSelection.js'
+import { getDisplayedSigningAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, resolveActiveAddressForMode } from '../../utils/activeAddressSelection.js'
 import { updateRichListAddress } from '../../utils/richList.js'
 import { CopySafeTransactionsButton } from '../subcomponents/CopySafeTransactionsButton.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
@@ -894,7 +894,7 @@ export function Home(param: HomeParams) {
 		param.activeAddresses.value,
 		param.simulationMode.value,
 		param.activeSimulationAddress.value,
-		param.displayedSigningAddress.value,
+		getDisplayedSigningAddressSelection(param.displayedSigningAddress.value, param.activeSigningSafeAddress.value),
 		param.rpcNetwork.value?.chainId,
 		param.tabState.value?.signerAccounts ?? [],
 		getWalletSelectedAccount(param.tabState.value),

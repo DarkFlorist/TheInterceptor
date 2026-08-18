@@ -7,7 +7,7 @@ import { getAssociatedAddresses, persistWebsiteAccessChange, updateWebsiteApprov
 import { handleInterceptedRequest, refuseAccess } from '../background.js'
 import { activateUserSelectedAddress } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
-import { getActiveAddressEntryForChain, getActiveAddresses } from '../metadataUtils.js'
+import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddressEntryForChain } from '../metadataUtils.js'
 import { getSettings } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
@@ -473,14 +473,16 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 	if (accessReply.userReply === 'noResponse') {
 		if (request !== undefined) refuseAccess(websiteTabConnections, request)
 	} else {
+		// Equal addresses mean the user kept the current account. Metadata-only signer/Safe refreshes are activated by the signer transition path, not by replaying access approval.
 		const userRequestedAddressChange = accessReply.requestAccessToAddress !== accessReply.originalRequestAccessToAddress
 		const replyCompletesAccountRequest = request !== undefined && isAccountConnectionMethod(request.method)
 		const shouldPromptForFollowUpAccesses = !replyCompletesAccountRequest
 		promptForFollowUpAccesses = shouldPromptForFollowUpAccesses
 		const accountRequestSocket = replyCompletesAccountRequest ? request.uniqueRequestIdentifier.requestSocket : undefined
 		const applyAccessReply = async () => {
+			let approvedAddressSelection
 			if (accessReply.userReply === 'Approved' && accessReply.requestAccessToAddress !== undefined) {
-				await assertAddressSelectionAllowedForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress)
+				approvedAddressSelection = await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress)
 			}
 			if (!userRequestedAddressChange) {
 				await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, false)
@@ -490,10 +492,7 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 			await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, false)
 			const settings = await getSettings()
 			const signerAddress = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts[0]
-			const activeAddresses = await getActiveAddresses()
-			const requestEntry = pendingAccessRequest.requestAccessToAddress
-			const selectableAddresses = includePersistedAddressBookEntry(activeAddresses, requestEntry)
-			const selection = assertActiveAddressSelectionAllowed(accessReply.requestAccessToAddress, selectableAddresses, settings.simulationMode, settings.activeRpcNetwork.chainId, signerAddress === undefined ? [] : [signerAddress])
+			const selection = approvedAddressSelection ?? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress)
 			await activateUserSelectedAddress(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, selection, {
 				simulationMode: settings.simulationMode,
 				signerAddress,
@@ -533,26 +532,34 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 		if (message.data.requestAccessToAddress === undefined) throw new Error('Requesting account change on site level access request')
 		const pendingAccessRequest = previousPendingAccessRequests.find((request) => request.accessRequestId === message.data.accessRequestId)
 		if (pendingAccessRequest === undefined) throw new Error('Access request missing!')
-		if (message.method === 'popup_interceptorAccessChangeAddress') {
-			await assertAddressSelectionAllowedForAccessRequest(pendingAccessRequest, message.data.newActiveAddress)
-		}
-		async function getProposedAddress() {
+		const explicitlyRequestedSelection = message.method === 'popup_interceptorAccessChangeAddress'
+			? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, message.data.newActiveAddress)
+			: undefined
+		async function getProposedSelection() {
 			if (message.method === 'popup_interceptorAccessRefresh') {
 				const tabState = await getTabState(message.data.socket.tabId)
-				return tabState.signerAccounts[0]
+				const signerAddress = tabState.signerAccounts[0]
+				return signerAddress === undefined ? undefined : { type: 'signer', address: signerAddress } as const
 			}
-			if (message.data.newActiveAddress === 'signer') {
+			if (explicitlyRequestedSelection?.type === 'signer' && explicitlyRequestedSelection.address === undefined) {
 				const signerAccountsResult = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, message.data.socket)
-				return signerAccountsResult.accounts[0]
+				const signerAddress = signerAccountsResult.accounts[0]
+				return signerAddress === undefined ? undefined : { type: 'signer', address: signerAddress } as const
 			}
-			return message.data.newActiveAddress
+			return explicitlyRequestedSelection
 		}
 
-		const proposedAddress = await getProposedAddress()
+		const proposedSelection = await getProposedSelection()
 		const settings = await getSettings()
-		const requestAccessToAddress = proposedAddress === undefined
+		const requestAccessToAddress = proposedSelection === undefined
 			? pendingAccessRequest.requestAccessToAddress
-			: await getActiveAddressEntryForChain(proposedAddress, settings.activeRpcNetwork.chainId)
+			: proposedSelection.type === 'addressBookEntry' && proposedSelection.entry.type === 'safe'
+				? proposedSelection.entry
+				: proposedSelection.type === 'addressBookEntry'
+					? await getActiveAddressEntryForChain(proposedSelection.entry.address, settings.activeRpcNetwork.chainId)
+					: proposedSelection.address === undefined
+					? pendingAccessRequest.requestAccessToAddress
+					: await getWalletActiveAddressEntryForChain(proposedSelection.address, settings.activeRpcNetwork.chainId)
 		if (requestAccessToAddress === undefined) throw new Error('Access request has no address to refresh')
 		const associatedAddresses = await getAssociatedAddresses(settings, message.data.website.websiteOrigin, requestAccessToAddress)
 		return previousPendingAccessRequests.map((request) => {
@@ -563,14 +570,21 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 	return await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getAccessDialogActiveAddresses(), pendingAccessRequests: await withCurrentSignerStates(newRequests.current) } })
 }
 
-async function assertAddressSelectionAllowedForAccessRequest(pendingAccessRequest: PendingAccessRequest, address: bigint | 'signer') {
+async function getAllowedAddressSelectionForAccessRequest(pendingAccessRequest: PendingAccessRequest, address: bigint | 'signer') {
 	const settings = await getSettings()
 	const simulationMode = pendingAccessRequest.simulationMode && settings.simulationMode
 	const signerAccounts = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts
 	const activeAddresses = await getActiveAddresses()
 	const requestedEntry = pendingAccessRequest.requestAccessToAddress
 	const selectableAddresses = includePersistedAddressBookEntry(activeAddresses, requestedEntry)
-	assertActiveAddressSelectionAllowed(address, selectableAddresses, simulationMode, settings.activeRpcNetwork.chainId, signerAccounts)
+	// Access replies carry the approved address, while the pending entry preserves whether a same-address signing selection was explicitly a Safe.
+	const addressSelection = !simulationMode
+		&& address !== 'signer'
+		&& address === signerAccounts[0]
+		&& (requestedEntry?.address !== address || requestedEntry.type !== 'safe')
+		? 'signer'
+		: address
+	return assertActiveAddressSelectionAllowed(addressSelection, selectableAddresses, simulationMode, settings.activeRpcNetwork.chainId, signerAccounts)
 }
 
 export async function interceptorAccessMetadataRefresh() {

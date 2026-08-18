@@ -673,6 +673,7 @@ const ActiveSigningAddressChanged = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		tabId: funtypes.Number,
 		activeSigningAddress: OptionalEthereumAddress,
+		activeSigningSafeAddress: OptionalEthereumAddress,
 	})
 })
 

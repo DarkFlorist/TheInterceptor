@@ -38,6 +38,7 @@ export type HomeParams = {
 	walletSelectedAddressBookEntry: Signal<AddressBookEntry | undefined>
 	tabState: Signal<TabState | undefined>
 	activeSimulationAddress: Signal<bigint | undefined>
+	activeSigningSafeAddress: Signal<bigint | undefined>
 	displayedSigningAddress: Signal<bigint | undefined>
 	useSignersAddressAsActiveAddress: Signal<boolean>
 	simVisResults: Signal<ResolvedSimulationResults>

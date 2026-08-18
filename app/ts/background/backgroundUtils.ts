@@ -3,7 +3,7 @@ import { type WebsiteSocket, checkAndThrowRuntimeLastError } from '../utils/requ
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
 import { getAllTabStates, getTabState, getUserAddressBookEntries } from './storageVariables.js'
-import { getActiveAddressEntryForChain } from './metadataUtils.js'
+import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
@@ -27,7 +27,7 @@ async function resolveConfiguredActiveAddress(settings: Settings, signerAccounts
 		addressBookEntries,
 		settings.simulationMode,
 		settings.activeSimulationAddress,
-		settings.activeSigningSafeAddress,
+		settings.activeSigningSafeAddress === undefined ? undefined : { type: 'safe', address: settings.activeSigningSafeAddress },
 		settings.activeRpcNetwork.chainId,
 		signerAccounts,
 		walletSelectedAddress,
@@ -53,7 +53,7 @@ export async function getActiveAddress(settings: Settings, tabId: number) {
 	if (configuredAddress.useConfiguredAddress) return configuredAddress.activeAddress
 	const signingAddr = settings.simulationMode ? tabState.activeSigningAddress : walletSelectedAccount
 	if (signingAddr === undefined) return undefined
-	return await getActiveAddressEntryForChain(signingAddr, settings.activeRpcNetwork.chainId)
+	return await getWalletActiveAddressEntryForChain(signingAddr, settings.activeRpcNetwork.chainId)
 }
 
 export async function getActiveOrFirstSignerAddress(settings: Settings, tabId: number) {
@@ -64,7 +64,7 @@ export async function getActiveOrFirstSignerAddress(settings: Settings, tabId: n
 	if (configuredAddress.useConfiguredAddress) return configuredAddress.activeAddress
 	const address = walletSelectedAccount
 	if (address === undefined) return undefined
-	return await getActiveAddressEntryForChain(address, settings.activeRpcNetwork.chainId)
+	return await getWalletActiveAddressEntryForChain(address, settings.activeRpcNetwork.chainId)
 }
 
 export async function getActiveAddressesForAllTabs(settings: Settings) {
@@ -79,7 +79,7 @@ export async function getActiveAddressesForAllTabs(settings: Settings) {
 		const configuredAddress = await resolveConfiguredActiveAddress(settings, state.signerAccounts, walletSelectedAccount, addressBookEntries)
 		if (configuredAddress.useConfiguredAddress) return { tabId: state.tabId, activeAddress: configuredAddress.activeAddress }
 		const signingAddr = settings.simulationMode ? state.activeSigningAddress : walletSelectedAccount
-		return { tabId: state.tabId, activeAddress: signingAddr === undefined ? undefined : await getActiveAddressEntryForChain(signingAddr, settings.activeRpcNetwork.chainId) }
+		return { tabId: state.tabId, activeAddress: signingAddr === undefined ? undefined : await getWalletActiveAddressEntryForChain(signingAddr, settings.activeRpcNetwork.chainId) }
 	}))
 }
 

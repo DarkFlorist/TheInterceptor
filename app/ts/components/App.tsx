@@ -20,7 +20,7 @@ import { useLiveSimulationHomeData } from './hooks/useLiveSimulationHomeData.js'
 import { NetworkErrors } from './subcomponents/NetworkErrors.js'
 import { ProviderErrors } from './subcomponents/ProviderErrors.js'
 import { PopupModal, type PopupPage } from './PopupModal.js'
-import { getOptimisticActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode, resolveActiveAddressForMode } from '../utils/activeAddressSelection.js'
+import { getDisplayedSigningAddressSelection, getOptimisticActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode, resolveActiveAddressForMode } from '../utils/activeAddressSelection.js'
 import { requestActiveAddressChange } from './activeAddressChange.js'
 import { DinoSaysNotification } from './subcomponents/DinoSays.js'
 export { NetworkErrors } from './subcomponents/NetworkErrors.js'
@@ -32,6 +32,7 @@ export function App() {
 		activeAddresses,
 		walletSelectedAddressBookEntry,
 		activeSimulationAddress,
+		activeSigningSafeAddress,
 		displayedSigningAddress,
 		useSignersAddressAsActiveAddress,
 		simVisResults,
@@ -93,6 +94,7 @@ export function App() {
 			return
 		}
 		displayedSigningAddress.value = optimisticSelection.displayedSigningAddress
+		activeSigningSafeAddress.value = address === 'signer' ? undefined : optimisticSelection.displayedSigningAddress
 	}
 
 	function isSignerConnected() {
@@ -232,7 +234,7 @@ export function App() {
 		activeAddresses.value,
 		simulationMode.value,
 		activeSimulationAddress.value,
-		displayedSigningAddress.value,
+		getDisplayedSigningAddressSelection(displayedSigningAddress.value, activeSigningSafeAddress.value),
 		rpcNetwork.value?.chainId,
 		tabState.value?.signerAccounts ?? [],
 		getWalletSelectedAccount(tabState.value),
@@ -277,6 +279,7 @@ export function App() {
 						simVisResults = { simVisResults }
 						useSignersAddressAsActiveAddress = { useSignersAddressAsActiveAddress }
 						displayedSigningAddress = { displayedSigningAddress }
+						activeSigningSafeAddress = { activeSigningSafeAddress }
 						activeSimulationAddress = { activeSimulationAddress }
 						changeActiveAddress = { changeActiveAddress }
 						makeCurrentAddressRich = { makeCurrentAddressRich }

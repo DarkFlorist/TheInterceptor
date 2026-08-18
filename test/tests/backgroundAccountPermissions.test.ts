@@ -132,6 +132,7 @@ describe('background eth_accounts', () => {
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
 			simulationMode: false,
 			activeAddress: signerAddress,
+			signingAddressSelection: 'signer',
 			promptForAccessesIfNeeded: false,
 		})
 

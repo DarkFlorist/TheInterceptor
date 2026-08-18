@@ -11,7 +11,7 @@ import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { changeSimulationMode, getSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
 import { acknowledgeActiveAddressSelectionResetNotice } from './activeAddressSelectionResetNotice.js'
-import { getUserAddressBookEntriesForChainIdMorePreciseFirst, promoteRpcAsPrimary, updateTransactionState } from './storageVariables.js'
+import { promoteRpcAsPrimary, updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 
@@ -52,12 +52,8 @@ export async function changeActiveAddressAndChain(
 			...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
 		})
 	} else {
-		const activeChainId = change.rpcNetwork?.chainId ?? (await getSettings()).activeRpcNetwork.chainId
-		const activeChainEntries = change.signingAddressSelection === undefined ? await getUserAddressBookEntriesForChainIdMorePreciseFirst(activeChainId) : []
-		const inferredSafeEntryOnActiveChain = change.activeAddress === undefined
-			? undefined
-			: activeChainEntries.find((entry) => entry.address === change.activeAddress && entry.type === 'safe')
-		const selectsSafe = change.signingAddressSelection === 'safe' || (change.signingAddressSelection === undefined && inferredSafeEntryOnActiveChain !== undefined)
+		if ('activeAddress' in change && change.signingAddressSelection === undefined) throw new Error('Signing address changes must identify whether the selection is the signer or a Safe.')
+		const selectsSafe = change.signingAddressSelection === 'safe'
 		await changeSimulationMode({
 			simulationMode: change.simulationMode,
 			...(!selectsSafe && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),

@@ -34,8 +34,22 @@ export async function getActiveAddressEntry(address: bigint): Promise<AddressBoo
 	return getUnknownActiveAddressEntry(address)
 }
 
+/**
+ * Resolves metadata for an address being surfaced as an active account. Like
+ * the legacy chain-agnostic helper above, this intentionally accepts metadata
+ * only from entries marked `useAsActiveAddress`; static contract/token metadata
+ * and non-active address-book entries must not supply active-account access
+ * policy. The chain-aware lookup only changes which eligible entry is preferred.
+ */
 export async function getActiveAddressEntryForChain(address: bigint, chainId: bigint): Promise<AddressBookEntry> {
 	const identifiedAddress = getAddressBookEntriesForChainIdMorePreciseFirst(await getActiveAddresses(), chainId).find((entry) => entry.address === address)
+	if (identifiedAddress !== undefined) return identifiedAddress
+	return getUnknownActiveAddressEntry(address)
+}
+
+export async function getWalletActiveAddressEntryForChain(address: bigint, chainId: bigint): Promise<AddressBookEntry> {
+	const identifiedAddress = getAddressBookEntriesForChainIdMorePreciseFirst(await getActiveAddresses(), chainId)
+		.find((entry) => entry.address === address && entry.type !== 'safe')
 	if (identifiedAddress !== undefined) return identifiedAddress
 	return getUnknownActiveAddressEntry(address)
 }

@@ -40,6 +40,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 	const activeAddresses = useSignal<AddressBookEntries>([])
 	const walletSelectedAddressBookEntry = useSignal<AddressBookEntry | undefined>(undefined)
 	const activeSimulationAddress = useSignal<bigint | undefined>(undefined)
+	const activeSigningSafeAddress = useSignal<bigint | undefined>(undefined)
 	const displayedSigningAddress = useSignal<bigint | undefined>(undefined)
 	const useSignersAddressAsActiveAddress = useSignal<boolean>(false)
 	const simVisResults = useSignal<ResolvedSimulationResults>(PASSTHROUGH_STATE)
@@ -129,6 +130,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 		const updateHomePageSettings = (settings: Settings) => {
 			rpcNetwork.value = settings.activeRpcNetwork
 			activeSimulationAddress.value = settings.activeSimulationAddress
+			activeSigningSafeAddress.value = settings.activeSigningSafeAddress
 			useSignersAddressAsActiveAddress.value = settings.useSignersAddressAsActiveAddress
 			websiteAccess.value = settings.websiteAccess
 			simulationMode.value = settings.simulationMode
@@ -240,6 +242,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 				case 'popup_activeSigningAddressChanged': {
 					if (parsed.data.tabId !== currentTabId.value) return undefined
 					displayedSigningAddress.value = parsed.data.activeSigningAddress
+					activeSigningSafeAddress.value = parsed.data.activeSigningSafeAddress
 					return undefined
 				}
 				case 'popup_websiteIconChanged': {
@@ -293,6 +296,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 		activeAddresses,
 		walletSelectedAddressBookEntry,
 		activeSimulationAddress,
+		activeSigningSafeAddress,
 		displayedSigningAddress,
 		useSignersAddressAsActiveAddress,
 		simVisResults,

@@ -1108,6 +1108,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			.findLast((parsed) => parsed.success && parsed.value.method === 'popup_activeSigningAddressChanged')
 		if (signingAddressUpdate?.success !== true || signingAddressUpdate.value.method !== 'popup_activeSigningAddressChanged') throw new Error('Expected signing-address popup update')
 		assert.equal(signingAddressUpdate.value.data.activeSigningAddress, safeAddress)
+		assert.equal(signingAddressUpdate.value.data.activeSigningSafeAddress, safeAddress)
 
 		await selectSignerAccount(directEoa, 210)
 		settings = await getSettings()
@@ -1399,6 +1400,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			simulationMode: false,
 			activeAddress: safeAddress,
+			signingAddressSelection: 'safe',
 		})
 		assert.notEqual((await getActiveAddress(await getSettings(), socket.tabId))?.address, safeAddress)
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
@@ -1503,6 +1505,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			simulationMode: false,
 			activeAddress: safeAddress,
+			signingAddressSelection: 'safe',
 		})
 		assert.equal((await getActiveAddress(await getSettings(), socket.tabId))?.address, safeSignerAddress)
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
@@ -1519,6 +1522,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			simulationMode: false,
 			activeAddress: undefined,
+			signingAddressSelection: 'signer',
 		})
 		assert.equal((await getSettings()).activeSimulationAddress, safeAddress)
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {

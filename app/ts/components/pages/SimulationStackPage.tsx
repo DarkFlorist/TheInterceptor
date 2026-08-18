@@ -29,7 +29,7 @@ import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { CopySafeTransactionsButton } from '../subcomponents/CopySafeTransactionsButton.js'
 import { Tooltip } from '../subcomponents/Tooltip.js'
 import { useCopyFeedback } from '../hooks/useCopyFeedback.js'
-import { getWalletSelectedAccount, resolveActiveAddressForMode } from '../../utils/activeAddressSelection.js'
+import { getDisplayedSigningAddressSelection, getWalletSelectedAccount, resolveActiveAddressForMode } from '../../utils/activeAddressSelection.js'
 
 type ModalState =
 	{ page: 'modifyAddress', state: Signal<ModifyAddressWindowState> } |
@@ -279,6 +279,7 @@ function scheduleStackTargetTimeout(callback: () => void, delayMs: number) {
 export function SimulationStackPage() {
 	const {
 		activeSimulationAddress,
+		activeSigningSafeAddress,
 		displayedSigningAddress,
 		activeAddresses,
 		simVisResults,
@@ -314,7 +315,7 @@ export function SimulationStackPage() {
 		activeAddresses.value,
 		simulationMode.value,
 		activeSimulationAddress.value,
-		displayedSigningAddress.value,
+		getDisplayedSigningAddressSelection(displayedSigningAddress.value, activeSigningSafeAddress.value),
 		rpcNetwork.value?.chainId,
 		tabState.value?.signerAccounts ?? [],
 		getWalletSelectedAccount(tabState.value),

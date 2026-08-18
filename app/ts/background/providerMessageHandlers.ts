@@ -105,7 +105,11 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 		}
 		const updatedSettings = transition.shouldActivate ? await getSettings() : settings
 		const displayedSigningSafe = await getConfiguredSigningSafe(updatedSettings, signerAccounts)
-		await sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: { tabId, activeSigningAddress: displayedSigningSafe?.address ?? activeSigningAddress } })
+		await sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: {
+			tabId,
+			activeSigningAddress: displayedSigningSafe?.address ?? activeSigningAddress,
+			activeSigningSafeAddress: displayedSigningSafe?.address,
+		} })
 		// Account-change waiters must only resume after the matching Safe-or-EOA selection is fully restored.
 		sendInternalWindowMessage({
 			method: 'window_signer_accounts_changed',
@@ -130,6 +134,7 @@ async function changeSignerChain(ethereum: EthereumClientService, tokenPriceServ
 	const settings = await getSettings()
 	const selectedSafe = await getConfiguredSigningSafe(settings, tabStateChange.newState.signerAccounts)
 	if (selectedSafe !== undefined) {
+		// Safe signing is pinned to the Safe's configured Interceptor chain. A signer-wallet chain change only refreshes signer state; it must not move the dapp away from the active Safe.
 		if (oldSignerChain !== signerChain) {
 			await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
@@ -142,6 +147,7 @@ async function changeSignerChain(ethereum: EthereumClientService, tokenPriceServ
 			simulationMode: settings.simulationMode,
 			rpcNetwork,
 			activeAddress,
+			...(!settings.simulationMode ? { signingAddressSelection: 'signer' as const } : {}),
 		})
 	}
 	if (oldSignerChain !== signerChain) sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
