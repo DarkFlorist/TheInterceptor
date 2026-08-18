@@ -175,14 +175,17 @@ export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsAct
 	})
 }
 
-export async function changeSimulationMode(changes: { simulationMode: boolean, rpcNetwork?: RpcNetwork, activeSimulationAddress?: EthereumAddress, activeSigningAddress?: EthereumAddress, activeSigningSafeAddress?: EthereumAddress }) {
-	return await browserStorageLocalSet({
+export async function changeSimulationMode(changes: { simulationMode: boolean, rpcNetwork?: RpcNetwork, activeSimulationAddress?: EthereumAddress, activeSigningAddress?: EthereumAddress, activeSigningSafeAddress?: EthereumAddress, signingAddressPreferences?: SigningAddressPreferences }) {
+	const storageUpdate = {
 		simulationMode: changes.simulationMode,
 		...changes.rpcNetwork ? { activeRpcNetwork: changes.rpcNetwork }: {},
 		...'activeSimulationAddress' in changes ? createIndependentActiveSimulationAddressStorageUpdate(changes.activeSimulationAddress) : {},
 		...'activeSigningAddress' in changes ? { activeSigningAddress: changes.activeSigningAddress }: {},
 		...'activeSigningSafeAddress' in changes ? { activeSigningSafeAddress: changes.activeSigningSafeAddress }: {},
-	})
+		...'signingAddressPreferences' in changes ? { signingAddressPreferences: changes.signingAddressPreferences }: {},
+	}
+	if (!('signingAddressPreferences' in changes)) return await browserStorageLocalSet(storageUpdate)
+	return await signingAddressPreferencesSemaphore.execute(async () => await browserStorageLocalSet(storageUpdate))
 }
 
 const websiteAccessSemaphore = new Semaphore(1)
@@ -228,7 +231,7 @@ export const setMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boo
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
 	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
-	const settings = await getSettings()
+	const [settings, signingAddressPreferences] = await Promise.all([getSettings(), getSigningAddressPreferences()])
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
 		version: '1.5' as const,
@@ -236,6 +239,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 		settings: {
 			activeSimulationAddress: settings.activeSimulationAddress,
 			activeSigningSafeAddress: settings.activeSigningSafeAddress,
+			signingAddressPreferences,
 			openedPage: settings.openedPage,
 			useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
 			websiteAccess: settings.websiteAccess,
@@ -255,6 +259,10 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	if (exportedSetings.version === '1.3' || exportedSetings.version === '1.4' || exportedSetings.version === '1.5') {
 		await setPage(exportedSetings.settings.openedPage)
 	}
+	// Safe selection and per-signer preferences resolve through the address book. Make imported entries available before publishing that dependent signing state.
+	if (exportedSetings.version === '1.4' || exportedSetings.version === '1.5') {
+		await updateUserAddressBookEntries(() => exportedSetings.settings.addressBookEntries)
+	}
 	if (exportedSetings.version === '1.0') {
 		await changeSimulationMode({
 			simulationMode: exportedSetings.settings.simulationMode,
@@ -262,6 +270,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 			activeSimulationAddress: defaultActiveAddress,
 			activeSigningAddress: undefined,
 			activeSigningSafeAddress: undefined,
+			signingAddressPreferences: [],
 		})
 	} else {
 		await changeSimulationMode({
@@ -270,6 +279,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 			activeSimulationAddress: exportedSetings.version === '1.5' ? exportedSetings.settings.activeSimulationAddress : defaultActiveAddress,
 			activeSigningAddress: undefined,
 			activeSigningSafeAddress: exportedSetings.version === '1.5' ? exportedSetings.settings.activeSigningSafeAddress : undefined,
+			signingAddressPreferences: exportedSetings.version === '1.5' ? exportedSetings.settings.signingAddressPreferences : [],
 		})
 	}
 	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
@@ -278,9 +288,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') {
 		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
 	}
-	if (exportedSetings.version === '1.4' || exportedSetings.version === '1.5') {
-		await updateUserAddressBookEntries(() => exportedSetings.settings.addressBookEntries)
-	} else {
+	if (exportedSetings.version !== '1.4' && exportedSetings.version !== '1.5') {
 		await updateUserAddressBookEntries((previousEntries) => {
 			const convertActiveAddressToAddressBookEntry = (info: ActiveAddress): AddressBookEntry => ({ ...info, type: 'contact' as const, useAsActiveAddress: true, entrySource: 'User' as const })
 			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])
