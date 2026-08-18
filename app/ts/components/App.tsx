@@ -20,9 +20,10 @@ import { useLiveSimulationHomeData } from './hooks/useLiveSimulationHomeData.js'
 import { NetworkErrors } from './subcomponents/NetworkErrors.js'
 import { ProviderErrors } from './subcomponents/ProviderErrors.js'
 import { PopupModal, type PopupPage } from './PopupModal.js'
-import { getDisplayedSigningAddressSelection, getOptimisticActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode, resolveActiveAddressForMode } from '../utils/activeAddressSelection.js'
+import { getOptimisticActiveAddressSelection, getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode } from '../utils/activeAddressSelection.js'
 import { requestActiveAddressChange } from './activeAddressChange.js'
 import { DinoSaysNotification } from './subcomponents/DinoSays.js'
+import { useModeActiveAddress } from './hooks/useModeActiveAddress.js'
 export { NetworkErrors } from './subcomponents/NetworkErrors.js'
 
 export function App() {
@@ -230,15 +231,7 @@ export function App() {
 		await sendPopupMessageToBackgroundPage({ method: 'popup_clearUnexpectedError' })
 	}
 
-	const modeActiveAddress = useComputed(() => resolveActiveAddressForMode(
-		activeAddresses.value,
-		simulationMode.value,
-		activeSimulationAddress.value,
-		getDisplayedSigningAddressSelection(displayedSigningAddress.value, activeSigningSafeAddress.value),
-		rpcNetwork.value?.chainId,
-		tabState.value?.signerAccounts ?? [],
-		getWalletSelectedAccount(tabState.value),
-	))
+	const modeActiveAddress = useModeActiveAddress({ activeAddresses, simulationMode, activeSimulationAddress, activeSigningSafeAddress, displayedSigningAddress, rpcNetwork, tabState })
 	const selectableActiveAddresses = useComputed(() =>
 		getSelectableActiveAddresses(activeAddresses.value, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])
 	)

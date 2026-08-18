@@ -23,14 +23,18 @@ async function resolveConfiguredActiveAddress(settings: Settings, signerAccounts
 	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningSafeAddress
 	if ((settings.simulationMode && settings.useSignersAddressAsActiveAddress) || configuredAddress === undefined) return { useConfiguredAddress: false }
 	if (addressBookEntries === undefined) throw new Error('Address-book entries are required to resolve a configured active address.')
+	const modeInput = settings.simulationMode
+		? { mode: 'simulation' as const, activeAddress: configuredAddress }
+		: {
+			mode: 'signing' as const,
+			selectedAddress: { type: 'safe' as const, address: configuredAddress },
+			signerAccounts,
+			walletFallbackAddress: walletSelectedAddress,
+		}
 	const resolution = resolveActiveAddressForMode(
 		addressBookEntries,
-		settings.simulationMode,
-		settings.activeSimulationAddress,
-		settings.activeSigningSafeAddress === undefined ? undefined : { type: 'safe', address: settings.activeSigningSafeAddress },
 		settings.activeRpcNetwork.chainId,
-		signerAccounts,
-		walletSelectedAddress,
+		modeInput,
 	)
 	if (resolution.activeAddress === undefined) return { useConfiguredAddress: true, activeAddress: undefined }
 	const activeAddress = resolution.activeAddressBookEntry ?? (settings.simulationMode

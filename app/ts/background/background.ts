@@ -24,7 +24,7 @@ import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
-import { getDisplayedSigningAddressSelection, getWalletSelectedAccount, resolveActiveAddressForMode } from '../utils/activeAddressSelection.js'
+import { getWalletSelectedAccount, resolveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
@@ -456,7 +456,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		if (refreshedActiveAddress === undefined) return replyWithoutActiveAccount(websiteTabConnections, request)
 		const refreshedAccess = verifyAccess(websiteTabConnections, socket, false, websiteOrigin, refreshedActiveAddress, refreshedSettings, { ignoreConnectionApproval: true })
 		if (refreshedAccess !== 'hasAccess') return replyWithoutActiveAccount(websiteTabConnections, request)
-		return await handleContentScriptMessage(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request, await websitePromise, refreshedActiveAddress.address, publishRpcConnectionStatus)
+		return await handleContentScriptMessage(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request, await websitePromise, refreshedActiveAddress, publishRpcConnectionStatus)
 	}
 
 	if (access === 'noAccess' || activeAddress === undefined) {
@@ -476,22 +476,24 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		case 'hasAccess': {
 			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
 			const website = await websitePromise
-			return await handleContentScriptMessage(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request, website, activeAddress.address, publishRpcConnectionStatus)
+			return await handleContentScriptMessage(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, request, website, activeAddress, publishRpcConnectionStatus)
 		}
 		default: assertNever(access)
 	}
 }
 
-async function handleContentScriptMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: bigint | undefined, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
+async function handleContentScriptMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		const settings = await getSettings()
 		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 		const selectedWalletAccount = getWalletSelectedAccount(signerTabState)
-		// The request's active address is captured before async handling begins. Do not reroute an in-flight request if the popup selects another account meanwhile.
-		const activeAddressResolution = resolveActiveAddressForMode(currentChainEntries, settings.simulationMode, activeAddress, getDisplayedSigningAddressSelection(activeAddress, settings.activeSigningSafeAddress), settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, selectedWalletAccount)
-		const safeSigningMode = activeAddressResolution.safeSigningMode
+		// The request's active entry is captured before async handling begins. Recheck Safe ownership without rerouting the request if the popup selects another account meanwhile.
+		const safeSigningMode = !settings.simulationMode
+			&& activeAddress.type === 'safe'
+			&& activeAddress.address === settings.activeSigningSafeAddress
+			&& resolveSigningSafe(activeAddress.address, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries) !== undefined
 		const simulationOverlayEnabled = settings.simulationMode || safeSigningMode
 		const walletSelectedSafeSigner = safeSigningMode ? selectedWalletAccount : undefined
 		let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
@@ -510,7 +512,7 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 			})()
 			return await executionSimulationStatePromise
 		}
-		const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, walletSelectedSafeSigner)
+		const resolved = await handleRPCRequest(ethereum, tokenPriceService, resetSimulationServices, getSimulationInput, getExecutionSimulationState, websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, website, request, settings, activeAddress.address, publishRpcConnectionStatus, simulationOverlayEnabled, safeSigningMode, walletSelectedSafeSigner)
 		await persistApprovedAccountsForAccountRequest(
 			ethereum,
 			tokenPriceService,
@@ -519,9 +521,9 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 			request,
 			website,
 			resolved,
-			activeAddress,
+			activeAddress.address,
 		)
-		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress)
+		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
 		return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
 	} catch (error: unknown) {
 		if (isFailedToFetchError(error)) {
