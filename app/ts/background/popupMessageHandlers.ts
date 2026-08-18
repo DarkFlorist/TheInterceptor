@@ -1,5 +1,5 @@
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
-import { activateAddressSelection, activateUserSelectedAddress, changeActiveAddressAndChain, changeActiveRpc } from './activeSettings.js'
+import { activateAddressSelection, changeActiveAddressAndChain, changeActiveRpc } from './activeSettings.js'
 import { getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, updateWebsiteAccess, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
@@ -229,7 +229,7 @@ export async function changeActiveAddress(ethereum: EthereumClientService, token
 	if (selection === undefined) {
 		if (!addressChange.data.simulationMode) {
 			if (addressChange.data.activeAddress === 'signer') {
-				await activateUserSelectedAddress(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, undefined, {
+				await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, undefined, {
 					simulationMode: false,
 					signerAddress: undefined,
 				})
@@ -247,7 +247,7 @@ export async function changeActiveAddress(ethereum: EthereumClientService, token
 		}
 		return { type: 'ChangeActiveAddressReply', ok: false, message: 'The selected address is not available.' } as const
 	}
-	await activateUserSelectedAddress(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, selection, {
+	await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, selection, {
 		simulationMode: addressChange.data.simulationMode,
 		signerAddress: signerAccount,
 	})

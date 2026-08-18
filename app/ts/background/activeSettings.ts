@@ -120,22 +120,6 @@ export async function activateAddressSelection(
 	})
 }
 
-export async function activateUserSelectedAddress(
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
-	resetSimulationServices: ResetSimulationServices,
-	websiteTabConnections: WebsiteTabConnections,
-	selection: ActiveAddressSelection | undefined,
-	options: {
-		readonly simulationMode: boolean
-		readonly signerAddress: bigint | undefined
-		readonly rpcNetwork?: RpcNetwork
-		readonly promptForAccessesIfNeeded?: boolean
-	},
-) {
-	await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, selection, options)
-}
-
 export async function changeActiveRpc(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean, signerTabId: number | undefined) {
 	if (simulationMode) {
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, { simulationMode, rpcNetwork })

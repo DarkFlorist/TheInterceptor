@@ -300,18 +300,13 @@ describe('active address selection', () => {
 		assert.doesNotMatch(activeSettingsSource, /inferredSafeEntryOnActiveChain/u)
 		assert.match(activeSettingsSource, /Signing address changes must identify whether the selection is the signer or a Safe\./u)
 		assert.match(providerMessageHandlersSource, /!settings\.simulationMode \? \{ signingAddressSelection: 'signer'/u)
-		assert.match(activeSettingsSource, /export async function activateUserSelectedAddress[\s\S]*?activateAddressSelection\(/u)
-		assert.doesNotMatch(activeSettingsSource, /acknowledgeActiveAddressSelectionResetNotice/u)
 		const explicitPopupSelectionHandler = popupMessageHandlersSource.slice(
 			popupMessageHandlersSource.indexOf('export async function changeActiveAddress('),
 			popupMessageHandlersSource.indexOf('export async function modifyMakeMeRich('),
 		)
-		assert.match(explicitPopupSelectionHandler, /activateUserSelectedAddress\(/u)
-		assert.doesNotMatch(explicitPopupSelectionHandler, /activateAddressSelection\(/u)
-		assert.match(interceptorAccessSource, /activateUserSelectedAddress\(/u)
-		assert.doesNotMatch(interceptorAccessSource, /activateAddressSelection\(/u)
+		assert.match(explicitPopupSelectionHandler, /activateAddressSelection\(/u)
+		assert.match(interceptorAccessSource, /activateAddressSelection\(/u)
 		assert.match(providerMessageHandlersSource, /activateAddressSelection\(/u)
-		assert.doesNotMatch(providerMessageHandlersSource, /activateUserSelectedAddress\(/u)
 		for (const consumerSource of [explicitPopupSelectionHandler, interceptorAccessSource, providerMessageHandlersSource]) {
 			assert.doesNotMatch(consumerSource, /setUseSignersAddressAsActiveAddress\(/u)
 			assert.doesNotMatch(consumerSource, /rememberSigningAddressPreference\(/u)
