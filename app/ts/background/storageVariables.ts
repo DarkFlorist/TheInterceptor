@@ -21,7 +21,6 @@ import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
-export { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 
 const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(`${ label } was corrupt:`)
