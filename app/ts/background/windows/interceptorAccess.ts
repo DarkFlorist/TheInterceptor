@@ -14,7 +14,7 @@ import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type Websit
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
 import type { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import type { PendingAccessRequest } from '../../types/accessRequest.js'
-import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
+import { doAddressBookChainIdsMatch, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
@@ -473,8 +473,14 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 	if (accessReply.userReply === 'noResponse') {
 		if (request !== undefined) refuseAccess(websiteTabConnections, request)
 	} else {
-		// Equal addresses mean the user kept the current account. Metadata-only signer/Safe refreshes are activated by the signer transition path, not by replaying access approval.
-		const userRequestedAddressChange = accessReply.requestAccessToAddress !== accessReply.originalRequestAccessToAddress
+		const requestedEntry = pendingAccessRequest.requestAccessToAddress
+		const originalEntry = pendingAccessRequest.originalRequestAccessToAddress
+		const pendingEntryChanged = requestedEntry === undefined || originalEntry === undefined
+			? requestedEntry !== originalEntry
+			: requestedEntry.address !== originalEntry.address
+				|| requestedEntry.type !== originalEntry.type
+				|| !doAddressBookChainIdsMatch(requestedEntry.chainId, originalEntry.chainId)
+		const userRequestedAddressChange = accessReply.requestAccessToAddress !== accessReply.originalRequestAccessToAddress || pendingEntryChanged
 		const replyCompletesAccountRequest = request !== undefined && isAccountConnectionMethod(request.method)
 		const shouldPromptForFollowUpAccesses = !replyCompletesAccountRequest
 		promptForFollowUpAccesses = shouldPromptForFollowUpAccesses
@@ -482,7 +488,7 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 		const applyAccessReply = async () => {
 			let approvedAddressSelection
 			if (accessReply.userReply === 'Approved' && accessReply.requestAccessToAddress !== undefined) {
-				approvedAddressSelection = await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress)
+				approvedAddressSelection = await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress, 'pendingEntry')
 			}
 			if (!userRequestedAddressChange) {
 				await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, false)
@@ -492,7 +498,7 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 			await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, false)
 			const settings = await getSettings()
 			const signerAddress = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts[0]
-			const selection = approvedAddressSelection ?? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress)
+			const selection = approvedAddressSelection ?? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress, 'pendingEntry')
 			await activateUserSelectedAddress(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, selection, {
 				simulationMode: settings.simulationMode,
 				signerAddress,
@@ -533,7 +539,7 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 		const pendingAccessRequest = previousPendingAccessRequests.find((request) => request.accessRequestId === message.data.accessRequestId)
 		if (pendingAccessRequest === undefined) throw new Error('Access request missing!')
 		const explicitlyRequestedSelection = message.method === 'popup_interceptorAccessChangeAddress'
-			? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, message.data.newActiveAddress)
+			? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, message.data.newActiveAddress, 'explicitSelection')
 			: undefined
 		async function getProposedSelection() {
 			if (message.method === 'popup_interceptorAccessRefresh') {
@@ -570,15 +576,18 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 	return await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getAccessDialogActiveAddresses(), pendingAccessRequests: await withCurrentSignerStates(newRequests.current) } })
 }
 
-async function getAllowedAddressSelectionForAccessRequest(pendingAccessRequest: PendingAccessRequest, address: bigint | 'signer') {
+async function getAllowedAddressSelectionForAccessRequest(pendingAccessRequest: PendingAccessRequest, address: bigint | 'signer', selectionSource: 'explicitSelection' | 'pendingEntry') {
 	const settings = await getSettings()
 	const simulationMode = pendingAccessRequest.simulationMode && settings.simulationMode
 	const signerAccounts = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts
 	const activeAddresses = await getActiveAddresses()
 	const requestedEntry = pendingAccessRequest.requestAccessToAddress
-	const selectableAddresses = includePersistedAddressBookEntry(activeAddresses, requestedEntry)
+	const selectableAddresses = selectionSource === 'pendingEntry'
+		? includePersistedAddressBookEntry(activeAddresses, requestedEntry)
+		: activeAddresses
 	// Access replies carry the approved address, while the pending entry preserves whether a same-address signing selection was explicitly a Safe.
-	const addressSelection = !simulationMode
+	const addressSelection = selectionSource === 'pendingEntry'
+		&& !simulationMode
 		&& address !== 'signer'
 		&& address === signerAccounts[0]
 		&& (requestedEntry?.address !== address || requestedEntry.type !== 'safe')

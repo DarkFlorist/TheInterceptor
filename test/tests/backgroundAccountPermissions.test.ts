@@ -158,6 +158,114 @@ describe('background eth_accounts', () => {
 		assert.equal((await getSettings()).activeSigningSafeAddress, undefined)
 	})
 
+	test('keeps a newly selected self-owned Safe distinct from its signer EOA in the access dialog', async () => {
+		installBrowserMock()
+		const {
+			changeSimulationMode,
+			getPendingAccessRequests,
+			requestAddressChange,
+			updatePendingAccessRequests,
+			updateTabState,
+			updateUserAddressBookEntries,
+		} = await loadModules()
+		const safeAndSignerAddress = 0x5151515151515151515151515151515151515151n
+		const originalAddress = 0x5252525252525252525252525252525252525252n
+		const originalEntry = { type: 'contact' as const, name: 'Original', address: originalAddress, entrySource: 'User' as const, useAsActiveAddress: true, askForAddressAccess: true }
+		const selfOwnedSafe = { type: 'safe' as const, name: 'Self-owned Safe', address: safeAndSignerAddress, chainId: 1n, entrySource: 'User' as const, useAsActiveAddress: true, safeSignerAddresses: [safeAndSignerAddress] }
+		const tabId = 196
+		const socket = { tabId, connectionName: 0n }
+		const website = { websiteOrigin: 'https://self-owned-safe.example', icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: false, activeSigningAddress: safeAndSignerAddress, activeSigningSafeAddress: undefined })
+		await updateUserAddressBookEntries(() => [originalEntry, selfOwnedSafe])
+		await updateTabState(tabId, (previousState) => ({ ...previousState, signerAccounts: [safeAndSignerAddress], activeSigningAddress: safeAndSignerAddress }))
+		await updatePendingAccessRequests(async () => [{
+			website,
+			requestAccessToAddress: originalEntry,
+			originalRequestAccessToAddress: originalEntry,
+			associatedAddresses: [],
+			signerAccounts: [safeAndSignerAddress],
+			signerName: 'MetaMask',
+			simulationMode: false,
+			popupOrTabId: { type: 'popup', id: 1 },
+			socket,
+			request: undefined,
+			activeAddress: originalAddress,
+			accessRequestId: 'self-owned-safe-selection',
+		}])
+
+		await requestAddressChange(new Map(), {
+			method: 'popup_interceptorAccessChangeAddress',
+			data: {
+				socket,
+				accessRequestId: 'self-owned-safe-selection',
+				website,
+				requestAccessToAddress: originalAddress,
+				newActiveAddress: safeAndSignerAddress,
+			},
+		})
+
+		assert.deepEqual((await getPendingAccessRequests())[0]?.requestAccessToAddress, selfOwnedSafe)
+	})
+
+	test('activates a self-owned Safe selected over its same-address signer EOA when access is approved', async () => {
+		installBrowserMock()
+		const {
+			changeSimulationMode,
+			getPendingAccessRequests,
+			getSettings,
+			requestAddressChange,
+			resolveInterceptorAccess,
+			updatePendingAccessRequests,
+			updateTabState,
+			updateUserAddressBookEntries,
+		} = await loadModules()
+		const address = 0x5353535353535353535353535353535353535353n
+		const signerEntry = { type: 'contact' as const, name: 'Signer', address, entrySource: 'User' as const, useAsActiveAddress: true, askForAddressAccess: true }
+		const selfOwnedSafe = { type: 'safe' as const, name: 'Self-owned Safe', address, chainId: 1n, entrySource: 'User' as const, useAsActiveAddress: true, safeSignerAddresses: [address] }
+		const tabId = 195
+		const socket = { tabId, connectionName: 0n }
+		const website = { websiteOrigin: 'https://same-address-safe.example', icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: false, activeSigningAddress: address, activeSigningSafeAddress: undefined })
+		await updateUserAddressBookEntries(() => [selfOwnedSafe])
+		await updateTabState(tabId, (previousState) => ({ ...previousState, signerAccounts: [address], activeSigningAddress: address }))
+		await updatePendingAccessRequests(async () => [{
+			website,
+			requestAccessToAddress: signerEntry,
+			originalRequestAccessToAddress: signerEntry,
+			associatedAddresses: [],
+			signerAccounts: [address],
+			signerName: 'MetaMask',
+			simulationMode: false,
+			popupOrTabId: { type: 'popup', id: 1 },
+			socket,
+			request: undefined,
+			activeAddress: address,
+			accessRequestId: 'same-address-safe-selection',
+		}])
+
+		await requestAddressChange(new Map(), {
+			method: 'popup_interceptorAccessChangeAddress',
+			data: {
+				socket,
+				accessRequestId: 'same-address-safe-selection',
+				website,
+				requestAccessToAddress: address,
+				newActiveAddress: address,
+			},
+		})
+		assert.deepEqual((await getPendingAccessRequests())[0]?.requestAccessToAddress, selfOwnedSafe)
+
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			userReply: 'Approved',
+			requestAccessToAddress: address,
+			originalRequestAccessToAddress: address,
+			accessRequestId: 'same-address-safe-selection',
+		}, noopPublishRpcConnectionStatus)
+
+		assert.equal((await getSettings()).activeSigningSafeAddress, address)
+	})
+
 	test('does not inherit wrong-chain address access policy during requests or access-dialog changes', async () => {
 		installBrowserMock()
 		const {
@@ -377,7 +485,7 @@ describe('background eth_accounts', () => {
 		const websiteOrigin = 'https://stale-safe.example'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const signerAddress = 0x4545454545454545454545454545454545454545n
-		const safeAddress = 0x4646464646464646464646464646464646464646n
+		const safeAddress = signerAddress
 		const formerOwner = 0x4747474747474747474747474747474747474747n
 		const socket = { tabId: 197, connectionName: 0n }
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: signerAddress, activeSigningSafeAddress: safeAddress })
@@ -399,7 +507,9 @@ describe('background eth_accounts', () => {
 		}))
 
 		const settings = await getSettings()
-		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, signerAddress)
+		const activeAddress = await getActiveAddress(settings, socket.tabId)
+		assert.equal(activeAddress?.address, signerAddress)
+		assert.notEqual(activeAddress?.type, 'safe')
 
 		const { port, messages } = createPort(socket.tabId)
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
@@ -887,7 +997,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: false }])
 	})
 
-	test('uses a cached signer account for address consent when active signing address is missing', async () => {
+	test('uses wallet metadata for cached signer address consent when a same-address Safe exists', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -896,6 +1006,7 @@ describe('background eth_accounts', () => {
 			setUseSignersAddressAsActiveAddress,
 			updateWebsiteAccess,
 			updateTabState,
+			updateUserAddressBookEntries,
 			getPendingAccessRequests,
 			getSettings,
 			resolveInterceptorAccess,
@@ -906,6 +1017,15 @@ describe('background eth_accounts', () => {
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
 		await setUseSignersAddressAsActiveAddress(false)
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: undefined }])
+		await updateUserAddressBookEntries(() => [{
+			type: 'safe',
+			name: 'Same-address Safe',
+			address: account,
+			chainId: 1n,
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			safeSignerAddresses: [account],
+		}])
 		await updateTabState(1, (previousState) => ({
 			...previousState,
 			signerAccounts: [account],
@@ -935,6 +1055,7 @@ describe('background eth_accounts', () => {
 		const pendingRequest = (await getPendingAccessRequests())[0]
 		if (pendingRequest === undefined) throw new Error('Missing address access request')
 		assert.equal(pendingRequest.requestAccessToAddress?.address, account)
+		assert.notEqual(pendingRequest.requestAccessToAddress?.type, 'safe')
 
 		await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			userReply: 'Approved',
@@ -959,7 +1080,7 @@ describe('background eth_accounts', () => {
 			getPendingAccessRequests,
 			getSettings,
 		} = await loadModules()
-		const { getActiveAddressEntry } = await import('../../app/ts/background/metadataUtils.js')
+		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
 		const firstWorkerAccess = await import('../../app/ts/background/windows/interceptorAccess.js?access-dialog-worker-before-restart')
 		const restartedWorkerAccess = await import('../../app/ts/background/windows/interceptorAccess.js?access-dialog-worker-after-restart')
 		const websiteOrigin = 'https://app.safe.global'
@@ -983,7 +1104,7 @@ describe('background eth_accounts', () => {
 			uniqueRequestIdentifier: { requestId: 111, requestSocket: socket },
 			method: 'eth_requestAccounts',
 		} as const
-		const requestAccessToAddress = await getActiveAddressEntry(account)
+		const requestAccessToAddress = await getActiveAddressEntryForChain(account, 1n)
 		const settings = await getSettings()
 
 		await firstWorkerAccess.requestAccessFromUser(

@@ -8,7 +8,7 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
 import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
-import { getActiveAddressEntryForChain } from './metadataUtils.js'
+import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { getActiveAddress } from './backgroundUtils.js'
 import { assertNever } from '../utils/typescript.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -357,7 +357,7 @@ async function discoverAccountRequestAddressContext(
 	const refreshedSettings = await getSettings()
 	const refreshedActiveAddress = await getActiveAddressForRequest(refreshedSettings, websiteTabConnections, socket.tabId)
 	if (refreshedActiveAddress !== undefined) return { settings: refreshedSettings, activeAddress: refreshedActiveAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
-	const firstSignerAddress = signerAccountsResult.accounts[0] === undefined ? undefined : await getActiveAddressEntryForChain(signerAccountsResult.accounts[0], refreshedSettings.activeRpcNetwork.chainId)
+	const firstSignerAddress = signerAccountsResult.accounts[0] === undefined ? undefined : await getWalletActiveAddressEntryForChain(signerAccountsResult.accounts[0], refreshedSettings.activeRpcNetwork.chainId)
 	return { settings: refreshedSettings, activeAddress: firstSignerAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
 }
 
@@ -449,7 +449,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		if (refreshedActiveAddress === undefined) {
 			const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 			if (signerStateToken !== undefined) {
-				const firstSignerAddress = await getActiveAddressEntryForChain(firstSignerAccount, refreshedSettings.activeRpcNetwork.chainId)
+				const firstSignerAddress = await getWalletActiveAddressEntryForChain(firstSignerAccount, refreshedSettings.activeRpcNetwork.chainId)
 				if (isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) refreshedActiveAddress = firstSignerAddress
 			}
 		}

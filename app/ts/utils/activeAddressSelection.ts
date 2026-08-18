@@ -20,6 +20,16 @@ export type SigningAddressSelection =
 	| { readonly type: 'walletAccount', readonly address: bigint }
 	| { readonly type: 'safe', readonly address: bigint }
 
+export function findActiveAddressBookEntryForChain(
+	activeAddresses: AddressBookEntries,
+	address: bigint,
+	activeChainId: bigint | undefined,
+	selectionType: 'any' | 'walletAccount',
+) {
+	const activeChainAddresses = activeChainId === undefined ? activeAddresses : getAddressBookEntriesForChainIdMorePreciseFirst(activeAddresses, activeChainId)
+	return activeChainAddresses.find((entry) => entry.address === address && (selectionType === 'any' || entry.type !== 'safe'))
+}
+
 /**
  * Resolves the effective address for the selected mode. An unavailable Safe
  * falls back to `walletSelectedAddress`; a wallet account remains the active
@@ -35,22 +45,21 @@ export function resolveActiveAddressForMode(
 	walletSelectedAddress: bigint | undefined,
 ): ModeActiveAddressResolution {
 	const configuredAddress = simulationMode ? activeSimulationAddress : selectedSigningAddress?.address
-	const activeChainAddresses = activeChainId === undefined ? activeAddresses : getAddressBookEntriesForChainIdMorePreciseFirst(activeAddresses, activeChainId)
 	if (!simulationMode) {
 		if (configuredAddress === undefined || selectedSigningAddress === undefined) return { activeAddress: undefined, activeAddressBookEntry: undefined, safeSigningMode: false }
 		if (selectedSigningAddress.type === 'walletAccount') {
-			const activeAddressBookEntry = activeChainAddresses.find((entry) => entry.address === configuredAddress && entry.type !== 'safe')
+			const activeAddressBookEntry = findActiveAddressBookEntryForChain(activeAddresses, configuredAddress, activeChainId, 'walletAccount')
 			return { activeAddress: configuredAddress, activeAddressBookEntry, safeSigningMode: false }
 		}
 		const activeSigningSafe = resolveSigningSafe(configuredAddress, activeChainId, signerAccounts, activeAddresses)
 		if (activeSigningSafe !== undefined) return { activeAddress: configuredAddress, activeAddressBookEntry: activeSigningSafe, safeSigningMode: true }
 		const activeAddress = walletSelectedAddress
 		if (activeAddress === undefined) return { activeAddress: undefined, activeAddressBookEntry: undefined, safeSigningMode: false }
-		const activeAddressBookEntry = activeChainAddresses.find((entry) => entry.address === activeAddress && entry.type !== 'safe')
+		const activeAddressBookEntry = findActiveAddressBookEntryForChain(activeAddresses, activeAddress, activeChainId, 'walletAccount')
 		return { activeAddress, activeAddressBookEntry, safeSigningMode: false }
 	}
 	if (configuredAddress === undefined) return { activeAddress: undefined, activeAddressBookEntry: undefined, safeSigningMode: false }
-	const activeAddressBookEntry = activeChainAddresses.find((entry) => entry.address === configuredAddress)
+	const activeAddressBookEntry = findActiveAddressBookEntryForChain(activeAddresses, configuredAddress, activeChainId, 'any')
 	const isSafeOnAnotherChain = simulationMode && activeAddressBookEntry === undefined
 		&& activeAddresses.some((entry) => entry.type === 'safe' && entry.address === configuredAddress)
 	if (isSafeOnAnotherChain) return { activeAddress: undefined, activeAddressBookEntry: undefined, safeSigningMode: false }

@@ -33,9 +33,12 @@ async function resolveConfiguredActiveAddress(settings: Settings, signerAccounts
 		walletSelectedAddress,
 	)
 	if (resolution.activeAddress === undefined) return { useConfiguredAddress: true, activeAddress: undefined }
+	const activeAddress = resolution.activeAddressBookEntry ?? (settings.simulationMode
+		? await getActiveAddressEntryForChain(resolution.activeAddress, settings.activeRpcNetwork.chainId)
+		: await getWalletActiveAddressEntryForChain(resolution.activeAddress, settings.activeRpcNetwork.chainId))
 	return {
 		useConfiguredAddress: true,
-		activeAddress: resolution.activeAddressBookEntry ?? await getActiveAddressEntryForChain(resolution.activeAddress, settings.activeRpcNetwork.chainId),
+		activeAddress,
 	}
 }
 
