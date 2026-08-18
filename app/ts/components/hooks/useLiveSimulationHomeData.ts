@@ -39,7 +39,8 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 	const activeAddresses = useSignal<AddressBookEntries>([])
 	const walletSelectedAddressBookEntry = useSignal<AddressBookEntry | undefined>(undefined)
 	const activeSimulationAddress = useSignal<bigint | undefined>(undefined)
-	const activeSigningAddress = useSignal<bigint | undefined>(undefined)
+	const activeSigningSafeAddress = useSignal<bigint | undefined>(undefined)
+	const displayedSigningAddress = useSignal<bigint | undefined>(undefined)
 	const useSignersAddressAsActiveAddress = useSignal<boolean>(false)
 	const simVisResults = useSignal<ResolvedSimulationResults>(PASSTHROUGH_STATE)
 	const websiteAccess = useSignal<WebsiteAccessArray | undefined>(undefined)
@@ -127,6 +128,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 		const updateHomePageSettings = (settings: Settings) => {
 			rpcNetwork.value = settings.activeRpcNetwork
 			activeSimulationAddress.value = settings.activeSimulationAddress
+			activeSigningSafeAddress.value = settings.activeSigningSafeAddress
 			useSignersAddressAsActiveAddress.value = settings.useSignersAddressAsActiveAddress
 			websiteAccess.value = settings.websiteAccess
 			simulationMode.value = settings.simulationMode
@@ -141,7 +143,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			activeAddresses.value = data.activeAddresses
 			hasSafeTransactionsToExport.value = data.hasSafeTransactionsToExport
 			walletSelectedAddressBookEntry.value = data.walletSelectedAddressBookEntry
-			activeSigningAddress.value = data.activeSigningAddressInThisTab
+			displayedSigningAddress.value = data.activeSigningAddressInThisTab
 			currentTabId.value = data.tabId
 			rpcEntries.value = data.rpcEntries
 			interceptorDisabled.value = data.interceptorDisabled
@@ -165,7 +167,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			if (homeDataSource === 'fresh') isFreshHomeDataLoaded.value = true
 			rpcEntries.value = data.rpcEntries
 			currentTabId.value = data.tabId
-			activeSigningAddress.value = data.activeSigningAddressInThisTab
+			displayedSigningAddress.value = data.activeSigningAddressInThisTab
 			activeAddresses.value = data.activeAddresses
 			walletSelectedAddressBookEntry.value = data.walletSelectedAddressBookEntry
 			interceptorDisabled.value = data.interceptorDisabled
@@ -233,7 +235,8 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 					return undefined
 				case 'popup_activeSigningAddressChanged': {
 					if (parsed.data.tabId !== currentTabId.value) return undefined
-					activeSigningAddress.value = parsed.data.activeSigningAddress
+					displayedSigningAddress.value = parsed.data.activeSigningAddress
+					activeSigningSafeAddress.value = parsed.data.activeSigningSafeAddress
 					return undefined
 				}
 				case 'popup_websiteIconChanged': {
@@ -287,7 +290,8 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 		activeAddresses,
 		walletSelectedAddressBookEntry,
 		activeSimulationAddress,
-		activeSigningAddress,
+		activeSigningSafeAddress,
+		displayedSigningAddress,
 		useSignersAddressAsActiveAddress,
 		simVisResults,
 		websiteAccess,

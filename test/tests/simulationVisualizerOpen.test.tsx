@@ -370,12 +370,15 @@ function createSimulatedCompleteVisualizedSimulation(serializableSettings: Setti
 function createStackHomePageUpdate(tabId: number, popupRefreshGeneration: number, iconReason: string, transactionIdentifiers: readonly bigint[] = [1n], numberOfAddressesMadeRich = 0, richList: readonly EnrichedRichListElement[] = []): UpdateHomePage {
 	const update = createHomePageUpdate(tabId, popupRefreshGeneration, iconReason, numberOfAddressesMadeRich, richList)
 	const safeAddress = 0x3000000000000000000000000000000000000003n
-	const serializableSettings = { ...createSerializableSettings(), activeSimulationAddress: safeAddress, simulationMode: false }
+	const safeOwnerAddress = 0x1000000000000000000000000000000000000001n
+	const serializableSettings = { ...createSerializableSettings(), activeSigningSafeAddress: safeAddress, simulationMode: false }
 	return {
 		...update,
 		data: {
 			...update.data,
-			activeAddresses: [{ type: 'safe', name: 'Test Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSimulationSignerAddress: 0x1000000000000000000000000000000000000001n }],
+			tabState: { ...update.data.tabState, signerConnected: true, signerAccounts: [safeOwnerAddress], activeSigningAddress: safeOwnerAddress },
+			activeSigningAddressInThisTab: safeAddress,
+			activeAddresses: [{ type: 'safe', name: 'Test Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSimulationSignerAddress: safeOwnerAddress, safeSignerAddresses: [safeOwnerAddress] }],
 			visualizedSimulatorState: createSimulatedCompleteVisualizedSimulation(serializableSettings, transactionIdentifiers, numberOfAddressesMadeRich),
 			settings: serializableSettings,
 			rpcEntries: [serializableSettings.activeRpcNetwork],
@@ -392,7 +395,8 @@ function createNonSafeStackHomePageUpdate(tabId: number, popupRefreshGeneration:
 		data: {
 			...update.data,
 			activeAddresses: [{ type: 'contact', name: 'Not a Safe', address: nonSafeAddress, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true }],
-			settings: { ...update.data.settings, activeSimulationAddress: nonSafeAddress },
+			activeSigningAddressInThisTab: nonSafeAddress,
+			settings: { ...update.data.settings, activeSigningSafeAddress: undefined },
 		},
 	}
 }
@@ -669,6 +673,33 @@ describe('simulation visualizer open replies', () => {
 			assert.equal(targetRow.textContent?.includes('Pending transaction'), true)
 			assert.equal(targetRow.textContent?.includes('Simulate delay'), false)
 			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), false)
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('stack visualizer uses the signing Safe as the visualized address in signing mode', async () => {
+		const dom = installDomMock()
+		const { listeners } = installBrowserMock()
+		const update = createStackHomePageUpdate(13, 1, 'Safe signing stack', [1n], 1)
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+
+			await act(() => {
+				listener({
+					role: 'all',
+					...serialize(UpdateHomePage, {
+						...update,
+						data: { ...update.data, makeCurrentAddressRich: true },
+					}),
+				}, {}, () => undefined)
+			})
+
+			assert.equal(collectElements(dom.document.body, 'p').some((paragraph) => paragraph.getAttribute?.('aria-label') === 'Address being made rich is Test Safe.'), true)
 		} finally {
 			dom.restore()
 		}
@@ -958,6 +989,7 @@ describe('simulation visualizer open replies', () => {
 			const update = createStackHomePageUpdate(23, 1, 'Stack tab')
 			const activeSafe = update.data.activeAddresses[0]
 			if (activeSafe?.type !== 'safe') throw new Error('Expected a Safe fixture')
+			const contactWithSafeAddress = { type: 'contact', name: 'Safe address contact', address: activeSafe.address, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true } as const
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createNonSafeStackHomePageUpdate(23, 2, 'Non-Safe stack tab')) }, {}, () => undefined)
@@ -967,13 +999,20 @@ describe('simulation visualizer open replies', () => {
 			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), false)
 
 			await act(() => {
-				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, popupRefreshGeneration: 3, data: { ...update.data, activeAddresses: [{ ...activeSafe, safeSimulationSignerAddress: undefined }], hasSafeTransactionsToExport: false } }) }, {}, () => undefined)
+				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, popupRefreshGeneration: 3, data: { ...update.data, activeAddresses: [contactWithSafeAddress, { ...activeSafe, safeSimulationSignerAddress: undefined }], hasSafeTransactionsToExport: false } }) }, {}, () => undefined)
 			})
 
 			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), true)
 			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), true)
 			assert.notEqual(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions').getAttribute?.('disabled'), null)
 			assert.equal(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions').getAttribute?.('title'), 'There are no Gnosis Safe proposals to export on the selected chain.')
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, popupRefreshGeneration: 4, data: { ...update.data, tabState: { ...update.data.tabState, signerAccounts: [0x9999999999999999999999999999999999999999n] } } }) }, {}, () => undefined)
+			})
+
+			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), false)
+			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), false)
 		} finally {
 			dom.restore()
 		}

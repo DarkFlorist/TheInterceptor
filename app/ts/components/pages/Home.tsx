@@ -11,7 +11,7 @@ import { requestPopupSafeContractState, sendPopupMessageToBackgroundPage, sendPo
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
-import { getSafeSigningEntry, getSafeSignerAddresses, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
+import { getSafeSignerAddresses, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon, ChevronIcon, OpenInNewIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { type Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
@@ -23,6 +23,7 @@ import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
 import { getSelectableActiveAddresses, getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
+import { useModeActiveAddress } from '../hooks/useModeActiveAddress.js'
 import { updateRichListAddress } from '../../utils/richList.js'
 import { CopySafeTransactionsButton } from '../subcomponents/CopySafeTransactionsButton.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
@@ -842,7 +843,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 				<TransactionsAndSignedMessages
 				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 				removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-				activeAddress = { param.activeSimulationAddress }
+				activeAddress = { param.visualizedAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
 				editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 				addressMetaData = { computedAddressBookEntries }
@@ -858,7 +859,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 					<TransactionsAndSignedMessages
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-						activeAddress = { param.activeSimulationAddress }
+						activeAddress = { param.visualizedAddress }
 						renameAddressCallBack = { param.renameAddressCallBack }
 						editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 						addressMetaData = { computedAddressBookEntries }
@@ -870,7 +871,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 						: <SimulationSummary
 							simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 							currentBlockNumber = { param.currentBlockNumber }
-							activeAddress = { param.activeSimulationAddress }
+							activeAddress = { param.visualizedAddress }
 							renameAddressCallBack = { param.renameAddressCallBack }
 							editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 							rpcConnectionStatus = { param.rpcConnectionStatus }
@@ -890,32 +891,17 @@ export function Home(param: HomeParams) {
 	const tabWebsite = useComputed(() => param.tabState.value?.website)
 	const disableResetUntilHomeDataLoaded = useComputed(() => disableReset.value || !param.isInitialHomeDataLoaded.value)
 
-	const activeSimulationAddress = useComputed(() => {
-		const address = param.activeSimulationAddress.value
-		if (address === undefined) return undefined
-		const matchingEntry = param.activeAddresses.value.find((entry) =>
-			entry.address === address && (entry.type !== 'safe' || entry.chainId === param.rpcNetwork.value?.chainId)
-		)
-		if (matchingEntry !== undefined) return matchingEntry
-		const isSafeOnAnotherChain = param.activeAddresses.value.some((entry) => entry.type === 'safe' && entry.address === address)
-		return isSafeOnAnotherChain ? undefined : getActiveAddressEntry(address, param.activeAddresses.value)
+	const modeActiveAddress = useModeActiveAddress(param)
+	const safeSigningMode = useComputed(() => modeActiveAddress.value.safeSigningMode)
+	const currentActiveAddress = useComputed(() => {
+		const resolution = modeActiveAddress.value
+		if (resolution.activeAddress === undefined) return undefined
+		return resolution.activeAddressBookEntry ?? getActiveAddressEntry(resolution.activeAddress, param.activeAddresses.value, param.rpcNetwork.value?.chainId)
 	})
-	const activeSigningAddress = useComputed(() =>
-		param.activeSigningAddress.value !== undefined ? getActiveAddressEntry(param.activeSigningAddress.value, param.activeAddresses.value) : undefined
-	)
-	const activeSafe = useComputed(() => getSafeSigningEntry(param.activeAddresses.value, {
-		simulationMode: param.simulationMode.value,
-		useSignersAddressAsActiveAddress: param.useSignersAddressAsActiveAddress.value,
-		activeSimulationAddress: param.activeSimulationAddress.value,
-		chainId: param.rpcNetwork.value?.chainId,
-	}))
-	const safeSigningMode = useComputed(() => activeSafe.value !== undefined)
-	const currentActiveAddress = useComputed(() =>
-		param.simulationMode.value || safeSigningMode.value ? activeSimulationAddress.value : activeSigningAddress.value
-	)
+	const visualizedAddress = useComputed(() => modeActiveAddress.value.activeAddress)
 
 	useEffect(() => {
-		if ((!param.simulationMode.value && !safeSigningMode.value) || activeSimulationAddress.value === undefined) {
+		if ((!param.simulationMode.value && !safeSigningMode.value) || currentActiveAddress.value === undefined) {
 			showPopupVisualisation.value = false
 			return
 		}
@@ -923,7 +909,7 @@ export function Home(param: HomeParams) {
 		return scheduleAfterPaint(() => {
 			showPopupVisualisation.value = true
 		})
-	}, [param.simulationMode.value, safeSigningMode.value, activeSimulationAddress.value])
+	}, [param.simulationMode.value, safeSigningMode.value, currentActiveAddress.value])
 
 	useSignalEffect(() => {
 		param.simVisResults.value
@@ -987,7 +973,7 @@ export function Home(param: HomeParams) {
 			isFreshHomeDataLoaded = { param.isFreshHomeDataLoaded }
 		/>
 
-		{ (param.simulationMode.value || safeSigningMode.value) && activeSimulationAddress.value !== undefined
+		{ (param.simulationMode.value || safeSigningMode.value) && currentActiveAddress.value !== undefined
 			? showPopupVisualisation.value
 				? <PopupVisualisation
 					simulationAndVisualisationResults = { param.simVisResults }
@@ -995,7 +981,7 @@ export function Home(param: HomeParams) {
 					disableReset = { disableResetUntilHomeDataLoaded }
 					resetSimulation = { resetSimulationAfterHomeDataLoaded }
 					currentBlockNumber = { param.currentBlockNumber }
-					activeSimulationAddress = { param.activeSimulationAddress }
+					visualizedAddress = { visualizedAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
 					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 					removedTransactionOrSignedMessages = { removedTransactionOrSignedMessages.value }

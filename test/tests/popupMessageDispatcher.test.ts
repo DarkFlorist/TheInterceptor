@@ -288,7 +288,7 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(importFailure?.method, 'popup_initiate_export_settings_reply')
 		if (importFailure?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected failed import broadcast.')
 		assert.equal(importFailure.data.success, false)
-		assert.equal(storageState.activeSimulationAddress, undefined)
+		assert.equal(storageState.independentActiveSimulationAddress, undefined)
 		assert.deepEqual(dynamicRuleUpdates, [])
 	})
 
@@ -336,7 +336,7 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(importSuccess.data.success, true)
 		assert.equal(messages[1]?.method, 'popup_settingsUpdated')
 		if (messages[1]?.method !== 'popup_settingsUpdated') throw new Error('Expected imported settings broadcast.')
-		assert.equal(messages[1].data.activeSimulationAddress, 2n)
+		assert.equal(messages[1].data.activeSimulationAddress, 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n)
 		assert.equal(messages[1].data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
 		assert.equal(messages[1].data.simulationMode, false)
 		assert.deepEqual(dynamicRuleUpdates, [{

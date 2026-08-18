@@ -394,8 +394,10 @@ async function main() {
 			const storedSettings = {
 				simulationMode: false,
 				useSignersAddressAsActiveAddress: false,
-				activeSimulationAddress: addressString(SAFE_ADDRESS),
+				independentActiveSimulationAddress: addressString(SAFE_ADDRESS),
 				activeSigningAddress: addressString(OWNER_ADDRESS),
+				activeSigningSafeAddress: addressString(SAFE_ADDRESS),
+				signingAddressPreferences: [{ signerAddress: addressString(OWNER_ADDRESS), selection: 'safe', safeAddress: addressString(SAFE_ADDRESS), chainId: '0x1' }],
 				activeRpcNetwork: testRpcNetwork,
 				userAddressBookEntriesV3: [{
 					type: 'safe',

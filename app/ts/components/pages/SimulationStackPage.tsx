@@ -2,7 +2,7 @@ import { Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals
 import type { JSX } from 'preact'
 import { requestPopupInterceptorSimulationInput, sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
-import { getSafeSigningEntry, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
+import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { EditEnsNamedHashWindowState, ModifyAddressWindowState, SimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { addressEditEntry } from '../ui-utils.js'
 import { ErrorBoundary, ErrorComponent, UnexpectedError } from '../subcomponents/Error.js'
@@ -29,6 +29,7 @@ import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { CopySafeTransactionsButton } from '../subcomponents/CopySafeTransactionsButton.js'
 import { Tooltip } from '../subcomponents/Tooltip.js'
 import { useCopyFeedback } from '../hooks/useCopyFeedback.js'
+import { useModeActiveAddress } from '../hooks/useModeActiveAddress.js'
 
 type ModalState =
 	{ page: 'modifyAddress', state: Signal<ModifyAddressWindowState> } |
@@ -44,12 +45,13 @@ function isEmptySimulation(simulationAndVisualisationResults: SimulationAndVisua
 function getMadeRichAddressBookEntries(
 	richList: readonly EnrichedRichListElement[],
 	makeCurrentAddressRich: boolean,
-	activeSimulationAddress: bigint | undefined,
+	activeAddress: bigint | undefined,
 	activeAddresses: AddressBookEntries,
+	activeChainId: bigint | undefined,
 ) {
 	const entries = richList.filter((element) => element.makingRich).map((element) => element.addressBookEntry)
-	if (!makeCurrentAddressRich || activeSimulationAddress === undefined || entries.some((entry) => entry.address === activeSimulationAddress)) return entries
-	return [...entries, getActiveAddressEntry(activeSimulationAddress, activeAddresses)]
+	if (!makeCurrentAddressRich || activeAddress === undefined || entries.some((entry) => entry.address === activeAddress)) return entries
+	return [...entries, getActiveAddressEntry(activeAddress, activeAddresses, activeChainId)]
 }
 
 function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSimulation, disableReset, showSafeSigningActions, hasSafeTransactionsToExport }: {
@@ -277,6 +279,8 @@ function scheduleStackTargetTimeout(callback: () => void, delayMs: number) {
 export function SimulationStackPage() {
 	const {
 		activeSimulationAddress,
+		activeSigningSafeAddress,
+		displayedSigningAddress,
 		activeAddresses,
 		simVisResults,
 		rpcNetwork,
@@ -292,7 +296,7 @@ export function SimulationStackPage() {
 		numberOfAddressesMadeRich,
 		hasSafeTransactionsToExport,
 		simulationMode,
-		useSignersAddressAsActiveAddress,
+		tabState,
 	} = useLiveSimulationHomeData({
 		answerMainPopupOpen: false,
 		answerSimulationDataConsumerOpen: true,
@@ -307,11 +311,14 @@ export function SimulationStackPage() {
 	const highlightedStackTargetId = useSignal<string | undefined>(undefined)
 	const handledStackTargetHash = useSignal<string | undefined>(undefined)
 	const addressMetaData = useComputed(() => simVisResults.value.kind === 'simulated' ? simVisResults.value.value.addressBookEntries : [])
+	const modeActiveAddress = useModeActiveAddress({ activeAddresses, simulationMode, activeSimulationAddress, activeSigningSafeAddress, displayedSigningAddress, rpcNetwork, tabState })
+	const visualizedAddress = useComputed(() => modeActiveAddress.value.activeAddress)
 	const madeRichAddressBookEntries = useComputed(() => getMadeRichAddressBookEntries(
 		fixedAddressRichList.value,
 		makeCurrentAddressRich.value,
-		activeSimulationAddress.value,
+		visualizedAddress.value,
 		activeAddresses.value,
+		rpcNetwork.value?.chainId,
 	))
 	const isEmpty = useComputed(() => {
 		if (numberOfAddressesMadeRich.value > 0) return false
@@ -319,12 +326,7 @@ export function SimulationStackPage() {
 		return isEmptySimulation(simVisResults.value.value)
 	})
 	// Safe import and copy are signing-mode controls: intentionally hide both unless a Safe is the active account on this chain.
-	const showSafeSigningActions = useComputed(() => getSafeSigningEntry(activeAddresses.value, {
-		simulationMode: simulationMode.value,
-		useSignersAddressAsActiveAddress: useSignersAddressAsActiveAddress.value,
-		activeSimulationAddress: activeSimulationAddress.value,
-		chainId: rpcNetwork.value?.chainId,
-	}) !== undefined)
+	const showSafeSigningActions = useComputed(() => modeActiveAddress.value.safeSigningMode)
 
 	useSignalEffect(() => {
 		simVisResults.value
@@ -442,7 +444,7 @@ export function SimulationStackPage() {
 							<TransactionsAndSignedMessages
 								simulationAndVisualisationResults = { simVisResults }
 								removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
-								activeAddress = { activeSimulationAddress }
+								activeAddress = { visualizedAddress }
 								renameAddressCallBack = { renameAddressCallBack }
 								editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 								addressMetaData = { addressMetaData }
@@ -451,7 +453,7 @@ export function SimulationStackPage() {
 							<SimulationSummary
 								simulationAndVisualisationResults = { simVisResults }
 								currentBlockNumber = { currentBlockNumber }
-								activeAddress = { activeSimulationAddress }
+								activeAddress = { visualizedAddress }
 								renameAddressCallBack = { renameAddressCallBack }
 								editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 								rpcConnectionStatus = { rpcConnectionStatus }
@@ -469,7 +471,7 @@ export function SimulationStackPage() {
 						setActiveAddressAndInformAboutIt = { undefined }
 						modifyAddressWindowState = { modalState.value.state }
 						close = { () => { modalState.value = { page: 'noModal' } } }
-						activeAddress = { activeSimulationAddress.value }
+						activeAddress = { visualizedAddress.value }
 						rpcEntries = { rpcEntries }
 					/>
 				</ErrorBoundary>

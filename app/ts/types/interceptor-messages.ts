@@ -613,6 +613,7 @@ const InterceptorAccessDialog = funtypes.ReadonlyObject({
 export type Settings = funtypes.Static<typeof Settings>
 export const Settings = funtypes.ReadonlyObject({
 	activeSimulationAddress: OptionalEthereumAddress,
+	activeSigningSafeAddress: OptionalEthereumAddress,
 	activeRpcNetwork: RpcNetwork,
 	openedPage: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
@@ -671,6 +672,7 @@ const ActiveSigningAddressChanged = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		tabId: funtypes.Number,
 		activeSigningAddress: OptionalEthereumAddress,
+		activeSigningSafeAddress: OptionalEthereumAddress,
 	})
 })
 

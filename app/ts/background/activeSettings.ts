@@ -10,7 +10,7 @@ import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { changeSimulationMode, getSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
-import { getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, promoteRpcAsPrimary, updateTransactionState } from './storageVariables.js'
+import { promoteRpcAsPrimary, updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 
@@ -36,6 +36,7 @@ export async function changeActiveAddressAndChain(
 	change: {
 		simulationMode: boolean,
 		activeAddress?: bigint,
+		signingAddressSelection?: 'signer' | 'safe',
 		rpcNetwork?: RpcNetwork,
 		promptForAccessesIfNeeded?: boolean,
 	},
@@ -50,24 +51,12 @@ export async function changeActiveAddressAndChain(
 			...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
 		})
 	} else {
-		const activeChainId = change.rpcNetwork?.chainId ?? (await getSettings()).activeRpcNetwork.chainId
-		const [allEntries, activeChainEntries] = await Promise.all([
-			getUserAddressBookEntries(),
-			getUserAddressBookEntriesForChainIdMorePreciseFirst(activeChainId),
-		])
-		const selectedSafe = change.activeAddress === undefined
-			? undefined
-			: allEntries.find((entry) => entry.type === 'safe' && entry.address === change.activeAddress)
-		const safeEntryOnActiveChain = change.activeAddress === undefined
-			? undefined
-			: activeChainEntries.find((entry) => entry.address === change.activeAddress && entry.type === 'safe')
+		if ('activeAddress' in change && change.signingAddressSelection === undefined) throw new Error('Signing address changes must identify whether the selection is the signer or a Safe.')
+		const selectsSafe = change.signingAddressSelection === 'safe'
 		await changeSimulationMode({
 			simulationMode: change.simulationMode,
-			...(selectedSafe === undefined && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
-			...(selectedSafe !== undefined && safeEntryOnActiveChain === undefined ? { activeSigningAddress: undefined } : {}),
-			...(safeEntryOnActiveChain !== undefined
-				? { activeSimulationAddress: safeEntryOnActiveChain.address }
-				: change.activeAddress !== undefined ? { activeSimulationAddress: undefined } : {}),
+			...(!selectsSafe && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
+			...('activeAddress' in change ? { activeSigningSafeAddress: selectsSafe ? change.activeAddress : undefined } : {}),
 			...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
 		})
 	}
@@ -107,10 +96,13 @@ export async function activateAddressSelection(
 	},
 ) {
 	const useSignerAddress = selection?.type === 'signer' || (!options.simulationMode && selection === undefined)
-	await setUseSignersAddressAsActiveAddress(useSignerAddress, useSignerAddress ? selection?.type === 'signer' ? selection.address : options.signerAddress : undefined)
+	if (options.simulationMode) {
+		await setUseSignersAddressAsActiveAddress(useSignerAddress, useSignerAddress ? selection?.type === 'signer' ? selection.address : options.signerAddress : undefined)
+	}
 	await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 		simulationMode: options.simulationMode,
 		activeAddress: selection?.type === 'signer' ? selection.address : selection?.entry.address,
+		...(!options.simulationMode ? { signingAddressSelection: selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? 'safe' as const : 'signer' as const } : {}),
 		...(options.rpcNetwork === undefined ? {} : { rpcNetwork: options.rpcNetwork }),
 		...(options.promptForAccessesIfNeeded === undefined ? {} : { promptForAccessesIfNeeded: options.promptForAccessesIfNeeded }),
 	})
