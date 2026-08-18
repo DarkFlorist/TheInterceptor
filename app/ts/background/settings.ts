@@ -174,17 +174,33 @@ export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsAct
 	})
 }
 
-export async function changeSimulationMode(changes: { simulationMode: boolean, rpcNetwork?: RpcNetwork, activeSimulationAddress?: EthereumAddress, activeSigningAddress?: EthereumAddress, activeSigningSafeAddress?: EthereumAddress, signingAddressPreferences?: SigningAddressPreferences }) {
-	const storageUpdate = {
+type SimulationModeChanges = {
+	readonly simulationMode: boolean
+	readonly rpcNetwork?: RpcNetwork
+	readonly activeSimulationAddress?: EthereumAddress
+	readonly activeSigningAddress?: EthereumAddress
+	readonly activeSigningSafeAddress?: EthereumAddress
+}
+
+function getSimulationModeStorageUpdate(changes: SimulationModeChanges) {
+	return {
 		simulationMode: changes.simulationMode,
 		...changes.rpcNetwork ? { activeRpcNetwork: changes.rpcNetwork }: {},
 		...'activeSimulationAddress' in changes ? { independentActiveSimulationAddress: changes.activeSimulationAddress } : {},
 		...'activeSigningAddress' in changes ? { activeSigningAddress: changes.activeSigningAddress }: {},
 		...'activeSigningSafeAddress' in changes ? { activeSigningSafeAddress: changes.activeSigningSafeAddress }: {},
-		...'signingAddressPreferences' in changes ? { signingAddressPreferences: changes.signingAddressPreferences }: {},
 	}
-	if (!('signingAddressPreferences' in changes)) return await browserStorageLocalSet(storageUpdate)
-	return await signingAddressPreferencesSemaphore.execute(async () => await browserStorageLocalSet(storageUpdate))
+}
+
+export async function changeSimulationMode(changes: SimulationModeChanges) {
+	return await browserStorageLocalSet(getSimulationModeStorageUpdate(changes))
+}
+
+async function replaceModeAndSigningPreferencesForImport(changes: SimulationModeChanges, signingAddressPreferences: SigningAddressPreferences) {
+	return await signingAddressPreferencesSemaphore.execute(async () => await browserStorageLocalSet({
+		...getSimulationModeStorageUpdate(changes),
+		signingAddressPreferences,
+	}))
 }
 
 const websiteAccessSemaphore = new Semaphore(1)
@@ -263,23 +279,21 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 		await updateUserAddressBookEntries(() => exportedSetings.settings.addressBookEntries)
 	}
 	if (exportedSetings.version === '1.0') {
-		await changeSimulationMode({
+		await replaceModeAndSigningPreferencesForImport({
 			simulationMode: exportedSetings.settings.simulationMode,
 			rpcNetwork: defaultRpcs[0],
 			activeSimulationAddress: defaultActiveAddress,
 			activeSigningAddress: undefined,
 			activeSigningSafeAddress: undefined,
-			signingAddressPreferences: [],
-		})
+		}, [])
 	} else {
-		await changeSimulationMode({
+		await replaceModeAndSigningPreferencesForImport({
 			simulationMode: exportedSetings.settings.simulationMode,
 			rpcNetwork: exportedSetings.settings.rpcNetwork,
 			activeSimulationAddress: exportedSetings.version === '1.5' ? exportedSetings.settings.activeSimulationAddress : defaultActiveAddress,
 			activeSigningAddress: undefined,
 			activeSigningSafeAddress: exportedSetings.version === '1.5' ? exportedSetings.settings.activeSigningSafeAddress : undefined,
-			signingAddressPreferences: exportedSetings.version === '1.5' ? exportedSetings.settings.signingAddressPreferences : [],
-		})
+		}, exportedSetings.version === '1.5' ? exportedSetings.settings.signingAddressPreferences : [])
 	}
 	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
 	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
