@@ -7,7 +7,7 @@ import { getAssociatedAddresses, persistWebsiteAccessChange, updateWebsiteApprov
 import { handleInterceptedRequest, refuseAccess } from '../background.js'
 import { activateUserSelectedAddress } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
-import { getActiveAddressEntry, getActiveAddresses } from '../metadataUtils.js'
+import { getActiveAddressEntryForChain, getActiveAddresses } from '../metadataUtils.js'
 import { getSettings } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
@@ -149,10 +149,10 @@ export async function resolveInterceptorAccess(ethereum: EthereumClientService, 
 	await withSuppressedUnscopedConnectionEventsForSocketAsync(resolution.replayRequestSocket, replayPendingRequests)
 }
 
-export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray): Promise<AddressBookEntries> {
+export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray, chainId: bigint): Promise<AddressBookEntries> {
 	const addresses = websiteAccess.flatMap((x) => x.addressAccess === undefined ? [] : x.addressAccess?.map((addr) => addr.address))
 	const addressSet = new Set(addresses)
-	return await Promise.all(Array.from(addressSet).map((x) => getActiveAddressEntry(x)))
+	return await Promise.all(Array.from(addressSet).map((x) => getActiveAddressEntryForChain(x, chainId)))
 }
 
 export function filterAccessDialogAddressesForChain(activeAddresses: AddressBookEntries, chainId: bigint) {
@@ -288,7 +288,7 @@ export async function requestAccessFromUser(
 	request: InterceptedRequest,
 	requestAccessToAddress: AddressBookEntry | undefined,
 	settings: Settings,
-	activeAddress: bigint | undefined,
+	activeAddressEntry: AddressBookEntry | undefined,
 	publishRpcConnectionStatus: PublishRpcConnectionStatus,
 ): Promise<void>
 export async function requestAccessFromUser(
@@ -301,7 +301,7 @@ export async function requestAccessFromUser(
 	request: undefined,
 	requestAccessToAddress: AddressBookEntry | undefined,
 	settings: Settings,
-	activeAddress: bigint | undefined,
+	activeAddressEntry: AddressBookEntry | undefined,
 	publishRpcConnectionStatus: undefined,
 ): Promise<void>
 export async function requestAccessFromUser(
@@ -314,11 +314,10 @@ export async function requestAccessFromUser(
 	request: InterceptedRequest | undefined,
 	requestAccessToAddress: AddressBookEntry | undefined,
 	settings: Settings,
-	activeAddress: bigint | undefined,
+	activeAddressEntry: AddressBookEntry | undefined,
 	publishRpcConnectionStatus: PublishRpcConnectionStatus | undefined,
 ) {
 	// check if we need to ask address access or not. If address is put to never need to have address specific permision, we don't need to ask for it
-	const activeAddressEntry = activeAddress !== undefined ? await getActiveAddressEntry(activeAddress) : activeAddress
 	const askForAddressAccess = requestAccessToAddress !== undefined && requestAccessToAddress.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
 	const verifyAccessForCurrentRequest = (currentSettings: Settings) => {
@@ -411,7 +410,7 @@ export async function requestAccessFromUser(
 			signerAccounts: tabState.signerAccounts,
 			signerName: tabState.signerName,
 			simulationMode: settings.simulationMode,
-			activeAddress: activeAddress,
+			activeAddress: activeAddressEntry?.address,
 		}
 
 		const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
@@ -551,8 +550,10 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 
 		const proposedAddress = await getProposedAddress()
 		const settings = await getSettings()
-		const newActiveAddress = proposedAddress === undefined ? message.data.requestAccessToAddress : proposedAddress
-		const requestAccessToAddress = await getActiveAddressEntry(newActiveAddress)
+		const requestAccessToAddress = proposedAddress === undefined
+			? pendingAccessRequest.requestAccessToAddress
+			: await getActiveAddressEntryForChain(proposedAddress, settings.activeRpcNetwork.chainId)
+		if (requestAccessToAddress === undefined) throw new Error('Access request has no address to refresh')
 		const associatedAddresses = await getAssociatedAddresses(settings, message.data.website.websiteOrigin, requestAccessToAddress)
 		return previousPendingAccessRequests.map((request) => {
 			if (request.accessRequestId === message.data.accessRequestId) return { ...request, associatedAddresses, requestAccessToAddress }

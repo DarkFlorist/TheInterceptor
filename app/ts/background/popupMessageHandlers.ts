@@ -13,7 +13,7 @@ import { updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
-import { getActiveAddressEntry, getActiveAddresses, identifyAddress } from './metadataUtils.js'
+import { getActiveAddressEntryForChain, getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState } from '../types/visualizer-types.js'
@@ -1082,7 +1082,7 @@ export const requestSimulationMode = async () => ({ method: 'popup_requestSimula
 
 export const requestLatestUnexpectedError = async () => ({ method: 'popup_requestLatestUnexpectedError' as const, latestUnexpectedError: await getLatestUnexpectedError() })
 
-async function getCachedRichData() {
+async function getCachedRichData(chainId: bigint) {
 	const [makeCurrentAddressRich, fixedAddressRichList] = await Promise.all([
 		getMakeCurrentAddressRich(),
 		getFixedAddressRichList(),
@@ -1090,7 +1090,7 @@ async function getCachedRichData() {
 	return {
 		method: 'popup_requestMakeMeRichData' as const,
 		richList: await Promise.all(fixedAddressRichList.map(async(element) => (
-			{ ...element, addressBookEntry: await getActiveAddressEntry(element.address) }
+			{ ...element, addressBookEntry: await getActiveAddressEntryForChain(element.address, chainId) }
 		))),
 		makeCurrentAddressRich,
 	}
@@ -1127,21 +1127,22 @@ async function buildHomePageUpdate(
 	const richDataPromise = silenceChromeUnCaughtPromise(
 		richDataSource === 'fresh'
 			? requestMakeMeRichList(ethereum, requestAbortController)
-			: getCachedRichData()
+			: settingsPromise.then(async (currentSettings) => await getCachedRichData(currentSettings.activeRpcNetwork.chainId))
 	)
 	const hasSafeTransactionsToExportPromise = silenceChromeUnCaughtPromise(getSafeTransactionStacks().then((stacks) => stacks.some((stack) =>
 		stack.chainId === ethereum.getChainId() && stack.transactions.length > 0
 	)))
 	const tabId = await getLastKnownCurrentTabId()
 	const tabStatePromise = silenceChromeUnCaughtPromise(tabId === undefined ? getTabState(-1) : getTabState(tabId))
-	const settings = await settingsPromise
+	let settings = await settingsPromise
 	let tabState = await tabStatePromise
 	tabState = await refreshSignerAccountsForTabIfNeeded(websiteTabConnections, tabId, tabState, shouldRefreshSignerAccounts)
+	if (shouldRefreshSignerAccounts) settings = await getSettings()
 	const activeSigningAddress = tabId === undefined ? undefined : (await getActiveAddressForCurrentPopupSignerState(settings, websiteTabConnections, tabId))?.address
 	const walletSelectedAddressBookEntry = await getWalletSelectedAddressBookEntry(tabState, settings.activeRpcNetwork.chainId)
 	const interceptorDisabled = isInterceptorDisabledForWebsite(settings, tabState.website?.websiteOrigin)
 	const richData = await richDataPromise
-	const websiteAccessAddressMetadata = includeWebsiteAccessAddressMetadata ? await getAddressMetadataForAccess(settings.websiteAccess) : []
+	const websiteAccessAddressMetadata = includeWebsiteAccessAddressMetadata ? await getAddressMetadataForAccess(settings.websiteAccess, settings.activeRpcNetwork.chainId) : []
 	return {
 		method: 'popup_UpdateHomePage' as const,
 		homeDataSource: richDataSource,

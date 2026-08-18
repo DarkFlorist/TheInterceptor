@@ -11,7 +11,7 @@ import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { changeSimulationMode, getSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
 import { acknowledgeActiveAddressSelectionResetNotice } from './activeAddressSelectionResetNotice.js'
-import { getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, promoteRpcAsPrimary, updateTransactionState } from './storageVariables.js'
+import { getUserAddressBookEntriesForChainIdMorePreciseFirst, promoteRpcAsPrimary, updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 
@@ -37,6 +37,7 @@ export async function changeActiveAddressAndChain(
 	change: {
 		simulationMode: boolean,
 		activeAddress?: bigint,
+		signingAddressSelection?: 'signer' | 'safe',
 		rpcNetwork?: RpcNetwork,
 		promptForAccessesIfNeeded?: boolean,
 	},
@@ -52,21 +53,15 @@ export async function changeActiveAddressAndChain(
 		})
 	} else {
 		const activeChainId = change.rpcNetwork?.chainId ?? (await getSettings()).activeRpcNetwork.chainId
-		const [allEntries, activeChainEntries] = await Promise.all([
-			getUserAddressBookEntries(),
-			getUserAddressBookEntriesForChainIdMorePreciseFirst(activeChainId),
-		])
-		const selectedSafe = change.activeAddress === undefined
-			? undefined
-			: allEntries.find((entry) => entry.type === 'safe' && entry.address === change.activeAddress)
-		const safeEntryOnActiveChain = change.activeAddress === undefined
+		const activeChainEntries = change.signingAddressSelection === undefined ? await getUserAddressBookEntriesForChainIdMorePreciseFirst(activeChainId) : []
+		const inferredSafeEntryOnActiveChain = change.activeAddress === undefined
 			? undefined
 			: activeChainEntries.find((entry) => entry.address === change.activeAddress && entry.type === 'safe')
+		const selectsSafe = change.signingAddressSelection === 'safe' || (change.signingAddressSelection === undefined && inferredSafeEntryOnActiveChain !== undefined)
 		await changeSimulationMode({
 			simulationMode: change.simulationMode,
-			...(selectedSafe === undefined && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
-			...(selectedSafe !== undefined && safeEntryOnActiveChain === undefined ? { activeSigningAddress: undefined } : {}),
-			...('activeAddress' in change ? { activeSigningSafeAddress: safeEntryOnActiveChain?.address } : {}),
+			...(!selectsSafe && 'activeAddress' in change ? { activeSigningAddress: change.activeAddress } : {}),
+			...('activeAddress' in change ? { activeSigningSafeAddress: selectsSafe ? change.activeAddress : undefined } : {}),
 			...(change.rpcNetwork !== undefined ? { rpcNetwork: change.rpcNetwork } : {}),
 		})
 	}
@@ -112,6 +107,7 @@ export async function activateAddressSelection(
 	await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 		simulationMode: options.simulationMode,
 		activeAddress: selection?.type === 'signer' ? selection.address : selection?.entry.address,
+		...(!options.simulationMode ? { signingAddressSelection: selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? 'safe' as const : 'signer' as const } : {}),
 		...(options.rpcNetwork === undefined ? {} : { rpcNetwork: options.rpcNetwork }),
 		...(options.promptForAccessesIfNeeded === undefined ? {} : { promptForAccessesIfNeeded: options.promptForAccessesIfNeeded }),
 	})

@@ -8,7 +8,7 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
 import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
-import { getActiveAddressEntry } from './metadataUtils.js'
+import { getActiveAddressEntryForChain } from './metadataUtils.js'
 import { getActiveAddress } from './backgroundUtils.js'
 import { assertNever } from '../utils/typescript.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -27,6 +27,7 @@ import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { getWalletSelectedAccount, resolveActiveAddressForMode } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
+import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent } from './signerStateOwnership.js'
 import { handleWatchAssetRequest, initializeWatchAssetWindowListeners, processWatchAssetQueue } from './windows/watchAsset.js'
 import { getSafeModeRpcPolicyReply } from '../safe/safeRequestPolicy.js'
@@ -282,7 +283,7 @@ async function persistApprovedAccountsForAccountRequest(
 
 	const settings = await getSettings()
 	for (const account of accounts) {
-		const addressEntry = await getActiveAddressEntry(account)
+		const addressEntry = await getActiveAddressEntryForChain(account, settings.activeRpcNetwork.chainId)
 		const existingApprovalState = getWebsiteAddressAccessApprovalState(settings.websiteAccess, website.websiteOrigin, addressEntry)
 		if (addressEntry.askForAddressAccess === false) continue
 		if (existingApprovalState === 'hasAccess') continue
@@ -356,7 +357,7 @@ async function discoverAccountRequestAddressContext(
 	const refreshedSettings = await getSettings()
 	const refreshedActiveAddress = await getActiveAddressForRequest(refreshedSettings, websiteTabConnections, socket.tabId)
 	if (refreshedActiveAddress !== undefined) return { settings: refreshedSettings, activeAddress: refreshedActiveAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
-	const firstSignerAddress = signerAccountsResult.accounts[0] === undefined ? undefined : await getActiveAddressEntry(signerAccountsResult.accounts[0])
+	const firstSignerAddress = signerAccountsResult.accounts[0] === undefined ? undefined : await getActiveAddressEntryForChain(signerAccountsResult.accounts[0], refreshedSettings.activeRpcNetwork.chainId)
 	return { settings: refreshedSettings, activeAddress: firstSignerAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
 }
 
@@ -448,7 +449,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		if (refreshedActiveAddress === undefined) {
 			const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 			if (signerStateToken !== undefined) {
-				const firstSignerAddress = await getActiveAddressEntry(firstSignerAccount)
+				const firstSignerAddress = await getActiveAddressEntryForChain(firstSignerAccount, refreshedSettings.activeRpcNetwork.chainId)
 				if (isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) refreshedActiveAddress = firstSignerAddress
 			}
 		}
@@ -470,7 +471,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	}
 
 	switch (access) {
-		case 'askAccess': return await gateKeepRequestBehindAccessDialog(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, request, await websitePromise, activeAddress?.address, await getSettings(), publishRpcConnectionStatus)
+		case 'askAccess': return await gateKeepRequestBehindAccessDialog(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, request, await websitePromise, activeAddress, await getSettings(), publishRpcConnectionStatus)
 		case 'noAccess': return refuseAccess(websiteTabConnections, request)
 		case 'hasAccess': {
 			if (activeAddress === undefined) return refuseAccess(websiteTabConnections, request)
@@ -552,7 +553,6 @@ export function refuseAccess(websiteTabConnections: WebsiteTabConnections, reque
 	})
 }
 
-async function gateKeepRequestBehindAccessDialog(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: InterceptedRequest, website: Website, currentActiveAddress: bigint | undefined, settings: Settings, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
-	const activeAddress = currentActiveAddress !== undefined ? await getActiveAddressEntry(currentActiveAddress) : undefined
-	return await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, request, activeAddress, settings, currentActiveAddress, publishRpcConnectionStatus)
+async function gateKeepRequestBehindAccessDialog(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry | undefined, settings: Settings, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
+	return await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, request, activeAddress, settings, activeAddress, publishRpcConnectionStatus)
 }

@@ -235,7 +235,7 @@ export function App() {
 		displayedSigningAddress.value,
 		rpcNetwork.value?.chainId,
 		tabState.value?.signerAccounts ?? [],
-		displayedSigningAddress.value === undefined ? undefined : getWalletSelectedAccount(tabState.value),
+		getWalletSelectedAccount(tabState.value),
 	))
 	const selectableActiveAddresses = useComputed(() =>
 		getSelectableActiveAddresses(activeAddresses.value, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])

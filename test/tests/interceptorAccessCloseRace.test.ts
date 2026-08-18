@@ -179,7 +179,8 @@ describe('interceptor access close handling', () => {
 		const tokenPriceService = {} as never
 		const resetSimulationServices = (() => undefined) as never
 
-		await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, request, undefined, await getSettings(), account, async () => undefined)
+		const { getActiveAddressEntry } = await import('../../app/ts/background/metadataUtils.js')
+		await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, request, undefined, await getSettings(), await getActiveAddressEntry(account), async () => undefined)
 
 		const postedMessages = browserMock.postedMessages as Array<{ method?: string, result?: unknown, requestId?: number }>
 		assert.deepEqual(postedMessages.map((message) => message.method), ['accountsChanged', 'eth_accounts'])
@@ -388,7 +389,7 @@ describe('interceptor access close handling', () => {
 			undefined,
 			activeAddress,
 			settings,
-			account,
+			activeAddress,
 			undefined,
 		)
 		const firstRequest = (await getPendingAccessRequests())[0]

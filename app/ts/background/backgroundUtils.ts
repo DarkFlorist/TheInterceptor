@@ -2,8 +2,8 @@ import { MessageToPopup, type MessageToPopupPayload, PopupMessage, type PopupRea
 import { type WebsiteSocket, checkAndThrowRuntimeLastError } from '../utils/requests.js'
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
-import { getAddressBookEntriesForChainIdMorePreciseFirst, getAllTabStates, getTabState, getUserAddressBookEntries } from './storageVariables.js'
-import { getActiveAddressEntry } from './metadataUtils.js'
+import { getAllTabStates, getTabState, getUserAddressBookEntries } from './storageVariables.js'
+import { getActiveAddressEntryForChain } from './metadataUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
@@ -23,22 +23,19 @@ async function resolveConfiguredActiveAddress(settings: Settings, signerAccounts
 	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningSafeAddress
 	if ((settings.simulationMode && settings.useSignersAddressAsActiveAddress) || configuredAddress === undefined) return { useConfiguredAddress: false }
 	if (addressBookEntries === undefined) throw new Error('Address-book entries are required to resolve a configured active address.')
-	const chainEntries = getAddressBookEntriesForChainIdMorePreciseFirst(addressBookEntries, settings.activeRpcNetwork.chainId)
-	if (!settings.simulationMode) {
-		const signingResolution = resolveActiveAddressForMode(addressBookEntries, false, undefined, configuredAddress, settings.activeRpcNetwork.chainId, signerAccounts, walletSelectedAddress)
-		if (signingResolution.activeAddress === undefined) return { useConfiguredAddress: true, activeAddress: undefined }
-		return {
-			useConfiguredAddress: true,
-			activeAddress: signingResolution.activeAddressBookEntry ?? await getActiveAddressEntry(signingResolution.activeAddress),
-		}
-	}
-	const configuredEntry = chainEntries.find((entry) => entry.address === configuredAddress)
-	if (configuredEntry !== undefined) return { useConfiguredAddress: true, activeAddress: configuredEntry }
-	const isSafeOnAnotherChain = addressBookEntries
-		.some((entry) => entry.type === 'safe' && entry.address === configuredAddress)
+	const resolution = resolveActiveAddressForMode(
+		addressBookEntries,
+		settings.simulationMode,
+		settings.activeSimulationAddress,
+		settings.activeSigningSafeAddress,
+		settings.activeRpcNetwork.chainId,
+		signerAccounts,
+		walletSelectedAddress,
+	)
+	if (resolution.activeAddress === undefined) return { useConfiguredAddress: true, activeAddress: undefined }
 	return {
 		useConfiguredAddress: true,
-		activeAddress: isSafeOnAnotherChain ? undefined : await getActiveAddressEntry(configuredAddress),
+		activeAddress: resolution.activeAddressBookEntry ?? await getActiveAddressEntryForChain(resolution.activeAddress, settings.activeRpcNetwork.chainId),
 	}
 }
 
@@ -56,7 +53,7 @@ export async function getActiveAddress(settings: Settings, tabId: number) {
 	if (configuredAddress.useConfiguredAddress) return configuredAddress.activeAddress
 	const signingAddr = settings.simulationMode ? tabState.activeSigningAddress : walletSelectedAccount
 	if (signingAddr === undefined) return undefined
-	return await getActiveAddressEntry(signingAddr)
+	return await getActiveAddressEntryForChain(signingAddr, settings.activeRpcNetwork.chainId)
 }
 
 export async function getActiveOrFirstSignerAddress(settings: Settings, tabId: number) {
@@ -67,7 +64,7 @@ export async function getActiveOrFirstSignerAddress(settings: Settings, tabId: n
 	if (configuredAddress.useConfiguredAddress) return configuredAddress.activeAddress
 	const address = walletSelectedAccount
 	if (address === undefined) return undefined
-	return await getActiveAddressEntry(address)
+	return await getActiveAddressEntryForChain(address, settings.activeRpcNetwork.chainId)
 }
 
 export async function getActiveAddressesForAllTabs(settings: Settings) {
@@ -82,7 +79,7 @@ export async function getActiveAddressesForAllTabs(settings: Settings) {
 		const configuredAddress = await resolveConfiguredActiveAddress(settings, state.signerAccounts, walletSelectedAccount, addressBookEntries)
 		if (configuredAddress.useConfiguredAddress) return { tabId: state.tabId, activeAddress: configuredAddress.activeAddress }
 		const signingAddr = settings.simulationMode ? state.activeSigningAddress : walletSelectedAccount
-		return { tabId: state.tabId, activeAddress: signingAddr === undefined ? undefined : await getActiveAddressEntry(signingAddr) }
+		return { tabId: state.tabId, activeAddress: signingAddr === undefined ? undefined : await getActiveAddressEntryForChain(signingAddr, settings.activeRpcNetwork.chainId) }
 	}))
 }
 

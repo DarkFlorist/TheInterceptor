@@ -47,10 +47,11 @@ function getMadeRichAddressBookEntries(
 	makeCurrentAddressRich: boolean,
 	activeAddress: bigint | undefined,
 	activeAddresses: AddressBookEntries,
+	activeChainId: bigint | undefined,
 ) {
 	const entries = richList.filter((element) => element.makingRich).map((element) => element.addressBookEntry)
 	if (!makeCurrentAddressRich || activeAddress === undefined || entries.some((entry) => entry.address === activeAddress)) return entries
-	return [...entries, getActiveAddressEntry(activeAddress, activeAddresses)]
+	return [...entries, getActiveAddressEntry(activeAddress, activeAddresses, activeChainId)]
 }
 
 function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSimulation, disableReset, showSafeSigningActions, hasSafeTransactionsToExport }: {
@@ -316,7 +317,7 @@ export function SimulationStackPage() {
 		displayedSigningAddress.value,
 		rpcNetwork.value?.chainId,
 		tabState.value?.signerAccounts ?? [],
-		displayedSigningAddress.value === undefined ? undefined : getWalletSelectedAccount(tabState.value),
+		getWalletSelectedAccount(tabState.value),
 	))
 	const visualizedAddress = useComputed(() => modeActiveAddress.value.activeAddress)
 	const madeRichAddressBookEntries = useComputed(() => getMadeRichAddressBookEntries(
@@ -324,6 +325,7 @@ export function SimulationStackPage() {
 		makeCurrentAddressRich.value,
 		visualizedAddress.value,
 		activeAddresses.value,
+		rpcNetwork.value?.chainId,
 	))
 	const isEmpty = useComputed(() => {
 		if (numberOfAddressesMadeRich.value > 0) return false

@@ -3,6 +3,7 @@ import { describe, test } from 'bun:test'
 import { assertActiveAddressSelectionAllowed, getActiveAddressSelection, getOptimisticActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode, resolveActiveAddressForMode } from '../../app/ts/utils/activeAddressSelection.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
 import { requestActiveAddressChange } from '../../app/ts/components/activeAddressChange.js'
+import { getActiveAddressEntry } from '../../app/ts/components/subcomponents/address.js'
 
 const EOA_ADDRESS = 0x1000000000000000000000000000000000000001n
 const SAFE_ADDRESS = 0x2000000000000000000000000000000000000002n
@@ -62,6 +63,11 @@ describe('active address selection', () => {
 			activeAddressBookEntry: activeAddresses[0],
 			safeSigningMode: false,
 		})
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, true, OTHER_CHAIN_SAFE_ADDRESS, SAFE_ADDRESS, 1n, [EOA_ADDRESS], EOA_ADDRESS), {
+			activeAddress: undefined,
+			activeAddressBookEntry: undefined,
+			safeSigningMode: false,
+		})
 		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, false, EOA_ADDRESS, SAFE_ADDRESS, 1n, [EOA_ADDRESS], EOA_ADDRESS), {
 			activeAddress: SAFE_ADDRESS,
 			activeAddressBookEntry: activeAddresses[1],
@@ -74,6 +80,7 @@ describe('active address selection', () => {
 		})
 		for (const consumerSource of [appSource, homeSource, simulationStackPageSource]) {
 			assert.match(consumerSource, /resolveActiveAddressForMode\(/u)
+			assert.doesNotMatch(consumerSource, /displayedSigningAddress\.value === undefined \? undefined : getWalletSelectedAccount/u)
 		}
 		assert.doesNotMatch(appSource, /simulationMode\.value \? activeSimulationAddress\.value : displayedSigningAddress\.value/u)
 		assert.doesNotMatch(homeSource, /param\.simulationMode\.value \? param\.activeSimulationAddress : param\.displayedSigningAddress/u)
@@ -103,6 +110,46 @@ describe('active address selection', () => {
 			activeAddressBookEntry: undefined,
 			safeSigningMode: false,
 		})
+	})
+
+	test('does not fall back to the wallet account before a signing address is configured', () => {
+		assert.deepEqual(resolveActiveAddressForMode(activeAddresses, false, EOA_ADDRESS, undefined, 1n, [EOA_ADDRESS], EOA_ADDRESS), {
+			activeAddress: undefined,
+			activeAddressBookEntry: undefined,
+			safeSigningMode: false,
+		})
+	})
+
+	test('uses current-chain metadata instead of an earlier wrong-chain entry for the same address', () => {
+		const wrongChainEntry = { ...activeAddresses[0], name: 'Wrong-chain EOA', chainId: 10n, askForAddressAccess: false }
+		const currentChainEntry = { ...activeAddresses[0], name: 'Current-chain EOA', chainId: 1n, askForAddressAccess: true }
+		const duplicatedAddressEntries = [wrongChainEntry, currentChainEntry, ...activeAddresses.slice(1)]
+
+		assert.deepEqual(resolveActiveAddressForMode(duplicatedAddressEntries, true, EOA_ADDRESS, SAFE_ADDRESS, 1n, [EOA_ADDRESS], EOA_ADDRESS), {
+			activeAddress: EOA_ADDRESS,
+			activeAddressBookEntry: currentChainEntry,
+			safeSigningMode: false,
+		})
+		assert.deepEqual(resolveActiveAddressForMode(duplicatedAddressEntries, false, EOA_ADDRESS, SAFE_ADDRESS, 1n, [OTHER_CHAIN_SAFE_ADDRESS], EOA_ADDRESS), {
+			activeAddress: EOA_ADDRESS,
+			activeAddressBookEntry: currentChainEntry,
+			safeSigningMode: false,
+		})
+	})
+
+	test('uses unknown UI metadata instead of another chain\'s entry', () => {
+		const address = 0x6161616161616161616161616161616161616161n
+		const entry = getActiveAddressEntry(address, [{
+			type: 'contact',
+			name: 'Wrong-chain label',
+			address,
+			chainId: 10n,
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			askForAddressAccess: false,
+		}], 1n)
+		assert.notEqual(entry.name, 'Wrong-chain label')
+		assert.equal(entry.askForAddressAccess, true)
 	})
 
 	test('treats an owner wallet as connected while a Safe is the displayed signing account', () => {
@@ -233,6 +280,8 @@ describe('active address selection', () => {
 		assert.doesNotMatch(providerSigningSelectionSource, /resolveConfiguredSigningSafe/u)
 		assert.match(providerSigningSelectionSource, /getConfiguredSigningSafeForChain[\s\S]*?resolveSigningSafe\(/u)
 		assert.doesNotMatch(backgroundUtilsSource, /safeSignerAddresses/u)
+		assert.doesNotMatch(backgroundUtilsSource, /isSafeOnAnotherChain/u)
+		assert.doesNotMatch(backgroundUtilsSource, /chainEntries\.find/u)
 		assert.match(backgroundUtilsSource, /const addressBookEntries = await getConfiguredActiveAddressBookEntries\(settings\)[\s\S]*?tabStates\.map/u)
 		assert.doesNotMatch(backgroundUtilsSource, /tabStates\.map\(async \(state\) => \{[\s\S]*?getConfiguredActiveAddressBookEntries/u)
 	})

@@ -12,11 +12,13 @@ type RuntimeMessage = {
 		activeAddresses?: readonly { address: bigint }[]
 		hasSafeTransactionsToExport?: boolean
 		walletSelectedAddressBookEntry?: { address: bigint, name: string }
+		richList?: readonly { addressBookEntry: { name: string } }[]
 		rpcConnectionStatus?: {
 			retrying: boolean
 		}
 		settings?: {
 			simulationMode?: boolean
+			activeSigningSafeAddress?: bigint
 		}
 		interceptorDisabled?: boolean
 		visualizedSimulatorState?: unknown
@@ -289,7 +291,7 @@ describe('refreshHomeData', () => {
 	test('home data falls back to signer accounts for active address when activeSigningAddress is unset', async () => {
 		const browserMock = installBrowserMock()
 		const modules: TestModules = await loadModules()
-		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, setRpcConnectionStatus, requestNewHomeData, defaultActiveAddresses, defaultRpcs, websiteSocketToString, EthereumClientService } = modules
+		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, updateUserAddressBookEntries, setRpcConnectionStatus, requestNewHomeData, defaultActiveAddresses, defaultRpcs, websiteSocketToString, EthereumClientService } = modules
 
 		const [defaultAddress] = defaultActiveAddresses
 		if (defaultAddress === undefined) throw new Error('missing default address')
@@ -304,8 +306,12 @@ describe('refreshHomeData', () => {
 			activeRpcNetwork: rpcNetwork,
 			simulationMode: false,
 			makeCurrentAddressRich: false,
-			fixedAddressRichList: [],
+			fixedAddressRichList: [{ address: defaultAddress.address, makingRich: true, type: 'UserAdded' }],
 		})
+		await updateUserAddressBookEntries(() => [
+			{ type: 'contact', name: 'Wrong-chain rich address', address: defaultAddress.address, chainId: rpcNetwork.chainId + 1n, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
+			{ type: 'contact', name: 'Current-chain rich address', address: defaultAddress.address, chainId: rpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
+		])
 		await setRpcConnectionStatus({
 			isConnected: false,
 			lastConnnectionAttempt: new Date('2024-01-01T00:00:00.000Z'),
@@ -352,6 +358,7 @@ describe('refreshHomeData', () => {
 
 		const homeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage') as { data?: { activeSigningAddressInThisTab?: bigint, tabState?: { signerAccounts?: readonly string[] } } } | undefined
 		assert.equal(homeUpdate?.data?.activeSigningAddressInThisTab, signerAddress)
+		assert.equal(browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage')?.data?.richList?.[0]?.addressBookEntry.name, 'Current-chain rich address')
 		assert.equal(homeUpdate?.data?.tabState?.signerAccounts?.[0], '0x4444444444444444444444444444444444444444')
 	})
 
@@ -558,6 +565,7 @@ describe('refreshHomeData', () => {
 			browserStorageLocalSet,
 			saveCurrentTabId,
 			updateTabState,
+			updateUserAddressBookEntries,
 			requestNewHomeData,
 			defaultActiveAddresses,
 			defaultRpcs,
@@ -590,6 +598,16 @@ describe('refreshHomeData', () => {
 		}))
 
 		const signerAccount = 0x5555555555555555555555555555555555555555n
+		const signingSafe = 0x5656565656565656565656565656565656565656n
+		await updateUserAddressBookEntries(() => [{
+			type: 'safe',
+			name: 'Remembered Safe',
+			address: signingSafe,
+			chainId: rpcNetwork.chainId,
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			safeSignerAddresses: [signerAccount],
+		}])
 		await browserStorageLocalSet({
 			websiteAccess: [{
 				website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
@@ -602,16 +620,18 @@ describe('refreshHomeData', () => {
 		const { port } = createPort(socket.tabId, async (message) => {
 			if (message.method !== 'request_signer_to_eth_accounts') return
 			requestCount += 1
-			void updateTabState(socket.tabId, (previousState) => ({
-				...previousState,
-				signerAccounts: [signerAccount],
-				activeSigningAddress: signerAccount,
-			})).then(() => {
+			void (async () => {
+				await updateTabState(socket.tabId, (previousState) => ({
+					...previousState,
+					signerAccounts: [signerAccount],
+					activeSigningAddress: signerAccount,
+				}))
+				await browserStorageLocalSet({ activeSigningSafeAddress: signingSafe })
 				sendInternalWindowMessage({
 					method: 'window_signer_accounts_changed',
 					data: { socket, signerStateOwnerGeneration: 1, signerProviderGeneration: 1 },
 				})
-			})
+			})()
 		})
 		const websiteTabConnections = new Map([[socket.tabId, {
 			signerStateOwner: {
@@ -644,13 +664,15 @@ describe('refreshHomeData', () => {
 			ethereum.cleanup()
 		}
 
-		const homeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage') as { data?: { tabState?: { signerAccounts?: readonly string[] }, websiteAccessAddressMetadata?: readonly unknown[] } } | undefined
+		const homeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage') as { data?: { activeSigningAddressInThisTab?: bigint, settings?: { activeSigningSafeAddress?: bigint }, tabState?: { signerAccounts?: readonly string[] }, websiteAccessAddressMetadata?: readonly unknown[] } } | undefined
 		const updatedState = await getTabState(1)
 		const result = homeUpdate?.data?.tabState?.signerAccounts
 		assert.equal(requestCount, 1)
 		assert.equal(result?.[0], '0x5555555555555555555555555555555555555555')
 		assert.equal(homeUpdate?.data?.websiteAccessAddressMetadata?.length, 1)
 		assert.equal(updatedState.signerAccounts?.[0], signerAccount)
+		assert.equal(homeUpdate?.data?.activeSigningAddressInThisTab, signingSafe)
+		assert.equal(homeUpdate?.data?.settings?.activeSigningSafeAddress, signingSafe)
 	})
 
 	test('refresh path does not request signer accounts with no approved socket', async () => {

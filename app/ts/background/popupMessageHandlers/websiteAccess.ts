@@ -52,7 +52,7 @@ export async function disableInterceptor(ethereum: EthereumClientService, tokenP
 export async function retrieveWebsiteAccess(parsedRequest: RetrieveWebsiteAccess) {
 	const settings = await getSettings()
 	const websiteAccess = searchWebsiteAccess(parsedRequest.data.query, settings.websiteAccess)
-	const addressAccessMetadata = await getAddressMetadataForAccess(websiteAccess)
+	const addressAccessMetadata = await getAddressMetadataForAccess(websiteAccess, settings.activeRpcNetwork.chainId)
 	await sendPopupMessageToOpenWindows({ method: 'popup_retrieveWebsiteAccessReply', data: { websiteAccess, addressAccessMetadata } })
 }
 

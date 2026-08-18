@@ -106,6 +106,128 @@ describe('background eth_accounts', () => {
 		assert.equal((await getSettings()).activeSimulationAddress, originalAddress)
 	})
 
+	test('does not classify a signer EOA as a Safe from another chain', async () => {
+		const { readStoredValue } = installBrowserMock()
+		const {
+			changeActiveAddressAndChain,
+			activateAddressSelection,
+			changeSimulationMode,
+			getSettings,
+			updateUserAddressBookEntries,
+		} = await loadModules()
+		const signerAddress = 0x4141414141414141414141414141414141414141n
+		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined, activeSigningSafeAddress: undefined })
+		const activeChainId = (await getSettings()).activeRpcNetwork.chainId
+		await updateUserAddressBookEntries(() => [{
+			type: 'safe',
+			name: 'Other-chain Safe with signer address',
+			address: signerAddress,
+			chainId: activeChainId + 1n,
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			safeSignerAddresses: [],
+		}])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			simulationMode: false,
+			activeAddress: signerAddress,
+			promptForAccessesIfNeeded: false,
+		})
+
+		const settings = await getSettings()
+		assert.equal(readStoredValue('activeSigningAddress'), signerAddress)
+		assert.equal(settings.activeSigningSafeAddress, undefined)
+
+		await updateUserAddressBookEntries(() => [{
+			type: 'safe',
+			name: 'Current-chain Safe with signer address',
+			address: signerAddress,
+			chainId: activeChainId,
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			safeSignerAddresses: [signerAddress],
+		}])
+		await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, new Map(), { type: 'signer', address: signerAddress }, {
+			simulationMode: false,
+			signerAddress,
+			promptForAccessesIfNeeded: false,
+		})
+		assert.equal(readStoredValue('activeSigningAddress'), signerAddress)
+		assert.equal((await getSettings()).activeSigningSafeAddress, undefined)
+	})
+
+	test('does not inherit wrong-chain address access policy during requests or access-dialog changes', async () => {
+		installBrowserMock()
+		const {
+			changeSimulationMode,
+			getActiveAddress,
+			getPendingAccessRequests,
+			getAddressMetadataForAccess,
+			getSettings,
+			hasAddressAccess,
+			handleInterceptedRequest,
+			requestAddressChange,
+			updateUserAddressBookEntries,
+			updateWebsiteAccess,
+			websiteSocketToString,
+		} = await loadModules()
+		const activeAddress = 0x4242424242424242424242424242424242424242n
+		const websiteOrigin = 'https://chain-scoped-metadata.example'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress })
+		await updateUserAddressBookEntries(() => [
+			{ type: 'contact', name: 'Wrong-chain address', address: activeAddress, chainId: 10n, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false },
+		])
+
+		const activeAddressEntry = await getActiveAddress(await getSettings(), 198)
+		if (activeAddressEntry === undefined) throw new Error('Missing active simulation address metadata')
+		assert.notEqual(activeAddressEntry.name, 'Wrong-chain address')
+		assert.equal(activeAddressEntry.askForAddressAccess, true)
+		assert.equal(hasAddressAccess([{
+			website,
+			access: true,
+			addressAccess: [],
+		}], websiteOrigin, activeAddressEntry), 'askAccess')
+
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [] }])
+		const socket = { tabId: 198, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: true,
+			uniqueRequestIdentifier: { requestId: 42, requestSocket: socket },
+			method: 'eth_requestAccounts',
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		const pendingRequest = (await getPendingAccessRequests())[0]
+		if (pendingRequest === undefined) throw new Error('Missing current-chain address access request')
+		assert.notEqual(pendingRequest.requestAccessToAddress?.name, 'Wrong-chain address')
+		assert.equal(pendingRequest.associatedAddresses.some((entry) => entry.name === 'Wrong-chain address'), false)
+		assert.equal(messages.some((message) => message.method === 'eth_requestAccounts' && message.requestId === 42), false)
+		assert.equal((await getAddressMetadataForAccess((await getSettings()).websiteAccess, 1n))[0]?.name === 'Wrong-chain address', false)
+
+		await updateUserAddressBookEntries(() => [
+			{ type: 'contact', name: 'Wrong-chain address', address: activeAddress, chainId: 10n, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false },
+			{ type: 'contact', name: 'Current-chain address', address: activeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true },
+		])
+		await requestAddressChange(websiteTabConnections, {
+			method: 'popup_interceptorAccessChangeAddress',
+			data: {
+				socket,
+				accessRequestId: pendingRequest.accessRequestId,
+				website,
+				requestAccessToAddress: activeAddress,
+				newActiveAddress: activeAddress,
+			},
+		})
+		assert.equal((await getPendingAccessRequests())[0]?.requestAccessToAddress?.name, 'Current-chain address')
+	})
+
 	test('acknowledges the reset notice only after a successful simulation address selection', async () => {
 		installBrowserMock()
 		const {
@@ -873,7 +995,7 @@ describe('background eth_accounts', () => {
 			request,
 			requestAccessToAddress,
 			settings,
-			account,
+			requestAccessToAddress,
 			noopPublishRpcConnectionStatus,
 		)
 		await restartedWorkerAccess.requestAccessFromUser(
@@ -886,7 +1008,7 @@ describe('background eth_accounts', () => {
 			request,
 			requestAccessToAddress,
 			settings,
-			account,
+			requestAccessToAddress,
 			noopPublishRpcConnectionStatus,
 		)
 
