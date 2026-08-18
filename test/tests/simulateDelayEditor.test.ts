@@ -120,8 +120,7 @@ const resetStack = async () => {
 	delete mockBrowser.__storage.makeCurrentAddressRich
 	delete mockBrowser.__storage.fixedAddressRichList
 	delete mockBrowser.__storage.simulationMode
-	delete mockBrowser.__storage.activeSimulationAddress
-	delete mockBrowser.__storage.hasIndependentActiveSimulationAddress
+	delete mockBrowser.__storage.independentActiveSimulationAddress
 	delete mockBrowser.__storage.activeRpcNetwork
 }
 

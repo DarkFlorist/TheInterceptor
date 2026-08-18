@@ -10,7 +10,6 @@ import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { changeSimulationMode, getSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
-import { acknowledgeActiveAddressSelectionResetNotice } from './activeAddressSelectionResetNotice.js'
 import { promoteRpcAsPrimary, updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
@@ -135,7 +134,6 @@ export async function activateUserSelectedAddress(
 	},
 ) {
 	await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, selection, options)
-	if (options.simulationMode) await acknowledgeActiveAddressSelectionResetNotice()
 }
 
 export async function changeActiveRpc(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean, signerTabId: number | undefined) {

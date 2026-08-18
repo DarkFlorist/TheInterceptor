@@ -52,7 +52,7 @@ export const RichListElement = funtypes.ReadonlyObject({
 })
 
 // ReadonlyPartial drops a property whose serialized value represents `undefined`. These presence-aware alternatives preserve the distinction between "not stored" and "explicitly cleared", which independent address update paths rely on.
-const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSigningSafeAddress' | 'activeSimulationAddress') => funtypes.Union(
+const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSigningSafeAddress' | 'independentActiveSimulationAddress') => funtypes.Union(
 	funtypes.ReadonlyObject({ [propertyName]: EthereumAddressOrMissing })
 		.withConstraint((item) => hasOwnKey(item, propertyName)),
 	funtypes.ReadonlyPartial({ [propertyName]: funtypes.Unknown })
@@ -60,15 +60,13 @@ const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'ac
 )
 const OptionalActiveSigningAddressStorageProperty = presenceAwareOptionalAddress('activeSigningAddress')
 const OptionalActiveSigningSafeAddressStorageProperty = presenceAwareOptionalAddress('activeSigningSafeAddress')
-const OptionalActiveSimulationAddressStorageProperty = presenceAwareOptionalAddress('activeSimulationAddress')
+const OptionalIndependentActiveSimulationAddressStorageProperty = presenceAwareOptionalAddress('independentActiveSimulationAddress')
 const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	openedPageV2: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
 	websiteAccess: WebsiteAccessArray,
 	activeRpcNetwork: RpcNetwork,
 	simulationMode: funtypes.Boolean,
-	hasIndependentActiveSimulationAddress: funtypes.Boolean,
-	activeAddressSelectionResetNoticePending: funtypes.Boolean,
 	pendingInterceptorAccessRequests: PendingAccessRequests,
 	makeCurrentAddressRich: funtypes.Boolean,
 	chainChangeConfirmationPromise: funtypes.Union(funtypes.Undefined, PendingChainChangeConfirmationPromise),
@@ -98,7 +96,7 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	pendingWatchAssetRequests: funtypes.ReadonlyArray(StoredWatchAssetRequest),
 	popupRefreshGeneration: funtypes.Number,
 	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
-}), OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalActiveSimulationAddressStorageProperty)
+}), OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalIndependentActiveSimulationAddressStorageProperty)
 type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
 
@@ -106,9 +104,7 @@ type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
 const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('activeSigningAddress'),
 	funtypes.Literal('activeSigningSafeAddress'),
-	funtypes.Literal('activeSimulationAddress'),
-	funtypes.Literal('hasIndependentActiveSimulationAddress'),
-	funtypes.Literal('activeAddressSelectionResetNoticePending'),
+	funtypes.Literal('independentActiveSimulationAddress'),
 	funtypes.Literal('openedPageV2'),
 	funtypes.Literal('useSignersAddressAsActiveAddress'),
 	funtypes.Literal('websiteAccess'),

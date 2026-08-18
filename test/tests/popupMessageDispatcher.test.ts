@@ -288,7 +288,7 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(importFailure?.method, 'popup_initiate_export_settings_reply')
 		if (importFailure?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected failed import broadcast.')
 		assert.equal(importFailure.data.success, false)
-		assert.equal(storageState.hasIndependentActiveSimulationAddress, undefined)
+		assert.equal(storageState.independentActiveSimulationAddress, undefined)
 		assert.deepEqual(dynamicRuleUpdates, [])
 	})
 

@@ -1531,6 +1531,51 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal((await getSettings()).activeSimulationAddress, safeAddress)
 	})
 
+	test('uses trusted signer state for simulation chain changes without website address access', async () => {
+		installBrowserMock()
+		const {
+			changeSimulationMode,
+			getSettings,
+			handleInterceptedRequest,
+			setUseSignersAddressAsActiveAddress,
+			updateTabState,
+			updateWebsiteAccess,
+			websiteSocketToString,
+		} = await loadModules()
+		const websiteOrigin = 'https://site-only-access.example'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const previousSimulationAddress = 0x6161616161616161616161616161616161616161n
+		const signerAddress = 0x6262626262626262626262626262626262626262n
+		const socket = { tabId: 1, connectionName: 0n }
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: previousSimulationAddress, activeSigningAddress: signerAddress })
+		await setUseSignersAddressAsActiveAddress(true)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [] }])
+		await updateTabState(socket.tabId, (previousState) => ({
+			...previousState,
+			signerAccounts: [signerAddress],
+			activeSigningAddress: signerAddress,
+			signerChain: 1n,
+		}))
+		const { port } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 212, requestSocket: socket },
+			method: 'signer_chainChanged',
+			params: ['0x2', 1],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		const settings = await getSettings()
+		assert.equal(settings.activeRpcNetwork.chainId, 2n)
+		assert.equal(settings.activeSimulationAddress, signerAddress)
+	})
+
 	test('follows wallet chain changes when the stored signing Safe is no longer owned', async () => {
 		installBrowserMock()
 		const {

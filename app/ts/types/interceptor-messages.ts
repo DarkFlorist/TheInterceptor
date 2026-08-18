@@ -663,7 +663,6 @@ export const HomePageBootstrap = funtypes.ReadonlyObject({
 		interceptorDisabled: funtypes.Boolean,
 	}).And(funtypes.ReadonlyPartial({
 		walletSelectedAddressBookEntry: AddressBookEntry,
-		activeAddressSelectionResetNotice: funtypes.Boolean,
 	}))
 })
 
@@ -1062,7 +1061,6 @@ const PopupMessageRuntype = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_clearUnexpectedError') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_acknowledgeActiveAddressSelectionResetNotice') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_get_export_settings') }),
 	SimulateGovernanceContractExecution,

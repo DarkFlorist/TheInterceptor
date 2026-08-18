@@ -363,8 +363,7 @@ describe('Gnosis Safe stack simulation', () => {
 
 		await modules.browserStorageLocalSet({
 			simulationMode: true,
-			activeSimulationAddress: activeAddress.address,
-			hasIndependentActiveSimulationAddress: true,
+			independentActiveSimulationAddress: activeAddress.address,
 			activeRpcNetwork: fakeRpcNetwork,
 			interceptorTransactionStack: {
 				operations: [{
@@ -571,8 +570,7 @@ describe('Gnosis Safe stack simulation', () => {
 		}] : []
 		await modules.browserStorageLocalSet({
 			simulationMode: true,
-			activeSimulationAddress: activeAddress.address,
-			hasIndependentActiveSimulationAddress: true,
+			independentActiveSimulationAddress: activeAddress.address,
 			activeRpcNetwork: fakeRpcNetwork,
 			interceptorTransactionStack: {
 				operations: stackOperations,

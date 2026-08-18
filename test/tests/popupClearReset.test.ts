@@ -353,8 +353,7 @@ describe('popup clear reset', () => {
 	test('keeps the cached popup timestamp when refresh finds no simulation change', async () => {
 		browserMock.reset()
 		await browserStorageLocalSet({
-			activeSimulationAddress: activeAddress,
-			hasIndependentActiveSimulationAddress: true,
+			independentActiveSimulationAddress: activeAddress,
 			interceptorTransactionStack: { operations: [] },
 		})
 		const modules = await modulesPromise
@@ -391,8 +390,7 @@ describe('popup clear reset', () => {
 		const nextActiveAddress = defaultActiveAddresses.find((entry) => entry.address !== activeAddress)?.address
 		if (nextActiveAddress === undefined) throw new Error('test defaults are missing a second active address')
 		await browserStorageLocalSet({
-			activeSimulationAddress: nextActiveAddress,
-			hasIndependentActiveSimulationAddress: true,
+			independentActiveSimulationAddress: nextActiveAddress,
 			simulationMode: true,
 			currentTabId: -1,
 			interceptorTransactionStack: { operations: [] },
@@ -439,8 +437,7 @@ describe('popup clear reset', () => {
 	test('publish an empty popup visualisation even when previous state was done', async () => {
 		browserMock.reset()
 		await browserStorageLocalSet({
-			activeSimulationAddress: activeAddress,
-			hasIndependentActiveSimulationAddress: true,
+			independentActiveSimulationAddress: activeAddress,
 			popupVisualisation: stalePopupVisualisation,
 			interceptorTransactionStack: { operations: [] },
 		})
@@ -471,8 +468,7 @@ describe('popup clear reset', () => {
 			}],
 		}))
 		await browserStorageLocalSet({
-			activeSimulationAddress: activeAddress,
-			hasIndependentActiveSimulationAddress: true,
+			independentActiveSimulationAddress: activeAddress,
 			popupVisualisation: stalePopupVisualisation,
 		})
 
@@ -499,8 +495,7 @@ describe('popup clear reset', () => {
 		}
 		const interceptorTransactionStack = { operations: [{ type: 'TimeManipulation', blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] as const }
 		await browserStorageLocalSet({
-			activeSimulationAddress: activeAddress,
-			hasIndependentActiveSimulationAddress: true,
+			independentActiveSimulationAddress: activeAddress,
 			activeRpcNetwork: rpcNetwork,
 			simulationMode: true,
 			popupVisualisation: stalePopupVisualisation,
@@ -527,8 +522,7 @@ describe('popup clear reset', () => {
 			resets.push(nextRpcEntry)
 		}
 		await browserStorageLocalSet({
-			activeSimulationAddress: activeAddress,
-			hasIndependentActiveSimulationAddress: true,
+			independentActiveSimulationAddress: activeAddress,
 			activeRpcNetwork: rpcNetwork,
 			simulationMode: true,
 			popupVisualisation: stalePopupVisualisation,
@@ -555,8 +549,7 @@ describe('popup clear reset', () => {
 	test('return the complete visualized simulation reply through the background popup handler', async () => {
 		browserMock.reset()
 		await browserStorageLocalSet({
-			activeSimulationAddress: activeAddress,
-			hasIndependentActiveSimulationAddress: true,
+			independentActiveSimulationAddress: activeAddress,
 			popupVisualisation: stalePopupVisualisation,
 			interceptorTransactionStack: { operations: [] },
 		})

@@ -20,6 +20,7 @@ import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from './signingAddressSelection.js'
+import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
@@ -123,7 +124,7 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 	})
 }
 
-async function changeSignerChain(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, signerStateToken: SignerStateToken, signerChain: bigint, approval: ApprovalState, activeAddress: bigint | undefined) {
+async function changeSignerChain(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, signerStateToken: SignerStateToken, signerChain: bigint, approval: ApprovalState) {
 	if (approval !== 'hasAccess') return
 	const tabStateChange = await updateTabState(signerStateToken.socket.tabId, (previousState: TabState) => {
 		return previousState.signerChain === signerChain ? previousState : modifyObject(previousState, { signerChain })
@@ -143,17 +144,18 @@ async function changeSignerChain(ethereum: EthereumClientService, tokenPriceServ
 	}
 	if ((settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && settings.activeRpcNetwork.chainId !== signerChain) {
 		const rpcNetwork = await getRpcNetworkForChain(signerChain)
+		const signerAddress = getWalletSelectedAccount(tabStateChange.newState)
 		return changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			simulationMode: settings.simulationMode,
 			rpcNetwork,
-			activeAddress,
+			activeAddress: signerAddress,
 			...(!settings.simulationMode ? { signingAddressSelection: 'signer' as const } : {}),
 		})
 	}
 	if (oldSignerChain !== signerChain) sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 }
 
-export async function signerChainChanged(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined) {
+export async function signerChainChanged(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'signer_chainChanged' as const, result: '0x' as const }
 	if (!('params' in request)) return returnValue
 	const [signerChain, signerProviderGeneration] = EthereumChainReply.parse(request.params)
@@ -163,12 +165,12 @@ export async function signerChainChanged(ethereum: EthereumClientService, tokenP
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
 		const signerStateToken = getSignerCallbackToken(websiteTabConnections, port, signerProviderGeneration)
 		if (signerStateToken === undefined) return returnValue
-		await changeSignerChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, signerStateToken, signerChain, 'hasAccess', activeAddress)
+		await changeSignerChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, signerStateToken, signerChain, 'hasAccess')
 		return returnValue
 	})
 }
 
-export async function walletSwitchEthereumChainReply(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined) {
+export async function walletSwitchEthereumChainReply(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'wallet_switchEthereumChain_reply' as const, result: '0x' as const }
 	const params = WalletSwitchEthereumChainReply.parse(request).params[0]
 	const socket = getSocketFromPort(port)
@@ -190,7 +192,7 @@ export async function walletSwitchEthereumChainReply(ethereum: EthereumClientSer
 			})
 			return returnValue
 		}
-		if (params.accept) await changeSignerChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, currentSignerStateToken, params.chainId, 'hasAccess', activeAddress)
+		if (params.accept) await changeSignerChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, currentSignerStateToken, params.chainId, 'hasAccess')
 		resolveSignerChainChange(callbackSignerStateToken, {
 			method: 'popup_signerChangeChainDialog',
 			data: [params],

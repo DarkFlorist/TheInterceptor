@@ -43,7 +43,7 @@ export const getDefaultBlockExplorer = (): BlockExplorer => ({ apiUrl: 'https://
 export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId.toString())
 
 type StartupStorageDefaults = {
-	activeSimulationAddress: Settings['activeSimulationAddress']
+	independentActiveSimulationAddress: Settings['activeSimulationAddress']
 	activeSigningSafeAddress: Settings['activeSigningSafeAddress']
 	openedPageV2: Page
 	useSignersAddressAsActiveAddress: boolean
@@ -69,7 +69,7 @@ async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDe
 export async function getSettings() : Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
-	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeSimulationAddress', defaultActiveAddresses[0].address))
+	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('independentActiveSimulationAddress', defaultActiveAddresses[0].address))
 	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeSigningSafeAddress', undefined))
 	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('openedPageV2', defaultPage))
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('useSignersAddressAsActiveAddress', false))

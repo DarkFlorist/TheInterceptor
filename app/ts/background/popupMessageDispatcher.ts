@@ -10,7 +10,6 @@ import { addressBookPopupMessageHandlers } from './popupMessageHandlerRegistries
 import { settingsPopupMessageHandlers } from './popupMessageHandlerRegistries/settings.js'
 import { safePopupMessageHandlers } from './popupMessageHandlerRegistries/safe.js'
 import { websiteAccessPopupMessageHandlers } from './popupMessageHandlerRegistries/websiteAccess.js'
-import { acknowledgeActiveAddressSelectionResetNotice } from './activeAddressSelectionResetNotice.js'
 
 export type { PopupMessageDispatcherContext } from './popupMessageHandlerRegistry.js'
 
@@ -38,7 +37,6 @@ const popupMessageHandlers = {
 	popup_simulateGnosisSafeTransaction: popupMessageHandler('popup_simulateGnosisSafeTransaction', async (context, request) => await simulateGnosisSafeTransactionOnPass(context.ethereum, context.tokenPriceService, request.data.gnosisSafeMessage)),
 	popup_openWebPage: popupMessageHandler('popup_openWebPage', async (_context, request) => await openWebPage(request)),
 	popup_clearUnexpectedError: popupMessageHandler('popup_clearUnexpectedError', async () => await setLatestUnexpectedError(undefined)),
-	popup_acknowledgeActiveAddressSelectionResetNotice: popupMessageHandler('popup_acknowledgeActiveAddressSelectionResetNotice', async () => await acknowledgeActiveAddressSelectionResetNotice()),
 	popup_openSimulationStack: popupMessageHandler('popup_openSimulationStack', async (_context, request) => await openNewTab('simulationStack', 'data' in request ? getSimulationStackTargetHash(request.data) : undefined)),
 	popup_forceSetGasLimitForTransaction: popupMessageHandler('popup_forceSetGasLimitForTransaction', async (context, request) => await forceSetGasLimitForTransaction(context.ethereum, context.tokenPriceService, request)),
 	popup_changePreSimulationBlockTimeManipulation: popupMessageHandler('popup_changePreSimulationBlockTimeManipulation', async (context, request) => await changePreSimulationBlockTimeManipulation(context.ethereum, context.tokenPriceService, request)),

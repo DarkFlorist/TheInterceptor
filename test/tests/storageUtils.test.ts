@@ -33,21 +33,19 @@ describe('local storage codecs', () => {
 	})
 
 	test('serializes only present active-address properties, including explicit clears', async () => {
-		await browserStorageLocalSet({ activeSigningAddress: undefined, activeSigningSafeAddress: 2n, activeSimulationAddress: 1n, hasIndependentActiveSimulationAddress: true })
+		await browserStorageLocalSet({ activeSigningAddress: undefined, activeSigningSafeAddress: 2n, independentActiveSimulationAddress: 1n })
 		assert.deepEqual(writes[0], {
 			activeSigningAddress: 'missing',
 			activeSigningSafeAddress: '0x0000000000000000000000000000000000000002',
-			activeSimulationAddress: '0x0000000000000000000000000000000000000001',
-			hasIndependentActiveSimulationAddress: true,
+			independentActiveSimulationAddress: '0x0000000000000000000000000000000000000001',
 		})
 
 		await browserStorageLocalSet({ simulationMode: true })
 		assert.deepEqual(writes[1], { simulationMode: true })
-		assert.deepEqual(await browserStorageLocalGet(['activeSigningAddress', 'activeSigningSafeAddress', 'activeSimulationAddress', 'hasIndependentActiveSimulationAddress']), {
+		assert.deepEqual(await browserStorageLocalGet(['activeSigningAddress', 'activeSigningSafeAddress', 'independentActiveSimulationAddress']), {
 			activeSigningAddress: undefined,
 			activeSigningSafeAddress: 2n,
-			activeSimulationAddress: 1n,
-			hasIndependentActiveSimulationAddress: true,
+			independentActiveSimulationAddress: 1n,
 		})
 	})
 
