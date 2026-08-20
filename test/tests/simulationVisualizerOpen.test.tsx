@@ -1131,6 +1131,95 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
+	test('open stack visualizer switches modes immediately when settings change', async () => {
+		const dom = installDomMock()
+		let resolveVisualizationRefresh: ((reply: unknown) => void) | undefined
+		const visualizationRefresh = new Promise<unknown>((resolve) => { resolveVisualizationRefresh = resolve })
+		const { listeners } = installBrowserMock((message) => (
+			typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestCompleteVisualizedSimulation'
+				? visualizationRefresh
+				: undefined
+		))
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+			const safeUpdate = createStackHomePageUpdate(25, 1, 'Safe stack tab')
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, safeUpdate) }, {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent?.includes('Gnosis Safe Stack'), true)
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), true)
+
+			await act(() => {
+				listener(serialize(MessageToPopup, {
+					role: 'all',
+					method: 'popup_settingsUpdated',
+					popupRefreshGeneration: 2,
+					data: { ...safeUpdate.data.settings, simulationMode: true },
+				}), {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent?.includes('Simulation Stack'), true)
+			assert.equal(dom.document.body.textContent?.includes('Gnosis Safe Stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import simulation stack'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import Gnosis Safe stack'), false)
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), false)
+
+			await act(() => {
+				listener(serialize(MessageToPopup, createSimulationStateChangedMessage(safeUpdate.data.visualizedSimulatorState)), {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), false)
+
+			await act(() => {
+				listener({
+					role: 'all',
+					...serialize(UpdateHomePage, {
+						...safeUpdate,
+						homeDataSource: 'cached',
+						popupRefreshGeneration: 3,
+						data: {
+							...safeUpdate.data,
+							settings: { ...safeUpdate.data.settings, simulationMode: true },
+						},
+					}),
+				}, {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent?.includes('Simulation Stack'), true)
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), false)
+
+			await act(async () => {
+				resolveVisualizationRefresh?.(undefined)
+				await visualizationRefresh
+				await Promise.resolve()
+			})
+			await act(() => {
+				listener(serialize(MessageToPopup, createSimulationStateChangedMessage(createSimulatedCompleteVisualizedSimulation({
+					...safeUpdate.data.settings,
+					simulationMode: true,
+				}))), {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), true)
+
+			await act(() => {
+				listener(serialize(MessageToPopup, {
+					role: 'all',
+					method: 'popup_settingsUpdated',
+					popupRefreshGeneration: 4,
+					data: safeUpdate.data.settings,
+				}), {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent?.includes('Gnosis Safe Stack'), true)
+			assert.equal(dom.document.body.textContent?.includes('Simulation Stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import Gnosis Safe stack'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import simulation stack'), false)
+		} finally {
+			dom.restore()
+		}
+	})
+
 	test('stack visualizer transaction cards collapse and reopen independently', async () => {
 		const dom = installDomMock()
 		const { listeners } = installBrowserMock()
@@ -1160,7 +1249,7 @@ describe('simulation visualizer open replies', () => {
 			assert.equal(String(firstHeader.getAttribute?.('aria-expanded')), 'false')
 			assert.equal(String(secondHeader.getAttribute?.('aria-expanded')), 'true')
 			assert.equal(countTextOccurrences(dom.document.body.textContent ?? '', 'Original request'), 1)
-			assert.equal(dom.document.body.textContent?.includes('Simulate delay'), true)
+			assert.equal(dom.document.body.textContent?.includes('Simulate delay'), false)
 
 			await act(async () => {
 				await clickElement(secondHeader)
@@ -1168,7 +1257,7 @@ describe('simulation visualizer open replies', () => {
 			assert.equal(String(firstHeader.getAttribute?.('aria-expanded')), 'false')
 			assert.equal(String(secondHeader.getAttribute?.('aria-expanded')), 'false')
 			assert.equal(countTextOccurrences(dom.document.body.textContent ?? '', 'Original request'), 0)
-			assert.equal(dom.document.body.textContent?.includes('Simulate delay'), true)
+			assert.equal(dom.document.body.textContent?.includes('Simulate delay'), false)
 
 			await act(async () => {
 				await clickElement(firstHeader)

@@ -13,17 +13,11 @@ import { changeSimulationMode, getSettings, setUseSignersAddressAsActiveAddress,
 import { promoteRpcAsPrimary, updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
-import { operationBelongsToActiveStackContext, type ActiveStackContext } from '../safe/safeStack.js'
+import { getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
 
 export async function resetSimulationStateFromConfig(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
 	const settings = await getSettings()
-	const activeStackContext: ActiveStackContext = settings.simulationMode
-		? { simulationMode: true }
-		: {
-			simulationMode: false,
-			activeSafeAddress: settings.activeSigningSafeAddress,
-			chainId: settings.activeRpcNetwork.chainId,
-		}
+	const activeStackContext = getActiveStackContext(settings)
 	await updateTransactionState((previousState) => {
 		if (settings.simulationMode) {
 			return {

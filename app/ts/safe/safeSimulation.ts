@@ -3,7 +3,7 @@ import type { InterceptorTransactionStack, PreSimulationTransaction, SimulationS
 import type { EthereumSendableSignedTransaction } from '../types/wire-types.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
-import { getOperationsForActiveStackContext } from './safeStack.js'
+import { getOperationsForActiveStackContext, getSafeStackContext } from '../utils/activeStackContext.js'
 
 export function createSafeSigningSimulationInput(
 	transactionStack: InterceptorTransactionStack,
@@ -11,11 +11,7 @@ export function createSafeSigningSimulationInput(
 ): SimulationStateInput {
 	const requiredChainId = safeSigningRequest.safeTx.domain.chainId
 	if (requiredChainId === undefined) throw new Error('Gnosis Safe optimistic simulation requires an EIP-712 chain ID.')
-	const transactions = getOperationsForActiveStackContext(transactionStack, {
-		simulationMode: false,
-		activeSafeAddress: safeSigningRequest.safeAddress,
-		chainId: requiredChainId,
-	}).flatMap((operation) => {
+	const transactions = getOperationsForActiveStackContext(transactionStack, getSafeStackContext(safeSigningRequest.safeAddress, requiredChainId)).flatMap((operation) => {
 		if (operation.type !== 'Transaction') return []
 		const transaction = operation.preSimulationTransaction
 		const storedSafeTransaction = transaction.safeTransaction

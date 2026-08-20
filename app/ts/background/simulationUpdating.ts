@@ -30,7 +30,7 @@ import type { Abi } from '../utils/ethereumPrimitives.js'
 import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
-import { getOperationsForActiveStackContext } from '../safe/safeStack.js'
+import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
 
 const delegateCallExecuteAbi = [
 	{
@@ -91,14 +91,7 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 		currentBlockSimulateWithZeroBaseFee = false
 	}
 
-	const operations = getOperationsForActiveStackContext(stack, settings.simulationMode
-		? { simulationMode: true }
-		: {
-			simulationMode: false,
-			activeSafeAddress: settings.activeSigningSafeAddress,
-			chainId: settings.activeRpcNetwork.chainId,
-		}
-	)
+	const operations = getOperationsForActiveStackContext(stack, getActiveStackContext(settings))
 	for (const operation of operations) {
 		switch(operation.type) {
 			case 'Transaction': {
@@ -116,7 +109,6 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 				break
 			}
 			case 'Message': {
-				if (!settings.simulationMode) break
 				if (currentBlockTransactions.length > 0) {
 					pushBlock({ type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' })
 				}
@@ -124,7 +116,6 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 				break
 			}
 			case 'TimeManipulation': {
-				if (!settings.simulationMode) break
 				pushBlock(operation.blockTimeManipulation)
 				break
 			}

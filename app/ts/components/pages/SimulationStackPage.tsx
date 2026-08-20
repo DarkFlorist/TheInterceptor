@@ -445,6 +445,7 @@ export function SimulationStackPage() {
 								editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 								addressMetaData = { addressMetaData }
 								highlightedStackTargetId = { highlightedStackTargetId }
+								showTimePicker = { simulationMode.value }
 							/>
 							<SimulationSummary
 								simulationAndVisualisationResults = { simVisResults }

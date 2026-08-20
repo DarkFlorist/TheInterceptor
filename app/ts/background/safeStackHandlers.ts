@@ -9,7 +9,6 @@ import { getErrorMessage } from '../utils/errors.js'
 import { modifyObject } from '../utils/typescript.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { getSafeTransactionStacks, updateTransactionState } from './storageVariables.js'
-import { reconcileStoredSafeState } from './safeStackState.js'
 
 export async function validateSafeTransactionStackForCurrentContract(ethereum: EthereumClientService, stack: SafeTransactionStack) {
 	if (stack.chainId !== ethereum.getChainId()) throw new Error(`Switch Interceptor to chain ${ stack.chainId.toString() } before validating this Gnosis Safe stack.`)
@@ -39,25 +38,13 @@ export async function validateSafeTransactionStackForCurrentContract(ethereum: E
 	return { safeState, reconciledStack: { ...reconciledStack, transactions: normalizedTransactions } }
 }
 
-export async function requestSafeStackExport(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
+export async function requestSafeStackExport(ethereum: EthereumClientService, _tokenPriceService: TokenPriceService) {
 	try {
-		const storedStacks = (await getSafeTransactionStacks()).filter((stack) =>
+		const stacks = (await getSafeTransactionStacks()).filter((stack) =>
 			stack.chainId === ethereum.getChainId() && stack.transactions.length > 0
 		)
-		if (storedStacks.length === 0) throw new Error('There are no Gnosis Safe proposals to export on the selected chain.')
-		assertUniqueSafeTransactionStacks(storedStacks)
-		const validatedStacks = await Promise.all(storedStacks.map(async (stack) => ({
-			stack,
-			validated: await validateSafeTransactionStackForCurrentContract(ethereum, stack),
-		})))
-		await Promise.all(validatedStacks.map(async ({ stack, validated }) => {
-			await reconcileStoredSafeState(ethereum, stack.safeAddress, validated.safeState)
-		}))
-		await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, true, false)
-		const stacks = validatedStacks
-			.map(({ validated }) => validated.reconciledStack)
-			.filter((stack) => stack.transactions.length > 0)
-		if (stacks.length === 0) throw new Error('All locally stored Gnosis Safe proposals on the selected chain have already executed.')
+		if (stacks.length === 0) throw new Error('There are no Gnosis Safe proposals to export on the selected chain.')
+		assertUniqueSafeTransactionStacks(stacks)
 		const exportPayload: SafeStackExport = {
 			name: 'Interceptor Safe Stack',
 			version: '1.0.0',
@@ -72,7 +59,7 @@ export async function requestSafeStackExport(ethereum: EthereumClientService, to
 		return {
 			method: 'popup_requestSafeStackExport' as const,
 			ok: false as const,
-			message: getErrorMessage(error) ?? 'Failed to validate the Gnosis Safe stack before export.',
+			message: getErrorMessage(error) ?? 'Failed to export the Gnosis Safe stack.',
 		}
 	}
 }

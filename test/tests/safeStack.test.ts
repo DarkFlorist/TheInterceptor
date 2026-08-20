@@ -2,10 +2,11 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../app/ts/config/defaults.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
-import { getOperationsForActiveStackContext, reconcileSafeTransactionStack } from '../../app/ts/safe/safeStack.js'
+import { reconcileSafeTransactionStack } from '../../app/ts/safe/safeStack.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
 import type { InterceptorTransactionStack, PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
+import { getOperationsForActiveStackContext, getSafeStackContext, SIMULATION_STACK_CONTEXT } from '../../app/ts/utils/activeStackContext.js'
 
 const chainId = 1n
 const safeAddress = 0x1111111111111111111111111111111111111111n
@@ -80,15 +81,15 @@ describe('Gnosis Safe stack reconciliation', () => {
 		] }
 
 		assert.deepEqual(
-			getOperationsForActiveStackContext(interceptorStack, { simulationMode: true }),
+			getOperationsForActiveStackContext(interceptorStack, SIMULATION_STACK_CONTEXT),
 			interceptorStack.operations.slice(0, 2),
 		)
 		assert.deepEqual(
-			getOperationsForActiveStackContext(interceptorStack, { simulationMode: false, activeSafeAddress: safeAddress, chainId }),
+			getOperationsForActiveStackContext(interceptorStack, getSafeStackContext(safeAddress, chainId)),
 			[interceptorStack.operations[2]],
 		)
 		assert.deepEqual(
-			getOperationsForActiveStackContext(interceptorStack, { simulationMode: false, activeSafeAddress: undefined, chainId }),
+			getOperationsForActiveStackContext(interceptorStack, getSafeStackContext(undefined, chainId)),
 			[],
 		)
 	})

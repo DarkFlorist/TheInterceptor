@@ -3,31 +3,6 @@ import type { InterceptorTransactionStack } from '../types/visualizer-types.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { createSafeContractValidationFailure } from './safeCore.js'
 
-export type ActiveStackContext =
-	| { readonly simulationMode: true }
-	| {
-		readonly simulationMode: false
-		readonly activeSafeAddress: bigint | undefined
-		readonly chainId: bigint
-	}
-
-export function operationBelongsToActiveStackContext(
-	operation: InterceptorTransactionStack['operations'][number],
-	context: ActiveStackContext,
-) {
-	if (context.simulationMode) {
-		return operation.type !== 'Transaction' || operation.preSimulationTransaction.safeTransaction === undefined
-	}
-	if (operation.type !== 'Transaction' || context.activeSafeAddress === undefined) return false
-	const transaction = operation.preSimulationTransaction
-	return transaction.safeTransaction?.safeTx.domain.verifyingContract === context.activeSafeAddress
-		&& transaction.simulationOptions?.requiredChainId === context.chainId
-}
-
-export function getOperationsForActiveStackContext(stack: InterceptorTransactionStack, context: ActiveStackContext) {
-	return stack.operations.filter((operation) => operationBelongsToActiveStackContext(operation, context))
-}
-
 export function mergeSafeOwnerSignatures(existing: readonly SafeOwnerSignature[], additions: readonly SafeOwnerSignature[]) {
 	const merged = [...existing]
 	for (const addition of additions) {
