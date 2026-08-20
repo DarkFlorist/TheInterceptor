@@ -35,6 +35,44 @@ describe('background eth_accounts', () => {
 		), true)
 	})
 
+	test('refreshes the cached signing visualization when the active Safe context changes chain', async () => {
+		installBrowserMock()
+		const messages: unknown[] = []
+		Object.defineProperty(browser.runtime, 'sendMessage', {
+			configurable: true,
+			value: async (message: unknown) => {
+				messages.push(message)
+				if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen') {
+					return { method: 'popup_isSimulationVisualizerOpen', data: { isOpen: false } }
+				}
+				return undefined
+			},
+		})
+		const { changeActiveAddressAndChain, changeSimulationMode, getSettings } = await loadModules()
+		const safeAddress = 0x3030303030303030303030303030303030303030n
+		await changeSimulationMode({ simulationMode: false, activeSigningSafeAddress: safeAddress })
+		const previousNetwork = (await getSettings()).activeRpcNetwork
+		const nextNetwork = {
+			...previousNetwork,
+			name: 'Other chain',
+			chainId: previousNetwork.chainId + 1n,
+			httpsRpc: 'https://other-chain.example',
+			primary: false,
+		}
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			simulationMode: false,
+			rpcNetwork: nextNetwork,
+			promptForAccessesIfNeeded: false,
+		})
+
+		assert.equal((await getSettings()).activeSigningSafeAddress, safeAddress)
+		assert.equal(messages.some((message) =>
+			typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen'
+		), true)
+	})
+
 	test('rejects arbitrary EOAs and unverified or unowned Safes selected through popup signing-mode bypasses', async () => {
 		const { readStoredValue } = installBrowserMock()
 		const {

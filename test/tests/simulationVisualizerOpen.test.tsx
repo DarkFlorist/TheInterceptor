@@ -326,6 +326,7 @@ function createPreSimulationTransaction(transactionIdentifier: bigint): PreSimul
 function createSerializableSettings(): Settings {
 	return {
 		...settings,
+		simulationMode: true,
 		activeSimulationAddress: undefined,
 		activeRpcNetwork: {
 			...settings.activeRpcNetwork,
@@ -1048,7 +1049,7 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer keeps Safe import and copy actions visible throughout signing mode', async () => {
+	test('stack visualizer shows Safe actions only when signing with an active Safe', async () => {
 		const dom = installDomMock()
 		const { listeners } = installBrowserMock(() => undefined)
 		try {
@@ -1066,10 +1067,13 @@ describe('simulation visualizer open replies', () => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createNonSafeStackHomePageUpdate(23, 2, 'Non-Safe stack tab')) }, {}, () => undefined)
 			})
 
-			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), true)
-			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), true)
+			assert.equal(dom.document.body.textContent?.includes('Gnosis Safe Stack'), false)
+			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), false)
+			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), false)
 			assert.equal(hasButtonWithText(dom.document.body, 'Import simulation'), false)
 			assert.equal(hasButtonWithText(dom.document.body, 'Export simulation'), false)
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), false)
+			assert.equal(dom.document.body.textContent?.includes('Select simulation mode or a Gnosis Safe to view a transaction stack.'), true)
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, popupRefreshGeneration: 3, data: { ...update.data, activeAddresses: [contactWithSafeAddress, { ...activeSafe, safeSimulationSignerAddress: undefined }], hasSafeTransactionsToExport: false } }) }, {}, () => undefined)

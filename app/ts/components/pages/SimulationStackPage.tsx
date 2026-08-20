@@ -327,7 +327,8 @@ export function SimulationStackPage() {
 		if (simVisResults.value.kind === 'passthrough') return true
 		return isEmptySimulation(simVisResults.value.value)
 	})
-	const showSafeSigningActions = useComputed(() => !simulationMode.value)
+	const safeStackMode = useComputed(() => !simulationMode.value && activeSigningSafeAddress.value !== undefined)
+	const stackModeActive = useComputed(() => simulationMode.value || safeStackMode.value)
 
 	useSignalEffect(() => {
 		simVisResults.value
@@ -419,15 +420,15 @@ export function SimulationStackPage() {
 				: <></> }
 				<CenterToPageTextSpinner/>
 			</> : <>
-				<SimulationStackToolbar
+				{ stackModeActive.value ? <SimulationStackToolbar
 					openImportSimulation = { () => { modalState.value = { page: 'importSimulation', state: new Signal('') } } }
 					openImportSafe = { () => { modalState.value = { page: 'importSafe', state: new Signal('') } } }
 					resetSimulation = { resetSimulation }
 					disableReset = { disableReset }
 					simulationMode = { simulationMode.value }
-					showSafeSigningActions = { showSafeSigningActions.value }
+					showSafeSigningActions = { safeStackMode.value }
 					hasSafeTransactionsToExport = { hasSafeTransactionsToExport.value }
-				/>
+				/> : <></> }
 				<div class = 'simulation-stack-page-body'>
 					<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>
 					<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
@@ -435,7 +436,9 @@ export function SimulationStackPage() {
 						<ErrorComponent text = { `${ rpcNetwork.value.name } is not a supported network. The Interceptor is disabled while you are using ${ rpcNetwork.value.name }.` }/>
 					: <></> }
 					<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }>
-					{ isEmpty.value ?
+					{ !stackModeActive.value ?
+						<article class = 'simulation-stack-page-content'><DinoSays text = { 'Select simulation mode or a Gnosis Safe to view a transaction stack.' } /></article>
+					: isEmpty.value ?
 						<article class = 'simulation-stack-page-content'><DinoSays text = { 'Give me some transactions to munch on!' } /></article>
 					: currentResults.kind === 'passthrough' ?
 						<article class = 'simulation-stack-page-content'><RichAddressesTitleCard numberOfAddressesMadeRich = { numberOfAddressesMadeRich.value } madeRichAddressBookEntries = { madeRichAddressBookEntries.value } renameAddressCallBack = { renameAddressCallBack } /></article>

@@ -95,9 +95,13 @@ export async function changeActiveAddressAndChain(
 	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration })
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	await changeActiveAddressAndChainSemaphore.execute(async () => {
-		const activeSigningSafeChanged = !updatedSettings.simulationMode
+		const activeSigningSafeContextChanged = !updatedSettings.simulationMode
 			&& updatedSettings.activeSigningSafeAddress !== undefined
-			&& (previousSettings.simulationMode || previousSettings.activeSigningSafeAddress !== updatedSettings.activeSigningSafeAddress)
+			&& (
+				previousSettings.simulationMode
+				|| previousSettings.activeSigningSafeAddress !== updatedSettings.activeSigningSafeAddress
+				|| previousSettings.activeRpcNetwork.chainId !== updatedSettings.activeRpcNetwork.chainId
+			)
 		if (change.rpcNetwork !== undefined) {
 			const rpcChainChanged = previousSettings.activeRpcNetwork.chainId !== change.rpcNetwork.chainId
 			if (change.rpcNetwork.httpsRpc !== undefined) resetSimulationServices(change.rpcNetwork)
@@ -110,7 +114,7 @@ export async function changeActiveAddressAndChain(
 				await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
 			}
 		}
-		if (activeSigningSafeChanged) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
+		if (activeSigningSafeContextChanged) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
 		await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 	})
 }
