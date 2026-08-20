@@ -3,6 +3,7 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import { assertInterceptorSafeTransactionPolicy, assertUniqueSafeTransactionStacks, createSafeOwnerValidator, getSafeContractSnapshot } from '../safe/safeCore.js'
 import { reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
 import { SafeStackExport, type SafeTransactionStack } from '../types/safeTypes.js'
+import type { InterceptorStackOperation } from '../types/visualizer-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import { getSafeTxHash } from '../utils/eip712.js'
 import { getErrorMessage } from '../utils/errors.js'
@@ -10,6 +11,29 @@ import { modifyObject } from '../utils/typescript.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { getSafeTransactionStacks, updateTransactionState } from './storageVariables.js'
 import { reconcileStoredSafeState } from './safeStackState.js'
+
+function recoverSafeTransactionStackFromLocalOperations(
+	importedStack: SafeTransactionStack,
+	operations: readonly InterceptorStackOperation[],
+) {
+	const localTransactions = operations.flatMap((operation) => {
+		if (operation.type !== 'Transaction') return []
+		const safeTransaction = operation.preSimulationTransaction.safeTransaction
+		if (safeTransaction === undefined) return []
+		if (safeTransaction.safeTx.domain.chainId !== importedStack.chainId) return []
+		if (safeTransaction.safeTx.domain.verifyingContract !== importedStack.safeAddress) return []
+		return [safeTransaction]
+	})
+	const importedTransactionHashes = importedStack.transactions.map(({ safeTxHash }) => safeTxHash)
+	const matchingStartIndex = localTransactions.findIndex((_transaction, startIndex) =>
+		importedTransactionHashes.every((safeTxHash, offset) => localTransactions[startIndex + offset]?.safeTxHash === safeTxHash)
+	)
+	if (matchingStartIndex === -1) return undefined
+	const transactions = localTransactions.slice(matchingStartIndex)
+	if (transactions[0]?.safeTx.message.nonce !== importedStack.baseNonce) return undefined
+	if (transactions.some((transaction, index) => transaction.safeTx.message.nonce !== importedStack.baseNonce + BigInt(index))) return undefined
+	return { ...importedStack, transactions }
+}
 
 export async function validateSafeTransactionStackForCurrentContract(ethereum: EthereumClientService, stack: SafeTransactionStack) {
 	if (stack.chainId !== ethereum.getChainId()) throw new Error(`Switch Interceptor to chain ${ stack.chainId.toString() } before validating this Gnosis Safe stack.`)
@@ -96,10 +120,17 @@ export async function importSafeStack(
 			const mergedStacks: SafeTransactionStack[] = [...reconciledState.safeTransactionStacks]
 			for (const { importedStack, safeState } of validatedImports) {
 				if (importedStack.transactions.length === 0) continue
-				const existingIndex = mergedStacks.findIndex((stack) =>
+				let existingIndex = mergedStacks.findIndex((stack) =>
 					stack.chainId === importedStack.chainId && stack.safeAddress === importedStack.safeAddress
 				)
-				const storedExistingStack = existingIndex === -1 ? undefined : mergedStacks[existingIndex]
+				let storedExistingStack = existingIndex === -1 ? undefined : mergedStacks[existingIndex]
+				if (storedExistingStack === undefined) {
+					storedExistingStack = recoverSafeTransactionStackFromLocalOperations(importedStack, reconciledState.interceptorTransactionStack.operations)
+					if (storedExistingStack !== undefined) {
+						existingIndex = mergedStacks.length
+						mergedStacks.push(storedExistingStack)
+					}
+				}
 				if (storedExistingStack === undefined) throw new Error('The imported Gnosis Safe stack does not match a locally created Interceptor Gnosis Safe stack.')
 				const existingStack = reconcileSafeTransactionStack(storedExistingStack, safeState.nonce)
 				if (
