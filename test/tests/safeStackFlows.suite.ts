@@ -58,6 +58,40 @@ test('extension Safe stack import merges owner signatures into proposal and opti
 	assert.equal(exportReply.safeStackJson.includes(`\"signature\": \"${ nonCanonicalSignature }\"`), false)
 })
 
+test('extension Safe stack export and import roundtrip leaves the local stack unchanged', async () => {
+	fakeSafeContract.owners = [safeTestOwnerAddress]
+	const unsignedLocalTransaction = createSafeStackTransactionFixture()
+	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(unsignedLocalTransaction.safeTx)))
+	const localTransaction = {
+		...unsignedLocalTransaction,
+		signatures: [{ signer: safeTestOwnerAddress, signature }],
+	}
+	await modules.updateSafeTransactionStacks(() => [createSafeStackFixture([localTransaction])])
+	await modules.updateInterceptorTransactionStack(() => ({
+		operations: [{
+			type: 'Transaction',
+			preSimulationTransaction: {
+				...pendingTransaction.transactionToSimulate,
+				signedTransaction,
+				safeTransaction: localTransaction,
+			},
+		}],
+	}))
+
+	const exportReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
+	assert.equal(exportReply.ok, true)
+	if (!exportReply.ok) throw new Error(exportReply.message)
+	const safeStacksBeforeImport = await modules.getSafeTransactionStacks()
+	const simulationStackBeforeImport = await modules.getInterceptorTransactionStack()
+	const exportedStack = SafeStackExport.parse(JSON.parse(exportReply.safeStackJson))
+
+	const importReply = await modules.importSafeStack(simulator.ethereum, simulator.tokenPriceService, { data: exportedStack })
+
+	assert.deepEqual(importReply, { type: 'ImportSafeStackReply', ok: true })
+	assert.deepEqual(await modules.getSafeTransactionStacks(), safeStacksBeforeImport)
+	assert.deepEqual(await modules.getInterceptorTransactionStack(), simulationStackBeforeImport)
+})
+
 test('extension Safe stack import recovers a missing Safe index from locally created stack operations', async () => {
 	const localTransaction = createSafeStackTransactionFixture()
 	await modules.updateSafeTransactionStacks(() => [createSafeStackFixture([localTransaction])])
