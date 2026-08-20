@@ -25,7 +25,6 @@ import { useResetSimulation } from '../hooks/useResetSimulation.js'
 import { getSelectableActiveAddresses, getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { useModeActiveAddress } from '../hooks/useModeActiveAddress.js'
 import { updateRichListAddress } from '../../utils/richList.js'
-import { CopySafeTransactionsButton } from '../subcomponents/CopySafeTransactionsButton.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import type { ComponentChildren, JSX } from 'preact'
@@ -102,7 +101,7 @@ function OpenSimulationStackButtonContent() {
 		<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
 			<OpenInNewIcon/>
 		</span>
-		<span>View stack details</span>
+		<span>View &amp; operate stack</span>
 	</>
 }
 
@@ -195,7 +194,6 @@ function SimulationLoadingSkeleton() {
 				<LoadingControl class = 'btn btn--outline is-small'>
 					<OpenSimulationStackButtonContent/>
 				</LoadingControl>
-				<LoadingControl class = 'button is-small'>Copy Gnosis Safe transactions</LoadingControl>
 				<LoadingControl class = 'btn is-small is-danger'>
 					<ClearSimulationButtonContent/>
 				</LoadingControl>
@@ -729,8 +727,6 @@ type SimulationResultsHeaderParams = {
 	openSimulationStack?: () => void
 	disableReset?: ReadonlySignal<boolean>
 	resetSimulation?: () => Promise<void>
-	showCopyGnosisSafeTransactions?: boolean
-	hasSafeTransactionsToExport?: boolean
 }
 
 function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
@@ -748,16 +744,10 @@ function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 		</div>
 		<div class = 'log-cell' style = 'justify-content: right; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 300px;'>
 			{ param.openSimulationStack === undefined ? <></> :
-				<button class = 'btn btn--outline is-small' onClick = { openStack } title = 'Open simulation stack details in a new tab' aria-label = 'Open simulation stack details in a new tab'>
+				<button class = 'btn btn--outline is-small' onClick = { openStack } title = 'View and operate the transaction stack in a new tab' aria-label = 'View and operate the transaction stack in a new tab'>
 					<OpenSimulationStackButtonContent/>
 				</button>
 			}
-			{ param.showCopyGnosisSafeTransactions === true
-				? <CopySafeTransactionsButton
-					disabled = { param.hasSafeTransactionsToExport !== true }
-					disabledTitle = 'There are no Gnosis Safe proposals to export on the selected chain.'
-				/>
-				: <></> }
 			{ param.disableReset === undefined || param.resetSimulation === undefined ? <></> :
 				<AsyncActionButton
 					class = 'btn is-small is-danger'
@@ -812,11 +802,6 @@ function PopupVisualisation(param: SimulationStateParam) {
 
 	const computedAddressBookEntries = useComputed(() => param.simulationAndVisualisationResults.value.kind === 'simulated' ? param.simulationAndVisualisationResults.value.value.addressBookEntries : [])
 	const currentResults = param.simulationAndVisualisationResults.value
-	const showCopyGnosisSafeTransactions = currentResults.kind === 'simulated'
-		&& param.safeSigningMode
-		&& currentResults.value.simulationStateInput?.some((block) =>
-			block.transactions.some((transaction) => transaction.safeTransaction !== undefined)
-		) === true
 	const isSimulationStatusUnknown = param.simulationUpdatingState.value === undefined || param.simulationResultState.value === undefined
 
 	if (isSimulationStatusUnknown || (isEmpty.value && param.simulationUpdatingState.value === 'updating')) {
@@ -825,7 +810,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 
 	if (currentResults.kind === 'passthrough') {
 		return <div class = 'popup-data-reveal'>
-			<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } showCopyGnosisSafeTransactions = { showCopyGnosisSafeTransactions } hasSafeTransactionsToExport = { param.hasSafeTransactionsToExport.value } />
+			<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } />
 			{ isEmpty.value ?
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 			: <RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } openSimulationStack = { param.openSimulationStack } /> }
@@ -835,7 +820,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 	const resolvedResults = currentResults.value
 
 	return <div class = 'popup-data-reveal'>
-		<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } showCopyGnosisSafeTransactions = { showCopyGnosisSafeTransactions } hasSafeTransactionsToExport = { param.hasSafeTransactionsToExport.value } />
+		<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } />
 
 			{ resolvedResults.visualizedSimulationState.success === false ? <>
 				<ErrorComponent text = { `Failed to simulate the stack due to error: "${ resolvedResults.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
@@ -990,8 +975,6 @@ export function Home(param: HomeParams) {
 					simulationResultState = { param.simulationResultState }
 					openSimulationStack = { openSimulationStack }
 					numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich }
-					hasSafeTransactionsToExport = { param.hasSafeTransactionsToExport }
-					safeSigningMode = { safeStackMode.value }
 				/>
 				: <SimulationLoadingSkeleton/>
 			: <></> }

@@ -719,8 +719,8 @@ describe('Home popup clear empty state', () => {
 				render(h(Home, createHomeParams({ simVisResults })), dom.document.body)
 			})
 
-			const viewStackButton = getButtonByText(dom.document.body, 'View stack details')
-			assert.equal(viewStackButton.getAttribute?.('aria-label'), 'Open simulation stack details in a new tab')
+			const viewStackButton = getButtonByText(dom.document.body, 'View & operate stack')
+			assert.equal(viewStackButton.getAttribute?.('aria-label'), 'View and operate the transaction stack in a new tab')
 			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.replace(/\s+/g, ' ').trim() === 'Import'), false)
 			assert.equal(dom.document.body.textContent?.includes('Export Simulation Stack'), false)
 
@@ -1369,24 +1369,22 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 		}
 	})
 
-	test('places the Gnosis Safe transaction copy action between stack details and clear', () => {
+	test('places stack operation and clear actions together without a Safe export action', () => {
 		const headerStart = homeSource.indexOf('function SimulationResultsHeader(')
 		const headerEnd = homeSource.indexOf('function PopupVisualisation(', headerStart)
 		const headerSource = homeSource.slice(headerStart, headerEnd)
 		const viewPosition = headerSource.indexOf('<OpenSimulationStackButtonContent')
-		const copyPosition = headerSource.indexOf('<CopySafeTransactionsButton')
 		const clearPosition = headerSource.indexOf('<AsyncActionButton')
 
 		assert.notEqual(viewPosition, -1)
-		assert.notEqual(copyPosition, -1)
 		assert.notEqual(clearPosition, -1)
-		assert.equal(viewPosition < copyPosition && copyPosition < clearPosition, true)
+		assert.equal(viewPosition < clearPosition, true)
+		assert.equal(headerSource.includes('CopySafeTransactionsButton'), false)
 	})
 
-	test('disables the Home Gnosis Safe export when the selected chain has no stored proposals', async () => {
+	test('does not expose Gnosis Safe export from the Home results header', async () => {
 		const dom = installDomMock()
 		const browserMock = installBrowserMock()
-		const hasSafeTransactionsToExport = new Signal(false)
 		try {
 			await act(async () => {
 				render(h(Home, createHomeParams({
@@ -1407,18 +1405,16 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 						activeSigningAddress: SAFE_SIGNER_ADDRESS,
 					}),
 					simVisResults: new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createSafeSimulationResults())),
-					hasSafeTransactionsToExport,
+					hasSafeTransactionsToExport: new Signal(true),
 				})), dom.document.body)
 				await new Promise((resolve) => setTimeout(resolve, 40))
 			})
 
-			const safeExportButton = getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions')
-			assert.notEqual(safeExportButton.getAttribute?.('disabled'), null)
-			assert.equal(safeExportButton.getAttribute?.('title'), 'There are no Gnosis Safe proposals to export on the selected chain.')
+			assert.equal(dom.document.body.textContent?.includes('Copy Gnosis Safe transactions'), false)
+			assert.equal(dom.document.body.textContent?.includes('View & operate stack'), true)
+			assert.equal(dom.document.body.textContent?.includes('Clear'), true)
+			assert.equal(getButtonByText(dom.document.body, 'View & operate stack').parentNode, getButtonByText(dom.document.body, 'Clear').parentNode)
 			assert.equal(browserMock.sentMessages.some((message) => hasMethod(message, 'popup_requestSafeStackExport')), false)
-
-			await act(() => { hasSafeTransactionsToExport.value = true })
-			assert.equal(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions').getAttribute?.('disabled'), null)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
@@ -1453,8 +1449,8 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 			})
 
 			assert.equal(dom.document.body.textContent?.includes('Simulation Results'), true)
-			assert.equal(dom.document.body.textContent?.includes('View stack details'), true)
-			assert.equal(dom.document.body.textContent?.includes('Copy Gnosis Safe transactions'), true)
+			assert.equal(dom.document.body.textContent?.includes('View & operate stack'), true)
+			assert.equal(dom.document.body.textContent?.includes('Copy Gnosis Safe transactions'), false)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()

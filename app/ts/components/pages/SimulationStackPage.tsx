@@ -7,7 +7,7 @@ import type { EditEnsNamedHashWindowState, ModifyAddressWindowState, SimulationA
 import { addressEditEntry } from '../ui-utils.js'
 import { ErrorBoundary, ErrorComponent, UnexpectedError } from '../subcomponents/Error.js'
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
-import { BroomIcon, ChevronIcon, CopyIcon, ExportIcon, ImportIcon } from '../subcomponents/icons.js'
+import { BroomIcon, ChevronIcon, ExportIcon, ImportIcon } from '../subcomponents/icons.js'
 import { clipboardCopy } from '../subcomponents/clipboardcopy.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
@@ -97,8 +97,53 @@ function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSim
 		<div class = 'simulation-stack-page-heading'>
 			<div class = 'simulation-stack-page-title'>
 				<h1>{ showSafeSigningActions ? 'Gnosis Safe Stack' : 'Simulation Stack' }</h1>
-				<p>{ showSafeSigningActions ? 'Import, copy, and review Gnosis Safe proposals.' : 'Import, export, and adjust the simulation stack.' }</p>
+				<p>{ showSafeSigningActions ? 'Import, export, and review Gnosis Safe proposals.' : 'Import, export, and adjust the simulation stack.' }</p>
 			</div>
+			<nav class = 'simulation-stack-page-controls' aria-label = { `${ stackName } actions` }>
+				{ simulationMode ? <>
+					<button class = 'btn btn--outline' type = 'button' onClick = { openImportSimulation } title = 'Import simulation stack' aria-label = 'Import simulation stack'>
+						<span class = 'simulation-stack-action-icon'><ImportIcon/></span>
+						<span>Import</span>
+					</button>
+					<AsyncActionButton
+						class = 'btn btn--outline'
+						type = 'button'
+						state = { exportSimulationStackState.value.state }
+						disabled = { simulationExportCoolingDown.value }
+						ariaLabel = 'Export simulation stack'
+						onClick = { exportStack }
+						text = { <>
+							<span class = 'simulation-stack-action-icon'><ExportIcon/></span>
+							<span>Export</span>
+						</> }
+						pendingText = 'Exporting simulation stack...'
+						keepTextWhilePending = { true }
+						pendingIndicatorPlacement = 'overlay'
+					/>
+					<Tooltip config = { simulationExportTooltip } />
+				</> : <></> }
+				{ showSafeSigningActions ? <>
+					<button class = 'btn btn--outline' type = 'button' onClick = { openImportSafe } title = 'Import Gnosis Safe stack' aria-label = 'Import Gnosis Safe stack'>
+						<span class = 'simulation-stack-action-icon'><ImportIcon/></span>
+						<span>Import</span>
+					</button>
+					<CopySafeTransactionsButton
+						class = 'btn btn--outline'
+						disabled = { !hasSafeTransactionsToExport }
+						disabledTitle = 'There are no Gnosis Safe proposals to export on the selected chain.'
+						ariaLabel = 'Export Gnosis Safe stack'
+						pendingText = 'Exporting Gnosis Safe stack...'
+						text = { <>
+							<span class = 'simulation-stack-action-icon'><ExportIcon/></span>
+							<span>Export</span>
+						</> }
+						onCopyStart = { () => {
+							latestExportType.value = 'safe'
+							safeCopyError.value = undefined
+						} }
+						onCopyError = { (message) => { safeCopyError.value = message } }
+					/>
+				</> : <></> }
 			<AsyncActionButton
 				class = 'btn btn--outline simulation-stack-page-clear'
 				type = 'button'
@@ -114,62 +159,8 @@ function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSim
 				</> }
 				pendingText = { `Clearing ${ stackName }...` }
 			/>
+			</nav>
 		</div>
-		<nav class = 'simulation-stack-page-actions' aria-label = { `${ stackName } actions` }>
-			{ simulationMode ? <div class = 'simulation-stack-action-group'>
-				<div class = 'simulation-stack-action-label'>
-					<strong>Simulation</strong>
-					<span>Entire stack</span>
-				</div>
-				<div class = 'simulation-stack-action-controls'>
-					<button class = 'btn btn--outline' type = 'button' onClick = { openImportSimulation } title = 'Import simulation stack' aria-label = 'Import simulation stack'>
-						<span class = 'simulation-stack-action-icon'><ImportIcon/></span>
-						<span>Import simulation</span>
-					</button>
-					<AsyncActionButton
-						class = 'btn btn--outline'
-						type = 'button'
-						state = { exportSimulationStackState.value.state }
-						disabled = { simulationExportCoolingDown.value }
-						onClick = { exportStack }
-						text = { <>
-							<span class = 'simulation-stack-action-icon'><ExportIcon/></span>
-							<span>Export simulation</span>
-						</> }
-						pendingText = 'Exporting simulation stack...'
-						keepTextWhilePending = { true }
-						pendingIndicatorPlacement = 'overlay'
-					/>
-					<Tooltip config = { simulationExportTooltip } />
-				</div>
-			</div> : <></> }
-			{ showSafeSigningActions ? <div class = 'simulation-stack-action-group'>
-				<div class = 'simulation-stack-action-label'>
-					<strong>Gnosis Safe</strong>
-					<span>Proposals and signatures</span>
-				</div>
-				<div class = 'simulation-stack-action-controls'>
-					<button class = 'btn btn--outline' type = 'button' onClick = { openImportSafe }>
-						<span class = 'simulation-stack-action-icon'><ImportIcon/></span>
-						<span>Import Gnosis Safe transactions</span>
-					</button>
-					<CopySafeTransactionsButton
-						class = 'btn btn--outline'
-						disabled = { !hasSafeTransactionsToExport }
-						disabledTitle = 'There are no Gnosis Safe proposals to export on the selected chain.'
-						text = { <>
-							<span class = 'simulation-stack-action-icon'><CopyIcon/></span>
-							<span>Copy Gnosis Safe transactions</span>
-						</> }
-						onCopyStart = { () => {
-							latestExportType.value = 'safe'
-							safeCopyError.value = undefined
-						} }
-						onCopyError = { (message) => { safeCopyError.value = message } }
-					/>
-				</div>
-			</div> : <></> }
-		</nav>
 		{ exportError === undefined ? <></> :
 			<div class = 'simulation-stack-page-action-error'>
 				<ErrorComponent text = { exportError } containerStyle = { { margin: '0' } }/>

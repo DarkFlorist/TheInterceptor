@@ -200,6 +200,10 @@ function getButtonByText(root: TestDomNode, text: string) {
 	return button
 }
 
+function hasButtonWithAriaLabel(root: TestDomNode, ariaLabel: string) {
+	return collectElements(root, 'button').some((button) => button.getAttribute?.('aria-label') === ariaLabel)
+}
+
 function getParagraphByAriaLabel(root: TestDomNode, ariaLabel: string) {
 	const paragraph = collectElements(root, 'p').find((element) => element.getAttribute?.('aria-label') === ariaLabel)
 	if (paragraph === undefined) throw new Error(`Expected paragraph with aria-label "${ ariaLabel }"`)
@@ -711,12 +715,16 @@ describe('simulation visualizer open replies', () => {
 			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), true)
 			assert.equal(dom.document.body.textContent?.includes('Import, export, and adjust the simulation stack.'), true)
 			assert.equal(dom.document.body.textContent?.includes('Loading...'), false)
-			assert.equal(hasButtonWithText(dom.document.body, 'Import simulation'), true)
-			assert.equal(hasButtonWithText(dom.document.body, 'Export simulation'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import simulation stack'), true)
+			assert.equal(hasButtonWithText(dom.document.body, 'Export'), true)
 			assert.equal(hasButtonWithText(dom.document.body, 'Clear stack'), true)
-			assert.equal(getButtonByText(dom.document.body, 'Import simulation').getAttribute?.('class')?.includes('is-small') ?? false, false)
-			assert.equal(getButtonByText(dom.document.body, 'Export simulation').getAttribute?.('class')?.includes('is-small') ?? false, false)
+			assert.equal(getButtonByText(dom.document.body, 'Import').getAttribute?.('class')?.includes('is-small') ?? false, false)
+			assert.equal(getButtonByText(dom.document.body, 'Export').getAttribute?.('class')?.includes('is-small') ?? false, false)
 			assert.equal(getButtonByText(dom.document.body, 'Clear stack').getAttribute?.('class')?.includes('is-small') ?? false, false)
+			const headerControls = findElementByClass(dom.document.body, 'nav', 'simulation-stack-page-controls')
+			assert.ok(headerControls)
+			assert.equal(collectElements(headerControls, 'button').length, 3)
+			assert.equal(findElementByClass(dom.document.body, 'nav', 'simulation-stack-page-actions'), undefined)
 			assert.equal(dom.document.body.textContent?.includes('Export Simulation Stack'), false)
 			assert.equal(hasCompactStackCard(dom.document.body), false)
 			const targetRow = findElementById(dom.document.body, 'simulation-stack-transaction-0x1')
@@ -782,9 +790,9 @@ describe('simulation visualizer open replies', () => {
 			})
 
 			assert.equal(dom.document.body.textContent?.includes('Gnosis Safe Stack'), true)
-			assert.equal(dom.document.body.textContent?.includes('Import Gnosis Safe transactions'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import Gnosis Safe stack'), true)
 			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), true)
-			assert.equal(dom.document.body.textContent?.includes('Import simulation'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import simulation stack'), false)
 		} finally {
 			dom.restore()
 		}
@@ -948,14 +956,14 @@ describe('simulation visualizer open replies', () => {
 			})
 
 			await act(async () => {
-				await clickElement(getButtonByText(dom.document.body, 'Export simulation'))
+				await clickElement(getButtonByText(dom.document.body, 'Export'))
 				await new Promise((resolve) => setTimeout(resolve, 0))
 			})
 
 			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestInterceptorSimulationInput'), true)
 			assert.deepStrictEqual(clipboardMock.copiedText, [exportPayload])
 			assert.equal(dom.document.body.textContent?.includes('Copied!'), true)
-			assert.notEqual(getButtonByText(dom.document.body, 'Export simulation').getAttribute?.('disabled'), null)
+			assert.notEqual(getButtonByText(dom.document.body, 'Export').getAttribute?.('disabled'), null)
 		} finally {
 			clipboardMock.restore()
 			dom.restore()
@@ -983,13 +991,13 @@ describe('simulation visualizer open replies', () => {
 			})
 
 			await act(async () => {
-				await clickElement(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions'))
+				await clickElement(getButtonByText(dom.document.body, 'Export'))
 				await new Promise((resolve) => setTimeout(resolve, 0))
 			})
 
 			assert.deepStrictEqual(clipboardMock.copiedText, [safeExportPayload])
 			assert.equal(dom.document.body.textContent?.includes('Copied!'), true)
-			assert.notEqual(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions').getAttribute?.('disabled'), null)
+			assert.notEqual(getButtonByText(dom.document.body, 'Export').getAttribute?.('disabled'), null)
 		} finally {
 			clipboardMock.restore()
 			dom.restore()
@@ -1009,10 +1017,10 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(20, 1, 'Stack tab')) }, {}, () => undefined)
 			})
-			assert.equal(hasButtonWithText(dom.document.body, 'Import simulation'), false)
-			assert.equal(hasButtonWithText(dom.document.body, 'Export simulation'), false)
-			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), true)
-			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import simulation stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export simulation stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import Gnosis Safe stack'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export Gnosis Safe stack'), true)
 		} finally {
 			dom.restore()
 		}
@@ -1038,7 +1046,7 @@ describe('simulation visualizer open replies', () => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(21, 1, 'Stack tab')) }, {}, () => undefined)
 			})
 			await act(async () => {
-				await clickElement(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions'))
+				await clickElement(getButtonByText(dom.document.body, 'Export'))
 				await new Promise((resolve) => setTimeout(resolve, 0))
 			})
 
@@ -1068,10 +1076,10 @@ describe('simulation visualizer open replies', () => {
 			})
 
 			assert.equal(dom.document.body.textContent?.includes('Gnosis Safe Stack'), false)
-			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), false)
-			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), false)
-			assert.equal(hasButtonWithText(dom.document.body, 'Import simulation'), false)
-			assert.equal(hasButtonWithText(dom.document.body, 'Export simulation'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import Gnosis Safe stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export Gnosis Safe stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import simulation stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export simulation stack'), false)
 			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), false)
 			assert.equal(dom.document.body.textContent?.includes('Select simulation mode or a Gnosis Safe to view a transaction stack.'), true)
 
@@ -1079,17 +1087,17 @@ describe('simulation visualizer open replies', () => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, popupRefreshGeneration: 3, data: { ...update.data, activeAddresses: [contactWithSafeAddress, { ...activeSafe, safeSimulationSignerAddress: undefined }], hasSafeTransactionsToExport: false } }) }, {}, () => undefined)
 			})
 
-			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), true)
-			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), true)
-			assert.notEqual(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions').getAttribute?.('disabled'), null)
-			assert.equal(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions').getAttribute?.('title'), 'There are no Gnosis Safe proposals to export on the selected chain.')
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import Gnosis Safe stack'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export Gnosis Safe stack'), true)
+			assert.notEqual(getButtonByText(dom.document.body, 'Export').getAttribute?.('disabled'), null)
+			assert.equal(getButtonByText(dom.document.body, 'Export').getAttribute?.('title'), 'There are no Gnosis Safe proposals to export on the selected chain.')
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, popupRefreshGeneration: 4, data: { ...update.data, tabState: { ...update.data.tabState, signerAccounts: [0x9999999999999999999999999999999999999999n] } } }) }, {}, () => undefined)
 			})
 
-			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), true)
-			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import Gnosis Safe stack'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export Gnosis Safe stack'), true)
 		} finally {
 			dom.restore()
 		}
@@ -1108,16 +1116,16 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(22, 1, 'Stack tab')) }, {}, () => undefined)
 			})
-			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), true)
-			assert.equal(hasButtonWithText(dom.document.body, 'Export simulation'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export Gnosis Safe stack'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export simulation stack'), false)
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createSimulationStackHomePageUpdate(22, 2, 'Simulation stack tab')) }, {}, () => undefined)
 			})
-			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), false)
-			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), false)
-			assert.equal(hasButtonWithText(dom.document.body, 'Export simulation'), true)
-			assert.equal(hasButtonWithText(dom.document.body, 'Import simulation'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export Gnosis Safe stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import Gnosis Safe stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export simulation stack'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import simulation stack'), true)
 		} finally {
 			dom.restore()
 		}
