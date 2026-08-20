@@ -17,7 +17,7 @@ type LiveSimulationHomeDataOptions = {
 	answerSimulationDataConsumerOpen: boolean
 	requestFreshHomeDataOnMount: boolean
 	filterByTabId?: boolean
-	requireActiveSimulationAddress?: boolean
+	requireActiveModeAddress?: boolean
 	requestHomeDataOnSimulationStateChange?: boolean
 	onInitialSettings?: (settings: Settings) => void
 }
@@ -90,10 +90,10 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			addressBookEntries: AddressBookEntries,
 			tokenPriceEstimates: readonly TokenPriceEstimate[],
 			visualizedSimulationState: VisualizedSimulationState,
-			activeSimulationAddress: bigint | undefined,
+			activeModeAddress: bigint | undefined,
 			namedTokenIds: readonly NamedTokenId[],
 		): void => {
-			if ((options.requireActiveSimulationAddress !== false && activeSimulationAddress === undefined) || simState.kind === 'passthrough') {
+			if ((options.requireActiveModeAddress !== false && activeModeAddress === undefined) || simState.kind === 'passthrough') {
 				simVisResults.value = PASSTHROUGH_STATE
 				return
 			}
@@ -116,7 +116,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 				state.addressBookEntries,
 				state.tokenPriceEstimates,
 				state.visualizedSimulationState,
-				activeSimulationAddress.value,
+				simulationMode.value ? activeSimulationAddress.value : activeSigningSafeAddress.value,
 				state.namedTokenIds,
 			)
 			simulationUpdatingState.value = state.simulationUpdatingState

@@ -1425,4 +1425,39 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 			browserMock.restore()
 		}
 	})
+
+	test('keeps the configured Safe stack visible when the current tab displays the wallet owner', async () => {
+		const dom = installDomMock()
+		try {
+			await act(async () => {
+				render(h(Home, createHomeParams({
+					activeAddresses: new Signal([safeEntry, safeSignerEntry]),
+					activeSigningSafeAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					simulationMode: new Signal(false),
+					tabState: new Signal<TabState | undefined>({
+						tabId: 1,
+						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+						signerConnected: true,
+						signerName: 'MetaMask',
+						signerAccounts: [SAFE_SIGNER_ADDRESS],
+						signerAccountError: undefined,
+						signerChain: 1n,
+						tabIconDetails: { icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' },
+						activeSigningAddress: SAFE_SIGNER_ADDRESS,
+					}),
+					simVisResults: new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createSafeSimulationResults())),
+					hasSafeTransactionsToExport: new Signal(true),
+				})), dom.document.body)
+				await new Promise((resolve) => setTimeout(resolve, 40))
+			})
+
+			assert.equal(dom.document.body.textContent?.includes('Simulation Results'), true)
+			assert.equal(dom.document.body.textContent?.includes('View stack details'), true)
+			assert.equal(dom.document.body.textContent?.includes('Copy Gnosis Safe transactions'), true)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
 })

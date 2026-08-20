@@ -3,6 +3,38 @@ import { describe, test } from 'bun:test'
 import { addressString, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
+	test('refreshes the cached signing visualization when selecting another Safe on the same chain', async () => {
+		installBrowserMock()
+		const messages: unknown[] = []
+		Object.defineProperty(browser.runtime, 'sendMessage', {
+			configurable: true,
+			value: async (message: unknown) => {
+				messages.push(message)
+				if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen') {
+					return { method: 'popup_isSimulationVisualizerOpen', data: { isOpen: false } }
+				}
+				return undefined
+			},
+		})
+		const { changeActiveAddressAndChain, changeSimulationMode, getSettings } = await loadModules()
+		const firstSafe = 0x1010101010101010101010101010101010101010n
+		const secondSafe = 0x2020202020202020202020202020202020202020n
+		await changeSimulationMode({ simulationMode: false, activeSigningSafeAddress: firstSafe })
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+
+		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			simulationMode: false,
+			activeAddress: secondSafe,
+			signingAddressSelection: 'safe',
+			promptForAccessesIfNeeded: false,
+		})
+
+		assert.equal((await getSettings()).activeSigningSafeAddress, secondSafe)
+		assert.equal(messages.some((message) =>
+			typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen'
+		), true)
+	})
+
 	test('rejects arbitrary EOAs and unverified or unowned Safes selected through popup signing-mode bypasses', async () => {
 		const { readStoredValue } = installBrowserMock()
 		const {

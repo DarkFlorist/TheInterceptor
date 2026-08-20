@@ -892,16 +892,16 @@ export function Home(param: HomeParams) {
 	const disableResetUntilHomeDataLoaded = useComputed(() => disableReset.value || !param.isInitialHomeDataLoaded.value)
 
 	const modeActiveAddress = useModeActiveAddress(param)
-	const safeSigningMode = useComputed(() => modeActiveAddress.value.safeSigningMode)
+	const safeStackMode = useComputed(() => !param.simulationMode.value && param.activeSigningSafeAddress.value !== undefined)
 	const currentActiveAddress = useComputed(() => {
 		const resolution = modeActiveAddress.value
 		if (resolution.activeAddress === undefined) return undefined
 		return resolution.activeAddressBookEntry ?? getActiveAddressEntry(resolution.activeAddress, param.activeAddresses.value, param.rpcNetwork.value?.chainId)
 	})
-	const visualizedAddress = useComputed(() => modeActiveAddress.value.activeAddress)
+	const visualizedAddress = useComputed(() => safeStackMode.value ? param.activeSigningSafeAddress.value : modeActiveAddress.value.activeAddress)
 
 	useEffect(() => {
-		if ((!param.simulationMode.value && !safeSigningMode.value) || currentActiveAddress.value === undefined) {
+		if ((!param.simulationMode.value && !safeStackMode.value) || visualizedAddress.value === undefined) {
 			showPopupVisualisation.value = false
 			return
 		}
@@ -909,7 +909,7 @@ export function Home(param: HomeParams) {
 		return scheduleAfterPaint(() => {
 			showPopupVisualisation.value = true
 		})
-	}, [param.simulationMode.value, safeSigningMode.value, currentActiveAddress.value])
+	}, [param.simulationMode.value, safeStackMode.value, visualizedAddress.value])
 
 	useSignalEffect(() => {
 		param.simVisResults.value
@@ -973,7 +973,7 @@ export function Home(param: HomeParams) {
 			isFreshHomeDataLoaded = { param.isFreshHomeDataLoaded }
 		/>
 
-		{ (param.simulationMode.value || safeSigningMode.value) && currentActiveAddress.value !== undefined
+		{ (param.simulationMode.value || safeStackMode.value) && visualizedAddress.value !== undefined
 			? showPopupVisualisation.value
 				? <PopupVisualisation
 					simulationAndVisualisationResults = { param.simVisResults }
@@ -991,7 +991,7 @@ export function Home(param: HomeParams) {
 					openSimulationStack = { openSimulationStack }
 					numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich }
 					hasSafeTransactionsToExport = { param.hasSafeTransactionsToExport }
-					safeSigningMode = { safeSigningMode.value }
+					safeSigningMode = { safeStackMode.value }
 				/>
 				: <SimulationLoadingSkeleton/>
 			: <></> }

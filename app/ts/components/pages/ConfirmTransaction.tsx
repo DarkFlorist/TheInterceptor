@@ -667,51 +667,53 @@ type ConfirmationActionButtonsParams = Omit<ButtonsParams, 'currentPendingTransa
 
 export function ConfirmationActionButtons({ identified, signerName, simulationMode, waitingForSigner, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToSafeStack, addToSafeStackButtonState = 'inactive', addToSafeStackDisabled = true }: ConfirmationActionButtonsParams) {
 	const addsSafeProposal = addToSafeStack !== undefined && !simulationMode
-	return <div style = 'display: flex; flex-direction: row;'>
-		<AsyncActionButton
-			class = 'button is-primary is-danger button-overflow dialog-action-button'
-			state = { rejectButtonState }
-			disabled = { approveButtonState === 'pending' || addToSafeStackButtonState === 'pending' }
-			text = { identified.rejectAction }
-			pendingText = 'Rejecting...'
-			onClick = { reject }
-		/>
-		{ addToSafeStack === undefined ? <></> : <AsyncActionButton
-			class = 'button is-primary is-outlined button-overflow dialog-action-button'
-			state = { addToSafeStackButtonState }
-			disabled = { addToSafeStackDisabled || rejectButtonState === 'pending' || approveButtonState === 'pending' }
-			ariaLabel = 'Add unsigned to Safe stack'
-			pendingAriaLabel = 'Adding unsigned proposal to Safe stack...'
-			title = 'Add this proposal to the Safe stack without a signature'
-			text = 'Add unsigned'
-			pendingText = 'Adding unsigned...'
-			onClick = { addToSafeStack }
-		/> }
-		<AsyncActionButton
-			class = 'button is-primary button-overflow dialog-action-button'
-			state = { approveButtonState }
-			ariaLabel = { addsSafeProposal ? 'Sign and add to Safe stack' : undefined }
-			pendingAriaLabel = { addsSafeProposal ? 'Signing and adding proposal to Safe stack...' : undefined }
-			title = { addsSafeProposal ? 'Sign this proposal and add it to the Safe stack' : undefined }
-			text = { waitingForSigner
-				? <span class = 'confirmation-waiting-for-signer'>
-					<AsyncStatusIcon state = 'pending'/>
-					<span>Waiting for{ ' ' }</span>
-					<SignersLogoName signerName = { signerName }/>
-				</span>
-				: simulationMode
-					? `${ identified.simulationAction }!`
-					: <SignerLogoText signerName = { signerName } text = { addsSafeProposal ? 'Sign & add' : identified.signingAction } />
-			}
-			pendingText = { waitingForSigner
-				? 'Waiting for signer...'
-				: simulationMode
-					? `${ identified.simulationAction }...`
-					: addsSafeProposal ? 'Signing & adding...' : `Sign with ${ signerName }...`
-			}
-			onClick = { approve }
-			disabled = { confirmDisabled || rejectButtonState === 'pending' || addToSafeStackButtonState === 'pending' }
-		/>
+	return <div class = 'confirmation-action-buttons-container'>
+		<div class = { `confirmation-action-buttons${ addsSafeProposal ? ' confirmation-action-buttons--safe' : '' }` }>
+			<AsyncActionButton
+				class = 'button is-primary is-danger button-overflow dialog-action-button'
+				state = { rejectButtonState }
+				disabled = { approveButtonState === 'pending' || addToSafeStackButtonState === 'pending' }
+				text = { identified.rejectAction }
+				pendingText = 'Rejecting...'
+				onClick = { reject }
+			/>
+			{ addToSafeStack === undefined ? <></> : <AsyncActionButton
+				class = 'button is-primary is-outlined button-overflow dialog-action-button'
+				state = { addToSafeStackButtonState }
+				disabled = { addToSafeStackDisabled || rejectButtonState === 'pending' || approveButtonState === 'pending' }
+				ariaLabel = 'Add unsigned to Safe stack'
+				pendingAriaLabel = 'Adding unsigned proposal to Safe stack...'
+				title = 'Add this proposal to the Safe stack without a signature'
+				text = 'Add unsigned'
+				pendingText = 'Adding unsigned...'
+				onClick = { addToSafeStack }
+			/> }
+			<AsyncActionButton
+				class = 'button is-primary button-overflow dialog-action-button'
+				state = { approveButtonState }
+				ariaLabel = { addsSafeProposal ? 'Sign and add to Safe stack' : undefined }
+				pendingAriaLabel = { addsSafeProposal ? 'Signing and adding proposal to Safe stack...' : undefined }
+				title = { addsSafeProposal ? 'Sign this proposal and add it to the Safe stack' : undefined }
+				text = { waitingForSigner
+					? <span class = 'confirmation-waiting-for-signer'>
+						<AsyncStatusIcon state = 'pending'/>
+						<span>Waiting for{ ' ' }</span>
+						<SignersLogoName signerName = { signerName }/>
+					</span>
+					: simulationMode
+						? `${ identified.simulationAction }!`
+						: <SignerLogoText signerName = { signerName } text = { addsSafeProposal ? 'Sign & add' : identified.signingAction } />
+				}
+				pendingText = { waitingForSigner
+					? 'Waiting for signer...'
+					: simulationMode
+						? `${ identified.simulationAction }...`
+						: addsSafeProposal ? 'Signing & adding...' : `Sign with ${ signerName }...`
+				}
+				onClick = { approve }
+				disabled = { confirmDisabled || rejectButtonState === 'pending' || addToSafeStackButtonState === 'pending' }
+			/>
+		</div>
 	</div>
 }
 

@@ -71,7 +71,7 @@ export async function changeActiveAddressAndChain(
 	},
 ) {
 	if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList()
-	const previousSettings = change.rpcNetwork !== undefined ? await getSettings() : undefined
+	const previousSettings = await getSettings()
 
 	if (change.simulationMode) {
 		await changeSimulationMode({
@@ -95,8 +95,11 @@ export async function changeActiveAddressAndChain(
 	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration })
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	await changeActiveAddressAndChainSemaphore.execute(async () => {
+		const activeSigningSafeChanged = !updatedSettings.simulationMode
+			&& updatedSettings.activeSigningSafeAddress !== undefined
+			&& (previousSettings.simulationMode || previousSettings.activeSigningSafeAddress !== updatedSettings.activeSigningSafeAddress)
 		if (change.rpcNetwork !== undefined) {
-			const rpcChainChanged = previousSettings !== undefined && previousSettings.activeRpcNetwork.chainId !== change.rpcNetwork.chainId
+			const rpcChainChanged = previousSettings.activeRpcNetwork.chainId !== change.rpcNetwork.chainId
 			if (change.rpcNetwork.httpsRpc !== undefined) resetSimulationServices(change.rpcNetwork)
 			sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: change.rpcNetwork.chainId })
 			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
@@ -107,6 +110,7 @@ export async function changeActiveAddressAndChain(
 				await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
 			}
 		}
+		if (activeSigningSafeChanged) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
 		await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 	})
 }

@@ -304,7 +304,7 @@ export function SimulationStackPage() {
 		answerSimulationDataConsumerOpen: true,
 		requestFreshHomeDataOnMount: true,
 		filterByTabId: false,
-		requireActiveSimulationAddress: false,
+		requireActiveModeAddress: false,
 		requestHomeDataOnSimulationStateChange: true,
 	})
 	const { disableReset, resetSimulation, markSimulationDataReceived } = useResetSimulation()
@@ -314,7 +314,7 @@ export function SimulationStackPage() {
 	const handledStackTargetHash = useSignal<string | undefined>(undefined)
 	const addressMetaData = useComputed(() => simVisResults.value.kind === 'simulated' ? simVisResults.value.value.addressBookEntries : [])
 	const modeActiveAddress = useModeActiveAddress({ activeAddresses, simulationMode, activeSimulationAddress, activeSigningSafeAddress, displayedSigningAddress, rpcNetwork, tabState })
-	const visualizedAddress = useComputed(() => modeActiveAddress.value.activeAddress)
+	const visualizedAddress = useComputed(() => simulationMode.value ? modeActiveAddress.value.activeAddress : activeSigningSafeAddress.value)
 	const madeRichAddressBookEntries = useComputed(() => getMadeRichAddressBookEntries(
 		fixedAddressRichList.value,
 		makeCurrentAddressRich.value,
@@ -327,8 +327,7 @@ export function SimulationStackPage() {
 		if (simVisResults.value.kind === 'passthrough') return true
 		return isEmptySimulation(simVisResults.value.value)
 	})
-	// Safe import and copy are signing-mode controls: intentionally hide both unless a Safe is the active account on this chain.
-	const showSafeSigningActions = useComputed(() => modeActiveAddress.value.safeSigningMode)
+	const showSafeSigningActions = useComputed(() => !simulationMode.value)
 
 	useSignalEffect(() => {
 		simVisResults.value

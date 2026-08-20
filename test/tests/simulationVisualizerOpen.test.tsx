@@ -92,6 +92,15 @@ function StackVisualizerHookProbe() {
 	return <div>ready</div>
 }
 
+function MainPopupSimulationStateProbe() {
+	const { simVisResults } = useLiveSimulationHomeData({
+		answerMainPopupOpen: true,
+		answerSimulationDataConsumerOpen: true,
+		requestFreshHomeDataOnMount: false,
+	})
+	return <div>{ simVisResults.value.kind }</div>
+}
+
 function CrossTabStackVisualizerHookProbe() {
 	const { tabState } = useLiveSimulationHomeData({
 		answerMainPopupOpen: false,
@@ -591,6 +600,26 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
+	test('main popup hook keeps Safe simulation results without a simulation-mode address', async () => {
+		const dom = installDomMock()
+		const { listeners } = installBrowserMock()
+		try {
+			await act(() => {
+				render(h(MainPopupSimulationStateProbe, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected hook to register a runtime listener')
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(12, 1, 'Safe stack')) }, {}, () => undefined)
+			})
+
+			assert.equal(dom.document.body.textContent, 'simulated')
+		} finally {
+			dom.restore()
+		}
+	})
+
 	test('stack visualizer page shows rich-only state instead of the empty-state dino', async () => {
 		const dom = installDomMock()
 		const { listeners } = installBrowserMock()
@@ -721,6 +750,40 @@ describe('simulation visualizer open replies', () => {
 			})
 
 			assert.equal(collectElements(dom.document.body, 'p').some((paragraph) => paragraph.getAttribute?.('aria-label') === 'Address being made rich is Test Safe.'), true)
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('stack visualizer remains a Gnosis Safe stack when the current tab cannot resolve the Safe owner', async () => {
+		const dom = installDomMock()
+		const { listeners } = installBrowserMock()
+		const update = createStackHomePageUpdate(13, 1, 'Safe signing stack', [1n], 0)
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+
+			await act(() => {
+				listener({
+					role: 'all',
+					...serialize(UpdateHomePage, {
+						...update,
+						data: {
+							...update.data,
+							activeSigningAddressInThisTab: 0x1000000000000000000000000000000000000001n,
+							tabState: { ...update.data.tabState, signerConnected: false, signerAccounts: [], activeSigningAddress: undefined },
+						},
+					}),
+				}, {}, () => undefined)
+			})
+
+			assert.equal(dom.document.body.textContent?.includes('Gnosis Safe Stack'), true)
+			assert.equal(dom.document.body.textContent?.includes('Import Gnosis Safe transactions'), true)
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), true)
+			assert.equal(dom.document.body.textContent?.includes('Import simulation'), false)
 		} finally {
 			dom.restore()
 		}
@@ -980,17 +1043,12 @@ describe('simulation visualizer open replies', () => {
 
 			assert.equal(dom.document.body.textContent?.includes(exportError), true)
 
-			await act(() => {
-				listener({ role: 'all', ...serialize(UpdateHomePage, createNonSafeStackHomePageUpdate(21, 2, 'Non-Safe stack tab')) }, {}, () => undefined)
-			})
-
-			assert.equal(dom.document.body.textContent?.includes(exportError), false)
 		} finally {
 			dom.restore()
 		}
 	})
 
-	test('stack visualizer applies the Safe signing-mode rule to both import and copy actions', async () => {
+	test('stack visualizer keeps Safe import and copy actions visible throughout signing mode', async () => {
 		const dom = installDomMock()
 		const { listeners } = installBrowserMock(() => undefined)
 		try {
@@ -1008,8 +1066,10 @@ describe('simulation visualizer open replies', () => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createNonSafeStackHomePageUpdate(23, 2, 'Non-Safe stack tab')) }, {}, () => undefined)
 			})
 
-			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), false)
-			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), false)
+			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), true)
+			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), true)
+			assert.equal(hasButtonWithText(dom.document.body, 'Import simulation'), false)
+			assert.equal(hasButtonWithText(dom.document.body, 'Export simulation'), false)
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, popupRefreshGeneration: 3, data: { ...update.data, activeAddresses: [contactWithSafeAddress, { ...activeSafe, safeSimulationSignerAddress: undefined }], hasSafeTransactionsToExport: false } }) }, {}, () => undefined)
@@ -1024,8 +1084,8 @@ describe('simulation visualizer open replies', () => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, popupRefreshGeneration: 4, data: { ...update.data, tabState: { ...update.data.tabState, signerAccounts: [0x9999999999999999999999999999999999999999n] } } }) }, {}, () => undefined)
 			})
 
-			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), false)
-			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), false)
+			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), true)
+			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), true)
 		} finally {
 			dom.restore()
 		}
