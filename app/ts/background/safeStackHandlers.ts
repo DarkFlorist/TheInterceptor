@@ -1,7 +1,7 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { assertInterceptorSafeTransactionPolicy, assertUniqueSafeTransactionStacks, createSafeOwnerValidator, getSafeContractSnapshot } from '../safe/safeCore.js'
-import { reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
+import { mergeSafeOwnerSignatures, reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
 import { SafeStackExport, type SafeTransactionStack } from '../types/safeTypes.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import { getSafeTxHash } from '../utils/eip712.js'
@@ -112,11 +112,7 @@ export async function importSafeStack(
 				const mergedTransactions = existingStack.transactions.map((existingTransaction, index) => {
 					const importedTransaction = importedStack.transactions[index]
 					if (importedTransaction === undefined) return existingTransaction
-					const signatures = [...existingTransaction.signatures]
-					for (const importedSignature of importedTransaction.signatures) {
-						if (!signatures.some((signature) => signature.signer === importedSignature.signer)) signatures.push(importedSignature)
-					}
-					return { ...existingTransaction, signatures }
+					return { ...existingTransaction, signatures: mergeSafeOwnerSignatures(existingTransaction.signatures, importedTransaction.signatures) }
 				})
 				mergedStacks[existingIndex] = {
 					...existingStack,

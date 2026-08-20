@@ -666,6 +666,7 @@ type ConfirmationActionButtonsParams = Omit<ButtonsParams, 'currentPendingTransa
 }
 
 export function ConfirmationActionButtons({ identified, signerName, simulationMode, waitingForSigner, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToSafeStack, addToSafeStackButtonState = 'inactive', addToSafeStackDisabled = true }: ConfirmationActionButtonsParams) {
+	const addsSafeProposal = addToSafeStack !== undefined && !simulationMode
 	return <div style = 'display: flex; flex-direction: row;'>
 		<AsyncActionButton
 			class = 'button is-primary is-danger button-overflow dialog-action-button'
@@ -679,13 +680,19 @@ export function ConfirmationActionButtons({ identified, signerName, simulationMo
 			class = 'button is-primary is-outlined button-overflow dialog-action-button'
 			state = { addToSafeStackButtonState }
 			disabled = { addToSafeStackDisabled || rejectButtonState === 'pending' || approveButtonState === 'pending' }
-			text = 'Add to Safe stack'
-			pendingText = 'Adding to Safe stack...'
+			ariaLabel = 'Add unsigned to Safe stack'
+			pendingAriaLabel = 'Adding unsigned proposal to Safe stack...'
+			title = 'Add this proposal to the Safe stack without a signature'
+			text = 'Add unsigned'
+			pendingText = 'Adding unsigned...'
 			onClick = { addToSafeStack }
 		/> }
 		<AsyncActionButton
 			class = 'button is-primary button-overflow dialog-action-button'
 			state = { approveButtonState }
+			ariaLabel = { addsSafeProposal ? 'Sign and add to Safe stack' : undefined }
+			pendingAriaLabel = { addsSafeProposal ? 'Signing and adding proposal to Safe stack...' : undefined }
+			title = { addsSafeProposal ? 'Sign this proposal and add it to the Safe stack' : undefined }
 			text = { waitingForSigner
 				? <span class = 'confirmation-waiting-for-signer'>
 					<AsyncStatusIcon state = 'pending'/>
@@ -694,13 +701,13 @@ export function ConfirmationActionButtons({ identified, signerName, simulationMo
 				</span>
 				: simulationMode
 					? `${ identified.simulationAction }!`
-					: <SignerLogoText signerName = { signerName } text = { identified.signingAction } />
+					: <SignerLogoText signerName = { signerName } text = { addsSafeProposal ? 'Sign & add' : identified.signingAction } />
 			}
 			pendingText = { waitingForSigner
 				? 'Waiting for signer...'
 				: simulationMode
 					? `${ identified.simulationAction }...`
-					: `Sign with ${ signerName }...`
+					: addsSafeProposal ? 'Signing & adding...' : `Sign with ${ signerName }...`
 			}
 			onClick = { approve }
 			disabled = { confirmDisabled || rejectButtonState === 'pending' || addToSafeStackButtonState === 'pending' }
@@ -1040,7 +1047,7 @@ export function ConfirmTransaction() {
 							}
 							{ currentSafeTransactionFlow.value?.kind === 'proposal'
 								? <DinoSaysNotification
-									text = { `This transaction will be wrapped as Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeTransaction.safeTx.message.nonce.toString() }. You can sign it with the owner selected in your wallet or add it to the local optimistic Gnosis Safe stack without a signature. It will not be broadcast automatically.` }
+									text = { `This transaction will be wrapped as Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeTransaction.safeTx.message.nonce.toString() }. Both choices add it to the local optimistic Gnosis Safe stack: Sign & add includes the signature from the owner selected in your wallet, while Add unsigned stores it without a signature. It will not be broadcast automatically.` }
 									close = { () => undefined }
 								/>
 								: <></>

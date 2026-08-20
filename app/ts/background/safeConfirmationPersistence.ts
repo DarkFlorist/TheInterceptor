@@ -11,7 +11,7 @@ import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js
 import { openPopupOrTab } from '../utils/popupOrTab.js'
 import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, createSafeOwnerValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
 import { createSafeExecutionPreSimulationTransaction } from '../safe/safeSimulation.js'
-import { reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
+import { mergeSafeOwnerSignatures, reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
 import { isSafeSignerSelectionFailure, validateSafeMessageCoSignature } from './safeConfirmationResolver.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { getSafePendingFlow } from '../safe/safePendingFlow.js'
@@ -137,6 +137,7 @@ async function persistSafeTransaction(
 			const existingStack = reconciledState.safeTransactionStacks.find((stack) =>
 				stack.chainId === ethereum.getChainId() && stack.safeAddress === safeSigningRequest.safeAddress
 			)
+			let persistedStackTransaction = stackTransaction
 			let safeTransactionStacks: typeof previousState.safeTransactionStacks
 			if (existingStack === undefined) {
 				safeTransactionStacks = [...reconciledState.safeTransactionStacks, {
@@ -150,7 +151,11 @@ async function persistSafeTransaction(
 			} else {
 				const duplicate = existingStack.transactions.find((entry) => entry.safeTxHash === safeSigningRequest.safeTxHash)
 				if (duplicate !== undefined) {
-					safeTransactionStacks = reconciledState.safeTransactionStacks
+					persistedStackTransaction = { ...duplicate, signatures: mergeSafeOwnerSignatures(duplicate.signatures, signatures) }
+					safeTransactionStacks = reconciledState.safeTransactionStacks.map((stack) => stack === existingStack
+						? { ...stack, transactions: stack.transactions.map((entry) => entry === duplicate ? persistedStackTransaction : entry) }
+						: stack
+					)
 				} else {
 					const expectedNonce = existingStack.baseNonce + BigInt(existingStack.transactions.length)
 					if (safeSigningRequest.safeTx.message.nonce !== expectedNonce) {
@@ -162,16 +167,23 @@ async function persistSafeTransaction(
 					)
 				}
 			}
-			const interceptorTransactionStack = reconciledState.interceptorTransactionStack.operations.some((operation) =>
+			let updatedSafeMirror = false
+			const updatedOperations = reconciledState.interceptorTransactionStack.operations.map((operation) => {
+				if (operation.type !== 'Transaction' || operation.preSimulationTransaction.safeTransaction?.safeTxHash !== safeSigningRequest.safeTxHash) return operation
+				updatedSafeMirror = true
+				return {
+					...operation,
+					preSimulationTransaction: { ...operation.preSimulationTransaction, safeTransaction: persistedStackTransaction },
+				}
+			})
+			const interceptorTransactionStack = updatedSafeMirror || updatedOperations.some((operation) =>
 				operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === pendingTransaction.transactionIdentifier
 			)
-				? reconciledState.interceptorTransactionStack
-				: {
-					operations: [
-						...reconciledState.interceptorTransactionStack.operations,
-						{ type: 'Transaction' as const, preSimulationTransaction: transaction },
-					],
-				}
+				? { operations: updatedOperations }
+				: { operations: [...updatedOperations, {
+					type: 'Transaction' as const,
+					preSimulationTransaction: { ...transaction, safeTransaction: persistedStackTransaction },
+				}] }
 			return { safeTransactionStacks, interceptorTransactionStack }
 		})
 	} catch (error) {

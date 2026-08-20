@@ -213,8 +213,8 @@ describe('popup header markup', () => {
 		})
 
 		assert.equal(dom.document.body.textContent?.includes(`Reject ${ abiFunctionName }`), true)
-		assert.equal(dom.document.body.textContent?.includes(`Sign ${ abiFunctionName }`), true)
-		assert.equal(dom.document.body.textContent?.includes('Add to Safe stack'), true)
+		assert.equal(dom.document.body.textContent?.includes('Sign & add'), true)
+		assert.equal(dom.document.body.textContent?.includes('Add unsigned'), true)
 
 		await act(() => {
 			render(h(ConfirmationActionButtons, {
