@@ -13,15 +13,23 @@ import { changeSimulationMode, getSettings, setUseSignersAddressAsActiveAddress,
 import { promoteRpcAsPrimary, updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
+import { operationBelongsToActiveStackContext, type ActiveStackContext } from '../safe/safeStack.js'
 
 export async function resetSimulationStateFromConfig(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
 	const settings = await getSettings()
+	const activeStackContext: ActiveStackContext = settings.simulationMode
+		? { simulationMode: true }
+		: {
+			simulationMode: false,
+			activeSafeAddress: settings.activeSigningSafeAddress,
+			chainId: settings.activeRpcNetwork.chainId,
+		}
 	await updateTransactionState((previousState) => {
 		if (settings.simulationMode) {
 			return {
 				interceptorTransactionStack: {
 					operations: previousState.interceptorTransactionStack.operations.filter((operation) =>
-						operation.type === 'Transaction' && operation.preSimulationTransaction.safeTransaction !== undefined
+						!operationBelongsToActiveStackContext(operation, activeStackContext)
 					),
 				},
 				safeTransactionStacks: previousState.safeTransactionStacks,
@@ -31,13 +39,9 @@ export async function resetSimulationStateFromConfig(ethereum: EthereumClientSer
 		const activeChainId = settings.activeRpcNetwork.chainId
 		return {
 			interceptorTransactionStack: {
-				operations: previousState.interceptorTransactionStack.operations.filter((operation) => {
-					if (operation.type !== 'Transaction') return true
-					const safeTransaction = operation.preSimulationTransaction.safeTransaction
-					return safeTransaction === undefined
-						|| safeTransaction.safeTx.domain.verifyingContract !== activeSafeAddress
-						|| operation.preSimulationTransaction.simulationOptions?.requiredChainId !== activeChainId
-				}),
+				operations: previousState.interceptorTransactionStack.operations.filter((operation) =>
+					!operationBelongsToActiveStackContext(operation, activeStackContext)
+				),
 			},
 			safeTransactionStacks: previousState.safeTransactionStacks.filter((stack) =>
 				stack.safeAddress !== activeSafeAddress || stack.chainId !== activeChainId

@@ -50,6 +50,7 @@ import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply
 import { createSafeContractValidationFailure, getSafeContractSnapshot, validateSafeOwnerIsEoa } from '../safe/safeCore.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getSafePendingFlow } from '../safe/safePendingFlow.js'
+import { getOperationsForActiveStackContext } from '../safe/safeStack.js'
 import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
 export { getLastKnownCurrentTabId } from './currentTab.js'
@@ -1194,9 +1195,7 @@ export async function requestInterceptorSimulationInput(ethereumClientService: E
 			message: 'Simulation stack export is available only in simulation mode.',
 		}
 	}
-	const simulationStack = modifyObject(stack, { operations: stack.operations.filter((operation) =>
-		operation.type !== 'Transaction' || operation.preSimulationTransaction.safeTransaction === undefined
-	) })
+	const simulationStack = modifyObject(stack, { operations: getOperationsForActiveStackContext(stack, { simulationMode: true }) })
 	const simulationInput = await getCurrentSimulationInput()
 	const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereumClientService.getBlockNumber(undefined))
 	const eth_simulateV1 = await ethereumClientService.ethSimulateV1Input(simulationInput, await currentBlockNumberPromise, undefined)

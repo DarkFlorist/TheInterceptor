@@ -30,6 +30,7 @@ import type { Abi } from '../utils/ethereumPrimitives.js'
 import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
+import { getOperationsForActiveStackContext } from '../safe/safeStack.js'
 
 const delegateCallExecuteAbi = [
 	{
@@ -90,17 +91,18 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 		currentBlockSimulateWithZeroBaseFee = false
 	}
 
-	for (const operation of stack.operations) {
+	const operations = getOperationsForActiveStackContext(stack, settings.simulationMode
+		? { simulationMode: true }
+		: {
+			simulationMode: false,
+			activeSafeAddress: settings.activeSigningSafeAddress,
+			chainId: settings.activeRpcNetwork.chainId,
+		}
+	)
+	for (const operation of operations) {
 		switch(operation.type) {
 			case 'Transaction': {
 				const simulationOptions = operation.preSimulationTransaction.simulationOptions
-				const safeTransaction = operation.preSimulationTransaction.safeTransaction
-				if (settings.simulationMode && safeTransaction !== undefined) break
-				if (!settings.simulationMode && (
-					safeTransaction === undefined
-					|| settings.activeSigningSafeAddress === undefined
-					|| safeTransaction.safeTx.domain.verifyingContract !== settings.activeSigningSafeAddress
-				)) break
 				if (
 					simulationOptions?.requiredChainId !== undefined
 					&& simulationOptions.requiredChainId !== settings.activeRpcNetwork.chainId
