@@ -206,9 +206,10 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			visualizedStateInvalidated = true
 			const reply = await requestPopupCompleteVisualizedSimulation()
 			const currentContext = getCurrentActiveStackContext()
-			if (refreshId !== activeStackRefreshId || currentContext === undefined || !activeStackContextsEqual(currentContext, expectedContext)) return
-			if (reply !== undefined) updateVisualizedState(reply.visualizedSimulatorState)
+			if (refreshId !== activeStackRefreshId) return
 			visualizedStateInvalidated = false
+			if (currentContext === undefined || !activeStackContextsEqual(currentContext, expectedContext)) return
+			if (reply !== undefined) updateVisualizedState(reply.visualizedSimulatorState)
 			await requestHomeDataForLiveUpdate('metadata')
 		}
 

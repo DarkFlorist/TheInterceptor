@@ -38,7 +38,7 @@ export async function validateSafeTransactionStackForCurrentContract(ethereum: E
 	return { safeState, reconciledStack: { ...reconciledStack, transactions: normalizedTransactions } }
 }
 
-export async function requestSafeStackExport(ethereum: EthereumClientService, _tokenPriceService: TokenPriceService) {
+export async function requestSafeStackExport(ethereum: EthereumClientService) {
 	try {
 		const stacks = (await getSafeTransactionStacks()).filter((stack) =>
 			stack.chainId === ethereum.getChainId() && stack.transactions.length > 0

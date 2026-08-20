@@ -6,6 +6,7 @@ const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
 const activeSettingsSource = await Bun.file(new URL('../../app/ts/background/activeSettings.ts', import.meta.url)).text()
 const simulationUpdatingSource = await Bun.file(new URL('../../app/ts/background/simulationUpdating.ts', import.meta.url)).text()
+const safeTransactionConfirmationSource = await Bun.file(new URL('../../app/ts/background/safeTransactionConfirmation.ts', import.meta.url)).text()
 const confirmTransactionComponentSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
 const safeSourceDirectory = new URL('../../app/ts/safe/', import.meta.url).pathname
 const safeSourceFiles: string[] = []
@@ -31,6 +32,11 @@ test('the confirmation window delegates Gnosis Safe resolution, persistence, and
 test('popup message handlers delegate Gnosis Safe stack import and export', () => {
 	assert.match(popupMessageHandlersSource, /export \{ importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract \} from '\.\/safeStackHandlers\.js'/u)
 	assert.doesNotMatch(popupMessageHandlersSource, /function validateSafeTransactionStackForCurrentContract/u)
+})
+
+test('Safe transaction confirmation owns stored stack reconciliation', () => {
+	assert.match(safeTransactionConfirmationSource, /from '\.\/safeStackState\.js'/u)
+	assert.match(safeTransactionConfirmationSource, /reconcileStoredSafeState\(/u)
 })
 
 test('the Gnosis Safe domain layer does not import background orchestration', () => {

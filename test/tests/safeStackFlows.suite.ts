@@ -50,7 +50,7 @@ test('extension Safe stack import merges owner signatures into proposal and opti
 	if (optimisticOperation?.type !== 'Transaction') throw new Error('Missing imported optimistic Safe transaction')
 	assert.equal(optimisticOperation.preSimulationTransaction.safeTransaction?.signatures[0]?.signer, ownerAddress)
 	assert.equal(optimisticOperation.preSimulationTransaction.safeTransaction?.signatures[0]?.signature, signature)
-	const exportReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
+	const exportReply = await modules.requestSafeStackExport(simulator.ethereum)
 	assert.equal(exportReply.ok, true)
 	if (!exportReply.ok) throw new Error(exportReply.message)
 	assert.equal(exportReply.safeStackJson.includes(`\"signature\": \"${ signature }\"`), true)
@@ -227,7 +227,7 @@ test('extension Safe stack import reconciles executed transactions and rejects a
 test('extension Safe stack export rejects an empty selected-chain stack', async () => {
 	await modules.updateSafeTransactionStacks(() => [])
 
-	const emptyReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
+	const emptyReply = await modules.requestSafeStackExport(simulator.ethereum)
 
 	assert.equal(emptyReply.ok, false)
 	if (emptyReply.ok) throw new Error('Expected empty Safe export failure')
@@ -241,7 +241,7 @@ test('extension Safe stack export rejects an empty selected-chain stack', async 
 		threshold: 2n,
 		transactions: [],
 	}])
-	const emptyRecordReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
+	const emptyRecordReply = await modules.requestSafeStackExport(simulator.ethereum)
 	assert.equal(emptyRecordReply.ok, false)
 	if (emptyRecordReply.ok) throw new Error('Expected empty Safe record export failure')
 	assert.match(emptyRecordReply.message, /no Gnosis Safe proposals to export/u)
@@ -260,7 +260,7 @@ test('extension Safe stack export preserves and includes already executed transa
 	}
 	await modules.updateSafeTransactionStacks(() => [createSafeStackFixture([signedStackTransaction])])
 
-	const validReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
+	const validReply = await modules.requestSafeStackExport(simulator.ethereum)
 	assert.equal(validReply.ok, true)
 	if (!validReply.ok) throw new Error('Expected valid Safe export')
 	assert.equal(JSON.parse(validReply.safeStackJson).stacks.length, 1)
@@ -302,7 +302,7 @@ test('extension Safe stack export preserves and includes already executed transa
 	fakeSafeContract.nonce = 1n
 	let liveSafeStateQueried = false
 	fakeSafeContract.beforeVersionResponse = async () => { liveSafeStateQueried = true }
-	const exportReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
+	const exportReply = await modules.requestSafeStackExport(simulator.ethereum)
 	fakeSafeContract.beforeVersionResponse = undefined
 	assert.equal(exportReply.ok, true)
 	if (!exportReply.ok) throw new Error('Expected read-only Safe export')

@@ -1260,6 +1260,64 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
+	test('stack visualizer releases its refresh barrier when the active Safe changes independently', async () => {
+		const dom = installDomMock()
+		let resolveVisualizationRefresh: ((reply: unknown) => void) | undefined
+		const visualizationRefresh = new Promise<unknown>((resolve) => { resolveVisualizationRefresh = resolve })
+		const { listeners } = installBrowserMock((message) => (
+			typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestCompleteVisualizedSimulation'
+				? visualizationRefresh
+				: undefined
+		))
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+			const simulationUpdate = createSimulationStackHomePageUpdate(27, 1, 'Simulation stack tab')
+			const safeSettings = createStackHomePageUpdate(27, 2, 'Safe stack tab').data.settings
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, simulationUpdate) }, {}, () => undefined)
+				listener(serialize(MessageToPopup, {
+					role: 'all',
+					method: 'popup_settingsUpdated',
+					popupRefreshGeneration: 2,
+					data: safeSettings,
+				}), {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), false)
+
+			await act(() => {
+				listener(serialize(MessageToPopup, {
+					role: 'all',
+					method: 'popup_activeSigningAddressChanged',
+					data: {
+						tabId: 27,
+						activeSigningAddress: 0x1000000000000000000000000000000000000001n,
+						activeSigningSafeAddress: 0x4000000000000000000000000000000000000004n,
+					},
+				}), {}, () => undefined)
+			})
+			await act(async () => {
+				resolveVisualizationRefresh?.(undefined)
+				await visualizationRefresh
+				await Promise.resolve()
+			})
+			await act(() => {
+				listener(serialize(MessageToPopup, createSimulationStateChangedMessage(createSimulatedCompleteVisualizedSimulation({
+					...safeSettings,
+					activeSigningSafeAddress: 0x4000000000000000000000000000000000000004n,
+				}))), {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent?.includes('Gnosis Safe Stack'), true)
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), true)
+		} finally {
+			dom.restore()
+		}
+	})
+
 	test('stack visualizer transaction cards collapse and reopen independently', async () => {
 		const dom = installDomMock()
 		const { listeners } = installBrowserMock()
