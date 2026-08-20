@@ -649,6 +649,9 @@ type ButtonsParams = {
 	approve: () => void
 	approveButtonState: AsyncStates
 	confirmDisabled: boolean
+	addToSafeStack?: () => void
+	addToSafeStackButtonState?: AsyncStates
+	addToSafeStackDisabled?: boolean
 }
 
 type ConfirmationActionButtonsParams = Omit<ButtonsParams, 'currentPendingTransactionOrSignableMessage'> & {
@@ -662,16 +665,24 @@ type ConfirmationActionButtonsParams = Omit<ButtonsParams, 'currentPendingTransa
 	waitingForSigner: boolean
 }
 
-export function ConfirmationActionButtons({ identified, signerName, simulationMode, waitingForSigner, reject, rejectButtonState, approve, approveButtonState, confirmDisabled }: ConfirmationActionButtonsParams) {
+export function ConfirmationActionButtons({ identified, signerName, simulationMode, waitingForSigner, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToSafeStack, addToSafeStackButtonState = 'inactive', addToSafeStackDisabled = true }: ConfirmationActionButtonsParams) {
 	return <div style = 'display: flex; flex-direction: row;'>
 		<AsyncActionButton
 			class = 'button is-primary is-danger button-overflow dialog-action-button'
 			state = { rejectButtonState }
-			disabled = { approveButtonState === 'pending' }
+			disabled = { approveButtonState === 'pending' || addToSafeStackButtonState === 'pending' }
 			text = { identified.rejectAction }
 			pendingText = 'Rejecting...'
 			onClick = { reject }
 		/>
+		{ addToSafeStack === undefined ? <></> : <AsyncActionButton
+			class = 'button is-primary is-outlined button-overflow dialog-action-button'
+			state = { addToSafeStackButtonState }
+			disabled = { addToSafeStackDisabled || rejectButtonState === 'pending' || approveButtonState === 'pending' }
+			text = 'Add to Safe stack'
+			pendingText = 'Adding to Safe stack...'
+			onClick = { addToSafeStack }
+		/> }
 		<AsyncActionButton
 			class = 'button is-primary button-overflow dialog-action-button'
 			state = { approveButtonState }
@@ -692,12 +703,12 @@ export function ConfirmationActionButtons({ identified, signerName, simulationMo
 					: `Sign with ${ signerName }...`
 			}
 			onClick = { approve }
-			disabled = { confirmDisabled || rejectButtonState === 'pending' }
+			disabled = { confirmDisabled || rejectButtonState === 'pending' || addToSafeStackButtonState === 'pending' }
 		/>
 	</div>
 }
 
-function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, reject, rejectButtonState, approve, approveButtonState, confirmDisabled }: ButtonsParams) {
+function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToSafeStack, addToSafeStackButtonState, addToSafeStackDisabled }: ButtonsParams) {
 	if (currentPendingTransactionOrSignableMessage === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
 	if (currentPendingTransactionOrSignableMessage.transactionOrMessageCreationStatus !== 'Simulated') return <RejectButton onClick = { reject } state = { rejectButtonState }/>
 
@@ -721,6 +732,9 @@ function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, rejec
 		approve = { approve }
 		approveButtonState = { approveButtonState }
 		confirmDisabled = { confirmDisabled }
+		addToSafeStack = { addToSafeStack }
+		addToSafeStackButtonState = { addToSafeStackButtonState }
+		addToSafeStackDisabled = { addToSafeStackDisabled }
 	/>
 }
 
@@ -899,6 +913,7 @@ export function ConfirmTransaction() {
 	}
 	const { value: rejectButtonState, waitFor: waitForRejectTransaction, reset: resetRejectButton } = useAsyncState<void>()
 	const { value: approveButtonState, waitFor: waitForApproveTransaction, reset: resetApproveButton } = useAsyncState<void>()
+	const { value: addToSafeStackButtonState, waitFor: waitForAddToSafeStack, reset: resetAddToSafeStackButton } = useAsyncState<void>()
 	const reject = () => {
 		resetRejectButton()
 		waitForRejectTransaction(rejectTransaction)
@@ -906,6 +921,15 @@ export function ConfirmTransaction() {
 	const approve = () => {
 		resetApproveButton()
 		waitForApproveTransaction(approveTransaction)
+	}
+	const addToSafeStack = () => {
+		const pending = currentPendingTransactionOrSignableMessage.value
+		if (pending === undefined) return
+		resetAddToSafeStackButton()
+		void waitForAddToSafeStack(async () => {
+			const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pending.uniqueRequestIdentifier, action: 'addToSafeStack' } })
+			if (deliveryError !== undefined) unexpectedError.value = deliveryError
+		})
 	}
 	const refreshMetadata = async () => {
 		if (currentPendingTransactionOrSignableMessage.value === undefined) return
@@ -937,6 +961,15 @@ export function ConfirmTransaction() {
 		if (lastTx.transactionStatus !== 'Transaction Succeeded') return true
 		if (lastTx.quarantine) return true
 		return false
+	})
+	const isAddToSafeStackDisabled = useComputed(() => {
+		const pending = currentPendingTransactionOrSignableMessage.value
+		if (pending?.type !== 'Transaction' || getSafeTransactionPendingFlow(pending)?.kind !== 'proposal') return true
+		if (pending.approvalStatus.status === 'WaitingForSigner') return true
+		if (pending.transactionOrMessageCreationStatus !== 'Simulated' || pending.popupVisualisation.statusCode !== 'success') return true
+		if (pending.popupVisualisation.data.visualizedSimulationState.success === false) return true
+		const lastTx = getResultsForTransaction(pending.popupVisualisation.data.visualizedSimulationState, pending.transactionIdentifier)
+		return lastTx === undefined || lastTx.transactionStatus !== 'Transaction Succeeded' || lastTx.quarantine
 	})
 
 	function getCurrentAddressBookEntries() {
@@ -1007,7 +1040,7 @@ export function ConfirmTransaction() {
 							}
 							{ currentSafeTransactionFlow.value?.kind === 'proposal'
 								? <DinoSaysNotification
-									text = { `This transaction will be wrapped as Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeTransaction.safeTx.message.nonce.toString() } and signed by the Gnosis Safe owner selected in your wallet. It will be added to the local optimistic Gnosis Safe stack, not broadcast automatically.` }
+									text = { `This transaction will be wrapped as Gnosis Safe transaction nonce ${ currentSafeTransactionFlow.value.pending.safeTransaction.safeTx.message.nonce.toString() }. You can sign it with the owner selected in your wallet or add it to the local optimistic Gnosis Safe stack without a signature. It will not be broadcast automatically.` }
 									close = { () => undefined }
 								/>
 								: <></>
@@ -1053,6 +1086,9 @@ export function ConfirmTransaction() {
 						approve = { approve }
 						approveButtonState = { approveButtonState.value.state }
 						confirmDisabled = { isConfirmDisabled.value }
+						addToSafeStack = { currentSafeTransactionFlow.value?.kind === 'proposal' ? addToSafeStack : undefined }
+						addToSafeStackButtonState = { addToSafeStackButtonState.value.state }
+						addToSafeStackDisabled = { isAddToSafeStackDisabled.value }
 					/>
 						</nav>
 					</div>

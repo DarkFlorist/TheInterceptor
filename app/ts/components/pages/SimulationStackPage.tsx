@@ -54,11 +54,12 @@ function getMadeRichAddressBookEntries(
 	return [...entries, getActiveAddressEntry(activeAddress, activeAddresses, activeChainId)]
 }
 
-function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSimulation, disableReset, showSafeSigningActions, hasSafeTransactionsToExport }: {
+function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSimulation, disableReset, simulationMode, showSafeSigningActions, hasSafeTransactionsToExport }: {
 	openImportSimulation: () => void
 	openImportSafe: () => void
 	resetSimulation: () => Promise<void>
 	disableReset: Signal<boolean>
+	simulationMode: boolean
 	showSafeSigningActions: boolean
 	hasSafeTransactionsToExport: boolean
 }) {
@@ -90,19 +91,20 @@ function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSim
 	const clearStack = () => {
 		void waitForClearSimulationStack(resetSimulation)
 	}
+	const stackName = showSafeSigningActions ? 'Gnosis Safe stack' : 'simulation stack'
 
 	return <header class = 'simulation-stack-page-header'>
 		<div class = 'simulation-stack-page-heading'>
 			<div class = 'simulation-stack-page-title'>
-				<h1>Simulation Stack</h1>
-				<p>Import, export, and adjust the simulation stack.</p>
+				<h1>{ showSafeSigningActions ? 'Gnosis Safe Stack' : 'Simulation Stack' }</h1>
+				<p>{ showSafeSigningActions ? 'Import, copy, and review Gnosis Safe proposals.' : 'Import, export, and adjust the simulation stack.' }</p>
 			</div>
 			<AsyncActionButton
 				class = 'btn btn--outline simulation-stack-page-clear'
 				type = 'button'
-				ariaLabel = 'Clear simulation stack'
-				pendingAriaLabel = 'Clearing simulation stack...'
-				title = 'Clear simulation stack'
+				ariaLabel = { `Clear ${ stackName }` }
+				pendingAriaLabel = { `Clearing ${ stackName }...` }
+				title = { `Clear ${ stackName }` }
 				state = { clearSimulationStackState.value.state }
 				disabled = { disableReset.value }
 				onClick = { clearStack }
@@ -110,11 +112,11 @@ function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSim
 					<span class = 'simulation-stack-action-icon'><BroomIcon /></span>
 					<span class = 'simulation-stack-clear-label'>Clear stack</span>
 				</> }
-				pendingText = 'Clearing simulation stack...'
+				pendingText = { `Clearing ${ stackName }...` }
 			/>
 		</div>
-		<nav class = 'simulation-stack-page-actions' aria-label = 'Simulation stack actions'>
-			<div class = 'simulation-stack-action-group'>
+		<nav class = 'simulation-stack-page-actions' aria-label = { `${ stackName } actions` }>
+			{ simulationMode ? <div class = 'simulation-stack-action-group'>
 				<div class = 'simulation-stack-action-label'>
 					<strong>Simulation</strong>
 					<span>Entire stack</span>
@@ -140,7 +142,7 @@ function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSim
 					/>
 					<Tooltip config = { simulationExportTooltip } />
 				</div>
-			</div>
+			</div> : <></> }
 			{ showSafeSigningActions ? <div class = 'simulation-stack-action-group'>
 				<div class = 'simulation-stack-action-label'>
 					<strong>Gnosis Safe</strong>
@@ -423,6 +425,7 @@ export function SimulationStackPage() {
 					openImportSafe = { () => { modalState.value = { page: 'importSafe', state: new Signal('') } } }
 					resetSimulation = { resetSimulation }
 					disableReset = { disableReset }
+					simulationMode = { simulationMode.value }
 					showSafeSigningActions = { showSafeSigningActions.value }
 					hasSafeTransactionsToExport = { hasSafeTransactionsToExport.value }
 				/>

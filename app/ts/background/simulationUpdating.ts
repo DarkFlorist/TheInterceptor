@@ -55,6 +55,7 @@ const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: bigint[]) =
 }
 
 export const getAddressesbeingMadeRich = async () => {
+	if (!(await getSettings()).simulationMode) return []
 	const currentAddressBeingRich = await getAddressToMakeRich()
 	const makeRichAddressList = await getFixedAddressRichList()
 	return [...makeRichAddressList.filter((x) => x.makingRich).map((x) => x.address), ...currentAddressBeingRich === undefined ? [] : [currentAddressBeingRich]]
@@ -93,6 +94,13 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 		switch(operation.type) {
 			case 'Transaction': {
 				const simulationOptions = operation.preSimulationTransaction.simulationOptions
+				const safeTransaction = operation.preSimulationTransaction.safeTransaction
+				if (settings.simulationMode && safeTransaction !== undefined) break
+				if (!settings.simulationMode && (
+					safeTransaction === undefined
+					|| settings.activeSigningSafeAddress === undefined
+					|| safeTransaction.safeTx.domain.verifyingContract !== settings.activeSigningSafeAddress
+				)) break
 				if (
 					simulationOptions?.requiredChainId !== undefined
 					&& simulationOptions.requiredChainId !== settings.activeRpcNetwork.chainId
@@ -106,6 +114,7 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 				break
 			}
 			case 'Message': {
+				if (!settings.simulationMode) break
 				if (currentBlockTransactions.length > 0) {
 					pushBlock({ type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' })
 				}
@@ -113,6 +122,7 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 				break
 			}
 			case 'TimeManipulation': {
+				if (!settings.simulationMode) break
 				pushBlock(operation.blockTimeManipulation)
 				break
 			}

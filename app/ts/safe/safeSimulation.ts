@@ -1,7 +1,34 @@
-import type { PreSimulationTransaction, WebsiteCreatedEthereumTransaction } from '../types/visualizer-types.js'
+import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
+import type { InterceptorTransactionStack, PreSimulationTransaction, SimulationStateInput, WebsiteCreatedEthereumTransaction } from '../types/visualizer-types.js'
 import type { EthereumSendableSignedTransaction } from '../types/wire-types.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import { getSignedTransactionForSimulation } from '../simulation/services/simulationTransactionSigning.js'
+
+export function createSafeSigningSimulationInput(
+	transactionStack: InterceptorTransactionStack,
+	safeSigningRequest: SafeTransactionSigningRequest,
+): SimulationStateInput {
+	const requiredChainId = safeSigningRequest.safeTx.domain.chainId
+	if (requiredChainId === undefined) throw new Error('Gnosis Safe optimistic simulation requires an EIP-712 chain ID.')
+	const transactions = transactionStack.operations.flatMap((operation) => {
+		if (operation.type !== 'Transaction') return []
+		const transaction = operation.preSimulationTransaction
+		const storedSafeTransaction = transaction.safeTransaction
+		if (storedSafeTransaction === undefined) return []
+		if (transaction.simulationOptions?.requiredChainId !== requiredChainId) return []
+		if (storedSafeTransaction.safeTx.domain.verifyingContract !== safeSigningRequest.safeAddress) return []
+		if (storedSafeTransaction.safeTx.message.nonce >= safeSigningRequest.safeTx.message.nonce) return []
+		return [transaction]
+	})
+	if (transactions.length === 0) return []
+	return [{
+		stateOverrides: {},
+		transactions,
+		signedMessages: [],
+		blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
+		simulateWithZeroBaseFee: true,
+	}]
+}
 
 function createSafeExecutionSimulationTransaction(
 	transactionToSimulate: WebsiteCreatedEthereumTransaction,

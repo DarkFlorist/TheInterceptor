@@ -206,11 +206,15 @@ describe('popup header markup', () => {
 				approve: () => undefined,
 				approveButtonState: 'inactive',
 				confirmDisabled: false,
+				addToSafeStack: () => undefined,
+				addToSafeStackButtonState: 'inactive',
+				addToSafeStackDisabled: false,
 			}), dom.document.body)
 		})
 
 		assert.equal(dom.document.body.textContent?.includes(`Reject ${ abiFunctionName }`), true)
 		assert.equal(dom.document.body.textContent?.includes(`Sign ${ abiFunctionName }`), true)
+		assert.equal(dom.document.body.textContent?.includes('Add to Safe stack'), true)
 
 		await act(() => {
 			render(h(ConfirmationActionButtons, {

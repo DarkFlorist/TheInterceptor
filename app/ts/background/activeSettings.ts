@@ -15,10 +15,35 @@ import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 
 export async function resetSimulationStateFromConfig(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
-	await updateTransactionState(() => ({
-		interceptorTransactionStack: { operations: [] },
-		safeTransactionStacks: [],
-	}))
+	const settings = await getSettings()
+	await updateTransactionState((previousState) => {
+		if (settings.simulationMode) {
+			return {
+				interceptorTransactionStack: {
+					operations: previousState.interceptorTransactionStack.operations.filter((operation) =>
+						operation.type === 'Transaction' && operation.preSimulationTransaction.safeTransaction !== undefined
+					),
+				},
+				safeTransactionStacks: previousState.safeTransactionStacks,
+			}
+		}
+		const activeSafeAddress = settings.activeSigningSafeAddress
+		const activeChainId = settings.activeRpcNetwork.chainId
+		return {
+			interceptorTransactionStack: {
+				operations: previousState.interceptorTransactionStack.operations.filter((operation) => {
+					if (operation.type !== 'Transaction') return true
+					const safeTransaction = operation.preSimulationTransaction.safeTransaction
+					return safeTransaction === undefined
+						|| safeTransaction.safeTx.domain.verifyingContract !== activeSafeAddress
+						|| operation.preSimulationTransaction.simulationOptions?.requiredChainId !== activeChainId
+				}),
+			},
+			safeTransactionStacks: previousState.safeTransactionStacks.filter((stack) =>
+				stack.safeAddress !== activeSafeAddress || stack.chainId !== activeChainId
+			),
+		}
+	})
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
 }
 

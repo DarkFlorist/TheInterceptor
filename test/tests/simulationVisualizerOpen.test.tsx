@@ -401,6 +401,27 @@ function createNonSafeStackHomePageUpdate(tabId: number, popupRefreshGeneration:
 	}
 }
 
+function createSimulationStackHomePageUpdate(tabId: number, popupRefreshGeneration: number, iconReason: string): UpdateHomePage {
+	const update = createStackHomePageUpdate(tabId, popupRefreshGeneration, iconReason)
+	const simulationAddress = 0x4000000000000000000000000000000000000004n
+	const simulationSettings = {
+		...update.data.settings,
+		simulationMode: true,
+		activeSimulationAddress: simulationAddress,
+		activeSigningSafeAddress: undefined,
+	}
+	return {
+		...update,
+		data: {
+			...update.data,
+			activeAddresses: [{ type: 'contact', name: 'Simulation address', address: simulationAddress, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true }],
+			activeSigningAddressInThisTab: undefined,
+			settings: simulationSettings,
+			visualizedSimulatorState: createSimulatedCompleteVisualizedSimulation(simulationSettings),
+		},
+	}
+}
+
 function createSerializableRichHomePageUpdate(tabId: number, popupRefreshGeneration: number, iconReason: string, numberOfAddressesMadeRich: number, richList: readonly EnrichedRichListElement[]): UpdateHomePage {
 	const update = createHomePageUpdate(tabId, popupRefreshGeneration, iconReason, numberOfAddressesMadeRich, richList)
 	const serializableSettings = createSerializableSettings()
@@ -654,7 +675,7 @@ describe('simulation visualizer open replies', () => {
 			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
-				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(13, 1, 'Stack tab')) }, {}, () => undefined)
+				listener({ role: 'all', ...serialize(UpdateHomePage, createSimulationStackHomePageUpdate(13, 1, 'Stack tab')) }, {}, () => undefined)
 			})
 
 			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), true)
@@ -741,7 +762,7 @@ describe('simulation visualizer open replies', () => {
 			const layout = findElementByClass(dom.document.body, 'div', 'simulation-stack-page')
 			assert.ok(layout)
 			assert.equal(getFirstElementChild(layout)?.tagName, 'HEADER')
-			assert.equal(getFirstElementChild(layout)?.textContent?.includes('Simulation Stack'), true)
+			assert.equal(getFirstElementChild(layout)?.textContent?.includes('Gnosis Safe Stack'), true)
 			const layoutChildren = getElementChildren(layout)
 			assert.equal(layoutChildren[1]?.tagName, 'DIV')
 			assert.equal(hasClass(layoutChildren[1], 'simulation-stack-page-body'), true)
@@ -801,7 +822,7 @@ describe('simulation visualizer open replies', () => {
 			const listener = listeners[0]
 			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 			await act(() => {
-				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(19, 1, 'Stack tab')) }, {}, () => undefined)
+				listener({ role: 'all', ...serialize(UpdateHomePage, createSimulationStackHomePageUpdate(19, 1, 'Stack tab')) }, {}, () => undefined)
 			})
 			sentMessages.splice(0)
 
@@ -859,7 +880,7 @@ describe('simulation visualizer open replies', () => {
 			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
-				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(19, 1, 'Stack tab')) }, {}, () => undefined)
+				listener({ role: 'all', ...serialize(UpdateHomePage, createSimulationStackHomePageUpdate(19, 1, 'Stack tab')) }, {}, () => undefined)
 			})
 
 			await act(async () => {
@@ -911,15 +932,9 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer shows Safe-specific guidance when simulation export is refused', async () => {
+	test('stack visualizer hides simulation import and export in Safe signing mode', async () => {
 		const dom = installDomMock()
-		const exportError = 'Use Copy Gnosis Safe transactions for those proposals, or remove them before using Export simulation.'
-		const { listeners } = installBrowserMock((message) => {
-			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestInterceptorSimulationInput') {
-				return { method: 'popup_requestInterceptorSimulationInput', ok: false, message: exportError }
-			}
-			return undefined
-		})
+		const { listeners } = installBrowserMock()
 		try {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
@@ -930,12 +945,10 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(20, 1, 'Stack tab')) }, {}, () => undefined)
 			})
-			await act(async () => {
-				await clickElement(getButtonByText(dom.document.body, 'Export simulation'))
-				await new Promise((resolve) => setTimeout(resolve, 0))
-			})
-
-			assert.equal(dom.document.body.textContent?.includes(exportError), true)
+			assert.equal(hasButtonWithText(dom.document.body, 'Import simulation'), false)
+			assert.equal(hasButtonWithText(dom.document.body, 'Export simulation'), false)
+			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), true)
+			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), true)
 		} finally {
 			dom.restore()
 		}
@@ -1018,20 +1031,9 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
-	test('stack visualizer shows the most recently refused export reason', async () => {
+	test('stack visualizer switches between mutually exclusive Safe and simulation controls', async () => {
 		const dom = installDomMock()
-		const safeExportError = 'The simulation stack has no Safe proposals to export.'
-		const simulationExportError = 'The simulation stack cannot be exported in this state.'
-		const { listeners } = installBrowserMock((message) => {
-			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
-			if (message.method === 'popup_requestSafeStackExport') {
-				return { method: 'popup_requestSafeStackExport', ok: false, message: safeExportError }
-			}
-			if (message.method === 'popup_requestInterceptorSimulationInput') {
-				return { method: 'popup_requestInterceptorSimulationInput', ok: false, message: simulationExportError }
-			}
-			return undefined
-		})
+		const { listeners } = installBrowserMock()
 		try {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
@@ -1042,18 +1044,16 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(22, 1, 'Stack tab')) }, {}, () => undefined)
 			})
-			await act(async () => {
-				await clickElement(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions'))
-				await new Promise((resolve) => setTimeout(resolve, 0))
-			})
-			assert.equal(dom.document.body.textContent?.includes(safeExportError), true)
+			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), true)
+			assert.equal(hasButtonWithText(dom.document.body, 'Export simulation'), false)
 
-			await act(async () => {
-				await clickElement(getButtonByText(dom.document.body, 'Export simulation'))
-				await new Promise((resolve) => setTimeout(resolve, 0))
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createSimulationStackHomePageUpdate(22, 2, 'Simulation stack tab')) }, {}, () => undefined)
 			})
-			assert.equal(dom.document.body.textContent?.includes(simulationExportError), true)
-			assert.equal(dom.document.body.textContent?.includes(safeExportError), false)
+			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), false)
+			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), false)
+			assert.equal(hasButtonWithText(dom.document.body, 'Export simulation'), true)
+			assert.equal(hasButtonWithText(dom.document.body, 'Import simulation'), true)
 		} finally {
 			dom.restore()
 		}
