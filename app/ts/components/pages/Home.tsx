@@ -832,6 +832,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 				renameAddressCallBack = { param.renameAddressCallBack }
 				editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 				addressMetaData = { computedAddressBookEntries }
+				showTimePicker = { param.simulationMode.value }
 				displayMode = 'titleOnly'
 				openSimulationStackAt = { param.openSimulationStack }
 			/>
@@ -848,6 +849,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 						renameAddressCallBack = { param.renameAddressCallBack }
 						editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 						addressMetaData = { computedAddressBookEntries }
+						showTimePicker = { param.simulationMode.value }
 						displayMode = 'titleOnly'
 						openSimulationStackAt = { param.openSimulationStack }
 					/>
@@ -961,6 +963,7 @@ export function Home(param: HomeParams) {
 		{ (param.simulationMode.value || safeStackMode.value) && visualizedAddress.value !== undefined
 			? showPopupVisualisation.value
 				? <PopupVisualisation
+					simulationMode = { param.simulationMode }
 					simulationAndVisualisationResults = { param.simVisResults }
 					removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
 					disableReset = { disableResetUntilHomeDataLoaded }

@@ -70,7 +70,7 @@ function SimulationStackToolbar({ openImportSimulation, openImportSafe, resetSim
 	const { coolingDown: simulationExportCoolingDown, tooltip: simulationExportTooltip, showCopied: showSimulationExportCopied } = useCopyFeedback()
 	const exportError = latestExportType.value === 'safe'
 		? showSafeSigningActions ? safeCopyError.value : undefined
-		: latestExportType.value === 'simulation' && exportSimulationStackState.value.state === 'rejected'
+		: latestExportType.value === 'simulation' && simulationMode && exportSimulationStackState.value.state === 'rejected'
 			? exportSimulationStackState.value.error.message
 			: undefined
 

@@ -1413,8 +1413,10 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 			assert.equal(dom.document.body.textContent?.includes('Copy Gnosis Safe transactions'), false)
 			assert.equal(dom.document.body.textContent?.includes('View & operate stack'), true)
 			assert.equal(dom.document.body.textContent?.includes('Clear'), true)
+			assert.equal(dom.document.body.textContent?.includes('Simulate delay'), false)
 			assert.equal(getButtonByText(dom.document.body, 'View & operate stack').parentNode, getButtonByText(dom.document.body, 'Clear').parentNode)
 			assert.equal(browserMock.sentMessages.some((message) => hasMethod(message, 'popup_requestSafeStackExport')), false)
+			assert.equal(browserMock.sentMessages.some((message) => hasMethod(message, 'popup_setTransactionOrMessageBlockTimeManipulator')), false)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()

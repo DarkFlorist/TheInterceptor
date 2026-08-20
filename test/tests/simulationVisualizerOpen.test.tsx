@@ -970,6 +970,46 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
+	test('stack visualizer hides a simulation export error after switching to Safe mode', async () => {
+		const dom = installDomMock()
+		const exportError = 'Simulation stack export failed.'
+		const { listeners } = installBrowserMock((message) => {
+			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestInterceptorSimulationInput') {
+				return { method: 'popup_requestInterceptorSimulationInput', ok: false, message: exportError }
+			}
+			return undefined
+		})
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+			const simulationUpdate = createSimulationStackHomePageUpdate(26, 1, 'Simulation stack tab')
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, simulationUpdate) }, {}, () => undefined)
+			})
+			await act(async () => {
+				await clickElement(getButtonByText(dom.document.body, 'Export'))
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.equal(dom.document.body.textContent?.includes(exportError), true)
+
+			await act(async () => {
+				listener(serialize(MessageToPopup, {
+					role: 'all',
+					method: 'popup_settingsUpdated',
+					popupRefreshGeneration: 2,
+					data: { ...simulationUpdate.data.settings, simulationMode: false },
+				}), {}, () => undefined)
+				await Promise.resolve()
+			})
+			assert.equal(dom.document.body.textContent?.includes(exportError), false)
+		} finally {
+			dom.restore()
+		}
+	})
+
 	test('stack visualizer Safe export copies with feedback and a cooldown', async () => {
 		const dom = installDomMock()
 		const clipboardMock = installClipboardMock()

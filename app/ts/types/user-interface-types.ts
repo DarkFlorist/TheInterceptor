@@ -93,6 +93,7 @@ export type FirstCardParams = {
 }
 
 export type SimulationStateParam = {
+	simulationMode: ReadonlySignal<boolean>
 	simulationAndVisualisationResults: ReadonlySignal<ResolvedSimulationResults>
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	currentBlockNumber: Signal<bigint | undefined>
