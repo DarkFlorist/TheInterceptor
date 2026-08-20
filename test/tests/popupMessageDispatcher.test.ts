@@ -11,6 +11,7 @@ const dynamicRuleUpdates: unknown[] = []
 const dispatcherEvents: ({ type: 'message', message: unknown } | { type: 'dynamicRuleUpdate' })[] = []
 let storageSetError: Error | undefined
 let dynamicRuleUpdateError: Error | undefined
+let addressBookBroadcastWait: Promise<void> | undefined
 
 Reflect.set(globalThis, 'chrome', { runtime: { id: 'test-extension' } })
 Reflect.set(globalThis, 'browser', {
@@ -20,6 +21,8 @@ Reflect.set(globalThis, 'browser', {
 		sendMessage: async (message: unknown) => {
 			sentMessages.push(message)
 			dispatcherEvents.push({ type: 'message', message })
+			const parsed = MessageToPopup.safeParse(message)
+			if (parsed.success && parsed.value.method === 'popup_addressBookEntriesChanged') await addressBookBroadcastWait
 			return undefined
 		},
 		onMessage: { addListener: () => undefined, removeListener: () => undefined },
@@ -129,6 +132,7 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 beforeEach(() => {
 	storageSetError = undefined
 	dynamicRuleUpdateError = undefined
+	addressBookBroadcastWait = undefined
 	for (const key of Object.keys(storageState)) delete storageState[key]
 	sentMessages.splice(0, sentMessages.length)
 	dynamicRuleUpdates.splice(0, dynamicRuleUpdates.length)
@@ -224,6 +228,34 @@ describe('popup message dispatcher seams', () => {
 			const parsed = MessageToPopup.safeParse(message)
 			return parsed.success && parsed.value.method === 'popup_addressBookEntriesChanged'
 		}), true)
+	})
+
+	test('returns a successful save reply without waiting for address-book refresh listeners', async () => {
+		let releaseBroadcast: (() => void) | undefined
+		addressBookBroadcastWait = new Promise<void>((resolve) => { releaseBroadcast = resolve })
+		const dispatch = dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: {
+				type: 'contract',
+				name: 'Contract with fetched ABI',
+				address: 1n,
+				entrySource: 'User',
+				abi: '[{"type":"function","name":"read","inputs":[],"outputs":[],"stateMutability":"view"}]',
+			},
+		})
+
+		while (!sentMessages.some((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_addressBookEntriesChanged'
+		})) await Promise.resolve()
+		const result = await Promise.race([
+			dispatch,
+			new Promise<'save reply timeout'>((resolve) => { setTimeout(() => resolve('save reply timeout'), 50) }),
+		])
+		releaseBroadcast?.()
+		await dispatch
+
+		assert.deepEqual(result, { type: 'AddOrModifyAddressBookEntryReply', ok: true })
 	})
 
 	test('delegates simulation reset through the injected lifecycle callback', async () => {
