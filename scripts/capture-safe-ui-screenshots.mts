@@ -154,7 +154,8 @@ try {
 		await captureScenario(addressBook, `address-form-${ addressType.toLowerCase() }`)
 	}
 	const setSafeAddressFixture = `browser.storage.local.set({
-			activeSimulationAddress: '0x1234567890123456789012345678901234567890',
+			independentActiveSimulationAddress: '0x1234567890123456789012345678901234567890',
+			activeSigningSafeAddress: '0x1234567890123456789012345678901234567890',
 			simulationMode: false,
 			useSignersAddressAsActiveAddress: false,
 			openedPageV2: { page: 'Home' },
@@ -366,7 +367,7 @@ try {
 	await waitForSelector(stack, '.simulation-stack-page-header')
 	await captureScenario(stack, 'safe-simulation-stack')
 	await stack.evaluate(`(() => {
-		const importButton = [...document.querySelectorAll('button')].find((element) => element.textContent?.includes('Import Gnosis Safe'))
+		const importButton = document.querySelector('button[aria-label="Import Gnosis Safe stack"]')
 		if (!(importButton instanceof HTMLElement)) throw new Error('Import Gnosis Safe button was not found')
 		importButton.click()
 	})()`)

@@ -15,6 +15,8 @@ export function CopySafeTransactionsButton({
 	text = 'Copy Gnosis Safe transactions',
 	disabled = false,
 	disabledTitle,
+	ariaLabel,
+	pendingText = 'Copying Gnosis Safe transactions...',
 }: {
 	readonly class?: string
 	readonly onCopyStart?: () => void
@@ -22,6 +24,8 @@ export function CopySafeTransactionsButton({
 	readonly text?: ComponentChildren
 	readonly disabled?: boolean
 	readonly disabledTitle?: string
+	readonly ariaLabel?: string
+	readonly pendingText?: string
 }) {
 	const { value: copyState, waitFor: waitForCopy } = useAsyncState<void>()
 	const { coolingDown, tooltip, showCopied } = useCopyFeedback()
@@ -46,12 +50,13 @@ export function CopySafeTransactionsButton({
 			state = { copyState.value.state }
 			disabled = { disabled || coolingDown.value }
 			title = { disabled ? disabledTitle : undefined }
+			ariaLabel = { ariaLabel }
 			onClick = { (event) => {
 				const copyPosition = { x: event.clientX, y: event.clientY }
 				void waitForCopy(async () => await copySafeTransactions(copyPosition))
 			} }
 			text = { text }
-			pendingText = 'Copying Gnosis Safe transactions...'
+			pendingText = { pendingText }
 			keepTextWhilePending = { true }
 			pendingIndicatorPlacement = 'overlay'
 		/>

@@ -120,7 +120,7 @@ const resetStack = async () => {
 	delete mockBrowser.__storage.makeCurrentAddressRich
 	delete mockBrowser.__storage.fixedAddressRichList
 	delete mockBrowser.__storage.simulationMode
-	delete mockBrowser.__storage.activeSimulationAddress
+	delete mockBrowser.__storage.independentActiveSimulationAddress
 	delete mockBrowser.__storage.activeRpcNetwork
 }
 
@@ -164,7 +164,7 @@ describe('simulate delay editor', () => {
 		])
 	})
 
-	test('signing mode ignores the pre-simulation first-transaction delay', async () => {
+	test('signing mode excludes the simulation-mode transaction and delay stack', async () => {
 		await resetStack()
 		await browserStorageLocalSet({
 			simulationMode: false,
@@ -180,11 +180,7 @@ describe('simulate delay editor', () => {
 		})
 
 		const simulationInput = await getCurrentSimulationInput()
-		assert.equal(simulationInput.length, 2)
-		assert.deepStrictEqual(simulationInput.map((block) => block.blockTimeManipulation), [
-			DEFAULT_BLOCK_MANIPULATION,
-			newDelay,
-		])
+		assert.deepStrictEqual(simulationInput, [])
 	})
 
 	test('excludes transactions whose simulation options require another chain', async () => {

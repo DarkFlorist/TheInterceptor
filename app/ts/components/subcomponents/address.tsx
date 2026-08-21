@@ -6,13 +6,15 @@ import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBo
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
+import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../../utils/addressBook.js'
 import { Blockie } from './SVGBlockie.js'
 import { InlineCard } from './InlineCard.js'
 import { EditIcon } from './icons.js'
 import { type ActionableIconProps, type ActionableTextProps, MultilineCard } from './MultilineCard.js'
 
-export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: AddressBookEntries): AddressBookEntry {
-	for (const info of activeAddresses) {
+export function getActiveAddressEntry(addressToFind: bigint, activeAddresses: AddressBookEntries, chainId: bigint | undefined = undefined): AddressBookEntry {
+	const selectableAddresses = chainId === undefined ? activeAddresses : getAddressBookEntriesForChainIdMorePreciseFirst(activeAddresses, chainId)
+	for (const info of selectableAddresses) {
 		if (info.address === addressToFind) return info
 	}
 	return { name: checksummedAddress(addressToFind), address: addressToFind, askForAddressAccess: true, type: 'contact', useAsActiveAddress: true, entrySource: 'User' }

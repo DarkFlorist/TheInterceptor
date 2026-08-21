@@ -11,6 +11,7 @@ const dynamicRuleUpdates: unknown[] = []
 const dispatcherEvents: ({ type: 'message', message: unknown } | { type: 'dynamicRuleUpdate' })[] = []
 let storageSetError: Error | undefined
 let dynamicRuleUpdateError: Error | undefined
+let addressBookBroadcastWait: Promise<void> | undefined
 
 Reflect.set(globalThis, 'chrome', { runtime: { id: 'test-extension' } })
 Reflect.set(globalThis, 'browser', {
@@ -20,6 +21,8 @@ Reflect.set(globalThis, 'browser', {
 		sendMessage: async (message: unknown) => {
 			sentMessages.push(message)
 			dispatcherEvents.push({ type: 'message', message })
+			const parsed = MessageToPopup.safeParse(message)
+			if (parsed.success && parsed.value.method === 'popup_addressBookEntriesChanged') await addressBookBroadcastWait
 			return undefined
 		},
 		onMessage: { addListener: () => undefined, removeListener: () => undefined },
@@ -129,6 +132,7 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 beforeEach(() => {
 	storageSetError = undefined
 	dynamicRuleUpdateError = undefined
+	addressBookBroadcastWait = undefined
 	for (const key of Object.keys(storageState)) delete storageState[key]
 	sentMessages.splice(0, sentMessages.length)
 	dynamicRuleUpdates.splice(0, dynamicRuleUpdates.length)
@@ -226,6 +230,34 @@ describe('popup message dispatcher seams', () => {
 		}), true)
 	})
 
+	test('returns a successful save reply without waiting for address-book refresh listeners', async () => {
+		let releaseBroadcast: (() => void) | undefined
+		addressBookBroadcastWait = new Promise<void>((resolve) => { releaseBroadcast = resolve })
+		const dispatch = dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: {
+				type: 'contract',
+				name: 'Contract with fetched ABI',
+				address: 1n,
+				entrySource: 'User',
+				abi: '[{"type":"function","name":"read","inputs":[],"outputs":[],"stateMutability":"view"}]',
+			},
+		})
+
+		while (!sentMessages.some((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_addressBookEntriesChanged'
+		})) await Promise.resolve()
+		const result = await Promise.race([
+			dispatch,
+			new Promise<'save reply timeout'>((resolve) => { setTimeout(() => resolve('save reply timeout'), 50) }),
+		])
+		releaseBroadcast?.()
+		await dispatch
+
+		assert.deepEqual(result, { type: 'AddOrModifyAddressBookEntryReply', ok: true })
+	})
+
 	test('delegates simulation reset through the injected lifecycle callback', async () => {
 		let resetCount = 0
 		const result = await dispatchPopupMessage(createDispatcherContext(async () => {
@@ -288,7 +320,7 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(importFailure?.method, 'popup_initiate_export_settings_reply')
 		if (importFailure?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected failed import broadcast.')
 		assert.equal(importFailure.data.success, false)
-		assert.equal(storageState.activeSimulationAddress, undefined)
+		assert.equal(storageState.independentActiveSimulationAddress, undefined)
 		assert.deepEqual(dynamicRuleUpdates, [])
 	})
 
@@ -336,7 +368,7 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(importSuccess.data.success, true)
 		assert.equal(messages[1]?.method, 'popup_settingsUpdated')
 		if (messages[1]?.method !== 'popup_settingsUpdated') throw new Error('Expected imported settings broadcast.')
-		assert.equal(messages[1].data.activeSimulationAddress, 2n)
+		assert.equal(messages[1].data.activeSimulationAddress, 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n)
 		assert.equal(messages[1].data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
 		assert.equal(messages[1].data.simulationMode, false)
 		assert.deepEqual(dynamicRuleUpdates, [{

@@ -11,7 +11,7 @@ import { POPUP_PERFORMANCE_MARKS, clearPerformanceMarks } from '../../app/ts/uti
 
 type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => void
 
-function installBrowserMock() {
+function installBrowserMock(replyToMessage: (message: unknown) => unknown | Promise<unknown> = () => undefined) {
 	const sentMessages: unknown[] = []
 	let messageListener: RuntimeMessageListener | undefined
 
@@ -20,7 +20,7 @@ function installBrowserMock() {
 			lastError: null,
 			async sendMessage(message: unknown) {
 				sentMessages.push(message)
-				return undefined
+				return await replyToMessage(message)
 			},
 			getManifest: () => ({ manifest_version: 3 }),
 			onMessage: {

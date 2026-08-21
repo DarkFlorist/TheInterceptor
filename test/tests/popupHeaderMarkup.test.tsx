@@ -206,11 +206,17 @@ describe('popup header markup', () => {
 				approve: () => undefined,
 				approveButtonState: 'inactive',
 				confirmDisabled: false,
+				addToSafeStack: () => undefined,
+				addToSafeStackButtonState: 'inactive',
+				addToSafeStackDisabled: false,
 			}), dom.document.body)
 		})
 
 		assert.equal(dom.document.body.textContent?.includes(`Reject ${ abiFunctionName }`), true)
-		assert.equal(dom.document.body.textContent?.includes(`Sign ${ abiFunctionName }`), true)
+		assert.equal(dom.document.body.textContent?.includes('Sign & add'), true)
+		assert.equal(dom.document.body.textContent?.includes('Add unsigned'), true)
+		assert.notEqual(findFirstByClass(dom.document.body, 'confirmation-action-buttons-container'), undefined)
+		assert.notEqual(findFirstByClass(dom.document.body, 'confirmation-action-buttons--safe'), undefined)
 
 		await act(() => {
 			render(h(ConfirmationActionButtons, {
@@ -227,6 +233,7 @@ describe('popup header markup', () => {
 		})
 
 		assert.equal(dom.document.body.textContent?.includes(`Simulate ${ abiFunctionName }!`), true)
+		assert.equal(findFirstByClass(dom.document.body, 'confirmation-action-buttons--safe'), undefined)
 
 		await act(() => {
 			render(h(ConfirmationActionButtons, {

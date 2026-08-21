@@ -26,6 +26,7 @@ export function createDeferredValue<T>() {
 
 export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3 }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3 } = {}) {
 	const storageState: Record<string, unknown> = {}
+	const runtimeMessages: unknown[] = []
 	const chainChangeRemovalStarted = createDeferredSignal()
 	const chainChangeRemovalRelease = createDeferredSignal()
 	let chainChangeRemovalDeferred = false
@@ -37,7 +38,8 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 	;(globalThis as typeof globalThis & { browser: typeof globalThis.browser }).browser = {
 		runtime: {
 			lastError: null,
-			async sendMessage() {
+			async sendMessage(message: unknown) {
+				runtimeMessages.push(message)
 				return undefined
 			},
 			getManifest: () => ({ manifest_version: manifestVersion }),
@@ -123,6 +125,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		waitForDeferredChainChangeRemoval: async () => await chainChangeRemovalStarted.promise,
 		releaseDeferredChainChangeRemoval: chainChangeRemovalRelease.resolve,
 		requestBlockingCalls,
+		runtimeMessages,
 		readStoredValue: (key: string) => storageState[key],
 	}
 }

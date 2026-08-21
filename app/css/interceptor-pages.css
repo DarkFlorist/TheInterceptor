@@ -61,21 +61,31 @@ header:has(form[role='search']) h1 {
 	margin-top: 0.25rem;
 }
 
-.simulation-stack-page-actions {
-	background: color-mix(in srgb, var(--text-color) 4%, transparent);
-	border: 1px solid var(--layout-line-color);
-	border-radius: 8px;
-	display: grid;
-	min-width: 0;
-	overflow: hidden;
-}
-
 .simulation-stack-page-heading {
 	align-items: center;
 	display: flex;
+	flex-wrap: wrap;
 	gap: 0.75rem;
 	justify-content: space-between;
 	min-width: 0;
+}
+
+.simulation-stack-page-controls {
+	align-items: center;
+	display: flex;
+	flex: 0 1 auto;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	justify-content: flex-end;
+	min-width: 0;
+}
+
+.simulation-stack-page-controls > .copy-safe-transactions-button {
+	display: grid;
+}
+
+.simulation-stack-page-controls > .copy-safe-transactions-button > .btn {
+	width: 100%;
 }
 
 .simulation-stack-page-clear {
@@ -89,60 +99,8 @@ header:has(form[role='search']) h1 {
 	--btn-text-color: var(--text-color);
 }
 
-.simulation-stack-action-group {
-	align-items: center;
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.625rem;
-	min-width: 0;
-	padding: 0.625rem;
-}
-
-.simulation-stack-action-group + .simulation-stack-action-group {
-	border-top: 1px solid var(--layout-line-color);
-}
-
-.simulation-stack-action-label {
-	display: grid;
-	flex: 1 1 8rem;
-	line-height: 1.2;
-	min-width: 0;
-}
-
-.simulation-stack-action-label strong {
-	color: var(--text-color);
-	font-size: 0.8125rem;
-	font-weight: 650;
-}
-
-.simulation-stack-action-label span {
-	color: var(--subtitle-text-color);
-	font-size: 0.75rem;
-}
-
-.simulation-stack-action-controls {
-	display: flex;
-	flex: 2 1 20rem;
-	flex-wrap: wrap;
-	gap: 0.5rem;
-	min-width: 0;
-}
-
-.simulation-stack-action-controls > * {
-	flex: 1 1 9rem;
-	min-width: 0;
-}
-
-.simulation-stack-action-controls .btn {
+.simulation-stack-page-controls .btn {
 	font-size: 0.875rem;
-}
-
-.simulation-stack-action-controls > .copy-safe-transactions-button {
-	display: grid;
-}
-
-.simulation-stack-action-controls > .copy-safe-transactions-button > .btn {
-	width: 100%;
 }
 
 .simulation-stack-action-icon {

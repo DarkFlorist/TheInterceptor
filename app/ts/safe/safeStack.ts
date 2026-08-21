@@ -1,7 +1,15 @@
-import type { SafeTransactionStack, SafeTransactionStacks } from '../types/safeTypes.js'
+import type { SafeOwnerSignature, SafeTransactionStack, SafeTransactionStacks } from '../types/safeTypes.js'
 import type { InterceptorTransactionStack } from '../types/visualizer-types.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { createSafeContractValidationFailure } from './safeCore.js'
+
+export function mergeSafeOwnerSignatures(existing: readonly SafeOwnerSignature[], additions: readonly SafeOwnerSignature[]) {
+	const merged = [...existing]
+	for (const addition of additions) {
+		if (!merged.some((signature) => signature.signer === addition.signer)) merged.push(addition)
+	}
+	return merged
+}
 
 export function reconcileSafeTransactionStack(stack: SafeTransactionStack, currentNonce: bigint) {
 	const endNonce = stack.baseNonce + BigInt(stack.transactions.length)

@@ -38,7 +38,8 @@ export type HomeParams = {
 	walletSelectedAddressBookEntry: Signal<AddressBookEntry | undefined>
 	tabState: Signal<TabState | undefined>
 	activeSimulationAddress: Signal<bigint | undefined>
-	activeSigningAddress: Signal<bigint | undefined>
+	activeSigningSafeAddress: Signal<bigint | undefined>
+	displayedSigningAddress: Signal<bigint | undefined>
 	useSignersAddressAsActiveAddress: Signal<boolean>
 	simVisResults: Signal<ResolvedSimulationResults>
 	rpcNetwork: Signal<RpcNetwork | undefined>
@@ -92,10 +93,11 @@ export type FirstCardParams = {
 }
 
 export type SimulationStateParam = {
+	simulationMode: ReadonlySignal<boolean>
 	simulationAndVisualisationResults: ReadonlySignal<ResolvedSimulationResults>
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	currentBlockNumber: Signal<bigint | undefined>
-	activeSimulationAddress: Signal<bigint | undefined>
+	visualizedAddress: ReadonlySignal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack
 	disableReset: ReadonlySignal<boolean>
@@ -106,8 +108,6 @@ export type SimulationStateParam = {
 	simulationResultState: Signal<SimulationResultState | undefined>
 	openSimulationStack: (target?: TransactionOrMessageIdentifier) => void
 	numberOfAddressesMadeRich: Signal<number>
-	hasSafeTransactionsToExport: ReadonlySignal<boolean>
-	safeSigningMode: boolean
 }
 
 export type LogAnalysisParams = {

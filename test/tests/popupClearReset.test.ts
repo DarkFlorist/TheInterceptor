@@ -4,6 +4,9 @@ import type { CompleteVisualizedSimulation } from '../../app/ts/types/visualizer
 import { CompleteVisualizedSimulation as CompleteVisualizedSimulationCodec, toResolvedSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
+import { createSafeTx } from '../../app/ts/safe/safeCore.js'
+import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import type { PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
 import { describe, test } from 'bun:test'
 
 type RuntimeMessage = {
@@ -345,6 +348,43 @@ const otherChainRpcNetwork: RpcNetwork = {
 	primary: false,
 }
 
+function createResetTestTransaction(transactionIdentifier: bigint, requiredChainId: bigint, safeAddress?: bigint): PreSimulationTransaction {
+	const recipient = 0x2000000000000000000000000000000000000002n
+	const transaction = {
+		from: activeAddress,
+		to: recipient,
+		value: 0n,
+		input: new Uint8Array(),
+	}
+	const safeTx = safeAddress === undefined ? undefined : createSafeTx(requiredChainId, safeAddress, transaction, transactionIdentifier)
+	return {
+		signedTransaction: mockSignTransaction({
+			type: '1559',
+			...transaction,
+			nonce: transactionIdentifier,
+			gas: 21_000n,
+			chainId: requiredChainId,
+			maxFeePerGas: 1n,
+			maxPriorityFeePerGas: 1n,
+		}),
+		website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+		created: new Date('2024-01-01T00:00:00.000Z'),
+		originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] },
+		transactionIdentifier,
+		simulationOptions: { requiredChainId, simulateWithZeroBaseFee: safeAddress !== undefined },
+		...(safeTx === undefined ? {} : {
+			safeTransaction: {
+				safeTx,
+				safeTxHash: transactionIdentifier,
+				created: new Date('2024-01-01T00:00:00.000Z'),
+				websiteOrigin: 'https://example.com',
+				transactionIdentifier,
+				signatures: [],
+			},
+		}),
+	}
+}
+
 const stalePopupVisualisation = buildStalePopupVisualisationState(rpcNetwork, DEFAULT_BLOCK_MANIPULATION)
 const fakeEthereum = createFakeEthereum(rpcNetwork) as never as Parameters<typeof updatePopupVisualisationIfNeeded>[0]
 const fakeTokenPriceService = {} as never as Parameters<typeof updatePopupVisualisationIfNeeded>[1]
@@ -353,7 +393,7 @@ describe('popup clear reset', () => {
 	test('keeps the cached popup timestamp when refresh finds no simulation change', async () => {
 		browserMock.reset()
 		await browserStorageLocalSet({
-			activeSimulationAddress: activeAddress,
+			independentActiveSimulationAddress: activeAddress,
 			interceptorTransactionStack: { operations: [] },
 		})
 		const modules = await modulesPromise
@@ -390,7 +430,7 @@ describe('popup clear reset', () => {
 		const nextActiveAddress = defaultActiveAddresses.find((entry) => entry.address !== activeAddress)?.address
 		if (nextActiveAddress === undefined) throw new Error('test defaults are missing a second active address')
 		await browserStorageLocalSet({
-			activeSimulationAddress: nextActiveAddress,
+			independentActiveSimulationAddress: nextActiveAddress,
 			simulationMode: true,
 			currentTabId: -1,
 			interceptorTransactionStack: { operations: [] },
@@ -437,7 +477,7 @@ describe('popup clear reset', () => {
 	test('publish an empty popup visualisation even when previous state was done', async () => {
 		browserMock.reset()
 		await browserStorageLocalSet({
-			activeSimulationAddress: activeAddress,
+			independentActiveSimulationAddress: activeAddress,
 			popupVisualisation: stalePopupVisualisation,
 			interceptorTransactionStack: { operations: [] },
 		})
@@ -454,7 +494,7 @@ describe('popup clear reset', () => {
 		assert.deepEqual(changedMessages.at(-1), getExpectedPopupSimulationChangedMessage(popupVisualisation))
 	})
 
-	test('clear the interceptor stack and refresh popup state during reset', async () => {
+	test('clears simulation-mode operations while preserving Safe stacks', async () => {
 		browserMock.reset()
 		await updateTransactionState(() => ({
 			interceptorTransactionStack: { operations: [{ type: 'TimeManipulation', blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] },
@@ -468,7 +508,7 @@ describe('popup clear reset', () => {
 			}],
 		}))
 		await browserStorageLocalSet({
-			activeSimulationAddress: activeAddress,
+			independentActiveSimulationAddress: activeAddress,
 			popupVisualisation: stalePopupVisualisation,
 		})
 
@@ -477,13 +517,53 @@ describe('popup clear reset', () => {
 		const interceptorTransactionStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.deepEqual(interceptorTransactionStack, { operations: [] })
-		assert.deepEqual(await getSafeTransactionStacks(), [])
+		assert.equal((await getSafeTransactionStacks()).length, 1)
 		assert.ok(popupVisualisation)
 		assertDefinedEmptyPopupVisualisation(popupVisualisation, DEFAULT_BLOCK_MANIPULATION)
 
 		const changedMessages = getSimulationStateChangedMessages(browserMock.sentMessages)
 		assert.equal(changedMessages.length > 0, true)
 		assert.deepEqual(changedMessages.at(-1), getExpectedPopupSimulationChangedMessage(popupVisualisation))
+	})
+
+	test('clears only the active Safe stack in signing mode', async () => {
+		browserMock.reset()
+		const activeSafeAddress = 0x3000000000000000000000000000000000000003n
+		const otherSafeAddress = 0x4000000000000000000000000000000000000004n
+		const activeChainId = rpcNetwork.chainId
+		const anotherChainId = activeChainId + 1n
+		const ordinaryTransaction = createResetTestTransaction(1n, activeChainId)
+		const activeSafeTransaction = createResetTestTransaction(2n, activeChainId, activeSafeAddress)
+		const otherSafeTransaction = createResetTestTransaction(3n, activeChainId, otherSafeAddress)
+		const otherChainTransaction = createResetTestTransaction(4n, anotherChainId, activeSafeAddress)
+		await updateTransactionState(() => ({
+			interceptorTransactionStack: { operations: [
+				{ type: 'Transaction', preSimulationTransaction: ordinaryTransaction },
+				{ type: 'Transaction', preSimulationTransaction: activeSafeTransaction },
+				{ type: 'Transaction', preSimulationTransaction: otherSafeTransaction },
+				{ type: 'Transaction', preSimulationTransaction: otherChainTransaction },
+			] },
+			safeTransactionStacks: [
+				{ chainId: activeChainId, safeAddress: activeSafeAddress, safeVersion: '1.4.1', baseNonce: 0n, threshold: 1n, transactions: [] },
+				{ chainId: activeChainId, safeAddress: otherSafeAddress, safeVersion: '1.4.1', baseNonce: 0n, threshold: 1n, transactions: [] },
+				{ chainId: anotherChainId, safeAddress: activeSafeAddress, safeVersion: '1.4.1', baseNonce: 0n, threshold: 1n, transactions: [] },
+			],
+		}))
+		await browserStorageLocalSet({
+			simulationMode: false,
+			activeSigningSafeAddress: activeSafeAddress,
+			activeRpcNetwork: rpcNetwork,
+			popupVisualisation: stalePopupVisualisation,
+		})
+
+		await resetSimulationStateFromConfig(fakeEthereum, fakeTokenPriceService)
+
+		const storedStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
+		assert.deepEqual(storedStack.operations.map((operation) => operation.preSimulationTransaction.transactionIdentifier), [1n, 3n, 4n])
+		assert.deepEqual((await getSafeTransactionStacks()).map((stack) => [stack.chainId, stack.safeAddress]), [
+			[activeChainId, otherSafeAddress],
+			[anotherChainId, activeSafeAddress],
+		])
 	})
 
 	test('preserves the interceptor stack when changing rpc within the same chain', async () => {
@@ -495,7 +575,7 @@ describe('popup clear reset', () => {
 		}
 		const interceptorTransactionStack = { operations: [{ type: 'TimeManipulation', blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] as const }
 		await browserStorageLocalSet({
-			activeSimulationAddress: activeAddress,
+			independentActiveSimulationAddress: activeAddress,
 			activeRpcNetwork: rpcNetwork,
 			simulationMode: true,
 			popupVisualisation: stalePopupVisualisation,
@@ -522,7 +602,7 @@ describe('popup clear reset', () => {
 			resets.push(nextRpcEntry)
 		}
 		await browserStorageLocalSet({
-			activeSimulationAddress: activeAddress,
+			independentActiveSimulationAddress: activeAddress,
 			activeRpcNetwork: rpcNetwork,
 			simulationMode: true,
 			popupVisualisation: stalePopupVisualisation,
@@ -549,7 +629,7 @@ describe('popup clear reset', () => {
 	test('return the complete visualized simulation reply through the background popup handler', async () => {
 		browserMock.reset()
 		await browserStorageLocalSet({
-			activeSimulationAddress: activeAddress,
+			independentActiveSimulationAddress: activeAddress,
 			popupVisualisation: stalePopupVisualisation,
 			interceptorTransactionStack: { operations: [] },
 		})

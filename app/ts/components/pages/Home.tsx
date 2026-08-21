@@ -11,7 +11,7 @@ import { requestPopupSafeContractState, sendPopupMessageToBackgroundPage, sendPo
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
-import { getSafeSigningEntry, getSafeSignerAddresses, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
+import { getSafeSignerAddresses, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon, ChevronIcon, OpenInNewIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { type Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
@@ -23,8 +23,8 @@ import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
 import { getSelectableActiveAddresses, getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
+import { useModeActiveAddress } from '../hooks/useModeActiveAddress.js'
 import { updateRichListAddress } from '../../utils/richList.js'
-import { CopySafeTransactionsButton } from '../subcomponents/CopySafeTransactionsButton.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import type { ComponentChildren, JSX } from 'preact'
@@ -101,7 +101,7 @@ function OpenSimulationStackButtonContent() {
 		<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
 			<OpenInNewIcon/>
 		</span>
-		<span>View stack details</span>
+		<span>View &amp; operate stack</span>
 	</>
 }
 
@@ -194,7 +194,6 @@ function SimulationLoadingSkeleton() {
 				<LoadingControl class = 'btn btn--outline is-small'>
 					<OpenSimulationStackButtonContent/>
 				</LoadingControl>
-				<LoadingControl class = 'button is-small'>Copy Gnosis Safe transactions</LoadingControl>
 				<LoadingControl class = 'btn is-small is-danger'>
 					<ClearSimulationButtonContent/>
 				</LoadingControl>
@@ -728,8 +727,6 @@ type SimulationResultsHeaderParams = {
 	openSimulationStack?: () => void
 	disableReset?: ReadonlySignal<boolean>
 	resetSimulation?: () => Promise<void>
-	showCopyGnosisSafeTransactions?: boolean
-	hasSafeTransactionsToExport?: boolean
 }
 
 function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
@@ -747,16 +744,10 @@ function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 		</div>
 		<div class = 'log-cell' style = 'justify-content: right; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 300px;'>
 			{ param.openSimulationStack === undefined ? <></> :
-				<button class = 'btn btn--outline is-small' onClick = { openStack } title = 'Open simulation stack details in a new tab' aria-label = 'Open simulation stack details in a new tab'>
+				<button class = 'btn btn--outline is-small' onClick = { openStack } title = 'View and operate the transaction stack in a new tab' aria-label = 'View and operate the transaction stack in a new tab'>
 					<OpenSimulationStackButtonContent/>
 				</button>
 			}
-			{ param.showCopyGnosisSafeTransactions === true
-				? <CopySafeTransactionsButton
-					disabled = { param.hasSafeTransactionsToExport !== true }
-					disabledTitle = 'There are no Gnosis Safe proposals to export on the selected chain.'
-				/>
-				: <></> }
 			{ param.disableReset === undefined || param.resetSimulation === undefined ? <></> :
 				<AsyncActionButton
 					class = 'btn is-small is-danger'
@@ -811,11 +802,6 @@ function PopupVisualisation(param: SimulationStateParam) {
 
 	const computedAddressBookEntries = useComputed(() => param.simulationAndVisualisationResults.value.kind === 'simulated' ? param.simulationAndVisualisationResults.value.value.addressBookEntries : [])
 	const currentResults = param.simulationAndVisualisationResults.value
-	const showCopyGnosisSafeTransactions = currentResults.kind === 'simulated'
-		&& param.safeSigningMode
-		&& currentResults.value.simulationStateInput?.some((block) =>
-			block.transactions.some((transaction) => transaction.safeTransaction !== undefined)
-		) === true
 	const isSimulationStatusUnknown = param.simulationUpdatingState.value === undefined || param.simulationResultState.value === undefined
 
 	if (isSimulationStatusUnknown || (isEmpty.value && param.simulationUpdatingState.value === 'updating')) {
@@ -824,7 +810,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 
 	if (currentResults.kind === 'passthrough') {
 		return <div class = 'popup-data-reveal'>
-			<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } showCopyGnosisSafeTransactions = { showCopyGnosisSafeTransactions } hasSafeTransactionsToExport = { param.hasSafeTransactionsToExport.value } />
+			<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } />
 			{ isEmpty.value ?
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
 			: <RichAddressesTitleCard numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich.value } openSimulationStack = { param.openSimulationStack } /> }
@@ -834,7 +820,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 	const resolvedResults = currentResults.value
 
 	return <div class = 'popup-data-reveal'>
-		<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } showCopyGnosisSafeTransactions = { showCopyGnosisSafeTransactions } hasSafeTransactionsToExport = { param.hasSafeTransactionsToExport.value } />
+		<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } />
 
 			{ resolvedResults.visualizedSimulationState.success === false ? <>
 				<ErrorComponent text = { `Failed to simulate the stack due to error: "${ resolvedResults.visualizedSimulationState.jsonRpcError.error.message }". Please modify the stack to make it simutable.` }/>
@@ -842,10 +828,11 @@ function PopupVisualisation(param: SimulationStateParam) {
 				<TransactionsAndSignedMessages
 				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 				removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-				activeAddress = { param.activeSimulationAddress }
+				activeAddress = { param.visualizedAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
 				editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 				addressMetaData = { computedAddressBookEntries }
+				showTimePicker = { param.simulationMode.value }
 				displayMode = 'titleOnly'
 				openSimulationStackAt = { param.openSimulationStack }
 			/>
@@ -858,10 +845,11 @@ function PopupVisualisation(param: SimulationStateParam) {
 					<TransactionsAndSignedMessages
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-						activeAddress = { param.activeSimulationAddress }
+						activeAddress = { param.visualizedAddress }
 						renameAddressCallBack = { param.renameAddressCallBack }
 						editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 						addressMetaData = { computedAddressBookEntries }
+						showTimePicker = { param.simulationMode.value }
 						displayMode = 'titleOnly'
 						openSimulationStackAt = { param.openSimulationStack }
 					/>
@@ -870,7 +858,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 						: <SimulationSummary
 							simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 							currentBlockNumber = { param.currentBlockNumber }
-							activeAddress = { param.activeSimulationAddress }
+							activeAddress = { param.visualizedAddress }
 							renameAddressCallBack = { param.renameAddressCallBack }
 							editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 							rpcConnectionStatus = { param.rpcConnectionStatus }
@@ -890,32 +878,17 @@ export function Home(param: HomeParams) {
 	const tabWebsite = useComputed(() => param.tabState.value?.website)
 	const disableResetUntilHomeDataLoaded = useComputed(() => disableReset.value || !param.isInitialHomeDataLoaded.value)
 
-	const activeSimulationAddress = useComputed(() => {
-		const address = param.activeSimulationAddress.value
-		if (address === undefined) return undefined
-		const matchingEntry = param.activeAddresses.value.find((entry) =>
-			entry.address === address && (entry.type !== 'safe' || entry.chainId === param.rpcNetwork.value?.chainId)
-		)
-		if (matchingEntry !== undefined) return matchingEntry
-		const isSafeOnAnotherChain = param.activeAddresses.value.some((entry) => entry.type === 'safe' && entry.address === address)
-		return isSafeOnAnotherChain ? undefined : getActiveAddressEntry(address, param.activeAddresses.value)
+	const modeActiveAddress = useModeActiveAddress(param)
+	const safeStackMode = useComputed(() => !param.simulationMode.value && param.activeSigningSafeAddress.value !== undefined)
+	const currentActiveAddress = useComputed(() => {
+		const resolution = modeActiveAddress.value
+		if (resolution.activeAddress === undefined) return undefined
+		return resolution.activeAddressBookEntry ?? getActiveAddressEntry(resolution.activeAddress, param.activeAddresses.value, param.rpcNetwork.value?.chainId)
 	})
-	const activeSigningAddress = useComputed(() =>
-		param.activeSigningAddress.value !== undefined ? getActiveAddressEntry(param.activeSigningAddress.value, param.activeAddresses.value) : undefined
-	)
-	const activeSafe = useComputed(() => getSafeSigningEntry(param.activeAddresses.value, {
-		simulationMode: param.simulationMode.value,
-		useSignersAddressAsActiveAddress: param.useSignersAddressAsActiveAddress.value,
-		activeSimulationAddress: param.activeSimulationAddress.value,
-		chainId: param.rpcNetwork.value?.chainId,
-	}))
-	const safeSigningMode = useComputed(() => activeSafe.value !== undefined)
-	const currentActiveAddress = useComputed(() =>
-		param.simulationMode.value || safeSigningMode.value ? activeSimulationAddress.value : activeSigningAddress.value
-	)
+	const visualizedAddress = useComputed(() => safeStackMode.value ? param.activeSigningSafeAddress.value : modeActiveAddress.value.activeAddress)
 
 	useEffect(() => {
-		if ((!param.simulationMode.value && !safeSigningMode.value) || activeSimulationAddress.value === undefined) {
+		if ((!param.simulationMode.value && !safeStackMode.value) || visualizedAddress.value === undefined) {
 			showPopupVisualisation.value = false
 			return
 		}
@@ -923,7 +896,7 @@ export function Home(param: HomeParams) {
 		return scheduleAfterPaint(() => {
 			showPopupVisualisation.value = true
 		})
-	}, [param.simulationMode.value, safeSigningMode.value, activeSimulationAddress.value])
+	}, [param.simulationMode.value, safeStackMode.value, visualizedAddress.value])
 
 	useSignalEffect(() => {
 		param.simVisResults.value
@@ -987,15 +960,16 @@ export function Home(param: HomeParams) {
 			isFreshHomeDataLoaded = { param.isFreshHomeDataLoaded }
 		/>
 
-		{ (param.simulationMode.value || safeSigningMode.value) && activeSimulationAddress.value !== undefined
+		{ (param.simulationMode.value || safeStackMode.value) && visualizedAddress.value !== undefined
 			? showPopupVisualisation.value
 				? <PopupVisualisation
+					simulationMode = { param.simulationMode }
 					simulationAndVisualisationResults = { param.simVisResults }
 					removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
 					disableReset = { disableResetUntilHomeDataLoaded }
 					resetSimulation = { resetSimulationAfterHomeDataLoaded }
 					currentBlockNumber = { param.currentBlockNumber }
-					activeSimulationAddress = { param.activeSimulationAddress }
+					visualizedAddress = { visualizedAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
 					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 					removedTransactionOrSignedMessages = { removedTransactionOrSignedMessages.value }
@@ -1004,8 +978,6 @@ export function Home(param: HomeParams) {
 					simulationResultState = { param.simulationResultState }
 					openSimulationStack = { openSimulationStack }
 					numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich }
-					hasSafeTransactionsToExport = { param.hasSafeTransactionsToExport }
-					safeSigningMode = { safeSigningMode.value }
 				/>
 				: <SimulationLoadingSkeleton/>
 			: <></> }

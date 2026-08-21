@@ -506,6 +506,28 @@
 	margin-bottom: 0px;
 }
 
+.confirmation-action-buttons-container {
+	container-type: inline-size;
+	width: 100%;
+}
+
+.confirmation-action-buttons {
+	display: flex;
+	flex-direction: row;
+}
+
+@container (max-width: 42rem) {
+	.confirmation-action-buttons--safe {
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.confirmation-action-buttons--safe > .dialog-action-button {
+		flex: 0 0 auto;
+		margin-block: 0;
+	}
+}
+
 .confirmation-waiting-for-signer {
 	align-items: center;
 	display: inline-flex;

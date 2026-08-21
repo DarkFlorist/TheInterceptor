@@ -260,7 +260,8 @@ function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 		walletSelectedAddressBookEntry: new Signal(undefined),
 		tabState: new Signal<TabState | undefined>(undefined),
 		activeSimulationAddress: new Signal<bigint | undefined>(ACTIVE_ADDRESS),
-		activeSigningAddress: new Signal<bigint | undefined>(undefined),
+		activeSigningSafeAddress: new Signal<bigint | undefined>(undefined),
+		displayedSigningAddress: new Signal<bigint | undefined>(undefined),
 		useSignersAddressAsActiveAddress: new Signal(false),
 		simVisResults: new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createSimulationResults())),
 		rpcNetwork: new Signal(rpcNetwork),
@@ -718,8 +719,8 @@ describe('Home popup clear empty state', () => {
 				render(h(Home, createHomeParams({ simVisResults })), dom.document.body)
 			})
 
-			const viewStackButton = getButtonByText(dom.document.body, 'View stack details')
-			assert.equal(viewStackButton.getAttribute?.('aria-label'), 'Open simulation stack details in a new tab')
+			const viewStackButton = getButtonByText(dom.document.body, 'View & operate stack')
+			assert.equal(viewStackButton.getAttribute?.('aria-label'), 'View and operate the transaction stack in a new tab')
 			assert.equal(collectElements(dom.document.body, 'button').some((button) => button.textContent?.replace(/\s+/g, ' ').trim() === 'Import'), false)
 			assert.equal(dom.document.body.textContent?.includes('Export Simulation Stack'), false)
 
@@ -755,7 +756,7 @@ describe('Home popup clear empty state', () => {
 						activeSigningAddress: ACTIVE_ADDRESS,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(undefined),
-					activeSigningAddress: new Signal<bigint | undefined>(ACTIVE_ADDRESS),
+					displayedSigningAddress: new Signal<bigint | undefined>(ACTIVE_ADDRESS),
 					useSignersAddressAsActiveAddress: new Signal(true),
 					simVisResults,
 					simulationMode: new Signal(false),
@@ -789,7 +790,7 @@ describe('Home popup clear empty state', () => {
 						activeSigningAddress: undefined,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(undefined),
-					activeSigningAddress: new Signal<bigint | undefined>(undefined),
+					displayedSigningAddress: new Signal<bigint | undefined>(undefined),
 					simulationMode: new Signal(false),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'No signer wallet detected.' }),
 				})), dom.document.body)
@@ -825,7 +826,8 @@ describe('Home popup clear empty state', () => {
 						activeSigningAddress: SAFE_SIGNER_ADDRESS,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(undefined),
-					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					activeSigningSafeAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
 					useSignersAddressAsActiveAddress: new Signal(true),
 					simulationMode: new Signal(false),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Connected through MetaMask.' }),
@@ -881,7 +883,8 @@ describe('Home popup clear empty state', () => {
 						activeSigningAddress: SAFE_SIGNER_ADDRESS,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
-					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					activeSigningSafeAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
 					simulationMode: new Signal(false),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
 				})), dom.document.body)
@@ -940,7 +943,8 @@ describe('Home popup clear empty state', () => {
 						activeSigningAddress: undefined,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
-					activeSigningAddress: new Signal<bigint | undefined>(undefined),
+					activeSigningSafeAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
 					simulationMode: new Signal(false),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
 				})), dom.document.body)
@@ -1012,8 +1016,8 @@ test('changes the Safe simulation signer from the popup in simulation mode', asy
 						activeSigningAddress: SAFE_SIGNER_ADDRESS,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
-					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
-				simulationMode: new Signal(true),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					simulationMode: new Signal(true),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
 				})), dom.document.body)
 			})
@@ -1087,8 +1091,8 @@ test('rolls back only the simulation signer when optimistic persistence fails', 
 						activeSigningAddress: SAFE_SIGNER_ADDRESS,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
-					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
-				simulationMode: new Signal(true),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					simulationMode: new Signal(true),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
 				})), dom.document.body)
 			})
@@ -1166,8 +1170,8 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 						activeSigningAddress: SAFE_SIGNER_ADDRESS,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
-					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
-				simulationMode: new Signal(true),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					simulationMode: new Signal(true),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
 				})), dom.document.body)
 			})
@@ -1327,7 +1331,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 		}
 	})
 
-test('warns when the wallet-selected account is not among the known Safe owners', async () => {
+	test('presents the wallet account instead of a stale unowned Safe as the current signing account', async () => {
 		const dom = installDomMock()
 		try {
 			await act(() => {
@@ -1338,69 +1342,56 @@ test('warns when the wallet-selected account is not among the known Safe owners'
 						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 						signerConnected: true,
 						signerName: 'MetaMask',
-					signerAccounts: [0x6000000000000000000000000000000000000006n, SAFE_SIGNER_ADDRESS],
+						signerAccounts: [0x6000000000000000000000000000000000000006n, SAFE_SIGNER_ADDRESS],
 						signerAccountError: undefined,
 						signerChain: 1n,
 						tabIconDetails: { icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' },
-					activeSigningAddress: 0x6000000000000000000000000000000000000006n,
+						activeSigningAddress: 0x6000000000000000000000000000000000000006n,
 					}),
 					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
-				activeSigningAddress: new Signal<bigint | undefined>(0x6000000000000000000000000000000000000006n),
+					activeSigningSafeAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
 					simulationMode: new Signal(false),
 					tabIconDetails: new Signal({ icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' }),
 				})), dom.document.body)
 			})
 
 			const popupText = dom.document.body.textContent ?? ''
+			assert.equal(popupText.includes('0x6000000000000000000000000000000000000006'), true)
 			assert.equal(popupText.includes('Gnosis Safe signers'), false)
 			assert.equal(popupText.includes('CONNECTED'), true)
 			assert.equal(popupText.includes('NOT CONNECTED'), false)
-			assert.equal(popupText.includes('MetaMask has'), true)
-			assert.equal(popupText.includes('0x6000000000000000000000000000000000000006'), true)
-			assert.equal(popupText.includes('selected. You cannot sign the current Gnosis Safe with it.'), true)
-			const selectedSignerCard = collectElements(dom.document.body, 'span').find((element) =>
-				element.getAttribute?.('class') === 'inline-card' && element.getAttribute?.('title') === '0x6000000000000000000000000000000000000006'
-			)
-			if (selectedSignerCard === undefined) throw new Error('Missing unknown wallet-selected signer address card')
-			assert.equal(collectElements(selectedSignerCard, 'svg').length > 0, true)
-			assert.equal(collectElements(dom.document.body, 'img').some((element) =>
-				element.getAttribute?.('src') === '../img/warning-sign-black.svg'
-			), true)
-			const retrievalStatus = collectElements(dom.document.body, 'p').find((element) =>
-				element.getAttribute?.('class') === 'popup-home-retrieval-status'
-			)
-			if (retrievalStatus === undefined) throw new Error('Missing aligned wallet retrieval status')
-			assert.equal(collectElements(retrievalStatus, 'span').some((element) => element.getAttribute?.('class') === 'popup-home-retrieval-source'), true)
+			assert.equal(popupText.includes('MetaMask has'), false)
+			assert.equal(popupText.includes('selected. You cannot sign the current Gnosis Safe with it.'), false)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
 		}
 	})
 
-	test('places the Gnosis Safe transaction copy action between stack details and clear', () => {
+	test('places stack operation and clear actions together without a Safe export action', () => {
 		const headerStart = homeSource.indexOf('function SimulationResultsHeader(')
 		const headerEnd = homeSource.indexOf('function PopupVisualisation(', headerStart)
 		const headerSource = homeSource.slice(headerStart, headerEnd)
 		const viewPosition = headerSource.indexOf('<OpenSimulationStackButtonContent')
-		const copyPosition = headerSource.indexOf('<CopySafeTransactionsButton')
 		const clearPosition = headerSource.indexOf('<AsyncActionButton')
 
 		assert.notEqual(viewPosition, -1)
-		assert.notEqual(copyPosition, -1)
 		assert.notEqual(clearPosition, -1)
-		assert.equal(viewPosition < copyPosition && copyPosition < clearPosition, true)
+		assert.equal(viewPosition < clearPosition, true)
+		assert.equal(headerSource.includes('CopySafeTransactionsButton'), false)
 	})
 
-	test('disables the Home Gnosis Safe export when the selected chain has no stored proposals', async () => {
+	test('does not expose Gnosis Safe export from the Home results header', async () => {
 		const dom = installDomMock()
 		const browserMock = installBrowserMock()
-		const hasSafeTransactionsToExport = new Signal(false)
 		try {
 			await act(async () => {
 				render(h(Home, createHomeParams({
 					activeAddresses: new Signal([safeEntry, safeSignerEntry]),
 					activeSimulationAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
-					activeSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					activeSigningSafeAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
 					simulationMode: new Signal(false),
 					tabState: new Signal<TabState | undefined>({
 						tabId: 1,
@@ -1414,22 +1405,57 @@ test('warns when the wallet-selected account is not among the known Safe owners'
 						activeSigningAddress: SAFE_SIGNER_ADDRESS,
 					}),
 					simVisResults: new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createSafeSimulationResults())),
-					hasSafeTransactionsToExport,
+					hasSafeTransactionsToExport: new Signal(true),
 				})), dom.document.body)
 				await new Promise((resolve) => setTimeout(resolve, 40))
 			})
 
-			const safeExportButton = getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions')
-			assert.notEqual(safeExportButton.getAttribute?.('disabled'), null)
-			assert.equal(safeExportButton.getAttribute?.('title'), 'There are no Gnosis Safe proposals to export on the selected chain.')
+			assert.equal(dom.document.body.textContent?.includes('Copy Gnosis Safe transactions'), false)
+			assert.equal(dom.document.body.textContent?.includes('View & operate stack'), true)
+			assert.equal(dom.document.body.textContent?.includes('Clear'), true)
+			assert.equal(dom.document.body.textContent?.includes('Simulate delay'), false)
+			assert.equal(getButtonByText(dom.document.body, 'View & operate stack').parentNode, getButtonByText(dom.document.body, 'Clear').parentNode)
 			assert.equal(browserMock.sentMessages.some((message) => hasMethod(message, 'popup_requestSafeStackExport')), false)
-
-			await act(() => { hasSafeTransactionsToExport.value = true })
-			assert.equal(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions').getAttribute?.('disabled'), null)
+			assert.equal(browserMock.sentMessages.some((message) => hasMethod(message, 'popup_setTransactionOrMessageBlockTimeManipulator')), false)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
 			browserMock.restore()
+		}
+	})
+
+	test('keeps the configured Safe stack visible when the current tab displays the wallet owner', async () => {
+		const dom = installDomMock()
+		try {
+			await act(async () => {
+				render(h(Home, createHomeParams({
+					activeAddresses: new Signal([safeEntry, safeSignerEntry]),
+					activeSigningSafeAddress: new Signal<bigint | undefined>(SAFE_ADDRESS),
+					displayedSigningAddress: new Signal<bigint | undefined>(SAFE_SIGNER_ADDRESS),
+					simulationMode: new Signal(false),
+					tabState: new Signal<TabState | undefined>({
+						tabId: 1,
+						website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+						signerConnected: true,
+						signerName: 'MetaMask',
+						signerAccounts: [SAFE_SIGNER_ADDRESS],
+						signerAccountError: undefined,
+						signerChain: 1n,
+						tabIconDetails: { icon: ICON_SIGNING, iconReason: 'Signing through MetaMask.' },
+						activeSigningAddress: SAFE_SIGNER_ADDRESS,
+					}),
+					simVisResults: new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createSafeSimulationResults())),
+					hasSafeTransactionsToExport: new Signal(true),
+				})), dom.document.body)
+				await new Promise((resolve) => setTimeout(resolve, 40))
+			})
+
+			assert.equal(dom.document.body.textContent?.includes('Simulation Results'), true)
+			assert.equal(dom.document.body.textContent?.includes('View & operate stack'), true)
+			assert.equal(dom.document.body.textContent?.includes('Copy Gnosis Safe transactions'), false)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
 		}
 	})
 })
