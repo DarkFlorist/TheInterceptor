@@ -756,7 +756,7 @@ describe('background eth_accounts', () => {
 		assert.equal('activeAddress' in (connectedResult ?? {}), false)
 	})
 
-	test('restores Safe compatibility for an approved top-frame reload without trusting a new child-frame port', async () => {
+	test('does not advertise an approved EOA as a Safe on top-frame reload or child-frame approval', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -801,7 +801,7 @@ describe('background eth_accounts', () => {
 		assert.equal(connection.wantsToConnect, true)
 		assert.equal(connectedResult?.metamaskCompatibilityMode, false)
 		await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
-		assert.equal(messages.find((message) => message.method === 'safe_apps_compatibility')?.result?.enabled, true)
+		assert.equal(messages.find((message) => message.method === 'safe_apps_compatibility')?.result?.enabled, false)
 		assert.deepEqual(messages.find((message) => message.method === 'accountsChanged')?.result, [addressString(account)])
 
 		const childSocket = { tabId: 2, connectionName: 1n }
@@ -825,7 +825,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(childMessages.filter((message) => message.method === 'safe_apps_compatibility').map((message) => message.result?.enabled), [false, false])
 	})
 
-	test('keeps Safe compatibility disabled without current address consent or after signer state is cleared', async () => {
+	test('keeps Safe compatibility disabled when address consent is granted only to an EOA', async () => {
 		installBrowserMock()
 		const {
 			handleInterceptedRequest,
@@ -869,7 +869,7 @@ describe('background eth_accounts', () => {
 
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
 		await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), false)
-		assert.deepEqual(messages.filter((message) => message.method === 'safe_apps_compatibility').map((message) => message.result?.enabled), [false, true])
+		assert.deepEqual(messages.filter((message) => message.method === 'safe_apps_compatibility').map((message) => message.result?.enabled), [false, false])
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
 			...connectedRequest,
 			uniqueRequestIdentifier: { requestId: 16, requestSocket: socket },
@@ -877,18 +877,18 @@ describe('background eth_accounts', () => {
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		await waitForPortMessageCount(messages, 'safe_apps_compatibility', 3)
 		assert.equal(messages.find((message) => message.method === 'connected_to_signer' && message.requestId === 16)?.result?.metamaskCompatibilityMode, false)
-		assert.deepEqual(messages.filter((message) => message.method === 'safe_apps_compatibility').map((message) => message.result?.enabled), [false, true, false])
+		assert.deepEqual(messages.filter((message) => message.method === 'safe_apps_compatibility').map((message) => message.result?.enabled), [false, false, false])
 	})
 
-	test('keeps the synthetic Safe compatibility facade disabled while signing through a configured Safe', async () => {
+	test('enables Safe compatibility only while an owned configured Safe is active', async () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
-			getSettings,
 			sendSafeAppsCompatibilityToApprovedWebsitePorts,
 			setSafeAppsCompatibilityMode,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
+			updateUserAddressBookEntries,
 			updateWebsiteAccess,
 			websiteSocketToString,
 		} = await loadModules()
@@ -904,6 +904,15 @@ describe('background eth_accounts', () => {
 		})
 		await setUseSignersAddressAsActiveAddress(false)
 		await setSafeAppsCompatibilityMode(true)
+		await updateUserAddressBookEntries(() => [{
+			type: 'safe',
+			name: 'Configured Safe',
+			address: configuredSafeAddress,
+			chainId: 1n,
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			safeSignerAddresses: [signerAddress],
+		}])
 		await updateWebsiteAccess(() => [{
 			website,
 			access: true,
@@ -928,7 +937,7 @@ describe('background eth_accounts', () => {
 
 		await sendSafeAppsCompatibilityToApprovedWebsitePorts(websiteTabConnections)
 
-		assert.deepEqual(messages.filter((message) => message.method === 'safe_apps_compatibility').map((message) => message.result?.enabled), [false])
+		assert.deepEqual(messages.filter((message) => message.method === 'safe_apps_compatibility').map((message) => message.result?.enabled), [true])
 	})
 
 	test('does not let an older async Safe compatibility enable overwrite a newer disable', async () => {
@@ -939,24 +948,35 @@ describe('background eth_accounts', () => {
 			setSafeAppsCompatibilityMode,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
+			updateUserAddressBookEntries,
 			updateWebsiteAccess,
 			websiteSocketToString,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
-		const account = 0x6969696969696969696969696969696969696969n
-		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account, activeSigningSafeAddress: undefined })
+		const signerAddress = 0x6969696969696969696969696969696969696969n
+		const configuredSafeAddress = 0x7070707070707070707070707070707070707070n
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: signerAddress, activeSigningSafeAddress: configuredSafeAddress })
 		await setUseSignersAddressAsActiveAddress(false)
 		await setSafeAppsCompatibilityMode(true)
-		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+		await updateUserAddressBookEntries(() => [{
+			type: 'safe',
+			name: 'Configured Safe',
+			address: configuredSafeAddress,
+			chainId: 1n,
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			safeSignerAddresses: [signerAddress],
+		}])
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: configuredSafeAddress, access: true }] }])
 
 		const socket = { tabId: 1, connectionName: 0n }
 		await updateTabState(socket.tabId, (previousState) => ({
 			...previousState,
 			signerName: 'MetaMask',
 			signerConnected: true,
-			signerAccounts: [account],
-			activeSigningAddress: account,
+			signerAccounts: [signerAddress],
+			activeSigningAddress: signerAddress,
 		}))
 		const { port, messages } = createPort(socket.tabId, undefined, 0)
 		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {

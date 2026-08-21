@@ -1,6 +1,7 @@
 import * as funtypes from 'funtypes'
 import type { RpcNetwork } from '../types/rpc.js'
 import { addressString } from '../utils/bigint.js'
+import type { SafeContractState } from '../safe/safeCore.js'
 
 export type SafeAppsChainInfo = funtypes.Static<typeof SafeAppsChainInfo>
 export const SafeAppsChainInfo = funtypes.ReadonlyObject({
@@ -95,6 +96,11 @@ function parseRpcCall(params: unknown) {
 	return { method: SAFE_APPS_RPC_ALIASES.get(params.call) ?? params.call, params: rpcParams }
 }
 
+function toSafeAppsNumber(value: bigint, label: string) {
+	if (value > BigInt(Number.MAX_SAFE_INTEGER)) throw safeAppsPolicyError(`The Safe ${ label } is too large for the Safe Apps protocol.`)
+	return Number(value)
+}
+
 export function getSafeAppsChainInfo(rpcNetwork: RpcNetwork): SafeAppsChainInfo {
 	return {
 		chainId: rpcNetwork.chainId.toString(),
@@ -106,16 +112,16 @@ export function getSafeAppsChainInfo(rpcNetwork: RpcNetwork): SafeAppsChainInfo 
 	}
 }
 
-export function getSafeAppsRequestCommand(value: unknown, websiteOrigin: string, activeAddress: bigint, rpcNetwork: RpcNetwork): SafeAppsRequestCommand {
+export async function getSafeAppsRequestCommand(value: unknown, websiteOrigin: string, activeSafeAddress: bigint, rpcNetwork: RpcNetwork, getSafeContractState: () => Promise<SafeContractState>): Promise<SafeAppsRequestCommand> {
 	const request = parseSafeAppsRequest(value)
-	const safeAddress = addressString(activeAddress)
+	const safeAddress = addressString(activeSafeAddress)
 	const chainInfo = getSafeAppsChainInfo(rpcNetwork)
 	switch (request.method) {
 		case 'getEnvironmentInfo': return { kind: 'result', value: { origin: websiteOrigin } }
 		case 'getChainInfo': return { kind: 'result', value: { chainName: chainInfo.name, chainId: chainInfo.chainId, shortName: chainInfo.name, nativeCurrency: { name: chainInfo.currencyName, symbol: chainInfo.currencyTicker, decimals: 18, logoUri: chainInfo.currencyLogoUri ?? '' }, blockExplorerUriTemplate: { address: '', txHash: '', api: chainInfo.blockExplorerApiUrl ?? '' } } }
 		case 'getSafeInfo': {
-			if (rpcNetwork.chainId > BigInt(Number.MAX_SAFE_INTEGER)) throw safeAppsPolicyError('The active chain ID is too large for the Safe Apps protocol.')
-			return { kind: 'result', value: { safeAddress, chainId: Number(rpcNetwork.chainId), owners: [safeAddress], threshold: 1, isReadOnly: false, nonce: 0, implementation: ZERO_ADDRESS, modules: [], fallbackHandler: ZERO_ADDRESS, guard: ZERO_ADDRESS, version: '1.4.1', network: `CHAIN_${ rpcNetwork.chainId.toString() }` } }
+			const safeState = await getSafeContractState()
+			return { kind: 'result', value: { safeAddress, chainId: toSafeAppsNumber(rpcNetwork.chainId, 'chain ID'), owners: safeState.owners.map(addressString), threshold: toSafeAppsNumber(safeState.threshold, 'threshold'), isReadOnly: false, nonce: toSafeAppsNumber(safeState.nonce, 'nonce'), implementation: ZERO_ADDRESS, modules: [], fallbackHandler: ZERO_ADDRESS, guard: ZERO_ADDRESS, version: safeState.version, network: `CHAIN_${ rpcNetwork.chainId.toString() }` } }
 		}
 		case 'wallet_getPermissions': return { kind: 'result', value: [] }
 		case 'wallet_requestPermissions': {
@@ -127,7 +133,7 @@ export function getSafeAppsRequestCommand(value: unknown, websiteOrigin: string,
 		case 'rpcCall': {
 			const rpcCall = parseRpcCall(request.params)
 			if (rpcCall.method === 'wallet_getPermissions' || rpcCall.method === 'wallet_requestPermissions') {
-				return getSafeAppsRequestCommand({ method: rpcCall.method, params: rpcCall.params }, websiteOrigin, activeAddress, rpcNetwork)
+				return await getSafeAppsRequestCommand({ method: rpcCall.method, params: rpcCall.params }, websiteOrigin, activeSafeAddress, rpcNetwork, getSafeContractState)
 			}
 			return { kind: 'ethereumRequest', ...rpcCall, mapResult: 'passthrough' }
 		}

@@ -32,12 +32,16 @@ export function isSafeAppsTopFramePort(port: browser.runtime.Port) {
 	return port.sender?.frameId === undefined || port.sender.frameId === 0
 }
 
+export function isSafeAppsActiveSafe(activeAddress: AddressBookEntry | undefined, settings: Settings) {
+	return !settings.simulationMode
+		&& activeAddress?.type === 'safe'
+		&& activeAddress.address === settings.activeSigningSafeAddress
+}
+
 export async function isSafeAppsConnectionEligible(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, settings: Settings) {
 	const connection = getConnectionDetails(websiteTabConnections, socket)
 	if (connection?.approved !== true || !isSafeAppsTopFramePort(connection.port)) return false
-	// The compatibility facade represents one approved account as a synthetic 1-of-1 Safe, so do not expose a configured multisig or route requests through Safe signing.
-	if (!settings.simulationMode && settings.activeSigningSafeAddress !== undefined) return false
-	return await getActiveAddressForDomain(websiteTabConnections, connection.websiteOrigin, settings, socket) !== undefined
+	return isSafeAppsActiveSafe(await getActiveAddressForDomain(websiteTabConnections, connection.websiteOrigin, settings, socket), settings)
 }
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {

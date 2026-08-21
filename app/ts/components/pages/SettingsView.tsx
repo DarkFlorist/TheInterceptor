@@ -217,7 +217,7 @@ export function SettingsView() {
 							onInput = { requestToMetamaskCompatibilityMode }
 						/>
 						<CheckBoxSetting
-							text = { 'Advertise Interceptor as a Safe connection (experimental). Safe Apps can use the active Interceptor address and submit single transactions through the Safe Apps protocol.' }
+							text = { 'Advertise the active Interceptor Safe to Safe Apps (experimental). This is available only while a configured Safe wallet is active; Interceptor EOAs are never advertised as Safe connections.' }
 							checked = { safeAppsCompatibilityMode.value }
 							onInput = { requestToSafeAppsCompatibilityMode }
 						/>

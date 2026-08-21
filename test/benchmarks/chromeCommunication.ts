@@ -20,20 +20,6 @@ type SafeAppsInfoResult = {
 	elapsedMs?: number
 }
 
-type SafeAppsRpcResult = {
-	status: 'fulfilled' | 'pending' | 'rejected'
-	data?: { readonly number?: string }
-	error?: string
-}
-
-type SafeAppsPermissionsResult = {
-	status: 'fulfilled' | 'pending' | 'rejected'
-	data?: readonly unknown[]
-	error?: string
-}
-
-type EarlySafeAppsInfoResult = SafeAppsInfoResult & { readonly elapsedMs?: number }
-
 const COMMUNICATION_PAGE_STATE_GLOBAL = '__interceptorChromeCommunicationState' as const
 const ACCESS_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.is-primary:not(.is-danger)'
 const UNAVAILABLE_SIGNER_ERROR_MESSAGE = 'No signer wallet is available to this page. Enable your wallet extension for this site, then try again.'
@@ -172,88 +158,11 @@ async function main() {
 				globalThis.addEventListener('message', listener)
 				globalThis.postMessage({ id, method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, globalThis.location.origin)
 			})()`)
-			await waitForCondition(async () => await pageConnection.evaluate<boolean>(`globalThis.__safeAppsInfoResult?.status !== 'pending'`), 10_000, 'Safe Apps getSafeInfo reply')
+			await sleep(250)
 			const safeAppsInfoResult = await pageConnection.evaluate<SafeAppsInfoResult>('globalThis.__safeAppsInfoResult')
-			if (safeAppsInfoResult.status !== 'fulfilled') throw new Error(`Safe Apps getSafeInfo failed: ${ safeAppsInfoResult.error ?? 'unknown error' }`)
-			if (safeAppsInfoResult.data?.safeAddress !== accessGrantedState.accounts?.[0]) throw new Error('Safe Apps getSafeInfo did not advertise the approved Interceptor account')
-			if (safeAppsInfoResult.data?.chainId !== 1) throw new Error(`Safe Apps getSafeInfo returned chain ${ safeAppsInfoResult.data?.chainId?.toString() ?? 'unknown' } instead of 1`)
-			if (safeAppsInfoResult.elapsedMs === undefined) throw new Error('Safe Apps getSafeInfo did not report its diagnostic elapsed time')
-
-			await pageConnection.evaluate(`(() => {
-				const id = crypto.randomUUID()
-				globalThis.__safeAppsPermissionsResult = { status: 'pending' }
-				const listener = (event) => {
-					if (event.source !== globalThis || event.data?.id !== id || typeof event.data?.success !== 'boolean') return
-					globalThis.removeEventListener('message', listener)
-					globalThis.__safeAppsPermissionsResult = event.data.success
-						? { status: 'fulfilled', data: event.data.data }
-						: { status: 'rejected', error: event.data.error }
-				}
-				globalThis.addEventListener('message', listener)
-				globalThis.postMessage({
-					id,
-					method: 'wallet_getPermissions',
-					env: { sdkVersion: '9.1.0' },
-				}, globalThis.location.origin)
-			})()`)
-			await waitForCondition(async () => await pageConnection.evaluate<boolean>(`globalThis.__safeAppsPermissionsResult?.status !== 'pending'`), 10_000, 'Safe Apps wallet_getPermissions reply')
-			const safeAppsPermissionsResult = await pageConnection.evaluate<SafeAppsPermissionsResult>('globalThis.__safeAppsPermissionsResult')
-			if (safeAppsPermissionsResult.status !== 'fulfilled') throw new Error(`Safe Apps wallet_getPermissions failed: ${ safeAppsPermissionsResult.error ?? 'unknown error' }`)
-			if (!Array.isArray(safeAppsPermissionsResult.data) || safeAppsPermissionsResult.data.length !== 0) throw new Error('Safe Apps wallet_getPermissions did not return an empty Safe permission array')
-
-			await pageConnection.evaluate(`(() => {
-				const id = crypto.randomUUID()
-				globalThis.__safeAppsPermissionRequestResult = { status: 'pending' }
-				const listener = (event) => {
-					if (event.source !== globalThis || event.data?.id !== id || typeof event.data?.success !== 'boolean') return
-					globalThis.removeEventListener('message', listener)
-					globalThis.__safeAppsPermissionRequestResult = event.data.success
-						? { status: 'fulfilled', data: event.data.data }
-						: { status: 'rejected', error: event.data.error }
-				}
-				globalThis.addEventListener('message', listener)
-				globalThis.postMessage({
-					id,
-					method: 'wallet_requestPermissions',
-					params: [{ requestAddressBook: {} }],
-					env: { sdkVersion: '9.1.0' },
-				}, globalThis.location.origin)
-			})()`)
-			await waitForCondition(async () => await pageConnection.evaluate<boolean>(`globalThis.__safeAppsPermissionRequestResult?.status !== 'pending'`), 10_000, 'Safe Apps wallet_requestPermissions rejection')
-			const safeAppsPermissionRequestResult = await pageConnection.evaluate<SafeAppsPermissionsResult>('globalThis.__safeAppsPermissionRequestResult')
-			if (safeAppsPermissionRequestResult.status !== 'rejected' || safeAppsPermissionRequestResult.error !== 'Interceptor Safe compatibility does not support the requestAddressBook permission.') {
-				throw new Error(`Unexpected Safe Apps wallet_requestPermissions result: ${ safeAppsPermissionRequestResult.error ?? safeAppsPermissionRequestResult.status }`)
-			}
-
-			await pageConnection.evaluate(`(() => {
-				const id = crypto.randomUUID()
-				globalThis.__safeAppsRpcResult = { status: 'pending' }
-				const listener = (event) => {
-					if (event.source !== globalThis || event.data?.id !== id || typeof event.data?.success !== 'boolean') return
-					globalThis.removeEventListener('message', listener)
-					globalThis.__safeAppsRpcResult = event.data.success
-						? { status: 'fulfilled', data: event.data.data }
-						: { status: 'rejected', error: event.data.error }
-				}
-				globalThis.addEventListener('message', listener)
-				globalThis.postMessage({
-					id,
-					method: 'rpcCall',
-					params: { call: 'eth_getBlockByNumber', params: ['latest'] },
-					env: { sdkVersion: '9.1.0' },
-				}, globalThis.location.origin)
-			})()`)
-			await waitForCondition(async () => await pageConnection.evaluate<boolean>(`globalThis.__safeAppsRpcResult?.status !== 'pending'`), 10_000, 'Safe Apps rpcCall reply')
-			const safeAppsRpcResult = await pageConnection.evaluate<SafeAppsRpcResult>('globalThis.__safeAppsRpcResult')
-			if (safeAppsRpcResult.status !== 'fulfilled') throw new Error(`Safe Apps rpcCall failed: ${ safeAppsRpcResult.error ?? 'unknown error' }`)
-			if (typeof safeAppsRpcResult.data?.number !== 'string') throw new Error('Safe Apps rpcCall did not return the latest block')
-
-			await pageConnection.send('Page.navigate', { url: `${ server.baseUrl }?safe-probe=early&safe-only=true` })
-			await waitForCondition(async () => await pageConnection.evaluate<boolean>(`globalThis.__earlySafeAppsInfoResult?.status !== 'pending'`), 10_000, 'early Safe Apps getSafeInfo reply')
-			const earlySafeAppsInfoResult = await pageConnection.evaluate<EarlySafeAppsInfoResult>('globalThis.__earlySafeAppsInfoResult')
-			if (earlySafeAppsInfoResult.status !== 'fulfilled') throw new Error(`Early Safe Apps getSafeInfo failed: ${ earlySafeAppsInfoResult.error ?? 'unknown error' }`)
-			if (earlySafeAppsInfoResult.data?.safeAddress !== accessGrantedState.accounts?.[0]) throw new Error('Early Safe Apps getSafeInfo did not advertise the approved Interceptor account')
-			await waitForCommunicationPagePhase(pageConnection, 'safe-only-granted', 30_000)
+			if (safeAppsInfoResult.status !== 'pending') throw new Error(`Safe Apps advertised the approved EOA with status ${ safeAppsInfoResult.status }`)
+			const earlySafeAppsInfoResult = await pageConnection.evaluate<SafeAppsInfoResult>('globalThis.__earlySafeAppsInfoResult')
+			if (earlySafeAppsInfoResult.status !== 'pending') throw new Error(`Queued Safe Apps discovery advertised the approved EOA with status ${ earlySafeAppsInfoResult.status }`)
 
 			await pageConnection.evaluate(`(() => {
 				globalThis.__raw7702Result = { status: 'pending' }
@@ -292,9 +201,6 @@ async function main() {
 				extensionId,
 				accessGrantedState,
 				safeAppsInfoResult,
-				safeAppsPermissionsResult,
-				safeAppsPermissionRequestResult,
-				safeAppsRpcResult,
 				earlySafeAppsInfoResult,
 				unavailableSignerState,
 			}, null, 2))

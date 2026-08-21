@@ -374,6 +374,7 @@ describe('inpage signer bridge', () => {
 
 	test('queues an early Safe Apps request until the enabled setting arrives', async () => {
 		const account = '0x1111111111111111111111111111111111111111'
+		const safeState = { version: '1.4.1', nonce: 7n, owners: [0x3333333333333333333333333333333333333333n, 0x4444444444444444444444444444444444444444n], threshold: 2n }
 		const ethereumRequests: InpageRequest[] = []
 		let replyToConnection: (() => void) | undefined
 		const { fakeWindow } = createFakeWindow({
@@ -530,6 +531,7 @@ describe('inpage signer bridge', () => {
 		})
 
 		const account = '0x1111111111111111111111111111111111111111'
+		const safeState = { version: '1.4.1', nonce: 7n, owners: [0x3333333333333333333333333333333333333333n, 0x4444444444444444444444444444444444444444n], threshold: 2n }
 		const ethereumRequests: InpageRequest[] = []
 		let connected = false
 		let rpcNetwork: RpcNetwork = { name: 'Polygon', chainId: 137n, httpsRpc: 'https://polygon.example', currencyName: 'POL', currencyTicker: 'POL', currencyLogoUri: 'https://example.com/pol.svg', blockExplorer: { apiUrl: 'https://api.polygonscan.com/api', apiKey: '' }, primary: false, minimized: false }
@@ -548,11 +550,10 @@ describe('inpage signer bridge', () => {
 					return true
 				}
 				if (request.method === 'safe_apps_request') {
-					try {
-						replyToSafeAppsRequest(request, sendBackgroundMessage, getSafeAppsRequestCommand(request.params?.[0], fakeWindow.location.origin, BigInt(account), rpcNetwork))
-					} catch (error: unknown) {
-						rejectSafeAppsRequest(request, sendBackgroundMessage, error instanceof Error ? error.message : 'Safe Apps request failed.')
-					}
+					void getSafeAppsRequestCommand(request.params?.[0], fakeWindow.location.origin, BigInt(account), rpcNetwork, async () => safeState).then(
+						(command) => replyToSafeAppsRequest(request, sendBackgroundMessage, command),
+						(error: unknown) => rejectSafeAppsRequest(request, sendBackgroundMessage, error instanceof Error ? error.message : 'Safe Apps request failed.'),
+					)
 					return true
 				}
 				if (request.internal === true) return false
@@ -590,10 +591,10 @@ describe('inpage signer bridge', () => {
 			assert.deepEqual(safeInfoReply.data, {
 				safeAddress: account,
 				chainId: 137,
-				owners: [account],
-				threshold: 1,
+				owners: ['0x3333333333333333333333333333333333333333', '0x4444444444444444444444444444444444444444'],
+				threshold: 2,
 				isReadOnly: false,
-				nonce: 0,
+				nonce: 7,
 				implementation: '0x0000000000000000000000000000000000000000',
 				modules: [],
 				fallbackHandler: '0x0000000000000000000000000000000000000000',
