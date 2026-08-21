@@ -20,6 +20,9 @@ const safePendingFlowSource = await Bun.file(new URL('../../app/ts/safe/safePend
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
 const confirmTransactionPageSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
+const safeAppsCompatibilityCoordinatorSource = await Bun.file(new URL('../../app/ts/background/safeAppsCompatibilityCoordinator.ts', import.meta.url)).text()
+const accessManagementSource = await Bun.file(new URL('../../app/ts/background/accessManagement.ts', import.meta.url)).text()
+const websiteTabConnectionsSource = await Bun.file(new URL('../../app/ts/background/websiteTabConnections.ts', import.meta.url)).text()
 const refreshPopupSimulationSource = popupMessageHandlersSource.slice(
 	popupMessageHandlersSource.indexOf('export async function refreshPopupConfirmTransactionSimulation'),
 	popupMessageHandlersSource.indexOf('export async function popupChangeActiveRpc'),
@@ -65,6 +68,13 @@ test('simulation service keeps compatibility exports backed by focused signing m
 	assert.equal(simulationFacade.getSignedTransactionForSimulation, simulationTransactionSigning.getSignedTransactionForSimulation)
 	assert.equal(simulationFacade.getMessageHashForPersonalSign, simulationPersonalSigning.getMessageHashForPersonalSign)
 	assert.equal(simulationFacade.simulatePersonalSign, simulationPersonalSigning.simulatePersonalSign)
+})
+
+test('Safe Apps compatibility lifecycle has a peer-level coordinator', () => {
+	assert.match(safeAppsCompatibilityCoordinatorSource, /function createSafeAppsCompatibilityCoordinator/u)
+	assert.match(websiteTabConnectionsSource, /from '\.\/safeAppsCompatibilityCoordinator\.js'/u)
+	assert.doesNotMatch(websiteTabConnectionsSource, /from '\.\/accessManagement\.js'/u)
+	assert.doesNotMatch(accessManagementSource, /function createSafeAppsCompatibilityCoordinator/u)
 })
 
 test('popup handler registries agree with the protocol domain inventory', () => {
