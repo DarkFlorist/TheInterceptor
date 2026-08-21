@@ -27,6 +27,7 @@ type RuntimeMessage = {
 
 type PortMessage = {
 	method?: string
+	result?: unknown
 }
 
 function installBrowserMock() {
@@ -722,7 +723,7 @@ describe('refreshHomeData', () => {
 
 	test('changeSettings refreshes home without triggering signer account refresh', async () => {
 		const browserMock = installBrowserMock()
-		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, setRpcConnectionStatus, changeSettings, defaultActiveAddresses, defaultRpcs, EthereumClientService, TokenPriceService } = await loadModules()
+		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, setRpcConnectionStatus, changeSettings, defaultActiveAddresses, defaultRpcs, websiteSocketToString, EthereumClientService, TokenPriceService } = await loadModules()
 
 		const [defaultAddress] = defaultActiveAddresses
 		if (defaultAddress === undefined) throw new Error('missing default address')
@@ -765,9 +766,16 @@ describe('refreshHomeData', () => {
 			},
 		}, async () => undefined, async () => undefined, rpcNetwork)
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, {
+			connections: {
+				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+			},
+		}]])
 
 		try {
-			await changeSettings(ethereum, tokenPriceService, {} as never, { method: 'popup_ChangeSettings', data: {} } as never, undefined)
+			await changeSettings(ethereum, tokenPriceService, {} as never, websiteTabConnections, { method: 'popup_ChangeSettings', data: { safeAppsCompatibilityMode: false } } as never, undefined)
 		} finally {
 			ethereum.cleanup()
 		}
@@ -776,5 +784,16 @@ describe('refreshHomeData', () => {
 		const homeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage') as { data?: { websiteAccessAddressMetadata?: readonly unknown[] } } | undefined
 		assert.equal(requestMessages.length, 0)
 		assert.equal(homeUpdate?.data?.websiteAccessAddressMetadata?.length, 1)
+		assert.deepEqual(messages.find((message) => message.method === 'safe_apps_compatibility')?.result, {
+			enabled: false,
+			chainInfo: {
+				chainId: rpcNetwork.chainId.toString(),
+				name: rpcNetwork.name,
+				currencyName: rpcNetwork.currencyName,
+				currencyTicker: rpcNetwork.currencyTicker,
+				currencyLogoUri: rpcNetwork.currencyLogoUri,
+				blockExplorerApiUrl: rpcNetwork.blockExplorer?.apiUrl,
+			},
+		})
 	})
 })

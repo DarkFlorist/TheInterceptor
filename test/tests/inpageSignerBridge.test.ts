@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 
-type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[] }
+type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[], origin?: string, source?: unknown }
 type Listener = (event: WindowEvent) => void
 type InpageRequest = { readonly method: string, readonly requestId: number, readonly params?: readonly unknown[], readonly internal?: true, readonly replayOnDisconnect?: true }
 type SignerRequest = { readonly method: string, readonly params?: readonly unknown[] | Readonly<Record<string, unknown>> }
@@ -88,6 +88,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 
 	const fakeWindow = {
 		ethereum: fakeSigner,
+		location: { origin: 'https://safe-app.example' },
 		...(signerInitialSelectedAddress === undefined ? {} : { web3: { accounts: [signerInitialSelectedAddress], currentProvider: fakeSigner } }),
 		addEventListener: (type: string, listener: Listener) => {
 			const existing = listeners.get(type)
@@ -105,11 +106,14 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 			return true
 		},
 		postMessage: (data: unknown, _targetOrigin?: string, transfer?: readonly Transferable[]) => {
-			if (!isRecord(data) || data.type !== 'interceptor_bridge_port') return
-			const port = transfer?.find((item): item is MessagePort => item instanceof MessagePort)
-			if (port === undefined) throw new Error('missing bridge port')
-			bridgePort = port
-			bridgePort.onmessage = (event: MessageEvent<unknown>) => handleInpageRequest(event.data)
+			if (isRecord(data) && data.type === 'interceptor_bridge_port') {
+				const port = transfer?.find((item): item is MessagePort => item instanceof MessagePort)
+				if (port === undefined) throw new Error('missing bridge port')
+				bridgePort = port
+				bridgePort.onmessage = (event: MessageEvent<unknown>) => handleInpageRequest(event.data)
+				return
+			}
+			queueMicrotask(() => fakeWindow.dispatchEvent({ type: 'message', data, origin: fakeWindow.location.origin, source: fakeWindow }))
 		},
 	}
 
@@ -131,7 +135,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
 					})
 					return
 				case 'InterceptorError':
@@ -286,6 +290,366 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 }
 
 describe('inpage signer bridge', () => {
+	test('rejects unsafe or malformed Safe Apps messages before forwarding Ethereum requests', async () => {
+		const ethereumRequests: InpageRequest[] = []
+		let connected = false
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method === 'connected_to_signer') {
+					connected = true
+					sendBackgroundMessage({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: { metamaskCompatibilityMode: false, safeAppsCompatibilityMode: true },
+					})
+					return true
+				}
+				if (request.internal !== true) ethereumRequests.push(request)
+				return false
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?safe-apps-message-boundary', async () => {
+			await waitFor(() => connected)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			const replies: Record<string, unknown>[] = []
+			fakeWindow.addEventListener('message', (event) => {
+				if (isRecord(event.data) && typeof event.data.success === 'boolean') replies.push(event.data)
+			})
+			const validRequest = { id: 'unsafe-safe-info', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }
+			fakeWindow.dispatchEvent({ type: 'message', data: validRequest, origin: 'https://untrusted.example', source: fakeWindow })
+			fakeWindow.dispatchEvent({ type: 'message', data: validRequest, origin: fakeWindow.location.origin, source: {} })
+			fakeWindow.postMessage({ id: 'missing-env', method: 'getSafeInfo' }, fakeWindow.location.origin)
+			fakeWindow.postMessage({ id: 'invalid-env', method: 'getSafeInfo', env: { sdkVersion: 9 } }, fakeWindow.location.origin)
+			fakeWindow.postMessage({ id: 'empty-version', method: 'getSafeInfo', env: { sdkVersion: '' } }, fakeWindow.location.origin)
+			fakeWindow.postMessage({ id: 'invalid-version', method: 'getSafeInfo', env: { sdkVersion: 'not-a-version' } }, fakeWindow.location.origin)
+			fakeWindow.postMessage({ id: 'unsupported-version', method: 'getSafeInfo', env: { sdkVersion: '0.9.0' } }, fakeWindow.location.origin)
+			fakeWindow.postMessage({ id: 'missing-method', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+			fakeWindow.postMessage({ id: 'invalid-method', method: 1, env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+			fakeWindow.postMessage({ id: 'invalid-method-and-env', method: 1, env: {} }, fakeWindow.location.origin)
+			fakeWindow.postMessage({ id: 'unknown-method', method: 'notSafeApps', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+			fakeWindow.postMessage({ id: 'invalid-rpc-params', method: 'rpcCall', params: {}, env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+			await waitFor(() => replies.length === 9)
+			assert.deepEqual(replies.sort((left, right) => String(left.id).localeCompare(String(right.id))), [
+				{ id: 'empty-version', success: false, error: 'Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
+				{ id: 'invalid-env', success: false, error: 'Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
+				{ id: 'invalid-method', success: false, error: 'Safe Apps method must be a string.', version: '9.1.0' },
+				{ id: 'invalid-method-and-env', success: false, error: 'Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
+				{ id: 'invalid-rpc-params', success: false, error: 'Unsupported Safe Apps RPC call.', version: '9.1.0' },
+				{ id: 'invalid-version', success: false, error: 'Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
+				{ id: 'missing-method', success: false, error: 'Safe Apps method must be a string.', version: '9.1.0' },
+				{ id: 'unknown-method', success: false, error: 'Unsupported Safe Apps method: notSafeApps.', version: '9.1.0' },
+				{ id: 'unsupported-version', success: false, error: 'Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
+			])
+			assert.deepEqual(ethereumRequests, [])
+		})
+	})
+
+	test('queues an early Safe Apps request until the enabled setting arrives', async () => {
+		const account = '0x1111111111111111111111111111111111111111'
+		const ethereumRequests: InpageRequest[] = []
+		let replyToConnection: (() => void) | undefined
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method === 'connected_to_signer') {
+					replyToConnection = () => sendBackgroundMessage({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: { metamaskCompatibilityMode: false, safeAppsCompatibilityMode: true },
+					})
+					return true
+				}
+				if (request.internal === true) return false
+				ethereumRequests.push(request)
+				const result = request.method === 'eth_requestAccounts' || request.method === 'eth_accounts' ? [account] : request.method === 'eth_chainId' ? '0x1' : '0x'
+				sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result })
+				return true
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?safe-apps-early-request', async () => {
+			const replies: Record<string, unknown>[] = []
+			const response = new Promise<Record<string, unknown>>((resolve) => {
+				fakeWindow.addEventListener('message', (event) => {
+					if (!isRecord(event.data) || typeof event.data.success !== 'boolean') return
+					replies.push(event.data)
+					if (event.data.id === 'early-safe-info') resolve(event.data)
+				})
+			})
+			for (let index = 0; index < 40; index += 1) {
+				fakeWindow.postMessage({ id: `generic-early-${ index }`, method: 'unrelatedProtocolMethod' }, fakeWindow.location.origin)
+			}
+			fakeWindow.postMessage({ id: 'early-safe-info', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.deepEqual(ethereumRequests, [])
+			assert.notEqual(replyToConnection, undefined)
+			replyToConnection?.()
+			const safeInfoReply = await response
+			assert.equal(safeInfoReply.success, true)
+			assert.equal(isRecord(safeInfoReply.data) ? safeInfoReply.data.safeAddress : undefined, account)
+			for (let index = 0; index < 40; index += 1) {
+				fakeWindow.postMessage({ id: `generic-enabled-${ index }`, method: 'unrelatedProtocolMethod' }, fakeWindow.location.origin)
+			}
+			fakeWindow.postMessage({ id: 'enabled-safe-info', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+			await waitFor(() => replies.length === 2)
+			assert.deepEqual(replies.map((reply) => reply.id), ['early-safe-info', 'enabled-safe-info'])
+		})
+	})
+
+	test('bounds Safe Apps requests queued before the experimental setting arrives', async () => {
+		let replyToConnection: (() => void) | undefined
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method !== 'connected_to_signer') return false
+				replyToConnection = () => sendBackgroundMessage({
+					interceptorApproved: true,
+					requestId: request.requestId,
+					type: 'result',
+					method: request.method,
+					result: { metamaskCompatibilityMode: false, safeAppsCompatibilityMode: true },
+				})
+				return true
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?safe-apps-bounded-early-requests', async () => {
+			const replies: Record<string, unknown>[] = []
+			fakeWindow.addEventListener('message', (event) => {
+				if (isRecord(event.data) && typeof event.data.success === 'boolean') replies.push(event.data)
+			})
+			for (let index = 0; index < 40; index += 1) {
+				fakeWindow.postMessage({ id: `early-${ index }`, method: 'unsupportedEarlyMethod', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+			}
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			replyToConnection?.()
+			await waitFor(() => replies.length === 32)
+			assert.equal(replies.every((reply) => reply.success === false && reply.error === 'Unsupported Safe Apps method: unsupportedEarlyMethod.'), true)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(replies.length, 32)
+		})
+	})
+
+	test('drops an in-flight Safe Apps response when website approval is revoked', async () => {
+		let pendingRpcRequest: InpageRequest | undefined
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessageForRequest) => {
+				if (request.method === 'connected_to_signer') {
+					sendBackgroundMessageForRequest({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: { metamaskCompatibilityMode: false, safeAppsCompatibilityMode: true },
+					})
+					return true
+				}
+				if (request.method === 'eth_call' && request.internal !== true) {
+					pendingRpcRequest = request
+					return true
+				}
+				return false
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?safe-apps-revoked-in-flight', async () => {
+			let responseCount = 0
+			fakeWindow.addEventListener('message', (event) => {
+				if (isRecord(event.data) && event.data.id === 'revoked-rpc' && typeof event.data.success === 'boolean') responseCount += 1
+			})
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			fakeWindow.postMessage({ id: 'revoked-rpc', method: 'rpcCall', params: { call: 'eth_call', params: [] }, env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+			await waitFor(() => pendingRpcRequest !== undefined)
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'safe_apps_compatibility',
+				result: { enabled: false, chainInfo: { chainId: '1', name: 'Ethereum Mainnet', currencyName: 'Ether', currencyTicker: 'ETH' } },
+			})
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			const rpcRequest = pendingRpcRequest
+			if (rpcRequest === undefined) throw new Error('Missing deferred Safe RPC request')
+			sendBackgroundMessage({ interceptorApproved: true, requestId: rpcRequest.requestId, type: 'result', method: rpcRequest.method, result: '0x1234' })
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(responseCount, 0)
+		})
+	})
+
+	test('answers Safe Apps protocol requests only when experimental compatibility is enabled', async () => {
+		const disabledEthereumRequests: InpageRequest[] = []
+		const disabledHarness = createFakeWindow({
+			handleRequest: (request) => {
+				if (request.internal !== true) disabledEthereumRequests.push(request)
+				return false
+			},
+		})
+		await withFakeInpageWindow(disabledHarness.fakeWindow, '../../app/inpage/ts/inpage.js?safe-apps-protocol-disabled', async () => {
+			let responseCount = 0
+			disabledHarness.fakeWindow.addEventListener('message', (event) => {
+				if (isRecord(event.data) && typeof event.data.success === 'boolean') responseCount += 1
+			})
+			disabledHarness.fakeWindow.postMessage({ id: 'disabled-safe-info', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, disabledHarness.fakeWindow.location.origin)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(responseCount, 0)
+			assert.deepEqual(disabledEthereumRequests, [])
+		})
+
+		const account = '0x1111111111111111111111111111111111111111'
+		const ethereumRequests: InpageRequest[] = []
+		let connected = false
+		let activeChainId = '0x89'
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method === 'connected_to_signer') {
+					connected = true
+					sendBackgroundMessage({
+						interceptorApproved: true,
+						requestId: request.requestId,
+						type: 'result',
+						method: request.method,
+						result: {
+							metamaskCompatibilityMode: false,
+							safeAppsCompatibilityMode: true,
+							safeAppsChainInfo: { chainId: '137', name: 'Polygon', currencyName: 'POL', currencyTicker: 'POL', currencyLogoUri: 'https://example.com/pol.svg', blockExplorerApiUrl: 'https://api.polygonscan.com/api' },
+						},
+					})
+					return true
+				}
+				if (request.internal === true) return false
+				ethereumRequests.push(request)
+				const result = request.method === 'eth_requestAccounts' || request.method === 'eth_accounts'
+					? [account]
+					: request.method === 'eth_chainId'
+						? activeChainId
+						: request.method === 'eth_getLogs'
+							? ['log-entry']
+						: request.method === 'eth_getBlockByNumber'
+								? { number: '0x123' }
+							: request.method === 'eth_sendTransaction'
+								? '0xsafehash'
+								: '0x'
+				sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result })
+				return true
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?safe-apps-protocol', async () => {
+			await waitFor(() => connected)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			const safeRequest = (method: string, params?: unknown) => new Promise<Record<string, unknown>>((resolve) => {
+				const id = `${ method }-${ Math.random().toString(16) }`
+				const listener = (event: WindowEvent) => {
+					if (!isRecord(event.data) || event.data.id !== id || typeof event.data.success !== 'boolean') return
+					fakeWindow.removeEventListener('message', listener)
+					resolve(event.data)
+				}
+				fakeWindow.addEventListener('message', listener)
+				fakeWindow.postMessage({ id, method, env: { sdkVersion: '9.1.0' }, ...(params === undefined ? {} : { params }) }, fakeWindow.location.origin)
+			})
+
+			const safeInfoReply = await safeRequest('getSafeInfo')
+			assert.equal(safeInfoReply.success, true)
+			assert.deepEqual(safeInfoReply.data, {
+				safeAddress: account,
+				chainId: 137,
+				owners: [account],
+				threshold: 1,
+				isReadOnly: false,
+				nonce: 0,
+				implementation: '0x0000000000000000000000000000000000000000',
+				modules: [],
+				fallbackHandler: '0x0000000000000000000000000000000000000000',
+				guard: '0x0000000000000000000000000000000000000000',
+				version: '1.4.1',
+				network: 'CHAIN_137',
+			})
+			const chainInfoReply = await safeRequest('getChainInfo')
+			assert.deepEqual(chainInfoReply.data, {
+				chainName: 'Polygon',
+				chainId: '137',
+				shortName: 'Polygon',
+				nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18, logoUri: 'https://example.com/pol.svg' },
+				blockExplorerUriTemplate: { address: '', txHash: '', api: 'https://api.polygonscan.com/api' },
+			})
+			activeChainId = '0xa'
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'safe_apps_chain_info',
+				result: { chainId: '10', name: 'Optimism', currencyName: 'Ether', currencyTicker: 'ETH' },
+			})
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			const updatedChainInfoReply = await safeRequest('getChainInfo')
+			assert.deepEqual(updatedChainInfoReply.data, {
+				chainName: 'Optimism',
+				chainId: '10',
+				shortName: 'Optimism',
+				nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18, logoUri: '' },
+				blockExplorerUriTemplate: { address: '', txHash: '', api: '' },
+			})
+
+			const rpcReply = await safeRequest('rpcCall', { call: 'eth_getPastLogs', params: [{ fromBlock: 'latest' }] })
+			assert.deepEqual(rpcReply.data, ['log-entry'])
+			const blockReply = await safeRequest('rpcCall', { call: 'eth_getBlockByNumber', params: ['latest'] })
+			assert.deepEqual(blockReply.data, { number: '0x123' })
+			const getPermissionsReply = await safeRequest('wallet_getPermissions')
+			assert.deepEqual(getPermissionsReply.data, [])
+			const permissionParams = [{ requestAddressBook: {} }]
+			const requestPermissionsReply = await safeRequest('wallet_requestPermissions', permissionParams)
+			assert.equal(requestPermissionsReply.success, false)
+			assert.equal(requestPermissionsReply.error, 'Interceptor Safe compatibility does not support the requestAddressBook permission.')
+			const invalidPermissionReply = await safeRequest('wallet_requestPermissions', {})
+			assert.equal(invalidPermissionReply.success, false)
+			assert.equal(invalidPermissionReply.error, 'Safe Apps permission request params must be an array.')
+			const emptyPermissionReply = await safeRequest('wallet_requestPermissions', [])
+			assert.deepEqual(emptyPermissionReply.data, [])
+			const unsupportedPermissionReply = await safeRequest('wallet_requestPermissions', [{ eth_accounts: {} }])
+			assert.equal(unsupportedPermissionReply.success, false)
+			assert.equal(unsupportedPermissionReply.error, 'Unsupported Safe Apps permission request.')
+			const transaction = { to: '0x2222222222222222222222222222222222222222', value: '15', data: '0x1234' }
+			const sendReply = await safeRequest('sendTransactions', { txs: [transaction], params: { safeTxGas: 21000 } })
+			assert.deepEqual(sendReply.data, { safeTxHash: '0xsafehash' })
+			const zeroGasSendReply = await safeRequest('sendTransactions', { txs: [transaction], params: { safeTxGas: 0 } })
+			assert.deepEqual(zeroGasSendReply.data, { safeTxHash: '0xsafehash' })
+			const delegateCallReply = await safeRequest('sendTransactions', { txs: [{ ...transaction, operation: 1 }] })
+			assert.equal(delegateCallReply.success, false)
+			assert.equal(delegateCallReply.error, 'Interceptor Safe compatibility supports only CALL transactions; delegate calls are not supported.')
+			const batchReply = await safeRequest('sendTransactions', { txs: [transaction, transaction] })
+			assert.equal(batchReply.success, false)
+			assert.equal(batchReply.error, 'Interceptor Safe compatibility currently supports exactly one transaction per request; Safe batches require atomic MultiSend support.')
+			assert.deepEqual(ethereumRequests.map(({ method, params }) => ({ method, params })), [
+				{ method: 'eth_accounts', params: undefined },
+				{ method: 'eth_chainId', params: undefined },
+				{ method: 'eth_chainId', params: undefined },
+				{ method: 'eth_chainId', params: undefined },
+				{ method: 'eth_getLogs', params: [{ fromBlock: 'latest' }] },
+				{ method: 'eth_getBlockByNumber', params: ['latest', false] },
+				{ method: 'eth_requestAccounts', params: undefined },
+				{ method: 'eth_sendTransaction', params: [{ from: account, to: transaction.to, value: '0xf', data: transaction.data, gas: '0x5208' }] },
+				{ method: 'eth_requestAccounts', params: undefined },
+				{ method: 'eth_sendTransaction', params: [{ from: account, to: transaction.to, value: '0xf', data: transaction.data }] },
+			])
+
+			let responseCountAfterDisable = 0
+			fakeWindow.addEventListener('message', (event) => {
+				if (isRecord(event.data) && event.data.id === 'disabled-after-update' && typeof event.data.success === 'boolean') responseCountAfterDisable += 1
+			})
+			sendBackgroundMessage({
+				interceptorApproved: true,
+				type: 'result',
+				method: 'safe_apps_compatibility',
+				result: { enabled: false, chainInfo: { chainId: '10', name: 'Optimism', currencyName: 'Ether', currencyTicker: 'ETH' } },
+			})
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			fakeWindow.postMessage({ id: 'disabled-after-update', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(responseCountAfterDisable, 0)
+		})
+	})
+
 	test('returns JSON-RPC failures through the sendAsync response argument', async () => {
 		const { fakeWindow } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
@@ -613,7 +977,7 @@ describe('inpage signer bridge', () => {
 					requestId: request.requestId,
 					type: 'result',
 					method: 'connected_to_signer',
-					result: { metamaskCompatibilityMode: true },
+					result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
 				})
 				return true
 			},
@@ -650,7 +1014,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: request.method,
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
 					})
 					return true
 				}
@@ -686,7 +1050,7 @@ describe('inpage signer bridge', () => {
 					requestId: request.requestId,
 					type: 'result',
 					method: 'connected_to_signer',
-					result: { metamaskCompatibilityMode: true },
+					result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
 				})
 				return true
 			},
@@ -724,7 +1088,7 @@ describe('inpage signer bridge', () => {
 					requestId: request.requestId,
 					type: 'result',
 					method: 'connected_to_signer',
-					result: { metamaskCompatibilityMode: true },
+					result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
 				})
 				return true
 			},
@@ -1629,7 +1993,7 @@ describe('inpage signer bridge', () => {
 					requestId: request.requestId,
 					type: 'result',
 					method: 'connected_to_signer',
-					result: { metamaskCompatibilityMode: true },
+					result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
 				}), delay)
 				return true
 			},
@@ -2285,7 +2649,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
 					})
 					return true
 				}
@@ -2345,7 +2709,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
 					})
 					return true
 				}
@@ -2403,7 +2767,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
 					})
 					return true
 				}
@@ -2449,7 +2813,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
 					})
 					return true
 				}
@@ -2517,7 +2881,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
 					})
 					return true
 				}
@@ -2588,7 +2952,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
 					})
 					return true
 				}
@@ -2662,7 +3026,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
 					})
 					return true
 				}
@@ -2734,7 +3098,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
 					})
 					return true
 				}
@@ -2806,7 +3170,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
 					})
 					return true
 				}
@@ -2875,7 +3239,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
 					})
 					return true
 				}
@@ -2922,7 +3286,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
 					})
 					return true
 				}

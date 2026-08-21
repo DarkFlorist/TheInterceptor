@@ -4,7 +4,7 @@ import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
-import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
+import { getSafeAppsCompatibilityMode, getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
@@ -21,11 +21,24 @@ import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
+import { getSafeAppsChainInfo } from '../utils/safeAppsCompatibility.js'
 
 function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
 	const tabConnection = websiteTabConnections.get(socket.tabId)
 	return tabConnection?.connections[identifier]
+}
+
+export function isSafeAppsTopFramePort(port: browser.runtime.Port) {
+	return port.sender?.frameId === undefined || port.sender.frameId === 0
+}
+
+export async function isSafeAppsConnectionEligible(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, settings: Settings) {
+	const connection = getConnectionDetails(websiteTabConnections, socket)
+	if (connection?.approved !== true || !isSafeAppsTopFramePort(connection.port)) return false
+	// The compatibility facade represents one approved account as a synthetic 1-of-1 Safe, so do not expose a configured multisig or route requests through Safe signing.
+	if (!settings.simulationMode && settings.activeSigningSafeAddress !== undefined) return false
+	return await getActiveAddressForDomain(websiteTabConnections, connection.websiteOrigin, settings, socket) !== undefined
 }
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
@@ -230,7 +243,11 @@ function connectToPort(
 	settings: Settings,
 	connectWithActiveAddress: bigint | undefined,
 ): true {
+	const wasApproved = getConnectionDetails(websiteTabConnections, socket)?.approved === true
 	setWebsitePortApproval(websiteTabConnections, socket, true)
+	if (!wasApproved) {
+		void sendCurrentSafeAppsCompatibilityToPort(websiteTabConnections, socket).catch((error: unknown) => { void reportUnexpectedError(error) })
+	}
 	if (!shouldSendUnscopedConnectionEvents(socket)) return true
 	sendProviderConnectionEventsToPort(websiteTabConnections, socket, settings, connectWithActiveAddress === undefined ? [] : [connectWithActiveAddress])
 	return true
@@ -242,9 +259,50 @@ export function sendProviderConnectionEventsToPort(
 	settings: Settings,
 	accounts: readonly bigint[],
 ) {
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'safe_apps_chain_info', result: getSafeAppsChainInfo(settings.activeRpcNetwork) })
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId] })
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: accounts })
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'chainChanged', result: settings.activeRpcNetwork.chainId })
+}
+
+const safeAppsCompatibilityPublicationGenerations = new Map<string, number>()
+
+function beginSafeAppsCompatibilityPublication(socket: WebsiteSocket) {
+	const socketIdentifier = websiteSocketToString(socket)
+	const generation = (safeAppsCompatibilityPublicationGenerations.get(socketIdentifier) ?? 0) + 1
+	safeAppsCompatibilityPublicationGenerations.set(socketIdentifier, generation)
+	return { socketIdentifier, generation }
+}
+
+function isCurrentSafeAppsCompatibilityPublication(socketIdentifier: string, generation: number) {
+	return safeAppsCompatibilityPublicationGenerations.get(socketIdentifier) === generation
+}
+
+function sendSafeAppsCompatibilityToPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, enabled: boolean, settings: Settings) {
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'safe_apps_compatibility', result: { enabled, chainInfo: getSafeAppsChainInfo(settings.activeRpcNetwork) } })
+}
+
+async function sendCurrentSafeAppsCompatibilityToPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
+	const { socketIdentifier, generation } = beginSafeAppsCompatibilityPublication(socket)
+	const [enabled, settings] = await Promise.all([getSafeAppsCompatibilityMode(), getSettings()])
+	const eligible = enabled && await isSafeAppsConnectionEligible(websiteTabConnections, socket, settings)
+	if (!isCurrentSafeAppsCompatibilityPublication(socketIdentifier, generation)) return
+	// Re-read persisted state after async eligibility work; a newer publication invalidates this generation while state transitions are being applied.
+	const [latestEnabled, latestSettings] = await Promise.all([getSafeAppsCompatibilityMode(), getSettings()])
+	const latestEligible = latestEnabled && await isSafeAppsConnectionEligible(websiteTabConnections, socket, latestSettings)
+	if (!isCurrentSafeAppsCompatibilityPublication(socketIdentifier, generation)) return
+	sendSafeAppsCompatibilityToPort(websiteTabConnections, socket, eligible && latestEligible, latestSettings)
+}
+
+export async function sendSafeAppsCompatibilityToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections) {
+	const sends: Promise<void>[] = []
+	for (const tabConnection of websiteTabConnections.values()) {
+		for (const connection of Object.values(tabConnection.connections)) {
+			if (connection?.approved !== true) continue
+			sends.push(sendCurrentSafeAppsCompatibilityToPort(websiteTabConnections, connection.socket))
+		}
+	}
+	await Promise.all(sends)
 }
 
 export function sendAccountsChangedToPort(
@@ -259,7 +317,10 @@ export function sendAccountsChangedToPort(
 function disconnectFromPort(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
+	settings: Settings,
 ): false {
+	beginSafeAppsCompatibilityPublication(socket)
+	sendSafeAppsCompatibilityToPort(websiteTabConnections, socket, false, settings)
 	setWebsitePortApproval(websiteTabConnections, socket, false)
 	// Account access can be revoked without the provider losing chain connectivity. Notify account listeners before the legacy disconnect event so dapps clear stale account state.
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: [] })
@@ -312,7 +373,7 @@ async function updateTabConnections(
 		const access = currentActiveAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, currentActiveAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
 
 		if (access !== 'hasAccess' && connection.approved) {
-			disconnectFromPort(websiteTabConnections, connection.socket)
+			disconnectFromPort(websiteTabConnections, connection.socket, settings)
 		} else if (access === 'hasAccess' && !connection.approved) {
 			connectToPort(websiteTabConnections, connection.socket, settings, currentActiveAddress?.address)
 		}
@@ -455,6 +516,7 @@ export async function updateWebsiteApprovalAccesses(
 		if (throwOnError) throw error
 		await reportUnexpectedError(error)
 	}
+	await sendSafeAppsCompatibilityToApprovedWebsitePorts(websiteTabConnections)
 	const iconRefreshPromises = [...iconRefreshTargets.values()].map(({ tabId, websiteOrigin }) =>
 		updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, popupRefreshGeneration)
 	)

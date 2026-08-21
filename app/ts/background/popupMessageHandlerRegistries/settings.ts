@@ -1,19 +1,21 @@
-import { updateWebsiteApprovalAccesses } from '../accessManagement.js'
+import { sendSafeAppsCompatibilityToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { popupMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
 import { changeSettings, exportSettings, importSettings, openNewTab, popupChangeActiveRpc, setNewRpcList, settingsOpened } from '../popupMessageHandlers.js'
-import { getSettings } from '../settings.js'
+import { getSafeAppsCompatibilityMode, getSettings } from '../settings.js'
 
 export const settingsPopupMessageHandlers = {
 	popup_changeActiveRpc: popupMessageHandler('popup_changeActiveRpc', async (context, request) => await popupChangeActiveRpc(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request, context.settings)),
 	popup_requestSettings: popupMessageHandler('popup_requestSettings', async () => await settingsOpened()),
-	popup_ChangeSettings: popupMessageHandler('popup_ChangeSettings', async (context, request) => await changeSettings(context.ethereum, context.tokenPriceService, context.resetSimulationServices, request, context.simulationAbortController)),
+	popup_ChangeSettings: popupMessageHandler('popup_ChangeSettings', async (context, request) => await changeSettings(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request, context.simulationAbortController)),
 	popup_openSettings: popupMessageHandler('popup_openSettings', async () => await openNewTab('settingsView')),
 	popup_import_settings: popupMessageHandler('popup_import_settings', async (context, request) => {
 		const importSettingsReply = await importSettings(request)
 		await sendPopupMessageToOpenWindows(importSettingsReply)
 		if (!importSettingsReply.data.success) return
 		const importedSettings = await getSettings()
+		const safeAppsCompatibilityMode = await getSafeAppsCompatibilityMode()
+		if (!safeAppsCompatibilityMode) await sendSafeAppsCompatibilityToApprovedWebsitePorts(context.websiteTabConnections)
 		const popupRefreshGeneration = await updateWebsiteApprovalAccesses(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, importedSettings, true)
 		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: importedSettings, popupRefreshGeneration })
 	}),
