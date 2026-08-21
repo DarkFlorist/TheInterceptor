@@ -454,10 +454,11 @@ describe('inpage signer bridge', () => {
 			}
 			await new Promise((resolve) => setTimeout(resolve, 0))
 			replyToConnection?.()
-			await waitFor(() => replies.length === 32)
-			assert.equal(replies.every((reply) => reply.success === false && reply.error === 'Unsupported Safe Apps method: unsupportedEarlyMethod.'), true)
+			await waitFor(() => replies.length === 40)
+			assert.equal(replies.filter((reply) => reply.error === 'Unsupported Safe Apps method: unsupportedEarlyMethod.').length, 32)
+			assert.equal(replies.filter((reply) => reply.error === 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.').length, 8)
 			await new Promise((resolve) => setTimeout(resolve, 0))
-			assert.equal(replies.length, 32)
+			assert.equal(replies.length, 40)
 		})
 	})
 

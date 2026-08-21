@@ -6,7 +6,7 @@ import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWin
 import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { getPendingSignerChainChangeTokenForCallback, isPendingSignerChainChangeReply, resolveSignerChainChange } from './windows/changeChain.js'
-import { type ApprovalState, isSafeAppsTopFramePort, sendCurrentSafeAppsCompatibilityToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
+import { type ApprovalState, isSafeAppsTopFramePort, safeAppsCompatibilityCoordinator, verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { reportUnexpectedError } from '../utils/errors.js'
@@ -93,6 +93,7 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 				},
 			})
 			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
+			safeAppsCompatibilityCoordinator.signerAccountsChanged(websiteTabConnections, signerStateToken.socket)
 			return returnValue
 		}
 		const signerAccounts = signerAccountsReply.accounts
@@ -138,6 +139,8 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 				signerProviderGeneration: signerStateToken.signerProviderGeneration,
 			},
 		})
+		if (transition.shouldActivate) safeAppsCompatibilityCoordinator.signerAccountsSettled(signerStateToken.socket)
+		else safeAppsCompatibilityCoordinator.signerAccountsChanged(websiteTabConnections, signerStateToken.socket)
 		return returnValue
 	})
 }
@@ -275,7 +278,7 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 		return await getConnectedToSignerResult()
 	})
 	// Safe Apps compatibility is an optional subscription and must not delay or fail the core signer handshake.
-	void sendCurrentSafeAppsCompatibilityToPort(websiteTabConnections, socket).catch((error: unknown) => { void reportUnexpectedError(error) })
+	safeAppsCompatibilityCoordinator.signerConnectionChanged(websiteTabConnections, socket)
 	return result
 }
 

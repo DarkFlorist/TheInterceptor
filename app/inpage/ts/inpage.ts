@@ -92,8 +92,10 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 		const parsedRequest = parseSafeAppsRequest(messageEvent.data)
 		if (parsedRequest === undefined) return
 		if (enabled === undefined) {
-			// Do not answer overflow before the opt-in setting arrives: that would advertise this disabled-by-default bridge.
-			if (pendingRequests.length >= SAFE_APPS_PENDING_REQUEST_LIMIT) return
+			if (pendingRequests.length >= SAFE_APPS_PENDING_REQUEST_LIMIT) {
+				windowObject.postMessage({ id: parsedRequest.id, success: false, error: 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.', version: SAFE_APPS_RESPONSE_VERSION }, messageEvent.origin)
+				return
+			}
 			pendingRequests.push({ parsedRequest, origin: messageEvent.origin })
 			return
 		}
