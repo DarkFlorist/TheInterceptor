@@ -14,7 +14,6 @@ import { promoteRpcAsPrimary, updateTransactionState } from './storageVariables.
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
-import { getSafeAppsChainInfo } from '../utils/safeAppsCompatibility.js'
 
 export async function resetSimulationStateFromConfig(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
 	const settings = await getSettings()
@@ -96,7 +95,6 @@ export async function changeActiveAddressAndChain(
 		if (change.rpcNetwork !== undefined) {
 			const rpcChainChanged = previousSettings.activeRpcNetwork.chainId !== change.rpcNetwork.chainId
 			if (change.rpcNetwork.httpsRpc !== undefined) resetSimulationServices(change.rpcNetwork)
-			sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'safe_apps_chain_info', result: getSafeAppsChainInfo(change.rpcNetwork) })
 			sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: change.rpcNetwork.chainId })
 			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 

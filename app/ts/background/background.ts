@@ -1,13 +1,13 @@
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { getSettings, updateWebsiteAccess } from './settings.js'
+import { getSafeAppsCompatibilityMode, getSettings, updateWebsiteAccess } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
-import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
+import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, isSafeAppsConnectionEligible, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
 import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { getActiveAddress } from './backgroundUtils.js'
 import { assertNever } from '../utils/typescript.js'
@@ -34,6 +34,7 @@ import { getSafeModeRpcPolicyReply } from '../safe/safeRequestPolicy.js'
 import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
 import { createMethodHandlerFor, hasOwnKey } from '../utils/methodHandlers.js'
 import { getWalletCapabilities } from './walletCapabilities.js'
+import { getSafeAppsRequestCommand, isSafeAppsRequestPolicyError } from './safeAppsRequestPolicy.js'
 import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
 
 if (initializeWatchAssetWindowListeners()) {
@@ -48,6 +49,7 @@ const INTERNAL_PROVIDER_METHODS = [
 	'connected_to_signer',
 	'eth_accounts_reply',
 	'InterceptorError',
+	'safe_apps_request',
 	'signer_chainChanged',
 	'signer_reply',
 	'wallet_switchEthereumChain_reply',
@@ -486,6 +488,18 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
 		const settings = await getSettings()
+		if (request.method === 'safe_apps_request') {
+			const safeAppsEnabled = await getSafeAppsCompatibilityMode()
+			const safeAppsEligible = safeAppsEnabled && await isSafeAppsConnectionEligible(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, settings)
+			if (!safeAppsEligible) return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'safe_apps_request', uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: { code: -32602, message: 'Interceptor Safe Apps compatibility is not enabled for this connection.' } })
+			try {
+				const command = getSafeAppsRequestCommand('params' in request ? request.params?.[0] : undefined, website.websiteOrigin, activeAddress.address, settings.activeRpcNetwork)
+				return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'safe_apps_request', result: command, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+			} catch (error: unknown) {
+				if (isSafeAppsRequestPolicyError(error)) return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'safe_apps_request', uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: { code: -32602, message: error.message } })
+				throw error
+			}
+		}
 		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 		const selectedWalletAccount = getWalletSelectedAccount(signerTabState)

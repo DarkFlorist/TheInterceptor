@@ -747,12 +747,12 @@ describe('background eth_accounts', () => {
 		}
 
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
 
 		const connectedReplies = messages.filter((message) => message.method === 'connected_to_signer' && message.requestId === 12)
 		const connectedResult = connectedReplies.at(-1)?.result
 		assert.equal(connectedResult?.metamaskCompatibilityMode, false)
-		assert.equal(connectedResult?.safeAppsCompatibilityMode, false)
-		assert.equal(connectedResult?.safeAppsChainInfo?.name, 'Ethereum Mainnet')
+		assert.deepEqual(messages.find((message) => message.method === 'safe_apps_compatibility')?.result, { enabled: false })
 		assert.equal('activeAddress' in (connectedResult ?? {}), false)
 	})
 
@@ -799,7 +799,7 @@ describe('background eth_accounts', () => {
 		const connectedResult = messages.find((message) => message.method === 'connected_to_signer' && message.requestId === 13)?.result
 		assert.equal(connection.approved, true)
 		assert.equal(connection.wantsToConnect, true)
-		assert.equal(connectedResult?.safeAppsCompatibilityMode, true)
+		assert.equal(connectedResult?.metamaskCompatibilityMode, false)
 		await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
 		assert.equal(messages.find((message) => message.method === 'safe_apps_compatibility')?.result?.enabled, true)
 		assert.deepEqual(messages.find((message) => message.method === 'accountsChanged')?.result, [addressString(account)])
@@ -815,7 +815,7 @@ describe('background eth_accounts', () => {
 		}, childConnections, noopPublishRpcConnectionStatus)
 		const childResult = childMessages.find((message) => message.method === 'connected_to_signer' && message.requestId === 14)?.result
 		assert.equal(childConnection.approved, false)
-		assert.equal(childResult?.safeAppsCompatibilityMode, false)
+		assert.equal(childResult?.metamaskCompatibilityMode, false)
 
 		await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, childConnections, await getSettings(), false)
 		await waitForPortMessageCount(childMessages, 'safe_apps_compatibility', 1)
@@ -833,7 +833,6 @@ describe('background eth_accounts', () => {
 			changeSimulationMode,
 			setUseSignersAddressAsActiveAddress,
 			setSafeAppsCompatibilityMode,
-			sendSafeAppsCompatibilityToApprovedWebsitePorts,
 			updateWebsiteAccess,
 			updateWebsiteApprovalAccesses,
 			updateTabState,
@@ -864,8 +863,8 @@ describe('background eth_accounts', () => {
 		}
 
 		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, connectedRequest, websiteTabConnections, noopPublishRpcConnectionStatus)
-		assert.equal(messages.find((message) => message.method === 'connected_to_signer' && message.requestId === 15)?.result?.safeAppsCompatibilityMode, false)
-		await sendSafeAppsCompatibilityToApprovedWebsitePorts(websiteTabConnections)
+		await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
+		assert.equal(messages.find((message) => message.method === 'connected_to_signer' && message.requestId === 15)?.result?.metamaskCompatibilityMode, false)
 		assert.deepEqual(messages.filter((message) => message.method === 'safe_apps_compatibility').map((message) => message.result?.enabled), [false])
 
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
@@ -876,8 +875,8 @@ describe('background eth_accounts', () => {
 			uniqueRequestIdentifier: { requestId: 16, requestSocket: socket },
 			params: [false, 'NoSigner', 2],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
-		assert.equal(messages.find((message) => message.method === 'connected_to_signer' && message.requestId === 16)?.result?.safeAppsCompatibilityMode, false)
-		await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), false)
+		await waitForPortMessageCount(messages, 'safe_apps_compatibility', 3)
+		assert.equal(messages.find((message) => message.method === 'connected_to_signer' && message.requestId === 16)?.result?.metamaskCompatibilityMode, false)
 		assert.deepEqual(messages.filter((message) => message.method === 'safe_apps_compatibility').map((message) => message.result?.enabled), [false, true, false])
 	})
 

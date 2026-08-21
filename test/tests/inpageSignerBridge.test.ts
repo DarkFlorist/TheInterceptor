@@ -1,5 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import type { RpcNetwork } from '../../app/ts/types/rpc.js'
+import { getSafeAppsRequestCommand } from '../../app/ts/background/safeAppsRequestPolicy.js'
 
 type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[], origin?: string, source?: unknown }
 type Listener = (event: WindowEvent) => void
@@ -14,6 +16,23 @@ type FakeWindowOptions = {
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
+
+function sendSafeAppsCompatibility(sendBackgroundMessage: (data: unknown) => void, enabled: boolean) {
+	sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'safe_apps_compatibility', result: { enabled } })
+}
+
+function getSafeAppsMethod(request: InpageRequest) {
+	const safeRequest = request.params?.[0]
+	return isRecord(safeRequest) && typeof safeRequest.method === 'string' ? safeRequest.method : undefined
+}
+
+function replyToSafeAppsRequest(request: InpageRequest, sendBackgroundMessage: (data: unknown) => void, result: unknown) {
+	sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: 'safe_apps_request', result })
+}
+
+function rejectSafeAppsRequest(request: InpageRequest, sendBackgroundMessage: (data: unknown) => void, message: string) {
+	sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: 'safe_apps_request', error: { code: -32602, message } })
+}
 
 function parseInpageRequest(value: unknown): InpageRequest | undefined {
 	if (!isRecord(value)) return undefined
@@ -135,7 +154,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return
 				case 'InterceptorError':
@@ -302,8 +321,14 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: request.method,
-						result: { metamaskCompatibilityMode: false, safeAppsCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: false },
 					})
+					sendSafeAppsCompatibility(sendBackgroundMessage, true)
+					return true
+				}
+				if (request.method === 'safe_apps_request') {
+					const safeAppsMethod = getSafeAppsMethod(request)
+					rejectSafeAppsRequest(request, sendBackgroundMessage, safeAppsMethod === 'rpcCall' ? 'Unsupported Safe Apps RPC call.' : `Unsupported Safe Apps method: ${ safeAppsMethod }.`)
 					return true
 				}
 				if (request.internal !== true) ethereumRequests.push(request)
@@ -354,13 +379,14 @@ describe('inpage signer bridge', () => {
 		const { fakeWindow } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
 				if (request.method === 'connected_to_signer') {
-					replyToConnection = () => sendBackgroundMessage({
-						interceptorApproved: true,
-						requestId: request.requestId,
-						type: 'result',
-						method: request.method,
-						result: { metamaskCompatibilityMode: false, safeAppsCompatibilityMode: true },
-					})
+					replyToConnection = () => {
+						sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
+						sendSafeAppsCompatibility(sendBackgroundMessage, true)
+					}
+					return true
+				}
+				if (request.method === 'safe_apps_request') {
+					replyToSafeAppsRequest(request, sendBackgroundMessage, { kind: 'result', value: { safeAddress: account } })
 					return true
 				}
 				if (request.internal === true) return false
@@ -404,14 +430,15 @@ describe('inpage signer bridge', () => {
 		let replyToConnection: (() => void) | undefined
 		const { fakeWindow } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
-				if (request.method !== 'connected_to_signer') return false
-				replyToConnection = () => sendBackgroundMessage({
-					interceptorApproved: true,
-					requestId: request.requestId,
-					type: 'result',
-					method: request.method,
-					result: { metamaskCompatibilityMode: false, safeAppsCompatibilityMode: true },
-				})
+				if (request.method === 'connected_to_signer') {
+					replyToConnection = () => {
+						sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
+						sendSafeAppsCompatibility(sendBackgroundMessage, true)
+					}
+					return true
+				}
+				if (request.method !== 'safe_apps_request') return false
+				rejectSafeAppsRequest(request, sendBackgroundMessage, 'Unsupported Safe Apps method: unsupportedEarlyMethod.')
 				return true
 			},
 		})
@@ -443,8 +470,13 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: request.method,
-						result: { metamaskCompatibilityMode: false, safeAppsCompatibilityMode: true },
+						result: { metamaskCompatibilityMode: false },
 					})
+					sendSafeAppsCompatibility(sendBackgroundMessageForRequest, true)
+					return true
+				}
+				if (request.method === 'safe_apps_request') {
+					replyToSafeAppsRequest(request, sendBackgroundMessageForRequest, { kind: 'ethereumRequest', method: 'eth_call', params: [], mapResult: 'passthrough' })
 					return true
 				}
 				if (request.method === 'eth_call' && request.internal !== true) {
@@ -467,7 +499,7 @@ describe('inpage signer bridge', () => {
 				interceptorApproved: true,
 				type: 'result',
 				method: 'safe_apps_compatibility',
-				result: { enabled: false, chainInfo: { chainId: '1', name: 'Ethereum Mainnet', currencyName: 'Ether', currencyTicker: 'ETH' } },
+				result: { enabled: false },
 			})
 			await new Promise((resolve) => setTimeout(resolve, 0))
 			const rpcRequest = pendingRpcRequest
@@ -500,7 +532,7 @@ describe('inpage signer bridge', () => {
 		const account = '0x1111111111111111111111111111111111111111'
 		const ethereumRequests: InpageRequest[] = []
 		let connected = false
-		let activeChainId = '0x89'
+		let rpcNetwork: RpcNetwork = { name: 'Polygon', chainId: 137n, httpsRpc: 'https://polygon.example', currencyName: 'POL', currencyTicker: 'POL', currencyLogoUri: 'https://example.com/pol.svg', blockExplorer: { apiUrl: 'https://api.polygonscan.com/api', apiKey: '' }, primary: false, minimized: false }
 		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
 				if (request.method === 'connected_to_signer') {
@@ -510,21 +542,24 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: request.method,
-						result: {
-							metamaskCompatibilityMode: false,
-							safeAppsCompatibilityMode: true,
-							safeAppsChainInfo: { chainId: '137', name: 'Polygon', currencyName: 'POL', currencyTicker: 'POL', currencyLogoUri: 'https://example.com/pol.svg', blockExplorerApiUrl: 'https://api.polygonscan.com/api' },
-						},
+						result: { metamaskCompatibilityMode: false },
 					})
+					sendSafeAppsCompatibility(sendBackgroundMessage, true)
+					return true
+				}
+				if (request.method === 'safe_apps_request') {
+					try {
+						replyToSafeAppsRequest(request, sendBackgroundMessage, getSafeAppsRequestCommand(request.params?.[0], fakeWindow.location.origin, BigInt(account), rpcNetwork))
+					} catch (error: unknown) {
+						rejectSafeAppsRequest(request, sendBackgroundMessage, error instanceof Error ? error.message : 'Safe Apps request failed.')
+					}
 					return true
 				}
 				if (request.internal === true) return false
 				ethereumRequests.push(request)
 				const result = request.method === 'eth_requestAccounts' || request.method === 'eth_accounts'
 					? [account]
-					: request.method === 'eth_chainId'
-						? activeChainId
-						: request.method === 'eth_getLogs'
+					: request.method === 'eth_getLogs'
 							? ['log-entry']
 						: request.method === 'eth_getBlockByNumber'
 								? { number: '0x123' }
@@ -574,13 +609,7 @@ describe('inpage signer bridge', () => {
 				nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18, logoUri: 'https://example.com/pol.svg' },
 				blockExplorerUriTemplate: { address: '', txHash: '', api: 'https://api.polygonscan.com/api' },
 			})
-			activeChainId = '0xa'
-			sendBackgroundMessage({
-				interceptorApproved: true,
-				type: 'result',
-				method: 'safe_apps_chain_info',
-				result: { chainId: '10', name: 'Optimism', currencyName: 'Ether', currencyTicker: 'ETH' },
-			})
+			rpcNetwork = { name: 'Optimism', chainId: 10n, httpsRpc: 'https://optimism.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: false, minimized: false }
 			await new Promise((resolve) => setTimeout(resolve, 0))
 			const updatedChainInfoReply = await safeRequest('getChainInfo')
 			assert.deepEqual(updatedChainInfoReply.data, {
@@ -597,10 +626,15 @@ describe('inpage signer bridge', () => {
 			assert.deepEqual(blockReply.data, { number: '0x123' })
 			const getPermissionsReply = await safeRequest('wallet_getPermissions')
 			assert.deepEqual(getPermissionsReply.data, [])
+			const aliasedGetPermissionsReply = await safeRequest('rpcCall', { call: 'eth_getPermissions', params: [] })
+			assert.deepEqual(aliasedGetPermissionsReply.data, [])
 			const permissionParams = [{ requestAddressBook: {} }]
 			const requestPermissionsReply = await safeRequest('wallet_requestPermissions', permissionParams)
 			assert.equal(requestPermissionsReply.success, false)
 			assert.equal(requestPermissionsReply.error, 'Interceptor Safe compatibility does not support the requestAddressBook permission.')
+			const aliasedRequestPermissionsReply = await safeRequest('rpcCall', { call: 'eth_requestPermissions', params: permissionParams })
+			assert.equal(aliasedRequestPermissionsReply.success, false)
+			assert.equal(aliasedRequestPermissionsReply.error, 'Interceptor Safe compatibility does not support the requestAddressBook permission.')
 			const invalidPermissionReply = await safeRequest('wallet_requestPermissions', {})
 			assert.equal(invalidPermissionReply.success, false)
 			assert.equal(invalidPermissionReply.error, 'Safe Apps permission request params must be an array.')
@@ -621,15 +655,9 @@ describe('inpage signer bridge', () => {
 			assert.equal(batchReply.success, false)
 			assert.equal(batchReply.error, 'Interceptor Safe compatibility currently supports exactly one transaction per request; Safe batches require atomic MultiSend support.')
 			assert.deepEqual(ethereumRequests.map(({ method, params }) => ({ method, params })), [
-				{ method: 'eth_accounts', params: undefined },
-				{ method: 'eth_chainId', params: undefined },
-				{ method: 'eth_chainId', params: undefined },
-				{ method: 'eth_chainId', params: undefined },
 				{ method: 'eth_getLogs', params: [{ fromBlock: 'latest' }] },
 				{ method: 'eth_getBlockByNumber', params: ['latest', false] },
-				{ method: 'eth_requestAccounts', params: undefined },
 				{ method: 'eth_sendTransaction', params: [{ from: account, to: transaction.to, value: '0xf', data: transaction.data, gas: '0x5208' }] },
-				{ method: 'eth_requestAccounts', params: undefined },
 				{ method: 'eth_sendTransaction', params: [{ from: account, to: transaction.to, value: '0xf', data: transaction.data }] },
 			])
 
@@ -641,7 +669,7 @@ describe('inpage signer bridge', () => {
 				interceptorApproved: true,
 				type: 'result',
 				method: 'safe_apps_compatibility',
-				result: { enabled: false, chainInfo: { chainId: '10', name: 'Optimism', currencyName: 'Ether', currencyTicker: 'ETH' } },
+				result: { enabled: false },
 			})
 			await new Promise((resolve) => setTimeout(resolve, 0))
 			fakeWindow.postMessage({ id: 'disabled-after-update', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
@@ -977,7 +1005,7 @@ describe('inpage signer bridge', () => {
 					requestId: request.requestId,
 					type: 'result',
 					method: 'connected_to_signer',
-					result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
+					result: { metamaskCompatibilityMode: true },
 				})
 				return true
 			},
@@ -1014,7 +1042,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: request.method,
-						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -1050,7 +1078,7 @@ describe('inpage signer bridge', () => {
 					requestId: request.requestId,
 					type: 'result',
 					method: 'connected_to_signer',
-					result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
+					result: { metamaskCompatibilityMode: true },
 				})
 				return true
 			},
@@ -1088,7 +1116,7 @@ describe('inpage signer bridge', () => {
 					requestId: request.requestId,
 					type: 'result',
 					method: 'connected_to_signer',
-					result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
+					result: { metamaskCompatibilityMode: true },
 				})
 				return true
 			},
@@ -1993,7 +2021,7 @@ describe('inpage signer bridge', () => {
 					requestId: request.requestId,
 					type: 'result',
 					method: 'connected_to_signer',
-					result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
+					result: { metamaskCompatibilityMode: true },
 				}), delay)
 				return true
 			},
@@ -2649,7 +2677,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -2709,7 +2737,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -2767,7 +2795,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -2813,7 +2841,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -2881,7 +2909,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -2952,7 +2980,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -3026,7 +3054,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -3098,7 +3126,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -3170,7 +3198,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -3239,7 +3267,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}
@@ -3286,7 +3314,7 @@ describe('inpage signer bridge', () => {
 						requestId: request.requestId,
 						type: 'result',
 						method: 'connected_to_signer',
-						result: { metamaskCompatibilityMode: true, safeAppsCompatibilityMode: false },
+						result: { metamaskCompatibilityMode: true },
 					})
 					return true
 				}

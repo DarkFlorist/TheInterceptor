@@ -784,16 +784,6 @@ describe('refreshHomeData', () => {
 		const homeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage') as { data?: { websiteAccessAddressMetadata?: readonly unknown[] } } | undefined
 		assert.equal(requestMessages.length, 0)
 		assert.equal(homeUpdate?.data?.websiteAccessAddressMetadata?.length, 1)
-		assert.deepEqual(messages.find((message) => message.method === 'safe_apps_compatibility')?.result, {
-			enabled: false,
-			chainInfo: {
-				chainId: rpcNetwork.chainId.toString(),
-				name: rpcNetwork.name,
-				currencyName: rpcNetwork.currencyName,
-				currencyTicker: rpcNetwork.currencyTicker,
-				currencyLogoUri: rpcNetwork.currencyLogoUri,
-				blockExplorerApiUrl: rpcNetwork.blockExplorer?.apiUrl,
-			},
-		})
+		assert.deepEqual(messages.find((message) => message.method === 'safe_apps_compatibility')?.result, { enabled: false })
 	})
 })

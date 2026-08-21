@@ -4,9 +4,9 @@ import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-type
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
-import { getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings } from './settings.js'
+import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { getPendingSignerChainChangeTokenForCallback, isPendingSignerChainChangeReply, resolveSignerChainChange } from './windows/changeChain.js'
-import { type ApprovalState, isSafeAppsConnectionEligible, isSafeAppsTopFramePort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
+import { type ApprovalState, isSafeAppsTopFramePort, sendCurrentSafeAppsCompatibilityToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { reportUnexpectedError } from '../utils/errors.js'
@@ -21,7 +21,6 @@ import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from './signingAddressSelection.js'
 import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
-import { getSafeAppsChainInfo } from '../utils/safeAppsCompatibility.js'
 import { getActiveAddressEntryForChain } from './metadataUtils.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
@@ -34,15 +33,13 @@ function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, po
 	return token
 }
 
-async function getConnectedToSignerResult(safeAppsAccessApproved: boolean) {
-	const [metamaskCompatibilityMode, safeAppsCompatibilityMode, settings] = await Promise.all([getMetamaskCompatibilityMode(), getSafeAppsCompatibilityMode(), getSettings()])
+async function getConnectedToSignerResult() {
+	const metamaskCompatibilityMode = await getMetamaskCompatibilityMode()
 	return {
 		type: 'result' as const,
 		method: 'connected_to_signer' as const,
 		result: {
 			metamaskCompatibilityMode,
-			safeAppsCompatibilityMode: safeAppsAccessApproved && safeAppsCompatibilityMode,
-			safeAppsChainInfo: getSafeAppsChainInfo(settings.activeRpcNetwork),
 		},
 	}
 }
@@ -228,19 +225,19 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 	const isTopFrame = isSafeAppsTopFramePort(port)
 	const socket = getSocketFromPort(port)
 	const requestSocket = request.uniqueRequestIdentifier.requestSocket
-	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName) return await getConnectedToSignerResult(false)
+	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName) return await getConnectedToSignerResult()
 	// Persisted origin approval must not let a newly connected child frame claim tab-wide signer ownership or bootstrap address access.
-	if (!isTopFrame && !isApprovedWebsitePort(websiteTabConnections, port)) return await getConnectedToSignerResult(false)
-	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
+	if (!isTopFrame && !isApprovedWebsitePort(websiteTabConnections, port)) return await getConnectedToSignerResult()
+	const result = await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
 		const tabConnection = websiteTabConnections.get(socket.tabId)
 		if (!isCurrentWebsiteConnection(tabConnection, socket, port) || tabConnection?.signerStateOwner?.connectionName !== socket.connectionName) {
-			return await getConnectedToSignerResult(false)
+			return await getConnectedToSignerResult()
 		}
 		const previousSignerProviderGeneration = tabConnection.signerStateOwner.providerGeneration
 		if (tabConnection.signerStateOwner.confirmed
 			&& previousSignerProviderGeneration !== undefined
 			&& signerProviderGeneration < previousSignerProviderGeneration) {
-			return await getConnectedToSignerResult(await isSafeAppsConnectionEligible(websiteTabConnections, socket, await getSettings()))
+			return await getConnectedToSignerResult()
 		}
 		const signerStateWasConfirmed = tabConnection.signerStateOwner.confirmed
 		beginSignerStateConfirmation(tabConnection)
@@ -256,7 +253,7 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 			return modifyObject(baseState, { signerName, signerConnected: signerMissing ? false : signerConnected })
 		})
 		if (!isCurrentWebsiteConnection(tabConnection, socket, port) || tabConnection.signerStateOwner.connectionName !== socket.connectionName) {
-			return await getConnectedToSignerResult(false)
+			return await getConnectedToSignerResult()
 		}
 		confirmSignerState(tabConnection, signerProviderGeneration)
 		await setDefaultSignerName(signerName)
@@ -267,21 +264,19 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 				sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_chainId', result: [] })
 			}
 		}
-		let settings = await getSettings()
-		let safeAppsAccessApproved = await isSafeAppsConnectionEligible(websiteTabConnections, socket, settings)
-		if (!safeAppsAccessApproved && isTopFrame && approval === 'hasAccess' && activeAddress !== undefined) {
+		const settings = await getSettings()
+		if (isTopFrame && approval === 'hasAccess' && activeAddress !== undefined) {
 			const activeAddressEntry = await getActiveAddressEntryForChain(activeAddress, settings.activeRpcNetwork.chainId)
 			const connection = getWebsiteConnectionForPort(websiteTabConnections, port)
 			if (connection !== undefined) {
-				const restoredApproval = verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, activeAddressEntry, settings)
-				if (restoredApproval === 'hasAccess') {
-					settings = await getSettings()
-					safeAppsAccessApproved = await isSafeAppsConnectionEligible(websiteTabConnections, socket, settings)
-				}
+				verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, activeAddressEntry, settings)
 			}
 		}
-		return await getConnectedToSignerResult(safeAppsAccessApproved)
+		return await getConnectedToSignerResult()
 	})
+	// Safe Apps compatibility is an optional subscription and must not delay or fail the core signer handshake.
+	void sendCurrentSafeAppsCompatibilityToPort(websiteTabConnections, socket).catch((error: unknown) => { void reportUnexpectedError(error) })
+	return result
 }
 
 export async function signerReply(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {

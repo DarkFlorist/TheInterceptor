@@ -46,10 +46,7 @@ const InpageScriptRequestWithoutIdentifier = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_reply'), result: funtypes.Unknown }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts_reply'), result: funtypes.Literal('0x') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signer_chainChanged'), result: funtypes.Literal('0x') }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('connected_to_signer'), result: funtypes.Intersect(
-		funtypes.ReadonlyObject({ metamaskCompatibilityMode: funtypes.Boolean, safeAppsCompatibilityMode: funtypes.Boolean }),
-		funtypes.ReadonlyPartial({ safeAppsChainInfo: funtypes.ReadonlyObject({ chainId: funtypes.String, name: funtypes.String, currencyName: funtypes.String, currencyTicker: funtypes.String }).And(funtypes.ReadonlyPartial({ currencyLogoUri: funtypes.String, blockExplorerApiUrl: funtypes.String })) }),
-	) }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('connected_to_signer'), result: funtypes.ReadonlyObject({ metamaskCompatibilityMode: funtypes.Boolean }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_switchEthereumChain_reply'), result: funtypes.Literal('0x') }),
 )
 
@@ -90,8 +87,7 @@ export const InpageScriptCallBack = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('connect'), result: funtypes.ReadonlyTuple(EthereumQuantity) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('accountsChanged'), result: funtypes.ReadonlyArray(EthereumAddress) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('chainChanged'), result: EthereumQuantity }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('safe_apps_compatibility'), result: funtypes.ReadonlyObject({ enabled: funtypes.Boolean, chainInfo: funtypes.ReadonlyObject({ chainId: funtypes.String, name: funtypes.String, currencyName: funtypes.String, currencyTicker: funtypes.String }).And(funtypes.ReadonlyPartial({ currencyLogoUri: funtypes.String, blockExplorerApiUrl: funtypes.String })) }) }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('safe_apps_chain_info'), result: funtypes.ReadonlyObject({ chainId: funtypes.String, name: funtypes.String, currencyName: funtypes.String, currencyTicker: funtypes.String }).And(funtypes.ReadonlyPartial({ currencyLogoUri: funtypes.String, blockExplorerApiUrl: funtypes.String })) }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('safe_apps_compatibility'), result: funtypes.ReadonlyObject({ enabled: funtypes.Boolean }) }),
 )
 
 export type GetSimulationStackReply = funtypes.Static<typeof GetSimulationStackReply>
@@ -114,6 +110,15 @@ const WalletCapabilities = funtypes.ReadonlyRecord(
 const WalletCapabilitiesReply = funtypes.Intersect(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getCapabilities') }),
 	funtypes.ReadonlyObject({ result: WalletCapabilities }),
+)
+const SafeAppsRequestCommand = funtypes.Union(
+	funtypes.ReadonlyObject({ kind: funtypes.Literal('result'), value: funtypes.Unknown }),
+	funtypes.ReadonlyObject({
+		kind: funtypes.Literal('ethereumRequest'),
+		method: funtypes.String,
+		params: funtypes.ReadonlyArray(funtypes.Unknown),
+		mapResult: funtypes.Union(funtypes.Literal('passthrough'), funtypes.Literal('safeTxHash')),
+	}),
 )
 const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBlockByNumber'), result: GetBlockReturn }),
@@ -152,6 +157,7 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_simulateV1'), result: EthSimulateV1Result }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getFilterChanges'), result: EthGetLogsResponse }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getFilterLogs'), result: EthGetLogsResponse }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('safe_apps_request'), result: SafeAppsRequestCommand }),
 )
 
 type SubscriptionReturnValue = funtypes.Static<typeof SubscriptionReturnValue>

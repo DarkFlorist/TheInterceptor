@@ -1,35 +1,5 @@
 const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
 const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
-const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
-
-const SAFE_APPS_RPC_METHODS = new Set([
-	'eth_call',
-	'eth_estimateGas',
-	'eth_gasPrice',
-	'eth_getBalance',
-	'eth_getBlockByHash',
-	'eth_getBlockByNumber',
-	'eth_getCode',
-	'eth_getLogs',
-	'eth_getStorageAt',
-	'eth_getTransactionByHash',
-	'eth_getTransactionCount',
-	'eth_getTransactionReceipt',
-	// Compatibility aliases used by older Safe Apps providers, including Forklift.
-	'eth_getGasPrice',
-	'eth_getPastLogs',
-	'eth_getPermissions',
-	'eth_requestPermissions',
-])
-
-const SAFE_APPS_RPC_ALIASES = new Map([
-	['eth_getGasPrice', 'eth_gasPrice'],
-	['eth_getPastLogs', 'eth_getLogs'],
-	['eth_getPermissions', 'wallet_getPermissions'],
-	['eth_requestPermissions', 'wallet_requestPermissions'],
-])
-
-type SafeAppsEthereumRequest = (request: { readonly method: string, readonly params?: readonly unknown[] }) => Promise<unknown>
 
 type SafeAppsWindow = {
 	readonly location: { readonly origin: string }
@@ -48,36 +18,19 @@ type ParsedSafeAppsRequest =
 	| { readonly id: string, readonly request: SafeAppsRequest }
 	| { readonly id: string, readonly error: string }
 
-type SafeAppsChainInfo = {
-	readonly chainId: string
-	readonly name: string
-	readonly currencyName: string
-	readonly currencyTicker: string
-	readonly currencyLogoUri?: string
-	readonly blockExplorerApiUrl?: string
-}
-
 type SafeAppsMessageEvent = { readonly data: unknown, readonly origin: string, readonly source: unknown }
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null
 
 type SafeAppsRequestCandidate = { readonly id?: unknown, readonly method?: unknown, readonly env?: unknown, readonly params?: unknown }
 type SafeAppsEnvironmentCandidate = { readonly sdkVersion?: unknown }
-type SafeAppsChainInfoCandidate = { readonly chainId?: unknown, readonly name?: unknown, readonly currencyName?: unknown, readonly currencyTicker?: unknown, readonly currencyLogoUri?: unknown, readonly blockExplorerApiUrl?: unknown }
-type SafeAppsCompatibilityCandidate = { readonly enabled?: unknown, readonly chainInfo?: unknown }
-type SafeTransactionsCandidate = { readonly txs?: unknown, readonly params?: unknown }
-type SafeTransactionCandidate = { readonly to?: unknown, readonly value?: unknown, readonly data?: unknown, readonly operation?: unknown }
-type SafeTransactionOptionsCandidate = { readonly safeTxGas?: unknown }
-type SafeRpcCallCandidate = { readonly call?: unknown, readonly params?: unknown }
+type SafeAppsCompatibilityCandidate = { readonly enabled?: unknown }
+type SafeAppsCommandCandidate = { readonly kind?: unknown, readonly value?: unknown, readonly method?: unknown, readonly params?: unknown, readonly mapResult?: unknown }
 
 const isSafeAppsRequestCandidate = (value: unknown): value is SafeAppsRequestCandidate => isRecord(value)
 const isSafeAppsEnvironmentCandidate = (value: unknown): value is SafeAppsEnvironmentCandidate => isRecord(value)
-const isSafeAppsChainInfoCandidate = (value: unknown): value is SafeAppsChainInfoCandidate => isRecord(value)
 const isSafeAppsCompatibilityCandidate = (value: unknown): value is SafeAppsCompatibilityCandidate => isRecord(value)
-const isSafeTransactionsCandidate = (value: unknown): value is SafeTransactionsCandidate => isRecord(value)
-const isSafeTransactionCandidate = (value: unknown): value is SafeTransactionCandidate => isRecord(value)
-const isSafeTransactionOptionsCandidate = (value: unknown): value is SafeTransactionOptionsCandidate => isRecord(value)
-const isSafeRpcCallCandidate = (value: unknown): value is SafeRpcCallCandidate => isRecord(value)
+const isSafeAppsCommandCandidate = (value: unknown): value is SafeAppsCommandCandidate => isRecord(value)
 
 function parseSafeAppsMessageEvent(event: Event): SafeAppsMessageEvent | undefined {
 	if (!('data' in event) || !('origin' in event) || !('source' in event) || typeof event.origin !== 'string') return undefined
@@ -95,148 +48,24 @@ function parseSafeAppsRequest(data: unknown): ParsedSafeAppsRequest | undefined 
 	return { id: data.id, request: { id: data.id, method: data.method, ...(data.params === undefined ? {} : { params: data.params }) } }
 }
 
-function parseSafeAppsChainInfo(value: unknown): SafeAppsChainInfo | undefined {
-	if (!isSafeAppsChainInfoCandidate(value) || typeof value.chainId !== 'string' || typeof value.name !== 'string' || typeof value.currencyName !== 'string' || typeof value.currencyTicker !== 'string') return undefined
-	if (value.currencyLogoUri !== undefined && typeof value.currencyLogoUri !== 'string') return undefined
-	if (value.blockExplorerApiUrl !== undefined && typeof value.blockExplorerApiUrl !== 'string') return undefined
-	return {
-		chainId: value.chainId,
-		name: value.name,
-		currencyName: value.currencyName,
-		currencyTicker: value.currencyTicker,
-		...(value.currencyLogoUri === undefined ? {} : { currencyLogoUri: value.currencyLogoUri }),
-		...(value.blockExplorerApiUrl === undefined ? {} : { blockExplorerApiUrl: value.blockExplorerApiUrl }),
-	}
-}
-
 function parseSafeAppsCompatibility(value: unknown) {
 	if (!isSafeAppsCompatibilityCandidate(value) || typeof value.enabled !== 'boolean') return undefined
-	const chainInfo = parseSafeAppsChainInfo(value.chainInfo)
-	if (chainInfo === undefined) return undefined
-	return { enabled: value.enabled, chainInfo }
+	return { enabled: value.enabled }
 }
 
-function parseChainId(value: unknown): number {
-	if (typeof value !== 'string' || !/^(?:0x[0-9a-f]+|[0-9]+)$/i.test(value)) throw new Error('Interceptor returned an invalid chain ID.')
-	const chainId = BigInt(value)
-	if (chainId > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('The active chain ID is too large for the Safe Apps protocol.')
-	return Number(chainId)
+async function executeSafeAppsCommand(command: unknown, requestEthereum: EthereumRequest): Promise<unknown> {
+	if (!isSafeAppsCommandCandidate(command) || (command.kind !== 'result' && command.kind !== 'ethereumRequest')) throw new Error('Interceptor returned an invalid Safe Apps command.')
+	if (command.kind === 'result') return command.value
+	if (typeof command.method !== 'string' || !Array.isArray(command.params) || (command.mapResult !== 'passthrough' && command.mapResult !== 'safeTxHash')) throw new Error('Interceptor returned an invalid Safe Apps Ethereum request.')
+	const result = await requestEthereum({ method: command.method, params: command.params })
+	if (command.mapResult === 'passthrough') return result
+	if (typeof result !== 'string') throw new Error('Interceptor returned an invalid transaction hash.')
+	return { safeTxHash: result }
 }
 
-function parseAccounts(value: unknown): readonly string[] {
-	if (!Array.isArray(value) || !value.every((account) => typeof account === 'string')) throw new Error('Interceptor returned invalid accounts.')
-	return value
-}
-
-function toEthereumQuantity(value: string): string {
-	if (!/^(?:0x[0-9a-f]+|[0-9]+)$/i.test(value)) throw new Error('Safe transaction value must be a non-negative integer.')
-	return `0x${ BigInt(value).toString(16) }`
-}
-
-function parseSafeTransaction(params: unknown) {
-	if (!isSafeTransactionsCandidate(params) || !Array.isArray(params.txs)) throw new Error('Safe sendTransactions params must contain a transaction array.')
-	if (params.txs.length !== 1) throw new Error('Interceptor Safe compatibility currently supports exactly one transaction per request; Safe batches require atomic MultiSend support.')
-	const transaction = params.txs[0]
-	if (!isSafeTransactionCandidate(transaction) || typeof transaction.to !== 'string' || typeof transaction.value !== 'string' || typeof transaction.data !== 'string') {
-		throw new Error('Safe transaction fields must be strings.')
-	}
-	if (!/^0x[0-9a-f]{40}$/i.test(transaction.to)) throw new Error('Safe transaction destination must be an Ethereum address.')
-	if (!/^0x(?:[0-9a-f]{2})*$/i.test(transaction.data)) throw new Error('Safe transaction data must be hex-encoded bytes.')
-	if (transaction.operation !== undefined && transaction.operation !== 0) throw new Error('Interceptor Safe compatibility supports only CALL transactions; delegate calls are not supported.')
-	let safeTxGas: number | undefined
-	if (params.params !== undefined) {
-		const transactionParams = params.params
-		if (!isSafeTransactionOptionsCandidate(transactionParams) || (transactionParams.safeTxGas !== undefined && (typeof transactionParams.safeTxGas !== 'number' || !Number.isSafeInteger(transactionParams.safeTxGas) || transactionParams.safeTxGas < 0))) {
-			throw new Error('Safe transaction gas must be a non-negative safe integer.')
-		}
-		safeTxGas = transactionParams.safeTxGas
-	}
-	return { to: transaction.to, value: toEthereumQuantity(transaction.value), data: transaction.data, safeTxGas }
-}
-
-function parseRpcCall(params: unknown) {
-	if (!isSafeRpcCallCandidate(params) || typeof params.call !== 'string' || !SAFE_APPS_RPC_METHODS.has(params.call)) throw new Error('Unsupported Safe Apps RPC call.')
-	if (!Array.isArray(params.params)) throw new Error('Safe Apps RPC params must be an array.')
-	const rpcParams = params.call === 'eth_getBlockByNumber' && params.params.length === 1 ? [...params.params, false] : params.params
-	return { method: SAFE_APPS_RPC_ALIASES.get(params.call) ?? params.call, params: rpcParams }
-}
-
-async function getConnectedAccount(requestEthereum: SafeAppsEthereumRequest, requestAccess: boolean) {
-	const accounts = parseAccounts(await requestEthereum({ method: requestAccess ? 'eth_requestAccounts' : 'eth_accounts' }))
-	const account = accounts[0]
-	if (account === undefined) throw new Error('No Interceptor account is available to expose as a Safe connection.')
-	return account
-}
-
-async function handleSafeAppsRequest(request: SafeAppsRequest, requestEthereum: SafeAppsEthereumRequest, origin: string, chainInfo: SafeAppsChainInfo | undefined): Promise<unknown> {
-	switch (request.method) {
-		case 'getEnvironmentInfo': return { origin }
-		case 'getChainInfo': {
-			const chainId = parseChainId(await requestEthereum({ method: 'eth_chainId' }))
-			if (chainInfo === undefined || parseChainId(chainInfo.chainId) !== chainId) throw new Error('Interceptor chain metadata is not available for the active chain.')
-			return {
-				chainName: chainInfo.name,
-				chainId: chainId.toString(),
-				shortName: chainInfo.name,
-				nativeCurrency: { name: chainInfo.currencyName, symbol: chainInfo.currencyTicker, decimals: 18, logoUri: chainInfo.currencyLogoUri ?? '' },
-				blockExplorerUriTemplate: { address: '', txHash: '', api: chainInfo.blockExplorerApiUrl ?? '' },
-			}
-		}
-		case 'getSafeInfo': {
-			const [safeAddress, chainIdValue] = await Promise.all([
-				getConnectedAccount(requestEthereum, false),
-				requestEthereum({ method: 'eth_chainId' }),
-			])
-			const chainId = parseChainId(chainIdValue)
-			return {
-				safeAddress,
-				chainId,
-				owners: [safeAddress],
-				threshold: 1,
-				isReadOnly: false,
-				nonce: 0,
-				implementation: ZERO_ADDRESS,
-				modules: [],
-				fallbackHandler: ZERO_ADDRESS,
-				guard: ZERO_ADDRESS,
-				version: '1.4.1',
-				network: `CHAIN_${ chainId.toString() }`,
-			}
-		}
-		case 'wallet_getPermissions': return []
-		case 'wallet_requestPermissions': {
-			if (!Array.isArray(request.params)) throw new Error('Safe Apps permission request params must be an array.')
-			if (request.params.length === 0) return []
-			if (!request.params.every((permission) => isRecord(permission) && Object.keys(permission).length > 0 && Object.keys(permission).every((key) => key === 'requestAddressBook'))) {
-				throw new Error('Unsupported Safe Apps permission request.')
-			}
-			throw new Error('Interceptor Safe compatibility does not support the requestAddressBook permission.')
-		}
-		case 'rpcCall': return await requestEthereum(parseRpcCall(request.params))
-		case 'sendTransactions': {
-			const transaction = parseSafeTransaction(request.params)
-			const from = await getConnectedAccount(requestEthereum, true)
-			const safeTxHash = await requestEthereum({
-				method: 'eth_sendTransaction',
-				params: [{
-					from,
-					to: transaction.to,
-					value: transaction.value,
-					data: transaction.data,
-					...(transaction.safeTxGas === undefined || transaction.safeTxGas === 0 ? {} : { gas: `0x${ transaction.safeTxGas.toString(16) }` }),
-				}],
-			})
-			if (typeof safeTxHash !== 'string') throw new Error('Interceptor returned an invalid transaction hash.')
-			return { safeTxHash }
-		}
-		default: throw new Error(`Unsupported Safe Apps method: ${ request.method }.`)
-	}
-}
-
-function createSafeAppsBridge(windowObject: SafeAppsWindow, requestEthereum: SafeAppsEthereumRequest) {
+function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (request: SafeAppsRequest) => Promise<unknown>) {
 	let enabled: boolean | undefined
 	let enablementGeneration = 0
-	let chainInfo: SafeAppsChainInfo | undefined
 	const pendingRequests: { readonly parsedRequest: ParsedSafeAppsRequest, readonly origin: string }[] = []
 	const answerRequest = (parsedRequest: ParsedSafeAppsRequest, origin: string) => {
 		if ('error' in parsedRequest) {
@@ -245,7 +74,7 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestEthereum: Saf
 		}
 		const request = parsedRequest.request
 		const requestEnablementGeneration = enablementGeneration
-		void handleSafeAppsRequest(request, requestEthereum, origin, chainInfo).then(
+		void requestSafeApps(request).then(
 			(data) => {
 				if (!enabled || requestEnablementGeneration !== enablementGeneration) return
 				windowObject.postMessage({ id: request.id, success: true, data, version: SAFE_APPS_RESPONSE_VERSION }, origin)
@@ -272,16 +101,14 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestEthereum: Saf
 	}
 	windowObject.addEventListener('message', onMessage)
 	return {
-		setEnabled(nextEnabled: boolean, nextChainInfo: SafeAppsChainInfo | undefined) {
+		setEnabled(nextEnabled: boolean) {
 			if (enabled !== nextEnabled) enablementGeneration += 1
 			enabled = nextEnabled
-			chainInfo = nextChainInfo
 			const queuedRequests = pendingRequests.splice(0)
 			if (nextEnabled) {
 				for (const { parsedRequest, origin } of queuedRequests) answerRequest(parsedRequest, origin)
 			}
 		},
-		setChainInfo(nextChainInfo: SafeAppsChainInfo) { chainInfo = nextChainInfo },
 		dispose() {
 			pendingRequests.splice(0)
 			windowObject.removeEventListener('message', onMessage)
@@ -357,6 +184,7 @@ const INTERNAL_BACKGROUND_METHODS = [
 	'connected_to_signer',
 	'eth_accounts_reply',
 	'InterceptorError',
+	'safe_apps_request',
 	'signer_chainChanged',
 	'signer_reply',
 	'wallet_switchEthereumChain_reply',
@@ -803,7 +631,10 @@ class InterceptorMessageListener {
 	private connected = false
 	private requestId = 0
 	private metamaskCompatibilityMode = false
-	private readonly safeAppsBridge = createSafeAppsBridge(inpageWindow, async (request) => await this.WindowEthereumRequest(request))
+	private readonly safeAppsBridge = createSafeAppsBridge(inpageWindow, async (request) => {
+		const command = await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [{ method: request.method, ...(request.params === undefined ? {} : { params: request.params }) }] })
+		return await executeSafeAppsCommand(command, async (ethereumRequest) => await this.WindowEthereumRequest(ethereumRequest))
+	})
 	private signerName: Signer = 'NoSigner'
 	private signerWindowEthereumProvider: WindowEthereum | undefined = undefined
 	private signerWindowEthereumRequest: EthereumRequest | undefined = undefined
@@ -1673,14 +1504,9 @@ class InterceptorMessageListener {
 					}
 					return
 				}
-				case 'safe_apps_chain_info': {
-					const safeAppsChainInfo = parseSafeAppsChainInfo(replyRequest.result)
-					if (safeAppsChainInfo !== undefined) this.safeAppsBridge.setChainInfo(safeAppsChainInfo)
-					return
-				}
 				case 'safe_apps_compatibility': {
 					const safeAppsCompatibility = parseSafeAppsCompatibility(replyRequest.result)
-					if (safeAppsCompatibility !== undefined) this.safeAppsBridge.setEnabled(safeAppsCompatibility.enabled, safeAppsCompatibility.chainInfo)
+					if (safeAppsCompatibility !== undefined) this.safeAppsBridge.setEnabled(safeAppsCompatibility.enabled)
 					return
 				}
 				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner()
@@ -1868,14 +1694,12 @@ class InterceptorMessageListener {
 			if (this.signerAvailabilityWaiters.size === 0 && this.metaMaskAvailabilityWaiters.size === 0) this.stopSignerDiscoveryRetries()
 		}
 		const selectionGeneration = ++this.signerSelectionGeneration
-		const connectToSigner = async (): Promise<{ metamaskCompatibilityMode: boolean, safeAppsCompatibilityMode: boolean, safeAppsChainInfo?: SafeAppsChainInfo }> => {
+		const connectToSigner = async (): Promise<{ metamaskCompatibilityMode: boolean }> => {
 			const connectSignerReply = await this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName !== 'NoSigner', signerName, signerProviderGeneration] })
 			if (typeof connectSignerReply === 'object' && connectSignerReply !== null
 				&& 'metamaskCompatibilityMode' in connectSignerReply && connectSignerReply.metamaskCompatibilityMode !== null
-				&& connectSignerReply.metamaskCompatibilityMode !== undefined && typeof connectSignerReply.metamaskCompatibilityMode === 'boolean'
-				&& 'safeAppsCompatibilityMode' in connectSignerReply && typeof connectSignerReply.safeAppsCompatibilityMode === 'boolean') {
-				const safeAppsChainInfo = 'safeAppsChainInfo' in connectSignerReply ? parseSafeAppsChainInfo(connectSignerReply.safeAppsChainInfo) : undefined
-				return { metamaskCompatibilityMode: connectSignerReply.metamaskCompatibilityMode, safeAppsCompatibilityMode: connectSignerReply.safeAppsCompatibilityMode, ...(safeAppsChainInfo === undefined ? {} : { safeAppsChainInfo }) }
+				&& connectSignerReply.metamaskCompatibilityMode !== undefined && typeof connectSignerReply.metamaskCompatibilityMode === 'boolean') {
+				return { metamaskCompatibilityMode: connectSignerReply.metamaskCompatibilityMode }
 			}
 			throw new Error('Failed to parse connected_to_signer reply')
 		}
@@ -1884,7 +1708,6 @@ class InterceptorMessageListener {
 			const connection = await connectToSigner()
 			if (selectionGeneration !== this.signerSelectionGeneration) return
 			this.enableMetamaskCompatibilityMode(connection.metamaskCompatibilityMode)
-			this.safeAppsBridge.setEnabled(connection.safeAppsCompatibilityMode, connection.safeAppsChainInfo)
 			if (signerName !== 'NoSigner') await this.requestChainIdFromSigner()
 		}
 		// A fresh status report must not wait behind an older bridge request whose reply may have been lost during a background-worker or content-port replacement. The generation checks on both sides make late replies from superseded reports harmless.

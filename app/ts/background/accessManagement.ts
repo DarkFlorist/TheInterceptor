@@ -21,7 +21,6 @@ import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
-import { getSafeAppsChainInfo } from '../utils/safeAppsCompatibility.js'
 
 function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
@@ -259,7 +258,6 @@ export function sendProviderConnectionEventsToPort(
 	settings: Settings,
 	accounts: readonly bigint[],
 ) {
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'safe_apps_chain_info', result: getSafeAppsChainInfo(settings.activeRpcNetwork) })
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'connect', result: [settings.activeRpcNetwork.chainId] })
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: accounts })
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'chainChanged', result: settings.activeRpcNetwork.chainId })
@@ -278,11 +276,11 @@ function isCurrentSafeAppsCompatibilityPublication(socketIdentifier: string, gen
 	return safeAppsCompatibilityPublicationGenerations.get(socketIdentifier) === generation
 }
 
-function sendSafeAppsCompatibilityToPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, enabled: boolean, settings: Settings) {
-	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'safe_apps_compatibility', result: { enabled, chainInfo: getSafeAppsChainInfo(settings.activeRpcNetwork) } })
+function sendSafeAppsCompatibilityToPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, enabled: boolean) {
+	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'safe_apps_compatibility', result: { enabled } })
 }
 
-async function sendCurrentSafeAppsCompatibilityToPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
+export async function sendCurrentSafeAppsCompatibilityToPort(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const { socketIdentifier, generation } = beginSafeAppsCompatibilityPublication(socket)
 	const [enabled, settings] = await Promise.all([getSafeAppsCompatibilityMode(), getSettings()])
 	const eligible = enabled && await isSafeAppsConnectionEligible(websiteTabConnections, socket, settings)
@@ -291,7 +289,7 @@ async function sendCurrentSafeAppsCompatibilityToPort(websiteTabConnections: Web
 	const [latestEnabled, latestSettings] = await Promise.all([getSafeAppsCompatibilityMode(), getSettings()])
 	const latestEligible = latestEnabled && await isSafeAppsConnectionEligible(websiteTabConnections, socket, latestSettings)
 	if (!isCurrentSafeAppsCompatibilityPublication(socketIdentifier, generation)) return
-	sendSafeAppsCompatibilityToPort(websiteTabConnections, socket, eligible && latestEligible, latestSettings)
+	sendSafeAppsCompatibilityToPort(websiteTabConnections, socket, eligible && latestEligible)
 }
 
 export async function sendSafeAppsCompatibilityToApprovedWebsitePorts(websiteTabConnections: WebsiteTabConnections) {
@@ -317,10 +315,9 @@ export function sendAccountsChangedToPort(
 function disconnectFromPort(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
-	settings: Settings,
 ): false {
 	beginSafeAppsCompatibilityPublication(socket)
-	sendSafeAppsCompatibilityToPort(websiteTabConnections, socket, false, settings)
+	sendSafeAppsCompatibilityToPort(websiteTabConnections, socket, false)
 	setWebsitePortApproval(websiteTabConnections, socket, false)
 	// Account access can be revoked without the provider losing chain connectivity. Notify account listeners before the legacy disconnect event so dapps clear stale account state.
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: [] })
@@ -373,7 +370,7 @@ async function updateTabConnections(
 		const access = currentActiveAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, currentActiveAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
 
 		if (access !== 'hasAccess' && connection.approved) {
-			disconnectFromPort(websiteTabConnections, connection.socket, settings)
+			disconnectFromPort(websiteTabConnections, connection.socket)
 		} else if (access === 'hasAccess' && !connection.approved) {
 			connectToPort(websiteTabConnections, connection.socket, settings, currentActiveAddress?.address)
 		}
