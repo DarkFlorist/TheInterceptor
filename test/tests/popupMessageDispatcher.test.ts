@@ -9,6 +9,7 @@ const storageState: Record<string, unknown> = {}
 const sentMessages: unknown[] = []
 const dynamicRuleUpdates: unknown[] = []
 const dispatcherEvents: ({ type: 'message', message: unknown } | { type: 'dynamicRuleUpdate' })[] = []
+const registeredContentScripts = new Map<string, { readonly id: string, readonly js?: readonly string[] }>()
 let storageSetError: Error | undefined
 let dynamicRuleUpdateError: Error | undefined
 let addressBookBroadcastWait: Promise<void> | undefined
@@ -43,6 +44,19 @@ Reflect.set(globalThis, 'browser', {
 			async remove(keys: string | string[]) {
 				for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 			},
+		},
+	},
+	scripting: {
+		getRegisteredContentScripts: async () => [...registeredContentScripts.values()],
+		unregisterContentScripts: async (filter?: { readonly ids?: readonly string[] }) => {
+			const ids = filter?.ids ?? [...registeredContentScripts.keys()]
+			for (const id of ids) registeredContentScripts.delete(id)
+		},
+		registerContentScripts: async (scripts: readonly { readonly id: string, readonly js?: readonly string[] }[]) => {
+			for (const script of scripts) registeredContentScripts.set(script.id, script)
+		},
+		updateContentScripts: async (scripts: readonly { readonly id: string, readonly js?: readonly string[] }[]) => {
+			for (const script of scripts) registeredContentScripts.set(script.id, script)
 		},
 	},
 	tabs: {
@@ -137,6 +151,7 @@ beforeEach(() => {
 	sentMessages.splice(0, sentMessages.length)
 	dynamicRuleUpdates.splice(0, dynamicRuleUpdates.length)
 	dispatcherEvents.splice(0, dispatcherEvents.length)
+	registeredContentScripts.clear()
 })
 
 describe('popup message dispatcher seams', () => {
@@ -371,6 +386,7 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(messages[1].data.activeSimulationAddress, 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n)
 		assert.equal(messages[1].data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
 		assert.equal(messages[1].data.simulationMode, false)
+		assert.deepEqual(registeredContentScripts.get('inpage')?.js, ['/inpage/js/inpage.js'])
 		assert.deepEqual(dynamicRuleUpdates, [{
 			removeRuleIds: [],
 			addRules: [{

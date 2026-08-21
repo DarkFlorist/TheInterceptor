@@ -384,6 +384,7 @@ const runtimeEntrypointPaths = [
 	path.join(appDirectory, 'inpage', 'js', 'inpage.js'),
 	path.join(appDirectory, 'inpage', 'js', 'listenContentScript.js'),
 	path.join(appDirectory, 'inpage', 'js', 'listenContentScriptBootstrap.js'),
+	path.join(appDirectory, 'inpage', 'js', 'metamaskCompatibilityMode.js'),
 	path.join(appDirectory, 'js', 'utils', 'ethereumPrimitives.js'),
 ]
 
@@ -392,6 +393,7 @@ const classicRuntimeEntrypointPaths = new Set([
 	path.join(appDirectory, 'inpage', 'js', 'inpage.js'),
 	path.join(appDirectory, 'inpage', 'js', 'listenContentScript.js'),
 	path.join(appDirectory, 'inpage', 'js', 'listenContentScriptBootstrap.js'),
+	path.join(appDirectory, 'inpage', 'js', 'metamaskCompatibilityMode.js'),
 ])
 
 export function assertClassicEntrypointHasNoModuleSyntax(filePath: string, source: string) {

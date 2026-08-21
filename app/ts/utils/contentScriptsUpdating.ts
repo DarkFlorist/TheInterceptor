@@ -1,4 +1,4 @@
-import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
+import { getInterceptorDisabledSites, getMetamaskCompatibilityMode, getSettings } from '../background/settings.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
 
@@ -39,7 +39,8 @@ export function getManifestV3ExcludeMatches(origins: readonly string[]) {
 }
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
-	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(await getSettings()))
+	const [settings, metamaskCompatibilityMode] = await Promise.all([getSettings(), getMetamaskCompatibilityMode()])
+	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(settings))
 	try {
 		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
@@ -57,7 +58,7 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 			allFrames: true,
 			matches: injectableSitesWildcard,
 			excludeMatches,
-			js: ['/inpage/js/inpage.js'],
+			js: [...(metamaskCompatibilityMode ? ['/inpage/js/metamaskCompatibilityMode.js'] : []), '/inpage/js/inpage.js'],
 			runAt: 'document_start',
 			world: 'MAIN',
 			matchOriginAsFallback: true
@@ -78,7 +79,8 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 
 const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {
 	if (!isInjectableSite(content.url)) return false
-	const disabledSites = getInterceptorDisabledSites(await getSettings())
+	const [settings, metamaskCompatibilityMode] = await Promise.all([getSettings(), getMetamaskCompatibilityMode()])
+	const disabledSites = getInterceptorDisabledSites(settings)
 	// The tab can navigate while settings are loading, including to another extension page where injection is prohibited.
 	const thisTab = await getTabIfExists(content.tabId)
 	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false
@@ -89,6 +91,7 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 	try {
 		await browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/dist/browser-polyfill.js', allFrames: false, runAt: 'document_start' })
 		await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/listenContentScript.js', allFrames: false, runAt: 'document_start' })
+		if (metamaskCompatibilityMode) await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/metamaskCompatibilityMode.js', allFrames: false, runAt: 'document_start' })
 		await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/document_start.js', allFrames: false, runAt: 'document_start' })
 		checkAndThrowRuntimeLastError()
 	} catch(error) {

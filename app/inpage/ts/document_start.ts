@@ -12,12 +12,28 @@ function injectScript(_content: string) {
 		if (typeof contentScriptListener !== 'function') throw new Error('Interceptor content script listener was not initialized')
 		contentScriptListener(undefined, 'document-start')
 		const container = document.head || document.documentElement
-		const scriptTag = document.createElement('script')
-		scriptTag.setAttribute('async', 'false')
-		if (_content === '[[injected.ts]]') scriptTag.src = browser.runtime.getURL('inpage/js/inpage.js')
-		else scriptTag.textContent = _content
-		container.insertBefore(scriptTag, container.children[1])
-		container.removeChild(scriptTag)
+		const metamaskCompatibilityMode = Reflect.get(globalThis, Symbol.for('TheInterceptor.metamaskCompatibilityMode')) === true
+		if (metamaskCompatibilityMode) {
+			const compatibilityModeScript = document.createElement('script')
+			compatibilityModeScript.async = false
+			compatibilityModeScript.src = browser.runtime.getURL('inpage/js/metamaskCompatibilityMode.js')
+			container.insertBefore(compatibilityModeScript, container.children[1])
+			container.removeChild(compatibilityModeScript)
+
+			const scriptTag = document.createElement('script')
+			scriptTag.async = false
+			scriptTag.src = browser.runtime.getURL('inpage/js/inpage.js')
+			container.insertBefore(scriptTag, container.children[1])
+			container.removeChild(scriptTag)
+		} else {
+			const scriptTag = document.createElement('script')
+			if (_content === '[[injected.ts]]') {
+				scriptTag.async = false
+				scriptTag.src = browser.runtime.getURL('inpage/js/inpage.js')
+			} else scriptTag.textContent = _content
+			container.insertBefore(scriptTag, container.children[1])
+			container.removeChild(scriptTag)
+		}
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
 		console.error('Interceptor: Provider injection failed.', error)

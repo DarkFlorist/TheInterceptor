@@ -9,6 +9,7 @@ type RuntimeMessage = {
 }
 
 type BrowserMockOptions = {
+	readonly metamaskCompatibilityMode?: boolean
 	readonly registerError?: Error
 	readonly updateError?: Error
 	readonly executeScriptError?: Error
@@ -20,11 +21,14 @@ type BrowserMockOptions = {
 
 type RegisteredContentScript = {
 	readonly id: string
+	readonly js?: readonly string[]
 	readonly excludeMatches?: readonly string[]
 }
 
-function installBrowserMock({ registerError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [] }: BrowserMockOptions = {}) {
-	const storageState: Record<string, unknown> = {}
+function installBrowserMock({ metamaskCompatibilityMode, registerError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [] }: BrowserMockOptions = {}) {
+	const storageState: Record<string, unknown> = {
+		...(metamaskCompatibilityMode === undefined ? {} : { metamaskCompatibilityMode }),
+	}
 	const sentMessages: RuntimeMessage[] = []
 	const executedScriptFiles: string[] = []
 	const registeredContentScripts = new Map(registeredContentScriptIds.map((id) => [id, { id }]))
@@ -209,9 +213,44 @@ describe('content script injection strategy', () => {
 		]
 		assert.deepEqual(getExecutedScriptFiles(), injectedFiles)
 		assert.deepEqual(getManifestV2WebAccessibleResources(), [
-			...injectedFiles.map((file) => file.slice(1)),
+			'vendor/webextension-polyfill/dist/browser-polyfill.js',
+			'inpage/js/listenContentScript.js',
+			'inpage/js/metamaskCompatibilityMode.js',
+			'inpage/js/document_start.js',
 			'inpage/js/inpage.js',
 		])
+	})
+
+	test('registers the main-world compatibility prelude only when MetaMask compatibility mode is active', async () => {
+		for (const metamaskCompatibilityMode of [false, true]) {
+			const { getRegisteredContentScripts } = installBrowserMock({ metamaskCompatibilityMode })
+			const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
+
+			await updateContentScriptInjectionStrategyManifestV3()
+
+			const mainWorldRegistration = getRegisteredContentScripts().find((registration) => registration.id === 'inpage')
+			assert.deepEqual(mainWorldRegistration?.js, [
+				...(metamaskCompatibilityMode ? ['/inpage/js/metamaskCompatibilityMode.js'] : []),
+				'/inpage/js/inpage.js',
+			])
+		}
+	})
+
+	test('injects the Firefox compatibility prelude only when MetaMask compatibility mode is active', async () => {
+		for (const metamaskCompatibilityMode of [false, true]) {
+			const { getCommittedListener, getExecutedScriptFiles } = installBrowserMock({ metamaskCompatibilityMode })
+			const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+
+			await updateContentScriptInjectionStrategyManifestV2()
+			await getCommittedListener()(committedDetails)
+
+			assert.deepEqual(getExecutedScriptFiles(), [
+				'/vendor/webextension-polyfill/dist/browser-polyfill.js',
+				'/inpage/js/listenContentScript.js',
+				...(metamaskCompatibilityMode ? ['/inpage/js/metamaskCompatibilityMode.js'] : []),
+				'/inpage/js/document_start.js',
+			])
+		}
 	})
 
 	test('records manifest v3 registration failures as unexpected errors', async () => {

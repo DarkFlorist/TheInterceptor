@@ -7,6 +7,7 @@ import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.
 import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, importSettingsAndAddressBook } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { updateContentScriptInjectionStrategyManifestV3 } from '../../utils/contentScriptsUpdating.js'
 
 export async function settingsOpened() {
 	const useTabsInsteadOfPopupPromise = silenceChromeUnCaughtPromise(getUseTabsInsteadOfPopup())
@@ -34,6 +35,7 @@ export async function importSettings(settingsData: ImportSettings): Promise<Impo
 		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }
 	}
 	await importSettingsAndAddressBook(parsed.value)
+	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
 	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
 }
 

@@ -330,6 +330,7 @@ type InpageWindow = Window & {
 }
 
 const inpageWindow: InpageWindow = window
+const metamaskCompatibilityModeAtPageLoad = Reflect.get(inpageWindow, Symbol.for('TheInterceptor.metamaskCompatibilityMode')) === true
 
 interface EIP6963ProviderInfo {
 	uuid: string
@@ -511,7 +512,8 @@ class InterceptorMessageListener {
 
 	private connected = false
 	private requestId = 0
-	private metamaskCompatibilityMode = false
+	private metamaskCompatibilityMode = metamaskCompatibilityModeAtPageLoad
+	private readonly replaceMetaMaskEip6963AnnouncementsAtPageLoad = metamaskCompatibilityModeAtPageLoad
 	private signerName: Signer = 'NoSigner'
 	private signerWindowEthereumProvider: WindowEthereum | undefined = undefined
 	private signerWindowEthereumRequest: EthereumRequest | undefined = undefined
@@ -520,7 +522,9 @@ class InterceptorMessageListener {
 	private readonly subscribedSignerProviders = new WeakSet<object>()
 	private readonly rejectedSignerProviders = new WeakSet<object>()
 	private announcedMetaMaskUuid: string | undefined = undefined
+	private announcedMetaMaskProvider: WindowEthereum | undefined = undefined
 	private acceptingAnnouncedMetaMaskProviders = false
+	private readonly replacementMetaMaskAnnouncementEvents = new WeakSet<Event>()
 	private signerSelectionGeneration = 0
 	private signerProviderGeneration = 0
 	private latestSignerConnectionTransition: Promise<void> = Promise.resolve()
@@ -547,8 +551,10 @@ class InterceptorMessageListener {
 	private pendingSignerAddressRequest: Promise<SignerAccountsResolution> | undefined = undefined
 
 	public constructor() {
+		window.addEventListener('eip6963:announceProvider', this.replaceMetaMaskAnnouncementForCompatibilityMode, { capture: true })
 		this.connectToContentScript()
 		this.injectEthereumIntoWindow()
+		if (this.metamaskCompatibilityMode) this.enableMetamaskCompatibilityMode(true)
 		this.onPageLoad()
 	}
 
@@ -928,26 +934,62 @@ class InterceptorMessageListener {
 		return undefined
 	}
 
-	private readonly useAnnouncedMetaMaskProvider = (event: Event) => {
-		if (!this.acceptingAnnouncedMetaMaskProviders) return
+	private readonly readMetaMaskAnnouncement = (event: Event) => {
 		let announcement: ReturnType<typeof getEip6963MetaMaskAnnouncement>
 		try {
 			announcement = getEip6963MetaMaskAnnouncement(event)
 		} catch (error: unknown) {
 			this.reportSignerDiscoveryError('read EIP-6963 MetaMask announcement', error)
-			return
+			return undefined
 		}
-		if (announcement === undefined) return
+		return announcement
+	}
+
+	private readonly useMetaMaskAnnouncement = (announcement: NonNullable<ReturnType<typeof getEip6963MetaMaskAnnouncement>>) => {
 		const { provider, info } = announcement
-		if (provider === this.signerWindowEthereumProvider) return
-		if (this.announcedMetaMaskUuid !== undefined) return
-		if (!canAnnouncedMetaMaskReplaceSigner(this.signerName)) return
+		if (provider === this.announcedMetaMaskProvider && info.uuid === this.announcedMetaMaskUuid) return true
+		if (!this.acceptingAnnouncedMetaMaskProviders) return false
+		if (provider === this.signerWindowEthereumProvider) {
+			if (this.signerName !== 'MetaMask' || this.announcedMetaMaskUuid !== undefined) return false
+			this.announcedMetaMaskUuid = info.uuid
+			this.announcedMetaMaskProvider = this.signerWindowEthereumProvider
+			return true
+		}
+		if (this.announcedMetaMaskUuid !== undefined) return false
+		if (!canAnnouncedMetaMaskReplaceSigner(this.signerName)) return false
 		const preparedSigner = this.prepareSignerProvider(provider, 'MetaMask')
-		if (preparedSigner === undefined) return
+		if (preparedSigner === undefined) return false
 		this.announcedMetaMaskUuid = info.uuid
+		this.announcedMetaMaskProvider = preparedSigner.provider
 		this.setSignerProvider(preparedSigner.provider, preparedSigner.request)
 		this.connected = preparedSigner.connected
 		this.connectToSigner('MetaMask')
+		return true
+	}
+
+	private readonly useAnnouncedMetaMaskProvider = (event: Event) => {
+		if (!this.acceptingAnnouncedMetaMaskProviders) return
+		const announcement = this.readMetaMaskAnnouncement(event)
+		if (announcement === undefined) return
+		this.useMetaMaskAnnouncement(announcement)
+	}
+
+	private readonly replaceMetaMaskAnnouncementForCompatibilityMode = (event: Event) => {
+		if (!this.replaceMetaMaskEip6963AnnouncementsAtPageLoad || this.replacementMetaMaskAnnouncementEvents.has(event)) return
+		const announcement = this.readMetaMaskAnnouncement(event)
+		if (announcement === undefined) return
+		this.useMetaMaskAnnouncement(announcement)
+		const provider = inpageWindow.ethereum
+		if (provider === undefined || provider.isInterceptor !== true) {
+			this.reportSignerDiscoveryError('replace EIP-6963 MetaMask announcement', new Error('The Interceptor provider was not initialized'))
+			return
+		}
+		event.stopImmediatePropagation()
+		const replacementEvent = new CustomEvent('eip6963:announceProvider', {
+			detail: Object.freeze({ info: announcement.info, provider }),
+		})
+		this.replacementMetaMaskAnnouncementEvents.add(replacementEvent)
+		window.dispatchEvent(replacementEvent)
 	}
 
 	private readonly WindowEthereumSend = (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] } | string, maybeCallBack: undefined | LegacyJsonRpcCallback) => {
@@ -1543,7 +1585,7 @@ class InterceptorMessageListener {
 		this.metamaskCompatibilityMode = enable
 		if (enable) {
 			if (inpageWindow.ethereum === undefined) return
-			if (!('isMetamask' in inpageWindow.ethereum)) setCompatibilityProperty(inpageWindow.ethereum, 'isMetaMask', true, 'window.ethereum.isMetaMask')
+			if (!('isMetaMask' in inpageWindow.ethereum)) setCompatibilityProperty(inpageWindow.ethereum, 'isMetaMask', true, 'window.ethereum.isMetaMask')
 			if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) {
 				setCompatibilityProperty(inpageWindow.web3, 'currentProvider', inpageWindow.ethereum, 'window.web3.currentProvider')
 			} else {
@@ -1629,6 +1671,7 @@ class InterceptorMessageListener {
 	private readonly onPageLoad = () => {
 		const interceptorMessageListener = this
 		function announceProvider() {
+			if (interceptorMessageListener.replaceMetaMaskEip6963AnnouncementsAtPageLoad) return
 			const info: EIP6963ProviderInfo = {
 				uuid: '200ecd95-afe4-4684-bce7-0f2f8bdd3498',
 				name: 'The Interceptor',
