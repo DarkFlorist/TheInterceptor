@@ -3,6 +3,7 @@ import type { WebsiteSocket } from '../utils/requests.js'
 import { websiteSocketToString } from './backgroundUtils.js'
 import { advanceSignerStateGeneration, clearSignerDerivedTabState, getConfirmedSignerStateToken, resolveSignerStateConfirmation, runSignerStateOperation, settleSignerRequestsForReplacedState } from './signerStateOwnership.js'
 import { updateTabState } from './storageVariables.js'
+import { safeAppsCompatibilityCoordinator } from './safeAppsCompatibilityCoordinator.js'
 
 export async function removeWebsiteTabConnection(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, disconnectedPort: browser.runtime.Port) {
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
@@ -13,6 +14,7 @@ export async function removeWebsiteTabConnection(websiteTabConnections: WebsiteT
 		if (currentConnection?.port !== disconnectedPort) return false
 		const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 		delete tabConnection.connections[connectionIdentifier]
+		safeAppsCompatibilityCoordinator.connectionRemoved(socket)
 		if (tabConnection.signerStateOwner?.connectionName === socket.connectionName) {
 			resolveSignerStateConfirmation(tabConnection)
 			advanceSignerStateGeneration(tabConnection)

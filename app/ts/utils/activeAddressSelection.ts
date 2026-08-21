@@ -89,6 +89,11 @@ export function resolveSigningSafe(configuredSafeAddress: bigint | undefined, ac
 		.find((entry) => entry.address === configuredSafeAddress)
 }
 
+export function isActiveSigningSafe(activeAddress: AddressBookEntry | undefined, simulationMode: boolean, configuredSafeAddress: bigint | undefined, activeChainId: bigint | undefined, signerAccounts: readonly bigint[], activeAddresses: AddressBookEntries) {
+	if (simulationMode || activeAddress?.type !== 'safe' || activeAddress.address !== configuredSafeAddress) return false
+	return resolveSigningSafe(configuredSafeAddress, activeChainId, signerAccounts, activeAddresses) !== undefined
+}
+
 export function getOptimisticActiveAddressSelection(address: bigint | 'signer', simulationMode: boolean, signerAccounts: readonly bigint[]): OptimisticActiveAddressSelection {
 	const resolvedAddress = address === 'signer' ? signerAccounts[0] : address
 	return simulationMode

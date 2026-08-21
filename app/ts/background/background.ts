@@ -1,7 +1,7 @@
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { getSettings, updateWebsiteAccess } from './settings.js'
+import { getSafeAppsCompatibilityMode, getSettings, updateWebsiteAccess } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -24,7 +24,7 @@ import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
-import { getWalletSelectedAccount, resolveSigningSafe } from '../utils/activeAddressSelection.js'
+import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
@@ -34,7 +34,10 @@ import { getSafeModeRpcPolicyReply } from '../safe/safeRequestPolicy.js'
 import { getWatchAssetRpcParseFailureReply } from './watchAssetRpc.js'
 import { createMethodHandlerFor, hasOwnKey } from '../utils/methodHandlers.js'
 import { getWalletCapabilities } from './walletCapabilities.js'
+import { getSafeAppsRequestCommand, isSafeAppsRequestPolicyError } from './safeAppsRequestPolicy.js'
 import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
+import { getSafeContractState } from '../safe/safeCore.js'
+import { isSafeAppsConnectionEligible } from './safeAppsCompatibilityCoordinator.js'
 
 if (initializeWatchAssetWindowListeners()) {
 	void processWatchAssetQueue(undefined).catch(async (error: unknown) => {
@@ -48,6 +51,7 @@ const INTERNAL_PROVIDER_METHODS = [
 	'connected_to_signer',
 	'eth_accounts_reply',
 	'InterceptorError',
+	'safe_apps_request',
 	'signer_chainChanged',
 	'signer_reply',
 	'wallet_switchEthereumChain_reply',
@@ -488,12 +492,23 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 		const settings = await getSettings()
 		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
+		const safeSigningMode = isActiveSigningSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
+		if (request.method === 'safe_apps_request') {
+			const safeAppsEnabled = await getSafeAppsCompatibilityMode()
+			const safeAppsEligible = safeAppsEnabled
+				&& safeSigningMode
+				&& await isSafeAppsConnectionEligible(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, settings)
+			if (!safeAppsEligible) return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'safe_apps_request', uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: { code: -32602, message: 'Interceptor Safe Apps compatibility is not enabled for this connection.' } })
+			try {
+				const command = await getSafeAppsRequestCommand('params' in request ? request.params?.[0] : undefined, website.websiteOrigin, activeAddress.address, settings.activeRpcNetwork, async () => await getSafeContractState(ethereum, activeAddress.address))
+				return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'safe_apps_request', result: command, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+			} catch (error: unknown) {
+				if (isSafeAppsRequestPolicyError(error)) return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'safe_apps_request', uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: { code: -32602, message: error.message } })
+				throw error
+			}
+		}
 		const selectedWalletAccount = getWalletSelectedAccount(signerTabState)
 		// The request's active entry is captured before async handling begins. Recheck Safe ownership without rerouting the request if the popup selects another account meanwhile.
-		const safeSigningMode = !settings.simulationMode
-			&& activeAddress.type === 'safe'
-			&& activeAddress.address === settings.activeSigningSafeAddress
-			&& resolveSigningSafe(activeAddress.address, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries) !== undefined
 		const simulationOverlayEnabled = settings.simulationMode || safeSigningMode
 		const walletSelectedSafeSigner = safeSigningMode ? selectedWalletAccount : undefined
 		let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined

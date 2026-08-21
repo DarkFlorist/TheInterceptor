@@ -1,3 +1,123 @@
+const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
+const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
+
+type SafeAppsWindow = {
+	readonly location: { readonly origin: string }
+	addEventListener(type: 'message', listener: (event: Event) => void): void
+	removeEventListener(type: 'message', listener: (event: Event) => void): void
+	postMessage(message: unknown, targetOrigin: string): void
+}
+
+type SafeAppsRequest = {
+	readonly id: string
+	readonly method: string
+	readonly params?: unknown
+}
+
+type ParsedSafeAppsRequest =
+	| { readonly id: string, readonly request: SafeAppsRequest }
+	| { readonly id: string, readonly error: string }
+
+type SafeAppsMessageEvent = { readonly data: unknown, readonly origin: string, readonly source: unknown }
+
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null
+
+type SafeAppsRequestCandidate = { readonly id?: unknown, readonly method?: unknown, readonly env?: unknown, readonly params?: unknown }
+type SafeAppsEnvironmentCandidate = { readonly sdkVersion?: unknown }
+type SafeAppsCompatibilityCandidate = { readonly enabled?: unknown }
+type SafeAppsCommandCandidate = { readonly kind?: unknown, readonly value?: unknown, readonly method?: unknown, readonly params?: unknown, readonly mapResult?: unknown }
+
+const isSafeAppsRequestCandidate = (value: unknown): value is SafeAppsRequestCandidate => isRecord(value)
+const isSafeAppsEnvironmentCandidate = (value: unknown): value is SafeAppsEnvironmentCandidate => isRecord(value)
+const isSafeAppsCompatibilityCandidate = (value: unknown): value is SafeAppsCompatibilityCandidate => isRecord(value)
+const isSafeAppsCommandCandidate = (value: unknown): value is SafeAppsCommandCandidate => isRecord(value)
+
+function parseSafeAppsMessageEvent(event: Event): SafeAppsMessageEvent | undefined {
+	if (!('data' in event) || !('origin' in event) || !('source' in event) || typeof event.origin !== 'string') return undefined
+	return { data: event.data, origin: event.origin, source: event.source }
+}
+
+function parseSafeAppsRequest(data: unknown): ParsedSafeAppsRequest | undefined {
+	if (!isSafeAppsRequestCandidate(data) || typeof data.id !== 'string') return undefined
+	// The SDK envelope distinguishes Safe Apps requests from unrelated page postMessage protocols.
+	if (!isSafeAppsEnvironmentCandidate(data.env)) return undefined
+	if (typeof data.env.sdkVersion !== 'string' || !/^[1-9][0-9]*\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/.test(data.env.sdkVersion)) {
+		return { id: data.id, error: 'Safe Apps env.sdkVersion must be a supported semantic version.' }
+	}
+	if (typeof data.method !== 'string') return { id: data.id, error: 'Safe Apps method must be a string.' }
+	return { id: data.id, request: { id: data.id, method: data.method, ...(data.params === undefined ? {} : { params: data.params }) } }
+}
+
+function parseSafeAppsCompatibility(value: unknown) {
+	if (!isSafeAppsCompatibilityCandidate(value) || typeof value.enabled !== 'boolean') return undefined
+	return { enabled: value.enabled }
+}
+
+async function executeSafeAppsCommand(command: unknown, requestEthereum: EthereumRequest): Promise<unknown> {
+	if (!isSafeAppsCommandCandidate(command) || (command.kind !== 'result' && command.kind !== 'ethereumRequest')) throw new Error('Interceptor returned an invalid Safe Apps command.')
+	if (command.kind === 'result') return command.value
+	if (typeof command.method !== 'string' || !Array.isArray(command.params) || (command.mapResult !== 'passthrough' && command.mapResult !== 'safeTxHash')) throw new Error('Interceptor returned an invalid Safe Apps Ethereum request.')
+	const result = await requestEthereum({ method: command.method, params: command.params })
+	if (command.mapResult === 'passthrough') return result
+	if (typeof result !== 'string') throw new Error('Interceptor returned an invalid transaction hash.')
+	return { safeTxHash: result }
+}
+
+function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (request: SafeAppsRequest) => Promise<unknown>) {
+	let enabled: boolean | undefined
+	let enablementGeneration = 0
+	const pendingRequests: { readonly parsedRequest: ParsedSafeAppsRequest, readonly origin: string }[] = []
+	const answerRequest = (parsedRequest: ParsedSafeAppsRequest, origin: string) => {
+		if ('error' in parsedRequest) {
+			windowObject.postMessage({ id: parsedRequest.id, success: false, error: parsedRequest.error, version: SAFE_APPS_RESPONSE_VERSION }, origin)
+			return
+		}
+		const request = parsedRequest.request
+		const requestEnablementGeneration = enablementGeneration
+		void requestSafeApps(request).then(
+			(data) => {
+				if (!enabled || requestEnablementGeneration !== enablementGeneration) return
+				windowObject.postMessage({ id: request.id, success: true, data, version: SAFE_APPS_RESPONSE_VERSION }, origin)
+			},
+			(error: unknown) => {
+				if (!enabled || requestEnablementGeneration !== enablementGeneration) return
+				windowObject.postMessage({ id: request.id, success: false, error: error instanceof Error ? error.message : 'Safe Apps request failed.', version: SAFE_APPS_RESPONSE_VERSION }, origin)
+			},
+		)
+	}
+	const onMessage = (event: Event) => {
+		const messageEvent = parseSafeAppsMessageEvent(event)
+		if (messageEvent === undefined) return
+		if (messageEvent.source !== windowObject || messageEvent.origin !== windowObject.location.origin) return
+		const parsedRequest = parseSafeAppsRequest(messageEvent.data)
+		if (parsedRequest === undefined) return
+		if (enabled === undefined) {
+			if (pendingRequests.length >= SAFE_APPS_PENDING_REQUEST_LIMIT) {
+				windowObject.postMessage({ id: parsedRequest.id, success: false, error: 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.', version: SAFE_APPS_RESPONSE_VERSION }, messageEvent.origin)
+				return
+			}
+			pendingRequests.push({ parsedRequest, origin: messageEvent.origin })
+			return
+		}
+		if (enabled) answerRequest(parsedRequest, messageEvent.origin)
+	}
+	windowObject.addEventListener('message', onMessage)
+	return {
+		setEnabled(nextEnabled: boolean) {
+			if (enabled !== nextEnabled) enablementGeneration += 1
+			enabled = nextEnabled
+			const queuedRequests = pendingRequests.splice(0)
+			if (nextEnabled) {
+				for (const { parsedRequest, origin } of queuedRequests) answerRequest(parsedRequest, origin)
+			}
+		},
+		dispose() {
+			pendingRequests.splice(0)
+			windowObject.removeEventListener('message', onMessage)
+		},
+	}
+}
+
 const METAMASK_ERROR_USER_REJECTED_REQUEST = 4001
 const METAMASK_ERROR_PROVIDER_DISCONNECTED = 4900
 const METAMASK_ERROR_BLANKET_ERROR = -32603
@@ -66,6 +186,7 @@ const INTERNAL_BACKGROUND_METHODS = [
 	'connected_to_signer',
 	'eth_accounts_reply',
 	'InterceptorError',
+	'safe_apps_request',
 	'signer_chainChanged',
 	'signer_reply',
 	'wallet_switchEthereumChain_reply',
@@ -512,6 +633,10 @@ class InterceptorMessageListener {
 	private connected = false
 	private requestId = 0
 	private metamaskCompatibilityMode = false
+	private readonly safeAppsBridge = createSafeAppsBridge(inpageWindow, async (request) => {
+		const command = await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [{ method: request.method, ...(request.params === undefined ? {} : { params: request.params }) }] })
+		return await executeSafeAppsCommand(command, async (ethereumRequest) => await this.WindowEthereumRequest(ethereumRequest))
+	})
 	private signerName: Signer = 'NoSigner'
 	private signerWindowEthereumProvider: WindowEthereum | undefined = undefined
 	private signerWindowEthereumRequest: EthereumRequest | undefined = undefined
@@ -1379,6 +1504,11 @@ class InterceptorMessageListener {
 					for (const callback of this.onChainChangedCallBacks) {
 						callback(reply)
 					}
+					return
+				}
+				case 'safe_apps_compatibility': {
+					const safeAppsCompatibility = parseSafeAppsCompatibility(replyRequest.result)
+					if (safeAppsCompatibility !== undefined) this.safeAppsBridge.setEnabled(safeAppsCompatibility.enabled)
 					return
 				}
 				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner()

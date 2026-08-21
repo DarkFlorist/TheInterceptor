@@ -87,6 +87,7 @@ export const InpageScriptCallBack = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('connect'), result: funtypes.ReadonlyTuple(EthereumQuantity) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('accountsChanged'), result: funtypes.ReadonlyArray(EthereumAddress) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('chainChanged'), result: EthereumQuantity }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('safe_apps_compatibility'), result: funtypes.ReadonlyObject({ enabled: funtypes.Boolean }) }),
 )
 
 export type GetSimulationStackReply = funtypes.Static<typeof GetSimulationStackReply>
@@ -109,6 +110,15 @@ const WalletCapabilities = funtypes.ReadonlyRecord(
 const WalletCapabilitiesReply = funtypes.Intersect(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getCapabilities') }),
 	funtypes.ReadonlyObject({ result: WalletCapabilities }),
+)
+const SafeAppsRequestCommand = funtypes.Union(
+	funtypes.ReadonlyObject({ kind: funtypes.Literal('result'), value: funtypes.Unknown }),
+	funtypes.ReadonlyObject({
+		kind: funtypes.Literal('ethereumRequest'),
+		method: funtypes.String,
+		params: funtypes.ReadonlyArray(funtypes.Unknown),
+		mapResult: funtypes.Union(funtypes.Literal('passthrough'), funtypes.Literal('safeTxHash')),
+	}),
 )
 const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBlockByNumber'), result: GetBlockReturn }),
@@ -147,6 +157,7 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_simulateV1'), result: EthSimulateV1Result }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getFilterChanges'), result: EthGetLogsResponse }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getFilterLogs'), result: EthGetLogsResponse }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('safe_apps_request'), result: SafeAppsRequestCommand }),
 )
 
 type SubscriptionReturnValue = funtypes.Static<typeof SubscriptionReturnValue>
@@ -700,6 +711,7 @@ export const ChangeSettings = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyPartial({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
+		safeAppsCompatibilityMode: funtypes.Boolean,
 	})
 })
 
@@ -828,6 +840,7 @@ const SettingsOpenedReply = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
+		safeAppsCompatibilityMode: funtypes.Boolean,
 		activeRpcNetwork: RpcNetwork,
 		rpcEntries: RpcEntries,
 	})

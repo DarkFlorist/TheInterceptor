@@ -21,6 +21,10 @@ import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
+import { safeAppsCompatibilityCoordinator } from './safeAppsCompatibilityCoordinator.js'
+import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
+
+export { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 
 function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
@@ -85,8 +89,6 @@ export async function withSuppressedUnscopedConnectionEventsForSocketAsync<T>(so
 	}
 }
 
-export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled'
-
 type VerifyAccessOptions = {
 	readonly ignoreConnectionApproval?: boolean
 }
@@ -139,38 +141,6 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 			})
 		}
 	}
-}
-
-export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : ApprovalState {
-	for (const web of websiteAccess) {
-		if (web.website.websiteOrigin === websiteOrigin) {
-			if (web.interceptorDisabled) return 'interceptorDisabled'
-			if (web.access === true) return 'hasAccess'
-			if (web.access === false) return 'noAccess'
-			return 'askAccess'
-		}
-	}
-	return 'askAccess'
-}
-
-export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: AddressBookEntry) : ApprovalState {
-	for (const web of websiteAccess) {
-		if (web.website.websiteOrigin === websiteOrigin) {
-			if (web.interceptorDisabled) return 'interceptorDisabled'
-			if (web.access === false) return 'noAccess'
-			if (web.access !== true) return 'askAccess'
-			if (web.addressAccess !== undefined) {
-				for (const addressAccess of web.addressAccess) {
-					if (addressAccess.address === address.address) {
-						return addressAccess.access ? 'hasAccess' : 'noAccess'
-					}
-				}
-			}
-			if (address.askForAddressAccess === false) return 'hasAccess'
-			return 'askAccess'
-		}
-	}
-	return 'askAccess'
 }
 
 function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : readonly WebsiteAddressAccess[] {
@@ -230,7 +200,9 @@ function connectToPort(
 	settings: Settings,
 	connectWithActiveAddress: bigint | undefined,
 ): true {
+	const wasApproved = getConnectionDetails(websiteTabConnections, socket)?.approved === true
 	setWebsitePortApproval(websiteTabConnections, socket, true)
+	if (!wasApproved) safeAppsCompatibilityCoordinator.connectionApproved(websiteTabConnections, socket)
 	if (!shouldSendUnscopedConnectionEvents(socket)) return true
 	sendProviderConnectionEventsToPort(websiteTabConnections, socket, settings, connectWithActiveAddress === undefined ? [] : [connectWithActiveAddress])
 	return true
@@ -260,6 +232,7 @@ function disconnectFromPort(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 ): false {
+	safeAppsCompatibilityCoordinator.connectionDisconnected(websiteTabConnections, socket)
 	setWebsitePortApproval(websiteTabConnections, socket, false)
 	// Account access can be revoked without the provider losing chain connectivity. Notify account listeners before the legacy disconnect event so dapps clear stale account state.
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: [] })
@@ -455,6 +428,7 @@ export async function updateWebsiteApprovalAccesses(
 		if (throwOnError) throw error
 		await reportUnexpectedError(error)
 	}
+	await safeAppsCompatibilityCoordinator.refreshApprovedPorts(websiteTabConnections)
 	const iconRefreshPromises = [...iconRefreshTargets.values()].map(({ tabId, websiteOrigin }) =>
 		updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, popupRefreshGeneration)
 	)
