@@ -442,7 +442,11 @@
 	}
 }
 
-@media screen and (max-width: 220px) {
+@media screen and (max-width: 360px) {
+	.address-book-sidebar .menu {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
 	.address-book-entry-media {
 		flex-direction: column;
 		gap: 0.5rem;
@@ -678,7 +682,7 @@
 	grid-template-columns: auto auto;
 	justify-content: center;
 	column-gap: 12px;
-	color: var(--primary-color);
+	color: var(--accent-color);
 	font-weight: 650;
 	text-align: center;
 }
@@ -730,12 +734,12 @@ strong { color: inherit }
 .btn:not(:disabled):focus { --btn-outline: 1px solid var(--s-fg) }
 
 /* Primary Button */
-.btn--primary { --btn-bg-color: var(--primary-color) }
-.btn--primary:not(:disabled):hover { --btn-saturation: 1.5 }
+.btn--primary { --btn-bg-color: var(--primary-action-color) }
+.btn--primary:not(:disabled):hover { --btn-bg-color: var(--highlighted-primary-action-color); --btn-brightness: 1; --btn-saturation: 1 }
 
 /* Danger Button */
-.btn--destructive { --btn-bg-color: var(--negative-color) }
-.btn--destructive:not(:disabled):hover { --btn-saturation: 1.5 }
+.btn--destructive { --btn-bg-color: var(--destructive-action-color) }
+.btn--destructive:not(:disabled):hover { --btn-bg-color: var(--highlighted-destructive-action-color); --btn-brightness: 1; --btn-saturation: 1 }
 
 .btn--outline {
 	--btn-bg-color: transparent;
@@ -921,7 +925,7 @@ summary:focus {
 .text-input > input::placeholder { color: transparent; }
 
 .text-input > input:where(:disabled, :read-only) { --text-color: var(--border-color) }
-.text-input > input:where(:invalid) { --text-color: var(--negative-color) }
+.text-input > input:where(:invalid) { --text-color: var(--danger-color) }
 
 :where(.text-input:has(input) > span) {
 	grid-area: 1 / span 2;
@@ -937,8 +941,8 @@ summary:focus {
 }
 
 .disclosure {
-	border: 1px dashed var(--negative-color);
-	color: var(--negative-color);
+	border: 1px dashed var(--danger-color);
+	color: var(--danger-color);
 	padding: 1rem;
 	border-radius: 6px;
 }
@@ -1050,4 +1054,31 @@ fieldset label:has([type=radio]:checked):before {
 	border-radius: 0.25rem;
 	padding: 0.5rem;
 	align-items: start;
+}
+
+@media screen and (max-width: 320px) {
+	.rpc-summary {
+		--grid-cols: minmax(0, 1fr);
+		--gap-y: 0.5rem;
+	}
+
+	.rpc-summary > .actions {
+		justify-self: start;
+	}
+
+	.key-value-pair {
+		--grid-cols: minmax(0, 1fr);
+		width: 100%;
+	}
+
+	.key-value-pair dt,
+	.key-value-pair dd {
+		justify-self: stretch;
+		text-align: left;
+	}
+
+	.key-value-pair dd {
+		overflow-wrap: anywhere;
+		padding-bottom: 0.25rem;
+	}
 }

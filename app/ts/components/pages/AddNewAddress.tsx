@@ -122,6 +122,7 @@ function NameInput({ nameInput, setNameInput, disabled }: NameInputParams) {
 	return <input
 		class = 'input address-editor-name-input'
 		type = 'text'
+		aria-label = 'Name'
 		value = { nameInput }
 		onInput = { e => setNameInput((e.target as HTMLInputElement).value) }
 		maxLength = { MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH }
@@ -134,18 +135,20 @@ type AddressInputParams = {
 	disabled: boolean
 	addressInput: string | undefined
 	setAddress: (input: string) => void
+	ariaLabel?: string
 }
 
-function AddressInput({ disabled, addressInput, setAddress }: AddressInputParams) {
+function AddressInput({ disabled, addressInput, setAddress, ariaLabel = 'Address' }: AddressInputParams) {
 	return <textarea
 		disabled = { disabled }
 		class = 'input address-editor-address-input'
 		rows = { 1 }
 		spellcheck = { false }
+		aria-label = { ariaLabel }
 		value = { addressInput }
 		placeholder = { '0x0...' }
 		onInput = { e => setAddress(e.currentTarget.value.replaceAll('\n', '').replaceAll('\r', '')) }
-		style = { addressInput === undefined || isAddress(addressInput.trim()) ? undefined : 'color: var(--negative-color);' }
+		style = { addressInput === undefined || isAddress(addressInput.trim()) ? undefined : 'color: var(--danger-color);' }
 	/>
 }
 
@@ -170,11 +173,12 @@ function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 	return <input
 		class = 'input address-editor-abi-input'
 		type = 'text'
+		aria-label = 'ABI'
 		value = { abiInput }
 		placeholder = { 'no abi' }
 		onInput = { e => setAbiInput(e.currentTarget.value) }
 		disabled = { disabled }
-		style = { abiInput === undefined || isValidAbi(abiInput.trim()) ? undefined : 'color: var(--negative-color);' }
+		style = { abiInput === undefined || isValidAbi(abiInput.trim()) ? undefined : 'color: var(--danger-color);' }
 	/>
 }
 

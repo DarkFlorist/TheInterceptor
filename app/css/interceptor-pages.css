@@ -89,13 +89,13 @@ header:has(form[role='search']) h1 {
 }
 
 .simulation-stack-page-clear {
-	--btn-outline: 1px solid color-mix(in srgb, var(--negative-color) 50%, transparent);
-	--btn-text-color: var(--negative-color);
+	--btn-outline: 1px solid color-mix(in srgb, var(--danger-color) 50%, transparent);
+	--btn-text-color: var(--danger-color);
 	flex: 0 0 auto;
 }
 
 .simulation-stack-page-clear:not(:disabled):hover {
-	--btn-bg-color: var(--negative-dim-color);
+	--btn-bg-color: var(--danger-dim-color);
 	--btn-text-color: var(--text-color);
 }
 
@@ -214,7 +214,7 @@ header:has(form[role='search']) h1 {
 	line-break: anywhere;
 }
 .autosizing-input:focus-within {
-	outline-color: var(--negative-color);
+	outline-color: var(--danger-color);
 }
 .autosizing-span,
 .autosizing-label {
@@ -251,7 +251,7 @@ header:has(form[role='search']) h1 {
 	padding-inline: 2px;
 }
 .autosizing-label .autosizing-input:invalid {
-	outline-color: var(--negative-color);
+	outline-color: var(--danger-color);
 }
 .autosizing-input:focus {
 	outline: none;
@@ -262,7 +262,7 @@ header:has(form[role='search']) h1 {
 
 .inline-card {
 	--bg-color: transparent;
-	--button-color-hilite: white;
+	--highlighted-inline-action-color: white;
 	--bg-inline-padding: 4px;
 	--bg-block-padding: 1px;
 	--image-size: 1em;
@@ -316,7 +316,7 @@ header:has(form[role='search']) h1 {
 		:focus-within > &, :hover > & { opacity: 0 }
 	}
 
-	> [role=menu] {
+	> .inline-card-actions {
 		background: var(--bg-status-color, var(--bg-color));
 		display: inline-grid;
 		grid-area: start / start / end / end;
@@ -329,7 +329,7 @@ header:has(form[role='search']) h1 {
 		opacity: 0;
 		:hover > &, :focus-within > & { opacity: 1 }
 
-		> button {
+		> :is(button, .inline-card-static-action) {
 			font: inherit;
 			appearance: none;
 			background: transparent;
@@ -340,8 +340,9 @@ header:has(form[role='search']) h1 {
 			display: grid;
 			grid-template-columns: minmax(0, min-content) 1fr min-content;
 			align-items: baseline;
-			cursor: pointer;
 			pointer-events: all;
+
+			&:is(button) { cursor: pointer; }
 
 			&:is(button + *) { margin-left: 0.25em }
 
@@ -352,7 +353,7 @@ header:has(form[role='search']) h1 {
 
 			> :has(svg):has(span) {
 				font-size: 0.9em;
-				background: var(--button-color);
+				background: var(--inline-action-color);
 				color: var(--text-color);
 				white-space: nowrap;
 				border: 0 none;
@@ -375,7 +376,7 @@ header:has(form[role='search']) h1 {
 
 				&:is(:is(:hover,:focus) > *) {
 					color: black;
-					background: var(--button-color-hilite);
+					background: var(--highlighted-inline-action-color);
 					outline: none;
 
 					&:is([aria-label="Spell-out actions"] *) {
@@ -464,7 +465,7 @@ header:has(form[role='search']) h1 {
 		}
 	}
 
-	> :has(data ~ button) {
+	> :has(data ~ :is(button, .multiline-card-static-action)) {
 		display: inline-grid;
 		align-items: baseline;
 		grid-template-columns: [left] minmax(0, min-content) [right];
@@ -490,7 +491,7 @@ header:has(form[role='search']) h1 {
 		> data {
 			grid-area: top / left / bottom / right;
 
-			&:not(:has(+:disabled)) {
+			&:not(:has(+ :is(:disabled, .multiline-card-static-action))) {
 				.multiline-card:hover &, .multiline-card:focus-within & { visibility: hidden }
 			}
 		}
@@ -520,7 +521,7 @@ header:has(form[role='search']) h1 {
 			}
 
 			> span {
-				background: var(--button-color);
+				background: var(--inline-action-color);
 				color: var(--white-color);
 				font-size: 0.8em;
 				font-weight: 600;
@@ -539,6 +540,10 @@ header:has(form[role='search']) h1 {
 					vertical-align: -0.125em;
 				}
 			}
+		}
+
+		> .multiline-card-static-action {
+			grid-area: top / left / bottom / right;
 		}
 	}
 }
@@ -640,9 +645,14 @@ header:has(form[role='search']) h1 {
 }
 
 .btn.is-danger {
-  background-color: var(--negative-color);
-  border-color: transparent;
-  color: var(--white-color);
+	background-color: var(--destructive-action-color);
+	border-color: transparent;
+	color: var(--white-color);
+}
+
+.btn.is-danger:not(:disabled):hover {
+	background-color: var(--highlighted-destructive-action-color);
+	--btn-brightness: 1;
 }
 
 .dropdown-chevron {
@@ -676,8 +686,41 @@ input[type="number"]:focus {
 }
 
 .btn.is-primary {
-	background-color: var(--primary-color);
+	background-color: var(--primary-action-color);
 	border-color: transparent;
+	color: var(--white-color);
+}
+
+.btn.is-primary:not(:disabled):hover {
+	background-color: var(--highlighted-primary-action-color);
+	--btn-brightness: 1;
+}
+
+.btn.is-primary:not(:disabled):active,
+.btn.is-primary.is-active {
+	background-color: var(--highlighted-primary-action-color);
+	color: var(--white-color);
+}
+
+.button.is-primary.is-danger {
+	background-color: var(--destructive-action-color);
+}
+
+.button.is-primary.is-danger:not(:disabled):hover {
+	background-color: var(--highlighted-destructive-action-color);
+}
+
+.button.is-primary.is-danger:not(:disabled):active,
+.button.is-primary.is-danger.is-active,
+.button.is-primary.is-danger.is-hovered {
+	background-color: var(--highlighted-destructive-action-color);
+	color: var(--white-color);
+}
+
+.button.is-primary.is-danger[disabled],
+fieldset[disabled] .button.is-primary.is-danger {
+	background-color: var(--destructive-action-color);
+	border-color: var(--destructive-action-color);
 	color: var(--white-color);
 }
 
@@ -686,5 +729,27 @@ input[type="number"]:focus {
 	.popup-data-reveal,
 	.popup-data-reveal-inline {
 		animation: none;
+	}
+}
+
+@media screen and (max-width: 400px) {
+	.responsive-notification .media {
+		display: none;
+	}
+
+	.responsive-notification-details {
+		display: block;
+		min-width: 0;
+	}
+
+	.responsive-notification-details summary {
+		color: var(--text-color);
+		cursor: pointer;
+		font-weight: 600;
+	}
+
+	.responsive-notification-details .paragraph {
+		color: var(--text-color);
+		margin-top: 0.5rem;
 	}
 }
