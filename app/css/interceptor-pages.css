@@ -491,7 +491,7 @@ header:has(form[role='search']) h1 {
 		> data {
 			grid-area: top / left / bottom / right;
 
-			&:not(:has(+:disabled)) {
+			&:not(:has(+ :is(:disabled, .multiline-card-static-action))) {
 				.multiline-card:hover &, .multiline-card:focus-within & { visibility: hidden }
 			}
 		}

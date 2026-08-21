@@ -485,6 +485,16 @@ svg[role="img"] {
 }
 
 @container (max-width: 280px) {
+	.address-editor-primary-identity {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.address-editor-address-icon {
+		justify-content: start;
+		min-height: 0;
+		padding-top: 0;
+	}
+
 	.address-editor-identity-controls {
 		grid-template-columns: minmax(0, 1fr);
 	}
@@ -1263,6 +1273,53 @@ html, body {
 
 .responsive-notification-details {
 	display: none;
+}
+
+.error-notification {
+	align-items: flex-start;
+	display: flex;
+	gap: 10px;
+	padding: 10px;
+}
+
+@media screen and (max-width: 320px) {
+	.error-notification {
+		flex-direction: column;
+	}
+
+	.failed-transaction-header {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.failed-transaction-header > .card-header-icon,
+	.failed-transaction-header > .card-header-title,
+	.failed-transaction-header > .card-header-website {
+		box-sizing: border-box;
+		justify-content: flex-start;
+		margin: 0;
+		max-width: 100%;
+		padding: 0.5rem 0.75rem;
+		width: 100%;
+	}
+
+	.failed-transaction-header > .card-header-title {
+		overflow-wrap: anywhere;
+		white-space: normal !important;
+	}
+
+	.failed-transaction-header > .card-header-website {
+		border-top: 1px solid var(--layout-line-color);
+	}
+
+	.failed-transaction-header .website-origin-text {
+		align-items: flex-start;
+	}
+
+	.failed-transaction-header :is(.website-origin-text-origin, .website-origin-text-title) {
+		overflow-wrap: anywhere;
+		white-space: normal;
+	}
 }
 
 .input:not([type='checkbox']):disabled, input:not([type='checkbox'])[disabled] {

@@ -442,7 +442,11 @@
 	}
 }
 
-@media screen and (max-width: 220px) {
+@media screen and (max-width: 360px) {
+	.address-book-sidebar .menu {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
 	.address-book-entry-media {
 		flex-direction: column;
 		gap: 0.5rem;
@@ -1050,4 +1054,31 @@ fieldset label:has([type=radio]:checked):before {
 	border-radius: 0.25rem;
 	padding: 0.5rem;
 	align-items: start;
+}
+
+@media screen and (max-width: 320px) {
+	.rpc-summary {
+		--grid-cols: minmax(0, 1fr);
+		--gap-y: 0.5rem;
+	}
+
+	.rpc-summary > .actions {
+		justify-self: start;
+	}
+
+	.key-value-pair {
+		--grid-cols: minmax(0, 1fr);
+		width: 100%;
+	}
+
+	.key-value-pair dt,
+	.key-value-pair dd {
+		justify-self: stretch;
+		text-align: left;
+	}
+
+	.key-value-pair dd {
+		overflow-wrap: anywhere;
+		padding-bottom: 0.25rem;
+	}
 }

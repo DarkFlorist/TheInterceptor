@@ -272,7 +272,7 @@ function FailedTransactionPreviewDetails({
 	const gasLimit = request?.gas
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-		<header class = 'card-header'>
+		<header class = 'card-header failed-transaction-header'>
 			<div class = 'card-header-icon unset-cursor'>
 				<span class = 'icon'>
 					<img src = '../img/error-icon.svg' width = '24' height = '24'/>

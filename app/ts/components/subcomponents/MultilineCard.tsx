@@ -126,7 +126,7 @@ type TextActionProps = {
 
 const TextAction = (props: TextActionProps) => {
 	const DisplayText = props.textNode
-	if (props.onClick === undefined) return <span class = 'multiline-card-static-action'><DisplayText /></span>
+	if (props.onClick === undefined) return <span class = 'multiline-card-static-action' aria-hidden = 'true'></span>
 	const ActionIcon = props.buttonIcon
 
 	return (

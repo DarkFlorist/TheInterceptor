@@ -65,6 +65,8 @@ describe('UI audit fixes', () => {
 
 		const css = await readInterceptorAppCss()
 		assert.match(css, /\.address-editor-identity-controls\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/)
+		assert.match(css, /@container \(max-width: 280px\)[\s\S]*?\.address-editor-primary-identity\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/)
+		assert.match(css, /@container \(max-width: 280px\)[\s\S]*?\.address-editor-address-icon\s*\{[\s\S]*?padding-top:\s*0;/)
 		assert.match(css, /@container \(max-width: 280px\)[\s\S]*?\.address-editor-identity-controls\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/)
 		assert.match(css, /@container \(max-width: 280px\)[\s\S]*?\.address-editor-address-field\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/)
 		assert.match(css, /\.address-editor-modal\s*\{[\s\S]*?max-width:\s*min\(468px, calc\(100% - 32px\)\);/)
@@ -89,6 +91,11 @@ describe('UI audit fixes', () => {
 			assert.equal(buttons[0]?.getAttribute?.('tabindex'), null)
 			const actionGroups = collectElements(dom.document.body, 'span').filter((element) => element.getAttribute?.('role') === 'group')
 			assert.equal(actionGroups.length, 2)
+			const renderedText = dom.document.body.textContent
+			assert.equal(renderedText.split('Static label').length - 1, 1)
+			assert.equal(renderedText.split('Static note').length - 1, 1)
+			const css = await readInterceptorAppCss()
+			assert.match(css, /&:not\(:has\(\+ :is\(:disabled, \.multiline-card-static-action\)\)\)\s*\{/)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()
@@ -104,5 +111,22 @@ describe('UI audit fixes', () => {
 		assert.match(css, /@media screen and \(max-width: 400px\)[\s\S]*?\.responsive-notification \.media\s*\{[\s\S]*?display:\s*none;/)
 		assert.match(css, /\.responsive-notification-details\s*\{[\s\S]*?display:\s*block;/)
 		assert.match(css, /\.responsive-notification-details summary\s*\{[\s\S]*?color:\s*var\(--text-color\);/)
+	})
+
+	test('stacks dense content before it overflows at narrow widths', async () => {
+		const settingsSource = await Bun.file('app/ts/components/pages/SettingsView.tsx').text()
+		const confirmSource = await Bun.file('app/ts/components/pages/ConfirmTransaction.tsx').text()
+		const errorSource = await Bun.file('app/ts/components/subcomponents/Error.tsx').text()
+		assert.match(settingsSource, /class = 'grid brief rpc-summary'/)
+		assert.match(confirmSource, /class = 'card-header failed-transaction-header'/)
+		assert.match(errorSource, /class = 'notification error-notification'/)
+
+		const css = await readInterceptorAppCss()
+		assert.match(css, /@media screen and \(max-width:\s*360px\)[\s\S]*?\.address-book-sidebar \.menu\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/)
+		assert.match(css, /@media screen and \(max-width:\s*320px\)[\s\S]*?\.rpc-summary\s*\{[\s\S]*?--grid-cols:\s*minmax\(0, 1fr\);/)
+		assert.match(css, /@media screen and \(max-width:\s*320px\)[\s\S]*?\.key-value-pair\s*\{[\s\S]*?--grid-cols:\s*minmax\(0, 1fr\);/)
+		assert.match(css, /@media screen and \(max-width:\s*320px\)[\s\S]*?\.error-notification\s*\{[\s\S]*?flex-direction:\s*column;/)
+		assert.match(css, /@media screen and \(max-width:\s*320px\)[\s\S]*?\.failed-transaction-header\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/)
+		assert.match(css, /\.failed-transaction-header :is\(\.website-origin-text-origin, \.website-origin-text-title\)\s*\{[\s\S]*?white-space:\s*normal;/)
 	})
 })
