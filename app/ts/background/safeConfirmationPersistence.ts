@@ -11,7 +11,7 @@ import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js
 import { openPopupOrTab } from '../utils/popupOrTab.js'
 import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, createSafeOwnerValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
 import { createSafeExecutionPreSimulationTransaction } from '../safe/safeSimulation.js'
-import { mergeSafeOwnerSignatures, reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
+import { mapSafeTransactionMetadata, mergeSafeOwnerSignatures, reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
 import { isSafeSignerSelectionFailure, validateSafeMessageCoSignature } from './safeConfirmationResolver.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
 import { getSafePendingFlow } from '../safe/safePendingFlow.js'
@@ -168,14 +168,12 @@ async function persistSafeTransaction(
 				}
 			}
 			let updatedSafeMirror = false
-			const updatedOperations = reconciledState.interceptorTransactionStack.operations.map((operation) => {
-				if (operation.type !== 'Transaction' || operation.preSimulationTransaction.safeTransaction?.safeTxHash !== safeSigningRequest.safeTxHash) return operation
+			const stackWithUpdatedSafeMirror = mapSafeTransactionMetadata(reconciledState.interceptorTransactionStack, (safeTransaction) => {
+				if (safeTransaction.safeTxHash !== safeSigningRequest.safeTxHash) return safeTransaction
 				updatedSafeMirror = true
-				return {
-					...operation,
-					preSimulationTransaction: { ...operation.preSimulationTransaction, safeTransaction: persistedStackTransaction },
-				}
+				return persistedStackTransaction
 			})
+			const updatedOperations = stackWithUpdatedSafeMirror.operations
 			const interceptorTransactionStack = updatedSafeMirror || updatedOperations.some((operation) =>
 				operation.type === 'Transaction' && operation.preSimulationTransaction.transactionIdentifier === pendingTransaction.transactionIdentifier
 			)
