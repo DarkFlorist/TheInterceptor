@@ -80,7 +80,11 @@ describe('UI audit fixes', () => {
 		assert.match(frameworkCss, /\.button\.is-danger\.is-outlined:hover,[\s\S]*?background-color:\s*var\(--destructive-action-color\);/)
 		const addAddressSource = await Bun.file('app/ts/components/pages/AddNewAddress.tsx').text()
 		const accessListSource = await Bun.file('app/ts/components/pages/InterceptorAccessList.tsx').text()
+		const configureRpcSource = await Bun.file('app/ts/components/subcomponents/ConfigureRpcConnection.tsx').text()
 		assert.doesNotMatch(`${ addAddressSource }\n${ accessListSource }`, /background-color: var\(--danger-color\)/)
+		assert.match(configureRpcSource, /Remove<\/span><\/button>|<Trash \/> Remove<\/span><\/button>/)
+		assert.doesNotMatch(configureRpcSource, /--(?:btn-)?text-color: var\(--danger-color\)/)
+		assert.match(configureRpcSource, /--btn-text-color: var\(--destructive-action-color\)[\s\S]*?--text-color: var\(--destructive-action-color\)/)
 	})
 
 	test('labels address editor text inputs and applies a single-column narrow layout', async () => {
@@ -96,6 +100,7 @@ describe('UI audit fixes', () => {
 		assert.match(css, /@container \(max-width: 280px\)[\s\S]*?\.address-editor-address-icon\s*\{[\s\S]*?padding-top:\s*0;/)
 		assert.match(css, /@container \(max-width: 280px\)[\s\S]*?\.address-editor-identity-controls\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/)
 		assert.match(css, /@container \(max-width: 280px\)[\s\S]*?\.address-editor-address-field\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/)
+		assert.match(css, /\.address-editor-setting--primary\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) max-content;[\s\S]*?min-width:\s*0;/)
 		assert.match(css, /\.address-editor-modal\s*\{[\s\S]*?max-width:\s*min\(468px, calc\(100% - 32px\)\);/)
 	})
 
@@ -116,12 +121,20 @@ describe('UI audit fixes', () => {
 			const buttons = collectElements(dom.document.body, 'button')
 			assert.equal(buttons.length, 1)
 			assert.equal(buttons[0]?.getAttribute?.('tabindex'), null)
-			const actionGroups = collectElements(dom.document.body, 'span').filter((element) => element.getAttribute?.('role') === 'group')
-			assert.equal(actionGroups.length, 2)
+			const spans = collectElements(dom.document.body, 'span')
+			const actionOverlays = spans.filter((element) => element.getAttribute?.('class') === 'inline-card-actions')
+			assert.equal(actionOverlays.length, 2)
+			const actionGroups = spans.filter((element) => element.getAttribute?.('role') === 'group')
+			assert.equal(actionGroups.length, 1)
+			assert.equal(actionGroups[0]?.getAttribute?.('aria-label'), 'Spell-out actions')
+			const staticOverlays = actionOverlays.filter((element) => element.getAttribute?.('role') === null)
+			assert.equal(staticOverlays.length, 1)
+			assert.equal(staticOverlays[0]?.getAttribute?.('aria-hidden'), true)
 			const renderedText = dom.document.body.textContent
 			assert.equal(renderedText.split('Static label').length - 1, 1)
 			assert.equal(renderedText.split('Static note').length - 1, 1)
 			const css = await readInterceptorAppCss()
+			assert.match(css, /> \.inline-card-actions\s*\{[\s\S]*?display:\s*inline-grid;/)
 			assert.match(css, /&:not\(:has\(\+ :is\(:disabled, \.multiline-card-static-action\)\)\)\s*\{/)
 		} finally {
 			render(null, dom.document.body)

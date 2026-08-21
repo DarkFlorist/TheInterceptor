@@ -33,13 +33,14 @@ export const InlineCard = (props: InlineCardProps) => {
 	}
 
 	const Icon = props.icon
+	const hasAction = !props.noCopy || props.onEditClicked !== undefined
 
 	return (
 		<span class = 'inline-card' role = 'figure' style = { props.style } title = { props.label }>
 			{ props.warningMessage ? <WarningSign message = { props.warningMessage } /> : <></> }
 			<span role = 'img'><Icon /></span>
 			<data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data>
-			<span role = 'group' aria-hidden = { props.nonInteractive } aria-label = { props.noExpandButtons || props.nonInteractive ? undefined : 'Spell-out actions' }>
+			<span class = 'inline-card-actions' role = { hasAction ? 'group' : undefined } aria-hidden = { props.nonInteractive || !hasAction } aria-label = { props.noExpandButtons || props.nonInteractive || !hasAction ? undefined : 'Spell-out actions' }>
 				{ props.nonInteractive ? <>
 					<span role = 'img'><Icon /></span>
 					<span><data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data></span>

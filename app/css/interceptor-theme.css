@@ -690,7 +690,11 @@ svg[role="img"] {
 }
 
 .address-editor-setting--primary {
-	white-space: nowrap;
+	display: grid;
+	flex: 1 1 160px;
+	grid-template-columns: minmax(0, 1fr) max-content;
+	min-width: 0;
+	white-space: normal;
 }
 
 .address-editor-preference-disclosure {

@@ -316,7 +316,7 @@ header:has(form[role='search']) h1 {
 		:focus-within > &, :hover > & { opacity: 0 }
 	}
 
-	> [role=group] {
+	> .inline-card-actions {
 		background: var(--bg-status-color, var(--bg-color));
 		display: inline-grid;
 		grid-area: start / start / end / end;
