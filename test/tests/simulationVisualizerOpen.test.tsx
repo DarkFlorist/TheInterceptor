@@ -92,6 +92,15 @@ function StackVisualizerHookProbe() {
 	return <div>ready</div>
 }
 
+function MainPopupSimulationStateProbe() {
+	const { simVisResults } = useLiveSimulationHomeData({
+		answerMainPopupOpen: true,
+		answerSimulationDataConsumerOpen: true,
+		requestFreshHomeDataOnMount: false,
+	})
+	return <div>{ simVisResults.value.kind }</div>
+}
+
 function CrossTabStackVisualizerHookProbe() {
 	const { tabState } = useLiveSimulationHomeData({
 		answerMainPopupOpen: false,
@@ -189,6 +198,10 @@ function getButtonByText(root: TestDomNode, text: string) {
 	const button = collectElements(root, 'button').find((button) => button.textContent?.replace(/\s+/g, ' ').trim() === text)
 	if (button === undefined) throw new Error(`Expected button with text "${ text }"`)
 	return button
+}
+
+function hasButtonWithAriaLabel(root: TestDomNode, ariaLabel: string) {
+	return collectElements(root, 'button').some((button) => button.getAttribute?.('aria-label') === ariaLabel)
 }
 
 function getParagraphByAriaLabel(root: TestDomNode, ariaLabel: string) {
@@ -317,6 +330,7 @@ function createPreSimulationTransaction(transactionIdentifier: bigint): PreSimul
 function createSerializableSettings(): Settings {
 	return {
 		...settings,
+		simulationMode: true,
 		activeSimulationAddress: undefined,
 		activeRpcNetwork: {
 			...settings.activeRpcNetwork,
@@ -370,12 +384,15 @@ function createSimulatedCompleteVisualizedSimulation(serializableSettings: Setti
 function createStackHomePageUpdate(tabId: number, popupRefreshGeneration: number, iconReason: string, transactionIdentifiers: readonly bigint[] = [1n], numberOfAddressesMadeRich = 0, richList: readonly EnrichedRichListElement[] = []): UpdateHomePage {
 	const update = createHomePageUpdate(tabId, popupRefreshGeneration, iconReason, numberOfAddressesMadeRich, richList)
 	const safeAddress = 0x3000000000000000000000000000000000000003n
-	const serializableSettings = { ...createSerializableSettings(), activeSimulationAddress: safeAddress, simulationMode: false }
+	const safeOwnerAddress = 0x1000000000000000000000000000000000000001n
+	const serializableSettings = { ...createSerializableSettings(), activeSigningSafeAddress: safeAddress, simulationMode: false }
 	return {
 		...update,
 		data: {
 			...update.data,
-			activeAddresses: [{ type: 'safe', name: 'Test Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSimulationSignerAddress: 0x1000000000000000000000000000000000000001n }],
+			tabState: { ...update.data.tabState, signerConnected: true, signerAccounts: [safeOwnerAddress], activeSigningAddress: safeOwnerAddress },
+			activeSigningAddressInThisTab: safeAddress,
+			activeAddresses: [{ type: 'safe', name: 'Test Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSimulationSignerAddress: safeOwnerAddress, safeSignerAddresses: [safeOwnerAddress] }],
 			visualizedSimulatorState: createSimulatedCompleteVisualizedSimulation(serializableSettings, transactionIdentifiers, numberOfAddressesMadeRich),
 			settings: serializableSettings,
 			rpcEntries: [serializableSettings.activeRpcNetwork],
@@ -392,7 +409,29 @@ function createNonSafeStackHomePageUpdate(tabId: number, popupRefreshGeneration:
 		data: {
 			...update.data,
 			activeAddresses: [{ type: 'contact', name: 'Not a Safe', address: nonSafeAddress, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true }],
-			settings: { ...update.data.settings, activeSimulationAddress: nonSafeAddress },
+			activeSigningAddressInThisTab: nonSafeAddress,
+			settings: { ...update.data.settings, activeSigningSafeAddress: undefined },
+		},
+	}
+}
+
+function createSimulationStackHomePageUpdate(tabId: number, popupRefreshGeneration: number, iconReason: string): UpdateHomePage {
+	const update = createStackHomePageUpdate(tabId, popupRefreshGeneration, iconReason)
+	const simulationAddress = 0x4000000000000000000000000000000000000004n
+	const simulationSettings = {
+		...update.data.settings,
+		simulationMode: true,
+		activeSimulationAddress: simulationAddress,
+		activeSigningSafeAddress: undefined,
+	}
+	return {
+		...update,
+		data: {
+			...update.data,
+			activeAddresses: [{ type: 'contact', name: 'Simulation address', address: simulationAddress, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true }],
+			activeSigningAddressInThisTab: undefined,
+			settings: simulationSettings,
+			visualizedSimulatorState: createSimulatedCompleteVisualizedSimulation(simulationSettings),
 		},
 	}
 }
@@ -566,6 +605,26 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
+	test('main popup hook keeps Safe simulation results without a simulation-mode address', async () => {
+		const dom = installDomMock()
+		const { listeners } = installBrowserMock()
+		try {
+			await act(() => {
+				render(h(MainPopupSimulationStateProbe, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected hook to register a runtime listener')
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(12, 1, 'Safe stack')) }, {}, () => undefined)
+			})
+
+			assert.equal(dom.document.body.textContent, 'simulated')
+		} finally {
+			dom.restore()
+		}
+	})
+
 	test('stack visualizer page shows rich-only state instead of the empty-state dino', async () => {
 		const dom = installDomMock()
 		const { listeners } = installBrowserMock()
@@ -650,18 +709,22 @@ describe('simulation visualizer open replies', () => {
 			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
-				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(13, 1, 'Stack tab')) }, {}, () => undefined)
+				listener({ role: 'all', ...serialize(UpdateHomePage, createSimulationStackHomePageUpdate(13, 1, 'Stack tab')) }, {}, () => undefined)
 			})
 
 			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), true)
 			assert.equal(dom.document.body.textContent?.includes('Import, export, and adjust the simulation stack.'), true)
 			assert.equal(dom.document.body.textContent?.includes('Loading...'), false)
-			assert.equal(hasButtonWithText(dom.document.body, 'Import simulation'), true)
-			assert.equal(hasButtonWithText(dom.document.body, 'Export simulation'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import simulation stack'), true)
+			assert.equal(hasButtonWithText(dom.document.body, 'Export'), true)
 			assert.equal(hasButtonWithText(dom.document.body, 'Clear stack'), true)
-			assert.equal(getButtonByText(dom.document.body, 'Import simulation').getAttribute?.('class')?.includes('is-small') ?? false, false)
-			assert.equal(getButtonByText(dom.document.body, 'Export simulation').getAttribute?.('class')?.includes('is-small') ?? false, false)
+			assert.equal(getButtonByText(dom.document.body, 'Import').getAttribute?.('class')?.includes('is-small') ?? false, false)
+			assert.equal(getButtonByText(dom.document.body, 'Export').getAttribute?.('class')?.includes('is-small') ?? false, false)
 			assert.equal(getButtonByText(dom.document.body, 'Clear stack').getAttribute?.('class')?.includes('is-small') ?? false, false)
+			const headerControls = findElementByClass(dom.document.body, 'nav', 'simulation-stack-page-controls')
+			assert.ok(headerControls)
+			assert.equal(collectElements(headerControls, 'button').length, 3)
+			assert.equal(findElementByClass(dom.document.body, 'nav', 'simulation-stack-page-actions'), undefined)
 			assert.equal(dom.document.body.textContent?.includes('Export Simulation Stack'), false)
 			assert.equal(hasCompactStackCard(dom.document.body), false)
 			const targetRow = findElementById(dom.document.body, 'simulation-stack-transaction-0x1')
@@ -669,6 +732,67 @@ describe('simulation visualizer open replies', () => {
 			assert.equal(targetRow.textContent?.includes('Pending transaction'), true)
 			assert.equal(targetRow.textContent?.includes('Simulate delay'), false)
 			assert.equal(dom.document.body.textContent?.includes('Give me some transactions to munch on!'), false)
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('stack visualizer uses the signing Safe as the visualized address in signing mode', async () => {
+		const dom = installDomMock()
+		const { listeners } = installBrowserMock()
+		const update = createStackHomePageUpdate(13, 1, 'Safe signing stack', [1n], 1)
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+
+			await act(() => {
+				listener({
+					role: 'all',
+					...serialize(UpdateHomePage, {
+						...update,
+						data: { ...update.data, makeCurrentAddressRich: true },
+					}),
+				}, {}, () => undefined)
+			})
+
+			assert.equal(collectElements(dom.document.body, 'p').some((paragraph) => paragraph.getAttribute?.('aria-label') === 'Address being made rich is Test Safe.'), true)
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('stack visualizer remains a Gnosis Safe stack when the current tab cannot resolve the Safe owner', async () => {
+		const dom = installDomMock()
+		const { listeners } = installBrowserMock()
+		const update = createStackHomePageUpdate(13, 1, 'Safe signing stack', [1n], 0)
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+
+			await act(() => {
+				listener({
+					role: 'all',
+					...serialize(UpdateHomePage, {
+						...update,
+						data: {
+							...update.data,
+							activeSigningAddressInThisTab: 0x1000000000000000000000000000000000000001n,
+							tabState: { ...update.data.tabState, signerConnected: false, signerAccounts: [], activeSigningAddress: undefined },
+						},
+					}),
+				}, {}, () => undefined)
+			})
+
+			assert.equal(dom.document.body.textContent?.includes('Gnosis Safe Stack'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import Gnosis Safe stack'), true)
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import simulation stack'), false)
 		} finally {
 			dom.restore()
 		}
@@ -710,7 +834,7 @@ describe('simulation visualizer open replies', () => {
 			const layout = findElementByClass(dom.document.body, 'div', 'simulation-stack-page')
 			assert.ok(layout)
 			assert.equal(getFirstElementChild(layout)?.tagName, 'HEADER')
-			assert.equal(getFirstElementChild(layout)?.textContent?.includes('Simulation Stack'), true)
+			assert.equal(getFirstElementChild(layout)?.textContent?.includes('Gnosis Safe Stack'), true)
 			const layoutChildren = getElementChildren(layout)
 			assert.equal(layoutChildren[1]?.tagName, 'DIV')
 			assert.equal(hasClass(layoutChildren[1], 'simulation-stack-page-body'), true)
@@ -770,7 +894,7 @@ describe('simulation visualizer open replies', () => {
 			const listener = listeners[0]
 			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 			await act(() => {
-				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(19, 1, 'Stack tab')) }, {}, () => undefined)
+				listener({ role: 'all', ...serialize(UpdateHomePage, createSimulationStackHomePageUpdate(19, 1, 'Stack tab')) }, {}, () => undefined)
 			})
 			sentMessages.splice(0)
 
@@ -828,20 +952,60 @@ describe('simulation visualizer open replies', () => {
 			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
-				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(19, 1, 'Stack tab')) }, {}, () => undefined)
+				listener({ role: 'all', ...serialize(UpdateHomePage, createSimulationStackHomePageUpdate(19, 1, 'Stack tab')) }, {}, () => undefined)
 			})
 
 			await act(async () => {
-				await clickElement(getButtonByText(dom.document.body, 'Export simulation'))
+				await clickElement(getButtonByText(dom.document.body, 'Export'))
 				await new Promise((resolve) => setTimeout(resolve, 0))
 			})
 
 			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestInterceptorSimulationInput'), true)
 			assert.deepStrictEqual(clipboardMock.copiedText, [exportPayload])
 			assert.equal(dom.document.body.textContent?.includes('Copied!'), true)
-			assert.notEqual(getButtonByText(dom.document.body, 'Export simulation').getAttribute?.('disabled'), null)
+			assert.notEqual(getButtonByText(dom.document.body, 'Export').getAttribute?.('disabled'), null)
 		} finally {
 			clipboardMock.restore()
+			dom.restore()
+		}
+	})
+
+	test('stack visualizer hides a simulation export error after switching to Safe mode', async () => {
+		const dom = installDomMock()
+		const exportError = 'Simulation stack export failed.'
+		const { listeners } = installBrowserMock((message) => {
+			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestInterceptorSimulationInput') {
+				return { method: 'popup_requestInterceptorSimulationInput', ok: false, message: exportError }
+			}
+			return undefined
+		})
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+			const simulationUpdate = createSimulationStackHomePageUpdate(26, 1, 'Simulation stack tab')
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, simulationUpdate) }, {}, () => undefined)
+			})
+			await act(async () => {
+				await clickElement(getButtonByText(dom.document.body, 'Export'))
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.equal(dom.document.body.textContent?.includes(exportError), true)
+
+			await act(async () => {
+				listener(serialize(MessageToPopup, {
+					role: 'all',
+					method: 'popup_settingsUpdated',
+					popupRefreshGeneration: 2,
+					data: { ...simulationUpdate.data.settings, simulationMode: false },
+				}), {}, () => undefined)
+				await Promise.resolve()
+			})
+			assert.equal(dom.document.body.textContent?.includes(exportError), false)
+		} finally {
 			dom.restore()
 		}
 	})
@@ -867,28 +1031,22 @@ describe('simulation visualizer open replies', () => {
 			})
 
 			await act(async () => {
-				await clickElement(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions'))
+				await clickElement(getButtonByText(dom.document.body, 'Export'))
 				await new Promise((resolve) => setTimeout(resolve, 0))
 			})
 
 			assert.deepStrictEqual(clipboardMock.copiedText, [safeExportPayload])
 			assert.equal(dom.document.body.textContent?.includes('Copied!'), true)
-			assert.notEqual(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions').getAttribute?.('disabled'), null)
+			assert.notEqual(getButtonByText(dom.document.body, 'Export').getAttribute?.('disabled'), null)
 		} finally {
 			clipboardMock.restore()
 			dom.restore()
 		}
 	})
 
-	test('stack visualizer shows Safe-specific guidance when simulation export is refused', async () => {
+	test('stack visualizer hides simulation import and export in Safe signing mode', async () => {
 		const dom = installDomMock()
-		const exportError = 'Use Copy Gnosis Safe transactions for those proposals, or remove them before using Export simulation.'
-		const { listeners } = installBrowserMock((message) => {
-			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestInterceptorSimulationInput') {
-				return { method: 'popup_requestInterceptorSimulationInput', ok: false, message: exportError }
-			}
-			return undefined
-		})
+		const { listeners } = installBrowserMock()
 		try {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
@@ -899,12 +1057,10 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(20, 1, 'Stack tab')) }, {}, () => undefined)
 			})
-			await act(async () => {
-				await clickElement(getButtonByText(dom.document.body, 'Export simulation'))
-				await new Promise((resolve) => setTimeout(resolve, 0))
-			})
-
-			assert.equal(dom.document.body.textContent?.includes(exportError), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import simulation stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export simulation stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import Gnosis Safe stack'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export Gnosis Safe stack'), true)
 		} finally {
 			dom.restore()
 		}
@@ -930,23 +1086,18 @@ describe('simulation visualizer open replies', () => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(21, 1, 'Stack tab')) }, {}, () => undefined)
 			})
 			await act(async () => {
-				await clickElement(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions'))
+				await clickElement(getButtonByText(dom.document.body, 'Export'))
 				await new Promise((resolve) => setTimeout(resolve, 0))
 			})
 
 			assert.equal(dom.document.body.textContent?.includes(exportError), true)
 
-			await act(() => {
-				listener({ role: 'all', ...serialize(UpdateHomePage, createNonSafeStackHomePageUpdate(21, 2, 'Non-Safe stack tab')) }, {}, () => undefined)
-			})
-
-			assert.equal(dom.document.body.textContent?.includes(exportError), false)
 		} finally {
 			dom.restore()
 		}
 	})
 
-	test('stack visualizer applies the Safe signing-mode rule to both import and copy actions', async () => {
+	test('stack visualizer shows Safe actions only when signing with an active Safe', async () => {
 		const dom = installDomMock()
 		const { listeners } = installBrowserMock(() => undefined)
 		try {
@@ -958,41 +1109,43 @@ describe('simulation visualizer open replies', () => {
 			const update = createStackHomePageUpdate(23, 1, 'Stack tab')
 			const activeSafe = update.data.activeAddresses[0]
 			if (activeSafe?.type !== 'safe') throw new Error('Expected a Safe fixture')
+			const contactWithSafeAddress = { type: 'contact', name: 'Safe address contact', address: activeSafe.address, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: true } as const
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createNonSafeStackHomePageUpdate(23, 2, 'Non-Safe stack tab')) }, {}, () => undefined)
 			})
 
-			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), false)
-			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), false)
+			assert.equal(dom.document.body.textContent?.includes('Gnosis Safe Stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import Gnosis Safe stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export Gnosis Safe stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import simulation stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export simulation stack'), false)
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), false)
+			assert.equal(dom.document.body.textContent?.includes('Select simulation mode or a Gnosis Safe to view a transaction stack.'), true)
 
 			await act(() => {
-				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, popupRefreshGeneration: 3, data: { ...update.data, activeAddresses: [{ ...activeSafe, safeSimulationSignerAddress: undefined }], hasSafeTransactionsToExport: false } }) }, {}, () => undefined)
+				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, popupRefreshGeneration: 3, data: { ...update.data, activeAddresses: [contactWithSafeAddress, { ...activeSafe, safeSimulationSignerAddress: undefined }], hasSafeTransactionsToExport: false } }) }, {}, () => undefined)
 			})
 
-			assert.equal(hasButtonWithText(dom.document.body, 'Import Gnosis Safe transactions'), true)
-			assert.equal(hasButtonWithText(dom.document.body, 'Copy Gnosis Safe transactions'), true)
-			assert.notEqual(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions').getAttribute?.('disabled'), null)
-			assert.equal(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions').getAttribute?.('title'), 'There are no Gnosis Safe proposals to export on the selected chain.')
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import Gnosis Safe stack'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export Gnosis Safe stack'), true)
+			assert.notEqual(getButtonByText(dom.document.body, 'Export').getAttribute?.('disabled'), null)
+			assert.equal(getButtonByText(dom.document.body, 'Export').getAttribute?.('title'), 'There are no Gnosis Safe proposals to export on the selected chain.')
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, { ...update, popupRefreshGeneration: 4, data: { ...update.data, tabState: { ...update.data.tabState, signerAccounts: [0x9999999999999999999999999999999999999999n] } } }) }, {}, () => undefined)
+			})
+
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import Gnosis Safe stack'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export Gnosis Safe stack'), true)
 		} finally {
 			dom.restore()
 		}
 	})
 
-	test('stack visualizer shows the most recently refused export reason', async () => {
+	test('stack visualizer switches between mutually exclusive Safe and simulation controls', async () => {
 		const dom = installDomMock()
-		const safeExportError = 'The simulation stack has no Safe proposals to export.'
-		const simulationExportError = 'The simulation stack cannot be exported in this state.'
-		const { listeners } = installBrowserMock((message) => {
-			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
-			if (message.method === 'popup_requestSafeStackExport') {
-				return { method: 'popup_requestSafeStackExport', ok: false, message: safeExportError }
-			}
-			if (message.method === 'popup_requestInterceptorSimulationInput') {
-				return { method: 'popup_requestInterceptorSimulationInput', ok: false, message: simulationExportError }
-			}
-			return undefined
-		})
+		const { listeners } = installBrowserMock()
 		try {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
@@ -1003,18 +1156,163 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(22, 1, 'Stack tab')) }, {}, () => undefined)
 			})
-			await act(async () => {
-				await clickElement(getButtonByText(dom.document.body, 'Copy Gnosis Safe transactions'))
-				await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export Gnosis Safe stack'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export simulation stack'), false)
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createSimulationStackHomePageUpdate(22, 2, 'Simulation stack tab')) }, {}, () => undefined)
 			})
-			assert.equal(dom.document.body.textContent?.includes(safeExportError), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export Gnosis Safe stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import Gnosis Safe stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export simulation stack'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import simulation stack'), true)
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('open stack visualizer switches modes immediately when settings change', async () => {
+		const dom = installDomMock()
+		let resolveVisualizationRefresh: ((reply: unknown) => void) | undefined
+		const visualizationRefresh = new Promise<unknown>((resolve) => { resolveVisualizationRefresh = resolve })
+		const { listeners } = installBrowserMock((message) => (
+			typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestCompleteVisualizedSimulation'
+				? visualizationRefresh
+				: undefined
+		))
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+			const safeUpdate = createStackHomePageUpdate(25, 1, 'Safe stack tab')
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, safeUpdate) }, {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent?.includes('Gnosis Safe Stack'), true)
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), true)
+
+			await act(() => {
+				listener(serialize(MessageToPopup, {
+					role: 'all',
+					method: 'popup_settingsUpdated',
+					popupRefreshGeneration: 2,
+					data: { ...safeUpdate.data.settings, simulationMode: true },
+				}), {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent?.includes('Simulation Stack'), true)
+			assert.equal(dom.document.body.textContent?.includes('Gnosis Safe Stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import simulation stack'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import Gnosis Safe stack'), false)
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), false)
+
+			await act(() => {
+				listener(serialize(MessageToPopup, createSimulationStateChangedMessage(safeUpdate.data.visualizedSimulatorState)), {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), false)
+
+			await act(() => {
+				listener({
+					role: 'all',
+					...serialize(UpdateHomePage, {
+						...safeUpdate,
+						homeDataSource: 'cached',
+						popupRefreshGeneration: 3,
+						data: {
+							...safeUpdate.data,
+							settings: { ...safeUpdate.data.settings, simulationMode: true },
+						},
+					}),
+				}, {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent?.includes('Simulation Stack'), true)
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), false)
 
 			await act(async () => {
-				await clickElement(getButtonByText(dom.document.body, 'Export simulation'))
-				await new Promise((resolve) => setTimeout(resolve, 0))
+				resolveVisualizationRefresh?.(undefined)
+				await visualizationRefresh
+				await Promise.resolve()
 			})
-			assert.equal(dom.document.body.textContent?.includes(simulationExportError), true)
-			assert.equal(dom.document.body.textContent?.includes(safeExportError), false)
+			await act(() => {
+				listener(serialize(MessageToPopup, createSimulationStateChangedMessage(createSimulatedCompleteVisualizedSimulation({
+					...safeUpdate.data.settings,
+					simulationMode: true,
+				}))), {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), true)
+
+			await act(() => {
+				listener(serialize(MessageToPopup, {
+					role: 'all',
+					method: 'popup_settingsUpdated',
+					popupRefreshGeneration: 4,
+					data: safeUpdate.data.settings,
+				}), {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent?.includes('Gnosis Safe Stack'), true)
+			assert.equal(dom.document.body.textContent?.includes('Simulation Stack'), false)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import Gnosis Safe stack'), true)
+			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import simulation stack'), false)
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('stack visualizer releases its refresh barrier when the active Safe changes independently', async () => {
+		const dom = installDomMock()
+		let resolveVisualizationRefresh: ((reply: unknown) => void) | undefined
+		const visualizationRefresh = new Promise<unknown>((resolve) => { resolveVisualizationRefresh = resolve })
+		const { listeners } = installBrowserMock((message) => (
+			typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestCompleteVisualizedSimulation'
+				? visualizationRefresh
+				: undefined
+		))
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+			const simulationUpdate = createSimulationStackHomePageUpdate(27, 1, 'Simulation stack tab')
+			const safeSettings = createStackHomePageUpdate(27, 2, 'Safe stack tab').data.settings
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, simulationUpdate) }, {}, () => undefined)
+				listener(serialize(MessageToPopup, {
+					role: 'all',
+					method: 'popup_settingsUpdated',
+					popupRefreshGeneration: 2,
+					data: safeSettings,
+				}), {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), false)
+
+			await act(() => {
+				listener(serialize(MessageToPopup, {
+					role: 'all',
+					method: 'popup_activeSigningAddressChanged',
+					data: {
+						tabId: 27,
+						activeSigningAddress: 0x1000000000000000000000000000000000000001n,
+						activeSigningSafeAddress: 0x4000000000000000000000000000000000000004n,
+					},
+				}), {}, () => undefined)
+			})
+			await act(async () => {
+				resolveVisualizationRefresh?.(undefined)
+				await visualizationRefresh
+				await Promise.resolve()
+			})
+			await act(() => {
+				listener(serialize(MessageToPopup, createSimulationStateChangedMessage(createSimulatedCompleteVisualizedSimulation({
+					...safeSettings,
+					activeSigningSafeAddress: 0x4000000000000000000000000000000000000004n,
+				}))), {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent?.includes('Gnosis Safe Stack'), true)
+			assert.equal(dom.document.body.textContent?.includes('Pending transaction'), true)
 		} finally {
 			dom.restore()
 		}
@@ -1049,7 +1347,7 @@ describe('simulation visualizer open replies', () => {
 			assert.equal(String(firstHeader.getAttribute?.('aria-expanded')), 'false')
 			assert.equal(String(secondHeader.getAttribute?.('aria-expanded')), 'true')
 			assert.equal(countTextOccurrences(dom.document.body.textContent ?? '', 'Original request'), 1)
-			assert.equal(dom.document.body.textContent?.includes('Simulate delay'), true)
+			assert.equal(dom.document.body.textContent?.includes('Simulate delay'), false)
 
 			await act(async () => {
 				await clickElement(secondHeader)
@@ -1057,7 +1355,7 @@ describe('simulation visualizer open replies', () => {
 			assert.equal(String(firstHeader.getAttribute?.('aria-expanded')), 'false')
 			assert.equal(String(secondHeader.getAttribute?.('aria-expanded')), 'false')
 			assert.equal(countTextOccurrences(dom.document.body.textContent ?? '', 'Original request'), 0)
-			assert.equal(dom.document.body.textContent?.includes('Simulate delay'), true)
+			assert.equal(dom.document.body.textContent?.includes('Simulate delay'), false)
 
 			await act(async () => {
 				await clickElement(firstHeader)

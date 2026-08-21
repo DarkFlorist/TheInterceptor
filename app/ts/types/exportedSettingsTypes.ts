@@ -4,6 +4,7 @@ import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory, Optio
 import { AddressBookEntries, ContactEntries } from './addressBookTypes.js'
 import { WebsiteAccessArray } from './websiteAccessTypes.js'
 import { EditEnsNamedHashWindowState, ModifyAddressWindowState } from './visualizer-types.js'
+import { SigningAddressPreferences } from './signerTypes.js'
 
 export type Page = funtypes.Static<typeof Page>
 export const Page = funtypes.Union(
@@ -88,6 +89,23 @@ export const ExportedSettings = funtypes.Union(
 		version: funtypes.Literal('1.4'),
 		settings: funtypes.ReadonlyObject({
 			activeSimulationAddress: OptionalEthereumAddress,
+			rpcNetwork: RpcNetwork,
+			openedPage: Page,
+			useSignersAddressAsActiveAddress: funtypes.Boolean,
+			websiteAccess: WebsiteAccessArray,
+			simulationMode: funtypes.Boolean,
+			addressBookEntries: AddressBookEntries,
+			useTabsInsteadOfPopup: funtypes.Boolean,
+			metamaskCompatibilityMode: funtypes.Boolean,
+		})
+	}),
+	funtypes.ReadonlyObject({
+		...exportedSettingsEnvelopeFields,
+		version: funtypes.Literal('1.5'),
+		settings: funtypes.ReadonlyObject({
+			activeSimulationAddress: OptionalEthereumAddress,
+			activeSigningSafeAddress: OptionalEthereumAddress,
+			signingAddressPreferences: SigningAddressPreferences,
 			rpcNetwork: RpcNetwork,
 			openedPage: Page,
 			useSignersAddressAsActiveAddress: funtypes.Boolean,

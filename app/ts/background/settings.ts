@@ -42,7 +42,8 @@ export const getDefaultBlockExplorer = (): BlockExplorer => ({ apiUrl: 'https://
 export const getWethForChainId = (chainId: bigint) => wethForChainId.get(chainId.toString())
 
 type StartupStorageDefaults = {
-	activeSimulationAddress: Settings['activeSimulationAddress']
+	independentActiveSimulationAddress: Settings['activeSimulationAddress']
+	activeSigningSafeAddress: Settings['activeSigningSafeAddress']
 	openedPageV2: Page
 	useSignersAddressAsActiveAddress: boolean
 	websiteAccess: WebsiteAccessArray
@@ -67,20 +68,23 @@ async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDe
 export async function getSettings() : Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
-	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeSimulationAddress', defaultActiveAddresses[0].address))
+	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('independentActiveSimulationAddress', defaultActiveAddresses[0].address))
+	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeSigningSafeAddress', undefined))
 	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('openedPageV2', defaultPage))
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('useSignersAddressAsActiveAddress', false))
 	const websiteAccessPromise = silenceChromeUnCaughtPromise(getWebsiteAccess())
 	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('simulationMode', defaultSimulationMode))
 	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefault('activeRpcNetwork', defaultRpcs[0]))
-	return {
-		activeSimulationAddress: await activeSimulationAddressPromise,
-		openedPage: await openedPagePromise,
-		useSignersAddressAsActiveAddress: await useSignersAddressAsActiveAddressPromise,
-		websiteAccess: await websiteAccessPromise,
-		activeRpcNetwork: await activeRpcNetworkPromise,
-		simulationMode: await simulationModePromise,
-	}
+	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
+		activeSimulationAddressPromise,
+		activeSigningSafeAddressPromise,
+		openedPagePromise,
+		useSignersAddressAsActiveAddressPromise,
+		websiteAccessPromise,
+		activeRpcNetworkPromise,
+		simulationModePromise,
+	])
+	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
 
 export function getInterceptorDisabledSites(settings: Settings): string[] {
@@ -170,13 +174,33 @@ export async function setUseSignersAddressAsActiveAddress(useSignersAddressAsAct
 	})
 }
 
-export async function changeSimulationMode(changes: { simulationMode: boolean, rpcNetwork?: RpcNetwork, activeSimulationAddress?: EthereumAddress, activeSigningAddress?: EthereumAddress }) {
-	return await browserStorageLocalSet({
+type SimulationModeChanges = {
+	readonly simulationMode: boolean
+	readonly rpcNetwork?: RpcNetwork
+	readonly activeSimulationAddress?: EthereumAddress
+	readonly activeSigningAddress?: EthereumAddress
+	readonly activeSigningSafeAddress?: EthereumAddress
+}
+
+function getSimulationModeStorageUpdate(changes: SimulationModeChanges) {
+	return {
 		simulationMode: changes.simulationMode,
 		...changes.rpcNetwork ? { activeRpcNetwork: changes.rpcNetwork }: {},
-		...'activeSimulationAddress' in changes ? { activeSimulationAddress: changes.activeSimulationAddress }: {},
+		...'activeSimulationAddress' in changes ? { independentActiveSimulationAddress: changes.activeSimulationAddress } : {},
 		...'activeSigningAddress' in changes ? { activeSigningAddress: changes.activeSigningAddress }: {},
-	})
+		...'activeSigningSafeAddress' in changes ? { activeSigningSafeAddress: changes.activeSigningSafeAddress }: {},
+	}
+}
+
+export async function changeSimulationMode(changes: SimulationModeChanges) {
+	return await browserStorageLocalSet(getSimulationModeStorageUpdate(changes))
+}
+
+async function replaceModeAndSigningPreferencesForImport(changes: SimulationModeChanges, signingAddressPreferences: SigningAddressPreferences) {
+	return await signingAddressPreferencesSemaphore.execute(async () => await browserStorageLocalSet({
+		...getSimulationModeStorageUpdate(changes),
+		signingAddressPreferences,
+	}))
 }
 
 const websiteAccessSemaphore = new Semaphore(1)
@@ -222,13 +246,15 @@ export const setMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boo
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
 	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
-	const settings = await getSettings()
+	const [settings, signingAddressPreferences] = await Promise.all([getSettings(), getSigningAddressPreferences()])
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
-		version: '1.4' as const,
+		version: '1.5' as const,
 		exportedDate: exportDate,
 		settings: {
 			activeSimulationAddress: settings.activeSimulationAddress,
+			activeSigningSafeAddress: settings.activeSigningSafeAddress,
+			signingAddressPreferences,
 			openedPage: settings.openedPage,
 			useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
 			websiteAccess: settings.websiteAccess,
@@ -242,23 +268,32 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 }
 
 export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings) {
-	if (exportedSetings.version === '1.3' || exportedSetings.version === '1.4') {
+	// Pre-1.5 exports contain the legacy address shared by signing and simulation. Apply the same explicit default reset as startup rather than heuristically assigning ambiguous state to either independent mode.
+	const defaultActiveAddress = defaultActiveAddresses[0]?.address
+	if (defaultActiveAddress === undefined) throw new Error('Default active address was missing')
+	if (exportedSetings.version === '1.3' || exportedSetings.version === '1.4' || exportedSetings.version === '1.5') {
 		await setPage(exportedSetings.settings.openedPage)
 	}
+	// Safe selection and per-signer preferences resolve through the address book. Make imported entries available before publishing that dependent signing state.
+	if (exportedSetings.version === '1.4' || exportedSetings.version === '1.5') {
+		await updateUserAddressBookEntries(() => exportedSetings.settings.addressBookEntries)
+	}
 	if (exportedSetings.version === '1.0') {
-		await changeSimulationMode({
+		await replaceModeAndSigningPreferencesForImport({
 			simulationMode: exportedSetings.settings.simulationMode,
 			rpcNetwork: defaultRpcs[0],
-			activeSimulationAddress: exportedSetings.settings.activeSimulationAddress,
+			activeSimulationAddress: defaultActiveAddress,
 			activeSigningAddress: undefined,
-		})
+			activeSigningSafeAddress: undefined,
+		}, [])
 	} else {
-		await changeSimulationMode({
+		await replaceModeAndSigningPreferencesForImport({
 			simulationMode: exportedSetings.settings.simulationMode,
 			rpcNetwork: exportedSetings.settings.rpcNetwork,
-			activeSimulationAddress: exportedSetings.settings.activeSimulationAddress,
+			activeSimulationAddress: exportedSetings.version === '1.5' ? exportedSetings.settings.activeSimulationAddress : defaultActiveAddress,
 			activeSigningAddress: undefined,
-		})
+			activeSigningSafeAddress: exportedSetings.version === '1.5' ? exportedSetings.settings.activeSigningSafeAddress : undefined,
+		}, exportedSetings.version === '1.5' ? exportedSetings.settings.signingAddressPreferences : [])
 	}
 	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
 	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
@@ -266,9 +301,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') {
 		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
 	}
-	if (exportedSetings.version === '1.4') {
-		await updateUserAddressBookEntries(() => exportedSetings.settings.addressBookEntries)
-	} else {
+	if (exportedSetings.version !== '1.4' && exportedSetings.version !== '1.5') {
 		await updateUserAddressBookEntries((previousEntries) => {
 			const convertActiveAddressToAddressBookEntry = (info: ActiveAddress): AddressBookEntry => ({ ...info, type: 'contact' as const, useAsActiveAddress: true, entrySource: 'User' as const })
 			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])

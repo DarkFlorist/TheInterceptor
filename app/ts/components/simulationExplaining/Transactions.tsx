@@ -756,7 +756,7 @@ type TokenLogEventParams = {
 }
 
 function TokenLogEvent(params: TokenLogEventParams ) {
-	const style = { color: isPositiveEvent(params.tokenVisualizerResult, params.ourAddressInReferenceFrame) ? 'var(--dim-text-color)' : 'var(--negative-dim-color)' }
+	const style = { color: isPositiveEvent(params.tokenVisualizerResult, params.ourAddressInReferenceFrame) ? 'var(--dim-text-color)' : 'var(--danger-dim-color)' }
 
 	return <>
 		<div class = 'log-cell' style = 'justify-content: right;'>

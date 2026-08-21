@@ -12,12 +12,12 @@ import { updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
-import { getActiveAddressEntry, getActiveAddresses, identifyAddress } from './metadataUtils.js'
+import { getActiveAddressEntryForChain, getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState } from '../types/visualizer-types.js'
+import { CompleteVisualizedSimulation, InterceptorSimulationExport, type InterceptorStackOperation, InterceptorTransactionStack, type ModifyAddressWindowState, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { isJSON } from '../utils/json.js'
-import { doAddressBookChainIdsMatch, getSafeSigningEntry, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
+import { doAddressBookChainIdsMatch, type AddressBookEntry, type IncompleteAddressBookEntry } from '../types/addressBookTypes.js'
 import { EthereumAddress, serialize } from '../types/wire-types.js'
 import { fetchAbiFromBlockExplorer, isValidAbi } from '../simulation/services/EtherScanAbiFetcher.js'
 import { checksummedAddress, generate256BitRandomBigInt, stringToAddress } from '../utils/bigint.js'
@@ -50,7 +50,8 @@ import { serializeSimulateExecutionReply } from '../types/simulateExecutionReply
 import { createSafeContractValidationFailure, getSafeContractSnapshot, validateSafeOwnerIsEoa } from '../safe/safeCore.js'
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getSafePendingFlow } from '../safe/safePendingFlow.js'
-import { assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
+import { getOperationsForActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
+import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
 export { getLastKnownCurrentTabId } from './currentTab.js'
 export { exportSettings, importSettings, setNewRpcList, settingsOpened } from './popupMessageHandlers/settings.js'
@@ -58,6 +59,7 @@ export { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, di
 import { getLastKnownCurrentTabId } from './currentTab.js'
 import { disableInterceptorForPage } from './popupMessageHandlers/websiteAccess.js'
 import { updateContentScriptInjectionStrategyManifestV3 } from '../utils/contentScriptsUpdating.js'
+import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -327,7 +329,7 @@ export async function addOrModifyAddressBookEntry(ethereum: EthereumClientServic
 			return previousContacts.concat([entryToStore])
 		})
 		if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true, true)
-		await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
+		void sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
 	} catch(error) {
 		if (!isExpectedInfrastructureError(error)) await reportUnexpectedError(error, {
@@ -528,8 +530,10 @@ export async function refreshPopupConfirmTransactionMetadata(ethereum: EthereumC
 	const currentBlockNumberPromise = ethereum.getBlockNumber(requestAbortController)
 	silenceChromeUnCaughtPromise(currentBlockNumberPromise)
 	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
-	// A confirmation popup consumes this state even when the standalone simulation visualizer is closed.
-	const visualizedSimulatorStatePromise = silenceChromeUnCaughtPromise(refreshPopupVisualisationForOpenConsumer(ethereum, tokenPriceService, dependencies.visualisation))
+	// Signing confirmations are independent of the simulation-mode stack. Safe proposals carry their own isolated optimistic simulation in the pending transaction payload.
+	const visualizedSimulatorStatePromise = first.simulationMode
+		? silenceChromeUnCaughtPromise(refreshPopupVisualisationForOpenConsumer(ethereum, tokenPriceService, dependencies.visualisation))
+		: Promise.resolve(createPassthroughCompleteVisualizedSimulation())
 	switch (first.type) {
 		case 'SignableMessage': {
 			const visualizedPersonalSignRequestPromise = craftPersonalSignPopupMessage(ethereum, requestAbortController, first.signedMessageTransaction, ethereum.getRpcEntry())
@@ -685,28 +689,18 @@ export async function enableSimulationMode(
 		if (tabId !== undefined) sendCallbackToConfirmedSignerOwner(websiteTabConnections, tabId, { method: 'request_signer_chainId', result: [] })
 		const chainToSwitch = tabId === undefined ? undefined : (await getTabState(tabId)).signerChain
 		const networkToSwitch = chainToSwitch === undefined ? (await getRpcList())[0] : await getPrimaryRpcForChain(chainToSwitch)
-		const targetChainId = networkToSwitch?.chainId ?? settings.activeRpcNetwork.chainId
-		const activeChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(targetChainId)
-		const configuredSigningSafeCandidate = getSafeSigningEntry(
-			activeChainEntries,
-			{
-				simulationMode: params.data,
-				useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
-				activeSimulationAddress: settings.activeSimulationAddress,
-				chainId: targetChainId,
-			},
-		)
 		const signerAccount = await getSignerAccount()
-		const configuredSigningSelection = configuredSigningSafeCandidate === undefined
-			? undefined
-			: getActiveAddressSelection(configuredSigningSafeCandidate.address, activeChainEntries, false, targetChainId, signerAccount === undefined ? [] : [signerAccount])
-		const configuredSigningSafe = configuredSigningSelection?.type === 'addressBookEntry' && configuredSigningSelection.entry.type === 'safe'
-			? configuredSigningSelection.entry
-			: undefined
 		if (!params.data) {
-			const signingSelection = configuredSigningSafe === undefined
+			const targetChainId = networkToSwitch?.chainId ?? settings.activeRpcNetwork.chainId
+			const activeChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(targetChainId)
+			const configuredSigningSafe = await getConfiguredSigningSafeForChain(
+				settings.activeSigningSafeAddress,
+				targetChainId,
+				signerAccount === undefined ? [] : [signerAccount],
+			)
+			const signingSelection: ActiveAddressSelection | undefined = configuredSigningSafe === undefined
 				? signerAccount === undefined ? undefined : getActiveAddressSelection('signer', activeChainEntries, false, targetChainId, [signerAccount])
-				: configuredSigningSelection
+				: { type: 'addressBookEntry', entry: configuredSigningSafe }
 			await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, signingSelection, {
 				simulationMode: false,
 				signerAddress: signerAccount,
@@ -716,7 +710,7 @@ export async function enableSimulationMode(
 		}
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			simulationMode: params.data,
-			activeAddress: configuredSigningSafe?.address ?? signerAccount,
+			activeAddress: signerAccount,
 			...chainToSwitch === undefined ? {} : { rpcNetwork: networkToSwitch },
 		})
 	} else {
@@ -820,7 +814,6 @@ export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTab
 	const activeSigningAddress = tabId === undefined ? undefined : (await getActiveAddressForCurrentPopupSignerState(settings, websiteTabConnections, tabId))?.address
 	const walletSelectedAddressBookEntry = await getWalletSelectedAddressBookEntry(tabState, settings.activeRpcNetwork.chainId)
 	const interceptorDisabled = isInterceptorDisabledForWebsite(settings, tabState.website?.websiteOrigin)
-
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_homePageBootstrap',
 		popupRefreshGeneration,
@@ -1092,7 +1085,7 @@ export const requestSimulationMode = async () => ({ method: 'popup_requestSimula
 
 export const requestLatestUnexpectedError = async () => ({ method: 'popup_requestLatestUnexpectedError' as const, latestUnexpectedError: await getLatestUnexpectedError() })
 
-async function getCachedRichData() {
+async function getCachedRichData(chainId: bigint) {
 	const [makeCurrentAddressRich, fixedAddressRichList] = await Promise.all([
 		getMakeCurrentAddressRich(),
 		getFixedAddressRichList(),
@@ -1100,7 +1093,7 @@ async function getCachedRichData() {
 	return {
 		method: 'popup_requestMakeMeRichData' as const,
 		richList: await Promise.all(fixedAddressRichList.map(async(element) => (
-			{ ...element, addressBookEntry: await getActiveAddressEntry(element.address) }
+			{ ...element, addressBookEntry: await getActiveAddressEntryForChain(element.address, chainId) }
 		))),
 		makeCurrentAddressRich,
 	}
@@ -1137,21 +1130,22 @@ async function buildHomePageUpdate(
 	const richDataPromise = silenceChromeUnCaughtPromise(
 		richDataSource === 'fresh'
 			? requestMakeMeRichList(ethereum, requestAbortController)
-			: getCachedRichData()
+			: settingsPromise.then(async (currentSettings) => await getCachedRichData(currentSettings.activeRpcNetwork.chainId))
 	)
 	const hasSafeTransactionsToExportPromise = silenceChromeUnCaughtPromise(getSafeTransactionStacks().then((stacks) => stacks.some((stack) =>
 		stack.chainId === ethereum.getChainId() && stack.transactions.length > 0
 	)))
 	const tabId = await getLastKnownCurrentTabId()
 	const tabStatePromise = silenceChromeUnCaughtPromise(tabId === undefined ? getTabState(-1) : getTabState(tabId))
-	const settings = await settingsPromise
+	let settings = await settingsPromise
 	let tabState = await tabStatePromise
 	tabState = await refreshSignerAccountsForTabIfNeeded(websiteTabConnections, tabId, tabState, shouldRefreshSignerAccounts)
+	if (shouldRefreshSignerAccounts) settings = await getSettings()
 	const activeSigningAddress = tabId === undefined ? undefined : (await getActiveAddressForCurrentPopupSignerState(settings, websiteTabConnections, tabId))?.address
 	const walletSelectedAddressBookEntry = await getWalletSelectedAddressBookEntry(tabState, settings.activeRpcNetwork.chainId)
 	const interceptorDisabled = isInterceptorDisabledForWebsite(settings, tabState.website?.websiteOrigin)
 	const richData = await richDataPromise
-	const websiteAccessAddressMetadata = includeWebsiteAccessAddressMetadata ? await getAddressMetadataForAccess(settings.websiteAccess) : []
+	const websiteAccessAddressMetadata = includeWebsiteAccessAddressMetadata ? await getAddressMetadataForAccess(settings.websiteAccess, settings.activeRpcNetwork.chainId) : []
 	return {
 		method: 'popup_UpdateHomePage' as const,
 		homeDataSource: richDataSource,
@@ -1198,20 +1192,19 @@ export async function reportUnexpectedErrorInWindow(parsedRequest: UnexpectedErr
 
 export async function requestInterceptorSimulationInput(ethereumClientService: EthereumClientService) {
 	const stack = await getInterceptorTransactionStack()
-	if (stack.operations.some((operation) =>
-		operation.type === 'Transaction' && operation.preSimulationTransaction.safeTransaction !== undefined
-	)) {
+	if (!(await getSettings()).simulationMode) {
 		return {
 			method: 'popup_requestInterceptorSimulationInput' as const,
 			ok: false as const,
-			message: 'The simulation stack contains Gnosis Safe proposals, which require the synchronized Gnosis Safe export format. Use Copy Gnosis Safe transactions for those proposals, or remove them before using Export simulation for the remaining operations.',
+			message: 'Simulation stack export is available only in simulation mode.',
 		}
 	}
+	const simulationStack = modifyObject(stack, { operations: getOperationsForActiveStackContext(stack, SIMULATION_STACK_CONTEXT) })
 	const simulationInput = await getCurrentSimulationInput()
 	const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereumClientService.getBlockNumber(undefined))
 	const eth_simulateV1 = await ethereumClientService.ethSimulateV1Input(simulationInput, await currentBlockNumberPromise, undefined)
 
-	const interceptorSimulateStack = modifyObject(stack, { operations: stack.operations.map((operation) => {
+	const interceptorSimulateStack = modifyObject(simulationStack, { operations: simulationStack.operations.map((operation) => {
 		switch(operation.type) {
 			case 'Message': return modifyObject(operation, { signedMessageTransaction: modifyObject(operation.signedMessageTransaction, { website: { ...operation.signedMessageTransaction.website, icon: undefined, title: undefined } }) })
 			case 'TimeManipulation': return operation

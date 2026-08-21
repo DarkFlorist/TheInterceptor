@@ -179,7 +179,8 @@ describe('interceptor access close handling', () => {
 		const tokenPriceService = {} as never
 		const resetSimulationServices = (() => undefined) as never
 
-		await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, request, undefined, await getSettings(), account, async () => undefined)
+		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
+		await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, request, undefined, await getSettings(), await getActiveAddressEntryForChain(account, 1n), async () => undefined)
 
 		const postedMessages = browserMock.postedMessages as Array<{ method?: string, result?: unknown, requestId?: number }>
 		assert.deepEqual(postedMessages.map((message) => message.method), ['accountsChanged', 'eth_accounts'])
@@ -327,7 +328,7 @@ describe('interceptor access close handling', () => {
 			resolveInterceptorAccess,
 			websiteSocketToString,
 		} = await loadModules()
-		const { getActiveAddressEntry } = await import('../../app/ts/background/metadataUtils.js')
+		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
 		const account = 0x1234567890123456789012345678901234567890n
 		const firstWebsite = { websiteOrigin: 'https://first.example.test', icon: undefined, title: undefined }
 		const secondWebsite = { websiteOrigin: 'https://second.example.test', icon: undefined, title: undefined }
@@ -359,7 +360,7 @@ describe('interceptor access close handling', () => {
 		const resetSimulationServices = (() => undefined) as never
 		const publishRpcConnectionStatus = async () => undefined
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
-		const activeAddress = await getActiveAddressEntry(account)
+		const activeAddress = await getActiveAddressEntryForChain(account, 1n)
 		const settings: Settings = {
 			activeSimulationAddress: account,
 			activeSigningAddress: undefined,
@@ -388,7 +389,7 @@ describe('interceptor access close handling', () => {
 			undefined,
 			activeAddress,
 			settings,
-			account,
+			activeAddress,
 			undefined,
 		)
 		const firstRequest = (await getPendingAccessRequests())[0]
