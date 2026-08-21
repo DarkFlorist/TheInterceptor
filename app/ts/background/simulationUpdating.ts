@@ -30,6 +30,7 @@ import type { Abi } from '../utils/ethereumPrimitives.js'
 import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
+import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
 
 const delegateCallExecuteAbi = [
 	{
@@ -55,6 +56,7 @@ const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: bigint[]) =
 }
 
 export const getAddressesbeingMadeRich = async () => {
+	if (!(await getSettings()).simulationMode) return []
 	const currentAddressBeingRich = await getAddressToMakeRich()
 	const makeRichAddressList = await getFixedAddressRichList()
 	return [...makeRichAddressList.filter((x) => x.makingRich).map((x) => x.address), ...currentAddressBeingRich === undefined ? [] : [currentAddressBeingRich]]
@@ -89,7 +91,8 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 		currentBlockSimulateWithZeroBaseFee = false
 	}
 
-	for (const operation of stack.operations) {
+	const operations = getOperationsForActiveStackContext(stack, getActiveStackContext(settings))
+	for (const operation of operations) {
 		switch(operation.type) {
 			case 'Transaction': {
 				const simulationOptions = operation.preSimulationTransaction.simulationOptions

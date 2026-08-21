@@ -93,6 +93,7 @@ export type FirstCardParams = {
 }
 
 export type SimulationStateParam = {
+	simulationMode: ReadonlySignal<boolean>
 	simulationAndVisualisationResults: ReadonlySignal<ResolvedSimulationResults>
 	removeTransactionOrSignedMessage: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	currentBlockNumber: Signal<bigint | undefined>
@@ -107,8 +108,6 @@ export type SimulationStateParam = {
 	simulationResultState: Signal<SimulationResultState | undefined>
 	openSimulationStack: (target?: TransactionOrMessageIdentifier) => void
 	numberOfAddressesMadeRich: Signal<number>
-	hasSafeTransactionsToExport: ReadonlySignal<boolean>
-	safeSigningMode: boolean
 }
 
 export type LogAnalysisParams = {

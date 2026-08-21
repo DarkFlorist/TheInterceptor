@@ -268,6 +268,7 @@ test('uses zero-reimbursement Safe semantics in the pre-sign confirmation simula
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
 		simulationMode: false,
 		rpcNetwork: fakeRpcNetwork,
+		activeSigningSafeAddress: activeAddress,
 	})
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
 		to: recipientAddress,
@@ -306,10 +307,101 @@ test('uses zero-reimbursement Safe semantics in the pre-sign confirmation simula
 	assert.equal(simulatedSafeTransaction?.transaction.gas, 123_456n)
 })
 
+test('isolates Safe signing previews from the simulation-mode transaction stack', async () => {
+	const previousSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 1n,
+		input: new Uint8Array(),
+	}, 0n)
+	const pendingSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 2n,
+		input: new Uint8Array(),
+	}, 1n)
+	const previousSafeRequest = {
+		safeAddress: activeAddress,
+		safeSignerAddress: recipientAddress,
+		safeVersion: '1.4.1',
+		threshold: 2n,
+		safeTxHash: BigInt(getSafeTxHash(previousSafeTx)),
+		safeTx: previousSafeTx,
+	}
+	const pendingSafeRequest = {
+		...previousSafeRequest,
+		safeTxHash: BigInt(getSafeTxHash(pendingSafeTx)),
+		safeTx: pendingSafeTx,
+	}
+	const previousSafeTransaction = modules.createSafeExecutionPreSimulationTransaction(
+		{ ...pendingTransaction.transactionToSimulate, transactionIdentifier: 71n },
+		previousSafeRequest,
+	)
+	const isolatedInput = modules.createSafeSigningSimulationInput({
+		operations: [{
+			type: 'Transaction',
+			preSimulationTransaction: {
+				...pendingTransaction.transactionToSimulate,
+				transactionIdentifier: 70n,
+			},
+		}, {
+			type: 'TimeManipulation',
+			blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 1n, deltaUnit: 'Days' },
+		}, {
+			type: 'Transaction',
+			preSimulationTransaction: previousSafeTransaction,
+		}],
+	}, pendingSafeRequest)
+
+	assert.equal(isolatedInput.length, 1)
+	assert.deepEqual(isolatedInput[0]?.transactions.map(({ transactionIdentifier }) => transactionIdentifier), [71n])
+	assert.deepEqual(isolatedInput[0]?.stateOverrides, {})
+	assert.deepEqual(isolatedInput[0]?.blockTimeManipulation, { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' })
+	assert.equal(isolatedInput[0]?.simulateWithZeroBaseFee, true)
+})
+
+test('does not show simulation-mode stack setup in a Safe signing confirmation', async () => {
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	await modules.browserStorageLocalSet({
+		simulationMode: false,
+		activeRpcNetwork: fakeRpcNetwork,
+		makeCurrentAddressRich: true,
+		independentActiveSimulationAddress: activeAddress,
+	})
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			simulationMode: false,
+			safeTransaction: {
+				safeAddress: activeAddress,
+				safeSignerAddress: recipientAddress,
+				safeVersion: '1.4.1',
+				threshold: 2n,
+				safeTxHash: BigInt(getSafeTxHash(safeTx)),
+				safeTx,
+			},
+		}],
+	})
+	browserMock.sentMessages.length = 0
+
+	await modules.updateConfirmTransactionView(simulator.ethereum, simulator.tokenPriceService)
+
+	const dialogUpdate = browserMock.sentMessages.find((message) => isRecord(message) && message.method === 'popup_update_confirm_transaction_dialog')
+	if (!isRecord(dialogUpdate) || !isRecord(dialogUpdate.data) || !isRecord(dialogUpdate.data.visualizedSimulatorState)) {
+		throw new Error('Missing Safe confirmation simulation-state update')
+	}
+	const visualizedSimulatorState = dialogUpdate.data.visualizedSimulatorState
+	assert.equal(visualizedSimulatorState.numberOfAddressesMadeRich, 0)
+	assert.deepEqual(visualizedSimulatorState.simulationState, { kind: 'passthrough' })
+})
+
 test('returns the current Safe overlay when a simulation-stack request is confirmed', async () => {
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
 		simulationMode: false,
 		rpcNetwork: fakeRpcNetwork,
+		activeSigningSafeAddress: activeAddress,
 	})
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
 		to: recipientAddress,
@@ -332,6 +424,8 @@ test('returns the current Safe overlay when a simulation-stack request is confir
 	await modules.updateInterceptorTransactionStack(() => ({
 		operations: [{ type: 'Transaction', preSimulationTransaction }],
 	}))
+	assert.equal((await (await import('../../app/ts/background/settings.js')).getSettings()).activeSigningSafeAddress, activeAddress)
+	assert.equal((await (await import('../../app/ts/background/simulationUpdating.js')).getCurrentSimulationInput())[0]?.transactions.length, 1)
 	await modules.setFetchSimulationStackRequestPromise({
 		website: { websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
 		popupOrTabId: { type: 'popup', id: 41 },
