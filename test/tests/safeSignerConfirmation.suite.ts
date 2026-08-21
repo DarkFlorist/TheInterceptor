@@ -27,6 +27,7 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
 		simulationMode: false,
 		rpcNetwork: fakeRpcNetwork,
+		activeSigningSafeAddress: activeAddress,
 	})
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({
 		safeSimulationSignerAddress: activeAddress,
@@ -966,6 +967,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
 		simulationMode: false,
 		rpcNetwork: fakeRpcNetwork,
+		activeSigningSafeAddress: activeAddress,
 	})
 	await modules.browserStorageLocalSet2({
 		pendingTransactionsAndMessages: [{
@@ -1013,6 +1015,7 @@ test('persists and simulates a valid Safe owner signature before replying with t
 		requiredChainId: fakeRpcNetwork.chainId,
 		simulateWithZeroBaseFee: true,
 	})
+	assert.equal((await (await import('../../app/ts/background/settings.js')).getSettings()).activeSigningSafeAddress, activeAddress)
 	const simulationInput = await (await import('../../app/ts/background/simulationUpdating.js')).getCurrentSimulationInput()
 	const safeSimulationBlock = simulationInput.find((block) => block.transactions.some((transaction) =>
 		transaction.safeTransaction?.safeTxHash === safeTxHash
@@ -1024,6 +1027,91 @@ test('persists and simulates a valid Safe owner signature before replying with t
 	)
 	if (!isRecord(dappReply)) throw new Error('Missing Safe transaction dapp reply')
 	assert.equal(dappReply.result, modules.EthereumBytes32.serialize(safeTxHash))
+})
+
+test('adds an unsigned Safe proposal and merges a later owner signature into both stack representations', async () => {
+	const safeSignerAddress = safeTestOwnerAddress
+	fakeSafeContract.owners = [safeSignerAddress]
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	const safeTxHash = BigInt(getSafeTxHash(safeTx))
+	const postedMessages: unknown[] = []
+	const socket = uniqueRequestIdentifier.requestSocket
+	const port = createWebsitePort(socket, 0, postedMessages)
+	const websiteTabConnections = new Map([[socket.tabId, {
+		connections: {
+			[modules.websiteSocketToString(socket)]: {
+				port,
+				socket,
+				websiteOrigin: 'https://example.com',
+				approved: true,
+				wantsToConnect: true,
+			},
+		},
+	}]])
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+	await (await import('../../app/ts/background/settings.js')).changeSimulationMode({
+		simulationMode: false,
+		rpcNetwork: fakeRpcNetwork,
+		activeSigningSafeAddress: activeAddress,
+	})
+	const safePending = {
+		...pendingTransaction,
+		simulationMode: false as const,
+		approvalStatus: { status: 'WaitingForUser' as const },
+		safeTransaction: {
+			safeAddress: activeAddress,
+			safeSignerAddress,
+			safeVersion: '1.4.1',
+			threshold: 2n,
+			reviewedSafeState: {
+				version: '1.4.1' as const,
+				nonce: 0n,
+				owners: [safeSignerAddress],
+				threshold: 2n,
+			},
+			safeTxHash,
+			safeTx,
+		},
+	}
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [safePending],
+	})
+
+	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+		method: 'popup_confirmDialog',
+		data: { action: 'addToSafeStack', uniqueRequestIdentifier },
+	}), true)
+
+	const [storedStack] = await modules.getSafeTransactionStacks()
+	assert.equal(storedStack?.transactions[0]?.safeTxHash, safeTxHash)
+	assert.deepEqual(storedStack?.transactions[0]?.signatures, [])
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+	const dappReply = postedMessages.find((message) =>
+		isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === uniqueRequestIdentifier.requestId
+	)
+	if (!isRecord(dappReply)) throw new Error('Missing unsigned Safe transaction dapp reply')
+	assert.equal(dappReply.result, modules.EthereumBytes32.serialize(safeTxHash))
+
+	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
+	const signedResolution = await modules.resolveSafeSignerReply(
+		simulator.ethereum,
+		simulator.tokenPriceService,
+		{ ...safePending, approvalStatus: { status: 'WaitingForSigner' } },
+		signature,
+	)
+	assert.equal(signedResolution.status, 'success')
+	const [signedStack] = await modules.getSafeTransactionStacks()
+	assert.equal(signedStack?.transactions[0]?.signatures[0]?.signer, safeSignerAddress)
+	const mirroredProposal = (await modules.getInterceptorTransactionStack()).operations.find((operation) =>
+		operation.type === 'Transaction' && operation.preSimulationTransaction.safeTransaction?.safeTxHash === safeTxHash
+	)
+	if (mirroredProposal?.type !== 'Transaction') throw new Error('Missing optimistic Safe transaction mirror')
+	assert.equal(mirroredProposal.preSimulationTransaction.safeTransaction?.signatures[0]?.signer, safeSignerAddress)
 })
 
 test('invalid Safe owner signatures retain the request as a signer error without creating a Safe stack', async () => {

@@ -40,7 +40,7 @@ import { prepareSafeTransactionConfirmation } from '../safeTransactionConfirmati
 import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, isExpectedSafeMessageCoSignSnapshotFailure, isSafeMessageAccountMismatchFailure, isSafeSignerSelectionFailure, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
 import { refreshAndPersistSafeSignerSelection } from '../safeSignerSelectionRefresh.js'
 import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
-import { resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
+import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
 
@@ -186,17 +186,19 @@ export function toPopupPendingTransactionOrSignableMessage(pending: PendingTrans
 
 export async function updateConfirmTransactionView(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, onlyIfNotAlreadyUpdating = false) {
 	try {
-		const visualizedSimulatorStatePromise = silenceChromeUnCaughtPromise(updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, onlyIfNotAlreadyUpdating))
-		const settings = getSettings()
+		const settingsPromise = getSettings()
 		const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereum.getBlockNumber(undefined))
 		const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
 		const pendingTransactionAndSignableMessages = await getPendingTransactionsAndMessages()
 		if (pendingTransactionAndSignableMessages.length === 0) return false
-		const showOptimisticSafeSimulation = pendingTransactionAndSignableMessages.some((pending) => getSafePendingFlow(pending)?.kind === 'proposal')
+		const settings = await settingsPromise
+		const visualizedSimulatorState = settings.simulationMode
+			? await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, onlyIfNotAlreadyUpdating)
+			: createPassthroughCompleteVisualizedSimulation()
 		const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: {
 			currentBlockNumber: await currentBlockNumberPromise,
 			rpcConnectionStatus: await rpcConnectionStatusPromise,
-			visualizedSimulatorState: (await settings).simulationMode || showOptimisticSafeSimulation ? await visualizedSimulatorStatePromise : createPassthroughCompleteVisualizedSimulation(),
+			visualizedSimulatorState,
 		} }
 		const messagePendingTransactions: UpdateConfirmTransactionDialogPendingTransactions = {
 			method: 'popup_update_confirm_transaction_dialog_pending_transactions' as const,
@@ -334,6 +336,19 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		}
 		await removePendingRequestAndUpdateView()
 		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+	}
+	if (confirmation.data.action === 'addToSafeStack') {
+		if (pendingTransactionOrMessage.approvalStatus.status === 'WaitingForSigner') return false
+		const safeReply = await persistUnsignedSafeTransaction(ethereum, tokenPriceService, pendingTransactionOrMessage)
+		if (safeReply.status === 'error') {
+			await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
+				approvalStatus: safeReply.approvalStatus,
+			}))
+			await updateConfirmTransactionView(ethereum, tokenPriceService)
+			return false
+		}
+		if (safeReply.status === 'success') return reply({ type: 'result', result: safeReply.result })
+		return false
 	}
 	if (
 		confirmation.data.action === 'accept'

@@ -367,7 +367,7 @@ try {
 	await waitForSelector(stack, '.simulation-stack-page-header')
 	await captureScenario(stack, 'safe-simulation-stack')
 	await stack.evaluate(`(() => {
-		const importButton = [...document.querySelectorAll('button')].find((element) => element.textContent?.includes('Import Gnosis Safe'))
+		const importButton = document.querySelector('button[aria-label="Import Gnosis Safe stack"]')
 		if (!(importButton instanceof HTMLElement)) throw new Error('Import Gnosis Safe button was not found')
 		importButton.click()
 	})()`)

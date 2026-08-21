@@ -443,4 +443,4 @@ export async function resolveSafeConfirmation(
 	}
 }
 
-type TransactionConfirmationAction = 'accept' | 'reject' | 'noResponse' | 'signerIncluded'
+type TransactionConfirmationAction = 'accept' | 'addToSafeStack' | 'reject' | 'noResponse' | 'signerIncluded'

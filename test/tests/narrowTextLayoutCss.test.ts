@@ -212,16 +212,12 @@ describe('narrow text layout CSS', () => {
 		assert.match(simulationStackHeader, /padding\s*:\s*1rem clamp\(0\.75rem,\s*2vw,\s*1\.5rem\)\s*;/)
 		assert.match(simulationStackHeader, /display\s*:\s*grid\s*;/)
 
-		const simulationStackActions = expectRule(css, '.simulation-stack-page-actions')
-		assert.match(simulationStackActions, /border-radius\s*:\s*8px\s*;/)
-		assert.match(simulationStackActions, /display\s*:\s*grid\s*;/)
-
-		const simulationStackActionGroup = expectRule(css, '.simulation-stack-action-group')
-		assert.match(simulationStackActionGroup, /display\s*:\s*flex\s*;/)
-		assert.match(simulationStackActionGroup, /flex-wrap\s*:\s*wrap\s*;/)
-
-		const simulationStackActionControls = expectRule(css, '.simulation-stack-action-controls')
-		assert.match(simulationStackActionControls, /flex-wrap\s*:\s*wrap\s*;/)
+		const simulationStackControls = expectRule(css, '.simulation-stack-page-controls')
+		assert.match(simulationStackControls, /display\s*:\s*flex\s*;/)
+		assert.match(simulationStackControls, /flex-wrap\s*:\s*wrap\s*;/)
+		assert.match(simulationStackControls, /justify-content\s*:\s*flex-end\s*;/)
+		assert.doesNotMatch(css, /\.simulation-stack-page-actions\s*\{/)
+		assert.doesNotMatch(css, /\.simulation-stack-action-group\s*\{/)
 		assert.match(css, /\.simulation-stack-page-clear > \.simulation-stack-clear-label\s*\{[\s\S]*?display\s*:\s*none\s*;/)
 		assert.doesNotMatch(css, /\.simulation-stack-page-clear > span:last-child/)
 
