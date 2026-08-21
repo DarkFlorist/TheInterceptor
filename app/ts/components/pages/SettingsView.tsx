@@ -277,7 +277,7 @@ const RpcSummary = ({ info }: { info: SignalOrValue<RpcEntry | undefined> }) => 
 	const infoKey = JSON.stringify(serialize(RpcEntry, currentInfo))
 
 	return (
-		<li class = 'grid brief'>
+		<li class = 'grid brief rpc-summary'>
 			<div class = 'grid rpc-summary-details'>
 				<div class = 'truncate' title = { currentInfo.name }><strong>{ currentInfo.name }</strong></div>
 				<div class = 'truncate' title = { networkName }>{ networkName }</div>

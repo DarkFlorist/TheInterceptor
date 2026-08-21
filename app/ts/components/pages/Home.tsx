@@ -607,8 +607,8 @@ function FirstCard(param: FirstCardParams) {
 						{ isActiveAddressLoading
 							? <InlineLoadingSkeleton ariaLabel = 'Loading signer connection state'/>
 							: signerAvailable.value
-								? <span class = 'popup-home-connection-status popup-data-reveal-inline' style = 'color: var(--primary-color);'>CONNECTED</span>
-								: <span class = 'popup-home-connection-status popup-data-reveal-inline' style = 'color: var(--negative-color);'>NOT CONNECTED</span>
+								? <span class = 'popup-home-connection-status popup-data-reveal-inline' style = 'color: var(--accent-color);'>CONNECTED</span>
+								: <span class = 'popup-home-connection-status popup-data-reveal-inline' style = 'color: var(--danger-color);'>NOT CONNECTED</span>
 						}
 					</p>
 					: <></>
