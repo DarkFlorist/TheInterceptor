@@ -21,6 +21,7 @@ test('extension Safe stack import merges owner signatures into proposal and opti
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
 				signedTransaction,
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
 				safeTransaction: localTransaction,
 			},
 		}],
@@ -73,12 +74,13 @@ test('extension Safe stack export and import roundtrip leaves the local stack un
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
 				signedTransaction,
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
 				safeTransaction: localTransaction,
 			},
 		}],
 	}))
 
-	const exportReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
+	const exportReply = await modules.requestSafeStackExport(simulator.ethereum)
 	assert.equal(exportReply.ok, true)
 	if (!exportReply.ok) throw new Error(exportReply.message)
 	const safeStacksBeforeImport = await modules.getSafeTransactionStacks()
@@ -101,12 +103,13 @@ test('extension Safe stack import recovers a missing Safe index from locally cre
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
 				signedTransaction,
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
 				safeTransaction: localTransaction,
 			},
 		}],
 	}))
 
-	const exportReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
+	const exportReply = await modules.requestSafeStackExport(simulator.ethereum)
 	assert.equal(exportReply.ok, true)
 	if (!exportReply.ok) throw new Error(exportReply.message)
 	const exportedStack = SafeStackExport.parse(JSON.parse(exportReply.safeStackJson))
@@ -129,6 +132,7 @@ test('extension Safe stack import recovers a missing Safe index from locally cre
 				...pendingTransaction.transactionToSimulate,
 				transactionIdentifier: secondTransaction.transactionIdentifier,
 				signedTransaction,
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
 				safeTransaction: secondTransaction,
 			},
 		}],
@@ -144,7 +148,7 @@ test('extension Safe stack import recovers a missing Safe index from locally cre
 test('extension Safe stack import does not recover its index from a different local proposal', async () => {
 	const exportedTransaction = createSafeStackTransactionFixture()
 	await modules.updateSafeTransactionStacks(() => [createSafeStackFixture([exportedTransaction])])
-	const exportReply = await modules.requestSafeStackExport(simulator.ethereum, simulator.tokenPriceService)
+	const exportReply = await modules.requestSafeStackExport(simulator.ethereum)
 	assert.equal(exportReply.ok, true)
 	if (!exportReply.ok) throw new Error(exportReply.message)
 	const exportedStack = SafeStackExport.parse(JSON.parse(exportReply.safeStackJson))
@@ -165,6 +169,7 @@ test('extension Safe stack import does not recover its index from a different lo
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
 				signedTransaction,
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
 				safeTransaction: differentLocalTransaction,
 			},
 		}],
