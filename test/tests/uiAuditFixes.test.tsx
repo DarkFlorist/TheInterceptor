@@ -35,25 +35,52 @@ function contrastRatio(first: string, second: string) {
 describe('UI audit fixes', () => {
 	test('keeps action colors readable with white text in default and hover states', async () => {
 		const css = await Bun.file('app/css/interceptor-theme.css').text()
-		const actionColors = ['primary-action-color', 'highlighted-primary-action-color', 'negative-action-color', 'highlighted-negative-action-color']
+		const actionColors = ['primary-action-color', 'highlighted-primary-action-color', 'destructive-action-color', 'highlighted-destructive-action-color']
 		for (const variable of actionColors) {
 			const color = new RegExp(`--${ variable }:\\s*(#[0-9a-fA-F]{6})`).exec(css)?.[1]
 			assert.notEqual(color, undefined)
 			assert.ok(contrastRatio(color ?? '#ffffff', '#ffffff') >= 4.5, `${ variable } must have at least 4.5:1 contrast with white`)
 		}
 		const appCss = await readInterceptorAppCss()
-		assert.match(appCss, /\.btn\.is-primary,\s*\.button\.is-primary\s*\{[\s\S]*?background-color:\s*var\(--primary-action-color\);/)
-		assert.match(appCss, /\.btn\.is-danger,\s*\.button\.is-danger\s*\{[\s\S]*?background-color:\s*var\(--negative-action-color\);/)
-		assert.match(appCss, /\.button\.is-primary\.is-danger\s*\{[\s\S]*?background-color:\s*var\(--negative-action-color\);/)
-		assert.match(appCss, /\.button\.is-primary:not\(:disabled\):active,[\s\S]*?background-color:\s*var\(--highlighted-primary-action-color\);/)
-		assert.match(appCss, /\.button\.is-primary\[disabled\],[\s\S]*?background-color:\s*var\(--primary-action-color\);/)
-		assert.match(appCss, /\.button\.is-primary\.is-outlined:hover,[\s\S]*?background-color:\s*var\(--primary-action-color\);/)
-		assert.match(appCss, /\.button\.is-danger:not\(:disabled\):active,[\s\S]*?background-color:\s*var\(--highlighted-negative-action-color\);/)
-		assert.match(appCss, /\.button\.is-danger\[disabled\],[\s\S]*?background-color:\s*var\(--negative-action-color\);/)
-		assert.match(appCss, /\.button\.is-danger\.is-outlined:hover,[\s\S]*?background-color:\s*var\(--negative-action-color\);/)
+		const frameworkCss = await Bun.file('app/css/interceptor-framework.css').text()
+		const pageCss = await Bun.file('app/css/interceptor-pages.css').text()
+		assert.match(css, /--accent-color:\s*#[0-9a-fA-F]{6}/)
+		assert.match(css, /--danger-color:\s*#[0-9a-fA-F]{6}/)
+		const deprecatedTokens = [
+			'primary-color',
+			'highlighted-primary-color',
+			'disabled-primary-color',
+			'negative-color',
+			'highlighted-negative-color',
+			'negative-dim-color',
+			'button-color',
+			'button-color-hilite',
+			'negative-action-color',
+			'highlighted-negative-action-color',
+		]
+		for (const deprecatedToken of deprecatedTokens) {
+			const deprecatedTokenPattern = new RegExp(`--${ deprecatedToken }(?=\\s*[:),;])`)
+			assert.doesNotMatch(appCss, deprecatedTokenPattern)
+			assert.match(`color: var(--${ deprecatedToken }, var(--accent-color));`, deprecatedTokenPattern)
+		}
+		assert.match(appCss, /button:where\(:not\(\.btn\)\)\s*\{[\s\S]*?background-color:\s*var\(--primary-action-color\);/)
+		assert.match(appCss, /button:not\(\.btn\):disabled, button:not\(\.btn\)\[disabled\]\s*\{[\s\S]*?background-color:\s*var\(--disabled-action-color\);/)
+		assert.match(frameworkCss, /\.button\.is-primary\s*\{[\s\S]*?background-color:\s*var\(--primary-action-color\);/)
+		assert.match(frameworkCss, /\.button\.is-danger\s*\{[\s\S]*?background-color:\s*var\(--destructive-action-color\);/)
+		assert.doesNotMatch(pageCss, /(^|\n)\.button\.is-primary\s*\{/)
+		assert.doesNotMatch(pageCss, /(^|\n)\.button\.is-danger\s*\{/)
+		assert.match(appCss, /\.btn\.is-primary\s*\{[\s\S]*?background-color:\s*var\(--primary-action-color\);/)
+		assert.match(appCss, /\.btn\.is-danger\s*\{[\s\S]*?background-color:\s*var\(--destructive-action-color\);/)
+		assert.match(appCss, /\.button\.is-primary\.is-danger\s*\{[\s\S]*?background-color:\s*var\(--destructive-action-color\);/)
+		assert.match(frameworkCss, /\.button\.is-primary:active,[\s\S]*?background-color:\s*var\(--highlighted-primary-action-color\);/)
+		assert.match(frameworkCss, /\.button\.is-primary\[disabled\],[\s\S]*?background-color:\s*var\(--primary-action-color\);/)
+		assert.match(frameworkCss, /\.button\.is-primary\.is-outlined:hover,[\s\S]*?background-color:\s*var\(--primary-action-color\);/)
+		assert.match(frameworkCss, /\.button\.is-danger:active,[\s\S]*?background-color:\s*var\(--highlighted-destructive-action-color\);/)
+		assert.match(frameworkCss, /\.button\.is-danger\[disabled\],[\s\S]*?background-color:\s*var\(--destructive-action-color\);/)
+		assert.match(frameworkCss, /\.button\.is-danger\.is-outlined:hover,[\s\S]*?background-color:\s*var\(--destructive-action-color\);/)
 		const addAddressSource = await Bun.file('app/ts/components/pages/AddNewAddress.tsx').text()
 		const accessListSource = await Bun.file('app/ts/components/pages/InterceptorAccessList.tsx').text()
-		assert.doesNotMatch(`${ addAddressSource }\n${ accessListSource }`, /background-color: var\(--negative-color\)/)
+		assert.doesNotMatch(`${ addAddressSource }\n${ accessListSource }`, /background-color: var\(--danger-color\)/)
 	})
 
 	test('labels address editor text inputs and applies a single-column narrow layout', async () => {

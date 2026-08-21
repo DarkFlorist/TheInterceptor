@@ -31,16 +31,16 @@ body { font-family: "Inter", sans-serif; }
 	--address-muted-bg-color: #757575;
 
 	--disabled-card-color: rgba(10, 10, 10, 0.6);
-	--primary-color: #58a5b3;
-	--highlighted-primary-color: #79b7c2;
-	--disabled-primary-color: #3d737d;
+	--accent-color: #58a5b3;
+	--highlighted-accent-color: #79b7c2;
+	--disabled-action-color: #3d737d;
 	--primary-action-color: #357783;
 	--highlighted-primary-action-color: #397f8c;
 
 	--positive-color: #4caf50;
-	--negative-color: #f6685e;
-	--negative-action-color: #b83e37;
-	--highlighted-negative-action-color: #c04941;
+	--danger-color: #f6685e;
+	--destructive-action-color: #b83e37;
+	--highlighted-destructive-action-color: #c04941;
 
 	--error-box-color:#FFB6B6;
 	--error-box-text: #000000;
@@ -48,9 +48,9 @@ body { font-family: "Inter", sans-serif; }
 	--warning-box-color:#FFC107;
 	--warning-box-text: #000000;
 
-	--highlighted-negative-color: #f77f76;
+	--highlighted-danger-color: #f77f76;
 	--warning-color: #FFC107;
-	--negative-dim-color: rgba(246, 104, 94, 0.5);
+	--danger-dim-color: rgba(246, 104, 94, 0.5);
 	--status-warn-bg-color: #F5934B;
 	--status-warn-fg-color: #753100;
 	--status-danger-bg-color: #FF7272;
@@ -74,7 +74,7 @@ body { font-family: "Inter", sans-serif; }
 	--white-alpha-08: #ffffff08;
 	--black-alpha-90: #00000090;
 	--black-alpha-d6: #000000d6;
-	--button-color: #77738ccc;
+	--inline-action-color: #77738ccc;
 	--checked-switch-color: #378b37;
 	--unchecked-switch-color: #922929;
 	--tooltip-color: #222222;
@@ -117,7 +117,7 @@ button:where(:not(.btn)):hover {
 }
 
 button:not(.btn):disabled, button:not(.btn)[disabled] {
-	background-color: var(--disabled-primary-color);
+	background-color: var(--disabled-action-color);
 	border-color: transparent;
 }
 
@@ -358,13 +358,13 @@ svg[role="img"] {
 .address-editor .input:hover,
 .address-editor .address-editor-field .btn:hover {
 	background: var(--white-alpha-10);
-	border: 1px solid var(--highlighted-primary-color);
+	border: 1px solid var(--highlighted-accent-color);
 }
 
 .address-editor .input:focus,
 .address-editor .address-editor-field .btn:focus {
-	border: 1px solid var(--primary-color);
-	box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 22%, transparent);
+	border: 1px solid var(--accent-color);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 22%, transparent);
 }
 
 .address-editor-identity {
@@ -579,12 +579,12 @@ svg[role="img"] {
 }
 
 .safe-signer-owner-option:has(input:checked) {
-	background: color-mix(in srgb, var(--primary-color) 12%, transparent);
-	border-color: var(--primary-color);
+	background: color-mix(in srgb, var(--accent-color) 12%, transparent);
+	border-color: var(--accent-color);
 }
 
 .safe-signer-owner-option > input {
-	accent-color: var(--primary-color);
+	accent-color: var(--accent-color);
 	margin: 0;
 }
 
@@ -761,8 +761,8 @@ svg[role="img"] {
 }
 
 .address-editor input[role=switch]:checked {
-	background: var(--primary-color);
-	border-color: var(--primary-color);
+	background: var(--accent-color);
+	border-color: var(--accent-color);
 }
 
 .address-editor input[role=switch]:checked::before {
@@ -848,7 +848,7 @@ input[type=checkbox]:not([role=switch])::before {
 	transform: scale(0);
 	border-radius: 3px;
 	transition: 120ms transform ease-in-out;
-	background-color: var(--primary-color);
+	background-color: var(--accent-color);
 	border: 1px solid var(--black-color);
 }
 
@@ -1025,7 +1025,7 @@ html, body {
 .stack-row-link-header:hover,
 .stack-row-link-header:focus-visible {
 	background-color: var(--white-alpha-10);
-	box-shadow: inset 3px 0 0 var(--primary-color);
+	box-shadow: inset 3px 0 0 var(--accent-color);
 	transform: translateY(-1px);
 }
 
@@ -1044,12 +1044,12 @@ html, body {
 
 @keyframes simulation-stack-row-target-pulse {
 	0% {
-		background-color: color-mix(in srgb, var(--primary-color) 26%, transparent);
-		box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary-color) 70%, transparent);
+		background-color: color-mix(in srgb, var(--accent-color) 26%, transparent);
+		box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-color) 70%, transparent);
 	}
 	45% {
-		background-color: color-mix(in srgb, var(--primary-color) 14%, transparent);
-		box-shadow: 0 0 0 6px color-mix(in srgb, var(--primary-color) 20%, transparent);
+		background-color: color-mix(in srgb, var(--accent-color) 14%, transparent);
+		box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent-color) 20%, transparent);
 	}
 	100% {
 		background-color: transparent;
@@ -1058,7 +1058,7 @@ html, body {
 }
 
 .hoverable:hover {
-	background-color: var(--highlighted-primary-color)
+	background-color: var(--highlighted-accent-color)
 }
 
 .input {
@@ -1076,14 +1076,14 @@ html, body {
 
 .input:hover {
 	border: unset;
-	border-bottom: 2px solid var(--highlighted-primary-color);
+	border-bottom: 2px solid var(--highlighted-accent-color);
 	box-shadow: none;
 }
 
 .input:focus {
 	border: unset;
 	border-radius: unset;
-	border-bottom: 2px solid var(--primary-color);
+	border-bottom: 2px solid var(--accent-color);
 	box-shadow: none;
  }
 
@@ -1116,21 +1116,21 @@ html, body {
 }
 
 .simulation-stack-import-input:hover {
-	border-color: var(--highlighted-primary-color);
+	border-color: var(--highlighted-accent-color);
 }
 
 .simulation-stack-import-input:focus {
 	outline: none;
-	border-color: var(--primary-color);
-	box-shadow: 0 0 0 1px var(--primary-color);
+	border-color: var(--accent-color);
+	box-shadow: 0 0 0 1px var(--accent-color);
 }
 
 .simulation-stack-import-input-invalid,
 .simulation-stack-import-input-invalid:hover,
 .simulation-stack-import-input-invalid:focus {
-	color: var(--negative-color);
-	border-color: var(--negative-color);
-	box-shadow: 0 0 0 1px var(--negative-color);
+	color: var(--danger-color);
+	border-color: var(--danger-color);
+	box-shadow: 0 0 0 1px var(--danger-color);
 }
 
 .address-book-page {
@@ -1414,7 +1414,7 @@ li {
 
 .simulation-summary-signature {
 	background-color: var(--importance-box-color);
-	border-left: 3px solid var(--primary-color);
+	border-left: 3px solid var(--accent-color);
 	border-radius: 6px;
 	color: var(--text-color);
 	display: grid;
@@ -1433,7 +1433,7 @@ li {
 }
 
 .simulation-summary-signature--invalid {
-	border-left-color: var(--negative-color);
+	border-left-color: var(--danger-color);
 }
 
 .simulation-summary-signature-identity {
@@ -1528,7 +1528,7 @@ li {
 
 .token-box {
 	padding: 4px;
-	background-color: var(--highlighted-primary-color);
+	background-color: var(--highlighted-accent-color);
 	box-shadow: unset;
 	margin-bottom: 5px;
 	margin-top: 5px;
@@ -1548,7 +1548,7 @@ li {
 }
 
 .negative-box {
-	background-color: var(--negative-color);
+	background-color: var(--danger-color);
 	color: var(--text-color);
 }
 
@@ -1558,7 +1558,7 @@ li {
 	height: 1.1em;
 	font-size: 0.9em;
 	background: white;
-	color: var(--negative-color);
+	color: var(--danger-color);
 	flex: 0 0 auto;
 	align-items: center;
 	display: flex;
@@ -1586,15 +1586,15 @@ a.dropdown-item:hover,
 button.dropdown-item:hover,
 a.dropdown-item:focus-visible,
 button.dropdown-item:focus-visible {
-	background-color: color-mix(in srgb, var(--primary-color) 18%, var(--card-content-bg-color));
+	background-color: color-mix(in srgb, var(--accent-color) 18%, var(--card-content-bg-color));
 	color: var(--text-color);
-	outline: 1px solid var(--primary-color);
+	outline: 1px solid var(--accent-color);
 	outline-offset: -1px;
 }
 
 a.dropdown-item.is-active, button.dropdown-item.is-active {
-	background-color: color-mix(in srgb, var(--primary-color) 38%, var(--card-content-bg-color));
-	box-shadow: inset 3px 0 0 var(--primary-color);
+	background-color: color-mix(in srgb, var(--accent-color) 38%, var(--card-content-bg-color));
+	box-shadow: inset 3px 0 0 var(--accent-color);
 	color: var(--text-color);
 }
 
@@ -1666,7 +1666,7 @@ svg.spinner > circle {
 	animation: 1.4s ease-in-out infinite both circle-animation;
 	display: block;
 	fill: transparent;
-	stroke: var(--primary-color);
+	stroke: var(--accent-color);
 	stroke-linecap: round;
 	stroke-dasharray: 283;
 	stroke-dashoffset: 280;
@@ -1695,7 +1695,7 @@ svg.spinner > circle {
 }
 
 .buttons.popup-home-mode-selector {
-	border: 1px solid var(--primary-color);
+	border: 1px solid var(--accent-color);
 	border-radius: 6px;
 	display: inline-flex;
 	margin-bottom: 0;

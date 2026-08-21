@@ -148,7 +148,7 @@ function AddressInput({ disabled, addressInput, setAddress, ariaLabel = 'Address
 		value = { addressInput }
 		placeholder = { '0x0...' }
 		onInput = { e => setAddress(e.currentTarget.value.replaceAll('\n', '').replaceAll('\r', '')) }
-		style = { addressInput === undefined || isAddress(addressInput.trim()) ? undefined : 'color: var(--negative-color);' }
+		style = { addressInput === undefined || isAddress(addressInput.trim()) ? undefined : 'color: var(--danger-color);' }
 	/>
 }
 
@@ -178,7 +178,7 @@ function AbiInput({ abiInput, setAbiInput, disabled }: AbiInputParams) {
 		placeholder = { 'no abi' }
 		onInput = { e => setAbiInput(e.currentTarget.value) }
 		disabled = { disabled }
-		style = { abiInput === undefined || isValidAbi(abiInput.trim()) ? undefined : 'color: var(--negative-color);' }
+		style = { abiInput === undefined || isValidAbi(abiInput.trim()) ? undefined : 'color: var(--danger-color);' }
 	/>
 }
 

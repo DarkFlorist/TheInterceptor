@@ -89,13 +89,13 @@ header:has(form[role='search']) h1 {
 }
 
 .simulation-stack-page-clear {
-	--btn-outline: 1px solid color-mix(in srgb, var(--negative-color) 50%, transparent);
-	--btn-text-color: var(--negative-color);
+	--btn-outline: 1px solid color-mix(in srgb, var(--danger-color) 50%, transparent);
+	--btn-text-color: var(--danger-color);
 	flex: 0 0 auto;
 }
 
 .simulation-stack-page-clear:not(:disabled):hover {
-	--btn-bg-color: var(--negative-dim-color);
+	--btn-bg-color: var(--danger-dim-color);
 	--btn-text-color: var(--text-color);
 }
 
@@ -214,7 +214,7 @@ header:has(form[role='search']) h1 {
 	line-break: anywhere;
 }
 .autosizing-input:focus-within {
-	outline-color: var(--negative-color);
+	outline-color: var(--danger-color);
 }
 .autosizing-span,
 .autosizing-label {
@@ -251,7 +251,7 @@ header:has(form[role='search']) h1 {
 	padding-inline: 2px;
 }
 .autosizing-label .autosizing-input:invalid {
-	outline-color: var(--negative-color);
+	outline-color: var(--danger-color);
 }
 .autosizing-input:focus {
 	outline: none;
@@ -262,7 +262,7 @@ header:has(form[role='search']) h1 {
 
 .inline-card {
 	--bg-color: transparent;
-	--button-color-hilite: white;
+	--highlighted-inline-action-color: white;
 	--bg-inline-padding: 4px;
 	--bg-block-padding: 1px;
 	--image-size: 1em;
@@ -353,7 +353,7 @@ header:has(form[role='search']) h1 {
 
 			> :has(svg):has(span) {
 				font-size: 0.9em;
-				background: var(--button-color);
+				background: var(--inline-action-color);
 				color: var(--text-color);
 				white-space: nowrap;
 				border: 0 none;
@@ -376,7 +376,7 @@ header:has(form[role='search']) h1 {
 
 				&:is(:is(:hover,:focus) > *) {
 					color: black;
-					background: var(--button-color-hilite);
+					background: var(--highlighted-inline-action-color);
 					outline: none;
 
 					&:is([aria-label="Spell-out actions"] *) {
@@ -521,7 +521,7 @@ header:has(form[role='search']) h1 {
 			}
 
 			> span {
-				background: var(--button-color);
+				background: var(--inline-action-color);
 				color: var(--white-color);
 				font-size: 0.8em;
 				font-weight: 600;
@@ -644,16 +644,14 @@ header:has(form[role='search']) h1 {
 	line-height: 1.2;
 }
 
-.btn.is-danger,
-.button.is-danger {
-	  background-color: var(--negative-action-color);
-  border-color: transparent;
-  color: var(--white-color);
+.btn.is-danger {
+	background-color: var(--destructive-action-color);
+	border-color: transparent;
+	color: var(--white-color);
 }
 
-.btn.is-danger:not(:disabled):hover,
-.button.is-danger:not(:disabled):hover {
-	background-color: var(--highlighted-negative-action-color);
+.btn.is-danger:not(:disabled):hover {
+	background-color: var(--highlighted-destructive-action-color);
 	--btn-brightness: 1;
 }
 
@@ -687,102 +685,43 @@ input[type="number"]:focus {
     -moz-appearance: number-input;
 }
 
-.btn.is-primary,
-.button.is-primary {
+.btn.is-primary {
 	background-color: var(--primary-action-color);
 	border-color: transparent;
 	color: var(--white-color);
 }
 
-.btn.is-primary:not(:disabled):hover,
-.button.is-primary:not(:disabled):hover {
+.btn.is-primary:not(:disabled):hover {
 	background-color: var(--highlighted-primary-action-color);
 	--btn-brightness: 1;
 }
 
 .btn.is-primary:not(:disabled):active,
-.btn.is-primary.is-active,
-.button.is-primary:not(:disabled):active,
-.button.is-primary.is-active,
-.button.is-primary.is-hovered {
+.btn.is-primary.is-active {
 	background-color: var(--highlighted-primary-action-color);
 	color: var(--white-color);
 }
 
-.button.is-primary[disabled],
-fieldset[disabled] .button.is-primary {
-	background-color: var(--primary-action-color);
-	border-color: var(--primary-action-color);
-	color: var(--white-color);
-}
-
-.button.is-primary.is-outlined {
-	border-color: var(--primary-action-color);
-	color: var(--primary-action-color);
-}
-
-.button.is-primary.is-outlined:hover,
-.button.is-primary.is-outlined.is-hovered,
-.button.is-primary.is-outlined:focus,
-.button.is-primary.is-outlined.is-focused {
-	background-color: var(--primary-action-color);
-	border-color: var(--primary-action-color);
-	color: var(--white-color);
-}
-
-.button.is-primary.is-outlined[disabled],
-fieldset[disabled] .button.is-primary.is-outlined {
-	background-color: transparent;
-	border-color: var(--primary-action-color);
-	color: var(--primary-action-color);
-}
-
 .button.is-primary.is-danger {
-	background-color: var(--negative-action-color);
+	background-color: var(--destructive-action-color);
 }
 
 .button.is-primary.is-danger:not(:disabled):hover {
-	background-color: var(--highlighted-negative-action-color);
+	background-color: var(--highlighted-destructive-action-color);
 }
 
-.button.is-danger:not(:disabled):active,
-.button.is-danger.is-active,
-.button.is-danger.is-hovered,
 .button.is-primary.is-danger:not(:disabled):active,
 .button.is-primary.is-danger.is-active,
 .button.is-primary.is-danger.is-hovered {
-	background-color: var(--highlighted-negative-action-color);
+	background-color: var(--highlighted-destructive-action-color);
 	color: var(--white-color);
 }
 
-.button.is-danger[disabled],
-fieldset[disabled] .button.is-danger,
 .button.is-primary.is-danger[disabled],
 fieldset[disabled] .button.is-primary.is-danger {
-	background-color: var(--negative-action-color);
-	border-color: var(--negative-action-color);
+	background-color: var(--destructive-action-color);
+	border-color: var(--destructive-action-color);
 	color: var(--white-color);
-}
-
-.button.is-danger.is-outlined {
-	border-color: var(--negative-action-color);
-	color: var(--negative-action-color);
-}
-
-.button.is-danger.is-outlined:hover,
-.button.is-danger.is-outlined.is-hovered,
-.button.is-danger.is-outlined:focus,
-.button.is-danger.is-outlined.is-focused {
-	background-color: var(--negative-action-color);
-	border-color: var(--negative-action-color);
-	color: var(--white-color);
-}
-
-.button.is-danger.is-outlined[disabled],
-fieldset[disabled] .button.is-danger.is-outlined {
-	background-color: transparent;
-	border-color: var(--negative-action-color);
-	color: var(--negative-action-color);
 }
 
 @media (prefers-reduced-motion: reduce) {

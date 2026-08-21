@@ -232,7 +232,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 					: <></> }
 					{ editableAccessList.value === undefined ? <></> : editableAccessList.value.map((access, accessListIndex) => (
 						<li key = { access.websiteAccess.website.websiteOrigin }>
-							{ access.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ access.websiteAccess.website.websiteOrigin }. `}</p> :
+							{ access.removed ? <p style = 'color: var(--danger-color)' > { `Forgot ${ access.websiteAccess.website.websiteOrigin }. `}</p> :
 								<div class = 'card'>
 									<div class = 'card-header'>
 										<div class = 'card-header-icon unset-cursor' >
@@ -273,7 +273,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 											{ access.addressAccess.length === 0 ? <p class = 'paragraph'> No individual address accesses given </p> : <>
 												{ access.addressAccessModified.map((websiteAccessAddress, addressIndex) => (
 													<li key = { addressString(websiteAccessAddress.address) } style = { `margin: 0px; margin-bottom: ${ addressIndex < access.addressAccessModified.length - 1  ? '10px;' : '0px' }` }>
-														{ websiteAccessAddress.removed ? <p style = 'color: var(--negative-color)' > { `Forgot ${ metadata.value.get(addressString(websiteAccessAddress.address))?.name || checksummedAddress(websiteAccessAddress.address) }`} </p> :
+														{ websiteAccessAddress.removed ? <p style = 'color: var(--danger-color)' > { `Forgot ${ metadata.value.get(addressString(websiteAccessAddress.address))?.name || checksummedAddress(websiteAccessAddress.address) }`} </p> :
 															<div style = 'display: flex; width: 100%; overflow: hidden;'>
 																<SmallAddress
 																	addressBookEntry = { metadata.value.get(addressString(websiteAccessAddress.address)) || {

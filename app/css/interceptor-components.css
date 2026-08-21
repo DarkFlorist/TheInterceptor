@@ -682,7 +682,7 @@
 	grid-template-columns: auto auto;
 	justify-content: center;
 	column-gap: 12px;
-	color: var(--primary-color);
+	color: var(--accent-color);
 	font-weight: 650;
 	text-align: center;
 }
@@ -738,8 +738,8 @@ strong { color: inherit }
 .btn--primary:not(:disabled):hover { --btn-bg-color: var(--highlighted-primary-action-color); --btn-brightness: 1; --btn-saturation: 1 }
 
 /* Danger Button */
-.btn--destructive { --btn-bg-color: var(--negative-action-color) }
-.btn--destructive:not(:disabled):hover { --btn-bg-color: var(--highlighted-negative-action-color); --btn-brightness: 1; --btn-saturation: 1 }
+.btn--destructive { --btn-bg-color: var(--destructive-action-color) }
+.btn--destructive:not(:disabled):hover { --btn-bg-color: var(--highlighted-destructive-action-color); --btn-brightness: 1; --btn-saturation: 1 }
 
 .btn--outline {
 	--btn-bg-color: transparent;
@@ -925,7 +925,7 @@ summary:focus {
 .text-input > input::placeholder { color: transparent; }
 
 .text-input > input:where(:disabled, :read-only) { --text-color: var(--border-color) }
-.text-input > input:where(:invalid) { --text-color: var(--negative-color) }
+.text-input > input:where(:invalid) { --text-color: var(--danger-color) }
 
 :where(.text-input:has(input) > span) {
 	grid-area: 1 / span 2;
@@ -941,8 +941,8 @@ summary:focus {
 }
 
 .disclosure {
-	border: 1px dashed var(--negative-color);
-	color: var(--negative-color);
+	border: 1px dashed var(--danger-color);
+	color: var(--danger-color);
 	padding: 1rem;
 	border-radius: 6px;
 }

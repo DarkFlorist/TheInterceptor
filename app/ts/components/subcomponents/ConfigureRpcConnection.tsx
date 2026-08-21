@@ -292,7 +292,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 							<button type = 'submit' value = 'cancel' class = 'btn btn--ghost' style = '--area: 1 / 3' formNoValidate disabled = { mutationPending }>Cancel</button>
 							<button type = 'submit' value = 'save' class = 'btn btn--primary' style = '--area: 1 / 4' disabled = { mutationPending }>{ mutationPending ? 'Saving RPC Connection...' : 'Save RPC Connection' }</button>
 							{ defaultValues && onRemove ? (
-								<button type = 'button' class = 'btn btn--ghost' style = '--area: 1 / 1; --btn-text-color: var(--negative-color)' onClick = { () => { confirmRemoval.value = true } } disabled = { mutationPending }><span class = 'grid' style = '--grid-cols: max-content 1fr; --gap-x: 0.5rem; --text-color: var(--negative-color)'><Trash /> Remove</span></button>
+								<button type = 'button' class = 'btn btn--ghost' style = '--area: 1 / 1; --btn-text-color: var(--danger-color)' onClick = { () => { confirmRemoval.value = true } } disabled = { mutationPending }><span class = 'grid' style = '--grid-cols: max-content 1fr; --gap-x: 0.5rem; --text-color: var(--danger-color)'><Trash /> Remove</span></button>
 							) : <></> }
 						</>
 					)
