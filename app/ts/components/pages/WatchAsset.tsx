@@ -40,7 +40,7 @@ function ProposedAssetField({ label, currentValue, proposedValue, changes }: {
 
 function ProposedTokenImage({ pendingRequest }: { pendingRequest: PendingWatchAssetRequest }) {
 	if (pendingRequest.selectedImageUri !== undefined) return <TokenImageValue uri = { pendingRequest.selectedImageUri } alt = 'Proposed token image'/>
-	if (pendingRequest.imageDownloadError !== undefined) return <small style = 'display: block; color: var(--negative-color)'>{ pendingRequest.imageDownloadError }</small>
+	if (pendingRequest.imageDownloadError !== undefined) return <small style = 'display: block; color: var(--danger-color)'>{ pendingRequest.imageDownloadError }</small>
 	return <TokenImageValue uri = { pendingRequest.currentToken.logoUri } alt = 'Current token image'/>
 }
 

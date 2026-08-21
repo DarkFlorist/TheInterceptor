@@ -357,7 +357,7 @@ function SummarizeAddress(param: SummarizeAddressParams) {
 		}
 		: {
 			textColor: 'var(--disabled-text-color)',
-			negativeColor: 'var(--negative-dim-color)'
+			negativeColor: 'var(--danger-dim-color)'
 		}
 
 	return <div>
@@ -686,7 +686,7 @@ export function getSimulationFreshnessColor(simulationBlockNumber: bigint, curre
 	const isRpcConnected = rpcConnectionStatus === undefined || rpcConnectionStatus.isConnected
 	if (currentBlockNumber !== undefined && (currentBlockNumber === simulationBlockNumber || currentBlockNumber + 1n === simulationBlockNumber) && isRpcConnected) return 'var(--positive-color)'
 	if (currentBlockNumber !== undefined && simulationBlockNumber + 1n === currentBlockNumber) return 'var(--warning-color)'
-	return 'var(--negative-color)'
+	return 'var(--danger-color)'
 }
 
 export function SimulatedInBlockNumber({ simulationBlockNumber, currentBlockNumber, simulationConductedTimestamp, rpcConnectionStatus } : { simulationBlockNumber: bigint, currentBlockNumber: Signal<bigint | undefined>, simulationConductedTimestamp: Date, rpcConnectionStatus: Signal<RpcConnectionStatus> }) {

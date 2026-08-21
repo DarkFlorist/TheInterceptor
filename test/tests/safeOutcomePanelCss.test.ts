@@ -13,7 +13,7 @@ describe('Safe outcome panel CSS', () => {
 	test('uses the primary color for the loading spinner', async () => {
 		const css = await readInterceptorAppCss()
 		const loadingRules = [...css.matchAll(/\.safe-outcome-panel__loading\s*\{([^}]*)\}/g)]
-		assert.equal(loadingRules.some((rule) => rule[1]?.includes('color: var(--primary-color);')), true)
+		assert.equal(loadingRules.some((rule) => rule[1]?.includes('color: var(--accent-color);')), true)
 	})
 
 	test('constrains nested simulation cards to the available panel width', async () => {

@@ -252,7 +252,7 @@ describe('narrow text layout CSS', () => {
 		assert.match(simulationStackContentRow, /margin\s*:\s*10px 0\s*;/)
 	})
 
-	test('uses flexible button height and stacks address book card actions at ultra-narrow widths', async () => {
+	test('uses flexible button height and stacks address book navigation and card actions before text wraps', async () => {
 		const css = await readInterceptorAppCss()
 
 		const button = expectRule(css, ':where(.btn)')
@@ -261,7 +261,8 @@ describe('narrow text layout CSS', () => {
 		assert.match(button, /min-height\s*:\s*2\.25em\s*;/)
 		assert.match(button, /line-height\s*:\s*1\.2\s*;/)
 
-		assert.match(css, /@media screen and \(max-width:\s*220px\)\s*\{[\s\S]*?\.address-book-entry-media\s*\{[\s\S]*?flex-direction\s*:\s*column\s*;/)
-		assert.match(css, /@media screen and \(max-width:\s*220px\)\s*\{[\s\S]*?\.address-book-entry-actions\s*\{[\s\S]*?flex-direction\s*:\s*row\s*;/)
+		assert.match(css, /@media screen and \(max-width:\s*360px\)\s*\{[\s\S]*?\.address-book-sidebar \.menu\s*\{[\s\S]*?grid-template-columns\s*:\s*minmax\(0,\s*1fr\)\s*;/)
+		assert.match(css, /@media screen and \(max-width:\s*360px\)\s*\{[\s\S]*?\.address-book-entry-media\s*\{[\s\S]*?flex-direction\s*:\s*column\s*;/)
+		assert.match(css, /@media screen and \(max-width:\s*360px\)\s*\{[\s\S]*?\.address-book-entry-actions\s*\{[\s\S]*?flex-direction\s*:\s*row\s*;/)
 	})
 })

@@ -11,10 +11,14 @@ export function DinoSays( { text } : { text: string }) {
 	</div>
 }
 
-export function DinoSaysNotification( { text, close } : { text: string, close?: () => void }) {
-	return <div style = 'display: flex; align-items: center; justify-content: center;'>
+export function DinoSaysNotification( { text, close, narrowSummary } : { text: string, close?: () => void, narrowSummary?: string }) {
+	return <div class = { narrowSummary === undefined ? undefined : 'responsive-notification' } style = 'display: flex; align-items: center; justify-content: center;'>
 		<div class = 'notification notification-importance-box' style = 'padding: 10px; display: flex;'>
 			<DinoSays text = { text }/>
+			{ narrowSummary === undefined ? <></> : <details class = 'responsive-notification-details'>
+				<summary>{ narrowSummary }</summary>
+				<p class = 'paragraph'>{ text }</p>
+			</details> }
 			{ close !== undefined ?
 				<button class = 'card-header-icon' aria-label = 'remove' onClick = { close }>
 					<XMarkIcon />

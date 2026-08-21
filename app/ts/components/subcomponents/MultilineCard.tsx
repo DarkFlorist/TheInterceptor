@@ -50,10 +50,11 @@ const ActionableIcon = (props: ActionableIconProps) => {
 	const handleClick = props.onClick ? props.onClick === 'clipboard-copy' ? copyTextToClipboard : props.onClick : undefined
 	const copyValue = props.onClick === 'clipboard-copy' ? props.copyValue : undefined
 	const hintText = props.onClick ? props.hintText : undefined
+	if (handleClick === undefined) return <span role = 'img' class = 'multiline-card-static-icon'><CardIcon /></span>
 
 	return (
 		<span role = 'img'>
-			<button type = 'button' onClick = { handleClick } tabIndex = { -1 } value = { copyValue } title = { hintText } disabled = { !props.onClick }>
+			<button type = 'button' onClick = { handleClick } value = { copyValue } title = { hintText }>
 				<CardIcon />
 				<Tooltip config = { tooltipConfig } />
 			</button>
@@ -125,14 +126,15 @@ type TextActionProps = {
 
 const TextAction = (props: TextActionProps) => {
 	const DisplayText = props.textNode
-	const ActionIcon = props.onClick ? props.buttonIcon : () => <></>
+	if (props.onClick === undefined) return <span class = 'multiline-card-static-action' aria-hidden = 'true'></span>
+	const ActionIcon = props.buttonIcon
 
 	return (
-		<button type = 'button' onClick = { props.onClick } value = { props.onClick ? props.copyValue : undefined } tabIndex = { 1 } disabled = { !props.onClick }>
+		<button type = 'button' onClick = { props.onClick } value = { props.copyValue }>
 			<DisplayText />
 			<span>
 				<ActionIcon />
-				<span>{ props.onClick ? props.buttonLabel : '' }</span>
+				<span>{ props.buttonLabel }</span>
 			</span>
 		</button>
 	)
