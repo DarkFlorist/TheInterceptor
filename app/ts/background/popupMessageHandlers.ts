@@ -57,7 +57,7 @@ export { getLastKnownCurrentTabId } from './currentTab.js'
 export { exportSettings, importSettings, setNewRpcList, settingsOpened } from './popupMessageHandlers/settings.js'
 export { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, disableInterceptor, reloadConnectedTabs, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from './popupMessageHandlers/websiteAccess.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
-import { disableInterceptorForPage } from './popupMessageHandlers/websiteAccess.js'
+import { reloadConnectedTabs, updateContentScriptInjectionStrategy } from './popupMessageHandlers/websiteAccess.js'
 import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
 
 type TimestampedPopupVisualisation = {
@@ -422,11 +422,10 @@ export async function changeInterceptorAccess(ethereum: EthereumClientService, t
 		})
 	})
 
-	const interceptorDisablesChanged = accessChange.data.filter((x) => x.newEntry.interceptorDisabled !== x.oldEntry.interceptorDisabled).map((x) => x)
-	await Promise.all(interceptorDisablesChanged.map(async (disable) => {
-		if (disable.newEntry.interceptorDisabled === undefined) return
-		return await disableInterceptorForPage(websiteTabConnections, disable.newEntry.website, disable.newEntry.interceptorDisabled)
-	}))
+	const interceptorDisabledStateChanged = accessChange.data.some((change) => change.newEntry.interceptorDisabled !== change.oldEntry.interceptorDisabled)
+	const disabledWebsiteRemoved = accessChange.data.some((change) => change.removed && change.oldEntry.interceptorDisabled === true)
+	if (interceptorDisabledStateChanged || disabledWebsiteRemoved) await updateContentScriptInjectionStrategy()
+	if (interceptorDisabledStateChanged) await reloadConnectedTabs(websiteTabConnections)
 
 	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })

@@ -36,10 +36,14 @@ export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConne
 	}
 }
 
-export const disableInterceptorForPage = async (websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) => {
-	await setInterceptorDisabledForWebsite(website, interceptorDisabled)
+export const updateContentScriptInjectionStrategy = async () => {
 	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
 	else await updateContentScriptInjectionStrategyManifestV2()
+}
+
+export const disableInterceptorForPage = async (websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) => {
+	await setInterceptorDisabledForWebsite(website, interceptorDisabled)
+	await updateContentScriptInjectionStrategy()
 	await reloadConnectedTabs(websiteTabConnections)
 }
 
@@ -101,6 +105,7 @@ export async function allowOrPreventAddressAccessForWebsite(websiteTabConnection
 
 export async function removeWebsiteAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
 	await updateWebsiteAccess((previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
+	await updateContentScriptInjectionStrategy()
 	await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, await getSettings(), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }
