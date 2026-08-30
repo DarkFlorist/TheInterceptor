@@ -228,8 +228,7 @@ export const getInterceptorStartSleepingTimestamp = async () => (await browserSt
 
 export const promoteRpcAsPrimary = async (rpcNetwork: RpcNetwork) => {
 	if (rpcNetwork.primary) return
-	const rpcs = await getRpcList()
-	await setRpcList(rpcs.map((rpc) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: rpc.httpsRpc === rpcNetwork.httpsRpc }) : rpc))
+	await rpcListRepository.update((rpcs) => rpcs.map((rpc) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: rpc.httpsRpc === rpcNetwork.httpsRpc }) : rpc))
 }
 
 export const getPrimaryRpcForChain = async (chainId: bigint) => {
