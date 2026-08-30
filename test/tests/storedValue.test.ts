@@ -32,4 +32,29 @@ describe('stored value repository', () => {
 		assert.equal(await repository.get(), 4)
 		assert.deepEqual(calls, ['recover:4'])
 	})
+
+	test('serializes direct writes behind an in-flight read-modify-write update', async () => {
+		let storedValue = 1
+		let releaseUpdate = () => undefined
+		let signalUpdateStarted = () => undefined
+		const updateStarted = new Promise<void>((resolve) => { signalUpdateStarted = resolve })
+		const continueUpdate = new Promise<void>((resolve) => { releaseUpdate = resolve })
+		const repository = createStoredValueRepository({
+			read: async () => storedValue,
+			write: async (value: number) => { storedValue = value },
+			getDefault: () => 0,
+		})
+
+		const updatePromise = repository.update(async (previous) => {
+			signalUpdateStarted()
+			await continueUpdate
+			return previous + 1
+		})
+		await updateStarted
+		const setPromise = repository.set(10)
+		releaseUpdate()
+		await Promise.all([updatePromise, setPromise])
+
+		assert.equal(storedValue, 10)
+	})
 })

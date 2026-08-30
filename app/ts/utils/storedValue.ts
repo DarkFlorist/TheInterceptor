@@ -26,11 +26,11 @@ export function createStoredValueRepository<T>(options: StoredValueRepositoryOpt
 			return defaultValue
 		}
 	}
-	const set = async (value: T) => await options.write(value)
+	const set = async (value: T) => await updateSemaphore.execute(async () => await options.write(value))
 	const update = async (updateValue: (previous: T) => T | Promise<T>) => await updateSemaphore.execute(async () => {
 		const previous = await get()
 		const current = await updateValue(previous)
-		await set(current)
+		await options.write(current)
 		return { previous, current }
 	})
 	return { get, set, update }
