@@ -50,19 +50,21 @@ const keepTrackOfPreviousAddressForRichList = async () => {
 	await trackPreviousActiveAddressForMakeMeRichList(previousActiveAddress)
 }
 
+type ActiveAddressAndChainChange = {
+	simulationMode: boolean
+	activeAddress?: bigint
+	signingAddressSelection?: 'signer' | 'safe'
+	rpcNetwork?: RpcNetwork
+	promptForAccessesIfNeeded?: boolean
+}
+
 const changeActiveAddressAndChainSemaphore = new Semaphore(1)
-export async function changeActiveAddressAndChain(
+async function changeActiveAddressAndChainUnlocked(
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	resetSimulationServices: ResetSimulationServices,
 	websiteTabConnections: WebsiteTabConnections,
-	change: {
-		simulationMode: boolean,
-		activeAddress?: bigint,
-		signingAddressSelection?: 'signer' | 'safe',
-		rpcNetwork?: RpcNetwork,
-		promptForAccessesIfNeeded?: boolean,
-	},
+	change: ActiveAddressAndChainChange,
 ) {
 	if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList()
 	const previousSettings = await getSettings()
@@ -88,25 +90,39 @@ export async function changeActiveAddressAndChain(
 	const popupRefreshGeneration = await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings, change.promptForAccessesIfNeeded ?? true)
 	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration })
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
-	await changeActiveAddressAndChainSemaphore.execute(async () => {
-		const activeSigningSafeContextChanged = !updatedSettings.simulationMode
-			&& updatedSettings.activeSigningSafeAddress !== undefined
-			&& !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings))
-		if (change.rpcNetwork !== undefined) {
-			const rpcChainChanged = previousSettings.activeRpcNetwork.chainId !== change.rpcNetwork.chainId
-			if (change.rpcNetwork.httpsRpc !== undefined) resetSimulationServices(change.rpcNetwork)
-			sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: change.rpcNetwork.chainId })
-			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
+	const activeSigningSafeContextChanged = !updatedSettings.simulationMode
+		&& updatedSettings.activeSigningSafeAddress !== undefined
+		&& !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings))
+	if (change.rpcNetwork !== undefined) {
+		const rpcChainChanged = previousSettings.activeRpcNetwork.chainId !== change.rpcNetwork.chainId
+		if (change.rpcNetwork.httpsRpc !== undefined) resetSimulationServices(change.rpcNetwork)
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: change.rpcNetwork.chainId })
+		sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 
-			if (updatedSettings.simulationMode && rpcChainChanged) {
-				await resetSimulationStateFromConfig(ethereum, tokenPriceService)
-			} else if (updatedSettings.simulationMode) {
-				await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
-			}
+		if (updatedSettings.simulationMode && rpcChainChanged) {
+			await resetSimulationStateFromConfig(ethereum, tokenPriceService)
+		} else if (updatedSettings.simulationMode) {
+			await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
 		}
-		if (activeSigningSafeContextChanged) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
-		await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
-	})
+	}
+	if (activeSigningSafeContextChanged) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
+	await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
+}
+
+export async function changeActiveAddressAndChain(
+	ethereum: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	resetSimulationServices: ResetSimulationServices,
+	websiteTabConnections: WebsiteTabConnections,
+	change: ActiveAddressAndChainChange,
+) {
+	await changeActiveAddressAndChainSemaphore.execute(async () => await changeActiveAddressAndChainUnlocked(
+		ethereum,
+		tokenPriceService,
+		resetSimulationServices,
+		websiteTabConnections,
+		change,
+	))
 }
 
 export async function activateAddressSelection(
@@ -122,28 +138,30 @@ export async function activateAddressSelection(
 		readonly promptForAccessesIfNeeded?: boolean
 	},
 ) {
-	const useSignerAddress = selection?.type === 'signer' || (!options.simulationMode && selection === undefined)
-	if (options.simulationMode) {
-		await setUseSignersAddressAsActiveAddress(useSignerAddress, useSignerAddress ? selection?.type === 'signer' ? selection.address : options.signerAddress : undefined)
-	}
-	await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
-		simulationMode: options.simulationMode,
-		activeAddress: selection?.type === 'signer' ? selection.address : selection?.entry.address,
-		...(!options.simulationMode ? { signingAddressSelection: selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? 'safe' as const : 'signer' as const } : {}),
-		...(options.rpcNetwork === undefined ? {} : { rpcNetwork: options.rpcNetwork }),
-		...(options.promptForAccessesIfNeeded === undefined ? {} : { promptForAccessesIfNeeded: options.promptForAccessesIfNeeded }),
-	})
-	if (options.simulationMode || options.signerAddress === undefined || selection === undefined) return
-	if (selection.type === 'signer') {
-		await rememberSigningAddressSelection({ signerAddress: options.signerAddress, selection: 'signer' })
-		return
-	}
-	if (selection.entry.type !== 'safe') throw new Error('Signing mode can only activate the external signer or an owned Gnosis Safe.')
-	await rememberSigningAddressSelection({
-		signerAddress: options.signerAddress,
-		selection: 'safe',
-		safeAddress: selection.entry.address,
-		chainId: selection.entry.chainId,
+	await changeActiveAddressAndChainSemaphore.execute(async () => {
+		const useSignerAddress = selection?.type === 'signer' || (!options.simulationMode && selection === undefined)
+		if (options.simulationMode) {
+			await setUseSignersAddressAsActiveAddress(useSignerAddress, useSignerAddress ? selection?.type === 'signer' ? selection.address : options.signerAddress : undefined)
+		}
+		await changeActiveAddressAndChainUnlocked(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			simulationMode: options.simulationMode,
+			activeAddress: selection?.type === 'signer' ? selection.address : selection?.entry.address,
+			...(!options.simulationMode ? { signingAddressSelection: selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? 'safe' as const : 'signer' as const } : {}),
+			...(options.rpcNetwork === undefined ? {} : { rpcNetwork: options.rpcNetwork }),
+			...(options.promptForAccessesIfNeeded === undefined ? {} : { promptForAccessesIfNeeded: options.promptForAccessesIfNeeded }),
+		})
+		if (options.simulationMode || options.signerAddress === undefined || selection === undefined) return
+		if (selection.type === 'signer') {
+			await rememberSigningAddressSelection({ signerAddress: options.signerAddress, selection: 'signer' })
+			return
+		}
+		if (selection.entry.type !== 'safe') throw new Error('Signing mode can only activate the external signer or an owned Gnosis Safe.')
+		await rememberSigningAddressSelection({
+			signerAddress: options.signerAddress,
+			selection: 'safe',
+			safeAddress: selection.entry.address,
+			chainId: selection.entry.chainId,
+		})
 	})
 }
 
