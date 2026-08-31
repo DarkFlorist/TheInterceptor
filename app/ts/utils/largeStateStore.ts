@@ -38,6 +38,7 @@ export type PreparedLargeStateWrite = {
 
 let indexedDbPromise: Promise<IDBDatabase | undefined> | undefined
 let indexedDbSource: IDBFactory | undefined
+let indexedDbOpenError: unknown
 const largeStateSemaphore = new Semaphore(1)
 
 function canUseIndexedDb() {
@@ -49,6 +50,7 @@ async function openLargeStateDb() {
 	if (indexedDbSource !== indexedDB) {
 		indexedDbSource = indexedDB
 		indexedDbPromise = undefined
+		indexedDbOpenError = undefined
 	}
 	if (indexedDbPromise !== undefined) return indexedDbPromise
 	const openPromise = new Promise<IDBDatabase>((resolve, reject) => {
@@ -57,13 +59,17 @@ async function openLargeStateDb() {
 			const db = request.result
 			if (!db.objectStoreNames.contains(LARGE_STATE_STORE_NAME)) db.createObjectStore(LARGE_STATE_STORE_NAME)
 		}
-		request.onsuccess = () => resolve(request.result)
+		request.onsuccess = () => {
+			indexedDbOpenError = undefined
+			resolve(request.result)
+		}
 		request.onerror = () => reject(request.error ?? new Error('Failed to open large state IndexedDB database'))
 		request.onblocked = () => reject(new Error('Large state IndexedDB database open was blocked'))
 	})
 	const retryableOpenPromise = openPromise.catch((error) => {
-		console.warn('IndexedDB unavailable for large state persistence, falling back to storage.local.')
+		console.warn('IndexedDB unavailable for large state persistence.')
 		console.warn(error)
+		indexedDbOpenError = error
 		if (indexedDbPromise === retryableOpenPromise) indexedDbPromise = undefined
 		return undefined
 	})
@@ -95,20 +101,23 @@ async function runIndexedDbRequest<T>(mode: IDBTransactionMode, operation: (stor
 	})
 }
 
-function warnIndexedDbRequestFailure(action: string, error: unknown) {
-	console.warn(`IndexedDB ${ action } failed for large state persistence, falling back to storage.local.`)
+function warnIndexedDbRequestFailure(action: string, error: unknown, consequence = 'falling back to storage.local.') {
+	console.warn(`IndexedDB ${ action } failed for large state persistence, ${ consequence }`)
 	console.warn(error)
 }
 
 async function getIndexedDbValue(key: LargeStateStorageKey): Promise<IndexedDbLookup> {
 	try {
 		const result = await runIndexedDbRequest('readonly', (store) => store.get(key))
-		if (result.kind === 'unavailable') return result
+		if (result.kind === 'unavailable') {
+			if (canUseIndexedDb()) throw indexedDbOpenError ?? new Error('IndexedDB unavailable while reading large state')
+			return result
+		}
 		if (result.value === undefined) return { kind: 'available', found: false }
 		return { kind: 'available', found: true, value: result.value }
 	} catch (error) {
-		warnIndexedDbRequestFailure('read', error)
-		return { kind: 'unavailable' }
+		warnIndexedDbRequestFailure('read', error, 'leaving the stored state unchanged.')
+		throw error
 	}
 }
 
