@@ -612,7 +612,7 @@ const EthereumUnknownTransactionType = funtypes.ReadonlyObject({
 })
 
 export type EthereumBlockHeaderTransaction = funtypes.Static<typeof EthereumBlockHeaderTransaction>
-export const EthereumBlockHeaderTransaction = funtypes.Union(EthereumSignedTransaction, EthereumUnknownTransactionType)
+export const EthereumBlockHeaderTransaction = funtypes.Union(EthereumSignedTransactionWithBlockData, EthereumSignedTransactionOptimismDeposit, EthereumUnknownTransactionType)
 
 export type EthereumBlockHeader = funtypes.Static<typeof EthereumBlockHeader>
 export const EthereumBlockHeader = funtypes.Union(funtypes.Null, funtypes.Intersect(
