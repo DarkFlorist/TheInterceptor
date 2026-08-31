@@ -989,7 +989,13 @@ const getSimulatedMockBlockFromPreparedContext = async (
 		uncles: [],
 		baseFeePerGas: block.baseFeePerGas,
 		transactionsRoot: parentBlock.transactionsRoot, // TODO: this is wrong
-		transactions: block.inputBlock.transactions.map((transaction) => transaction.signedTransaction),
+		transactions: block.inputBlock.transactions.map((transaction, transactionIndex) => getSignedTransactionWithBlockData(
+			transaction.signedTransaction,
+			block.blockHash,
+			block.blockNumber,
+			transactionIndex,
+			calculateRealizedEffectiveGasPrice(transaction.signedTransaction, block.baseFeePerGas ?? 0n),
+		)),
 		withdrawals: [],
 		withdrawalsRoot: 0n, // TODO: this is wrong
 	} as const
@@ -1213,21 +1219,12 @@ export const getSimulatedTransactionByHashFromInput = async (
 		for (const executionBlock of context.executionBlocks) {
 			for (const [transactionIndex, transaction] of executionBlock.inputBlock.transactions.entries()) {
 				if (transaction.signedTransaction.hash !== hash) continue
-				const v = getSignedTransactionV(transaction.signedTransaction)
 				const gasPrice = 'gasPrice' in transaction.signedTransaction
 					? transaction.signedTransaction.gasPrice
 					: calculateRealizedEffectiveGasPrice(transaction.signedTransaction, executionBlock.baseFeePerGas || 0n)
-				return {
-				...transaction.signedTransaction,
-				blockHash: executionBlock.blockHash,
-				blockNumber: executionBlock.blockNumber,
-				transactionIndex: BigInt(transactionIndex),
-				data: transaction.signedTransaction.input,
-				v,
-				gasPrice,
+				return getSignedTransactionWithBlockData(transaction.signedTransaction, executionBlock.blockHash, executionBlock.blockNumber, transactionIndex, gasPrice)
 			}
 		}
-	}
 	return await ethereumClientService.getTransactionByHash(hash, requestAbortController)
 }
 
@@ -1470,18 +1467,21 @@ async function getSimulatedMockBlock(ethereumClientService: EthereumClientServic
 	const simulatedBlock = simulationState.simulatedBlocks[blockDelta]
 	const blockHeaderTemplate = getSimulatedBlockHeaderTemplate(simulationState, blockDelta)
 	const parentHash = blockDelta === 0 ? blockHeaderTemplate?.parentHash ?? parentBlock.hash : getHashOfSimulatedBlock(simulationState, blockDelta - 1)
+	const blockHash = getHashOfSimulatedBlock(simulationState, blockDelta)
+	const blockNumber = getSimulationBlockNumber(simulationState, blockDelta)
+	const baseFeePerGas = simulatedBlock?.blockBaseFeePerGas ?? getNextBaseFeePerGas(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas)
 	return {
 		author: blockHeaderTemplate?.miner ?? parentBlock.miner,
 		difficulty: blockHeaderTemplate?.difficulty ?? parentBlock.difficulty,
 		extraData: blockHeaderTemplate?.extraData ?? parentBlock.extraData,
 		gasLimit: blockHeaderTemplate?.gasLimit ?? parentBlock.gasLimit,
 		gasUsed: blockHeaderTemplate?.gasUsed ?? transactionQueueTotalGasUsed(simulatedBlock?.simulatedTransactions || []),
-		hash: getHashOfSimulatedBlock(simulationState, blockDelta),
+		hash: blockHash,
 		logsBloom: blockHeaderTemplate?.logsBloom ?? parentBlock.logsBloom,
 		miner: blockHeaderTemplate?.miner ?? parentBlock.miner,
 		mixHash: blockHeaderTemplate?.mixHash ?? parentBlock.mixHash,
 		nonce: blockHeaderTemplate?.nonce ?? parentBlock.nonce,
-		number: getSimulationBlockNumber(simulationState, blockDelta),
+		number: blockNumber,
 		parentHash,
 		receiptsRoot: blockHeaderTemplate?.receiptsRoot ?? parentBlock.receiptsRoot,
 		sha3Uncles: blockHeaderTemplate?.sha3Uncles ?? parentBlock.sha3Uncles,
@@ -1490,9 +1490,15 @@ async function getSimulatedMockBlock(ethereumClientService: EthereumClientServic
 		size: blockHeaderTemplate?.size ?? parentBlock.size,
 		totalDifficulty: blockHeaderTemplate?.totalDifficulty ?? ((parentBlock.totalDifficulty ?? 0n) + parentBlock.difficulty),
 		uncles: blockHeaderTemplate?.uncles ?? [],
-		baseFeePerGas: simulatedBlock?.blockBaseFeePerGas ?? getNextBaseFeePerGas(parentBlock.gasUsed, parentBlock.gasLimit, parentBlock.baseFeePerGas),
+		baseFeePerGas,
 		transactionsRoot: blockHeaderTemplate?.transactionsRoot ?? parentBlock.transactionsRoot,
-		transactions: simulatedBlock?.simulatedTransactions.map((simulatedTransaction) => simulatedTransaction.preSimulationTransaction.signedTransaction) || [],
+		transactions: simulatedBlock?.simulatedTransactions.map((simulatedTransaction, transactionIndex) => getSignedTransactionWithBlockData(
+			simulatedTransaction.preSimulationTransaction.signedTransaction,
+			blockHash,
+			blockNumber,
+			transactionIndex,
+			simulatedTransaction.realizedGasPrice,
+		)) || [],
 		withdrawals: blockHeaderTemplate?.withdrawals ?? [],
 		...(blockHeaderTemplate?.blobGasUsed !== undefined ? { blobGasUsed: blockHeaderTemplate.blobGasUsed } : {}),
 		...(blockHeaderTemplate?.excessBlobGas !== undefined ? { excessBlobGas: blockHeaderTemplate.excessBlobGas } : {}),
@@ -1613,6 +1619,24 @@ function getSignedTransactionV(transaction: EthereumSendableSignedTransaction): 
 	return transaction.yParity === 'even' ? 0n : 1n
 }
 
+function getSignedTransactionWithBlockData(
+	transaction: EthereumSendableSignedTransaction,
+	blockHash: EthereumBytes32,
+	blockNumber: bigint,
+	transactionIndex: number,
+	realizedGasPrice: bigint,
+): EthereumSignedTransactionWithBlockData {
+	return {
+		...transaction,
+		blockHash,
+		blockNumber,
+		transactionIndex: BigInt(transactionIndex),
+		data: transaction.input,
+		v: getSignedTransactionV(transaction),
+		gasPrice: realizedGasPrice,
+	}
+}
+
 export const getSimulatedTransactionByHash = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, hash: bigint): Promise<EthereumSignedTransactionWithBlockData | null> => {
 	// try to see if the transaction is in our queue
 	if (simulationState.kind === 'passthrough') return await ethereumClientService.getTransactionByHash(hash, requestAbortController)
@@ -1621,25 +1645,13 @@ export const getSimulatedTransactionByHash = async (ethereumClientService: Ether
 	for (const [blockDelta, block] of currentState.simulatedBlocks.entries()) {
 		for (const [transactionIndex, simulatedTransaction] of block.simulatedTransactions.entries()) {
 			if (hash === simulatedTransaction.preSimulationTransaction.signedTransaction.hash) {
-				const v = getSignedTransactionV(simulatedTransaction.preSimulationTransaction.signedTransaction)
-				const additionalParams = {
-					blockHash: getHashOfSimulatedBlock(currentState, blockDelta),
-					blockNumber: currentState.blockNumber + BigInt(blockDelta) + 1n,
-					transactionIndex: BigInt(transactionIndex),
-					data: simulatedTransaction.preSimulationTransaction.signedTransaction.input,
-					v,
-				}
-				if ('gasPrice' in simulatedTransaction.preSimulationTransaction.signedTransaction) {
-					return {
-						...simulatedTransaction.preSimulationTransaction.signedTransaction,
-						...additionalParams,
-					}
-				}
-				return {
-					...simulatedTransaction.preSimulationTransaction.signedTransaction,
-					...additionalParams,
-					gasPrice: simulatedTransaction.realizedGasPrice,
-				}
+				return getSignedTransactionWithBlockData(
+					simulatedTransaction.preSimulationTransaction.signedTransaction,
+					getHashOfSimulatedBlock(currentState, blockDelta),
+					currentState.blockNumber + BigInt(blockDelta) + 1n,
+					transactionIndex,
+					simulatedTransaction.realizedGasPrice,
+				)
 			}
 		}
 	}
