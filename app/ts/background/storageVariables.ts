@@ -113,14 +113,7 @@ export const setPopupRefreshGeneration = popupRefreshGenerationRepository.set
 const simulationResultsSemaphore = new Semaphore(1)
 export async function getPopupVisualisationState() {
 	const emptyResults = createPassthroughCompleteVisualizedSimulation()
-	try {
-		return await getLargeStateValue('popupVisualisation', CompleteVisualizedSimulation) ?? emptyResults
-	} catch (error) {
-		console.warn('Simulation results were corrupt:')
-		console.warn(error)
-		await setLargeStateValue('popupVisualisation', CompleteVisualizedSimulation, emptyResults)
-		return emptyResults
-	}
+	return await getLargeStateValue('popupVisualisation', CompleteVisualizedSimulation) ?? emptyResults
 }
 
 export const setPopupVisualisationState = async (newResults: CompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)

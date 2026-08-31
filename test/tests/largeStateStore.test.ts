@@ -405,6 +405,32 @@ describe('large state store helpers', () => {
 		assert.deepEqual(value, stack)
 	})
 
+	test('rejects IndexedDB read failures instead of returning a stale migrated backup', async () => {
+		const { indexedDbState, storageState } = installLargeStateEnvironment({ getError: new Error('get failed') })
+		indexedDbState.set('interceptorTransactionStack', serializedStack())
+		storageState.interceptorTransactionStack = serializedStack(staleStack)
+		storageState[transactionStackMigratedMarkerKey] = true
+
+		await assert.rejects(
+			getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack),
+			/get failed/,
+		)
+		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
+		assert.deepEqual(storageState.interceptorTransactionStack, serializedStack(staleStack))
+	})
+
+	test('rejects IndexedDB open failures when state is not authoritative in storage.local', async () => {
+		const { indexedDbState, storageState } = installLargeStateEnvironment({ openErrors: [new Error('open failed')] })
+		indexedDbState.set('interceptorTransactionStack', serializedStack())
+		storageState[transactionStackMigratedMarkerKey] = true
+
+		await assert.rejects(
+			getLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack),
+			/open failed/,
+		)
+		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
+	})
+
 	test('keeps legacy storage.local value when IndexedDB migration writes fail', async () => {
 		const { indexedDbState, storageState } = installLargeStateEnvironment({ putError: new Error('put failed') })
 		storageState.interceptorTransactionStack = serializedStack()
