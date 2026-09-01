@@ -2,33 +2,23 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { WebsiteSocket } from '../utils/requests.js'
 import { isActiveSigningSafe } from '../utils/activeAddressSelection.js'
-import { getActiveAddress, websiteSocketToString } from './backgroundUtils.js'
+import { getWebsiteSocketConnection, websiteSocketToString } from './backgroundUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { getSafeAppsCompatibilityMode, getSettings } from './settings.js'
-import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken } from './signerStateOwnership.js'
+import { getConfirmedSignerStateToken } from './signerStateOwnership.js'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { hasAddressAccess } from './websiteAccessPolicy.js'
-
-function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	return websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]
-}
+import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 
 export function isSafeAppsTopFramePort(port: browser.runtime.Port) {
 	return port.sender?.frameId === undefined || port.sender.frameId === 0
 }
 
-async function getActiveAddressForDomain(websiteTabConnections: WebsiteTabConnections, websiteOrigin: string, settings: Settings, socket: WebsiteSocket) {
-	const activeAddress = await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, socket.tabId, async () => await getActiveAddress(settings, socket.tabId))
-	if (activeAddress === undefined) return undefined
-	return hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress) === 'hasAccess' ? activeAddress : undefined
-}
-
 export async function isSafeAppsConnectionEligible(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, settings: Settings) {
-	const connection = getConnectionDetails(websiteTabConnections, socket)
+	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 	if (connection?.approved !== true || !isSafeAppsTopFramePort(connection.port)) return false
 	const [activeAddress, tabState, activeAddresses] = await Promise.all([
-		getActiveAddressForDomain(websiteTabConnections, connection.websiteOrigin, settings, socket),
+		getWebsiteActiveAddress(websiteTabConnections, connection.websiteOrigin, settings, socket),
 		getTabState(socket.tabId),
 		getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId),
 	])
@@ -60,7 +50,7 @@ function createSafeAppsCompatibilityCoordinator() {
 	const refreshPort = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, signerAccountsKnown: boolean) => {
 		const { socketIdentifier, token } = beginPublication(socket)
 		const [enabled, settings] = await Promise.all([getSafeAppsCompatibilityMode(), getSettings()])
-		const connection = getConnectionDetails(websiteTabConnections, socket)
+		const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 		const tabState = await getTabState(socket.tabId)
 		const shouldDiscoverSignerAccounts = enabled
 			&& connection?.approved === true

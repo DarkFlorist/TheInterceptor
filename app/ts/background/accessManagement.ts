@@ -1,4 +1,4 @@
-import { getActiveAddress, getActiveAddressesForAllTabs, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
+import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
@@ -23,15 +23,10 @@ import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 import { safeAppsCompatibilityCoordinator } from './safeAppsCompatibilityCoordinator.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
-
-function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	const identifier = websiteSocketToString(socket)
-	const tabConnection = websiteTabConnections.get(socket.tabId)
-	return tabConnection?.connections[identifier]
-}
+import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
-	const connection = getConnectionDetails(websiteTabConnections, socket)
+	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 	if (connection === undefined) return
 	if (approved) connection.wantsToConnect = true
 	connection.approved = approved
@@ -92,7 +87,7 @@ type VerifyAccessOptions = {
 }
 
 export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, options: VerifyAccessOptions = {}): ApprovalState {
-	const connection = getConnectionDetails(websiteTabConnections, socket)
+	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 	if (connection?.approved && options.ignoreConnectionApproval !== true) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
 	if (access === 'hasAccess') {
@@ -131,7 +126,7 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 			if (connection === undefined) throw new Error('missing connection')
 			if (!connection.approved) continue
 			if (!shouldSendUnscopedConnectionEvents(connection.socket)) continue
-			const activeAddress = await getActiveAddressForDomain(websiteTabConnections, connection.websiteOrigin, settings, connection.socket)
+			const activeAddress = await getWebsiteActiveAddress(websiteTabConnections, connection.websiteOrigin, settings, connection.socket)
 			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
 				type: 'result' as const,
 				method: 'accountsChanged',
@@ -183,22 +178,13 @@ export async function setAccess(website: Website, access: boolean, address: bigi
 	})
 }
 
-// gets active address if the website has been give access for it, otherwise returns undefined this is to guard websites from seeing addresses without access
-async function getActiveAddressForDomain(websiteTabConnections: WebsiteTabConnections, websiteOrigin: string, settings: Settings, socket: WebsiteSocket) {
-	const activeAddress = await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, socket.tabId, async () => await getActiveAddress(settings, socket.tabId))
-	if (activeAddress === undefined) return undefined
-	const hasAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress)
-	if (hasAccess === 'hasAccess') return activeAddress
-	return undefined
-}
-
 function connectToPort(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	settings: Settings,
 	connectWithActiveAddress: bigint | undefined,
 ): true {
-	const wasApproved = getConnectionDetails(websiteTabConnections, socket)?.approved === true
+	const wasApproved = getWebsiteSocketConnection(websiteTabConnections, socket)?.approved === true
 	setWebsitePortApproval(websiteTabConnections, socket, true)
 	if (!wasApproved) safeAppsCompatibilityCoordinator.connectionApproved(websiteTabConnections, socket)
 	if (!shouldSendUnscopedConnectionEvents(socket)) return true
@@ -247,7 +233,7 @@ export async function getAssociatedAddresses(settings: Settings, websiteOrigin: 
 }
 
 async function askUserForAccessOnConnectionUpdate(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressBookEntry | undefined, settings: Settings) {
-	const details = getConnectionDetails(websiteTabConnections, socket)
+	const details = getWebsiteSocketConnection(websiteTabConnections, socket)
 	if (details === undefined) return
 
 	const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
