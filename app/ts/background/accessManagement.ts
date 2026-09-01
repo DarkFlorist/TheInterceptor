@@ -24,8 +24,6 @@ import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addres
 import { safeAppsCompatibilityCoordinator } from './safeAppsCompatibilityCoordinator.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 
-export { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
-
 function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 	const identifier = websiteSocketToString(socket)
 	const tabConnection = websiteTabConnections.get(socket.tabId)

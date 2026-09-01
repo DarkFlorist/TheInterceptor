@@ -6,7 +6,7 @@ import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWin
 import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { getPendingSignerChainChangeTokenForCallback, isPendingSignerChainChangeReply, resolveSignerChainChange } from './windows/changeChain.js'
-import { type ApprovalState, verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
+import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { reportUnexpectedError } from '../utils/errors.js'
@@ -23,6 +23,7 @@ import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from '
 import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { getActiveAddressEntryForChain } from './metadataUtils.js'
 import { isSafeAppsTopFramePort, safeAppsCompatibilityCoordinator } from './safeAppsCompatibilityCoordinator.js'
+import type { ApprovalState } from './websiteAccessPolicy.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)

@@ -217,7 +217,7 @@ export function SettingsView() {
 							onInput = { requestToMetamaskCompatibilityMode }
 						/>
 						<CheckBoxSetting
-							text = { 'Advertise the active Interceptor Safe to Safe Apps (experimental). This is available only while a configured Safe wallet is active; Interceptor EOAs are never advertised as Safe connections.' }
+							text = { 'Advertise as a Gnosis Safe wallet to Safe Apps (experimental).' }
 							checked = { safeAppsCompatibilityMode.value }
 							onInput = { requestToSafeAppsCompatibilityMode }
 						/>

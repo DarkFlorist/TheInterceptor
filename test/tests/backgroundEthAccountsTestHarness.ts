@@ -140,6 +140,7 @@ export async function loadModules() {
 		...await import('../../app/ts/background/safeAppsCompatibilityCoordinator.js'),
 		...await import('../../app/ts/background/settings.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/websiteAccessPolicy.js'),
 		...await import('../../app/ts/background/websiteTabConnections.js'),
 		...await import('../../app/ts/background/windows/changeChain.js'),
 		...await import('../../app/ts/background/windows/interceptorAccess.js'),

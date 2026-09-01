@@ -17,6 +17,7 @@ import { ErrorWithCodeAndOptionalData } from './error.js'
 import { SimulateExecutionReply as SharedSimulateExecutionReply, SimulateExecutionReplyData as SharedSimulateExecutionReplyData } from './simulateExecutionReply.js'
 import { SimulateGnosisSafeTransaction as SharedSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as SharedSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
 import { EthSimulateV1Result } from './ethSimulate-types.js'
+import { SafeAppsRequestCommand } from './safeApps.js'
 
 type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
 const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
@@ -110,15 +111,6 @@ const WalletCapabilities = funtypes.ReadonlyRecord(
 const WalletCapabilitiesReply = funtypes.Intersect(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getCapabilities') }),
 	funtypes.ReadonlyObject({ result: WalletCapabilities }),
-)
-const SafeAppsRequestCommand = funtypes.Union(
-	funtypes.ReadonlyObject({ kind: funtypes.Literal('result'), value: funtypes.Unknown }),
-	funtypes.ReadonlyObject({
-		kind: funtypes.Literal('ethereumRequest'),
-		method: funtypes.String,
-		params: funtypes.ReadonlyArray(funtypes.Unknown),
-		mapResult: funtypes.Union(funtypes.Literal('passthrough'), funtypes.Literal('safeTxHash')),
-	}),
 )
 const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBlockByNumber'), result: GetBlockReturn }),

@@ -136,6 +136,25 @@ describe('Safe Apps compatibility policy', () => {
 		await assert.rejects(async () => await getSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [{ ...transaction, operation: 1 }] } }, 'https://app.example', activeAddress, rpcNetwork, getSafeState), /delegate calls are not supported/)
 	})
 
+	test('rejects malformed Safe Apps shapes at the shared runtype boundaries', async () => {
+		await assert.rejects(
+			async () => await getSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [{ to: 1, value: '0', data: '0x' }] } }, 'https://app.example', activeAddress, rpcNetwork, getSafeState),
+			/Safe transaction fields must be strings/,
+		)
+		await assert.rejects(
+			async () => await getSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [{ to: '0x2222222222222222222222222222222222222222', value: '0', data: '0x' }], params: { safeTxGas: '21000' } } }, 'https://app.example', activeAddress, rpcNetwork, getSafeState),
+			/Safe transaction gas must be a non-negative safe integer/,
+		)
+		await assert.rejects(
+			async () => await getSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'eth_call', params: {} } }, 'https://app.example', activeAddress, rpcNetwork, getSafeState),
+			/Safe Apps RPC params must be an array/,
+		)
+		await assert.rejects(
+			async () => await getSafeAppsRequestCommand({ method: 'wallet_requestPermissions', params: [undefined] }, 'https://app.example', activeAddress, rpcNetwork, getSafeState),
+			/Safe Apps permission request params must be an array/,
+		)
+	})
+
 	test('rejects Safe metadata that cannot be represented by the Safe SDK', async () => {
 		await assert.rejects(async () => await getSafeAppsRequestCommand({ method: 'getSafeInfo' }, 'https://app.example', activeAddress, { ...rpcNetwork, chainId: BigInt(Number.MAX_SAFE_INTEGER) + 1n }, getSafeState), /chain ID is too large/)
 		await assert.rejects(async () => await getSafeAppsRequestCommand({ method: 'getSafeInfo' }, 'https://app.example', activeAddress, rpcNetwork, async () => ({ ...safeState, nonce: BigInt(Number.MAX_SAFE_INTEGER) + 1n })), /nonce is too large/)

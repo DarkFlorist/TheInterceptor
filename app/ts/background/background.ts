@@ -7,7 +7,7 @@ import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type Resolved
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
-import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
+import { clearWebsiteConnectionIntent, finalizeWebsiteAccessChange, persistWebsiteAccessChange, sendAccountsChangedToPort, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket } from './accessManagement.js'
 import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { getActiveAddress } from './backgroundUtils.js'
 import { assertNever } from '../utils/typescript.js'
@@ -38,6 +38,7 @@ import { getSafeAppsRequestCommand, isSafeAppsRequestPolicyError } from './safeA
 import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
 import { getSafeContractState } from '../safe/safeCore.js'
 import { isSafeAppsConnectionEligible } from './safeAppsCompatibilityCoordinator.js'
+import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState } from './websiteAccessPolicy.js'
 
 if (initializeWatchAssetWindowListeners()) {
 	void processWatchAssetQueue(undefined).catch(async (error: unknown) => {

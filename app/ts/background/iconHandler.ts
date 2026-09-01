@@ -1,5 +1,6 @@
 import { ICON_ACCESS_DENIED, ICON_ACTIVE, ICON_ACTIVE_WITH_SHIELD, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD, ICON_SIGNING, ICON_SIGNING_NOT_SUPPORTED, ICON_SIGNING_NOT_SUPPORTED_WITH_SHIELD, ICON_SIGNING_WITH_SHIELD, ICON_SIMULATING, ICON_SIMULATING_WITH_SHIELD, PRIMARY_COLOR, WARNING_COLOR } from '../utils/constants.js'
-import { areWeBlocking, hasAccess, hasAddressAccess } from './accessManagement.js'
+import { areWeBlocking } from './accessManagement.js'
+import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
 import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackgroundColor, setExtensionBadgeText, setExtensionIcon, setExtensionTitle } from './backgroundUtils.js'
 import { Future } from '../utils/future.js'
 import type { TabIcon, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
