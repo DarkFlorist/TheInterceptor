@@ -151,7 +151,7 @@ describe('Safe Apps compatibility policy', () => {
 		)
 		await assert.rejects(
 			async () => await getSafeAppsRequestCommand({ method: 'wallet_requestPermissions', params: [undefined] }, 'https://app.example', activeAddress, rpcNetwork, getSafeState),
-			/Safe Apps permission request params must be an array/,
+			/Safe Apps request params must be JSON-compatible/,
 		)
 	})
 

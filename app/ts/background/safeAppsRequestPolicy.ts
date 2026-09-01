@@ -2,7 +2,7 @@ import * as funtypes from 'funtypes'
 import type { RpcNetwork } from '../types/rpc.js'
 import { addressString } from '../utils/bigint.js'
 import type { SafeContractState } from '../safe/safeCore.js'
-import type { SafeAppsRequestCommand } from '../types/safeApps.js'
+import { JsonValue, type SafeAppsRequestCommand } from '../types/safeApps.js'
 
 export type SafeAppsChainInfo = funtypes.Static<typeof SafeAppsChainInfo>
 export const SafeAppsChainInfo = funtypes.ReadonlyObject({
@@ -15,35 +15,35 @@ export const SafeAppsChainInfo = funtypes.ReadonlyObject({
 	blockExplorerApiUrl: funtypes.String,
 }))
 
-const SafeAppsRequest = funtypes.ReadonlyObject({ method: funtypes.String }).And(funtypes.ReadonlyPartial({ params: funtypes.Unknown }))
-const SafeTransactionsParams = funtypes.ReadonlyObject({ txs: funtypes.ReadonlyArray(funtypes.Unknown) }).And(funtypes.ReadonlyPartial({ params: funtypes.Unknown }))
+const SafeAppsRequest = funtypes.ReadonlyObject({ method: funtypes.String }).And(funtypes.ReadonlyPartial({ params: JsonValue }))
+const SafeTransactionsParams = funtypes.ReadonlyObject({ txs: funtypes.ReadonlyArray(JsonValue) }).And(funtypes.ReadonlyPartial({ params: JsonValue }))
 const SafeTransaction = funtypes.ReadonlyObject({
 	to: funtypes.String,
 	value: funtypes.String,
 	data: funtypes.String,
-}).And(funtypes.ReadonlyPartial({ operation: funtypes.Unknown }))
-const SafeTransactionOptions = funtypes.ReadonlyPartial({ safeTxGas: funtypes.Unknown })
-const SafeRpcCall = funtypes.ReadonlyObject({ call: funtypes.String, params: funtypes.Unknown })
-const SafePermissionRequests = funtypes.ReadonlyArray(funtypes.ReadonlyRecord(funtypes.String, funtypes.Unknown))
+}).And(funtypes.ReadonlyPartial({ operation: funtypes.Number }))
+const SafeTransactionOptions = funtypes.ReadonlyPartial({ safeTxGas: funtypes.Number })
+const SafeRpcCall = funtypes.ReadonlyObject({ call: funtypes.String, params: JsonValue })
+const SafePermissionRequests = funtypes.ReadonlyArray(funtypes.ReadonlyRecord(funtypes.String, JsonValue))
 
-const SAFE_APPS_RPC_METHODS = new Set([
-	'eth_call',
-	'eth_estimateGas',
-	'eth_gasPrice',
-	'eth_getBalance',
-	'eth_getBlockByHash',
-	'eth_getBlockByNumber',
-	'eth_getCode',
-	'eth_getLogs',
-	'eth_getStorageAt',
-	'eth_getTransactionByHash',
-	'eth_getTransactionCount',
-	'eth_getTransactionReceipt',
-	'eth_getGasPrice',
-	'eth_getPastLogs',
-	'eth_getPermissions',
-	'eth_requestPermissions',
-])
+const SafeAppsRpcMethod = funtypes.Union(
+	funtypes.Literal('eth_call'),
+	funtypes.Literal('eth_estimateGas'),
+	funtypes.Literal('eth_gasPrice'),
+	funtypes.Literal('eth_getBalance'),
+	funtypes.Literal('eth_getBlockByHash'),
+	funtypes.Literal('eth_getBlockByNumber'),
+	funtypes.Literal('eth_getCode'),
+	funtypes.Literal('eth_getLogs'),
+	funtypes.Literal('eth_getStorageAt'),
+	funtypes.Literal('eth_getTransactionByHash'),
+	funtypes.Literal('eth_getTransactionCount'),
+	funtypes.Literal('eth_getTransactionReceipt'),
+	funtypes.Literal('eth_getGasPrice'),
+	funtypes.Literal('eth_getPastLogs'),
+	funtypes.Literal('eth_getPermissions'),
+	funtypes.Literal('eth_requestPermissions'),
+)
 
 const SAFE_APPS_RPC_ALIASES = new Map([
 	['eth_getGasPrice', 'eth_gasPrice'],
@@ -61,7 +61,11 @@ export const isSafeAppsRequestPolicyError = (error: unknown): error is Error & {
 
 function parseSafeAppsRequest(value: unknown): funtypes.Static<typeof SafeAppsRequest> {
 	const parsed = SafeAppsRequest.safeParse(value)
-	if (!parsed.success) throw safeAppsPolicyError('Safe Apps request must contain a method string.')
+	if (!parsed.success) {
+		const parsedMethod = funtypes.ReadonlyObject({ method: funtypes.String }).safeParse(value)
+		if (!parsedMethod.success) throw safeAppsPolicyError('Safe Apps request must contain a method string.')
+		throw safeAppsPolicyError('Safe Apps request params must be JSON-compatible.')
+	}
 	return parsed.value
 }
 
@@ -83,7 +87,7 @@ function parseSafeTransaction(params: unknown, from: string) {
 	let safeTxGas: number | undefined
 	if (parsedParams.value.params !== undefined) {
 		const parsedOptions = SafeTransactionOptions.safeParse(parsedParams.value.params)
-		if (!parsedOptions.success || (parsedOptions.value.safeTxGas !== undefined && (typeof parsedOptions.value.safeTxGas !== 'number' || !Number.isSafeInteger(parsedOptions.value.safeTxGas) || parsedOptions.value.safeTxGas < 0))) throw safeAppsPolicyError('Safe transaction gas must be a non-negative safe integer.')
+		if (!parsedOptions.success || (parsedOptions.value.safeTxGas !== undefined && (!Number.isSafeInteger(parsedOptions.value.safeTxGas) || parsedOptions.value.safeTxGas < 0))) throw safeAppsPolicyError('Safe transaction gas must be a non-negative safe integer.')
 		safeTxGas = parsedOptions.value.safeTxGas
 	}
 	return { from, to: transaction.to, value: toEthereumQuantity(transaction.value), data: transaction.data, ...(safeTxGas === undefined || safeTxGas === 0 ? {} : { gas: `0x${ safeTxGas.toString(16) }` }) }
@@ -91,11 +95,13 @@ function parseSafeTransaction(params: unknown, from: string) {
 
 function parseRpcCall(params: unknown) {
 	const parsedCall = SafeRpcCall.safeParse(params)
-	if (!parsedCall.success || !SAFE_APPS_RPC_METHODS.has(parsedCall.value.call)) throw safeAppsPolicyError('Unsupported Safe Apps RPC call.')
-	const parsedParams = funtypes.ReadonlyArray(funtypes.Unknown).safeParse(parsedCall.value.params)
+	if (!parsedCall.success) throw safeAppsPolicyError('Unsupported Safe Apps RPC call.')
+	const parsedMethod = SafeAppsRpcMethod.safeParse(parsedCall.value.call)
+	if (!parsedMethod.success) throw safeAppsPolicyError('Unsupported Safe Apps RPC call.')
+	const parsedParams = funtypes.ReadonlyArray(JsonValue).safeParse(parsedCall.value.params)
 	if (!parsedParams.success) throw safeAppsPolicyError('Safe Apps RPC params must be an array.')
-	const rpcParams = parsedCall.value.call === 'eth_getBlockByNumber' && parsedParams.value.length === 1 ? [...parsedParams.value, false] : parsedParams.value
-	return { method: SAFE_APPS_RPC_ALIASES.get(parsedCall.value.call) ?? parsedCall.value.call, params: rpcParams }
+	const rpcParams = parsedMethod.value === 'eth_getBlockByNumber' && parsedParams.value.length === 1 ? [...parsedParams.value, false] : parsedParams.value
+	return { method: SAFE_APPS_RPC_ALIASES.get(parsedMethod.value) ?? parsedMethod.value, params: rpcParams }
 }
 
 function toSafeAppsNumber(value: bigint, label: string) {
