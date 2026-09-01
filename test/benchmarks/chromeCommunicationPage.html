@@ -67,6 +67,22 @@
 		</main>
 		<script>
 			(() => {
+				const startEarlySafeAppsProbe = () => {
+					if (new URLSearchParams(location.search).get('safe-probe') !== 'early') return
+					const id = crypto.randomUUID()
+					const startedAt = performance.now()
+					globalThis.__earlySafeAppsInfoResult = { status: 'pending' }
+					const listener = (event) => {
+						if (event.source !== globalThis || event.data?.id !== id || typeof event.data?.success !== 'boolean') return
+						globalThis.removeEventListener('message', listener)
+						globalThis.__earlySafeAppsInfoResult = event.data.success
+							? { status: 'fulfilled', data: event.data.data, elapsedMs: performance.now() - startedAt }
+							: { status: 'rejected', error: event.data.error, elapsedMs: performance.now() - startedAt }
+					}
+					globalThis.addEventListener('message', listener)
+					globalThis.postMessage({ id, method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, globalThis.location.origin)
+				}
+
 				const state = globalThis.__interceptorChromeCommunicationState = {
 					phase: 'loading',
 					accounts: undefined,
@@ -102,6 +118,7 @@
 				;(async () => {
 					try {
 						const ethereum = await waitForEthereum()
+						startEarlySafeAppsProbe()
 						updateState('provider-ready')
 						ethereum.on('connect', () => {
 							state.connectEvents += 1
@@ -111,6 +128,15 @@
 							state.accountsChangedEvents += 1
 							state.eventOrder.push('accountsChanged')
 						})
+						if (new URLSearchParams(location.search).get('safe-only') === 'true') {
+							updateState('requesting-safe-only')
+							while (globalThis.__earlySafeAppsInfoResult?.status === 'pending') {
+								await new Promise((resolve) => requestAnimationFrame(() => resolve()))
+							}
+							if (globalThis.__earlySafeAppsInfoResult?.status !== 'fulfilled') throw new Error(globalThis.__earlySafeAppsInfoResult?.error ?? 'Safe Apps discovery failed')
+							updateState('safe-only-granted', { accounts: [globalThis.__earlySafeAppsInfoResult.data.safeAddress] })
+							return
+						}
 						updateState('requesting-access')
 						const useWalletRequestPermissions = new URLSearchParams(location.search).get('flow') === 'wallet-request-permissions'
 						let accounts

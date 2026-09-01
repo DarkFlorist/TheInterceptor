@@ -9,6 +9,7 @@ import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, ty
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { getWalletSelectedAccount, resolveActiveAddressForMode } from '../utils/activeAddressSelection.js'
+import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 
 function isIgnorableExtensionMessagingError(error: Error) {
 	return isIgnorablePortLifecycleError(error)
@@ -312,6 +313,8 @@ export async function setExtensionBadgeBackgroundColor(details: browser.action._
 }
 
 export const websiteSocketToString = (socket: WebsiteSocket) => `${ socket.tabId }-${ serialize(EthereumQuantity, socket.connectionName) }`
+
+export const getWebsiteSocketConnection = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) => websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]
 
 export const getSocketFromPort = (port: browser.runtime.Port) => {
 	if (port.sender?.tab?.id === undefined) return undefined

@@ -183,10 +183,11 @@ describe('interceptor access close handling', () => {
 		await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, request, undefined, await getSettings(), await getActiveAddressEntryForChain(account, 1n), async () => undefined)
 
 		const postedMessages = browserMock.postedMessages as Array<{ method?: string, result?: unknown, requestId?: number }>
-		assert.deepEqual(postedMessages.map((message) => message.method), ['accountsChanged', 'eth_accounts'])
-		assert.deepEqual(postedMessages.map((message) => message.requestId), [7, 7])
-		assert.deepEqual(postedMessages[0]?.result, ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'])
-		assert.deepEqual(postedMessages[1]?.result, ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'])
+		const providerRequestMessages = postedMessages.filter((message) => message.method !== 'safe_apps_compatibility')
+		assert.deepEqual(providerRequestMessages.map((message) => message.method), ['accountsChanged', 'eth_accounts'])
+		assert.deepEqual(providerRequestMessages.map((message) => message.requestId), [7, 7])
+		assert.deepEqual(providerRequestMessages[0]?.result, ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'])
+		assert.deepEqual(providerRequestMessages[1]?.result, ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'])
 	})
 
 	test('serializes dialog close cleanup with matching request creation', async () => {
