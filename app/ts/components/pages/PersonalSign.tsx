@@ -134,6 +134,10 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 			editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 		/>
 		case 'EIP712': {
+			if (visualizedPersonalSignRequest.safeMessageText !== undefined) return <>
+				<p class = 'paragraph'>Approve an off-chain Safe owner signature. The app can publish this message and signature to the Safe message service. The Safe threshold must be met before the message is fully signed.</p>
+				<div class = 'textbox'><p class = 'paragraph' style = 'white-space: pre-wrap'>{ visualizedPersonalSignRequest.safeMessageText }</p></div>
+			</>
 			return <ArbitraryEIP712 enrichedEIP712 = { visualizedPersonalSignRequest.message } renameAddressCallBack = { renameAddressCallBack } />
 		}
 		case 'OrderComponents': {

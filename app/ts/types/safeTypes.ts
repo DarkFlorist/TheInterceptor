@@ -15,9 +15,11 @@ export type SafeMessageCoSignSnapshot = funtypes.Static<typeof SafeMessageCoSign
 export const SafeMessageCoSignSnapshot = funtypes.ReadonlyObject({
 	safeAddress: EthereumAddress,
 	safeSignerAddress: EthereumAddress,
-	safeTxHash: EthereumBytes32,
 	reviewedSafeState: SafeContractStateSnapshot,
-})
+}).And(funtypes.Union(
+	funtypes.ReadonlyObject({ safeTxHash: EthereumBytes32 }),
+	funtypes.ReadonlyObject({ safeMessageHash: EthereumBytes32 }),
+))
 
 export type SafeSignerErrorDetails = funtypes.Static<typeof SafeSignerErrorDetails>
 export const SafeSignerErrorDetails = funtypes.Union(

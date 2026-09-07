@@ -3890,3 +3890,50 @@ describe('inpage signer bridge', () => {
 		}
 	})
 })
+
+test('Safe Apps message signing submits only a successful owner signature and returns the SDK message hash', async () => {
+	for (const rejected of [false, true]) {
+		const signature = `0x${ '12'.repeat(65) }`
+		const messageHash = `0x${ '34'.repeat(32) }`
+		const safeAddress = '0x1111111111111111111111111111111111111111'
+		let submissions = 0
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'connected_to_signer') {
+					reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
+					sendSafeAppsCompatibility(reply, true)
+					return true
+				}
+				if (getSafeAppsMethod(request) === 'signMessage') {
+					replyToSafeAppsRequest(request, reply, { kind: 'ethereumRequest', method: 'eth_signTypedData_v4', params: [safeAddress, '{}'], mapResult: 'safeMessage', message: 'Hello Safe', safeAddress, chainId: '1' })
+					return true
+				}
+				if (request.method === 'eth_signTypedData_v4') {
+					reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, ...(rejected ? { error: { code: 4001, message: 'User rejected signing.' } } : { result: signature }) })
+					return true
+				}
+				if (getSafeAppsMethod(request) === 'submitOffChainMessage') {
+					submissions++
+					assert.deepEqual(request.params?.[0], { method: 'submitOffChainMessage', params: { message: 'Hello Safe', signature, safeAddress, chainId: '1' } })
+					replyToSafeAppsRequest(request, reply, { kind: 'result', value: { messageHash } })
+					return true
+				}
+				return false
+			},
+		})
+		await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?safe-message-${ rejected }`, async () => {
+			let response: unknown
+			fakeWindow.addEventListener('message', (event) => {
+				if (isRecord(event.data) && event.data.id === 'sign-message' && typeof event.data.success === 'boolean') response = event.data
+			})
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			fakeWindow.postMessage({ id: 'sign-message', method: 'signMessage', params: { message: 'Hello Safe' }, env: { sdkVersion: '9.0.0' } }, fakeWindow.location.origin)
+			await waitFor(() => response !== undefined)
+			if (!isRecord(response)) throw new Error('Missing Safe Apps response')
+			assert.equal(response.success, !rejected)
+			assert.equal(submissions, rejected ? 0 : 1)
+			if (rejected) assert.equal(response.error, 'User rejected signing.')
+			else assert.deepEqual(response.data, { messageHash })
+		})
+	}
+})

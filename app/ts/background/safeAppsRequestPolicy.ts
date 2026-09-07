@@ -1,8 +1,11 @@
+import { createSafeMessageTypedData } from '../safe/safeMessage.js'
+import type { SafeAppsMessageServices } from './safeAppsMessages.js'
 import * as funtypes from 'funtypes'
 import type { RpcNetwork } from '../types/rpc.js'
 import { addressString } from '../utils/bigint.js'
 import type { SafeContractState } from '../safe/safeCore.js'
 import { JsonValue, type SafeAppsRequestCommand } from '../types/safeApps.js'
+import { fetchSafeAppsBalances } from './safeAppsBalances.js'
 
 export type SafeAppsChainInfo = funtypes.Static<typeof SafeAppsChainInfo>
 export const SafeAppsChainInfo = funtypes.ReadonlyObject({
@@ -23,6 +26,9 @@ const SafeTransaction = funtypes.ReadonlyObject({
 	data: funtypes.String,
 }).And(funtypes.ReadonlyPartial({ operation: funtypes.Number }))
 const SafeTransactionOptions = funtypes.ReadonlyPartial({ safeTxGas: funtypes.Number })
+const SafeSignMessageParams = funtypes.ReadonlyObject({ message: funtypes.String.withConstraint((value) => value.length <= 100_000) })
+const SafeSubmitMessageParams = SafeSignMessageParams.And(funtypes.ReadonlyObject({ signature: funtypes.String.withConstraint((value) => /^0x[0-9a-f]{130}$/i.test(value)), safeAddress: funtypes.String, chainId: funtypes.String }))
+const SafeBalanceParams = funtypes.ReadonlyPartial({ currency: funtypes.String })
 const SafeRpcCall = funtypes.ReadonlyObject({ call: funtypes.String, params: JsonValue })
 const SafePermissionRequests = funtypes.ReadonlyArray(funtypes.ReadonlyRecord(funtypes.String, JsonValue))
 
@@ -120,7 +126,7 @@ export function getSafeAppsChainInfo(rpcNetwork: RpcNetwork): SafeAppsChainInfo 
 	}
 }
 
-export async function getSafeAppsRequestCommand(value: unknown, websiteOrigin: string, activeSafeAddress: bigint, rpcNetwork: RpcNetwork, getSafeContractState: () => Promise<SafeContractState>): Promise<SafeAppsRequestCommand> {
+export async function getSafeAppsRequestCommand(value: unknown, websiteOrigin: string, activeSafeAddress: bigint, rpcNetwork: RpcNetwork, getSafeContractState: () => Promise<SafeContractState>, messageServices?: SafeAppsMessageServices): Promise<SafeAppsRequestCommand> {
 	const request = parseSafeAppsRequest(value)
 	const safeAddress = addressString(activeSafeAddress)
 	const chainInfo = getSafeAppsChainInfo(rpcNetwork)
@@ -130,6 +136,27 @@ export async function getSafeAppsRequestCommand(value: unknown, websiteOrigin: s
 		case 'getSafeInfo': {
 			const safeState = await getSafeContractState()
 			return { kind: 'result', value: { safeAddress, chainId: toSafeAppsNumber(rpcNetwork.chainId, 'chain ID'), owners: safeState.owners.map(addressString), threshold: toSafeAppsNumber(safeState.threshold, 'threshold'), isReadOnly: false, nonce: toSafeAppsNumber(safeState.nonce, 'nonce'), implementation: ZERO_ADDRESS, modules: [], fallbackHandler: ZERO_ADDRESS, guard: ZERO_ADDRESS, version: safeState.version, network: `CHAIN_${ rpcNetwork.chainId.toString() }` } }
+		}
+		case 'signMessage': {
+			const params = SafeSignMessageParams.safeParse(request.params)
+			if (!params.success) throw safeAppsPolicyError('Safe Apps signMessage params must contain a message string of at most 100000 characters.')
+			return { kind: 'ethereumRequest', method: 'eth_signTypedData_v4', params: [safeAddress, JSON.stringify(createSafeMessageTypedData(rpcNetwork.chainId, activeSafeAddress, params.value.message))], mapResult: 'safeMessage', message: params.value.message, safeAddress, chainId: rpcNetwork.chainId.toString() }
+		}
+		case 'submitOffChainMessage': {
+			const params = SafeSubmitMessageParams.safeParse(request.params)
+			if (!params.success || params.value.safeAddress !== safeAddress || params.value.chainId !== rpcNetwork.chainId.toString()) throw safeAppsPolicyError('The signed Safe message account or chain changed. Request the message again.')
+			if (messageServices === undefined) throw safeAppsPolicyError('Safe message services are unavailable.')
+			return { kind: 'result', value: await messageServices.submit(params.value.message, params.value.signature) }
+		}
+		case 'getOffChainSignature': {
+			if (typeof request.params !== 'string' || !/^0x[0-9a-f]{64}$/i.test(request.params)) throw safeAppsPolicyError('Safe Apps getOffChainSignature requires a message hash.')
+			if (messageServices === undefined) throw safeAppsPolicyError('Safe message services are unavailable.')
+			return { kind: 'result', value: await messageServices.getSignature(request.params.toLowerCase()) }
+		}
+		case 'getSafeBalances': {
+			const params = SafeBalanceParams.safeParse(request.params === undefined ? {} : request.params)
+			if (!params.success || (params.value.currency !== undefined && !/^[a-zA-Z]{3,10}$/.test(params.value.currency))) throw safeAppsPolicyError('Safe Apps balance currency must be a fiat currency code, such as usd or eur.')
+			return { kind: 'result', value: await fetchSafeAppsBalances(rpcNetwork.chainId, activeSafeAddress, params.value.currency?.toLowerCase() ?? 'usd') }
 		}
 		case 'wallet_getPermissions': return { kind: 'result', value: [] }
 		case 'wallet_requestPermissions': {

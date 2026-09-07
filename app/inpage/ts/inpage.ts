@@ -25,7 +25,7 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 type SafeAppsRequestCandidate = { readonly id?: unknown, readonly method?: unknown, readonly env?: unknown, readonly params?: unknown }
 type SafeAppsEnvironmentCandidate = { readonly sdkVersion?: unknown }
 type SafeAppsCompatibilityCandidate = { readonly enabled?: unknown, readonly canRequestAccess?: unknown }
-type SafeAppsCommandCandidate = { readonly kind?: unknown, readonly value?: unknown, readonly method?: unknown, readonly params?: unknown, readonly mapResult?: unknown }
+type SafeAppsCommandCandidate = { readonly kind?: unknown, readonly value?: unknown, readonly method?: unknown, readonly params?: unknown, readonly mapResult?: unknown, readonly message?: unknown, readonly safeAddress?: unknown, readonly chainId?: unknown }
 
 const isSafeAppsRequestCandidate = (value: unknown): value is SafeAppsRequestCandidate => isRecord(value)
 const isSafeAppsEnvironmentCandidate = (value: unknown): value is SafeAppsEnvironmentCandidate => isRecord(value)
@@ -54,12 +54,19 @@ function parseSafeAppsCompatibility(value: unknown) {
 	return { enabled: value.enabled, canRequestAccess: value.canRequestAccess === true }
 }
 
-async function executeSafeAppsCommand(command: unknown, requestEthereum: EthereumRequest): Promise<unknown> {
+async function executeSafeAppsCommand(command: unknown, requestEthereum: EthereumRequest, requestSafeApps: (request: Pick<SafeAppsRequest, 'method' | 'params'>) => Promise<unknown>): Promise<unknown> {
 	if (!isSafeAppsCommandCandidate(command) || (command.kind !== 'result' && command.kind !== 'ethereumRequest')) throw new Error('Interceptor returned an invalid Safe Apps command.')
 	if (command.kind === 'result') return command.value
-	if (typeof command.method !== 'string' || !Array.isArray(command.params) || (command.mapResult !== 'passthrough' && command.mapResult !== 'safeTxHash')) throw new Error('Interceptor returned an invalid Safe Apps Ethereum request.')
+	if (typeof command.method !== 'string' || !Array.isArray(command.params) || (command.mapResult !== 'passthrough' && command.mapResult !== 'safeTxHash' && command.mapResult !== 'safeMessage')) throw new Error('Interceptor returned an invalid Safe Apps Ethereum request.')
+	if (command.mapResult === 'safeMessage' && (typeof command.message !== 'string' || typeof command.safeAddress !== 'string' || typeof command.chainId !== 'string')) throw new Error('Interceptor returned an invalid Safe message request.')
 	const result = await requestEthereum({ method: command.method, params: command.params })
 	if (command.mapResult === 'passthrough') return result
+	if (command.mapResult === 'safeMessage') {
+		if (typeof result !== 'string' || !/^0x[0-9a-f]{130}$/i.test(result)) throw new Error('Interceptor returned an invalid Safe owner signature.')
+		const submitted = await requestSafeApps({ method: 'submitOffChainMessage', params: { message: command.message, signature: result, safeAddress: command.safeAddress, chainId: command.chainId } })
+		if (!isSafeAppsCommandCandidate(submitted) || submitted.kind !== 'result') throw new Error('Interceptor returned an invalid Safe message submission response.')
+		return submitted.value
+	}
 	if (typeof result !== 'string') throw new Error('Interceptor returned an invalid transaction hash.')
 	return { safeTxHash: result }
 }
@@ -67,7 +74,7 @@ async function executeSafeAppsCommand(command: unknown, requestEthereum: Ethereu
 // SDK discovery is read-only and has no retry: retain it until this page becomes eligible.
 const isSafeAppsDiscoveryRequest = (request: ParsedSafeAppsRequest) => 'request' in request && (request.request.method === 'getSafeInfo' || request.request.method === 'getChainInfo' || request.request.method === 'getEnvironmentInfo')
 
-function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (request: SafeAppsRequest) => Promise<unknown>, requestAccess: () => Promise<void>) {
+function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (request: Pick<SafeAppsRequest, 'method' | 'params'>) => Promise<unknown>, requestAccess: () => Promise<void>) {
 	let enabled: boolean | undefined
 	let enablementGeneration = 0
 	let canRequestAccess = false
@@ -668,7 +675,7 @@ class InterceptorMessageListener {
 	private metamaskCompatibilityMode = false
 	private readonly safeAppsBridge = createSafeAppsBridge(inpageWindow, async (request) => {
 		const command = await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [{ method: request.method, ...(request.params === undefined ? {} : { params: request.params }) }] })
-		return await executeSafeAppsCommand(command, async (ethereumRequest) => await this.WindowEthereumRequest(ethereumRequest))
+		return await executeSafeAppsCommand(command, async (ethereumRequest) => await this.WindowEthereumRequest(ethereumRequest), async (followup) => await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [followup] }))
 	}, async () => {
 		await this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
 		// Recheck Safe eligibility after the ordinary wallet/site approval flow completes.

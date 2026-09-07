@@ -18,6 +18,8 @@ export const SafeAppsRequestCommand = funtypes.Union(
 		kind: funtypes.Literal('ethereumRequest'),
 		method: funtypes.String,
 		params: funtypes.ReadonlyArray(JsonValue),
-		mapResult: funtypes.Union(funtypes.Literal('passthrough'), funtypes.Literal('safeTxHash')),
-	}),
+	}).And(funtypes.Union(
+		funtypes.ReadonlyObject({ mapResult: funtypes.Union(funtypes.Literal('passthrough'), funtypes.Literal('safeTxHash')) }),
+		funtypes.ReadonlyObject({ mapResult: funtypes.Literal('safeMessage'), message: funtypes.String, safeAddress: funtypes.String, chainId: funtypes.String }),
+	)),
 )

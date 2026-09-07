@@ -390,7 +390,13 @@ export const isValidMessage = (params: SignMessageParams): { valid: true } | { v
 		case 'eth_signTypedData_v1':
 		case 'eth_signTypedData_v2':
 		case 'eth_signTypedData_v3':
-		case 'eth_signTypedData_v4': return verifyEip712Message(params.params[1])
+		case 'eth_signTypedData_v4': {
+			const data = params.params[1]
+			if (data.safeMessageText === undefined) return verifyEip712Message(data)
+			// Safe review text is authenticated separately against the message hash and is never a signed EIP-712 field.
+			const { types, primaryType, domain, message } = data
+			return verifyEip712Message({ types, primaryType, domain, message })
+		}
 		case 'personal_sign': return { valid: true }
 		default: assertNever(params)
 	}

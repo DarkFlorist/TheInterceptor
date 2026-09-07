@@ -1,6 +1,8 @@
 import type { RPCReply } from '../types/interceptor-messages.js'
 import type { EthereumJsonRpcRequest } from '../types/JsonRpc-types.js'
 import type { InterceptedRequest } from '../utils/requests.js'
+import { isValidMessage } from '../utils/eip712.js'
+import { SafeMessage } from './safeMessage.js'
 import { SafeTx } from '../types/personal-message-definitions.js'
 import { METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../utils/constants.js'
 import { assertInterceptorSafeTransactionPolicy } from './safeCore.js'
@@ -47,10 +49,11 @@ export function getSafeModeRpcPolicyReply(options: {
 	if (
 		SAFE_MESSAGE_SIGNING_METHODS.has(options.parsedRequest.method)
 		&& !isSafeTransactionCoSignRequest(options.parsedRequest, options.activeAddress, options.chainId)
+		&& !isSafeMessageCoSignRequest(options.parsedRequest, options.activeAddress, options.chainId)
 	) {
 		return safeModeUnsupportedMethod(
 			options.parsedRequest.method,
-			'Gnosis Safe message signing is not supported. Only Gnosis Safe transaction proposals for the active Gnosis Safe can be co-signed.',
+			'This Gnosis Safe message signing request is not supported. Use a Safe Apps message request or a transaction proposal for the active Gnosis Safe.',
 		)
 	}
 	if (
@@ -85,4 +88,10 @@ export function isSafeTransactionCoSignRequest(
 	} catch {
 		return false
 	}
+}
+
+export function isSafeMessageCoSignRequest(request: EthereumJsonRpcRequest, activeAddress: bigint | undefined, chainId: bigint) {
+	if (request.method !== 'eth_signTypedData_v4' || activeAddress === undefined || request.params[0] !== activeAddress || !isValidMessage(request).valid) return false
+	const message = SafeMessage.safeParse(request.params[1])
+	return message.success && message.value.domain.chainId === chainId && message.value.domain.verifyingContract === activeAddress
 }

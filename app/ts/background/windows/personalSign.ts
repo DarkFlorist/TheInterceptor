@@ -1,3 +1,4 @@
+import { SafeMessage } from '../../safe/safeMessage.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { type OpenSeaOrderMessage, PersonalSignRequestIdentifiedEIP712Message, type VisualizedPersonalSignRequest } from '../../types/personal-message-definitions.js'
@@ -101,6 +102,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 
 	if (maybeParsed.success === false) {
 		const hashes = getMessageAndDomainHash(originalParams.originalRequestParameters)
+		const safeMessage = SafeMessage.safeParse(namedParams.param)
 		// if we fail to parse the message, that means it's a message type we do not identify, let's just show it as a nonidentified EIP712 message
 		if (validateEIP712Types(namedParams.param) === false) throw new Error('Not a valid EIP712 Message')
 		const message = await extractEIP712Message(ethereumClientService, requestAbortController, namedParams.param)
@@ -111,6 +113,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			...basicParams,
 			rpcNetwork: chainid !== undefined && rpcNetwork.chainId !== chainid ? await getRpcNetworkForChain(chainid) : rpcNetwork,
 			type: 'EIP712' as const,
+			...(safeMessage.success ? { safeMessageText: safeMessage.value.safeMessageText } : {}),
 			message,
 			account,
 			...getSigningQuarantineCodes(chainid, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),

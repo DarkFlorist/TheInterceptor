@@ -1,3 +1,4 @@
+import { SafeMessage, validateSafeMessageForSigning } from '../safe/safeMessage.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { EIP712Message } from '../types/eip721.js'
@@ -168,6 +169,21 @@ export async function createSafeMessageCoSignSnapshot(
 	}
 }
 
+export async function createSafeOffChainMessageSnapshot(ethereum: EthereumClientService, safeAddress: bigint, owner: bigint | undefined, transactionParams: SignMessageParams) {
+	if (transactionParams.method !== 'eth_signTypedData_v4' || transactionParams.params[0] !== safeAddress) throw createSafeSignerSelectionFailure('The Safe message signing account does not match the active Safe.')
+	if (owner === undefined) throw createSafeSignerSelectionFailure('Select a current Safe owner in your signer wallet.')
+	const safeEntry = await getCurrentSafeEntry(ethereum, safeAddress)
+	if (safeEntry.safeVersion === undefined) throw createSafeSignerSelectionFailure('Re-save the Safe address-book entry to verify its version before signing.')
+	const message = SafeMessage.parse(transactionParams.params[1])
+	try {
+		const { signingHash, safeState } = await validateSafeMessageForSigning(ethereum, safeAddress, owner, message, safeEntry.safeVersion)
+		return { safeAddress, safeSignerAddress: owner, safeMessageHash: signingHash, reviewedSafeState: safeState }
+	} catch (error) {
+		if (isSafeOwnerValidationFailure(error)) throw createSafeSignerSelectionFailure(error.message)
+		throw error
+	}
+}
+
 export async function validateSafeMessageCoSignature(
 	ethereum: EthereumClientService,
 	pending: PendingTransactionOrSignableMessage,
@@ -180,7 +196,7 @@ export async function validateSafeMessageCoSignature(
 	if (currentCoSignContext === undefined) throw createSafeSignerSelectionFailure('This Gnosis Safe transaction is not eligible for Interceptor co-signing.')
 	if (typeof signerReply !== 'string') throw createSafeOwnerValidationFailure('The signer returned a non-string Gnosis Safe owner signature.')
 	const ownerSignature = await currentCoSignContext.ownerValidator.validateSignature(
-		currentCoSignContext.safeTxHash,
+		currentCoSignContext.signingHash,
 		signerReply,
 		currentCoSignContext.safeSignerAddress,
 	)
@@ -192,10 +208,7 @@ async function getRequiredSafeCoSignContext(
 	flow: SafeMessageCoSignFlow,
 ) {
 	const pending = flow.pending
-	if (
-		pending.transactionOrMessageCreationStatus !== 'Simulated'
-		|| pending.visualizedPersonalSignRequest.type !== 'SafeTx'
-	) return undefined
+	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
 	const context = await getSafeMessageCoSignContext(ethereum, flow)
 	if (context === undefined) throw createSafeSignerSelectionFailure('This Gnosis Safe transaction is not eligible for Interceptor co-signing.')
 	return context
@@ -293,11 +306,12 @@ function getSafeSignerFacingRequest(
 	coSignContext: SafeMessageCoSignContext | undefined,
 ): SignMessageParams | undefined {
 	if (coSignContext !== undefined) {
+		const { types, primaryType, domain, message } = coSignContext.typedData
 		return {
 			method: 'eth_signTypedData_v4',
 			params: [
 				coSignContext.safeSignerAddress,
-				EIP712Message.parse(safeTxToTypedDataJson(coSignContext.safeTx)),
+				EIP712Message.parse(JSON.stringify({ types, primaryType, domain, message })),
 			],
 		}
 	}
