@@ -1,11 +1,12 @@
-import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
+import { getSettings } from '../settings.js'
+import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
-import type { ChainChangeConfirmation, SignerChainChangeConfirmation } from '../../types/interceptor-messages.js'
+import type { ChainChangeConfirmation, SignerChainChangeConfirmation, WalletSwitchEthereumChainReply } from '../../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { changeActiveRpc } from '../activeSettings.js'
-import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { getChainChangeConfirmationPromise, getRpcNetworkForChain, setChainChangeConfirmationPromise } from '../storageVariables.js'
-import type { RpcNetwork } from '../../types/rpc.js'
+import { getHtmlFile, getSocketFromPort, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { getChainChangeConfirmationPromise, getRpcNetworkForChain, promoteRpcAsPrimary, setChainChangeConfirmationPromise } from '../storageVariables.js'
+import { getRpcNetworkChange, type RpcNetwork } from '../../types/rpc.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import { replyToInterceptedRequest } from '../messageSending.js'
 import type { SwitchEthereumChainParams } from '../../types/JsonRpc-types.js'
@@ -14,7 +15,7 @@ import type { EthereumClientService } from '../../simulation/services/EthereumCl
 import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
-import { addSignerStateReplacementListener, doSignerStateTokensMatch, signerUnavailableError, type SignerStateToken } from '../signerStateOwnership.js'
+import { getConfirmedSignerStateToken, runSignerStateOperation, signerConnectionReplacedError, addSignerStateReplacementListener, doSignerStateTokensMatch, signerUnavailableError, type SignerStateToken } from '../signerStateOwnership.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined 
 
@@ -38,11 +39,11 @@ let pendingSignerChainChange: PendingSignerChainChange | undefined
 const WALLET_SWITCH_TIMEOUT_MS = 120_000
 
 // Command IDs isolate replies across popup/dapp requests, including retries after a deadline.
-export function isPendingWalletSwitchRequest(walletSwitchRequestId: string) {
+function isPendingWalletSwitchRequest(walletSwitchRequestId: string) {
 	return pendingSignerChainChange?.walletSwitchRequestId === walletSwitchRequestId
 }
 
-export function markSignerChainReplyReceived(token: SignerStateToken, chainId: bigint, walletSwitchRequestId: string) {
+function markSignerChainReplyReceived(token: SignerStateToken, chainId: bigint, walletSwitchRequestId: string) {
 	const pending = pendingSignerChainChange
 	if (pending !== undefined && pending.walletSwitchRequestId === walletSwitchRequestId && doesPendingSignerChainChangeMatch(pending, token, chainId)) {
 		pending.replyReceived = true
@@ -96,24 +97,24 @@ function doesPendingSignerChainChangeMatch(pending: PendingSignerChainChange, si
 		: doSignerStateTokensMatch(pending.signerStateToken, signerStateToken)
 }
 
-export function getPendingSignerChainChangeTokenForCallback(port: browser.runtime.Port, signerProviderGeneration: number, chainId: bigint) {
+function getPendingSignerChainChangeTokenForCallback(port: browser.runtime.Port, signerProviderGeneration: number, chainId: bigint) {
 	const signerStateToken = pendingSignerChainChange?.signerStateToken
 	if (signerStateToken === undefined || pendingSignerChainChange?.requestedRpcNetwork.chainId !== chainId) return undefined
 	if (signerStateToken.port !== port || signerStateToken.signerProviderGeneration !== signerProviderGeneration) return undefined
 	return signerStateToken
 }
 
-export function isPendingSignerChainChangeReply(signerStateToken: SignerStateToken, chainId: bigint) {
+function isPendingSignerChainChangeReply(signerStateToken: SignerStateToken, chainId: bigint) {
 	return pendingSignerChainChange !== undefined && doesPendingSignerChainChangeMatch(pendingSignerChainChange, signerStateToken, chainId)
 }
 
 // Keep the requested endpoint in memory until the matching wallet accepts; a rejected request must not change RPC preferences.
-export function getPendingSignerChainChangeRpc(signerStateToken: SignerStateToken, chainId: bigint) {
+function getPendingSignerChainChangeRpc(signerStateToken: SignerStateToken, chainId: bigint) {
 	const pending = pendingSignerChainChange
 	return pending !== undefined && doesPendingSignerChainChangeMatch(pending, signerStateToken, chainId) ? pending.requestedRpcNetwork : undefined
 }
 
-export function resolveSignerChainChange(signerStateToken: SignerStateToken, confirmation: SignerChainChangeConfirmation) {
+function resolveSignerChainChange(signerStateToken: SignerStateToken, confirmation: SignerChainChangeConfirmation) {
 	if (!isPendingWalletSwitchRequest(confirmation.data[0].walletSwitchRequestId)) return false
 	markSignerChainReplyReceived(signerStateToken, confirmation.data[0].chainId, confirmation.data[0].walletSwitchRequestId)
 	const pending = pendingSignerChainChange
@@ -278,4 +279,55 @@ export async function requestSignerChainChange(ethereum: EthereumClientService, 
 		if (pendingSignerChainChange === pending) pendingSignerChainChange = undefined
 	}
 	return userDeniedChange
+}
+
+// Own reply matching, deadline cancellation and settlement together, including failures while applying wallet state.
+export async function applyWalletSwitchReply(
+	websiteTabConnections: WebsiteTabConnections,
+	port: browser.runtime.Port,
+	params: WalletSwitchEthereumChainReply['params'][0],
+	applyChain: (token: SignerStateToken, chainId: bigint, rpc: RpcNetwork | undefined) => Promise<void>,
+) {
+	const socket = getSocketFromPort(port)
+	if (socket === undefined) return
+	await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
+		const currentSignerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+		if (currentSignerStateToken?.socket.connectionName !== socket.connectionName || currentSignerStateToken.port !== port) return
+		if (!isPendingWalletSwitchRequest(params.walletSwitchRequestId)) return
+		const pendingSignerStateToken = getPendingSignerChainChangeTokenForCallback(port, params.signerProviderGeneration, params.chainId)
+		const callbackSignerStateToken = pendingSignerStateToken
+			?? (currentSignerStateToken.signerProviderGeneration === params.signerProviderGeneration ? currentSignerStateToken : undefined)
+		if (callbackSignerStateToken === undefined) return
+		const solicitedReply = isPendingSignerChainChangeReply(callbackSignerStateToken, params.chainId)
+		// Only this command's owner and chain may apply its reply. Unsolicited chain events use signerChainChanged.
+		if (!solicitedReply) return
+		if (currentSignerStateToken.signerProviderGeneration !== params.signerProviderGeneration) {
+			resolveSignerChainChange(callbackSignerStateToken, {
+				method: 'popup_signerChangeChainDialog',
+				data: [{ accept: false, chainId: params.chainId, walletSwitchRequestId: params.walletSwitchRequestId, error: signerConnectionReplacedError, signerProviderGeneration: params.signerProviderGeneration }],
+			})
+			return
+		}
+		markSignerChainReplyReceived(callbackSignerStateToken, params.chainId, params.walletSwitchRequestId)
+		try {
+			if (params.accept) {
+				const requestedRpc = getPendingSignerChainChangeRpc(callbackSignerStateToken, params.chainId)
+				await applyChain(currentSignerStateToken, params.chainId, requestedRpc)
+				const activeRpc = (await getSettings()).activeRpcNetwork
+				if (requestedRpc !== undefined && !getRpcNetworkChange(activeRpc, requestedRpc).endpointChanged) await promoteRpcAsPrimary(requestedRpc)
+			}
+			resolveSignerChainChange(callbackSignerStateToken, {
+				method: 'popup_signerChangeChainDialog',
+				data: [params],
+			})
+		} catch (error) {
+			// Delivery ended the wallet deadline; a failure while applying the reply must also release the waiting popup.
+			resolveSignerChainChange(callbackSignerStateToken, {
+				method: 'popup_signerChangeChainDialog',
+				data: [{ accept: false, chainId: params.chainId, walletSwitchRequestId: params.walletSwitchRequestId, signerProviderGeneration: params.signerProviderGeneration, error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'The wallet replied, but updating the selected network failed. Refresh the popup and try again.' } }],
+			})
+			throw error
+		}
+		return
+	})
 }

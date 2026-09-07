@@ -95,7 +95,7 @@ describe('popup settings changes', () => {
 		const { changeSimulationMode, getSettings, saveCurrentTabId, websiteSocketToString } = await loadModules()
 		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
 		const { getConfirmedSignerStateToken } = await import('../../app/ts/background/signerStateOwnership.js')
-		const { resolveSignerChainChange } = await import('../../app/ts/background/windows/changeChain.js')
+		const { applyWalletSwitchReply } = await import('../../app/ts/background/windows/changeChain.js')
 		await changeSimulationMode({ simulationMode: false })
 		await saveCurrentTabId(1)
 		const socket = { tabId: 1, connectionName: 0n }
@@ -132,7 +132,7 @@ describe('popup settings changes', () => {
 		} finally {
 			const token = getConfirmedSignerStateToken(connections, 1)
 			if (token === undefined) throw new Error('Missing signer token')
-			resolveSignerChainChange(token, { method: 'popup_signerChangeChainDialog', data: [{ accept: false, chainId: 2n, walletSwitchRequestId: getWalletSwitchRequestId(messages), error: { code: 4001, message: 'Rejected' } }] })
+			await applyWalletSwitchReply(connections, port, { accept: false, chainId: 2n, walletSwitchRequestId: getWalletSwitchRequestId(messages), signerProviderGeneration: token.signerProviderGeneration, error: { code: 4001, message: 'Rejected' } }, async () => undefined)
 			await pending
 		}
 		assert.equal(statuses().at(-1)?.operation, undefined)
@@ -189,7 +189,7 @@ describe('popup settings changes', () => {
 		assert.equal(messages.some(message => message.method === 'request_signer_to_wallet_switchEthereumChain'), false, 'Metadata edits must not ask a connected wallet to switch chains')
 	})
 
-	test('activation returns the installed services and preserves them when the endpoint is unchanged', async () => {
+	test('activation installs services once without exposing a potentially superseded snapshot', async () => {
 		installBrowserMock()
 		const { changeSimulationMode, getSettings } = await loadModules()
 		const { activateAddressSelection } = await import('../../app/ts/background/activeSettings.js')
@@ -207,11 +207,9 @@ describe('popup settings changes', () => {
 		}
 		const options = { simulationMode: true, signerAddress: undefined, rpcNetwork: nextRpc }
 		const active = await activateAddressSelection(original.ethereum, original.tokenPriceService, reset, new Map(), undefined, options)
-		assert.equal(active.ethereum, installed.ethereum)
-		assert.equal(active.tokenPriceService, installed.tokenPriceService)
-		const unchanged = await activateAddressSelection(active.ethereum, active.tokenPriceService, reset, new Map(), undefined, options)
-		assert.equal(unchanged.ethereum, installed.ethereum)
-		assert.equal(unchanged.tokenPriceService, installed.tokenPriceService)
+		assert.equal(active, undefined)
+		const unchanged = await activateAddressSelection(installed.ethereum, installed.tokenPriceService, reset, new Map(), undefined, options)
+		assert.equal(unchanged, undefined)
 		assert.equal(resets, 1)
 	})
 
@@ -345,7 +343,7 @@ describe('popup settings changes', () => {
 		test(`wallet deadline releases a silent request but does not expire a received reply (${ outcome })`, async () => {
 			installBrowserMock()
 			const { changeSimulationMode, getSettings, websiteSocketToString } = await loadModules()
-			const { requestSignerChainChange, resolveSignerChainChange, markSignerChainReplyReceived } = await import('../../app/ts/background/windows/changeChain.js')
+			const { requestSignerChainChange, applyWalletSwitchReply } = await import('../../app/ts/background/windows/changeChain.js')
 			const { getConfirmedSignerStateToken } = await import('../../app/ts/background/signerStateOwnership.js')
 			await changeSimulationMode({ simulationMode: false })
 			const socket = { tabId: 1, connectionName: 0n }
@@ -358,17 +356,18 @@ describe('popup settings changes', () => {
 			const request = (timeoutMs: number) => requestSignerChainChange(services.ethereum, services.tokenPriceService, services.resetSimulationServices, connections, rpc, 1, timeoutMs)
 			const token = getConfirmedSignerStateToken(connections, 1)
 			if (token === undefined) throw new Error('Missing signer token')
+			const application = createDeferredValue<void>()
+			let delivery: Promise<void> | undefined
 			if (outcome === 'reply') {
 				const postMessage = port.postMessage
 				port.postMessage = message => {
 					postMessage(message)
 					// Simulate delivery before changeActiveRpc has returned its signer token.
-					markSignerChainReplyReceived(token, 2n, getWalletSwitchRequestId(messages))
+					if (message.method === 'request_signer_to_wallet_switchEthereumChain') delivery = applyWalletSwitchReply(connections, port, { accept: true, chainId: 2n, walletSwitchRequestId: getWalletSwitchRequestId(messages), signerProviderGeneration: token.signerProviderGeneration }, async () => await application.promise)
 				}
 			}
 			const pending = request(30)
 			await waitForPortMessageCount(messages, 'request_signer_to_wallet_switchEthereumChain', 1)
-			const reply = { method: 'popup_signerChangeChainDialog', data: [{ accept: false, chainId: 2n, walletSwitchRequestId: getWalletSwitchRequestId(messages), error: { code: 4001, message: 'Rejected' } }] } as const
 			if (outcome === 'failure') {
 				const { walletSwitchEthereumChainReply } = await import('../../app/ts/background/providerMessageHandlers.js')
 				const originalSet = browser.storage.local.set
@@ -383,8 +382,9 @@ describe('popup settings changes', () => {
 			} else if (outcome === 'reply') {
 				// Delivery has begun, but applying the accepted wallet state can involve slower RPC work.
 				await new Promise(resolve => setTimeout(resolve, 60))
-				resolveSignerChainChange(token, reply)
-				assert.equal((await pending).error?.code, 4001)
+				application.resolve(undefined)
+				await delivery
+				assert.equal((await pending).result, null)
 			} else {
 				assert.match((await pending).error?.message ?? '', /did not answer/)
 				const expiredId = getWalletSwitchRequestId(messages)
@@ -425,7 +425,7 @@ describe('popup settings changes', () => {
 		test(`waits for the matching wallet network ${ accept ? 'acceptance' : 'rejection' }`, async () => {
 			installBrowserMock()
 			const { changeSimulationMode, getSettings, websiteSocketToString } = await loadModules()
-			const { requestSignerChainChange, resolveSignerChainChange } = await import('../../app/ts/background/windows/changeChain.js')
+			const { requestSignerChainChange, applyWalletSwitchReply } = await import('../../app/ts/background/windows/changeChain.js')
 			await changeSimulationMode({ simulationMode: false })
 			const socket = { tabId: 1, connectionName: 0n }
 			const ownership = confirmedSignerOwnership(socket)
@@ -444,10 +444,8 @@ describe('popup settings changes', () => {
 			const { getConfirmedSignerStateToken } = await import('../../app/ts/background/signerStateOwnership.js')
 			const token = getConfirmedSignerStateToken(connections, 1)
 			if (token === undefined) throw new Error('Expected signer owner')
-			resolveSignerChainChange(token, {
-				method: 'popup_signerChangeChainDialog',
-				data: accept ? [{ accept: true, chainId: rpc.chainId, walletSwitchRequestId: getWalletSwitchRequestId(messages) }] : [{ accept: false, chainId: rpc.chainId, walletSwitchRequestId: getWalletSwitchRequestId(messages), error: { code: 4001, message: 'User rejected network change' } }],
-			})
+			const replyBase = { chainId: rpc.chainId, walletSwitchRequestId: getWalletSwitchRequestId(messages), signerProviderGeneration: token.signerProviderGeneration }
+			await applyWalletSwitchReply(connections, port, accept ? { ...replyBase, accept: true } : { ...replyBase, accept: false, error: { code: 4001, message: 'User rejected network change' } }, async () => undefined)
 			const result = await pending
 			if (accept) assert.equal(result.result, null)
 			else assert.equal(result.error?.message, 'User rejected network change')

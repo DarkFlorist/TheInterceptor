@@ -79,10 +79,10 @@ async function runActiveSettingsChange(
 	resetSimulationServices: ResetSimulationServices,
 	websiteTabConnections: WebsiteTabConnections,
 	transition: ActiveSettingsTransition,
-): Promise<SimulationServices> {
+): Promise<void> {
 	const { change } = transition
 	let accessUpdate: WebsiteAccessUpdate | undefined
-	// This is the transition snapshot, not a second registry of the currently installed services.
+	// Use the installed pair for work within this transition; nested access prompts may install another pair before completion.
 	let activeServices: SimulationServices = { ethereum, tokenPriceService }
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
@@ -142,7 +142,6 @@ async function runActiveSettingsChange(
 			await finishWebsiteAccessUpdate(activeServices.ethereum, activeServices.tokenPriceService, resetSimulationServices, websiteTabConnections, accessUpdate, change.promptForAccessesIfNeeded ?? true)
 		}
 	}
-	return activeServices
 }
 
 export async function changeActiveAddressAndChain(
@@ -151,7 +150,7 @@ export async function changeActiveAddressAndChain(
 	resetSimulationServices: ResetSimulationServices,
 	websiteTabConnections: WebsiteTabConnections,
 	change: ActiveAddressAndChainChange,
-): Promise<SimulationServices> {
+): Promise<void> {
 	return await runActiveSettingsChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, { change })
 }
 
@@ -168,7 +167,7 @@ export async function activateAddressSelection(
 		readonly promptForAccessesIfNeeded?: boolean
 		readonly addressChangeRequestId?: string
 	},
-): Promise<SimulationServices> {
+): Promise<void> {
 	const selectedSafe = selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? selection.entry : undefined
 	if (!options.simulationMode && selection?.type === 'addressBookEntry' && selectedSafe === undefined) throw new Error('Signing mode can only activate the external signer or an owned Gnosis Safe.')
 	const useSignerAddress = selection?.type === 'signer' || (!options.simulationMode && selection === undefined)
