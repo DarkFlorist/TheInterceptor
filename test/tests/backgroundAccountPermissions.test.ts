@@ -12,6 +12,13 @@ async function refreshSafeAppsPorts(connections: WebsiteTabConnections) {
 }
 
 describe('background eth_accounts', () => {
+	test('shared top-frame identity accepts MV2 and top-frame ports and rejects child frames', async () => {
+		const { isTopFramePort } = await loadModules()
+		for (const frameId of [undefined, 0, 1, 9]) {
+			assert.equal(isTopFramePort(createPort(1, undefined, frameId).port), frameId === undefined || frameId === 0)
+		}
+	})
+
 	test('disabled Safe Apps has no lifecycle work, reads, or port traffic', async () => {
 		installBrowserMock()
 		const { initializeSafeAppsCompatibility, websiteSocketToString } = await loadModules()

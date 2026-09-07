@@ -25,7 +25,7 @@ async function prepareMessageReview(data = typedData(), review = { text: origina
 	const port = createWebsitePort(socket, 0, [])
 	const connections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: { socket, port, websiteOrigin: 'safe-app.example', approved: true, wantsToConnect: true } } }]])
 	const request = { method: signRequest().method, params: [addressString(activeAddress), JSON.stringify(data)], interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
-	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, signRequest(), false, activeAddress, { websiteOrigin: 'safe-app.example', icon: undefined, title: 'Safe App' }, connections, { message: review }), { type: 'doNotReply' })
+	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, { kind: 'message', parameters: signRequest(), review }, false, activeAddress, { websiteOrigin: 'safe-app.example', icon: undefined, title: 'Safe App' }, connections), { type: 'doNotReply' })
 	const [pending] = await modules.getPendingTransactionsAndMessages()
 	if (pending?.type !== 'SignableMessage' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Missing Safe message review')
 	return pending
@@ -36,10 +36,10 @@ test('Safe Apps signMessage hashes UTF-8 text with the canonical Safe EIP-712 en
 	assert.equal(data.message.message, hashMessage(originalMessage))
 	assert.equal(hashTypedData(data), hashTypedData({ ...data, message: { message: hashMessage(originalMessage) } }))
 	assert.equal(SafeMessage.safeParse({ typedData: EIP712Message.parse(JSON.stringify(data)), review: { text: originalMessage, isTypedData: false } }).success, true)
-	assert.equal(isSafeMessageCoSignRequest(signRequest(), activeAddress, fakeRpcNetwork.chainId, { message: { text: originalMessage, isTypedData: false } }), true)
+	assert.equal(isSafeMessageCoSignRequest(signRequest(), activeAddress, fakeRpcNetwork.chainId, { text: originalMessage, isTypedData: false }), true)
 	assert.equal(isSafeMessageCoSignRequest(signRequest(), activeAddress + 1n, fakeRpcNetwork.chainId), false)
 	assert.equal(isSafeMessageCoSignRequest(signRequest(), activeAddress, fakeRpcNetwork.chainId + 1n), false)
-	assert.equal(isSafeMessageCoSignRequest(signRequest(), activeAddress, fakeRpcNetwork.chainId, { message: { text: 'Different text', isTypedData: false } }), false)
+	assert.equal(isSafeMessageCoSignRequest(signRequest(), activeAddress, fakeRpcNetwork.chainId, { text: 'Different text', isTypedData: false }), false)
 	assert.deepEqual(Object.keys(data).sort(), ['domain', 'message', 'primaryType', 'types'])
 	const command = await getSafeAppsRequestCommand({ method: 'signMessage', params: { message: originalMessage } }, 'safe-app.example', activeAddress, fakeRpcNetwork, async () => ({ version: '1.4.1', nonce: 0n, threshold: 2n, owners: [safeTestOwnerAddress] }))
 	assert.equal(command.kind, 'ethereumRequest')

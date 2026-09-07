@@ -1,4 +1,5 @@
-import type { SafeReviewInput } from '../types/safeReview.js'
+import type { SafeMessageReview } from '../types/safeReview.js'
+import type { ConfirmationRequest } from '../types/confirmationRequest.js'
 import type { RPCReply } from '../types/interceptor-messages.js'
 import type { EthereumJsonRpcRequest } from '../types/JsonRpc-types.js'
 import type { InterceptedRequest } from '../utils/requests.js'
@@ -31,7 +32,7 @@ function safeModeUnsupportedMethod(method: string, message: string): RPCReply {
 
 export function getSafeModeRpcPolicyReply(options: {
 	readonly rawRequest: InterceptedRequest
-	readonly safeReview?: SafeReviewInput
+	readonly confirmation?: ConfirmationRequest
 	readonly parsedRequest: EthereumJsonRpcRequest | undefined
 	readonly safeSigningMode: boolean
 	readonly forwardToSigner: boolean
@@ -40,7 +41,7 @@ export function getSafeModeRpcPolicyReply(options: {
 	readonly hasRpcConnection: boolean
 }): RPCReply | undefined {
 	if (!options.safeSigningMode) {
-		if (options.safeReview !== undefined) return safeModeUnsupportedMethod(options.rawRequest.method, 'Safe operations require an active Safe signing account.')
+		if (options.confirmation?.kind === 'transaction' ? options.confirmation.safeTransaction !== undefined : options.confirmation?.review !== undefined) return safeModeUnsupportedMethod(options.rawRequest.method, 'Safe operations require an active Safe signing account.')
 		return undefined
 	}
 	if (options.parsedRequest === undefined) {
@@ -54,7 +55,7 @@ export function getSafeModeRpcPolicyReply(options: {
 	if (
 		SAFE_MESSAGE_SIGNING_METHODS.has(options.parsedRequest.method)
 		&& !isSafeTransactionCoSignRequest(options.parsedRequest, options.activeAddress, options.chainId)
-		&& !isSafeMessageCoSignRequest(options.parsedRequest, options.activeAddress, options.chainId, options.safeReview)
+		&& !isSafeMessageCoSignRequest(options.parsedRequest, options.activeAddress, options.chainId, options.confirmation?.kind === 'message' ? options.confirmation.review : undefined)
 	) {
 		return safeModeUnsupportedMethod(
 			options.parsedRequest.method,
@@ -95,8 +96,8 @@ export function isSafeTransactionCoSignRequest(
 	}
 }
 
-export function isSafeMessageCoSignRequest(request: EthereumJsonRpcRequest, activeAddress: bigint | undefined, chainId: bigint, context?: SafeReviewInput) {
+export function isSafeMessageCoSignRequest(request: EthereumJsonRpcRequest, activeAddress: bigint | undefined, chainId: bigint, review?: SafeMessageReview) {
 	if (request.method !== 'eth_signTypedData_v4' || activeAddress === undefined || request.params[0] !== activeAddress || !isValidMessage(request).valid) return false
-	const message = SafeMessage.safeParse({ typedData: request.params[1], review: context?.message })
+	const message = SafeMessage.safeParse({ typedData: request.params[1], review })
 	return message.success && message.value.typedData.domain.chainId === chainId && message.value.typedData.domain.verifyingContract === activeAddress
 }

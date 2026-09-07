@@ -57,3 +57,23 @@ test('the confirmation presentation imports shared Safe flow policy from the dom
 	assert.match(confirmTransactionComponentSource, /from '\.\.\/\.\.\/safe\/safePendingFlow\.js'/u)
 	assert.doesNotMatch(confirmTransactionComponentSource, /from '\.\.\/\.\.\/background\/safePendingFlow\.js'/u)
 })
+
+
+test('shared dispatch and confirmation APIs depend on operation models, not frontend admission types', async () => {
+	const simulationHandlers = await Bun.file(new URL('../../app/ts/background/simulationModeHandlers.ts', import.meta.url)).text()
+	for (const source of [backgroundSource, simulationHandlers, confirmTransactionSource, safeTransactionConfirmationSource]) {
+		assert.doesNotMatch(source, /SafeReviewInput|safeReview[?:,]/u)
+	}
+	assert.match(simulationHandlers, /confirmation: TransactionConfirmationRequest/u)
+	assert.match(simulationHandlers, /confirmation: MessageConfirmationRequest/u)
+})
+
+test('signer ownership and Safe Apps eligibility use the same top-frame predicate', async () => {
+	const provider = await Bun.file(new URL('../../app/ts/background/providerMessageHandlers.ts', import.meta.url)).text()
+	const safeApps = await Bun.file(new URL('../../app/ts/background/safeAppsCompatibilityCoordinator.ts', import.meta.url)).text()
+	const startup = await Bun.file(new URL('../../app/ts/background/background-startup.ts', import.meta.url)).text()
+	for (const source of [provider, safeApps, startup]) {
+		assert.match(source, /isTopFramePort/u)
+		assert.doesNotMatch(source, /frameId ===/u)
+	}
+})

@@ -12,7 +12,7 @@ import type { EthereumBlockHeader } from '../types/wire-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { RpcRequestLifecycleCallbacks, SlowRpcRequest } from '../simulation/services/EthereumJSONRpcRequestHandler.js'
 import { createRpcConnectionStatusPublisher, slowRpcRequestKey, type DefinedRpcConnectionStatus, type RpcConnectionStatusChangeMethod } from './rpcSlowRequestTracking.js'
-import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
+import { getSocketFromPort, isTopFramePort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
@@ -149,7 +149,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 	silenceChromeUnCaughtPromise(websitePromise)
 
 	const newConnection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
-	const isTopFrame = port.sender.frameId === undefined || port.sender.frameId === 0
+	const isTopFrame = isTopFramePort(port)
 	let connectionInitializationPromise: ReturnType<typeof waitForStartup> | undefined
 	const getConnectionInitializationPromise = () => {
 		if (connectionInitializationPromise === undefined) throw new Error('Content script connection initialization did not start')

@@ -5,7 +5,7 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { WebsiteSocket } from '../utils/requests.js'
 import { isActiveSigningSafe } from '../utils/activeAddressSelection.js'
-import { getWebsiteSocketConnection, websiteSocketToString } from './backgroundUtils.js'
+import { getWebsiteSocketConnection, isTopFramePort, websiteSocketToString } from './backgroundUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { getSafeAppsCompatibilityMode, getSettings } from './settings.js'
@@ -14,13 +14,10 @@ import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from
 import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 
-export function isSafeAppsTopFramePort(port: browser.runtime.Port) {
-	return port.sender?.frameId === undefined || port.sender.frameId === 0
-}
 
 export async function isSafeAppsConnectionEligible(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, settings: Settings) {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
-	if (connection?.approved !== true || !isSafeAppsTopFramePort(connection.port)) return false
+	if (connection?.approved !== true || !isTopFramePort(connection.port)) return false
 	const [activeAddress, tabState, activeAddresses] = await Promise.all([
 		getWebsiteActiveAddress(websiteTabConnections, connection.websiteOrigin, settings, socket),
 		getTabState(socket.tabId),
@@ -62,12 +59,12 @@ function createSafeAppsCompatibilityCoordinator() {
 		if (!isCurrentPublication(socketIdentifier, token)) return
 		// Reconcile cached Safe consent within the publication generation so any newer refresh also retries it.
 		const signer = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
-		if (!settings.simulationMode && safe !== undefined && connection !== undefined && !connection.approved && isSafeAppsTopFramePort(connection.port) && signer?.socket.connectionName === socket.connectionName) {
+		if (!settings.simulationMode && safe !== undefined && connection !== undefined && !connection.approved && isTopFramePort(connection.port) && signer?.socket.connectionName === socket.connectionName) {
 			verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, safe, settings, { ignoreConnectionApproval: true })
 		}
 		const shouldDiscoverSignerAccounts = isCurrentPublication(socketIdentifier, token)
 			&& connection?.approved === true
-			&& isSafeAppsTopFramePort(connection.port)
+			&& isTopFramePort(connection.port)
 			&& !settings.simulationMode
 			&& settings.activeSigningSafeAddress !== undefined
 			&& tabState.signerConnected
@@ -87,7 +84,7 @@ function createSafeAppsCompatibilityCoordinator() {
 		const siteAccess = latestConnection === undefined ? 'noAccess' : hasAccess(latestSettings.websiteAccess, latestConnection.websiteOrigin)
 		// The Safe selection may be restored only after MetaMask exposes its account; connection must not require that selection upfront.
 		const safeAccess = latestConnection === undefined ? 'noAccess' : configuredSafe === undefined ? 'askAccess' : hasAddressAccess(latestSettings.websiteAccess, latestConnection.websiteOrigin, configuredSafe)
-		const canRequestAccess = latestEnabled && !latestSettings.simulationMode && latestConnection !== undefined && isSafeAppsTopFramePort(latestConnection.port)
+		const canRequestAccess = latestEnabled && !latestSettings.simulationMode && latestConnection !== undefined && isTopFramePort(latestConnection.port)
 			&& siteAccess !== 'noAccess' && siteAccess !== 'interceptorDisabled' && safeAccess !== 'noAccess' && safeAccess !== 'interceptorDisabled'
 		if (!isCurrentPublication(socketIdentifier, token)) return
 		send(websiteTabConnections, socket, eligible && latestEligible, canRequestAccess)

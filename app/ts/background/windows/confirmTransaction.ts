@@ -1,4 +1,4 @@
-import type { SafeReviewInput } from '../../types/safeReview.js'
+import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
 import { SafeMessage } from '../../safe/safeMessage.js'
 import { isSafeMessageCoSignRequest } from '../../safe/safeRequestPolicy.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
@@ -627,13 +627,13 @@ export async function openConfirmTransactionDialogForMessage(
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	request: InterceptedRequest,
-	transactionParams: SignMessageParams,
+	confirmation: MessageConfirmationRequest,
 	simulationMode: boolean,
 	activeAddress: bigint | undefined,
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
-	safeReview?: SafeReviewInput,
 ) {
+	const transactionParams = confirmation.parameters
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	const activeAddressEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()))
 		.find((entry) => entry.address === activeAddress)
@@ -649,8 +649,8 @@ export async function openConfirmTransactionDialogForMessage(
 	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
 	const messageIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
 	const created = new Date()
-	const safeMessage = transactionParams.method === 'eth_signTypedData_v4' && safeReview?.message !== undefined
-		? SafeMessage.parse({ typedData: transactionParams.params[1], review: safeReview.message }) : undefined
+	const safeMessage = transactionParams.method === 'eth_signTypedData_v4' && confirmation.review !== undefined
+		? SafeMessage.parse({ typedData: transactionParams.params[1], review: confirmation.review }) : undefined
 	const signedMessageTransaction = {
 		website,
 		created,
@@ -668,7 +668,7 @@ export async function openConfirmTransactionDialogForMessage(
 		let safeMessageCoSignSnapshot: Awaited<ReturnType<typeof createSafeMessageCoSignSnapshot | typeof createSafeOffChainMessageSnapshot>> | undefined
 			let safeMessageValidationError: string | undefined
 			let safeMessageValidationDetails: SafeSignerErrorDetails | undefined
-		if (!simulationMode && activeAddressEntry?.type === 'safe' && (visualizedPersonalSignRequest.type === 'SafeTx' || isSafeMessageCoSignRequest(transactionParams, activeAddress, ethereumClientService.getChainId(), safeReview))) {
+		if (!simulationMode && activeAddressEntry?.type === 'safe' && (visualizedPersonalSignRequest.type === 'SafeTx' || isSafeMessageCoSignRequest(transactionParams, activeAddress, ethereumClientService.getChainId(), confirmation.review))) {
 				try {
 					safeMessageCoSignSnapshot = visualizedPersonalSignRequest.type === 'SafeTx'
 						? await createSafeMessageCoSignSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, visualizedPersonalSignRequest.message)
@@ -735,12 +735,11 @@ export async function openConfirmTransactionDialogForTransaction(
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	request: InterceptedRequest,
-	transactionParams: SendTransactionParams | SendRawTransactionParams,
+	confirmation: TransactionConfirmationRequest,
 	simulationMode: boolean,
 	activeAddress: bigint | undefined,
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
-	safeReview?: SafeReviewInput,
 ) {
 	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
 	const transactionIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
@@ -750,11 +749,10 @@ export async function openConfirmTransactionDialogForTransaction(
 	const walletSignerAddress = getWalletSelectedAccount(signerTabState)
 	const safePreparation = await prepareSafeTransactionConfirmation(
 		ethereumClientService,
-		transactionParams,
+		confirmation,
 		simulationMode,
 		activeAddress,
 		walletSignerAddress,
-		safeReview,
 	)
 	if (safePreparation.rejection !== undefined) {
 		return formRejectMessage(safePreparation.rejection.code, safePreparation.rejection.message)

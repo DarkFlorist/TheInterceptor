@@ -320,3 +320,6 @@ export const getSocketFromPort = (port: browser.runtime.Port) => {
 	if (port.sender?.tab?.id === undefined) return undefined
 	return { tabId: port.sender?.tab?.id, connectionName: EthereumQuantity.parse(port.name) }
 }
+
+// MV2 ports may omit frameId; preserve their top-frame fallback consistently for ownership and eligibility.
+export const isTopFramePort = (port: browser.runtime.Port) => port.sender?.frameId === undefined || port.sender.frameId === 0

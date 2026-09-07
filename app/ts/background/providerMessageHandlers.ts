@@ -2,7 +2,7 @@ import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply, WatchAs
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
-import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { getPendingSignerChainChangeTokenForCallback, isPendingSignerChainChangeReply, resolveSignerChainChange } from './windows/changeChain.js'
@@ -225,8 +225,7 @@ export async function walletSwitchEthereumChainReply(ethereum: EthereumClientSer
 
 export async function connectedToSigner(_ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined) {
 	const [signerConnected, signerName, signerProviderGeneration] = ConnectedToSigner.parse(request).params
-	// MV2 and test ports may omit frameId. Treat those as the top frame.
-	const isTopFrame = (port.sender?.frameId === undefined || port.sender.frameId === 0)
+	const isTopFrame = isTopFramePort(port)
 	const socket = getSocketFromPort(port)
 	const requestSocket = request.uniqueRequestIdentifier.requestSocket
 	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName) return await getConnectedToSignerResult()
