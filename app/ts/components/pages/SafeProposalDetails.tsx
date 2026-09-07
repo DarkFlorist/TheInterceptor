@@ -1,5 +1,5 @@
 import type { SafeTx } from '../../types/personal-message-definitions.js'
-import type { SafeMessageReview } from '../../types/safeRequestContext.js'
+import type { SafeMessageReview } from '../../types/safeReview.js'
 import { decodeSafeBatch, SAFE_MULTI_SEND_CALL_ONLY, SAFE_SIGN_MESSAGE_LIB, SAFE_SIGN_MESSAGE_ABI } from '../../safe/safeDelegateCalls.js'
 import { getSafeMessageDigest } from '../../safe/safeMessage.js'
 import { encodeFunctionCall } from '../../utils/abiRuntime.js'

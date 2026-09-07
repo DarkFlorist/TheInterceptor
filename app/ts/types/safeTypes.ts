@@ -1,4 +1,4 @@
-import { SafeMessageReview } from './safeRequestContext.js'
+import { SafeMessageReview } from './safeReview.js'
 import * as funtypes from 'funtypes'
 import { SafeTx } from './personal-message-definitions.js'
 import { EthereumAddress, EthereumBytes32, EthereumQuantity, EthereumTimestamp } from './wire-types.js'

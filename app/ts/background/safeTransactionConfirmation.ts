@@ -1,4 +1,4 @@
-import type { SafeRequestContext } from '../types/safeRequestContext.js'
+import type { SafeReviewInput } from '../types/safeReview.js'
 import { getSafeMessageDigest } from '../safe/safeMessage.js'
 import { SAFE_SIGN_MESSAGE_LIB, SAFE_SIGN_MESSAGE_ABI } from '../safe/safeDelegateCalls.js'
 import { encodeFunctionCall } from '../utils/abiRuntime.js'
@@ -50,7 +50,7 @@ export async function prepareSafeTransactionConfirmation(
 	simulationMode: boolean,
 	activeAddress: bigint,
 	walletSignerAddress: bigint | undefined,
-	context?: SafeRequestContext,
+	context?: SafeReviewInput,
 ): Promise<SafeTransactionConfirmationPreparation> {
 	const configuredSafeEntry = simulationMode
 		? undefined
@@ -245,7 +245,7 @@ async function createSafeSigningRequestForTransaction(
 	safeEntry: SafeEntry | undefined,
 	walletSignerAddress: bigint | undefined,
 	reconciledStoredSafeState: ReconciledStoredSafeState | undefined,
-	context: SafeRequestContext | undefined,
+	context: SafeReviewInput | undefined,
 	validateOwner = true,
 ): Promise<SafeTransactionSigningRequest | undefined> {
 	if (safeEntry === undefined) return undefined

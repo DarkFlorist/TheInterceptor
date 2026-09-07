@@ -1,4 +1,5 @@
-import { getSafeRequestContext } from '../../safe/safeAppsExecution.js'
+import type { SafeReviewInput } from '../../types/safeReview.js'
+import { SafeMessage } from '../../safe/safeMessage.js'
 import { isSafeMessageCoSignRequest } from '../../safe/safeRequestPolicy.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas } from '../../simulation/services/SimulationModeEthereumClientService.js'
@@ -631,6 +632,7 @@ export async function openConfirmTransactionDialogForMessage(
 	activeAddress: bigint | undefined,
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
+	safeReview?: SafeReviewInput,
 ) {
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	const activeAddressEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()))
@@ -647,6 +649,8 @@ export async function openConfirmTransactionDialogForMessage(
 	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
 	const messageIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
 	const created = new Date()
+	const safeMessage = transactionParams.method === 'eth_signTypedData_v4' && safeReview?.message !== undefined
+		? SafeMessage.parse({ typedData: transactionParams.params[1], review: safeReview.message }) : undefined
 	const signedMessageTransaction = {
 		website,
 		created,
@@ -656,6 +660,7 @@ export async function openConfirmTransactionDialogForMessage(
 		simulationMode,
 		request,
 		messageIdentifier,
+		...(safeMessage === undefined ? {} : { safeMessageReview: safeMessage.review }),
 	}
 	try {
 		const visualizedPersonalSignRequest = await craftPersonalSignPopupMessage(ethereumClientService, undefined, signedMessageTransaction, ethereumClientService.getRpcEntry())
@@ -663,11 +668,11 @@ export async function openConfirmTransactionDialogForMessage(
 		let safeMessageCoSignSnapshot: Awaited<ReturnType<typeof createSafeMessageCoSignSnapshot | typeof createSafeOffChainMessageSnapshot>> | undefined
 			let safeMessageValidationError: string | undefined
 			let safeMessageValidationDetails: SafeSignerErrorDetails | undefined
-		if (!simulationMode && activeAddressEntry?.type === 'safe' && (visualizedPersonalSignRequest.type === 'SafeTx' || isSafeMessageCoSignRequest(transactionParams, activeAddress, ethereumClientService.getChainId(), getSafeRequestContext(request)))) {
+		if (!simulationMode && activeAddressEntry?.type === 'safe' && (visualizedPersonalSignRequest.type === 'SafeTx' || isSafeMessageCoSignRequest(transactionParams, activeAddress, ethereumClientService.getChainId(), safeReview))) {
 				try {
 					safeMessageCoSignSnapshot = visualizedPersonalSignRequest.type === 'SafeTx'
 						? await createSafeMessageCoSignSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, visualizedPersonalSignRequest.message)
-						: await createSafeOffChainMessageSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, getSafeRequestContext(request))
+						: await createSafeOffChainMessageSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, safeMessage?.review)
 				} catch (error) {
 					if (!isExpectedSafeMessageCoSignSnapshotFailure(error)) throw error
 					safeMessageValidationError = getErrorMessage(error) ?? 'The Gnosis Safe transaction could not be validated.'
@@ -735,6 +740,7 @@ export async function openConfirmTransactionDialogForTransaction(
 	activeAddress: bigint | undefined,
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
+	safeReview?: SafeReviewInput,
 ) {
 	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
 	const transactionIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
@@ -748,7 +754,7 @@ export async function openConfirmTransactionDialogForTransaction(
 		simulationMode,
 		activeAddress,
 		walletSignerAddress,
-		getSafeRequestContext(request),
+		safeReview,
 	)
 	if (safePreparation.rejection !== undefined) {
 		return formRejectMessage(safePreparation.rejection.code, safePreparation.rejection.message)

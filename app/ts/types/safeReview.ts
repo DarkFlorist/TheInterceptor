@@ -1,11 +1,11 @@
 import * as funtypes from 'funtypes'
 
-// Interceptor review context travels beside RPC params; none of these fields are part of an Ethereum payload.
+// Admission input for Safe review. Normalize transport data once, then persist the reviewed message or transaction in its domain model.
 export type SafeMessageReview = funtypes.Static<typeof SafeMessageReview>
 export const SafeMessageReview = funtypes.ReadonlyObject({ text: funtypes.String, isTypedData: funtypes.Boolean })
 
-export type SafeRequestContext = funtypes.Static<typeof SafeRequestContext>
-export const SafeRequestContext = funtypes.ReadonlyPartial({
+export type SafeReviewInput = funtypes.Static<typeof SafeReviewInput>
+export const SafeReviewInput = funtypes.ReadonlyPartial({
 	operation: funtypes.Union(funtypes.Literal(0), funtypes.Literal(1)),
 	message: SafeMessageReview,
 })

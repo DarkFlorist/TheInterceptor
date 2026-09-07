@@ -1,4 +1,3 @@
-import { getSafeRequestContext } from '../../safe/safeAppsExecution.js'
 import { SafeMessage } from '../../safe/safeMessage.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { stringifyJSONWithBigInts } from '../../utils/bigint.js'
@@ -103,7 +102,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 
 	if (maybeParsed.success === false) {
 		const hashes = getMessageAndDomainHash(originalParams.originalRequestParameters)
-		const safeMessage = SafeMessage.safeParse({ typedData: namedParams.param, review: getSafeRequestContext(signedMessageTransaction.request)?.message })
+		const safeMessage = SafeMessage.safeParse({ typedData: namedParams.param, review: signedMessageTransaction.safeMessageReview })
 		// if we fail to parse the message, that means it's a message type we do not identify, let's just show it as a nonidentified EIP712 message
 		if (validateEIP712Types(namedParams.param) === false) throw new Error('Not a valid EIP712 Message')
 		const message = await extractEIP712Message(ethereumClientService, requestAbortController, namedParams.param)

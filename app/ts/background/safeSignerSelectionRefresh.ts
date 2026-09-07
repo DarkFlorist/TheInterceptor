@@ -1,5 +1,4 @@
-import { getSafeRequestContext } from '../safe/safeAppsExecution.js'
-import type { SafeRequestContext } from '../types/safeRequestContext.js'
+import type { SafeMessageReview } from '../types/safeReview.js'
 import type { SignMessageParams } from '../types/jsonRpc-signing-types.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -95,12 +94,12 @@ async function refreshSafeTransactionSignerSelection(
 	}
 }
 
-export async function createSafeOffChainMessageSnapshot(ethereum: EthereumClientService, safeAddress: bigint, owner: bigint | undefined, transactionParams: SignMessageParams, context?: SafeRequestContext) {
+export async function createSafeOffChainMessageSnapshot(ethereum: EthereumClientService, safeAddress: bigint, owner: bigint | undefined, transactionParams: SignMessageParams, review?: SafeMessageReview) {
 	if (transactionParams.method !== 'eth_signTypedData_v4' || transactionParams.params[0] !== safeAddress) throw createSafeContractValidationFailure('The Safe message signing account does not match the active Safe.')
 	if (owner === undefined) throw createSafeContractValidationFailure('Select a current Safe owner in your signer wallet.')
 	const safeEntry = await getCurrentSafeEntry(ethereum, safeAddress)
 	if (safeEntry.safeVersion === undefined) throw createSafeContractValidationFailure('Re-save the Safe address-book entry to verify its version before signing.')
-	const parsedMessage = SafeMessage.safeParse({ typedData: transactionParams.params[1], review: context?.message })
+	const parsedMessage = SafeMessage.safeParse({ typedData: transactionParams.params[1], review })
 	if (!parsedMessage.success) throw createSafeContractValidationFailure('The Safe message review data is invalid or changed after review.')
 	const message = parsedMessage.value
 	try {
@@ -127,7 +126,7 @@ export async function getSafeMessageCoSignContext(
 		const snapshot = pending.safeMessageCoSignSnapshot
 		const safeEntry = await getCurrentSafeEntry(ethereum, pending.activeAddress)
 		if (safeEntry.safeVersion === undefined || snapshot.safeAddress !== pending.activeAddress || pending.originalRequestParameters.params[0] !== pending.activeAddress) throw createSafeContractValidationFailure('The Safe message account or version changed after review.')
-		const parsedMessage = SafeMessage.safeParse({ typedData: pending.originalRequestParameters.params[1], review: getSafeRequestContext(pending.signedMessageTransaction.request)?.message })
+		const parsedMessage = SafeMessage.safeParse({ typedData: pending.originalRequestParameters.params[1], review: pending.signedMessageTransaction.safeMessageReview })
 		if (!parsedMessage.success) throw createSafeContractValidationFailure('The Safe message review data is invalid or changed after review.')
 		const message = parsedMessage.value
 		const context = await validateSafeMessageForSigning(ethereum, pending.activeAddress, safeSignerOverride ?? snapshot.safeSignerAddress, message, safeEntry.safeVersion)
@@ -412,7 +411,7 @@ async function recoverSafeMessageReview(ethereum: EthereumClientService, pending
 		|| pending.approvalStatus.status !== 'SignerError' || pending.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE) return undefined
 	let refreshResult: SafeSignerSelectionRefreshResult
 	try {
-		const snapshot = await createSafeOffChainMessageSnapshot(ethereum, pending.activeAddress, selectedSigner, pending.originalRequestParameters, getSafeRequestContext(pending.signedMessageTransaction.request))
+		const snapshot = await createSafeOffChainMessageSnapshot(ethereum, pending.activeAddress, selectedSigner, pending.originalRequestParameters, pending.signedMessageTransaction.safeMessageReview)
 		refreshResult = { status: 'refreshed', pending: { ...pending, safeMessageCoSignSnapshot: snapshot, approvalStatus: { status: 'WaitingForUser' } } }
 	} catch (error) {
 		if (!isSafeContractValidationFailure(error) && !isSafeOwnerValidationFailure(error)) throw error
@@ -423,7 +422,7 @@ async function recoverSafeMessageReview(ethereum: EthereumClientService, pending
 		// Do not overwrite a cancellation, another completed refresh, or changed review data while the owner lookup was pending.
 		if (current.type !== 'SignableMessage' || current.safeMessageCoSignSnapshot !== undefined || current.activeAddress !== pending.activeAddress
 			|| current.approvalStatus.status !== 'SignerError' || current.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE
-			|| stringifyJSONWithBigInts(current.signedMessageTransaction) !== stringifyJSONWithBigInts(pending.signedMessageTransaction)
+			|| stringifyJSONWithBigInts(current.signedMessageTransaction.safeMessageReview) !== stringifyJSONWithBigInts(pending.signedMessageTransaction.safeMessageReview)
 			|| stringifyJSONWithBigInts(current.originalRequestParameters) !== stringifyJSONWithBigInts(pending.originalRequestParameters)) return current
 		if (refreshResult.status === 'refreshed' && refreshResult.pending.type === 'SignableMessage') {
 			persistedPending = { ...current, safeMessageCoSignSnapshot: refreshResult.pending.safeMessageCoSignSnapshot, approvalStatus: refreshResult.pending.approvalStatus }

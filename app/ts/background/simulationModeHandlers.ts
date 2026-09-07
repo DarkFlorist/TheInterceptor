@@ -1,3 +1,4 @@
+import type { SafeReviewInput } from '../types/safeReview.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { createEthereumSubscription, createNewFilter, getEthFilterChanges, getEthFilterLogs, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
 import { createSimulationCallParams, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, simulatedCallFromInput, simulateEstimateGasFromInput, getSimulatedFeeHistory, getSimulatedTransactionCountFromInput, ethSimulateV1FromInput } from '../simulation/services/SimulationModeEthereumClientService.js'
@@ -46,9 +47,10 @@ export async function sendTransaction(
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
 	simulationMode = true,
+	safeReview?: SafeReviewInput,
 ) {
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionRequestReceived)
-	const action = await openConfirmTransactionDialogForTransaction(ethereumClientService, tokenPriceService, request, transactionParams, simulationMode, activeAddress, website, websiteTabConnections)
+	const action = await openConfirmTransactionDialogForTransaction(ethereumClientService, tokenPriceService, request, transactionParams, simulationMode, activeAddress, website, websiteTabConnections, safeReview)
 	if (action.type === 'doNotReply') return action
 	return { method: transactionParams.method, ...action }
 }
@@ -130,8 +132,9 @@ export async function personalSign(
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
 	simulationMode = true,
+	safeReview?: SafeReviewInput,
 ) {
-	const action = await openConfirmTransactionDialogForMessage(ethereumClientService, tokenPriceService, request, transactionParams, simulationMode, activeAddress, website, websiteTabConnections)
+	const action = await openConfirmTransactionDialogForMessage(ethereumClientService, tokenPriceService, request, transactionParams, simulationMode, activeAddress, website, websiteTabConnections, safeReview)
 	if (action.type === 'doNotReply') return action
 	return { method: transactionParams.method, ...action }
 }

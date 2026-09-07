@@ -1,4 +1,4 @@
-import { SafeMessageReview } from './safeRequestContext.js'
+import { SafeMessageReview } from './safeReview.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBytes32, EthereumTimestamp, LiteralConverterParserFactory, NonHexBigInt, EthereumInput, EthereumQuantity } from './wire-types.js'
 import { RpcNetwork } from './rpc.js'

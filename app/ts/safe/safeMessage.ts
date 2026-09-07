@@ -1,4 +1,4 @@
-import { SafeMessageReview } from '../types/safeRequestContext.js'
+import { SafeMessageReview } from '../types/safeReview.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress } from '../types/wire-types.js'
 import { EIP712Message, Eip712Number, EIP712Types } from '../types/eip721.js'

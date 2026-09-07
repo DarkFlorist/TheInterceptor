@@ -1,3 +1,5 @@
+import { getSafeAppsExecution } from '../../app/ts/safe/safeAppsExecution.js'
+import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
@@ -231,5 +233,25 @@ describe('Safe Apps compatibility policy', () => {
 	}
 	for (const params of [[], [{}], [{ offChainSigning: 'false' }], [{ offChainSigning: false }, {}], [{ offChainSigning: false, unknown: true }]]) {
 		await assert.rejects(getSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'safe_setSettings', params } }, 'app.example', activeAddress, rpcNetwork, getSafeState), /settings object/)
+	}
+})
+
+
+test('Safe Apps execution normalizes transaction and message commands for the ordinary RPC pipeline', async () => {
+	const uniqueRequestIdentifier = { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } }
+	const transactions = [{ to: addressString(activeAddress), value: '0', data: '0x' }, { to: addressString(activeAddress), value: '1', data: '0x' }]
+	for (const command of [
+		await getSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: transactions } }, 'app.example', activeAddress, rpcNetwork, getSafeState),
+		await getSafeAppsRequestCommand({ method: 'signMessage', params: { message: 'Reviewed text' } }, 'app.example', activeAddress, rpcNetwork, getSafeState),
+	]) {
+		if (command.kind !== 'ethereumRequest' || command.safeRequestContext === undefined) throw new Error('Expected a Safe execution command')
+		const execution = getSafeAppsExecution({ method: 'safe_apps_request', params: [{ method: 'execute', params: command }], interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier })
+		if (execution === undefined) throw new Error('Missing normalized execution')
+		assert.equal(execution.request.method, command.method)
+		assert.deepEqual(execution.safeReview, command.safeRequestContext)
+		assert.equal(EthereumJsonRpcRequest.safeParse(execution.request).success, true)
+		assert.equal('safeRequestContext' in execution.request, false)
+		assert.equal(JSON.stringify(execution.request.params).includes('safeRequestContext'), false)
+		assert.deepEqual(execution.request.uniqueRequestIdentifier, uniqueRequestIdentifier)
 	}
 })
