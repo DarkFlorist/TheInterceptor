@@ -1214,17 +1214,17 @@ export const getSimulatedTransactionByHashFromInput = async (
 	simulationStateInput: ResolvedSimulationInput,
 	hash: bigint,
 ): Promise<EthereumSignedTransactionWithBlockData | null> => {
-		const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput)
-		if (context === undefined) return await ethereumClientService.getTransactionByHash(hash, requestAbortController)
-		for (const executionBlock of context.executionBlocks) {
-			for (const [transactionIndex, transaction] of executionBlock.inputBlock.transactions.entries()) {
-				if (transaction.signedTransaction.hash !== hash) continue
-				const gasPrice = 'gasPrice' in transaction.signedTransaction
-					? transaction.signedTransaction.gasPrice
-					: calculateRealizedEffectiveGasPrice(transaction.signedTransaction, executionBlock.baseFeePerGas || 0n)
-				return getSignedTransactionWithBlockData(transaction.signedTransaction, executionBlock.blockHash, executionBlock.blockNumber, transactionIndex, gasPrice)
-			}
+	const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput)
+	if (context === undefined) return await ethereumClientService.getTransactionByHash(hash, requestAbortController)
+	for (const executionBlock of context.executionBlocks) {
+		for (const [transactionIndex, transaction] of executionBlock.inputBlock.transactions.entries()) {
+			if (transaction.signedTransaction.hash !== hash) continue
+			const gasPrice = 'gasPrice' in transaction.signedTransaction
+				? transaction.signedTransaction.gasPrice
+				: calculateRealizedEffectiveGasPrice(transaction.signedTransaction, executionBlock.baseFeePerGas || 0n)
+			return getSignedTransactionWithBlockData(transaction.signedTransaction, executionBlock.blockHash, executionBlock.blockNumber, transactionIndex, gasPrice)
 		}
+	}
 	return await ethereumClientService.getTransactionByHash(hash, requestAbortController)
 }
 
