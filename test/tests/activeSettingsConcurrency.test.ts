@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { TabConnection, WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import type { ResetSimulationServices } from '../../app/ts/simulation/serviceLifecycle.js'
+import { ICON_NOT_ACTIVE } from '../../app/ts/utils/constants.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
@@ -247,6 +248,99 @@ describe('active settings concurrency', () => {
 			expect(pending.map((request) => request.website.websiteOrigin)).toEqual(['second.test'])
 		} finally {
 			// Close the successful prompt so the shared dialog state cannot leak into another test.
+			for (const request of pending) {
+				await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, connections, {
+					userReply: 'noResponse', accessRequestId: request.accessRequestId,
+					originalRequestAccessToAddress: selectedAddress.address, requestAccessToAddress: selectedAddress.address,
+				}, noopPublishRpcConnectionStatus)
+			}
+		}
+	})
+
+	test('a slow icon refresh does not block the next address change or leave stale toolbar state', async () => {
+		installBrowserMock()
+		const { changeActiveAddressAndChain, getSettings, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString, getTabState } = await loadModules()
+		await updateUserAddressBookEntries(() => [firstAddress, { ...secondAddress, askForAddressAccess: true }])
+		const websiteOrigin = 'example.test'
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin }, access: true }])
+		const secondAccountPublished = createDeferredSignal()
+		const { port } = createPort(1, (message) => {
+			if (message.method === 'accountsChanged' && Array.isArray(message.result) && message.result.length === 0) secondAccountPublished.resolve()
+		})
+		const socket = { tabId: 1, connectionName: 0n }
+		const connections: WebsiteTabConnections = new Map([[1, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const iconStarted = createDeferredSignal()
+		const releaseIcon = createDeferredSignal()
+		const originalSetIcon = browser.action.setIcon.bind(browser.action)
+		let lastIcon: unknown
+		let lastTitle: string | undefined
+		Object.defineProperty(browser.action, 'setTitle', {
+			configurable: true,
+			value: async (details: Parameters<typeof browser.action.setTitle>[0]) => { lastTitle = details.title },
+		})
+		let paused = false
+		Object.defineProperty(browser.action, 'setIcon', {
+			configurable: true,
+			value: async (...args: Parameters<typeof browser.action.setIcon>) => {
+				if (!paused) {
+					paused = true
+					iconStarted.resolve()
+					await releaseIcon.promise
+				}
+				lastIcon = args[0].path
+				return await originalSetIcon(...args)
+			},
+		})
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const first = changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, connections, { simulationMode: true, activeAddress: firstAddress.address, promptForAccessesIfNeeded: false })
+		await iconStarted.promise
+		const second = changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, connections, { simulationMode: true, activeAddress: secondAddress.address, promptForAccessesIfNeeded: false })
+		let timeout: ReturnType<typeof setTimeout> | undefined
+		try {
+			await Promise.race([
+				secondAccountPublished.promise,
+				new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Icon refresh blocked the next settings transition')), 1000) }),
+			])
+			assert.equal((await getSettings()).activeSimulationAddress, secondAddress.address)
+			// Let any unqueued second icon update finish before the first browser call resumes.
+			await new Promise((resolve) => setTimeout(resolve, 0))
+		} finally {
+			clearTimeout(timeout)
+			releaseIcon.resolve()
+			await Promise.all([first, second])
+		}
+		const expectedTitle = 'example.test has PENDING access request for Second address!'
+		expect(lastIcon).toEqual({ 128: ICON_NOT_ACTIVE })
+		assert.equal(lastTitle, expectedTitle)
+		expect((await getTabState(1)).tabIconDetails).toEqual({ icon: ICON_NOT_ACTIVE, iconReason: expectedTitle })
+	})
+
+	test.each(['immediate', 'deferred'])('%s access updates prompt for the latest address rather than the reconciliation snapshot', async (completion) => {
+		installBrowserMock()
+		const { changeSimulationMode, getSettings, updateUserAddressBookEntries, websiteSocketToString, reconcileWebsiteApprovalAccesses, updateWebsiteApprovalAccesses, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
+		const originalAddress = { ...firstAddress, askForAddressAccess: true }
+		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
+		await updateUserAddressBookEntries(() => [originalAddress, selectedAddress])
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: originalAddress.address })
+		const snapshot = await getSettings()
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port } = createPort(1)
+		const connections: WebsiteTabConnections = new Map([[1, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'example.test', approved: false, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const update = completion === 'deferred'
+			? await reconcileWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, connections, snapshot, true)
+			: undefined
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: selectedAddress.address })
+		if (update !== undefined) await update.finish()
+		else await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, connections, snapshot, true)
+		const pending = await getPendingAccessRequests()
+		try {
+			expect(pending.map((request) => request.requestAccessToAddress?.address)).toEqual([selectedAddress.address])
+		} finally {
 			for (const request of pending) {
 				await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, connections, {
 					userReply: 'noResponse', accessRequestId: request.accessRequestId,

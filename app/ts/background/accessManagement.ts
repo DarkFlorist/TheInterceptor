@@ -316,8 +316,7 @@ async function updateTabConnections(
 	return iconRefreshTargets
 }
 
-// Prompts acquire the access-dialog lock, so callers holding the active-settings lock must defer this phase.
-export async function promptForWebsiteAccesses(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, throwOnError = false) {
+async function promptForWebsiteAccesses(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, throwOnError = false) {
 	for (const tabConnection of websiteTabConnections.values()) {
 		for (const connection of Object.values(tabConnection.connections)) {
 			if (!connection.wantsToConnect) continue
@@ -430,6 +429,57 @@ export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections
 	return false
 }
 
+// Apply the ordered access decisions now; callers finish UI work after releasing any settings lock.
+export async function reconcileWebsiteApprovalAccesses(
+	ethereum: EthereumClientService | undefined,
+	tokenPriceService: TokenPriceService | undefined,
+	resetSimulationServices: ResetSimulationServices | undefined,
+	websiteTabConnections: WebsiteTabConnections,
+	settings: Settings,
+	promptForAccessesIfNeeded: boolean,
+	throwOnError = false,
+) {
+	const popupRefreshGeneration = bumpPopupRefreshGeneration()
+	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
+
+	try {
+		await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+	} catch (error) {
+		if (throwOnError) throw error
+		await reportUnexpectedError(error)
+	}
+	const updatePromises = [...websiteTabConnections.values()].map(async (tabConnection) => {
+		const tabIconRefreshTargets = await updateTabConnections(websiteTabConnections, tabConnection, settings)
+		for (const iconRefreshTarget of tabIconRefreshTargets.values()) addIconRefreshTarget(iconRefreshTargets, iconRefreshTarget.tabId, iconRefreshTarget.websiteOrigin)
+	})
+	try {
+		await Promise.all(updatePromises)
+	} catch (error) {
+		if (throwOnError) throw error
+		await reportUnexpectedError(error)
+	}
+
+	const finish = async () => {
+		if (promptForAccessesIfNeeded && ethereum !== undefined && tokenPriceService !== undefined && resetSimulationServices !== undefined) {
+			await promptForWebsiteAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, throwOnError)
+		}
+		try {
+			for (const tabState of await getAllTabStates()) {
+				if (websiteTabConnections.has(tabState.tabId)) continue
+				if (tabState.website?.websiteOrigin === undefined) continue
+				addIconRefreshTarget(iconRefreshTargets, tabState.tabId, tabState.website.websiteOrigin)
+			}
+			await Promise.all([...iconRefreshTargets.values()].map(({ tabId, websiteOrigin }) =>
+				updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, popupRefreshGeneration)
+			))
+		} catch (error) {
+			if (throwOnError) throw error
+			await reportUnexpectedError(error)
+		}
+	}
+	return { popupRefreshGeneration, finish }
+}
+
 export async function updateWebsiteApprovalAccesses(
 	ethereum: EthereumClientService | undefined,
 	tokenPriceService: TokenPriceService | undefined,
@@ -439,45 +489,9 @@ export async function updateWebsiteApprovalAccesses(
 	promptForAccessesIfNeeded: boolean,
 	throwOnError = false,
 ): Promise<number> {
-	const popupRefreshGeneration = bumpPopupRefreshGeneration()
-	const allTabStates = await getAllTabStates()
-	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
-
-	try {
-		await updateDeclarativeNetRequestBlocks(websiteTabConnections)
-	} catch (error) {
-		if (throwOnError) throw error
-		await reportUnexpectedError(error)
-	}
-	// update port connections and disconnect from ports that should not have access anymore
-	const updatePromises = [...websiteTabConnections.entries()].map(async ([_tab, tabConnection]) => {
-		const tabIconRefreshTargets = await updateTabConnections(websiteTabConnections, tabConnection, settings)
-		for (const iconRefreshTarget of tabIconRefreshTargets.values()) addIconRefreshTarget(iconRefreshTargets, iconRefreshTarget.tabId, iconRefreshTarget.websiteOrigin)
-	})
-	for (const tabState of allTabStates) {
-		if (websiteTabConnections.has(tabState.tabId)) continue
-		if (tabState.website?.websiteOrigin === undefined) continue
-		addIconRefreshTarget(iconRefreshTargets, tabState.tabId, tabState.website.websiteOrigin)
-	}
-	try {
-		await Promise.all(updatePromises)
-		if (promptForAccessesIfNeeded && ethereum !== undefined && tokenPriceService !== undefined && resetSimulationServices !== undefined) {
-			await promptForWebsiteAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, throwOnError)
-		}
-	} catch (error) {
-		if (throwOnError) throw error
-		await reportUnexpectedError(error)
-	}
-	const iconRefreshPromises = [...iconRefreshTargets.values()].map(({ tabId, websiteOrigin }) =>
-		updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, popupRefreshGeneration)
-	)
-	try {
-		await Promise.all(iconRefreshPromises)
-	} catch (error) {
-		if (throwOnError) throw error
-		await reportUnexpectedError(error)
-	}
-	return popupRefreshGeneration
+	const update = await reconcileWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, settings, promptForAccessesIfNeeded, throwOnError)
+	await update.finish()
+	return update.popupRefreshGeneration
 }
 
 export async function finalizeWebsiteAccessChange(
