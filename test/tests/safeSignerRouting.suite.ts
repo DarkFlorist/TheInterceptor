@@ -71,6 +71,78 @@ test('accepts a signer reply from the current approved child-frame port', async 
 	assert.equal(childReply.result, modules.EthereumBytes32.serialize(signedTransaction.hash))
 })
 
+test('allows retrying a Safe signature after MetaMask cancels a keyring scan', async () => {
+	const socket = uniqueRequestIdentifier.requestSocket
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	const safeTxHash = BigInt(getSafeTxHash(safeTx))
+	const messages: unknown[] = []
+	const port = createWebsitePort(socket, 0, messages)
+	const websiteOrigin = 'https://example.com'
+	const websiteTabConnections = new Map([[socket.tabId, {
+		signerStateOwner: {
+			connectionName: socket.connectionName,
+			confirmed: true,
+			generation: 3,
+			providerGeneration: 8,
+		},
+		connections: {
+			[modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		},
+	}]])
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			simulationMode: false,
+			approvalStatus: { status: 'WaitingForSigner' },
+			safeTransaction: {
+				safeAddress: activeAddress,
+				safeSignerAddress: recipientAddress,
+				safeVersion: '1.4.1',
+				threshold: 2n,
+				reviewedSafeState: {
+					version: '1.4.1',
+					nonce: 0n,
+					owners: [recipientAddress],
+					threshold: 2n,
+				},
+				safeTxHash,
+				safeTx,
+			},
+		}],
+	})
+
+	await modules.signerReply(simulator.ethereum, simulator.tokenPriceService, () => undefined, websiteTabConnections, port, {
+		method: 'signer_reply',
+		params: [{
+			success: false,
+			signerProviderGeneration: 8,
+			forwardRequest: {
+				type: 'forwardToSigner',
+				replyWithSignersReply: true,
+				method: 'eth_signTypedData_v4',
+				params: [recipientAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))],
+				requestId: uniqueRequestIdentifier.requestId,
+			},
+			error: {
+				code: -32603,
+				message: 'Keyring Controller signTypedMessage: Error: Scan cancelled',
+			},
+		}],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: 79, requestSocket: socket },
+	}, 'hasAccess', activeAddress)
+
+	const [retryableTransaction] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(retryableTransaction?.approvalStatus.status, 'WaitingForUser')
+	assert.equal(retryableTransaction?.safeTransaction?.safeTxHash, safeTxHash)
+})
+
 test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 typed data', async () => {
 	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({
 		...state,
