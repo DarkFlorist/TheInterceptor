@@ -1671,7 +1671,6 @@ class InterceptorMessageListener {
 	private readonly onPageLoad = () => {
 		const interceptorMessageListener = this
 		function announceProvider() {
-			if (interceptorMessageListener.replaceMetaMaskEip6963AnnouncementsAtPageLoad) return
 			const info: EIP6963ProviderInfo = {
 				uuid: '200ecd95-afe4-4684-bce7-0f2f8bdd3498',
 				name: 'The Interceptor',

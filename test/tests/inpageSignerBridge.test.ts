@@ -1575,18 +1575,25 @@ describe('inpage signer bridge', () => {
 			assert.equal((interceptorProvider as unknown as { isInterceptor?: unknown }).isInterceptor, true)
 			assert.equal((interceptorProvider as unknown as { isMetaMask?: unknown }).isMetaMask, true)
 			assert.notEqual(interceptorProvider, announcedMetaMaskProvider)
-			assert.equal(dappAnnouncements.length, 1)
-			assert.deepEqual(dappAnnouncements[0], {
+			const getMetaMaskAnnouncements = () => dappAnnouncements.filter((detail) => isRecord(detail) && isRecord(detail.info) && detail.info.rdns === 'io.metamask')
+			const getInterceptorAnnouncements = () => dappAnnouncements.filter((detail) => isRecord(detail) && isRecord(detail.info) && detail.info.rdns === 'dark.florist')
+			assert.deepEqual(getMetaMaskAnnouncements(), [{
 				info: metaMaskInfo,
 				provider: interceptorProvider,
-			})
+			}])
+			assert.equal(getInterceptorAnnouncements().length > 0, true)
+			assert.equal(getInterceptorAnnouncements().every((detail) => isRecord(detail) && detail.provider === interceptorProvider), true)
 
+			const interceptorAnnouncementCountBeforeRequest = getInterceptorAnnouncements().length
 			fakeWindow.dispatchEvent({ type: 'eip6963:requestProvider' })
-			assert.equal(dappAnnouncements.length, 2)
-			assert.deepEqual(dappAnnouncements[1], {
+			assert.deepEqual(getMetaMaskAnnouncements(), [{
 				info: metaMaskInfo,
 				provider: interceptorProvider,
-			})
+			}, {
+				info: metaMaskInfo,
+				provider: interceptorProvider,
+			}])
+			assert.equal(getInterceptorAnnouncements().length, interceptorAnnouncementCountBeforeRequest + 1)
 			await waitFor(() => signerRequests.includes('eth_chainId'))
 
 			const lateMetaMaskInfo = {
@@ -1601,11 +1608,29 @@ describe('inpage signer bridge', () => {
 				type: 'eip6963:announceProvider',
 				detail: { info: lateMetaMaskInfo, provider: lateMetaMaskProvider },
 			})
-			assert.equal(dappAnnouncements.length, 3)
-			assert.deepEqual(dappAnnouncements[2], {
+			assert.deepEqual(getMetaMaskAnnouncements().at(-1), {
 				info: lateMetaMaskInfo,
 				provider: interceptorProvider,
 			})
+		})
+	})
+
+	test('announces the Interceptor in compatibility mode when no MetaMask wallet is present', async () => {
+		const dappAnnouncements: unknown[] = []
+		const { fakeWindow } = createFakeWindow({ metamaskCompatibilityMode: true })
+		Reflect.deleteProperty(fakeWindow, 'ethereum')
+		Reflect.set(fakeWindow, Symbol.for(metamaskCompatibilityModeGlobalSymbolKey), true)
+		fakeWindow.addEventListener('eip6963:announceProvider', (event) => dappAnnouncements.push(event.detail))
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?compatibility-mode-without-metamask', async () => {
+			const interceptorProvider = fakeWindow.ethereum
+			const getInterceptorAnnouncements = () => dappAnnouncements.filter((detail) => isRecord(detail) && isRecord(detail.info) && detail.info.rdns === 'dark.florist')
+			const initialAnnouncements = getInterceptorAnnouncements()
+			assert.equal(initialAnnouncements.length > 0, true)
+			assert.equal(initialAnnouncements.every((detail) => isRecord(detail) && detail.provider === interceptorProvider), true)
+
+			fakeWindow.dispatchEvent({ type: 'eip6963:requestProvider' })
+			assert.equal(getInterceptorAnnouncements().length, initialAnnouncements.length + 1)
 		})
 	})
 
