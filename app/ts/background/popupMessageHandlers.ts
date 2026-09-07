@@ -1,3 +1,4 @@
+import { getRpcNetworkChange } from '../types/rpc.js'
 import { refreshPopupSimulation } from './popupSimulationRefresh.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain, changeActiveRpc } from './activeSettings.js'
@@ -667,14 +668,14 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 }
 
 export async function popupChangeActiveRpc(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
-	if (!settings.simulationMode && params.data.chainId !== settings.activeRpcNetwork.chainId) {
+	if (!settings.simulationMode && getRpcNetworkChange(settings.activeRpcNetwork, params.data).chainChanged) {
 		const tabId = await getLastKnownCurrentTabId()
 		if (tabId === undefined) return { type: 'PopupSettingsChangeReply', ok: false, message: 'No wallet is connected to switch networks.' } as const
 		if (await getConfiguredSigningSafe(settings, (await getTabState(tabId)).signerAccounts) !== undefined) return { type: 'PopupSettingsChangeReply', ok: false, message: 'This Safe is tied to its current network. Select your wallet account before switching networks.' } as const
 		const result = await requestSignerChainChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, params.data, tabId)
 		if ('error' in result && result.error !== undefined) return { type: 'PopupSettingsChangeReply', ok: false, message: result.error.message } as const
 		const activeRpc = (await getSettings()).activeRpcNetwork
-		if (activeRpc.chainId !== params.data.chainId || activeRpc.httpsRpc !== params.data.httpsRpc) return { type: 'PopupSettingsChangeReply', ok: false, message: 'The wallet switched networks, but the active Interceptor network did not change. Please select the network again.' } as const
+		if (getRpcNetworkChange(activeRpc, params.data).endpointChanged) return { type: 'PopupSettingsChangeReply', ok: false, message: 'The wallet switched networks, but the active Interceptor network did not change. Please select the network again.' } as const
 	} else {
 		await changeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, params.data, settings.simulationMode, await getLastKnownCurrentTabId())
 	}

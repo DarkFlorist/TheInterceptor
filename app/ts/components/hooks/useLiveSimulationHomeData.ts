@@ -3,7 +3,7 @@ import { MessageToPopup, type HomePageBootstrap, type UpdateHomePage, type Setti
 import type { RpcConnectionStatus, TabIconDetails, TabState } from '../../types/user-interface-types.js'
 import { PASSTHROUGH_STATE, type BlockTimeManipulation, type CompleteVisualizedSimulation, type NamedTokenId, type ResolvedSimulationResults, type ResolvedSimulationState, type SimulationResultState, type SimulationUpdatingState, type TokenPriceEstimate, type VisualizedSimulationState, toResolvedSimulationResults } from '../../types/visualizer-types.js'
 import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
-import type { RpcEntries, RpcNetwork } from '../../types/rpc.js'
+import { getRpcNetworkChange, type RpcEntries, type RpcNetwork } from '../../types/rpc.js'
 import type { WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import type { EnrichedRichListElement, UnexpectedErrorOccured } from '../../types/interceptor-reply-messages.js'
 import { PopupMessageReplyRequests } from '../../types/interceptor-reply-messages.js'
@@ -240,7 +240,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 					return undefined
 				case 'popup_settingsUpdated': {
 					if (shouldIgnoreOutdatedPopupRefreshMessage(parsed.popupRefreshGeneration, Math.max(popupRefreshGeneration.value, pendingPopupRefreshGeneration.value))) return undefined
-					const rpcChanged = rpcNetwork.value?.chainId !== parsed.data.activeRpcNetwork.chainId || rpcNetwork.value?.httpsRpc !== parsed.data.activeRpcNetwork.httpsRpc
+					const rpcChanged = getRpcNetworkChange(rpcNetwork.value, parsed.data.activeRpcNetwork).endpointChanged
 					const previousActiveStackContext = getCurrentActiveStackContext()
 					const updatedActiveStackContext = getActiveStackContext(parsed.data)
 					updateHomePageSettings(parsed.data)

@@ -3,7 +3,7 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import type { ResetSimulationServices, SimulationServices } from '../simulation/serviceLifecycle.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
-import { RpcNetwork } from '../types/rpc.js'
+import { getRpcNetworkChange, type RpcNetwork } from '../types/rpc.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { WebsiteAccessUpdate } from './accessManagement.js'
@@ -112,8 +112,7 @@ async function runActiveSettingsChange(
 			}
 
 			const updatedSettings = await getSettings()
-			const rpcChainChanged = previousSettings.activeRpcNetwork.chainId !== updatedSettings.activeRpcNetwork.chainId
-			const rpcEndpointChanged = rpcChainChanged || previousSettings.activeRpcNetwork.httpsRpc !== updatedSettings.activeRpcNetwork.httpsRpc
+			const { chainChanged: rpcChainChanged, endpointChanged: rpcEndpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
 			try {
 				if (rpcEndpointChanged && change.rpcNetwork?.httpsRpc !== undefined) activeServices = resetSimulationServices(change.rpcNetwork)
 				if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig()
@@ -197,15 +196,16 @@ export async function activateAddressSelection(
 
 export async function changeActiveRpc(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean, signerTabId: number | undefined, walletSwitchRequestId: string = crypto.randomUUID()) {
 	const currentRpc = (await getSettings()).activeRpcNetwork
-	// Metadata edits at the same endpoint still need to update the active selection.
-	if (JSON.stringify(RpcNetwork.serialize(currentRpc)) === JSON.stringify(RpcNetwork.serialize(rpcNetwork))) {
+	const { chainChanged, selectionChanged } = getRpcNetworkChange(currentRpc, rpcNetwork)
+	if (!selectionChanged) {
 		return simulationMode ? { type: 'completedLocally' as const } : { type: 'signerRequestNotNeeded' as const }
 	}
 	if (simulationMode) {
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, { simulationMode, rpcNetwork })
 		return { type: 'completedLocally' as const }
 	}
-	if (rpcNetwork.chainId === (await getSettings()).activeRpcNetwork.chainId) {
+	// Same-chain endpoint and metadata edits are local, even when a signer is connected.
+	if (!chainChanged) {
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, { simulationMode, rpcNetwork })
 		return { type: 'signerRequestNotNeeded' as const }
 	}

@@ -253,9 +253,13 @@ async function runIteration() {
 		const failuresBefore = injectedFailures
 		failSimulation = true
 		try {
-			samples.push(await measure(popup, 'stacked rich off with RPC failure', 'popup_modifyMakeMeRich', `document.querySelector('input[type="checkbox"]').click()`, `document.body.textContent.includes('Updating balances...')`, `document.querySelector('input[type="checkbox"]')?.checked === false`))
+			// A handled simulation error is rendered successfully: the setting is saved and the command replies ok, unlike a failed visualization refresh.
+			samples.push(await measure(popup, 'stacked rich off with RPC failure', 'popup_modifyMakeMeRich', `document.querySelector('input[type="checkbox"]').click()`, `document.body.textContent.includes('Updating balances...')`, `document.querySelector('input[type="checkbox"]')?.checked === false`, true))
 			if (injectedFailures === failuresBefore) throw new Error('RPC failure scenario did not exercise the fixture')
 			await waitFor(popup, `document.body.textContent.includes('Benchmark RPC simulation failure')`, 'visible RPC simulation failure')
+			const failureState = await popup.evaluate<{ visualizedSimulatorState: { simulationUpdatingState: string, simulationResultState: string, simulationState: { kind: string, value?: { success: boolean } } } }>(`browser.runtime.sendMessage({ method: 'popup_requestCompleteVisualizedSimulation' })`)
+			const visualized = failureState.visualizedSimulatorState
+			if (visualized.simulationUpdatingState !== 'done' || visualized.simulationResultState !== 'done' || visualized.simulationState.kind !== 'simulated' || visualized.simulationState.value?.success !== false) throw new Error('Expected a completed visualization of the simulation error')
 		} finally { failSimulation = false }
 		await popup.evaluate(`browser.runtime.sendMessage({ method: 'popup_refreshSimulation' })`)
 		await waitFor(popup, `!document.body.textContent.includes('Benchmark RPC simulation failure')`, 'RPC recovery')

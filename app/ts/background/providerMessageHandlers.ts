@@ -1,4 +1,4 @@
-import type { RpcNetwork } from '../types/rpc.js'
+import { getRpcNetworkChange, type RpcNetwork } from '../types/rpc.js'
 import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply, WatchAssetSignerRequest } from '../types/interceptor-messages.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
@@ -143,16 +143,18 @@ async function changeSignerChain(ethereum: EthereumClientService, tokenPriceServ
 		}
 		return
 	}
-	if ((settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && (settings.activeRpcNetwork.chainId !== signerChain || (requestedRpcNetwork !== undefined && settings.activeRpcNetwork.httpsRpc !== requestedRpcNetwork.httpsRpc))) {
-		const rpcNetwork = requestedRpcNetwork ?? await getRpcNetworkForChain(signerChain)
-		const signerAddress = getWalletSelectedAccount(tabStateChange.newState)
-		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
-			simulationMode: settings.simulationMode,
-			rpcNetwork,
-			activeAddress: signerAddress,
-			...(!settings.simulationMode ? { signingAddressSelection: 'signer' as const } : {}),
-		})
-		return
+	if (settings.useSignersAddressAsActiveAddress || !settings.simulationMode) {
+		const rpcNetwork = requestedRpcNetwork ?? (settings.activeRpcNetwork.chainId === signerChain ? settings.activeRpcNetwork : await getRpcNetworkForChain(signerChain))
+		if (getRpcNetworkChange(settings.activeRpcNetwork, rpcNetwork).endpointChanged) {
+			const signerAddress = getWalletSelectedAccount(tabStateChange.newState)
+			await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+				simulationMode: settings.simulationMode,
+				rpcNetwork,
+				activeAddress: signerAddress,
+				...(!settings.simulationMode ? { signingAddressSelection: 'signer' as const } : {}),
+			})
+			return
+		}
 	}
 	if (oldSignerChain !== signerChain) sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 }

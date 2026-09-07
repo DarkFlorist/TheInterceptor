@@ -166,16 +166,27 @@ describe('popup settings changes', () => {
 
 	for (const simulationMode of [true, false]) test(`saves active RPC metadata without resetting services in ${ simulationMode ? 'simulation' : 'signing' } mode`, async () => {
 		installBrowserMock()
-		const { changeSimulationMode, getSettings } = await loadModules()
+		const { changeSimulationMode, getSettings, saveCurrentTabId, websiteSocketToString } = await loadModules()
 		const { changeActiveRpc } = await import('../../app/ts/background/activeSettings.js')
+		const { popupChangeActiveRpc } = await import('../../app/ts/background/popupMessageHandlers.js')
+		await saveCurrentTabId(1)
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(1)
+		const connections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+		} }]])
 		await changeSimulationMode({ simulationMode })
 		const currentRpc = (await getSettings()).activeRpcNetwork
 		if (currentRpc.httpsRpc === undefined) throw new Error('Expected a configured RPC')
 		const editedRpc = { ...currentRpc, name: 'Renamed network', currencyName: 'Updated currency', currencyTicker: 'NEW', currencyLogoUri: 'updated.svg', blockExplorer: { apiUrl: 'https://explorer.example/api', apiKey: 'updated-key' }, primary: !currentRpc.primary, minimized: !currentRpc.minimized }
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
 		const reset = () => { throw new Error('Metadata edits should not reset services') }
-		assert.deepEqual(await changeActiveRpc(ethereum, tokenPriceService, reset, new Map(), editedRpc, simulationMode, undefined), { type: simulationMode ? 'completedLocally' : 'signerRequestNotNeeded' })
+		assert.deepEqual(await changeActiveRpc(ethereum, tokenPriceService, reset, connections, editedRpc, simulationMode, 1), { type: simulationMode ? 'completedLocally' : 'signerRequestNotNeeded' })
 		assert.deepEqual((await getSettings()).activeRpcNetwork, editedRpc)
+		const popupEdit = { ...editedRpc, name: 'Renamed through popup' }
+		assert.deepEqual(await popupChangeActiveRpc(ethereum, tokenPriceService, reset, connections, { method: 'popup_changeActiveRpc', data: popupEdit }, await getSettings()), { type: 'PopupSettingsChangeReply', ok: true })
+		assert.deepEqual((await getSettings()).activeRpcNetwork, popupEdit)
+		assert.equal(messages.some(message => message.method === 'request_signer_to_wallet_switchEthereumChain'), false, 'Metadata edits must not ask a connected wallet to switch chains')
 	})
 
 	test('activation returns the installed services and preserves them when the endpoint is unchanged', async () => {
