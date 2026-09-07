@@ -102,7 +102,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 
 	if (maybeParsed.success === false) {
 		const hashes = getMessageAndDomainHash(originalParams.originalRequestParameters)
-		const safeMessage = SafeMessage.safeParse(namedParams.param)
+		const safeMessage = SafeMessage.safeParse({ typedData: namedParams.param, review: signedMessageTransaction.request.safeRequestContext?.message })
 		// if we fail to parse the message, that means it's a message type we do not identify, let's just show it as a nonidentified EIP712 message
 		if (validateEIP712Types(namedParams.param) === false) throw new Error('Not a valid EIP712 Message')
 		const message = await extractEIP712Message(ethereumClientService, requestAbortController, namedParams.param)
@@ -112,8 +112,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			method: originalParams.originalRequestParameters.method,
 			...basicParams,
 			rpcNetwork: chainid !== undefined && rpcNetwork.chainId !== chainid ? await getRpcNetworkForChain(chainid) : rpcNetwork,
-			type: 'EIP712' as const,
-			...(safeMessage.success ? { safeMessageText: safeMessage.value.safeMessageText, safeMessageIsTypedData: safeMessage.value.safeMessageIsTypedData } : {}),
+			...(safeMessage.success ? { type: 'SafeMessage' as const, review: safeMessage.value.review } : { type: 'EIP712' as const }),
 			message,
 			account,
 			...getSigningQuarantineCodes(chainid, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),

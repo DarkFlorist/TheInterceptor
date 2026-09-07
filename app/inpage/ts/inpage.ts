@@ -25,7 +25,7 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 type SafeAppsRequestCandidate = { readonly id?: unknown, readonly method?: unknown, readonly env?: unknown, readonly params?: unknown }
 type SafeAppsEnvironmentCandidate = { readonly sdkVersion?: unknown }
 type SafeAppsCompatibilityCandidate = { readonly enabled?: unknown, readonly canRequestAccess?: unknown }
-type SafeAppsCommandCandidate = { readonly kind?: unknown, readonly value?: unknown, readonly method?: unknown, readonly params?: unknown, readonly mapResult?: unknown, readonly message?: unknown, readonly isTypedData?: unknown, readonly safeAddress?: unknown, readonly chainId?: unknown }
+type SafeAppsCommandCandidate = { readonly kind?: unknown, readonly value?: unknown, readonly method?: unknown, readonly params?: unknown, readonly mapResult?: unknown, readonly message?: unknown, readonly isTypedData?: unknown, readonly safeAddress?: unknown, readonly chainId?: unknown, readonly safeRequestContext?: unknown }
 
 const isSafeAppsRequestCandidate = (value: unknown): value is SafeAppsRequestCandidate => isRecord(value)
 const isSafeAppsEnvironmentCandidate = (value: unknown): value is SafeAppsEnvironmentCandidate => isRecord(value)
@@ -54,12 +54,12 @@ function parseSafeAppsCompatibility(value: unknown) {
 	return { enabled: value.enabled, canRequestAccess: value.canRequestAccess === true }
 }
 
-async function executeSafeAppsCommand(command: unknown, requestEthereum: EthereumRequest, requestSafeApps: (request: Pick<SafeAppsRequest, 'method' | 'params'>) => Promise<unknown>): Promise<unknown> {
+async function executeSafeAppsCommand(command: unknown, requestEthereum: SafeAppsEthereumRequest, requestSafeApps: (request: Pick<SafeAppsRequest, 'method' | 'params'>) => Promise<unknown>): Promise<unknown> {
 	if (!isSafeAppsCommandCandidate(command) || (command.kind !== 'result' && command.kind !== 'ethereumRequest')) throw new Error('Interceptor returned an invalid Safe Apps command.')
 	if (command.kind === 'result') return command.value
 	if (typeof command.method !== 'string' || !Array.isArray(command.params) || (command.mapResult !== 'passthrough' && command.mapResult !== 'safeTxHash' && command.mapResult !== 'safeMessage')) throw new Error('Interceptor returned an invalid Safe Apps Ethereum request.')
 	if (command.mapResult === 'safeMessage' && (typeof command.message !== 'string' || typeof command.safeAddress !== 'string' || typeof command.chainId !== 'string')) throw new Error('Interceptor returned an invalid Safe message request.')
-	const result = await requestEthereum({ method: command.method, params: command.params })
+	const result = await requestEthereum({ method: command.method, params: command.params, ...(command.safeRequestContext !== undefined ? { safeRequestContext: command.safeRequestContext } : {}) })
 	if (command.mapResult === 'passthrough') return result
 	if (command.mapResult === 'safeMessage') {
 		if (typeof result !== 'string' || !/^0x[0-9a-f]{130}$/i.test(result)) throw new Error('Interceptor returned an invalid Safe owner signature.')
@@ -74,7 +74,7 @@ async function executeSafeAppsCommand(command: unknown, requestEthereum: Ethereu
 // Retain read-only discovery while ineligible and reissue it after eligibility changes so stale account data is never published.
 const isSafeAppsDiscoveryRequest = (request: ParsedSafeAppsRequest) => 'request' in request && (request.request.method === 'getSafeInfo' || request.request.method === 'getChainInfo' || request.request.method === 'getEnvironmentInfo')
 
-function createSafeAppsRequestHandler(requestBackground: (request: unknown) => Promise<unknown>, requestEthereum: EthereumRequest) {
+function createSafeAppsRequestHandler(requestBackground: (request: unknown) => Promise<unknown>, requestEthereum: SafeAppsEthereumRequest) {
 	let offChainSigning = true
 	return async (request: Pick<SafeAppsRequest, 'method' | 'params'>) => {
 		const signingRequest = request.method === 'signMessage' || request.method === 'signTypedMessage'
@@ -251,6 +251,7 @@ type MessageMethodAndParams = {
 	readonly method: string,
 	readonly params?: readonly unknown[]
 	readonly internal?: true
+	readonly safeRequestContext?: unknown
 }
 
 const INTERNAL_BACKGROUND_METHODS = [
@@ -329,6 +330,7 @@ type BridgeRequest = {
 	readonly usingInterceptorWithoutSigner: boolean
 	readonly requestId: number
 	readonly internal?: true
+	readonly safeRequestContext?: unknown
 	readonly replayOnDisconnect?: true
 }
 
@@ -466,6 +468,7 @@ type AnyCallBack =  ((message: ProviderMessage) => void)
 	| ((chainId: string) => void)
 
 type EthereumRequestParameters = readonly unknown[] | Readonly<Record<string, unknown>>
+type SafeAppsEthereumRequest = (request: { readonly method: string, readonly params: readonly unknown[], readonly safeRequestContext?: unknown }) => Promise<unknown>
 type EthereumRequest = (methodAndParams: { readonly method: string, readonly params?: EthereumRequestParameters }) => Promise<unknown>
 type InterceptorEthereumRequestParameters = EthereumRequestParameters
 const METHODS_ACCEPTING_NAMED_PARAMETERS: ReadonlySet<string> = new Set(['wallet_watchAsset'])
@@ -707,7 +710,7 @@ class InterceptorMessageListener {
 	// The page owns SDK settings; every signing request carries its mode across background port recreation.
 	private readonly safeAppsBridge = createSafeAppsBridge(inpageWindow, createSafeAppsRequestHandler(
 		async (request) => await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [request] }),
-		async (request) => await this.WindowEthereumRequest(request),
+		async (request) => await this.sendMessageToBackgroundPage(request),
 	), async () => {
 		// Restore persisted access after reload before considering an interactive wallet connection.
 		const accounts = await this.WindowEthereumRequest({ method: 'eth_accounts' })
@@ -866,6 +869,7 @@ class InterceptorMessageListener {
 				type: INTERCEPTOR_BRIDGE_REQUEST_MESSAGE,
 				method: messageMethodAndParams.method,
 				params: messageMethodAndParams.params,
+				...(messageMethodAndParams.safeRequestContext !== undefined ? { safeRequestContext: messageMethodAndParams.safeRequestContext } : {}),
 				usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
 				requestId: pendingRequestId,
 				...(messageMethodAndParams.internal === true ? { internal: true as const } : {}),
@@ -1790,6 +1794,7 @@ class InterceptorMessageListener {
 			this.enableMetamaskCompatibilityMode(connection.metamaskCompatibilityMode)
 			// Account replies only require confirmed provider identity; chain initialization must not hold them back.
 			if (signerName !== 'NoSigner') void this.requestChainIdFromSigner().catch((error: unknown) => {
+				// Use the same discovery diagnostic helper as provider selection and account initialization.
 				this.reportSignerDiscoveryError('initialize signer chain', error)
 			})
 		}

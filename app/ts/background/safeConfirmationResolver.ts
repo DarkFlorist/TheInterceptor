@@ -1,4 +1,3 @@
-import { SafeMessage, validateSafeMessageForSigning } from '../safe/safeMessage.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { EIP712Message } from '../types/eip721.js'
@@ -169,21 +168,6 @@ export async function createSafeMessageCoSignSnapshot(
 	}
 }
 
-export async function createSafeOffChainMessageSnapshot(ethereum: EthereumClientService, safeAddress: bigint, owner: bigint | undefined, transactionParams: SignMessageParams) {
-	if (transactionParams.method !== 'eth_signTypedData_v4' || transactionParams.params[0] !== safeAddress) throw createSafeSignerSelectionFailure('The Safe message signing account does not match the active Safe.')
-	if (owner === undefined) throw createSafeSignerSelectionFailure('Select a current Safe owner in your signer wallet.')
-	const safeEntry = await getCurrentSafeEntry(ethereum, safeAddress)
-	if (safeEntry.safeVersion === undefined) throw createSafeSignerSelectionFailure('Re-save the Safe address-book entry to verify its version before signing.')
-	const message = SafeMessage.parse(transactionParams.params[1])
-	try {
-		const { signingHash, safeState } = await validateSafeMessageForSigning(ethereum, safeAddress, owner, message, safeEntry.safeVersion)
-		return { safeAddress, safeSignerAddress: owner, safeMessageHash: signingHash, reviewedSafeState: safeState }
-	} catch (error) {
-		if (isSafeOwnerValidationFailure(error)) throw createSafeSignerSelectionFailure(error.message)
-		throw error
-	}
-}
-
 export async function validateSafeMessageCoSignature(
 	ethereum: EthereumClientService,
 	pending: PendingTransactionOrSignableMessage,
@@ -299,7 +283,7 @@ async function refreshSafeProposalNonce(
 		},
 		firstUncommittedNonce,
 	)
-	return modifyObject(pending, { safeTransaction: refreshedSafeRequest })
+	return modifyObject(pending, { safeTransaction: { ...refreshedSafeRequest, ...(currentRequest.messageReview !== undefined ? { messageReview: currentRequest.messageReview } : {}) } })
 }
 
 function getSafeSignerFacingRequest(

@@ -133,14 +133,12 @@ function SignRequest({ visualizedPersonalSignRequest, renameAddressCallBack, edi
 			renameAddressCallBack = { renameAddressCallBack }
 			editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 		/>
-		case 'EIP712': {
-			if (visualizedPersonalSignRequest.safeMessageText !== undefined) return <>
-				<p class = 'paragraph'>Approve an off-chain Safe owner signature. The app can publish this message and signature to the Safe message service. The Safe threshold must be met before the message is fully signed.</p>
-				<p class = 'paragraph'>{ visualizedPersonalSignRequest.safeMessageIsTypedData ? 'EIP-712 typed message (domain, types and values):' : 'Message:' }</p>
-				<div class = 'textbox'><p class = 'paragraph' style = 'white-space: pre-wrap'>{ visualizedPersonalSignRequest.safeMessageText }</p></div>
-			</>
-			return <ArbitraryEIP712 enrichedEIP712 = { visualizedPersonalSignRequest.message } renameAddressCallBack = { renameAddressCallBack } />
-		}
+		case 'SafeMessage': return <>
+			<p class = 'paragraph'>Approve an off-chain Safe owner signature. The app can publish this message and signature to the Safe message service. The Safe threshold must be met before the message is fully signed.</p>
+			<p class = 'paragraph'>{ visualizedPersonalSignRequest.review.isTypedData ? 'EIP-712 typed message (domain, types and values):' : 'Message:' }</p>
+			<div class = 'textbox'><p class = 'paragraph' style = 'white-space: pre-wrap'>{ visualizedPersonalSignRequest.review.text }</p></div>
+		</>
+		case 'EIP712': return <ArbitraryEIP712 enrichedEIP712 = { visualizedPersonalSignRequest.message } renameAddressCallBack = { renameAddressCallBack } />
 		case 'OrderComponents': {
 			return <OrderComponents
 				openSeaOrderMessage = { visualizedPersonalSignRequest.message }
@@ -348,6 +346,7 @@ function GnosisSafeExtraDetails({ visualizedPersonalSignRequestSafeTx, renameAdd
 function ExtraDetailsInner({ visualizedPersonalSignRequest, renameAddressCallBack }: ExtraDetailsCardParams) {
 	switch(visualizedPersonalSignRequest.type) {
 		case 'EIP712':
+		case 'SafeMessage':
 		case 'NotParsed': return <>
 			<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
 				{ visualizedPersonalSignRequest.type === 'NotParsed' ? <></> : <>

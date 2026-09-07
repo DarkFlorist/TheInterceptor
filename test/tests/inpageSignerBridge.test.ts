@@ -5,7 +5,7 @@ import { getSafeAppsRequestCommand } from '../../app/ts/background/safeAppsReque
 
 type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[], origin?: string, source?: unknown }
 type Listener = (event: WindowEvent) => void
-type InpageRequest = { readonly method: string, readonly requestId: number, readonly params?: readonly unknown[], readonly internal?: true, readonly replayOnDisconnect?: true }
+type InpageRequest = { readonly method: string, readonly safeRequestContext?: unknown, readonly requestId: number, readonly params?: readonly unknown[], readonly internal?: true, readonly replayOnDisconnect?: true }
 type SignerRequest = { readonly method: string, readonly params?: readonly unknown[] | Readonly<Record<string, unknown>> }
 type FakeWindowOptions = {
 	readonly onConnectedToSignerRequest?: () => void
@@ -44,6 +44,7 @@ function parseInpageRequest(value: unknown): InpageRequest | undefined {
 	if (value.replayOnDisconnect !== undefined && value.replayOnDisconnect !== true) return undefined
 	return {
 		method: value.method,
+		...(value.safeRequestContext !== undefined ? { safeRequestContext: value.safeRequestContext } : {}),
 		requestId: value.requestId,
 		...(Array.isArray(value.params) ? { params: value.params } : {}),
 		...(value.internal === true ? { internal: true as const } : {}),
@@ -855,7 +856,8 @@ describe('inpage signer bridge', () => {
 			assert.equal(batchRequest?.method, 'eth_sendTransaction')
 			const batchTransaction = batchRequest?.params?.[0]
 			if (!isRecord(batchTransaction)) throw new Error('Missing batch transaction')
-			assert.equal(batchTransaction.safeOperation, '0x1')
+			assert.equal('safeOperation' in batchTransaction, false)
+			assert.deepEqual(batchRequest?.safeRequestContext, { operation: 1 })
 			assert.equal(batchTransaction.to, '0x9641d764fc13c8b624c04430c7356c1c7c8102e2')
 			assert.deepEqual(ethereumRequests.map(({ method, params }) => ({ method, params })), [
 				{ method: 'eth_getLogs', params: [{ fromBlock: 'latest' }] },
@@ -4045,7 +4047,7 @@ test('Safe SDK settings belong to the page and survive background connection rei
 					assert.equal(command.method, 'eth_sendTransaction')
 					assert.equal(command.mapResult, 'safeTxHash')
 					assert.ok(isRecord(command.params[0]))
-					assert.equal(command.params[0].safeOperation, '0x1')
+					assert.equal(command.safeRequestContext?.operation, 1)
 					assert.equal(command.params[0].to, '0xd53cd0ab83d845ac265be939c57f53ad838012c9')
 				}
 				replyToSafeAppsRequest(request, reply, command.kind === 'settings' ? { kind: 'result', value: { offChainSigning: command.offChainSigning } } : command)

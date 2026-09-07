@@ -1,3 +1,4 @@
+import { isValidMessage } from '../../app/ts/utils/eip712.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { SafeMessage, createSafeMessageTypedData } from '../../app/ts/safe/safeMessage.js'
@@ -11,18 +12,18 @@ const originalMessage = 'Hello Safe 👋'
 const typedData = () => createSafeMessageTypedData(fakeRpcNetwork.chainId, activeAddress, originalMessage)
 const signRequest = () => ({ method: 'eth_signTypedData_v4' as const, params: [activeAddress, EIP712Message.parse(JSON.stringify(typedData()))] as const })
 
-async function prepareMessageReview(data = typedData()) {
+async function prepareMessageReview(data = typedData(), review = { text: originalMessage, isTypedData: false }, selectedSigner = safeTestOwnerAddress) {
 	const signRequest = () => ({ method: 'eth_signTypedData_v4' as const, params: [activeAddress, EIP712Message.parse(JSON.stringify(data))] as const })
 	fakeSafeContract.messageHash = BigInt(hashTypedData(data))
 	fakeSafeContract.owners = [safeTestOwnerAddress]
 	fakeSafeContract.threshold = 1n
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
-	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerAccounts: [safeTestOwnerAddress], activeSigningAddress: safeTestOwnerAddress, signerChain: fakeRpcNetwork.chainId }))
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerAccounts: [selectedSigner], activeSigningAddress: selectedSigner, signerChain: fakeRpcNetwork.chainId }))
 	const socket = uniqueRequestIdentifier.requestSocket
 	const port = createWebsitePort(socket, 0, [])
 	const connections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: { socket, port, websiteOrigin: 'safe-app.example', approved: true, wantsToConnect: true } } }]])
-	const request = { ...signRequest(), interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
+	const request = { ...signRequest(), safeRequestContext: { message: review }, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
 	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, signRequest(), false, activeAddress, { websiteOrigin: 'safe-app.example', icon: undefined, title: 'Safe App' }, connections), { type: 'doNotReply' })
 	const [pending] = await modules.getPendingTransactionsAndMessages()
 	if (pending?.type !== 'SignableMessage' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Missing Safe message review')
@@ -33,12 +34,12 @@ test('Safe Apps signMessage hashes UTF-8 text with the canonical Safe EIP-712 en
 	const data = typedData()
 	assert.equal(data.message.message, hashMessage(originalMessage))
 	assert.equal(hashTypedData(data), hashTypedData({ ...data, message: { message: hashMessage(originalMessage) } }))
-	assert.equal(SafeMessage.safeParse(EIP712Message.parse(JSON.stringify(data))).success, true)
-	assert.equal(isSafeMessageCoSignRequest(signRequest(), activeAddress, fakeRpcNetwork.chainId), true)
+	assert.equal(SafeMessage.safeParse({ typedData: EIP712Message.parse(JSON.stringify(data)), review: { text: originalMessage, isTypedData: false } }).success, true)
+	assert.equal(isSafeMessageCoSignRequest(signRequest(), activeAddress, fakeRpcNetwork.chainId, { message: { text: originalMessage, isTypedData: false } }), true)
 	assert.equal(isSafeMessageCoSignRequest(signRequest(), activeAddress + 1n, fakeRpcNetwork.chainId), false)
 	assert.equal(isSafeMessageCoSignRequest(signRequest(), activeAddress, fakeRpcNetwork.chainId + 1n), false)
-	const misleading = { ...data, safeMessageText: 'Different text' }
-	assert.equal(isSafeMessageCoSignRequest({ ...signRequest(), params: [activeAddress, EIP712Message.parse(JSON.stringify(misleading))] }, activeAddress, fakeRpcNetwork.chainId), false)
+	assert.equal(isSafeMessageCoSignRequest(signRequest(), activeAddress, fakeRpcNetwork.chainId, { message: { text: 'Different text', isTypedData: false } }), false)
+	assert.deepEqual(Object.keys(data).sort(), ['domain', 'message', 'primaryType', 'types'])
 	const command = await getSafeAppsRequestCommand({ method: 'signMessage', params: { message: originalMessage } }, 'safe-app.example', activeAddress, fakeRpcNetwork, async () => ({ version: '1.4.1', nonce: 0n, threshold: 2n, owners: [safeTestOwnerAddress] }))
 	assert.equal(command.kind, 'ethereumRequest')
 	if (command.kind !== 'ethereumRequest') throw new Error('Missing signing command')
@@ -51,18 +52,22 @@ test('Safe Apps signMessage hashes UTF-8 text with the canonical Safe EIP-712 en
 test('Safe message review shows authenticated text, forwards to the selected owner, and validates its signature', async () => {
 	const pending = await prepareMessageReview()
 	assert.ok(pending.safeMessageCoSignSnapshot && 'safeMessageHash' in pending.safeMessageCoSignSnapshot)
-	assert.equal(pending.visualizedPersonalSignRequest.type, 'EIP712')
-	if (pending.visualizedPersonalSignRequest.type !== 'EIP712') throw new Error('Expected EIP-712 review')
-	assert.equal(pending.visualizedPersonalSignRequest.safeMessageText, originalMessage)
+	assert.equal(pending.visualizedPersonalSignRequest.type, 'SafeMessage')
+	if (pending.visualizedPersonalSignRequest.type !== 'SafeMessage') throw new Error('Expected EIP-712 review')
+	assert.equal(pending.visualizedPersonalSignRequest.review.text, originalMessage)
 	const resolution = await modules.resolveSafeConfirmation(simulator.ethereum, pending, 'accept', { selectedSigner: safeTestOwnerAddress, verificationError: undefined })
 	assert.equal(resolution.status, 'ready')
 	if (resolution.status !== 'ready' || resolution.signerFacingRequest?.method !== 'eth_signTypedData_v4') throw new Error('Missing signer request')
 	assert.equal(resolution.signerFacingRequest.params[0], safeTestOwnerAddress)
 	assert.equal(hashTypedData(resolution.signerFacingRequest.params[1]), hashTypedData(typedData()))
+	assert.deepEqual(Object.keys(resolution.signerFacingRequest.params[1]).sort(), ['domain', 'message', 'primaryType', 'types'])
+	assert.deepEqual(isValidMessage(resolution.signerFacingRequest), { valid: true })
 	const signature = await safeTestOwnerAccount.signTypedData(typedData())
 	assert.deepEqual(await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, pending, signature), { status: 'success', result: signature })
 	const wrongSignature = await safeTestOwnerAccount.signMessage({ message: originalMessage })
 	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, pending, wrongSignature)).status, 'error')
+	const alteredReview = { ...pending, signedMessageTransaction: { ...pending.signedMessageTransaction, request: { ...pending.signedMessageTransaction.request, safeRequestContext: { message: { text: 'Altered review text', isTypedData: false } } } } }
+	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, alteredReview, signature)).status, 'error')
 	fakeSafeContract.messageHash = 0n
 	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, pending, signature)).status, 'error')
 	fakeSafeContract.messageHash = BigInt(hashTypedData(typedData()))
@@ -125,17 +130,17 @@ test('Safe typed messages authenticate the original EIP-712 data through review,
 	if (command.kind !== 'ethereumRequest' || command.mapResult !== 'safeMessage') throw new Error('Missing typed signing command')
 	assert.equal(command.isTypedData, true)
 	assert.equal(command.message, original)
-	const pending = await prepareMessageReview(envelope)
-	if (pending.visualizedPersonalSignRequest.type !== 'EIP712') throw new Error('Missing EIP-712 review')
-	assert.equal(pending.visualizedPersonalSignRequest.safeMessageText, original)
-	assert.equal(pending.visualizedPersonalSignRequest.safeMessageIsTypedData, true)
+	const pending = await prepareMessageReview(envelope, { text: original, isTypedData: true })
+	if (pending.visualizedPersonalSignRequest.type !== 'SafeMessage') throw new Error('Missing EIP-712 review')
+	assert.equal(pending.visualizedPersonalSignRequest.review.text, original)
+	assert.equal(pending.visualizedPersonalSignRequest.review.isTypedData, true)
 	const resolution = await modules.resolveSafeConfirmation(simulator.ethereum, pending, 'accept', { selectedSigner: safeTestOwnerAddress, verificationError: undefined })
 	if (resolution.status !== 'ready' || resolution.signerFacingRequest?.method !== 'eth_signTypedData_v4') throw new Error('Missing owner signature request')
 	assert.equal(resolution.signerFacingRequest.params[0], safeTestOwnerAddress)
 	assert.equal(hashTypedData(resolution.signerFacingRequest.params[1]), hashTypedData(envelope))
 	const signature = await safeTestOwnerAccount.signTypedData(envelope)
 	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, pending, signature)).status, 'success')
-	assert.equal(SafeMessage.safeParse(EIP712Message.parse(JSON.stringify({ ...envelope, safeMessageIsTypedData: false }))).success, false)
+	assert.equal(SafeMessage.safeParse({ typedData: EIP712Message.parse(JSON.stringify(envelope)), review: { text: original, isTypedData: false } }).success, false)
 	const services = createSafeAppsMessageServices(simulator.ethereum, activeAddress, fakeRpcNetwork.chainId)
 	const messageHash = hashTypedData(envelope)
 	const originalFetch = globalThis.fetch
@@ -155,4 +160,21 @@ test('Safe typed messages authenticate the original EIP-712 data through review,
 		await assert.rejects(services.submit(original, signature, false))
 	} finally { globalThis.fetch = originalFetch }
 	await assert.rejects(getSafeAppsRequestCommand({ method: 'signTypedMessage', params: { typedData: { ...appTypedData, message: { contents: 'Missing amount' } } } }, 'app.example', activeAddress, fakeRpcNetwork, async () => { throw new Error('Unexpected state lookup') }), /Invalid Safe typed message/)
+})
+
+for (const isTypedData of [false, true]) test(`Safe ${ isTypedData ? 'typed' : 'plain' } message recovers after selecting an owner`, async () => {
+	const text = isTypedData ? JSON.stringify(appTypedData) : originalMessage
+	const data = createSafeMessageTypedData(fakeRpcNetwork.chainId, activeAddress, text, isTypedData)
+	const pending = await prepareMessageReview(data, { text, isTypedData }, safeTestOwnerAddress + 1n)
+	assert.equal(pending.approvalStatus.status, 'SignerError')
+	assert.equal(pending.safeMessageCoSignSnapshot, undefined)
+	await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerAccounts: [safeTestOwnerAddress], activeSigningAddress: safeTestOwnerAddress }))
+	await modules.refreshPendingSafeSignerSelectionErrors(simulator.ethereum, simulator.tokenPriceService, uniqueRequestIdentifier.requestSocket.tabId)
+	const [recovered] = await modules.getPendingTransactionsAndMessages()
+	if (recovered?.type !== 'SignableMessage') throw new Error('Missing recovered Safe message')
+	assert.equal(recovered.approvalStatus.status, 'WaitingForUser')
+	assert.equal(recovered.safeMessageCoSignSnapshot?.safeSignerAddress, safeTestOwnerAddress)
+	const result = await modules.resolveSafeConfirmation(simulator.ethereum, recovered, 'accept', { selectedSigner: safeTestOwnerAddress, verificationError: undefined })
+	if (result.status !== 'ready' || result.signerFacingRequest?.method !== 'eth_signTypedData_v4') throw new Error('Missing recovered owner request')
+	assert.equal(result.signerFacingRequest.params[0], safeTestOwnerAddress)
 })

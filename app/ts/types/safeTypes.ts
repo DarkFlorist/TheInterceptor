@@ -1,3 +1,4 @@
+import { SafeMessageReview } from './safeRequestContext.js'
 import * as funtypes from 'funtypes'
 import { SafeTx } from './personal-message-definitions.js'
 import { EthereumAddress, EthereumBytes32, EthereumQuantity, EthereumTimestamp } from './wire-types.js'
@@ -52,6 +53,7 @@ export const SafeTransactionSigningRequest = funtypes.ReadonlyObject({
 	// Undefined only while a reviewed proposal is waiting for the signer wallet to select an owner.
 	safeSignerAddress: EthereumAddress,
 	executionGasLimit: EthereumQuantity,
+	messageReview: SafeMessageReview,
 	reviewedSafeState: SafeContractStateSnapshot,
 }))
 

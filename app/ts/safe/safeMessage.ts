@@ -1,3 +1,4 @@
+import { SafeMessageReview } from '../types/safeRequestContext.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress } from '../types/wire-types.js'
 import { EIP712Message, Eip712Number, EIP712Types } from '../types/eip721.js'
@@ -16,8 +17,7 @@ export const SAFE_MESSAGE_ABI = [
 	{ type: 'function', name: 'isValidSignature', stateMutability: 'view', inputs: [{ name: 'hash', type: 'bytes32' }, { name: 'signature', type: 'bytes' }], outputs: [{ name: 'magicValue', type: 'bytes4' }] },
 ] as const
 
-export type SafeMessage = funtypes.Static<typeof SafeMessage>
-export const SafeMessage = funtypes.ReadonlyObject({
+const SafeMessageTypedData = funtypes.ReadonlyObject({
 	types: funtypes.ReadonlyObject({
 		SafeMessage: funtypes.ReadonlyTuple(funtypes.ReadonlyObject({ name: funtypes.Literal('message'), type: funtypes.Literal('bytes') })),
 		EIP712Domain: funtypes.ReadonlyTuple(
@@ -27,10 +27,12 @@ export const SafeMessage = funtypes.ReadonlyObject({
 	}),
 	primaryType: funtypes.Literal('SafeMessage'),
 	domain: funtypes.ReadonlyObject({ chainId: Eip712Number, verifyingContract: EthereumAddress }),
-	// Review metadata is outside the signed fields and must match the signed message hash.
-	safeMessageText: funtypes.String,
 	message: funtypes.ReadonlyObject({ message: funtypes.String }),
-}).And(funtypes.ReadonlyPartial({ safeMessageIsTypedData: funtypes.Boolean })).withConstraint((value) => value.message.message === getSafeMessageDigest(value.safeMessageText, value.safeMessageIsTypedData))
+})
+
+export type SafeMessage = funtypes.Static<typeof SafeMessage>
+export const SafeMessage = funtypes.ReadonlyObject({ typedData: SafeMessageTypedData, review: SafeMessageReview })
+	.withConstraint(({ typedData, review }) => typedData.message.message === getSafeMessageDigest(review.text, review.isTypedData))
 
 export function parseSafeTypedMessage(message: string) {
 	// Safe Apps permits omitting primaryType and EIP712Domain; normalize those before strict EIP-712 validation.
@@ -63,17 +65,15 @@ export function createSafeMessageTypedData(chainId: bigint, safeAddress: bigint,
 		},
 		primaryType: 'SafeMessage',
 		domain: { chainId: chainId.toString(), verifyingContract: addressString(safeAddress) },
-		safeMessageText: message,
-		...(isTypedData ? { safeMessageIsTypedData: true } : {}),
 		message: { message: getSafeMessageDigest(message, isTypedData) },
 	}
 }
 
 export async function validateSafeMessageForSigning(ethereum: EthereumClientService, safeAddress: bigint, owner: bigint, message: SafeMessage, expectedVersion?: string) {
-	if (message.domain.chainId !== ethereum.getChainId() || message.domain.verifyingContract !== safeAddress) throw createSafeContractValidationFailure('The Safe message is for a different account or chain.')
+	if (message.typedData.domain.chainId !== ethereum.getChainId() || message.typedData.domain.verifyingContract !== safeAddress) throw createSafeContractValidationFailure('The Safe message is for a different account or chain.')
 	const { snapshot, ownerValidator } = await validateSafeOwnerIsEoa(ethereum, safeAddress, owner)
 	if (expectedVersion !== undefined && snapshot.state.version !== expectedVersion) throw createSafeContractValidationFailure('The Safe version changed after this message was reviewed.')
-	const typedData = createSafeMessageTypedData(message.domain.chainId, safeAddress, message.safeMessageText, message.safeMessageIsTypedData)
+	const typedData = createSafeMessageTypedData(message.typedData.domain.chainId, safeAddress, message.review.text, message.review.isTypedData)
 	const signingHash = BigInt(hashTypedData(typedData))
 	const contractHash = await callSafeMessageHandler(ethereum, safeAddress, encodeFunctionCall(SAFE_MESSAGE_ABI, 'getMessageHash', [typedData.message.message]), snapshot.blockNumber)
 	if (contractHash.length !== 32 || BigInt(bytesToHex(contractHash)) !== signingHash) throw createSafeContractValidationFailure('The locally computed Safe message hash does not match the Safe fallback handler.')

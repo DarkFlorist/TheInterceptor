@@ -182,6 +182,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 				await pendingRequestLimiter.execute(async () => {
 					const request = {
 						method: rawMessage.method,
+						...(rawMessage.safeRequestContext !== undefined ? { safeRequestContext: rawMessage.safeRequestContext } : {}),
 						...'params' in rawMessage ? { params: rawMessage.params } : {},
 						interceptorRequest: rawMessage.interceptorRequest,
 						usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,

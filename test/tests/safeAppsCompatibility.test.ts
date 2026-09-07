@@ -163,7 +163,7 @@ describe('Safe Apps compatibility policy', () => {
 		if (batch.kind !== 'ethereumRequest') throw new Error('Missing batch command')
 		const request = SendTransactionParams.parse({ method: batch.method, params: batch.params })
 		assert.equal(request.params[0].to, SAFE_MULTI_SEND_CALL_ONLY)
-		assert.equal(request.params[0].safeOperation, 1n)
+		assert.equal(batch.safeRequestContext?.operation, 1)
 		assert.equal(request.params[0].value, 0n)
 		assert.deepEqual(decodeSafeBatch(request.params[0].data ?? new Uint8Array()), [
 			{ to: BigInt(transaction.to), value: 15n, data: stringToUint8Array(transaction.data) },
@@ -224,8 +224,8 @@ describe('Safe Apps compatibility policy', () => {
 		assert.equal(command.mapResult, offChainSigning ? 'safeMessage' : 'safeTxHash')
 		if (!offChainSigning) {
 			const request = SendTransactionParams.parse({ method: command.method, params: command.params })
-			assert.equal(request.params[0].safeOperation, 1n)
-			assert.equal(request.params[0].safeMessageText, 'Hello')
+			assert.equal(command.safeRequestContext?.operation, 1)
+			assert.equal(command.safeRequestContext?.message?.text, 'Hello')
 			assert.equal(addressString(request.params[0].from), addressString(activeAddress))
 		}
 	}

@@ -1,3 +1,4 @@
+import type { SafeRequestContext } from '../types/safeRequestContext.js'
 import type { RPCReply } from '../types/interceptor-messages.js'
 import type { EthereumJsonRpcRequest } from '../types/JsonRpc-types.js'
 import type { InterceptedRequest } from '../utils/requests.js'
@@ -38,7 +39,7 @@ export function getSafeModeRpcPolicyReply(options: {
 	readonly hasRpcConnection: boolean
 }): RPCReply | undefined {
 	if (!options.safeSigningMode) {
-		if (options.parsedRequest?.method === 'eth_sendTransaction' && options.parsedRequest.params[0].safeOperation !== undefined) return safeModeUnsupportedMethod('eth_sendTransaction', 'Safe operations require an active Safe signing account.')
+		if (options.rawRequest.safeRequestContext !== undefined) return safeModeUnsupportedMethod(options.rawRequest.method, 'Safe operations require an active Safe signing account.')
 		return undefined
 	}
 	if (options.parsedRequest === undefined) {
@@ -52,7 +53,7 @@ export function getSafeModeRpcPolicyReply(options: {
 	if (
 		SAFE_MESSAGE_SIGNING_METHODS.has(options.parsedRequest.method)
 		&& !isSafeTransactionCoSignRequest(options.parsedRequest, options.activeAddress, options.chainId)
-		&& !isSafeMessageCoSignRequest(options.parsedRequest, options.activeAddress, options.chainId)
+		&& !isSafeMessageCoSignRequest(options.parsedRequest, options.activeAddress, options.chainId, options.rawRequest.safeRequestContext)
 	) {
 		return safeModeUnsupportedMethod(
 			options.parsedRequest.method,
@@ -93,8 +94,8 @@ export function isSafeTransactionCoSignRequest(
 	}
 }
 
-export function isSafeMessageCoSignRequest(request: EthereumJsonRpcRequest, activeAddress: bigint | undefined, chainId: bigint) {
+export function isSafeMessageCoSignRequest(request: EthereumJsonRpcRequest, activeAddress: bigint | undefined, chainId: bigint, context?: SafeRequestContext) {
 	if (request.method !== 'eth_signTypedData_v4' || activeAddress === undefined || request.params[0] !== activeAddress || !isValidMessage(request).valid) return false
-	const message = SafeMessage.safeParse(request.params[1])
-	return message.success && message.value.domain.chainId === chainId && message.value.domain.verifyingContract === activeAddress
+	const message = SafeMessage.safeParse({ typedData: request.params[1], review: context?.message })
+	return message.success && message.value.typedData.domain.chainId === chainId && message.value.typedData.domain.verifyingContract === activeAddress
 }

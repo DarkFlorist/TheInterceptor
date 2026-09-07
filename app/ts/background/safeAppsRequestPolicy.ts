@@ -96,7 +96,7 @@ function toEthereumQuantity(value: string): string {
 
 const SAFE_PROPOSAL_GAS_LIMIT = '0x989680'
 
-function parseSafeTransaction(params: unknown, from: string): JsonValue {
+function parseSafeTransaction(params: unknown, from: string): { transaction: JsonValue, batch: boolean } {
 	const parsedParams = SafeTransactionsParams.safeParse(params)
 	if (!parsedParams.success || parsedParams.value.txs.length === 0 || parsedParams.value.txs.length > 100) throw safeAppsPolicyError('Safe sendTransactions params must contain between 1 and 100 transactions.')
 	const transactions = parsedParams.value.txs.map((value) => {
@@ -117,17 +117,16 @@ function parseSafeTransaction(params: unknown, from: string): JsonValue {
 	const gas = safeTxGas === undefined || safeTxGas === 0 ? undefined : `0x${ safeTxGas.toString(16) }`
 	const firstTransaction = transactions[0]
 	if (firstTransaction === undefined) throw safeAppsPolicyError('A Safe transaction is required.')
-	if (transactions.length === 1) return { from, ...firstTransaction, ...(gas === undefined ? {} : { gas }) }
+	if (transactions.length === 1) return { transaction: { from, ...firstTransaction, ...(gas === undefined ? {} : { gas }) }, batch: false }
 	const data = encodeSafeBatch(transactions.map((transaction) => ({ to: BigInt(transaction.to), value: BigInt(transaction.value), data: stringToUint8Array(transaction.data) })))
-	return { from, to: addressString(SAFE_MULTI_SEND_CALL_ONLY), value: '0x0', data: dataStringWith0xStart(data), safeOperation: '0x1', gas: gas ?? SAFE_PROPOSAL_GAS_LIMIT }
+	return { transaction: { from, to: addressString(SAFE_MULTI_SEND_CALL_ONLY), value: '0x0', data: dataStringWith0xStart(data), gas: gas ?? SAFE_PROPOSAL_GAS_LIMIT }, batch: true }
 }
 
 function createOnChainMessageCommand(from: string, message: string, isTypedData: boolean): SafeAppsRequestCommand {
 	return { kind: 'ethereumRequest', method: 'eth_sendTransaction', params: [{
-		from, to: addressString(SAFE_SIGN_MESSAGE_LIB), value: '0x0', gas: SAFE_PROPOSAL_GAS_LIMIT, safeOperation: '0x1',
+		from, to: addressString(SAFE_SIGN_MESSAGE_LIB), value: '0x0', gas: SAFE_PROPOSAL_GAS_LIMIT,
 		data: encodeFunctionCall(SAFE_SIGN_MESSAGE_ABI, 'signMessage', [getSafeMessageDigest(message, isTypedData)]),
-		safeMessageText: message, safeMessageIsTypedData: isTypedData,
-	}], mapResult: 'safeTxHash' }
+	}], safeRequestContext: { operation: 1, message: { text: message, isTypedData } }, mapResult: 'safeTxHash' }
 }
 
 function parseRpcCall(params: JsonValue | undefined) {
@@ -173,7 +172,7 @@ export async function getSafeAppsRequestCommand(value: unknown, websiteOrigin: s
 			const params = SafeSignMessageParams.safeParse(request.params)
 			if (!params.success) throw safeAppsPolicyError('Safe Apps signMessage params must contain a message string of at most 100000 characters.')
 			if (!offChainSigning) return createOnChainMessageCommand(safeAddress, params.value.message, false)
-			return { kind: 'ethereumRequest', method: 'eth_signTypedData_v4', params: [safeAddress, JSON.stringify(createSafeMessageTypedData(rpcNetwork.chainId, activeSafeAddress, params.value.message))], mapResult: 'safeMessage', message: params.value.message, safeAddress, chainId: rpcNetwork.chainId.toString() }
+			return { kind: 'ethereumRequest', method: 'eth_signTypedData_v4', params: [safeAddress, JSON.stringify(createSafeMessageTypedData(rpcNetwork.chainId, activeSafeAddress, params.value.message))], safeRequestContext: { message: { text: params.value.message, isTypedData: false } }, mapResult: 'safeMessage', message: params.value.message, safeAddress, chainId: rpcNetwork.chainId.toString() }
 		}
 		case 'signTypedMessage': {
 			const params = funtypes.ReadonlyObject({ typedData: JsonValue }).safeParse(request.params)
@@ -182,7 +181,7 @@ export async function getSafeAppsRequestCommand(value: unknown, websiteOrigin: s
 			if (message.length > 100_000) throw safeAppsPolicyError('The Safe typed message exceeds 100000 characters.')
 			if (!offChainSigning) return createOnChainMessageCommand(safeAddress, message, true)
 			const typedData = createSafeMessageTypedData(rpcNetwork.chainId, activeSafeAddress, message, true)
-			return { kind: 'ethereumRequest', method: 'eth_signTypedData_v4', params: [safeAddress, JSON.stringify(typedData)], mapResult: 'safeMessage', message, isTypedData: true, safeAddress, chainId: rpcNetwork.chainId.toString() }
+			return { kind: 'ethereumRequest', method: 'eth_signTypedData_v4', params: [safeAddress, JSON.stringify(typedData)], safeRequestContext: { message: { text: message, isTypedData: true } }, mapResult: 'safeMessage', message, isTypedData: true, safeAddress, chainId: rpcNetwork.chainId.toString() }
 		}
 		case 'submitOffChainMessage': {
 			const params = SafeSubmitMessageParams.safeParse(request.params)
@@ -226,7 +225,10 @@ export async function getSafeAppsRequestCommand(value: unknown, websiteOrigin: s
 			}
 			return { kind: 'ethereumRequest', ...rpcCall, mapResult: 'passthrough' }
 		}
-		case 'sendTransactions': return { kind: 'ethereumRequest', method: 'eth_sendTransaction', params: [parseSafeTransaction(request.params, safeAddress)], mapResult: 'safeTxHash' }
+		case 'sendTransactions': {
+			const { transaction, batch } = parseSafeTransaction(request.params, safeAddress)
+			return { kind: 'ethereumRequest', method: 'eth_sendTransaction', params: [transaction], ...(batch ? { safeRequestContext: { operation: 1 as const } } : {}), mapResult: 'safeTxHash' }
+		}
 		default: throw safeAppsPolicyError(`Unsupported Safe Apps method: ${ request.method }.`)
 	}
 }
