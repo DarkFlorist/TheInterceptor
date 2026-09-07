@@ -349,7 +349,10 @@ browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () =
 	return await onContentScriptConnected(waitForBackgroundStartup, port, websiteTabConnections)
 }))
 browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
-	const { simulationServices, resetActiveRpcNetwork } = await waitForBackgroundStartup()
-	return await popupMessageHandler(websiteTabConnections, simulationServices.ethereum, simulationServices.tokenPriceService, resetActiveRpcNetwork, message, await getSettings(), rpcConnectionStatusPublisher.publishRpcConnectionStatus)
+	const { resetActiveRpcNetwork } = await waitForBackgroundStartup()
+	const settings = await getSettings()
+	// A preceding popup RPC switch can replace services while settings are being read.
+	const simulationServices = getSimulationServices()
+	return await popupMessageHandler(websiteTabConnections, simulationServices.ethereum, simulationServices.tokenPriceService, resetActiveRpcNetwork, message, settings, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 })))
 addWindowTabListeners(onCloseWindow, onCloseTab)

@@ -55,3 +55,34 @@ BENCH_SCENARIO=stacked bun run benchmark:popup-lifecycle
 
 The real browser benchmark does not seed `browser.storage.local` and it does not use a local JSON-RPC fixture server.
 For the `stacked` scenario, it prints the send-transaction setup phases, the end-to-end send-transaction-to-main-popup path, the RPCs from the transaction/balance setup, and the RPCs observed while the main popup itself is opening.
+
+## Switching controls with controlled delays
+
+After `bun run setup-chrome`, run:
+
+```bash
+bun run benchmark:popup-switching
+```
+
+This benchmark uses the existing Chromium/CDP harness, an isolated temporary profile, a local JSON-RPC fixture, and an EIP-6963 fake wallet. Each iteration starts a fresh profile and seeds two contact wallets and RPC endpoints before measurement. It covers wallet selection, both modes, same-chain RPC switching, rich on/off, and wallet-required network acceptance/rejection. It deliberately uses an empty transaction stack; these results do not predict real-wallet or large-stack performance.
+
+Configure the fixture delays and sample count:
+
+```bash
+BENCH_RPC_DELAY_MS=150 BENCH_WALLET_DELAY_MS=300 BENCH_ITERATIONS=3 bun run benchmark:popup-switching
+```
+
+The defaults are shown above. `CHROME_BIN` selects the browser binary. Persistent profile variables are rejected because the benchmark seeds settings. No existing profile is modified.
+
+The JSON report includes each sample and per-scenario minimum, median (upper middle for even counts), and maximum timings:
+
+- `feedbackFrameMs`: first animation frame observing pending feedback, the selected value, or a new error.
+- `persistedMs`: the setting's storage-change event, when one occurs; rejected switches do not have this field.
+- `selectionFrameMs`: first frame showing the selected value. For rich mode this is the optimistic checkbox state, not completed balance refresh. Rejected switches omit this field.
+- `replyMs`: completion of the real popup/background request, including wallet approval when required.
+- `completedFrameMs`: first frame after the reply with pending feedback removed.
+- `rpcRequests`: local fixture RPC requests completed during the sample; cache hits and empty-stack changes can require none.
+
+The popup is brought to the foreground for frame sampling. These are animation-frame observations, not GPU paint timestamps. The benchmark fails for wrong outcomes, missing visual feedback or successful-setting persistence events, unsupported fixture RPC calls, wallet switches completing before the configured wallet delay, or rejected switches changing persisted RPC state. It imposes no machine-dependent speed threshold.
+
+For comparisons, build each revision and run the same command with the same browser, delays, iteration count, and host load. Compare feedback and selected-value timings separately from total completion time. Fixture setup is excluded from sample timings.

@@ -45,7 +45,7 @@ const delegateCallExecuteAbi = [
 	},
 ] as const satisfies Abi
 
-const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: bigint[]) => {
+const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
 	return Object.fromEntries(
 		addressesToMakeRich.map(currentAddress => {
@@ -62,12 +62,12 @@ export const getAddressesbeingMadeRich = async () => {
 	return [...makeRichAddressList.filter((x) => x.makingRich).map((x) => x.address), ...currentAddressBeingRich === undefined ? [] : [currentAddressBeingRich]]
 }
 
-export const getCurrentSimulationInput = async (): Promise<SimulationStateInput> => {
+export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[]): Promise<SimulationStateInput> => {
 	const [settings, preSimulationBlockTimeManipulation] = await Promise.all([
 		getSettings(),
 		getPreSimulationBlockTimeManipulation()
 	])
-	const richListPromise = silenceChromeUnCaughtPromise(getAddressesbeingMadeRich())
+	const richListPromise = silenceChromeUnCaughtPromise(richAddresses === undefined ? getAddressesbeingMadeRich() : Promise.resolve(richAddresses))
 	const stack = await getInterceptorTransactionStack()
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []

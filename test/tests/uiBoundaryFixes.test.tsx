@@ -1,5 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { installBrowserMock } from './backgroundEthAccountsTestHarness.js'
+import { requestPopupSettingsChange } from '../../app/ts/components/popupSettingsChange.js'
 import { signal } from '@preact/signals'
 import { render } from 'preact'
 import { act } from 'preact/test-utils'
@@ -211,6 +213,25 @@ describe('UI boundary fixes', () => {
 		), /fallback switch failed/)
 		assert.deepEqual(operations, [`change-active:${ fallbackRpc.httpsRpc }`])
 	})
+
+	for (const operation of ['edit', 'remove'] as const) {
+		test(`keeps the RPC list and dialog intact when the background rejects an active RPC ${ operation }`, async () => {
+			installBrowserMock()
+			Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: async () => ({ type: 'PopupSettingsChangeReply', ok: false, message: 'Another popup is changing settings.' }) })
+			const active = { name: 'Active', chainId: 1n, httpsRpc: 'https://active.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+			const fallback = { ...active, httpsRpc: 'https://fallback.example', primary: false }
+			let persisted = false
+			let closed = false
+			const persist = async () => { persisted = true }
+			const change = async (entry: typeof active) => await requestPopupSettingsChange({ method: 'popup_changeActiveRpc', data: entry })
+			await assert.rejects(completeRpcFormMutation(async () => {
+				if (operation === 'edit') await saveRpcEntryAndKeepActiveRpcConsistent({ ...active, name: 'Edited' }, [active, fallback], active, persist, change)
+				else await removeRpcEntryAndKeepActiveRpcConsistent(active.httpsRpc, [active, fallback], active, persist, change)
+			}, () => { closed = true }), /Another popup/)
+			assert.equal(persisted, false)
+			assert.equal(closed, false)
+		})
+	}
 
 	test('requires a confirmed same-chain fallback before removing an active RPC', async () => {
 		const activeRpc = { name: 'Active', chainId: 1n, httpsRpc: 'https://active.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }

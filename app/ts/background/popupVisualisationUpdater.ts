@@ -1,7 +1,7 @@
 
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import type { CompleteVisualizedSimulation, SimulationState } from '../types/visualizer-types.js'
+import type { CompleteVisualizedSimulation, SimulationState, SimulationStateInput } from '../types/visualizer-types.js'
 import { createPassthroughCompleteVisualizedSimulation, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } from '../utils/errors.js'
@@ -13,6 +13,11 @@ import { requestIsSimulationDataConsumerOpen, sendPopupMessageToOpenWindows } fr
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { getAddressesbeingMadeRich, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
 import { getPopupVisualisationState, setPopupVisualisationState } from './storageVariables.js'
+
+export type PopupSimulationSnapshot = {
+	readonly simulationStateInput: SimulationStateInput
+	readonly numberOfAddressesMadeRich: number
+}
 
 let abortController = new AbortController()
 
@@ -54,7 +59,7 @@ const hasSimulationInputOperations = (simulationState: SimulationState) => (
 	simulationState.simulationStateInput.some((block) => block.transactions.length > 0 || block.signedMessages.length > 0)
 )
 
-export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, invalidateOldState = false, onlyIfNotAlreadyUpdating = false, skipIfUnchanged = false) => {
+export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, invalidateOldState = false, onlyIfNotAlreadyUpdating = false, skipIfUnchanged = false, snapshot?: PopupSimulationSnapshot) => {
 	try {
 		const popupVisualisation = await getPopupVisualisationState()
 		if (onlyIfNotAlreadyUpdating && updateSimulationVisualisationSemaphore.getPermits() === 0) return popupVisualisation
@@ -65,14 +70,14 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 		const isSimulationDataConsumerOpenReply = await requestIsSimulationDataConsumerOpen()
 		if (!(isSimulationDataConsumerOpenReply?.data.isOpen === true)) return popupVisualisation
 		if (skipIfUnchanged && popupVisualisation.simulationState.kind === 'simulated') {
-			const currentSimulationInput = await getCurrentSimulationStateInput(ethereum)
+			const currentSimulationInput = await getCurrentSimulationStateInput(ethereum, snapshot)
 			const currentFingerprint = getPopupVisualisationFingerprint(currentSimulationInput.simulationStateInput, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)
 			const cachedFingerprint = getPopupVisualisationFingerprint(
 				popupVisualisation.simulationState.value.simulationStateInput,
 				popupVisualisation.simulationState.value.rpcNetwork,
 				popupVisualisation.simulationState.value.blockNumber,
 			)
-			if (currentFingerprint === cachedFingerprint) return popupVisualisation
+			if (currentFingerprint === cachedFingerprint && (snapshot === undefined || snapshot.numberOfAddressesMadeRich === popupVisualisation.numberOfAddressesMadeRich)) return popupVisualisation
 		}
 		abortController.abort(NEW_BLOCK_ABORT)
 		abortController = new AbortController()
@@ -82,7 +87,7 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 			const visualizedSimulatorState = await setPopupVisualisationState(modifyObject(popupVisualisation, { simulationId, simulationResultState: 'invalid', simulationUpdatingState: 'updating' }))
 			await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState } })
 		}
-		await updatePopupVisualisationState(ethereum, tokenPriceService, thisAbortController)
+		await updatePopupVisualisationState(ethereum, tokenPriceService, thisAbortController, false, snapshot)
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return await getPopupVisualisationState()
 		await reportUnexpectedError(error)
@@ -106,15 +111,15 @@ export async function refreshPopupVisualisationForOpenConsumer(ethereum: Ethereu
 }
 
 const updateSimulationVisualisationSemaphore = new Semaphore(1)
-export async function updatePopupVisualisationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, abortController: AbortController | undefined, throwOnUnexpectedError = false) {
+export async function updatePopupVisualisationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, abortController: AbortController | undefined, throwOnUnexpectedError = false, snapshot?: PopupSimulationSnapshot) {
 	try {
 		return await updateSimulationVisualisationSemaphore.execute(async () => {
 			if (abortController?.signal.aborted) return
 			const popupVisualisation = await getPopupVisualisationState()
 			const simulationId = popupVisualisation.simulationId + 1
-			const simulationState = await getUpdatedSimulationState(ethereum)
+			const simulationState = await getUpdatedSimulationState(ethereum, snapshot?.simulationStateInput)
 			const doneState = { simulationUpdatingState: 'done' as const, simulationResultState: 'done' as const, simulationId }
-			const numberOfAddressesMadeRich = (await getAddressesbeingMadeRich()).length
+			const numberOfAddressesMadeRich = snapshot?.numberOfAddressesMadeRich ?? (await getAddressesbeingMadeRich()).length
 			if (simulationState.kind === 'passthrough') {
 				const newState = buildPassthroughVisualizedState(simulationId, numberOfAddressesMadeRich)
 				await setPopupVisualisationState(newState)
@@ -162,9 +167,9 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 	}
 }
 
-async function getCurrentSimulationStateInput(ethereum: EthereumClientService) {
+async function getCurrentSimulationStateInput(ethereum: EthereumClientService, snapshot?: PopupSimulationSnapshot) {
 	return {
-		simulationStateInput: await getCurrentSimulationInput(),
+		simulationStateInput: snapshot?.simulationStateInput ?? await getCurrentSimulationInput(),
 		rpcNetwork: ethereum.getRpcEntry(),
 		blockNumber: await ethereum.getBlockNumber(undefined),
 	}

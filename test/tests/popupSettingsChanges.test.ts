@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
-import type { PopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefresh.js'
+import type { RevisionedPopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefresh.js'
 
 describe('popup settings changes', () => {
 	test('coalesces refreshes and waits for changes arriving during an active refresh', async () => {
@@ -9,20 +9,21 @@ describe('popup settings changes', () => {
 		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefresh.js')
 		const first = createDeferredValue<boolean>()
 		const last = createDeferredValue<boolean>()
-		const calls: PopupSimulationRefresh[] = []
+		const calls: RevisionedPopupSimulationRefresh[] = []
 		const refresh = createPopupSimulationRefresher(async (services) => {
 			calls.push(services)
 			return await (calls.length === 1 ? first.promise : last.promise)
 		})
-		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const services = { ...createEthereumWithGetBlockCounter({ count: 0 }), revision: 'first' }
 		const result = refresh(services)
 		assert.equal(refresh({ ...services, invalidateOldState: true }), result)
 		await Promise.resolve()
 		assert.equal(calls.length, 1)
 		assert.equal(calls[0]?.invalidateOldState, true)
-		const newerServices = createEthereumWithGetBlockCounter({ count: 0 })
+		assert.equal(refresh(services), result)
+		const newerServices = { ...createEthereumWithGetBlockCounter({ count: 0 }), revision: 'second' }
 		assert.equal(refresh({ ...services, invalidateOldState: true }), result)
-		assert.equal(refresh(newerServices), result)
+		assert.equal(refresh({ ...newerServices, invalidateOldState: true }), result)
 		let completed = false
 		void result.then(() => { completed = true })
 		first.resolve(true)
@@ -35,6 +36,45 @@ describe('popup settings changes', () => {
 		assert.equal(await result, false)
 	})
 
+	for (const change of ['same', 'revision', 'provider', 'force'] as const) {
+		test(`shares only refresh work that covers the requested revision and invalidation (${ change })`, async () => {
+			installBrowserMock()
+			const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefresh.js')
+			const release = createDeferredValue<boolean>()
+			let calls = 0
+			const refresh = createPopupSimulationRefresher(async () => { calls++; return await release.promise })
+			const services = { ...createEthereumWithGetBlockCounter({ count: 0 }), revision: 'one' }
+			const pending = refresh(services)
+			await Promise.resolve()
+			const next = change === 'provider' ? { ...services, ...createEthereumWithGetBlockCounter({ count: 0 }) }
+				: change === 'revision' ? { ...services, revision: 'two' }
+				: change === 'force' ? { ...services, invalidateOldState: true } : services
+			for (let i = 0; i < 5; i++) assert.equal(refresh(next), pending)
+			release.resolve(true)
+			assert.equal(await pending, true)
+			assert.equal(calls, change === 'same' ? 1 : 2)
+			// Completed work never suppresses a later retry or explicit refresh.
+			await refresh(next)
+			assert.equal(calls, change === 'same' ? 2 : 3)
+		})
+	}
+
+	test('keeps the latest A request when B was queued during an active A refresh', async () => {
+		installBrowserMock()
+		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefresh.js')
+		const release = createDeferredValue<boolean>()
+		const revisions: (string | symbol)[] = []
+		const refresh = createPopupSimulationRefresher(async (services) => { revisions.push(services.revision); return await release.promise })
+		const services = { ...createEthereumWithGetBlockCounter({ count: 0 }), revision: 'A' }
+		const pending = refresh(services)
+		await Promise.resolve()
+		refresh({ ...services, revision: 'B' })
+		refresh(services)
+		release.resolve(true)
+		await pending
+		assert.deepEqual(revisions, ['A', 'A'])
+	})
+
 	test('allows retry after a rejected refresh', async () => {
 		installBrowserMock()
 		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefresh.js')
@@ -43,9 +83,62 @@ describe('popup settings changes', () => {
 			if (++attempts === 1) throw new Error('Refresh failed')
 			return true
 		})
-		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const services = { ...createEthereumWithGetBlockCounter({ count: 0 }), revision: 'retry' }
 		await assert.rejects(refresh(services), /Refresh failed/)
 		assert.equal(await refresh(services), true)
+	})
+
+	test('coordinates settings changes across dispatchers without blocking wallet replies or reads', async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getSettings, saveCurrentTabId, websiteSocketToString } = await loadModules()
+		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+		const { getConfirmedSignerStateToken } = await import('../../app/ts/background/signerStateOwnership.js')
+		const { resolveSignerChainChange } = await import('../../app/ts/background/windows/changeChain.js')
+		await changeSimulationMode({ simulationMode: false })
+		await saveCurrentTabId(1)
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(1)
+		const connections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+		} }]])
+		const settings = await getSettings()
+		const context = {
+			...createEthereumWithGetBlockCounter({ count: 0 }), settings, websiteTabConnections: connections,
+			publishRpcConnectionStatus: async () => undefined,
+			simulationAbortController: new AbortController(), confirmTransactionAbortController: new AbortController(), resetSimulationState: async () => undefined,
+		}
+		const rpc = { ...settings.activeRpcNetwork, chainId: 2n, httpsRpc: 'https://other.example.test' }
+		const pending = dispatchPopupMessage(context, { method: 'popup_changeActiveRpc', data: rpc })
+		try {
+			await waitForPortMessageCount(messages, 'request_signer_to_wallet_switchEthereumChain', 1)
+			for (const request of [
+				{ method: 'popup_changeActiveRpc', data: rpc },
+				{ method: 'popup_enableSimulationMode', data: true },
+				{ method: 'popup_modifyMakeMeRich', data: { address: 'CurrentAddress', add: true } },
+				{ method: 'popup_changeActiveAddress', data: { simulationMode: true, activeAddress: 2n } },
+			] as const) {
+				const reply = await dispatchPopupMessage({ ...context }, request)
+				assert.ok(reply !== undefined && 'ok' in reply && !reply.ok && reply.message.includes('Another popup'))
+			}
+			assert.equal((await getSettings()).simulationMode, false)
+			await dispatchPopupMessage({ ...context }, { method: 'popup_requestSimulationMode' })
+		} finally {
+			const token = getConfirmedSignerStateToken(connections, 1)
+			if (token === undefined) throw new Error('Missing signer token')
+			resolveSignerChainChange(token, { method: 'popup_signerChangeChainDialog', data: [{ accept: false, chainId: 2n, error: { code: 4001, message: 'Rejected' } }] })
+			await pending
+		}
+		const retry = await dispatchPopupMessage(context, { method: 'popup_enableSimulationMode', data: false })
+		assert.deepEqual(retry, { type: 'PopupSettingsChangeReply', ok: true })
+		const setStorage = browser.storage.local.set
+		try {
+			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: async () => { throw new Error('Storage unavailable') } })
+			await assert.rejects(dispatchPopupMessage(context, { method: 'popup_modifyMakeMeRich', data: { address: 'CurrentAddress', add: true } }), /Storage unavailable/)
+		} finally {
+			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: setStorage })
+		}
+		assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_enableSimulationMode', data: false }), { type: 'PopupSettingsChangeReply', ok: true })
+
 	})
 
 	test('skips work when reselecting the current mode or RPC', async () => {

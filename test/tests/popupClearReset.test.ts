@@ -425,6 +425,20 @@ describe('popup clear reset', () => {
 		assert.equal(getSimulationStateChangedMessages(browserMock.sentMessages).length, 0)
 	})
 
+	test('renders the captured refresh input and rich count after live settings change', async () => {
+		browserMock.reset()
+		await browserStorageLocalSet({ independentActiveSimulationAddress: activeAddress, makeCurrentAddressRich: false, interceptorTransactionStack: { operations: [] } })
+		const modules = await modulesPromise
+		const snapshot = { simulationStateInput: await modules.getCurrentSimulationInput(), numberOfAddressesMadeRich: 0 }
+		await browserStorageLocalSet({ makeCurrentAddressRich: true })
+		assert.notDeepEqual(await modules.getCurrentSimulationInput(), snapshot.simulationStateInput)
+		const result = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, false, false, false, snapshot)
+		assert.equal(result.numberOfAddressesMadeRich, 0)
+		assert.equal(result.simulationState.kind, 'simulated')
+		if (result.simulationState.kind !== 'simulated') throw new Error('Expected a simulated snapshot')
+		assert.deepEqual(result.simulationState.value.simulationStateInput, snapshot.simulationStateInput)
+	})
+
 	test('updates the cached popup active address without restamping the simulation', async () => {
 		browserMock.reset()
 		const nextActiveAddress = defaultActiveAddresses.find((entry) => entry.address !== activeAddress)?.address

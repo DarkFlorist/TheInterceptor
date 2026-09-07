@@ -15,6 +15,7 @@ import { EthereumQuantity } from '../../types/wire-types.js'
 import { isBrowserFetchTransportError } from '../../utils/caughtErrors.js'
 import { AsyncStatusIcon } from './AsyncAction.js'
 import { parseRpcFormData } from '../../utils/rpcFormData.js'
+import { requestPopupSettingsChange } from '../popupSettingsChange.js'
 import { ErrorComponent } from './Error.js'
 
 type RpcProbeResult = {
@@ -122,7 +123,7 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 		const { activeRpcNetwork } = await getSettings()
 		await saveRpcEntryAndKeepActiveRpcConsistent(rpcEntry, rpcEntries.value, activeRpcNetwork,
 			async (entries) => await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_set_rpc_list', data: entries }),
-			async (entry) => await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_changeActiveRpc', data: entry })
+			async (entry) => await requestPopupSettingsChange({ method: 'popup_changeActiveRpc', data: entry })
 		)
 	}
 
@@ -130,7 +131,7 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 		const { activeRpcNetwork } = await getSettings()
 		await removeRpcEntryAndKeepActiveRpcConsistent(url, rpcEntries.value, activeRpcNetwork,
 			async (entries) => await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_set_rpc_list', data: entries }),
-			async (entry) => await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_changeActiveRpc', data: entry })
+			async (entry) => await requestPopupSettingsChange({ method: 'popup_changeActiveRpc', data: entry })
 		)
 	}
 

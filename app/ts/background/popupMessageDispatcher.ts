@@ -1,3 +1,4 @@
+import { getSettings } from './settings.js'
 import { refreshPopupSimulation } from './popupSimulationRefresh.js'
 import type { PopupMessage } from '../types/interceptor-messages.js'
 import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
@@ -70,6 +71,21 @@ const popupMessageHandlers = {
 	...websiteAccessPopupMessageHandlers,
 } satisfies PopupMessageHandlerMap
 
+let settingsChangePending = false
+
 export async function dispatchPopupMessage(context: PopupMessageDispatcherContext, request: PopupMessage): Promise<PopupReplyOption | void> {
-	return await popupMessageHandlers[request.method](context, request)
+	const isSettingsChange = request.method === 'popup_changeActiveAddress' || request.method === 'popup_enableSimulationMode' || request.method === 'popup_changeActiveRpc' || request.method === 'popup_modifyMakeMeRich'
+	if (!isSettingsChange) return await popupMessageHandlers[request.method](context, request)
+	if (settingsChangePending) return {
+		type: request.method === 'popup_changeActiveAddress' ? 'ChangeActiveAddressReply' : 'PopupSettingsChangeReply',
+		ok: false,
+		message: 'Another popup is changing settings. Please wait for it to finish, then try again.',
+	}
+	// Admit before the first await. Provider callbacks and read requests remain available while a wallet reply is pending.
+	settingsChangePending = true
+	try {
+		return await popupMessageHandlers[request.method]({ ...context, settings: await getSettings() }, request)
+	} finally {
+		settingsChangePending = false
+	}
 }
