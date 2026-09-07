@@ -417,12 +417,8 @@ export async function reconcileWebsiteApprovalAccesses(
 		await reportUnexpectedError(error)
 	}
 
-	try {
-		await safeAppsCompatibilityCoordinator.refreshApprovedPorts(websiteTabConnections)
-	} catch (error) {
-		if (throwOnError) throw error
-		await reportUnexpectedError(error)
-	}
+	// Optional feature eligibility must not hold the settings lock or fail core access reconciliation.
+	safeAppsCompatibilityCoordinator.scheduleApprovedPortsRefresh(websiteTabConnections)
 	return { popupRefreshGeneration, iconRefreshTargets: [...iconRefreshTargets.values()] }
 }
 

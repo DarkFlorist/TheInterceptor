@@ -14,7 +14,7 @@ export async function removeWebsiteTabConnection(websiteTabConnections: WebsiteT
 		if (currentConnection?.port !== disconnectedPort) return false
 		const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 		delete tabConnection.connections[connectionIdentifier]
-		safeAppsCompatibilityCoordinator.connectionRemoved(socket)
+		safeAppsCompatibilityCoordinator.connectionRemoved(websiteTabConnections, socket)
 		if (tabConnection.signerStateOwner?.connectionName === socket.connectionName) {
 			resolveSignerStateConfirmation(tabConnection)
 			advanceSignerStateGeneration(tabConnection)

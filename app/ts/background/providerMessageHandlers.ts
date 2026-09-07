@@ -146,7 +146,7 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 				signerProviderGeneration: signerStateToken.signerProviderGeneration,
 			},
 		})
-		if (transition.shouldActivate) safeAppsCompatibilityCoordinator.signerAccountsSettled(signerStateToken.socket)
+		if (transition.shouldActivate) safeAppsCompatibilityCoordinator.signerAccountsSettled(websiteTabConnections, signerStateToken.socket)
 		else safeAppsCompatibilityCoordinator.signerAccountsChanged(websiteTabConnections, signerStateToken.socket)
 		return returnValue
 	})
@@ -287,8 +287,14 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 		shouldRefreshSignerAccounts = isTopFrame && approval === 'hasAccess' && signerConnected && !signerMissing && !settings.simulationMode
 		return await getConnectedToSignerResult()
 	})
-	// Safe Apps compatibility is an optional subscription and must not delay or fail the core signer handshake.
-	safeAppsCompatibilityCoordinator.signerConnectionChanged(websiteTabConnections, socket, shouldRefreshSignerAccounts)
+	// Passive account refresh is core signer behavior, independent of Safe Apps compatibility.
+	const currentSigner = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+	const accountsRequested = shouldRefreshSignerAccounts
+		&& currentSigner?.port === port
+		&& currentSigner.signerProviderGeneration === signerProviderGeneration
+		&& sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_to_eth_accounts', result: [] })
+	// Feature publication must not delay or fail the core signer handshake.
+	safeAppsCompatibilityCoordinator.signerConnectionChanged(websiteTabConnections, socket, accountsRequested)
 	return result
 }
 

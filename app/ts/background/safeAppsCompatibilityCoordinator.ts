@@ -50,10 +50,17 @@ function createSafeAppsCompatibilityCoordinator() {
 	}
 	const refreshPort = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, signerAccountsKnown: boolean) => {
 		const { socketIdentifier, token } = beginPublication(socket)
-		const [enabled, settings] = await Promise.all([getSafeAppsCompatibilityMode(), getSettings()])
+		const enabled = await getSafeAppsCompatibilityMode()
+		if (!isCurrentPublication(socketIdentifier, token)) return
+		// Disabled compatibility only publishes its protocol status; it must not read signer/Safe state or discover accounts.
+		if (!enabled) {
+			send(websiteTabConnections, socket, false)
+			return
+		}
+		const settings = await getSettings()
 		const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 		const tabState = await getTabState(socket.tabId)
-		const shouldDiscoverSignerAccounts = enabled
+		const shouldDiscoverSignerAccounts = isCurrentPublication(socketIdentifier, token)
 			&& connection?.approved === true
 			&& isSafeAppsTopFramePort(connection.port)
 			&& !settings.simulationMode
@@ -85,7 +92,7 @@ function createSafeAppsCompatibilityCoordinator() {
 	}
 	return {
 		connectionApproved(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-			void refreshPort(websiteTabConnections, socket, false).catch((error: unknown) => { void reportUnexpectedError(error) })
+			void refreshPort(websiteTabConnections, socket, false).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 		},
 		connectionDisconnected(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 			beginPublication(socket)
@@ -97,18 +104,18 @@ function createSafeAppsCompatibilityCoordinator() {
 			publicationTokens.delete(websiteSocketToString(socket))
 			signerAccountDiscoveryTabs.delete(socket.tabId)
 		},
-		signerConnectionChanged(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, refreshSignerAccounts = false) {
+		signerConnectionChanged(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, accountsRequested = false) {
 			signerAccountDiscoveryTabs.delete(socket.tabId)
-			// Share the passive request with eligibility discovery, including when Safe compatibility is disabled.
-			if (refreshSignerAccounts) requestSignerAccountDiscovery(websiteTabConnections, socket)
-			void refreshPort(websiteTabConnections, socket, false).catch((error: unknown) => { void reportUnexpectedError(error) })
+			// The core signer handshake already sent this passive request; do not duplicate it during feature discovery.
+			if (accountsRequested) signerAccountDiscoveryTabs.add(socket.tabId)
+			void refreshPort(websiteTabConnections, socket, false).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 		},
 		signerAccountsSettled(socket: WebsiteSocket) {
 			signerAccountDiscoveryTabs.delete(socket.tabId)
 		},
 		signerAccountsChanged(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 			signerAccountDiscoveryTabs.delete(socket.tabId)
-			void refreshApprovedTabPorts(websiteTabConnections, socket.tabId, true).catch((error: unknown) => { void reportUnexpectedError(error) })
+			void refreshApprovedTabPorts(websiteTabConnections, socket.tabId, true).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 		},
 		async refreshApprovedPorts(websiteTabConnections: WebsiteTabConnections) {
 			const sends: Promise<void>[] = []
@@ -123,4 +130,40 @@ function createSafeAppsCompatibilityCoordinator() {
 	}
 }
 
-export const safeAppsCompatibilityCoordinator = createSafeAppsCompatibilityCoordinator()
+// Mutable discovery/publication state belongs to a connection registry, never to the process.
+const coordinators = new WeakMap<WebsiteTabConnections, ReturnType<typeof createSafeAppsCompatibilityCoordinator>>()
+function getCoordinator(connections: WebsiteTabConnections) {
+	const existing = coordinators.get(connections)
+	if (existing !== undefined) return existing
+	const coordinator = createSafeAppsCompatibilityCoordinator()
+	coordinators.set(connections, coordinator)
+	return coordinator
+}
+
+// Eligibility work requires the experimental setting; core callers schedule notifications and only explicit feature settings changes await publication.
+export const safeAppsCompatibilityCoordinator = {
+	connectionApproved(connections: WebsiteTabConnections, socket: WebsiteSocket) {
+		getCoordinator(connections).connectionApproved(connections, socket)
+	},
+	connectionDisconnected(connections: WebsiteTabConnections, socket: WebsiteSocket) {
+		getCoordinator(connections).connectionDisconnected(connections, socket)
+	},
+	connectionRemoved(connections: WebsiteTabConnections, socket: WebsiteSocket) {
+		coordinators.get(connections)?.connectionRemoved(socket)
+	},
+	signerConnectionChanged(connections: WebsiteTabConnections, socket: WebsiteSocket, accountsRequested = false) {
+		getCoordinator(connections).signerConnectionChanged(connections, socket, accountsRequested)
+	},
+	signerAccountsSettled(connections: WebsiteTabConnections, socket: WebsiteSocket) {
+		coordinators.get(connections)?.signerAccountsSettled(socket)
+	},
+	signerAccountsChanged(connections: WebsiteTabConnections, socket: WebsiteSocket) {
+		getCoordinator(connections).signerAccountsChanged(connections, socket)
+	},
+	async refreshApprovedPorts(connections: WebsiteTabConnections) {
+		await getCoordinator(connections).refreshApprovedPorts(connections)
+	},
+	scheduleApprovedPortsRefresh(connections: WebsiteTabConnections) {
+		void this.refreshApprovedPorts(connections).catch(async (error: unknown) => { await reportUnexpectedError(error) })
+	},
+}

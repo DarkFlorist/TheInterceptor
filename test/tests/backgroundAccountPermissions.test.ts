@@ -3,21 +3,79 @@ import { describe, spyOn, test } from 'bun:test'
 import { addressString, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
-	test('reports optional Safe Apps refresh failures and honors strict access updates', async () => {
+	test('reports optional Safe Apps refresh failures without failing strict access updates', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { safeAppsCompatibilityCoordinator, updateWebsiteApprovalAccesses, getSettings } = await loadModules()
 		const failure = new Error('Safe Apps eligibility storage unavailable')
 		const refresh = spyOn(safeAppsCompatibilityCoordinator, 'refreshApprovedPorts').mockRejectedValue(failure)
 		try {
 			const settings = await getSettings()
-			const generation = await updateWebsiteApprovalAccesses(undefined, undefined, undefined, new Map(), settings, false)
+			const generation = await updateWebsiteApprovalAccesses(undefined, undefined, undefined, new Map(), settings, false, true)
 			assert.equal(typeof generation, 'number')
+			await new Promise((resolve) => setTimeout(resolve, 0))
 			assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_UnexpectedErrorOccured'), true)
-			await assert.rejects(
-				async () => await updateWebsiteApprovalAccesses(undefined, undefined, undefined, new Map(), settings, false, true),
-				(error: unknown) => error === failure,
-			)
 		} finally {
+			refresh.mockRestore()
+		}
+	})
+
+	test('disabled Safe Apps notifications do not read eligibility state or request signer accounts', async () => {
+		installBrowserMock()
+		const { safeAppsCompatibilityCoordinator, setSafeAppsCompatibilityMode, websiteSocketToString } = await loadModules()
+		await setSafeAppsCompatibilityMode(false)
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'app.example', approved: true, wantsToConnect: true },
+		} }]])
+		const read = spyOn(browser.storage.local, 'get').mockImplementation(async (keys) => {
+			assert.deepEqual(keys, ['safeAppsCompatibilityMode'])
+			return { safeAppsCompatibilityMode: false }
+		})
+		try {
+			safeAppsCompatibilityCoordinator.connectionApproved(connections, socket)
+			safeAppsCompatibilityCoordinator.signerConnectionChanged(connections, socket, true)
+			safeAppsCompatibilityCoordinator.signerAccountsChanged(connections, socket)
+			await safeAppsCompatibilityCoordinator.refreshApprovedPorts(connections)
+			assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_accounts'), false)
+			assert.equal(messages.every((message) => message.method === 'safe_apps_compatibility' && message.result?.enabled === false), true)
+		} finally {
+			read.mockRestore()
+		}
+	})
+
+	test('keeps Safe Apps publications independent for registries with matching socket identifiers', async () => {
+		installBrowserMock()
+		const { safeAppsCompatibilityCoordinator, setSafeAppsCompatibilityMode, websiteSocketToString } = await loadModules()
+		await setSafeAppsCompatibilityMode(false)
+		const socket = { tabId: 1, connectionName: 0n }
+		const makeRegistry = () => {
+			const { port, messages } = createPort(socket.tabId)
+			return { messages, connections: new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'app.example', approved: true, wantsToConnect: true },
+			} }]]) }
+		}
+		const first = makeRegistry()
+		const second = makeRegistry()
+		await Promise.all([
+			safeAppsCompatibilityCoordinator.refreshApprovedPorts(first.connections),
+			safeAppsCompatibilityCoordinator.refreshApprovedPorts(second.connections),
+		])
+		assert.equal(first.messages.filter((message) => message.method === 'safe_apps_compatibility').length, 1)
+		assert.equal(second.messages.filter((message) => message.method === 'safe_apps_compatibility').length, 1)
+	})
+
+	test('strict access reconciliation does not wait for optional eligibility work', async () => {
+		installBrowserMock()
+		const { safeAppsCompatibilityCoordinator, updateWebsiteApprovalAccesses, getSettings } = await loadModules()
+		const pending = createDeferredValue<undefined>()
+		const refresh = spyOn(safeAppsCompatibilityCoordinator, 'refreshApprovedPorts').mockImplementation(async () => { await pending.promise })
+		try {
+			const generation = await updateWebsiteApprovalAccesses(undefined, undefined, undefined, new Map(), await getSettings(), false, true)
+			assert.equal(typeof generation, 'number')
+			assert.equal(refresh.mock.calls.length, 1)
+		} finally {
+			pending.resolve(undefined)
 			refresh.mockRestore()
 		}
 	})
