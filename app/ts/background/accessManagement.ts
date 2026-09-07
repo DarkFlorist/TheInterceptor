@@ -429,8 +429,7 @@ export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections
 	return false
 }
 
-// Apply the ordered access decisions now; callers finish UI work after releasing any settings lock.
-export async function reconcileWebsiteApprovalAccesses(
+async function reconcileWebsiteApprovalAccesses(
 	ethereum: EthereumClientService | undefined,
 	tokenPriceService: TokenPriceService | undefined,
 	resetSimulationServices: ResetSimulationServices | undefined,
@@ -480,6 +479,32 @@ export async function reconcileWebsiteApprovalAccesses(
 	return { popupRefreshGeneration, finish }
 }
 
+export type WebsiteAccessReconciler = (settings: Settings) => Promise<number>
+
+// Own all completion work so a caller cannot omit it or skip it by throwing after a committed access update.
+export async function runWithWebsiteAccessUpdates<T>(
+	ethereum: EthereumClientService | undefined,
+	tokenPriceService: TokenPriceService | undefined,
+	resetSimulationServices: ResetSimulationServices | undefined,
+	websiteTabConnections: WebsiteTabConnections,
+	promptForAccessesIfNeeded: boolean,
+	runOrdered: (operation: () => Promise<T>) => Promise<T>,
+	change: (reconcile: WebsiteAccessReconciler) => Promise<T>,
+	throwOnError = false,
+): Promise<T> {
+	const completions: Array<() => Promise<void>> = []
+	try {
+		return await runOrdered(async () => await change(async (settings) => {
+			const update = await reconcileWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, settings, promptForAccessesIfNeeded, throwOnError)
+			completions.push(update.finish)
+			return update.popupRefreshGeneration
+		}))
+	} finally {
+		// The ordered executor has released its lock before access dialogs or toolbar updates begin.
+		for (const complete of completions) await complete()
+	}
+}
+
 export async function updateWebsiteApprovalAccesses(
 	ethereum: EthereumClientService | undefined,
 	tokenPriceService: TokenPriceService | undefined,
@@ -489,9 +514,11 @@ export async function updateWebsiteApprovalAccesses(
 	promptForAccessesIfNeeded: boolean,
 	throwOnError = false,
 ): Promise<number> {
-	const update = await reconcileWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, settings, promptForAccessesIfNeeded, throwOnError)
-	await update.finish()
-	return update.popupRefreshGeneration
+	return await runWithWebsiteAccessUpdates<number>(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, promptForAccessesIfNeeded,
+		async (operation) => await operation(),
+		async (reconcile) => await reconcile(settings),
+		throwOnError,
+	)
 }
 
 export async function finalizeWebsiteAccessChange(

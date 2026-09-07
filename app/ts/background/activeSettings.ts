@@ -4,7 +4,8 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import type { RpcNetwork } from '../types/rpc.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { reconcileWebsiteApprovalAccesses, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
+import type { WebsiteAccessReconciler } from './accessManagement.js'
+import { runWithWebsiteAccessUpdates, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
@@ -59,11 +60,19 @@ type ActiveAddressAndChainChange = {
 }
 
 const changeActiveAddressAndChainSemaphore = new Semaphore(1)
-async function runActiveSettingsChange(change: () => Promise<() => Promise<void>>) {
+async function runActiveSettingsChange(
+	ethereum: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	resetSimulationServices: ResetSimulationServices,
+	websiteTabConnections: WebsiteTabConnections,
+	promptForAccessesIfNeeded: boolean,
+	change: (reconcile: WebsiteAccessReconciler) => Promise<void>,
+) {
 	// Global settings, port approvals, service resets and notifications must describe the same ordered transition.
-	const finishAccessUpdate = await changeActiveAddressAndChainSemaphore.execute(change)
-	// Access dialogs and icon refreshes do not hold up another transition or invert the dialog/settings lock order.
-	await finishAccessUpdate()
+	await runWithWebsiteAccessUpdates(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, promptForAccessesIfNeeded,
+		async (operation) => await changeActiveAddressAndChainSemaphore.execute(operation),
+		change,
+	)
 }
 
 async function changeActiveAddressAndChainUnlocked(
@@ -72,6 +81,7 @@ async function changeActiveAddressAndChainUnlocked(
 	resetSimulationServices: ResetSimulationServices,
 	websiteTabConnections: WebsiteTabConnections,
 	change: ActiveAddressAndChainChange,
+	reconcile: WebsiteAccessReconciler,
 ) {
 	if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList()
 	const previousSettings = await getSettings()
@@ -94,8 +104,8 @@ async function changeActiveAddressAndChainUnlocked(
 	}
 
 	const updatedSettings = await getSettings()
-	const accessUpdate = await reconcileWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings, change.promptForAccessesIfNeeded ?? true)
-	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration: accessUpdate.popupRefreshGeneration })
+	const popupRefreshGeneration = await reconcile(updatedSettings)
+	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration })
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	const activeSigningSafeContextChanged = !updatedSettings.simulationMode
 		&& updatedSettings.activeSigningSafeAddress !== undefined
@@ -114,7 +124,6 @@ async function changeActiveAddressAndChainUnlocked(
 	}
 	if (activeSigningSafeContextChanged) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
 	await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
-	return accessUpdate.finish
 }
 
 export async function changeActiveAddressAndChain(
@@ -124,12 +133,13 @@ export async function changeActiveAddressAndChain(
 	websiteTabConnections: WebsiteTabConnections,
 	change: ActiveAddressAndChainChange,
 ) {
-	await runActiveSettingsChange(async () => await changeActiveAddressAndChainUnlocked(
+	await runActiveSettingsChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, change.promptForAccessesIfNeeded ?? true, async (reconcile) => await changeActiveAddressAndChainUnlocked(
 		ethereum,
 		tokenPriceService,
 		resetSimulationServices,
 		websiteTabConnections,
 		change,
+		reconcile,
 	))
 }
 
@@ -146,31 +156,30 @@ export async function activateAddressSelection(
 		readonly promptForAccessesIfNeeded?: boolean
 	},
 ) {
-	await runActiveSettingsChange(async () => {
+	await runActiveSettingsChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, options.promptForAccessesIfNeeded ?? true, async (reconcile) => {
+		const selectedSafe = selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? selection.entry : undefined
+		if (!options.simulationMode && selection?.type === 'addressBookEntry' && selectedSafe === undefined) throw new Error('Signing mode can only activate the external signer or an owned Gnosis Safe.')
 		const useSignerAddress = selection?.type === 'signer' || (!options.simulationMode && selection === undefined)
 		if (options.simulationMode) {
 			await setUseSignersAddressAsActiveAddress(useSignerAddress, useSignerAddress ? selection?.type === 'signer' ? selection.address : options.signerAddress : undefined)
 		}
-		const finishAccessUpdate = await changeActiveAddressAndChainUnlocked(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+		await changeActiveAddressAndChainUnlocked(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			simulationMode: options.simulationMode,
-			promptForAccessesIfNeeded: options.promptForAccessesIfNeeded ?? true,
 			activeAddress: selection?.type === 'signer' ? selection.address : selection?.entry.address,
 			...(!options.simulationMode ? { signingAddressSelection: selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? 'safe' as const : 'signer' as const } : {}),
 			...(options.rpcNetwork === undefined ? {} : { rpcNetwork: options.rpcNetwork }),
-		})
-		if (options.simulationMode || options.signerAddress === undefined || selection === undefined) return finishAccessUpdate
-		if (selection.type === 'signer') {
+		}, reconcile)
+		if (options.simulationMode || options.signerAddress === undefined || selection === undefined) return
+		if (selectedSafe === undefined) {
 			await rememberSigningAddressSelection({ signerAddress: options.signerAddress, selection: 'signer' })
-			return finishAccessUpdate
+			return
 		}
-		if (selection.entry.type !== 'safe') throw new Error('Signing mode can only activate the external signer or an owned Gnosis Safe.')
 		await rememberSigningAddressSelection({
 			signerAddress: options.signerAddress,
 			selection: 'safe',
-			safeAddress: selection.entry.address,
-			chainId: selection.entry.chainId,
+			safeAddress: selectedSafe.address,
+			chainId: selectedSafe.chainId,
 		})
-		return finishAccessUpdate
 	})
 }
 

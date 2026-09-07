@@ -317,9 +317,9 @@ describe('active settings concurrency', () => {
 		expect((await getTabState(1)).tabIconDetails).toEqual({ icon: ICON_NOT_ACTIVE, iconReason: expectedTitle })
 	})
 
-	test.each(['immediate', 'deferred'])('%s access updates prompt for the latest address rather than the reconciliation snapshot', async (completion) => {
+	test.each(['immediate', 'scoped'])('%s access updates prompt for the latest address rather than the reconciliation snapshot', async (completion) => {
 		installBrowserMock()
-		const { changeSimulationMode, getSettings, updateUserAddressBookEntries, websiteSocketToString, reconcileWebsiteApprovalAccesses, updateWebsiteApprovalAccesses, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
+		const { changeSimulationMode, getSettings, updateUserAddressBookEntries, websiteSocketToString, runWithWebsiteAccessUpdates, updateWebsiteApprovalAccesses, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
 		const originalAddress = { ...firstAddress, askForAddressAccess: true }
 		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
 		await updateUserAddressBookEntries(() => [originalAddress, selectedAddress])
@@ -331,15 +331,65 @@ describe('active settings concurrency', () => {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'example.test', approved: false, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
-		const update = completion === 'deferred'
-			? await reconcileWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, connections, snapshot, true)
-			: undefined
-		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: selectedAddress.address })
-		if (update !== undefined) await update.finish()
-		else await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, connections, snapshot, true)
+		if (completion === 'scoped') {
+			await runWithWebsiteAccessUpdates(ethereum, tokenPriceService, resetSimulationServices, connections, true,
+				async (operation) => await operation(),
+				async (reconcile) => {
+					await reconcile(snapshot)
+					await changeSimulationMode({ simulationMode: true, activeSimulationAddress: selectedAddress.address })
+				},
+			)
+		} else {
+			await changeSimulationMode({ simulationMode: true, activeSimulationAddress: selectedAddress.address })
+			await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, connections, snapshot, true)
+		}
 		const pending = await getPendingAccessRequests()
 		try {
 			expect(pending.map((request) => request.requestAccessToAddress?.address)).toEqual([selectedAddress.address])
+		} finally {
+			for (const request of pending) {
+				await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, connections, {
+					userReply: 'noResponse', accessRequestId: request.accessRequestId,
+					originalRequestAccessToAddress: selectedAddress.address, requestAccessToAddress: selectedAddress.address,
+				}, noopPublishRpcConnectionStatus)
+			}
+		}
+	})
+
+	test('rejects an invalid signing selection before changing stored settings', async () => {
+		installBrowserMock()
+		const { activateAddressSelection } = await loadModules()
+		const before = await browser.storage.local.get()
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		await assert.rejects(activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, new Map(), { type: 'addressBookEntry', entry: secondAddress }, {
+			simulationMode: false, signerAddress: firstAddress.address,
+		}), /Signing mode can only activate the external signer or an owned Gnosis Safe/u)
+		expect(await browser.storage.local.get()).toEqual(before)
+	})
+
+	test.each(['direct', 'selection'])('completes access UI after a persisted %s transition throws', async (entryPoint) => {
+		installBrowserMock()
+		const { activateAddressSelection, changeActiveAddressAndChain, getSettings, getTabState, updateUserAddressBookEntries, websiteSocketToString, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
+		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
+		await updateUserAddressBookEntries(() => [selectedAddress])
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port } = createPort(1)
+		const connections: WebsiteTabConnections = new Map([[1, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'example.test', approved: false, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const rpcNetwork = (await getSettings()).activeRpcNetwork
+		const failure = new Error('Service reset failed after settings persisted')
+		const failReset: ResetSimulationServices = () => { throw failure }
+		const transition = entryPoint === 'direct'
+			? changeActiveAddressAndChain(ethereum, tokenPriceService, failReset, connections, { simulationMode: true, activeAddress: selectedAddress.address, rpcNetwork })
+			: activateAddressSelection(ethereum, tokenPriceService, failReset, connections, { type: 'addressBookEntry', entry: selectedAddress }, { simulationMode: true, signerAddress: undefined, rpcNetwork })
+		await assert.rejects(transition, (error: unknown) => error === failure)
+		const pending = await getPendingAccessRequests()
+		try {
+			assert.equal((await getSettings()).activeSimulationAddress, selectedAddress.address)
+			expect(pending.map((request) => request.requestAccessToAddress?.address)).toEqual([selectedAddress.address])
+			expect((await getTabState(1)).tabIconDetails).toEqual({ icon: ICON_NOT_ACTIVE, iconReason: 'example.test has PENDING access request for Second address!' })
 		} finally {
 			for (const request of pending) {
 				await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, connections, {
