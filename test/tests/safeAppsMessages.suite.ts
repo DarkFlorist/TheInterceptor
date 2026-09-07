@@ -23,7 +23,7 @@ async function prepareMessageReview(data = typedData(), review = { text: origina
 	const socket = uniqueRequestIdentifier.requestSocket
 	const port = createWebsitePort(socket, 0, [])
 	const connections = new Map([[socket.tabId, { connections: { [modules.websiteSocketToString(socket)]: { socket, port, websiteOrigin: 'safe-app.example', approved: true, wantsToConnect: true } } }]])
-	const request = { ...signRequest(), safeRequestContext: { message: review }, interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
+	const request = { method: 'safe_apps_request', params: [{ method: 'execute', params: { ...signRequest(), safeRequestContext: { message: review } } }], interceptorRequest: true as const, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier }
 	assert.deepEqual(await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, request, signRequest(), false, activeAddress, { websiteOrigin: 'safe-app.example', icon: undefined, title: 'Safe App' }, connections), { type: 'doNotReply' })
 	const [pending] = await modules.getPendingTransactionsAndMessages()
 	if (pending?.type !== 'SignableMessage' || pending.transactionOrMessageCreationStatus !== 'Simulated') throw new Error('Missing Safe message review')
@@ -66,7 +66,7 @@ test('Safe message review shows authenticated text, forwards to the selected own
 	assert.deepEqual(await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, pending, signature), { status: 'success', result: signature })
 	const wrongSignature = await safeTestOwnerAccount.signMessage({ message: originalMessage })
 	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, pending, wrongSignature)).status, 'error')
-	const alteredReview = { ...pending, signedMessageTransaction: { ...pending.signedMessageTransaction, request: { ...pending.signedMessageTransaction.request, safeRequestContext: { message: { text: 'Altered review text', isTypedData: false } } } } }
+	const alteredReview = { ...pending, signedMessageTransaction: { ...pending.signedMessageTransaction, request: { ...pending.signedMessageTransaction.request, params: [{ method: 'execute', params: { ...signRequest(), safeRequestContext: { message: { text: 'Altered review text', isTypedData: false } } } }] } } }
 	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, alteredReview, signature)).status, 'error')
 	fakeSafeContract.messageHash = 0n
 	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, pending, signature)).status, 'error')

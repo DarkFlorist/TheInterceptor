@@ -1,3 +1,4 @@
+import { getSafeRequestContext } from './safeAppsExecution.js'
 import type { SafeRequestContext } from '../types/safeRequestContext.js'
 import type { RPCReply } from '../types/interceptor-messages.js'
 import type { EthereumJsonRpcRequest } from '../types/JsonRpc-types.js'
@@ -39,7 +40,7 @@ export function getSafeModeRpcPolicyReply(options: {
 	readonly hasRpcConnection: boolean
 }): RPCReply | undefined {
 	if (!options.safeSigningMode) {
-		if (options.rawRequest.safeRequestContext !== undefined) return safeModeUnsupportedMethod(options.rawRequest.method, 'Safe operations require an active Safe signing account.')
+		if (getSafeRequestContext(options.rawRequest) !== undefined) return safeModeUnsupportedMethod(options.rawRequest.method, 'Safe operations require an active Safe signing account.')
 		return undefined
 	}
 	if (options.parsedRequest === undefined) {
@@ -53,7 +54,7 @@ export function getSafeModeRpcPolicyReply(options: {
 	if (
 		SAFE_MESSAGE_SIGNING_METHODS.has(options.parsedRequest.method)
 		&& !isSafeTransactionCoSignRequest(options.parsedRequest, options.activeAddress, options.chainId)
-		&& !isSafeMessageCoSignRequest(options.parsedRequest, options.activeAddress, options.chainId, options.rawRequest.safeRequestContext)
+		&& !isSafeMessageCoSignRequest(options.parsedRequest, options.activeAddress, options.chainId, getSafeRequestContext(options.rawRequest))
 	) {
 		return safeModeUnsupportedMethod(
 			options.parsedRequest.method,

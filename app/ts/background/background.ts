@@ -1,3 +1,5 @@
+import { getSafeAppsExecution } from '../safe/safeAppsExecution.js'
+import { isSafeMessageCoSignRequest } from '../safe/safeRequestPolicy.js'
 import { createSafeAppsMessageServices } from './safeAppsMessages.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
@@ -37,7 +39,7 @@ import { createMethodHandlerFor, hasOwnKey } from '../utils/methodHandlers.js'
 import { getWalletCapabilities } from './walletCapabilities.js'
 import { getSafeAppsRequestCommand, isSafeAppsRequestPolicyError } from './safeAppsRequestPolicy.js'
 import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
-import { getSafeContractState, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
+import { createSafeContractValidationFailure, getSafeContractState, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
 import { isSafeAppsConnectionEligible } from './safeAppsCompatibilityCoordinator.js'
 import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState } from './websiteAccessPolicy.js'
 
@@ -502,6 +504,15 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 				&& await isSafeAppsConnectionEligible(websiteTabConnections, request.uniqueRequestIdentifier.requestSocket, settings)
 			if (!safeAppsEligible) return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'safe_apps_request', uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: { code: -32602, message: 'Interceptor Safe Apps compatibility is not enabled for this connection.' } })
 			try {
+				const execution = getSafeAppsExecution(request)
+				if (execution !== undefined) {
+					if (execution.method === 'eth_signTypedData_v4' && !isSafeMessageCoSignRequest(execution, activeAddress.address, settings.activeRpcNetwork.chainId, execution.safeRequestContext)) throw createSafeContractValidationFailure('Invalid Safe message review context.')
+					const { safeRequestContext: _context, ...payload } = execution
+					const result = payload.method === 'eth_sendTransaction'
+						? await sendTransaction(ethereum, tokenPriceService, activeAddress.address, payload, request, website, websiteTabConnections, false)
+						: await personalSign(ethereum, tokenPriceService, activeAddress.address, payload, request, website, websiteTabConnections, false)
+					return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...result })
+				}
 				const command = await getSafeAppsRequestCommand('params' in request ? request.params?.[0] : undefined, website.websiteOrigin, activeAddress.address, settings.activeRpcNetwork, async () => await getSafeContractState(ethereum, activeAddress.address), createSafeAppsMessageServices(ethereum, activeAddress.address, settings.activeRpcNetwork.chainId))
 				const result = command.kind === 'settings' ? { kind: 'result' as const, value: { offChainSigning: command.offChainSigning } } : command
 				return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'safe_apps_request', result, uniqueRequestIdentifier: request.uniqueRequestIdentifier })

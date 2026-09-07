@@ -784,6 +784,6 @@ describe('refreshHomeData', () => {
 		const homeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage') as { data?: { websiteAccessAddressMetadata?: readonly unknown[] } } | undefined
 		assert.equal(requestMessages.length, 0)
 		assert.equal(homeUpdate?.data?.websiteAccessAddressMetadata?.length, 1)
-		assert.deepEqual(messages.find((message) => message.method === 'safe_apps_compatibility')?.result, { enabled: false, canRequestAccess: false })
+		assert.equal(messages.some((message) => message.method === 'safe_apps_compatibility'), false)
 	})
 })

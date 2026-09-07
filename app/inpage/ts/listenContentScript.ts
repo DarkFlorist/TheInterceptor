@@ -44,7 +44,6 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		readonly type?: unknown
 		readonly method?: unknown
 		readonly params?: unknown
-		readonly safeRequestContext?: unknown
 		readonly usingInterceptorWithoutSigner?: unknown
 		readonly requestId?: unknown
 		readonly internal?: unknown
@@ -57,7 +56,6 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		readonly type: typeof INTERCEPTOR_BRIDGE_REQUEST_MESSAGE
 		readonly method: string
 		readonly params?: readonly unknown[]
-		readonly safeRequestContext?: unknown
 		readonly usingInterceptorWithoutSigner: boolean
 		readonly requestId: number
 		readonly internal?: true
@@ -79,7 +77,6 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 			readonly interceptorRequest: true
 			readonly method: string
 			readonly params?: readonly unknown[]
-			readonly safeRequestContext?: unknown
 			readonly usingInterceptorWithoutSigner: boolean
 			readonly requestId: number
 			readonly interceptorInternalRequest?: true
@@ -254,7 +251,6 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		const message: ForwardedBridgeMessage = { replayOnDisconnect: data.replayOnDisconnect === true, data: {
 			interceptorRequest: true,
 			method: data.method,
-			...(data.safeRequestContext !== undefined ? { safeRequestContext: data.safeRequestContext } : {}),
 			...(data.params !== undefined ? { params: data.params } : {}),
 			usingInterceptorWithoutSigner: data.usingInterceptorWithoutSigner,
 			requestId: data.requestId,

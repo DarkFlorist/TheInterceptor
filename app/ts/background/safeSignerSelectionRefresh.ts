@@ -1,3 +1,4 @@
+import { getSafeRequestContext } from '../safe/safeAppsExecution.js'
 import type { SafeRequestContext } from '../types/safeRequestContext.js'
 import type { SignMessageParams } from '../types/jsonRpc-signing-types.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
@@ -126,7 +127,7 @@ export async function getSafeMessageCoSignContext(
 		const snapshot = pending.safeMessageCoSignSnapshot
 		const safeEntry = await getCurrentSafeEntry(ethereum, pending.activeAddress)
 		if (safeEntry.safeVersion === undefined || snapshot.safeAddress !== pending.activeAddress || pending.originalRequestParameters.params[0] !== pending.activeAddress) throw createSafeContractValidationFailure('The Safe message account or version changed after review.')
-		const parsedMessage = SafeMessage.safeParse({ typedData: pending.originalRequestParameters.params[1], review: pending.signedMessageTransaction.request.safeRequestContext?.message })
+		const parsedMessage = SafeMessage.safeParse({ typedData: pending.originalRequestParameters.params[1], review: getSafeRequestContext(pending.signedMessageTransaction.request)?.message })
 		if (!parsedMessage.success) throw createSafeContractValidationFailure('The Safe message review data is invalid or changed after review.')
 		const message = parsedMessage.value
 		const context = await validateSafeMessageForSigning(ethereum, pending.activeAddress, safeSignerOverride ?? snapshot.safeSignerAddress, message, safeEntry.safeVersion)
@@ -411,7 +412,7 @@ async function recoverSafeMessageReview(ethereum: EthereumClientService, pending
 		|| pending.approvalStatus.status !== 'SignerError' || pending.approvalStatus.code !== SAFE_SIGNER_SELECTION_ERROR_CODE) return undefined
 	let refreshResult: SafeSignerSelectionRefreshResult
 	try {
-		const snapshot = await createSafeOffChainMessageSnapshot(ethereum, pending.activeAddress, selectedSigner, pending.originalRequestParameters, pending.signedMessageTransaction.request.safeRequestContext)
+		const snapshot = await createSafeOffChainMessageSnapshot(ethereum, pending.activeAddress, selectedSigner, pending.originalRequestParameters, getSafeRequestContext(pending.signedMessageTransaction.request))
 		refreshResult = { status: 'refreshed', pending: { ...pending, safeMessageCoSignSnapshot: snapshot, approvalStatus: { status: 'WaitingForUser' } } }
 	} catch (error) {
 		if (!isSafeContractValidationFailure(error) && !isSafeOwnerValidationFailure(error)) throw error

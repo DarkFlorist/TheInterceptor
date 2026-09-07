@@ -5,7 +5,7 @@ import { getSafeAppsRequestCommand } from '../../app/ts/background/safeAppsReque
 
 type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[], origin?: string, source?: unknown }
 type Listener = (event: WindowEvent) => void
-type InpageRequest = { readonly method: string, readonly safeRequestContext?: unknown, readonly requestId: number, readonly params?: readonly unknown[], readonly internal?: true, readonly replayOnDisconnect?: true }
+type InpageRequest = { readonly method: string, readonly requestId: number, readonly params?: readonly unknown[], readonly internal?: true, readonly replayOnDisconnect?: true }
 type SignerRequest = { readonly method: string, readonly params?: readonly unknown[] | Readonly<Record<string, unknown>> }
 type FakeWindowOptions = {
 	readonly onConnectedToSignerRequest?: () => void
@@ -44,7 +44,6 @@ function parseInpageRequest(value: unknown): InpageRequest | undefined {
 	if (value.replayOnDisconnect !== undefined && value.replayOnDisconnect !== true) return undefined
 	return {
 		method: value.method,
-		...(value.safeRequestContext !== undefined ? { safeRequestContext: value.safeRequestContext } : {}),
 		requestId: value.requestId,
 		...(Array.isArray(value.params) ? { params: value.params } : {}),
 		...(value.internal === true ? { internal: true as const } : {}),
@@ -593,7 +592,7 @@ describe('inpage signer bridge', () => {
 		})
 	}
 
-	test('bounds Safe Apps requests queued before the experimental setting arrives', async () => {
+	test('bounds early discovery and ignores signing until Safe Apps is enabled', async () => {
 		let replyToConnection: (() => void) | undefined
 		const { fakeWindow } = createFakeWindow({
 			handleRequest: (request, sendBackgroundMessage) => {
@@ -605,7 +604,7 @@ describe('inpage signer bridge', () => {
 					return true
 				}
 				if (request.method !== 'safe_apps_request') return false
-				rejectSafeAppsRequest(request, sendBackgroundMessage, 'Unsupported Safe Apps method: unsupportedEarlyMethod.')
+				rejectSafeAppsRequest(request, sendBackgroundMessage, 'Discovery fixture response.')
 				return true
 			},
 		})
@@ -615,16 +614,18 @@ describe('inpage signer bridge', () => {
 			fakeWindow.addEventListener('message', (event) => {
 				if (isRecord(event.data) && typeof event.data.success === 'boolean') replies.push(event.data)
 			})
+			fakeWindow.postMessage({ id: 'early-signing', method: 'signMessage', params: { message: 'Do not queue this' }, env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
 			for (let index = 0; index < 40; index += 1) {
-				fakeWindow.postMessage({ id: `early-${ index }`, method: 'unsupportedEarlyMethod', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+				fakeWindow.postMessage({ id: `early-${ index }`, method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
 			}
 			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.deepEqual(replies, [])
 			replyToConnection?.()
-			await waitFor(() => replies.length === 40)
-			assert.equal(replies.filter((reply) => reply.error === 'Unsupported Safe Apps method: unsupportedEarlyMethod.').length, 32)
-			assert.equal(replies.filter((reply) => reply.error === 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.').length, 8)
+			await waitFor(() => replies.length === 32)
+			assert.equal(replies.filter((reply) => reply.error === 'Discovery fixture response.').length, 32)
+			assert.equal(replies.filter((reply) => reply.error === 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.').length, 0)
 			await new Promise((resolve) => setTimeout(resolve, 0))
-			assert.equal(replies.length, 40)
+			assert.equal(replies.length, 32)
 		})
 	})
 
@@ -747,6 +748,12 @@ describe('inpage signer bridge', () => {
 					return true
 				}
 				if (request.method === 'safe_apps_request') {
+					const envelope = request.params?.[0]
+					if (isRecord(envelope) && envelope.method === 'execute') {
+						ethereumRequests.push(request)
+						sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: '0xsafehash' })
+						return true
+					}
 					void getSafeAppsRequestCommand(request.params?.[0], fakeWindow.location.origin, BigInt(account), rpcNetwork, async () => safeState).then(
 						(command) => replyToSafeAppsRequest(request, sendBackgroundMessage, command),
 						(error: unknown) => rejectSafeAppsRequest(request, sendBackgroundMessage, error instanceof Error ? error.message : 'Safe Apps request failed.'),
@@ -853,11 +860,15 @@ describe('inpage signer bridge', () => {
 			assert.equal(batchReply.success, true)
 			assert.deepEqual(batchReply.data, { safeTxHash: '0xsafehash' })
 			const batchRequest = ethereumRequests.pop()
-			assert.equal(batchRequest?.method, 'eth_sendTransaction')
-			const batchTransaction = batchRequest?.params?.[0]
+			const batchEnvelope = batchRequest?.params?.[0]
+			if (!isRecord(batchEnvelope) || !isRecord(batchEnvelope.params) || !Array.isArray(batchEnvelope.params.params)) throw new Error('Missing Safe execution envelope')
+			const batchTransaction = batchEnvelope.params.params[0]
 			if (!isRecord(batchTransaction)) throw new Error('Missing batch transaction')
 			assert.equal('safeOperation' in batchTransaction, false)
-			assert.deepEqual(batchRequest?.safeRequestContext, { operation: 1 })
+			assert.equal(batchRequest?.method, 'safe_apps_request')
+			const envelope = batchRequest?.params?.[0]
+			assert.ok(isRecord(envelope) && isRecord(envelope.params))
+			assert.deepEqual(envelope.params.safeRequestContext, { operation: 1 })
 			assert.equal(batchTransaction.to, '0x9641d764fc13c8b624c04430c7356c1c7c8102e2')
 			assert.deepEqual(ethereumRequests.map(({ method, params }) => ({ method, params })), [
 				{ method: 'eth_getLogs', params: [{ fromBlock: 'latest' }] },
@@ -4041,6 +4052,12 @@ test('Safe SDK settings belong to the page and survive background connection rei
 			return true
 		}
 		if (request.method === 'safe_apps_request') {
+			const envelope = request.params?.[0]
+			if (isRecord(envelope) && envelope.method === 'execute') {
+				proposalCount++
+				reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: '0x' + 'ab'.repeat(32) })
+				return true
+			}
 			// Each invocation uses fresh background policy state, just as after an MV3 worker restart.
 			void getSafeAppsRequestCommand(request.params?.[0], 'example.test', safe, network, async () => { throw new Error('Unexpected Safe state lookup') }).then((command) => {
 				if (command.kind === 'ethereumRequest') {

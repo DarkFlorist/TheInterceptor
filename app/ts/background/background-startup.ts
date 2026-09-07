@@ -1,3 +1,4 @@
+import { initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import 'webextension-polyfill'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
@@ -182,7 +183,6 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 				await pendingRequestLimiter.execute(async () => {
 					const request = {
 						method: rawMessage.method,
-						...(rawMessage.safeRequestContext !== undefined ? { safeRequestContext: rawMessage.safeRequestContext } : {}),
 						...'params' in rawMessage ? { params: rawMessage.params } : {},
 						interceptorRequest: rawMessage.interceptorRequest,
 						usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,
@@ -272,6 +272,7 @@ async function startup() {
 	await tabStateInitializationPromise
 	await migrateAddressBook()
 	await migrateWebsiteAccess()
+	await initializeSafeAppsCompatibility(websiteTabConnections).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	await initializePopupRefreshGeneration()
 	bumpPopupRefreshGeneration()
 	const settings = await getSettings()

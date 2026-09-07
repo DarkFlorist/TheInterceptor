@@ -1,3 +1,6 @@
+import { verifyAccess } from './accessManagement.js'
+import { getConfiguredSigningSafe } from './signingAddressSelection.js'
+import { subscribeWebsiteLifecycle } from './websiteLifecycle.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { WebsiteSocket } from '../utils/requests.js'
@@ -27,6 +30,7 @@ export async function isSafeAppsConnectionEligible(websiteTabConnections: Websit
 }
 
 function createSafeAppsCompatibilityCoordinator() {
+	let active = true
 	const publicationTokens = new Map<string, object>()
 	const signerAccountDiscoveryTabs = new Set<number>()
 	const beginPublication = (socket: WebsiteSocket) => {
@@ -35,7 +39,7 @@ function createSafeAppsCompatibilityCoordinator() {
 		publicationTokens.set(socketIdentifier, token)
 		return { socketIdentifier, token }
 	}
-	const isCurrentPublication = (socketIdentifier: string, token: object) => publicationTokens.get(socketIdentifier) === token
+	const isCurrentPublication = (socketIdentifier: string, token: object) => active && publicationTokens.get(socketIdentifier) === token
 	const send = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, enabled: boolean, canRequestAccess = false) => {
 		sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'safe_apps_compatibility', result: { enabled, canRequestAccess } })
 	}
@@ -50,16 +54,17 @@ function createSafeAppsCompatibilityCoordinator() {
 	}
 	const refreshPort = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, signerAccountsKnown: boolean) => {
 		const { socketIdentifier, token } = beginPublication(socket)
-		const enabled = await getSafeAppsCompatibilityMode()
-		if (!isCurrentPublication(socketIdentifier, token)) return
-		// Disabled compatibility only publishes its protocol status; it must not read signer/Safe state or discover accounts.
-		if (!enabled) {
-			send(websiteTabConnections, socket, false)
-			return
-		}
+		if (!active) return
 		const settings = await getSettings()
 		const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 		const tabState = await getTabState(socket.tabId)
+		const safe = await getConfiguredSigningSafe(settings, tabState.signerAccounts)
+		if (!isCurrentPublication(socketIdentifier, token)) return
+		// Reconcile cached Safe consent within the publication generation so any newer refresh also retries it.
+		const signer = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+		if (!settings.simulationMode && safe !== undefined && connection !== undefined && !connection.approved && isSafeAppsTopFramePort(connection.port) && signer?.socket.connectionName === socket.connectionName) {
+			verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, safe, settings, { ignoreConnectionApproval: true })
+		}
 		const shouldDiscoverSignerAccounts = isCurrentPublication(socketIdentifier, token)
 			&& connection?.approved === true
 			&& isSafeAppsTopFramePort(connection.port)
@@ -69,10 +74,11 @@ function createSafeAppsCompatibilityCoordinator() {
 			&& tabState.signerAccounts.length === 0
 			&& !signerAccountsKnown
 		if (shouldDiscoverSignerAccounts && requestSignerAccountDiscovery(websiteTabConnections, socket)) return
-		const eligible = enabled && await isSafeAppsConnectionEligible(websiteTabConnections, socket, settings)
+		const eligible = await isSafeAppsConnectionEligible(websiteTabConnections, socket, settings)
 		if (!isCurrentPublication(socketIdentifier, token)) return
 		// Re-read persisted state after async eligibility work; a newer publication invalidates this token while state transitions are being applied.
-		const [latestEnabled, latestSettings] = await Promise.all([getSafeAppsCompatibilityMode(), getSettings()])
+		const latestSettings = await getSettings()
+		const latestEnabled = active
 		const latestEligible = latestEnabled && await isSafeAppsConnectionEligible(websiteTabConnections, socket, latestSettings)
 		if (!isCurrentPublication(socketIdentifier, token)) return
 		const latestConnection = getWebsiteSocketConnection(websiteTabConnections, socket)
@@ -86,11 +92,15 @@ function createSafeAppsCompatibilityCoordinator() {
 		if (!isCurrentPublication(socketIdentifier, token)) return
 		send(websiteTabConnections, socket, eligible && latestEligible, canRequestAccess)
 	}
-	const refreshApprovedTabPorts = async (websiteTabConnections: WebsiteTabConnections, tabId: number, signerAccountsKnown: boolean) => {
-		const connections = Object.values(websiteTabConnections.get(tabId)?.connections ?? {})
-		await Promise.all(connections.filter((connection) => connection?.approved === true).map(async (connection) => await refreshPort(websiteTabConnections, connection.socket, signerAccountsKnown)))
-	}
 	return {
+		dispose(connections: WebsiteTabConnections) {
+			active = false
+			for (const tab of connections.values()) for (const connection of Object.values(tab.connections)) {
+				if (connection !== undefined && publicationTokens.has(websiteSocketToString(connection.socket))) send(connections, connection.socket, false)
+			}
+			publicationTokens.clear()
+			signerAccountDiscoveryTabs.clear()
+		},
 		connectionApproved(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 			void refreshPort(websiteTabConnections, socket, false).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 		},
@@ -110,18 +120,15 @@ function createSafeAppsCompatibilityCoordinator() {
 			if (accountsRequested) signerAccountDiscoveryTabs.add(socket.tabId)
 			void refreshPort(websiteTabConnections, socket, false).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 		},
-		signerAccountsSettled(socket: WebsiteSocket) {
-			signerAccountDiscoveryTabs.delete(socket.tabId)
-		},
 		signerAccountsChanged(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
 			signerAccountDiscoveryTabs.delete(socket.tabId)
-			void refreshApprovedTabPorts(websiteTabConnections, socket.tabId, true).catch(async (error: unknown) => { await reportUnexpectedError(error) })
+			void refreshPort(websiteTabConnections, socket, true).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 		},
-		async refreshApprovedPorts(websiteTabConnections: WebsiteTabConnections) {
+		async refreshPorts(websiteTabConnections: WebsiteTabConnections, includeUnapproved = false) {
 			const sends: Promise<void>[] = []
 			for (const tabConnection of websiteTabConnections.values()) {
 				for (const connection of Object.values(tabConnection.connections)) {
-					if (connection?.approved !== true) continue
+					if (connection === undefined || (!includeUnapproved && !connection.approved)) continue
 					sends.push(refreshPort(websiteTabConnections, connection.socket, false))
 				}
 			}
@@ -130,40 +137,48 @@ function createSafeAppsCompatibilityCoordinator() {
 	}
 }
 
-// Mutable discovery/publication state belongs to a connection registry, never to the process.
-const coordinators = new WeakMap<WebsiteTabConnections, ReturnType<typeof createSafeAppsCompatibilityCoordinator>>()
-function getCoordinator(connections: WebsiteTabConnections) {
-	const existing = coordinators.get(connections)
-	if (existing !== undefined) return existing
-	const coordinator = createSafeAppsCompatibilityCoordinator()
-	coordinators.set(connections, coordinator)
-	return coordinator
+// The composition root owns this opt-in subscription; disabled mode has no lifecycle listener or coordinator state.
+export function createSafeAppsCompatibilityFeature(connections: WebsiteTabConnections) {
+	let coordinator: ReturnType<typeof createSafeAppsCompatibilityCoordinator> | undefined
+	let unsubscribe: (() => void) | undefined
+	const setEnabled = (enabled: boolean) => {
+		if (enabled === (coordinator !== undefined)) return
+		unsubscribe?.()
+		unsubscribe = undefined
+		coordinator?.dispose(connections)
+		coordinator = enabled ? createSafeAppsCompatibilityCoordinator() : undefined
+		const current = coordinator
+		if (current === undefined) return
+		unsubscribe = subscribeWebsiteLifecycle(connections, (event) => {
+			switch (event.type) {
+				case 'approvalChanged': return event.approved ? current.connectionApproved(connections, event.socket) : current.connectionDisconnected(connections, event.socket)
+				case 'connectionRemoved': return current.connectionRemoved(event.socket)
+				case 'signerConnected': return current.signerConnectionChanged(connections, event.socket, event.accountsRequested)
+				case 'signerAccountsChanged': return current.signerAccountsChanged(connections, event.socket)
+				case 'accessReconciled': void current.refreshPorts(connections).catch(async (error: unknown) => { await reportUnexpectedError(error) }); return
+			}
+		})
+		void current.refreshPorts(connections, true).catch(async (error: unknown) => { await reportUnexpectedError(error) })
+	}
+	return { setEnabled, dispose: () => setEnabled(false) }
 }
 
-// Eligibility work requires the experimental setting; core callers schedule notifications and only explicit feature settings changes await publication.
-export const safeAppsCompatibilityCoordinator = {
-	connectionApproved(connections: WebsiteTabConnections, socket: WebsiteSocket) {
-		getCoordinator(connections).connectionApproved(connections, socket)
-	},
-	connectionDisconnected(connections: WebsiteTabConnections, socket: WebsiteSocket) {
-		getCoordinator(connections).connectionDisconnected(connections, socket)
-	},
-	connectionRemoved(connections: WebsiteTabConnections, socket: WebsiteSocket) {
-		coordinators.get(connections)?.connectionRemoved(socket)
-	},
-	signerConnectionChanged(connections: WebsiteTabConnections, socket: WebsiteSocket, accountsRequested = false) {
-		getCoordinator(connections).signerConnectionChanged(connections, socket, accountsRequested)
-	},
-	signerAccountsSettled(connections: WebsiteTabConnections, socket: WebsiteSocket) {
-		coordinators.get(connections)?.signerAccountsSettled(socket)
-	},
-	signerAccountsChanged(connections: WebsiteTabConnections, socket: WebsiteSocket) {
-		getCoordinator(connections).signerAccountsChanged(connections, socket)
-	},
-	async refreshApprovedPorts(connections: WebsiteTabConnections) {
-		await getCoordinator(connections).refreshApprovedPorts(connections)
-	},
-	scheduleApprovedPortsRefresh(connections: WebsiteTabConnections) {
-		void this.refreshApprovedPorts(connections).catch(async (error: unknown) => { await reportUnexpectedError(error) })
-	},
+export async function initializeSafeAppsCompatibility(connections: WebsiteTabConnections) {
+	const feature = createSafeAppsCompatibilityFeature(connections)
+	let changedDuringInitialization = false
+	const onChanged = (changes: { readonly safeAppsCompatibilityMode?: browser.storage.StorageChange }, area: string) => {
+		if (area !== 'local' || !('safeAppsCompatibilityMode' in changes)) return
+		changedDuringInitialization = true
+		feature.setEnabled(changes.safeAppsCompatibilityMode?.newValue === true)
+	}
+	browser.storage.onChanged.addListener(onChanged)
+	try {
+		const enabled = await getSafeAppsCompatibilityMode()
+		if (!changedDuringInitialization) feature.setEnabled(enabled)
+	} catch (error) {
+		browser.storage.onChanged.removeListener(onChanged)
+		feature.dispose()
+		throw error
+	}
+	return () => { browser.storage.onChanged.removeListener(onChanged); feature.dispose() }
 }

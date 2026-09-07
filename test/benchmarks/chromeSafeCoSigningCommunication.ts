@@ -118,7 +118,10 @@ async function waitForButtonEnabled(connection: CdpConnection, selector: string,
 	await waitForCondition(async () => await connection.evaluate<boolean>(`(() => {
 		const element = document.querySelector(${ JSON.stringify(selector) })
 		return element instanceof HTMLButtonElement && element.disabled === false
-	})()`).catch(() => false), timeoutMs, `button ${ selector } to be enabled`)
+	})()`).catch(() => false), timeoutMs, `button ${ selector } to be enabled`).catch(async (error: unknown) => {
+		const body = await connection.evaluate('document.body.textContent')
+		throw new Error(`Button ${ selector } did not become enabled: ${ body }`, { cause: error })
+	})
 }
 
 async function clickButton(connection: CdpConnection, selector: string) {
@@ -473,7 +476,10 @@ async function main() {
 				throw new Error(`Safe access request did not open: ${ JSON.stringify(accessDiagnostics) }`, { cause: error })
 			}
 
-			const accessTarget = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/interceptorAccessV3.html`, 30_000)
+			const accessTarget = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/interceptorAccessV3.html`, 30_000).catch(async (error: unknown) => {
+				const diagnostics = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, signerRequests: globalThis.__fakeSafeSignerRequests })')
+				throw new Error(`Safe access popup did not open: ${ JSON.stringify(diagnostics) }`, { cause: error })
+			})
 			accessTargetId = accessTarget.id
 			const accessConnection = await connectTarget(chrome.browserDebugPort, accessTarget.id)
 			try {

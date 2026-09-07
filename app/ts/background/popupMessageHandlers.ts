@@ -11,7 +11,6 @@ import { resolveChainChange } from './windows/changeChain.js'
 import { updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
-import { safeAppsCompatibilityCoordinator } from './safeAppsCompatibilityCoordinator.js'
 import { findEntryWithSymbolOrName, getMetadataForAddressBookData } from './metadataSearch.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, identifyAddress } from './metadataUtils.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -868,12 +867,11 @@ export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnecti
 	await requestAddressChange(websiteTabConnections, params)
 }
 
-export async function changeSettings(ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, parsedRequest: ChangeSettings, requestAbortController: AbortController | undefined) {
+export async function changeSettings(ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, _websiteTabConnections: WebsiteTabConnections, parsedRequest: ChangeSettings, requestAbortController: AbortController | undefined) {
 	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) await setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
 	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(parsedRequest.data.metamaskCompatibilityMode)
 	if (parsedRequest.data.safeAppsCompatibilityMode !== undefined) {
 		await setSafeAppsCompatibilityMode(parsedRequest.data.safeAppsCompatibilityMode)
-		await safeAppsCompatibilityCoordinator.refreshApprovedPorts(websiteTabConnections)
 	}
 	return await requestNewHomeData(ethereum, new Map(), false, true, requestAbortController, bumpPopupRefreshGeneration())
 }

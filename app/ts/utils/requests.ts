@@ -1,4 +1,3 @@
-import { SafeRequestContext } from '../types/safeRequestContext.js'
 import * as funtypes from 'funtypes'
 import { EthereumQuantity } from '../types/wire-types.js'
 import { anySignal } from './anySignal.js'
@@ -32,7 +31,6 @@ export const RawInterceptedRequest = funtypes.Intersect(
 	}),
 	funtypes.ReadonlyPartial({
 		interceptorInternalRequest: funtypes.Literal(true),
-		safeRequestContext: SafeRequestContext,
 	})
 )
 
@@ -52,7 +50,6 @@ export const InterceptedRequest = funtypes.Intersect(
 	}),
 	funtypes.ReadonlyPartial({
 		interceptorInternalRequest: funtypes.Literal(true),
-		safeRequestContext: SafeRequestContext,
 	})
 )
 export type ProviderMessage = InterceptedRequest

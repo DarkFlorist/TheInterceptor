@@ -1,3 +1,4 @@
+import { getSafeRequestContext } from '../../safe/safeAppsExecution.js'
 import { isSafeMessageCoSignRequest } from '../../safe/safeRequestPolicy.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas } from '../../simulation/services/SimulationModeEthereumClientService.js'
@@ -662,11 +663,11 @@ export async function openConfirmTransactionDialogForMessage(
 		let safeMessageCoSignSnapshot: Awaited<ReturnType<typeof createSafeMessageCoSignSnapshot | typeof createSafeOffChainMessageSnapshot>> | undefined
 			let safeMessageValidationError: string | undefined
 			let safeMessageValidationDetails: SafeSignerErrorDetails | undefined
-		if (!simulationMode && activeAddressEntry?.type === 'safe' && (visualizedPersonalSignRequest.type === 'SafeTx' || isSafeMessageCoSignRequest(transactionParams, activeAddress, ethereumClientService.getChainId(), request.safeRequestContext))) {
+		if (!simulationMode && activeAddressEntry?.type === 'safe' && (visualizedPersonalSignRequest.type === 'SafeTx' || isSafeMessageCoSignRequest(transactionParams, activeAddress, ethereumClientService.getChainId(), getSafeRequestContext(request)))) {
 				try {
 					safeMessageCoSignSnapshot = visualizedPersonalSignRequest.type === 'SafeTx'
 						? await createSafeMessageCoSignSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, visualizedPersonalSignRequest.message)
-						: await createSafeOffChainMessageSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, request.safeRequestContext)
+						: await createSafeOffChainMessageSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, getSafeRequestContext(request))
 				} catch (error) {
 					if (!isExpectedSafeMessageCoSignSnapshotFailure(error)) throw error
 					safeMessageValidationError = getErrorMessage(error) ?? 'The Gnosis Safe transaction could not be validated.'
@@ -747,7 +748,7 @@ export async function openConfirmTransactionDialogForTransaction(
 		simulationMode,
 		activeAddress,
 		walletSignerAddress,
-		request.safeRequestContext,
+		getSafeRequestContext(request),
 	)
 	if (safePreparation.rejection !== undefined) {
 		return formRejectMessage(safePreparation.rejection.code, safePreparation.rejection.message)

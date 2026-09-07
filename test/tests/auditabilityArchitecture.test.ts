@@ -74,7 +74,8 @@ test('simulation service keeps compatibility exports backed by focused signing m
 
 test('Safe Apps compatibility lifecycle has a peer-level coordinator', () => {
 	assert.match(safeAppsCompatibilityCoordinatorSource, /function createSafeAppsCompatibilityCoordinator/u)
-	assert.match(websiteTabConnectionsSource, /from '\.\/safeAppsCompatibilityCoordinator\.js'/u)
+	assert.match(websiteTabConnectionsSource, /from '\.\/websiteLifecycle\.js'/u)
+	assert.doesNotMatch(accessManagementSource, /safeAppsCompatibilityCoordinator/u)
 	assert.doesNotMatch(websiteTabConnectionsSource, /from '\.\/accessManagement\.js'/u)
 	assert.doesNotMatch(accessManagementSource, /function createSafeAppsCompatibilityCoordinator/u)
 	assert.match(backgroundUtilsSource, /export const getWebsiteSocketConnection/u)
