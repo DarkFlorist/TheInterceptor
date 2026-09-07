@@ -22,10 +22,6 @@ import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSigner
 import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from './signingAddressSelection.js'
 import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 
-const isRejectedSignerRequest = (error: { readonly code: number, readonly message: string }) => {
-	return error.code === METAMASK_ERROR_USER_REJECTED_REQUEST || error.message.endsWith('Scan cancelled')
-}
-
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return undefined
@@ -311,7 +307,7 @@ export async function signerReply(ethereum: EthereumClientService, tokenPriceSer
 					}
 					return doNotReply
 				}
-				if (isRejectedSignerRequest(params.error)) {
+				if (params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST) {
 					await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForUser' } }))
 					await updateConfirmTransactionView(ethereum, tokenPriceService)
 					return doNotReply

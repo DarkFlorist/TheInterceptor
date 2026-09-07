@@ -71,7 +71,7 @@ test('accepts a signer reply from the current approved child-frame port', async 
 	assert.equal(childReply.result, modules.EthereumBytes32.serialize(signedTransaction.hash))
 })
 
-test('allows retrying a Safe signature after MetaMask cancels a keyring scan', async () => {
+test('preserves a MetaMask keyring scan error on a retryable Safe signature', async () => {
 	const socket = uniqueRequestIdentifier.requestSocket
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
 		to: recipientAddress,
@@ -139,7 +139,11 @@ test('allows retrying a Safe signature after MetaMask cancels a keyring scan', a
 	}, 'hasAccess', activeAddress)
 
 	const [retryableTransaction] = await modules.getPendingTransactionsAndMessages()
-	assert.equal(retryableTransaction?.approvalStatus.status, 'WaitingForUser')
+	assert.deepEqual(retryableTransaction?.approvalStatus, {
+		status: 'SignerError',
+		code: -32603,
+		message: 'Keyring Controller signTypedMessage: Error: Scan cancelled',
+	})
 	assert.equal(retryableTransaction?.safeTransaction?.safeTxHash, safeTxHash)
 })
 
