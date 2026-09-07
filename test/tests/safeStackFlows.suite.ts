@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { activeAddress, createSafeStackFixture, createSafeStackTransactionFixture, createSafeTx, EIP712Message, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, modules, pendingTransaction, recipientAddress, resetFakeSafeContractState, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, } from './confirmTransactionTestHarness.js'
 import { ensureHex } from '../../app/ts/utils/ethereumBytes.js'
+import { SafeStackExport } from '../../app/ts/types/safeTypes.js'
 
 test('extension Safe stack import merges owner signatures into proposal and optimistic metadata', async () => {
 	const ownerAccount = safeTestOwnerAccount
@@ -20,6 +21,7 @@ test('extension Safe stack import merges owner signatures into proposal and opti
 			preSimulationTransaction: {
 				...pendingTransaction.transactionToSimulate,
 				signedTransaction,
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
 				safeTransaction: localTransaction,
 			},
 		}],
@@ -55,6 +57,130 @@ test('extension Safe stack import merges owner signatures into proposal and opti
 	if (!exportReply.ok) throw new Error(exportReply.message)
 	assert.equal(exportReply.safeStackJson.includes(`\"signature\": \"${ signature }\"`), true)
 	assert.equal(exportReply.safeStackJson.includes(`\"signature\": \"${ nonCanonicalSignature }\"`), false)
+})
+
+test('extension Safe stack export and import roundtrip leaves the local stack unchanged', async () => {
+	fakeSafeContract.owners = [safeTestOwnerAddress]
+	const unsignedLocalTransaction = createSafeStackTransactionFixture()
+	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(unsignedLocalTransaction.safeTx)))
+	const localTransaction = {
+		...unsignedLocalTransaction,
+		signatures: [{ signer: safeTestOwnerAddress, signature }],
+	}
+	await modules.updateSafeTransactionStacks(() => [createSafeStackFixture([localTransaction])])
+	await modules.updateInterceptorTransactionStack(() => ({
+		operations: [{
+			type: 'Transaction',
+			preSimulationTransaction: {
+				...pendingTransaction.transactionToSimulate,
+				signedTransaction,
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
+				safeTransaction: localTransaction,
+			},
+		}],
+	}))
+
+	const exportReply = await modules.requestSafeStackExport(simulator.ethereum)
+	assert.equal(exportReply.ok, true)
+	if (!exportReply.ok) throw new Error(exportReply.message)
+	const safeStacksBeforeImport = await modules.getSafeTransactionStacks()
+	const simulationStackBeforeImport = await modules.getInterceptorTransactionStack()
+	const exportedStack = SafeStackExport.parse(JSON.parse(exportReply.safeStackJson))
+
+	const importReply = await modules.importSafeStack(simulator.ethereum, simulator.tokenPriceService, { data: exportedStack })
+
+	assert.deepEqual(importReply, { type: 'ImportSafeStackReply', ok: true })
+	assert.deepEqual(await modules.getSafeTransactionStacks(), safeStacksBeforeImport)
+	assert.deepEqual(await modules.getInterceptorTransactionStack(), simulationStackBeforeImport)
+})
+
+test('extension Safe stack import recovers a missing Safe index from locally created stack operations', async () => {
+	const localTransaction = createSafeStackTransactionFixture()
+	await modules.updateSafeTransactionStacks(() => [createSafeStackFixture([localTransaction])])
+	await modules.updateInterceptorTransactionStack(() => ({
+		operations: [{
+			type: 'Transaction',
+			preSimulationTransaction: {
+				...pendingTransaction.transactionToSimulate,
+				signedTransaction,
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
+				safeTransaction: localTransaction,
+			},
+		}],
+	}))
+
+	const exportReply = await modules.requestSafeStackExport(simulator.ethereum)
+	assert.equal(exportReply.ok, true)
+	if (!exportReply.ok) throw new Error(exportReply.message)
+	const exportedStack = SafeStackExport.parse(JSON.parse(exportReply.safeStackJson))
+	const secondSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 1n,
+		input: new Uint8Array(),
+	}, 1n)
+	const secondTransaction = {
+		...localTransaction,
+		safeTx: secondSafeTx,
+		safeTxHash: BigInt(getSafeTxHash(secondSafeTx)),
+		transactionIdentifier: 74n,
+		websiteOrigin: 'https://later-proposal.example',
+	}
+	await modules.updateInterceptorTransactionStack((stack) => ({
+		operations: [...stack.operations, {
+			type: 'Transaction',
+			preSimulationTransaction: {
+				...pendingTransaction.transactionToSimulate,
+				transactionIdentifier: secondTransaction.transactionIdentifier,
+				signedTransaction,
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
+				safeTransaction: secondTransaction,
+			},
+		}],
+	}))
+	await modules.updateSafeTransactionStacks(() => [])
+
+	const importReply = await modules.importSafeStack(simulator.ethereum, simulator.tokenPriceService, { data: exportedStack })
+
+	assert.deepEqual(importReply, { type: 'ImportSafeStackReply', ok: true })
+	assert.deepEqual((await modules.getSafeTransactionStacks())[0]?.transactions, [localTransaction, secondTransaction])
+})
+
+test('extension Safe stack import does not recover its index from a different local proposal', async () => {
+	const exportedTransaction = createSafeStackTransactionFixture()
+	await modules.updateSafeTransactionStacks(() => [createSafeStackFixture([exportedTransaction])])
+	const exportReply = await modules.requestSafeStackExport(simulator.ethereum)
+	assert.equal(exportReply.ok, true)
+	if (!exportReply.ok) throw new Error(exportReply.message)
+	const exportedStack = SafeStackExport.parse(JSON.parse(exportReply.safeStackJson))
+	const differentSafeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 1n,
+		input: new Uint8Array(),
+	}, 0n)
+	const differentLocalTransaction = {
+		...exportedTransaction,
+		safeTx: differentSafeTx,
+		safeTxHash: BigInt(getSafeTxHash(differentSafeTx)),
+	}
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.updateInterceptorTransactionStack(() => ({
+		operations: [{
+			type: 'Transaction',
+			preSimulationTransaction: {
+				...pendingTransaction.transactionToSimulate,
+				signedTransaction,
+				simulationOptions: { requiredChainId: fakeRpcNetwork.chainId, simulateWithZeroBaseFee: true },
+				safeTransaction: differentLocalTransaction,
+			},
+		}],
+	}))
+
+	const importReply = await modules.importSafeStack(simulator.ethereum, simulator.tokenPriceService, { data: exportedStack })
+
+	assert.equal(importReply.ok, false)
+	if (importReply.ok) throw new Error('Expected mismatched local proposal failure')
+	assert.match(importReply.message, /does not match a locally created Interceptor Gnosis Safe stack/u)
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 })
 
 test('Safe stack import preserves a proposal appended while live validation is pending', async () => {

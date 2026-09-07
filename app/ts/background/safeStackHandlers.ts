@@ -1,12 +1,10 @@
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { assertInterceptorSafeTransactionPolicy, assertUniqueSafeTransactionStacks, createSafeOwnerValidator, getSafeContractSnapshot } from '../safe/safeCore.js'
-import { mergeSafeOwnerSignatures, reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
+import { getSafeTransactionStackInvariantViolation, mapSafeTransactionMetadata, mergeSafeOwnerSignatures, reconcileSafeTransactionStack, reconcileSafeTransactionState, recoverSafeTransactionStackFromLocalOperations } from '../safe/safeStack.js'
 import { SafeStackExport, type SafeTransactionStack } from '../types/safeTypes.js'
 import { checksummedAddress } from '../utils/bigint.js'
-import { getSafeTxHash } from '../utils/eip712.js'
 import { getErrorMessage } from '../utils/errors.js'
-import { modifyObject } from '../utils/typescript.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { getSafeTransactionStacks, updateTransactionState } from './storageVariables.js'
 
@@ -21,12 +19,10 @@ export async function validateSafeTransactionStackForCurrentContract(ethereum: E
 		throw new Error(`Gnosis Safe ${ checksummedAddress(stack.safeAddress) } now has threshold ${ safeState.threshold.toString() }, but this stack records ${ stack.threshold.toString() }.`)
 	}
 	const reconciledStack = reconcileSafeTransactionStack(stack, safeState.nonce)
-	const normalizedTransactions = await Promise.all(reconciledStack.transactions.map(async (transaction, index) => {
+	const invariantViolation = getSafeTransactionStackInvariantViolation(reconciledStack)
+	if (invariantViolation !== undefined) throw new Error(invariantViolation)
+	const normalizedTransactions = await Promise.all(reconciledStack.transactions.map(async (transaction) => {
 		assertInterceptorSafeTransactionPolicy(transaction.safeTx)
-		if (transaction.safeTx.domain.verifyingContract !== reconciledStack.safeAddress) throw new Error('Gnosis Safe transaction verifying contract does not match the stack Gnosis Safe.')
-		if (transaction.safeTx.domain.chainId !== reconciledStack.chainId) throw new Error('Gnosis Safe transaction chain ID does not match the stack chain.')
-		if (transaction.safeTx.message.nonce !== reconciledStack.baseNonce + BigInt(index)) throw new Error('Gnosis Safe stack transaction nonces must be contiguous.')
-		if (BigInt(getSafeTxHash(transaction.safeTx)) !== transaction.safeTxHash) throw new Error('A Gnosis Safe transaction hash does not match its transaction data.')
 		if (new Set(transaction.signatures.map((signature) => signature.signer)).size !== transaction.signatures.length) {
 			throw new Error('A Gnosis Safe transaction contains duplicate owner signatures.')
 		}
@@ -83,10 +79,17 @@ export async function importSafeStack(
 			const mergedStacks: SafeTransactionStack[] = [...reconciledState.safeTransactionStacks]
 			for (const { importedStack, safeState } of validatedImports) {
 				if (importedStack.transactions.length === 0) continue
-				const existingIndex = mergedStacks.findIndex((stack) =>
+				let existingIndex = mergedStacks.findIndex((stack) =>
 					stack.chainId === importedStack.chainId && stack.safeAddress === importedStack.safeAddress
 				)
-				const storedExistingStack = existingIndex === -1 ? undefined : mergedStacks[existingIndex]
+				let storedExistingStack = existingIndex === -1 ? undefined : mergedStacks[existingIndex]
+				if (storedExistingStack === undefined) {
+					storedExistingStack = recoverSafeTransactionStackFromLocalOperations(importedStack, reconciledState.interceptorTransactionStack)
+					if (storedExistingStack !== undefined) {
+						existingIndex = mergedStacks.length
+						mergedStacks.push(storedExistingStack)
+					}
+				}
 				if (storedExistingStack === undefined) throw new Error('The imported Gnosis Safe stack does not match a locally created Interceptor Gnosis Safe stack.')
 				const existingStack = reconcileSafeTransactionStack(storedExistingStack, safeState.nonce)
 				if (
@@ -113,18 +116,9 @@ export async function importSafeStack(
 			))
 			return {
 				safeTransactionStacks: mergedStacks,
-				interceptorTransactionStack: {
-					operations: reconciledState.interceptorTransactionStack.operations.map((operation) => {
-						if (operation.type !== 'Transaction') return operation
-						const safeTransaction = operation.preSimulationTransaction.safeTransaction
-						if (safeTransaction === undefined) return operation
-						const updatedMetadata = transactionMetadata.get(safeTransaction.safeTxHash)
-						if (updatedMetadata === undefined) return operation
-						return modifyObject(operation, {
-							preSimulationTransaction: modifyObject(operation.preSimulationTransaction, { safeTransaction: updatedMetadata }),
-						})
-					}),
-				},
+				interceptorTransactionStack: mapSafeTransactionMetadata(reconciledState.interceptorTransactionStack, (safeTransaction) =>
+					transactionMetadata.get(safeTransaction.safeTxHash) ?? safeTransaction
+				),
 			}
 		})
 		await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, true, false)
