@@ -21,6 +21,7 @@ type LiveSimulationHomeDataOptions = {
 	requireActiveModeAddress?: boolean
 	requestHomeDataOnSimulationStateChange?: boolean
 	onInitialSettings?: (settings: Settings) => void
+	onAddressSelectionCommitted?: (selection: { requestId: string, activeAddress: bigint | undefined }, settings: Settings) => void
 }
 
 type CachedHomeDataRequest = {
@@ -239,11 +240,12 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 					unexpectedError.value = parsed
 					return undefined
 				case 'popup_settingsUpdated': {
-					if (shouldIgnoreOutdatedPopupRefreshMessage(parsed.popupRefreshGeneration)) return undefined
+					if (shouldIgnoreOutdatedPopupRefreshMessage(parsed.popupRefreshGeneration, Math.max(popupRefreshGeneration.value, pendingPopupRefreshGeneration.value))) return undefined
 					const previousActiveStackContext = getCurrentActiveStackContext()
 					const updatedActiveStackContext = getActiveStackContext(parsed.data)
 					updateHomePageSettings(parsed.data)
-					if (previousActiveStackContext === undefined || !activeStackContextsEqual(previousActiveStackContext, updatedActiveStackContext)) {
+					if (parsed.committedAddressChange !== undefined) options.onAddressSelectionCommitted?.(parsed.committedAddressChange, parsed.data)
+					if (parsed.committedAddressChange !== undefined || previousActiveStackContext === undefined || !activeStackContextsEqual(previousActiveStackContext, updatedActiveStackContext)) {
 						simVisResults.value = PASSTHROUGH_STATE
 						simulationUpdatingState.value = undefined
 						simulationResultState.value = undefined

@@ -62,6 +62,7 @@ export async function changeActiveAddressAndChain(
 		signingAddressSelection?: 'signer' | 'safe',
 		rpcNetwork?: RpcNetwork,
 		promptForAccessesIfNeeded?: boolean,
+		addressChangeRequestId?: string,
 	},
 ) {
 	if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList()
@@ -85,6 +86,10 @@ export async function changeActiveAddressAndChain(
 	}
 
 	const updatedSettings = await getSettings()
+	if (change.addressChangeRequestId !== undefined) {
+		// Confirm the persisted selection before waiting for website permissions, icons, and simulation work.
+		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration: bumpPopupRefreshGeneration(), committedAddressChange: { requestId: change.addressChangeRequestId, activeAddress: change.activeAddress } })
+	}
 	const popupRefreshGeneration = await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings, change.promptForAccessesIfNeeded ?? true)
 	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration })
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
@@ -120,6 +125,7 @@ export async function activateAddressSelection(
 		readonly signerAddress: bigint | undefined
 		readonly rpcNetwork?: RpcNetwork
 		readonly promptForAccessesIfNeeded?: boolean
+		readonly addressChangeRequestId?: string
 	},
 ) {
 	const useSignerAddress = selection?.type === 'signer' || (!options.simulationMode && selection === undefined)
@@ -128,6 +134,7 @@ export async function activateAddressSelection(
 	}
 	await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 		simulationMode: options.simulationMode,
+		addressChangeRequestId: options.addressChangeRequestId,
 		activeAddress: selection?.type === 'signer' ? selection.address : selection?.entry.address,
 		...(!options.simulationMode ? { signingAddressSelection: selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? 'safe' as const : 'signer' as const } : {}),
 		...(options.rpcNetwork === undefined ? {} : { rpcNetwork: options.rpcNetwork }),

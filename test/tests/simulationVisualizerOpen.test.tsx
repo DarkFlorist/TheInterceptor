@@ -3,11 +3,12 @@ import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { useLiveSimulationHomeData } from '../../app/ts/components/hooks/useLiveSimulationHomeData.js'
+import { App } from '../../app/ts/components/App.js'
 import { SimulationStackPage } from '../../app/ts/components/pages/SimulationStackPage.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { createPassthroughCompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
-import type { BlockTimeManipulation, CompleteVisualizedSimulation, PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
-import { MessageToPopup, UpdateHomePage, type Settings } from '../../app/ts/types/interceptor-messages.js'
+import { CompleteVisualizedSimulation, type BlockTimeManipulation, type PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
+import { MessageToPopup, PopupMessage, UpdateHomePage, type Settings } from '../../app/ts/types/interceptor-messages.js'
 import { serialize, type EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
 import { installDomMock } from './domMock.js'
 import { getSimulationStackTargetHash } from '../../app/ts/utils/simulationStackTargets.js'
@@ -99,6 +100,16 @@ function MainPopupSimulationStateProbe() {
 		requestFreshHomeDataOnMount: false,
 	})
 	return <div>{ simVisResults.value.kind }</div>
+}
+
+function AddressSelectionProbe({ onCommitted }: { onCommitted: (selection: { requestId: string, activeAddress: bigint | undefined }, settings: Settings) => void }) {
+	const { activeSimulationAddress, simVisResults, simulationUpdatingState } = useLiveSimulationHomeData({
+		answerMainPopupOpen: true,
+		answerSimulationDataConsumerOpen: true,
+		requestFreshHomeDataOnMount: false,
+		onAddressSelectionCommitted: onCommitted,
+	})
+	return <div>{ activeSimulationAddress.value?.toString() }/{ simVisResults.value.kind }/{ simulationUpdatingState.value ?? 'loading' }</div>
 }
 
 function CrossTabStackVisualizerHookProbe() {
@@ -1167,6 +1178,102 @@ describe('simulation visualizer open replies', () => {
 			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Export simulation stack'), true)
 			assert.equal(hasButtonWithAriaLabel(dom.document.body, 'Import simulation stack'), true)
 		} finally {
+			dom.restore()
+		}
+	})
+
+	test('popup reveals the committed wallet before the address-change reply and preserves later settings', async () => {
+		const dom = installDomMock()
+		let finishChange: (reply: unknown) => void = () => undefined
+		const changeReply = new Promise<unknown>((resolve) => { finishChange = resolve })
+		let requestId: string | undefined
+		const { listeners } = installBrowserMock((message) => {
+			const parsed = PopupMessage.safeParse(message)
+			if (parsed.success && parsed.value.method === 'popup_changeActiveAddress') {
+				requestId = parsed.value.data.addressChangeRequestId
+				return changeReply
+			}
+			return undefined
+		})
+		try {
+			await act(() => { render(h(App, {}), dom.document.body) })
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected a runtime listener')
+			const initial = createSimulationStackHomePageUpdate(25, 1, 'Simulation popup')
+			const nextEntry = createRichAddressEntry(2n, 'Next wallet')
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, { ...initial, data: { ...initial.data, activeAddresses: [...initial.data.activeAddresses, nextEntry] } }) }, {}, () => undefined)
+			})
+			await act(async () => {
+				await clickElement(getButtonByText(dom.document.body, 'Change'))
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			await act(async () => { await import('../../app/ts/components/pages/ChangeActiveAddress.js') })
+			const nextCard = collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('class') === 'card hoverable' && element.textContent?.includes('Next wallet'))
+			if (nextCard === undefined) throw new Error('Expected the next wallet in the address picker')
+			await act(async () => { await clickElement(nextCard) })
+			assert.ok(requestId)
+			const addressRow = () => collectElements(dom.document.body, 'div').find((element) => hasClass(element, 'active-address-row'))
+			assert.equal(addressRow()?.getAttribute?.('aria-label'), 'Switching active address')
+			await act(() => {
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: { ...initial.data.settings, activeSimulationAddress: 2n }, popupRefreshGeneration: 3, committedAddressChange: { requestId, activeAddress: 2n } }), {}, () => undefined)
+			})
+			assert.equal(addressRow()?.textContent?.includes('Next wallet'), true)
+			assert.equal(String(getButtonByText(dom.document.body, 'Change').getAttribute?.('disabled')), 'true')
+			await act(() => {
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: initial.data.settings, popupRefreshGeneration: 4 }), {}, () => undefined)
+			})
+			await act(async () => {
+				finishChange({ type: 'ChangeActiveAddressReply', ok: true })
+				await changeReply
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.equal(addressRow()?.textContent?.includes('Simulation address'), true)
+			assert.equal(getButtonByText(dom.document.body, 'Change').getAttribute?.('disabled'), undefined)
+		} finally {
+			finishChange(undefined)
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('reveals committed address settings while withholding stale simulation and older settings', async () => {
+		const dom = installDomMock()
+		let finishRefresh: (reply: unknown) => void = () => undefined
+		const refresh = new Promise<unknown>((resolve) => { finishRefresh = resolve })
+		const { listeners } = installBrowserMock((message) => (
+			typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestCompleteVisualizedSimulation'
+				? refresh : undefined
+		))
+		const confirmations: string[] = []
+		try {
+			await act(() => { render(h(AddressSelectionProbe, { onCommitted: ({ requestId }) => { confirmations.push(requestId) } }), dom.document.body) })
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected a runtime listener')
+			const initial = createSimulationStackHomePageUpdate(25, 1, 'Simulation popup')
+			await act(() => { listener({ role: 'all', ...serialize(UpdateHomePage, initial) }, {}, () => undefined) })
+			const settings = { ...initial.data.settings, activeSimulationAddress: 2n }
+			await act(() => {
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: settings, popupRefreshGeneration: 3, committedAddressChange: { requestId: 'switch-2', activeAddress: 2n } }), {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent, '2/passthrough/loading')
+			assert.deepEqual(confirmations, ['switch-2'])
+			await act(() => {
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: initial.data.settings, popupRefreshGeneration: 2, committedAddressChange: { requestId: 'older-switch', activeAddress: initial.data.settings.activeSimulationAddress } }), {}, () => undefined)
+				listener({ role: 'all', ...serialize(UpdateHomePage, initial) }, {}, () => undefined)
+				listener(serialize(MessageToPopup, createSimulationStateChangedMessage(initial.data.visualizedSimulatorState)), {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent, '2/passthrough/loading')
+			assert.deepEqual(confirmations, ['switch-2'])
+			await act(async () => {
+				finishRefresh({ method: 'popup_requestCompleteVisualizedSimulation', visualizedSimulatorState: serialize(CompleteVisualizedSimulation, createSimulatedCompleteVisualizedSimulation(settings)) })
+				await refresh
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.equal(dom.document.body.textContent, '2/simulated/done')
+		} finally {
+			finishRefresh(undefined)
+			render(undefined, dom.document.body)
 			dom.restore()
 		}
 	})

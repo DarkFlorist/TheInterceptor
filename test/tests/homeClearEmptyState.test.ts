@@ -255,6 +255,7 @@ const createPendingSignedMessageSimulationResults = (): SimulationAndVisualisati
 function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 	return {
 		isActiveAddressChanging: new Signal(false),
+		isActiveAddressChangePending: new Signal(false),
 		changeActiveAddress: () => undefined,
 		makeCurrentAddressRich: new Signal(false),
 		activeAddresses: new Signal([activeAddressEntry]),
@@ -430,6 +431,24 @@ describe('Home popup clear empty state', () => {
 			}
 		})
 	}
+
+	test('shows the committed wallet while keeping further selections disabled until the request finishes', async () => {
+		const dom = installDomMock()
+		const pending = new Signal(true)
+		try {
+			await act(() => { render(h(Home, createHomeParams({ isActiveAddressChangePending: pending })), dom.document.body) })
+			const addressRow = () => collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('class')?.split(/\s+/).includes('active-address-row'))
+			assert.equal(addressRow()?.getAttribute?.('aria-busy'), undefined)
+			assert.equal(addressRow()?.textContent?.includes(activeAddressEntry.name ?? ''), true)
+			const changeButton = () => collectElements(addressRow(), 'button').find((button) => button.textContent === 'Change')
+			assert.equal(String(changeButton()?.getAttribute?.('disabled')), 'true')
+			await act(() => { pending.value = false })
+			assert.equal(changeButton()?.getAttribute?.('disabled'), undefined)
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
 
 	test('shows a skeleton until initial simulation status is known', async () => {
 		const dom = installDomMock()

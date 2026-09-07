@@ -620,7 +620,7 @@ function FirstCard(param: FirstCardParams) {
 						<ActiveAddressComponent
 							activeAddress = { param.activeAddress }
 							buttonText = { 'Change' }
-							disableButton = { !param.isInitialHomeDataLoaded.value || (!param.simulationMode.value && !hasAlternativeSigningAddress.value) }
+							disableButton = { param.isActiveAddressChangePending.value || !param.isInitialHomeDataLoaded.value || (!param.simulationMode.value && !hasAlternativeSigningAddress.value) }
 							noCopying = { !param.isInitialHomeDataLoaded.value }
 							noEditAddress = { !param.isInitialHomeDataLoaded.value }
 							changeActiveAddress = { param.changeActiveAddress }
@@ -942,6 +942,7 @@ export function Home(param: HomeParams) {
 
 		<FirstCard
 			isActiveAddressChanging = { param.isActiveAddressChanging }
+			isActiveAddressChangePending = { param.isActiveAddressChangePending }
 			preSimulationBlockTimeManipulation = { param.preSimulationBlockTimeManipulation }
 			activeAddresses = { param.activeAddresses }
 			walletSelectedAddressBookEntry = { param.walletSelectedAddressBookEntry }

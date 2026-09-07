@@ -232,6 +232,7 @@ export async function changeActiveAddress(ethereum: EthereumClientService, token
 			if (addressChange.data.activeAddress === 'signer') {
 				await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, undefined, {
 					simulationMode: false,
+					addressChangeRequestId: addressChange.data.addressChangeRequestId,
 					signerAddress: undefined,
 				})
 				return { type: 'ChangeActiveAddressReply', ok: true } as const
@@ -250,6 +251,7 @@ export async function changeActiveAddress(ethereum: EthereumClientService, token
 	}
 	await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, selection, {
 		simulationMode: addressChange.data.simulationMode,
+		addressChangeRequestId: addressChange.data.addressChangeRequestId,
 		signerAddress: signerAccount,
 	})
 	return { type: 'ChangeActiveAddressReply', ok: true } as const

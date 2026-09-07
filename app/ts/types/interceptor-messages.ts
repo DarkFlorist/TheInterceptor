@@ -12,7 +12,7 @@ import { PendingAccessRequests, PopupPendingTransactionOrSignableMessage } from 
 import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
-import { EnrichedRichListElement, PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
+import { ChangeActiveAddress, EnrichedRichListElement, PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
 import { SimulateExecutionReply as SharedSimulateExecutionReply, SimulateExecutionReplyData as SharedSimulateExecutionReplyData } from './simulateExecutionReply.js'
 import { SimulateGnosisSafeTransaction as SharedSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as SharedSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
@@ -285,14 +285,7 @@ export const InterceptorAccessChangeAddress = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
-export type ChangeActiveAddress = funtypes.Static<typeof ChangeActiveAddress>
-export const ChangeActiveAddress = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_changeActiveAddress'),
-	data: funtypes.ReadonlyObject({
-		simulationMode: funtypes.Boolean,
-		activeAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer'))
-	})
-}).asReadonly()
+export { ChangeActiveAddress } from './interceptor-reply-messages.js'
 
 export type ModifyMakeMeRich = funtypes.Static<typeof ModifyMakeMeRich>
 export const ModifyMakeMeRich = funtypes.ReadonlyObject({
@@ -792,7 +785,7 @@ const SettingsUpdated = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_settingsUpdated'),
 	data: Settings,
 	popupRefreshGeneration: PopupRefreshGeneration,
-})
+}).And(funtypes.ReadonlyPartial({ committedAddressChange: funtypes.ReadonlyObject({ requestId: funtypes.String, activeAddress: OptionalEthereumAddress }) }))
 
 type PartiallyParsedSimulateExecutionReply = funtypes.Static<typeof PartiallyParsedSimulateExecutionReply>
 const PartiallyParsedSimulateExecutionReply = funtypes.ReadonlyObject({

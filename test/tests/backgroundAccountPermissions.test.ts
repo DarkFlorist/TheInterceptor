@@ -3,6 +3,48 @@ import { describe, test } from 'bun:test'
 import { addressString, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
+	test('confirms a persisted popup address before slow permission work completes', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { changeActiveAddress, changeSimulationMode, getSettings, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()
+		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
+		const previousAddress = 1n
+		const nextAddress = 2n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: previousAddress })
+		await updateUserAddressBookEntries(() => [{ type: 'contact', name: 'Next wallet', address: nextAddress, entrySource: 'User', useAsActiveAddress: true }])
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: 'https://address-switch-test.example' }, access: true, addressAccess: [], declarativeNetRequestBlockMode: 'block-all' }])
+		const permissionWorkStarted = createDeferredValue<void>()
+		const releasePermissionWork = createDeferredValue<void>()
+		Object.defineProperty(browser.declarativeNetRequest, 'getDynamicRules', {
+			configurable: true,
+			value: async () => {
+				permissionWorkStarted.resolve(undefined)
+				await releasePermissionWork.promise
+				return []
+			},
+		})
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		let completed = false
+		const change = changeActiveAddress(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
+			method: 'popup_changeActiveAddress',
+			data: { activeAddress: nextAddress, simulationMode: true, addressChangeRequestId: 'test-switch' },
+		}).then((reply) => { completed = true; return reply })
+		try {
+			await permissionWorkStarted.promise
+			assert.equal(completed, false)
+			assert.equal((await getSettings()).activeSimulationAddress, nextAddress)
+			const committed = runtimeMessages.map((message) => MessageToPopup.safeParse(message)).find((parsed) => parsed.success && parsed.value.method === 'popup_settingsUpdated' && parsed.value.committedAddressChange?.requestId === 'test-switch')
+			assert.ok(committed?.success && committed.value.method === 'popup_settingsUpdated')
+			if (committed?.success && committed.value.method === 'popup_settingsUpdated') {
+				assert.equal(committed.value.data.activeSimulationAddress, nextAddress)
+				assert.equal(committed.value.committedAddressChange?.activeAddress, nextAddress)
+			}
+		} finally {
+			releasePermissionWork.resolve(undefined)
+			await change
+		}
+		assert.equal((await change).ok, true)
+	})
+
 	test('refreshes the cached signing visualization when selecting another Safe on the same chain', async () => {
 		installBrowserMock()
 		const messages: unknown[] = []

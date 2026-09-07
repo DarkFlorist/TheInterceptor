@@ -20,13 +20,15 @@ import { useLiveSimulationHomeData } from './hooks/useLiveSimulationHomeData.js'
 import { NetworkErrors } from './subcomponents/NetworkErrors.js'
 import { ProviderErrors } from './subcomponents/ProviderErrors.js'
 import { PopupModal, type PopupPage } from './PopupModal.js'
-import { getOptimisticActiveAddressSelection, getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode } from '../utils/activeAddressSelection.js'
+import { getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode } from '../utils/activeAddressSelection.js'
 import { requestActiveAddressChange } from './activeAddressChange.js'
 import { useModeActiveAddress } from './hooks/useModeActiveAddress.js'
 export { NetworkErrors } from './subcomponents/NetworkErrors.js'
 
 export function App() {
 	const appPage = useSignal<PopupPage>({ page: 'Unknown' })
+	const pendingAddressChangeRequestId = useSignal<string | undefined>(undefined)
+	const isActiveAddressChanging = useSignal(false)
 	const {
 		activeAddresses,
 		walletSelectedAddressBookEntry,
@@ -61,6 +63,11 @@ export function App() {
 		answerSimulationDataConsumerOpen: true,
 		requestFreshHomeDataOnMount: true,
 		requestHomeDataOnSimulationStateChange: true,
+		onAddressSelectionCommitted({ requestId, activeAddress }, settings) {
+			if (pendingAddressChangeRequestId.value !== requestId) return
+			if (!settings.simulationMode) displayedSigningAddress.value = activeAddress
+			isActiveAddressChanging.value = false
+		},
 		onInitialSettings(settings: Settings) {
 			if (appPage.value.page !== 'Unknown') return
 			if (settings.openedPage.page === 'AddNewAddress' || settings.openedPage.page === 'ModifyAddress') {
@@ -71,24 +78,23 @@ export function App() {
 		},
 	})
 	const boundaryResetKey = useSignal(0)
-	const isActiveAddressChanging = useSignal(false)
+	const isActiveAddressChangePending = useComputed(() => pendingAddressChangeRequestId.value !== undefined)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer', persistedEntry?: AddressBookEntry) {
-		if (!isSettingsLoaded.value || isActiveAddressChanging.value) return
+		if (!isSettingsLoaded.value || isActiveAddressChangePending.value) return
 		const selectableAddresses = includePersistedAddressBookEntry(activeAddresses.value, persistedEntry)
 		if (!isActiveAddressSelectionAllowed(address, selectableAddresses, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])) return
+		const requestId = crypto.randomUUID()
+		pendingAddressChangeRequestId.value = requestId
 		isActiveAddressChanging.value = true
 		try {
-			await requestActiveAddressChange(address, simulationMode.value)
-			const optimisticSelection = getOptimisticActiveAddressSelection(address, simulationMode.value, tabState.value?.signerAccounts ?? [])
-			if (optimisticSelection.mode === 'simulation') {
-				activeSimulationAddress.value = optimisticSelection.activeSimulationAddress
-				useSignersAddressAsActiveAddress.value = optimisticSelection.useSignersAddressAsActiveAddress
-				return
+			await requestActiveAddressChange(address, simulationMode.value, undefined, requestId)
+			// Recover a missed commit notification from current background state, never from the original selection.
+			if (isActiveAddressChanging.value) {
+				await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData', data: { refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: true } })
 			}
-			displayedSigningAddress.value = optimisticSelection.displayedSigningAddress
-			activeSigningSafeAddress.value = address === 'signer' ? undefined : optimisticSelection.displayedSigningAddress
 		} finally {
+			pendingAddressChangeRequestId.value = undefined
 			isActiveAddressChanging.value = false
 		}
 	}
@@ -257,6 +263,7 @@ export function App() {
 					<ProviderErrors tabState = { tabState }/>
 					<Home
 						isActiveAddressChanging = { isActiveAddressChanging }
+						isActiveAddressChangePending = { isActiveAddressChangePending }
 						setActiveRpcAndInformAboutIt = { setActiveRpcAndInformAboutIt }
 						rpcNetwork = { rpcNetwork }
 						simVisResults = { simVisResults }
