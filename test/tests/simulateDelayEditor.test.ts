@@ -142,7 +142,6 @@ describe('simulate delay editor', () => {
 		assert.equal(stack.operations[1]?.type, 'TimeManipulation')
 		assert.equal(stack.operations[2]?.type, 'Transaction')
 		if (stack.operations[1]?.type !== 'TimeManipulation') throw new Error('missing time manipulation')
-		// Compare delay fields independently of the schema parser's object prototype.
 		assert.deepStrictEqual({ ...stack.operations[1].blockTimeManipulation }, newDelay)
 	})
 
