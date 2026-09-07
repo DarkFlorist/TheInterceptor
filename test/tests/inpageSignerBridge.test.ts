@@ -427,6 +427,50 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
+	test('completes direct-app discovery after initial ineligibility without replaying transactions', async () => {
+		let publishCompatibility: ((enabled: boolean) => void) | undefined
+		const forwardedMethods: (string | undefined)[] = []
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method === 'connected_to_signer') {
+					publishCompatibility = (enabled) => sendSafeAppsCompatibility(sendBackgroundMessage, enabled)
+					sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
+					return true
+				}
+				if (request.method !== 'safe_apps_request') return false
+				forwardedMethods.push(getSafeAppsMethod(request))
+				replyToSafeAppsRequest(request, sendBackgroundMessage, { kind: 'result', value: { chainId: 1 } })
+				return true
+			},
+		})
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?safe-apps-delayed-eligibility', async () => {
+			const replies: Record<string, unknown>[] = []
+			fakeWindow.addEventListener('message', (event) => {
+				if (!isRecord(event.data) || typeof event.data.success !== 'boolean') return
+				replies.push(event.data)
+				// The test app waits for Safe info before requesting chain info.
+				if (event.data.id === 'startup-info') fakeWindow.postMessage({ id: 'startup-chain', method: 'getChainInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+			})
+			await waitFor(() => publishCompatibility !== undefined)
+			fakeWindow.postMessage({ id: 'startup-info', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+			fakeWindow.postMessage({ id: 'early-transaction', method: 'sendTransactions', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			publishCompatibility?.(false)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			fakeWindow.postMessage({ id: 'later-info', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+			fakeWindow.postMessage({ id: 'disabled-transaction', method: 'sendTransactions', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			assert.deepEqual(forwardedMethods, [])
+			assert.deepEqual(replies, [])
+			publishCompatibility?.(false)
+			publishCompatibility?.(true)
+			await waitFor(() => replies.length === 3)
+			assert.deepEqual(replies.map((reply) => reply.id).sort(), ['later-info', 'startup-chain', 'startup-info'])
+			assert.equal(replies.every((reply) => reply.success === true), true)
+			assert.deepEqual(forwardedMethods, ['getSafeInfo', 'getSafeInfo', 'getChainInfo'])
+		})
+	})
+
 	test('bounds Safe Apps requests queued before the experimental setting arrives', async () => {
 		let replyToConnection: (() => void) | undefined
 		const { fakeWindow } = createFakeWindow({

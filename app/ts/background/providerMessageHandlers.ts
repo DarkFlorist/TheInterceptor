@@ -4,7 +4,7 @@ import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-type
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
-import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
+import { getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings } from './settings.js'
 import { getPendingSignerChainChangeTokenForCallback, isPendingSignerChainChangeReply, resolveSignerChainChange } from './windows/changeChain.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
@@ -23,7 +23,7 @@ import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from '
 import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { getActiveAddressEntryForChain } from './metadataUtils.js'
 import { isSafeAppsTopFramePort, safeAppsCompatibilityCoordinator } from './safeAppsCompatibilityCoordinator.js'
-import type { ApprovalState } from './websiteAccessPolicy.js'
+import { hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
@@ -127,6 +127,11 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 		}
 		const updatedSettings = transition.shouldActivate ? await getSettings() : settings
 		const displayedSigningSafe = await getConfiguredSigningSafe(updatedSettings, signerAccounts)
+		// Direct Safe apps do not request eth_accounts; restore their connection after fresh accounts prove ownership and persisted Safe consent is checked.
+		if (!updatedSettings.simulationMode && displayedSigningSafe !== undefined && isSafeAppsTopFramePort(port) && await getSafeAppsCompatibilityMode()) {
+			const connection = getWebsiteConnectionForPort(websiteTabConnections, port)
+			if (connection !== undefined) verifyAccess(websiteTabConnections, signerStateToken.socket, false, connection.websiteOrigin, displayedSigningSafe, updatedSettings, { ignoreConnectionApproval: true })
+		}
 		await sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: {
 			tabId,
 			activeSigningAddress: displayedSigningSafe?.address ?? activeSigningAddress,
@@ -275,6 +280,14 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 			const connection = getWebsiteConnectionForPort(websiteTabConnections, port)
 			if (connection !== undefined) {
 				verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, activeAddressEntry, settings)
+			}
+		}
+		if (isTopFrame && approval === 'hasAccess' && activeAddress === undefined && signerConnected && !signerMissing && !settings.simulationMode && settings.activeSigningSafeAddress !== undefined && await getSafeAppsCompatibilityMode()) {
+			const safe = await getActiveAddressEntryForChain(settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId)
+			const connection = getWebsiteConnectionForPort(websiteTabConnections, port)
+			if (safe.type === 'safe' && connection !== undefined && hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, safe) === 'hasAccess') {
+				// Discover ownership without approving the port or publishing the configured Safe.
+				sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_to_eth_accounts', result: [] })
 			}
 		}
 		return await getConnectedToSignerResult()

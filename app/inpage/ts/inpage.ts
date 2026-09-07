@@ -63,6 +63,9 @@ async function executeSafeAppsCommand(command: unknown, requestEthereum: Ethereu
 	return { safeTxHash: result }
 }
 
+// SDK discovery is read-only and has no retry: retain it until this page becomes eligible.
+const isSafeAppsDiscoveryRequest = (request: ParsedSafeAppsRequest) => 'request' in request && (request.request.method === 'getSafeInfo' || request.request.method === 'getChainInfo' || request.request.method === 'getEnvironmentInfo')
+
 function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (request: SafeAppsRequest) => Promise<unknown>) {
 	let enabled: boolean | undefined
 	let enablementGeneration = 0
@@ -91,8 +94,9 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 		if (messageEvent.source !== windowObject || messageEvent.origin !== windowObject.location.origin) return
 		const parsedRequest = parseSafeAppsRequest(messageEvent.data)
 		if (parsedRequest === undefined) return
-		if (enabled === undefined) {
+		if (enabled === undefined || (!enabled && isSafeAppsDiscoveryRequest(parsedRequest))) {
 			if (pendingRequests.length >= SAFE_APPS_PENDING_REQUEST_LIMIT) {
+				if (enabled === false) return
 				windowObject.postMessage({ id: parsedRequest.id, success: false, error: 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.', version: SAFE_APPS_RESPONSE_VERSION }, messageEvent.origin)
 				return
 			}
@@ -109,6 +113,9 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 			const queuedRequests = pendingRequests.splice(0)
 			if (nextEnabled) {
 				for (const { parsedRequest, origin } of queuedRequests) answerRequest(parsedRequest, origin)
+			} else {
+				// Never defer signing or transaction requests across a disabled state.
+				pendingRequests.push(...queuedRequests.filter(({ parsedRequest }) => isSafeAppsDiscoveryRequest(parsedRequest)))
 			}
 		},
 		dispose() {

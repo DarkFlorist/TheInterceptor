@@ -959,14 +959,19 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.filter((message) => message.method === 'safe_apps_compatibility').map((message) => message.result?.enabled), [true])
 	})
 
-	for (const { accountKind, discoveredAccount, expectedCompatibility } of [
-		{ accountKind: 'owner', discoveredAccount: 0x7171717171717171717171717171717171717171n, expectedCompatibility: true },
-		{ accountKind: 'non-owner', discoveredAccount: 0x7272727272727272727272727272727272727272n, expectedCompatibility: false },
+	for (const { accountKind, discoveredAccount, expectedCompatibility, coldStart, safeConsent, featureEnabled } of [
+		{ accountKind: 'owner', discoveredAccount: 0x7171717171717171717171717171717171717171n, expectedCompatibility: true, coldStart: false, safeConsent: true, featureEnabled: true },
+		{ accountKind: 'non-owner', discoveredAccount: 0x7272727272727272727272727272727272727272n, expectedCompatibility: false, coldStart: false, safeConsent: true, featureEnabled: true },
+		{ accountKind: 'owner on a direct fresh page', discoveredAccount: 0x7171717171717171717171717171717171717171n, expectedCompatibility: true, coldStart: true, safeConsent: true, featureEnabled: true },
+		{ accountKind: 'non-owner on a direct fresh page', discoveredAccount: 0x7272727272727272727272727272727272727272n, expectedCompatibility: false, coldStart: true, safeConsent: true, featureEnabled: true },
+		{ accountKind: 'owner without Safe consent', discoveredAccount: 0x7171717171717171717171717171717171717171n, expectedCompatibility: false, coldStart: true, safeConsent: false, featureEnabled: true },
+		{ accountKind: 'owner with compatibility disabled', discoveredAccount: 0x7171717171717171717171717171717171717171n, expectedCompatibility: false, coldStart: true, safeConsent: true, featureEnabled: false },
 	] as const) {
 		test(`waits for fresh ${ accountKind } account discovery before publishing Safe compatibility`, async () => {
 			installBrowserMock()
 			const {
 				changeSimulationMode,
+				rememberSigningAddressPreference,
 				handleInterceptedRequest,
 				safeAppsCompatibilityCoordinator,
 				setSafeAppsCompatibilityMode,
@@ -982,7 +987,7 @@ describe('background eth_accounts', () => {
 			const configuredSafeAddress = 0x7373737373737373737373737373737373737373n
 			await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: safeOwner, activeSigningSafeAddress: configuredSafeAddress })
 			await setUseSignersAddressAsActiveAddress(false)
-			await setSafeAppsCompatibilityMode(true)
+			await setSafeAppsCompatibilityMode(featureEnabled)
 			await updateUserAddressBookEntries(() => [{
 				type: 'safe',
 				name: 'Configured Safe',
@@ -992,7 +997,8 @@ describe('background eth_accounts', () => {
 				useAsActiveAddress: true,
 				safeSignerAddresses: [safeOwner],
 			}])
-			await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: configuredSafeAddress, access: true }] }])
+			await rememberSigningAddressPreference({ signerAddress: safeOwner, selection: 'safe', safeAddress: configuredSafeAddress, chainId: 1n })
+			await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: configuredSafeAddress, access: safeConsent }] }])
 
 			const socket = { tabId: 1, connectionName: 0n }
 			let replyToDiscovery: (() => Promise<void>) | undefined
@@ -1009,8 +1015,8 @@ describe('background eth_accounts', () => {
 					}, websiteTabConnections, noopPublishRpcConnectionStatus)
 				}
 			})
-			const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
-				[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+			const websiteTabConnections = new Map([[socket.tabId, { signerStateOwner: { ...confirmedSignerOwnership(socket).signerStateOwner, confirmed: !coldStart }, connections: {
+				[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: !coldStart, wantsToConnect: !coldStart },
 			} }]])
 			const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
 			await updateTabState(socket.tabId, (previousState) => ({
@@ -1021,13 +1027,30 @@ describe('background eth_accounts', () => {
 				activeSigningAddress: safeOwner,
 			}))
 
-			safeAppsCompatibilityCoordinator.signerConnectionChanged(websiteTabConnections, socket)
+			if (coldStart) {
+				await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+					interceptorRequest: true,
+					interceptorInternalRequest: true,
+					usingInterceptorWithoutSigner: false,
+					uniqueRequestIdentifier: { requestId: 170, requestSocket: socket },
+					method: 'connected_to_signer',
+					params: [true, 'MetaMask', 1],
+				}, websiteTabConnections, noopPublishRpcConnectionStatus)
+			} else safeAppsCompatibilityCoordinator.signerConnectionChanged(websiteTabConnections, socket)
+			if (!safeConsent || !featureEnabled) {
+				await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
+				assert.equal(replyToDiscovery, undefined)
+				assert.equal(websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.approved, false)
+				return
+			}
 			await waitForPortMessageCount(messages, 'request_signer_to_eth_accounts', 1)
-			assert.deepEqual(messages.filter((message) => message.method === 'safe_apps_compatibility'), [])
+			assert.equal(messages.some((message) => message.method === 'safe_apps_compatibility' && message.result?.enabled === true), false)
+			if (coldStart) assert.equal(websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.approved, false)
 			if (replyToDiscovery === undefined) throw new Error('Safe Apps signer-account discovery was not requested')
 			await replyToDiscovery()
-			await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
-			assert.deepEqual(messages.filter((message) => message.method === 'safe_apps_compatibility').map((message) => message.result?.enabled), [expectedCompatibility])
+			if (coldStart) assert.equal(websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.approved, expectedCompatibility)
+			await safeAppsCompatibilityCoordinator.refreshApprovedPorts(websiteTabConnections)
+			assert.equal(messages.some((message) => message.method === 'safe_apps_compatibility' && message.result?.enabled === true), expectedCompatibility)
 		})
 	}
 
