@@ -142,7 +142,7 @@ describe('simulate delay editor', () => {
 		assert.equal(stack.operations[1]?.type, 'TimeManipulation')
 		assert.equal(stack.operations[2]?.type, 'Transaction')
 		if (stack.operations[1]?.type !== 'TimeManipulation') throw new Error('missing time manipulation')
-		assert.deepStrictEqual(stack.operations[1].blockTimeManipulation, newDelay)
+		assert.deepStrictEqual({ ...stack.operations[1].blockTimeManipulation }, newDelay)
 	})
 
 	test('getCurrentSimulationInput produces one block transition per remaining delay', async () => {
@@ -158,7 +158,7 @@ describe('simulate delay editor', () => {
 
 		const simulationInput = await getCurrentSimulationInput()
 		assert.equal(simulationInput.length, 2)
-		assert.deepStrictEqual(simulationInput.map((block) => block.blockTimeManipulation), [
+		assert.deepStrictEqual(simulationInput.map((block) => ({ ...block.blockTimeManipulation })), [
 			{ type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
 			newDelay,
 		])
