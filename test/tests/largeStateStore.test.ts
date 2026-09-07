@@ -2,9 +2,12 @@ import * as assert from 'assert'
 import { afterEach, describe, test } from 'bun:test'
 import { estimateSerializedStateBytes, formatEstimatedBytes, getLargeStateValue, prepareLargeStateWrite, removeLargeStateValue, setLargeStateValue, setLargeStateValues } from '../../app/ts/utils/largeStateStore.js'
 import { CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation, InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
-import { getPopupVisualisationState } from '../../app/ts/background/storageVariables.js'
+import { getPopupVisualisationState, updateInterceptorTransactionStack, updatePopupVisualisationWithCallBack, updateTransactionState } from '../../app/ts/background/storageVariables.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 import { SafeTransactionStacks } from '../../app/ts/types/safeTypes.js'
+import { updatePopupVisualisationState } from '../../app/ts/background/popupVisualisationUpdater.js'
+import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 
 const stack: InterceptorTransactionStack = {
 	operations: [{
@@ -28,6 +31,7 @@ type StorageGetKeys = string | string[] | Record<string, unknown> | null | undef
 type FakeIndexedDbOptions = {
 	readonly openErrors?: readonly Error[]
 	readonly getError?: Error
+	readonly getErrorKey?: string
 	readonly putError?: Error
 	readonly deleteError?: Error
 	readonly putTransactionAbortAfterRequestSuccess?: Error
@@ -141,7 +145,7 @@ function installFakeIndexedDb(indexedDbState: Map<string, unknown>, options: Fak
 			store = {
 				get(key: string) {
 					const request = createFakeRequest(indexedDbState.get(key))
-					finishFakeRequest(request, transaction, options.getError, undefined)
+					finishFakeRequest(request, transaction, options.getErrorKey === undefined || options.getErrorKey === key ? options.getError : undefined, undefined)
 					return request
 				},
 				put(value: unknown, key: string) {
@@ -449,6 +453,70 @@ describe('large state store helpers', () => {
 			// A later successful read must still return the saved results, not an empty replacement.
 			installFakeIndexedDb(indexedDbState, {})
 			assert.deepEqual(await getPopupVisualisationState(), savedResults)
+		})
+	}
+
+	for (const key of ['interceptorTransactionStack', 'safeTransactionStacks']) {
+		test(`aborts transaction-state updates when ${ key } cannot be read`, async () => {
+			const error = new Error('read failed')
+			const { indexedDbState, storageState } = installLargeStateEnvironment({ getError: error })
+			if (key === 'safeTransactionStacks') {
+				storageState.interceptorTransactionStack = serializedStack()
+			} else {
+				indexedDbState.set('interceptorTransactionStack', serializedStack())
+			}
+			await assert.rejects(updateTransactionState(() => assert.fail('must not update unreadable state')), (caught: unknown) => caught === error)
+			if (key === 'interceptorTransactionStack') {
+				await assert.rejects(updateInterceptorTransactionStack(() => assert.fail('must not update unreadable stack')), (caught: unknown) => caught === error)
+			}
+			assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
+			assert.equal(indexedDbState.has('safeTransactionStacks'), false)
+		})
+	}
+
+	test('aborts popup updates when the previous visualisation cannot be read', async () => {
+		const error = new Error('read failed')
+		const { indexedDbState, storageState } = installLargeStateEnvironment({ getError: error })
+		const savedResults = serialize(CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation(77, 'done', 2))
+		indexedDbState.set('popupVisualisation', savedResults)
+
+		await assert.rejects(updatePopupVisualisationWithCallBack(async () => assert.fail('must not update unreadable visualisation')), (caught: unknown) => caught === error)
+		assert.deepEqual(indexedDbState.get('popupVisualisation'), savedResults)
+		assert.deepEqual(storageState, {})
+	})
+
+	test('preserves popup results when simulation refresh cannot read the transaction stack', async () => {
+		const error = new Error('transaction stack read failed')
+		const { indexedDbState, storageState } = installLargeStateEnvironment({ getError: error, getErrorKey: 'interceptorTransactionStack' })
+		const savedResults = serialize(CompleteVisualizedSimulation, createPassthroughCompleteVisualizedSimulation(77, 'done', 2))
+		indexedDbState.set('popupVisualisation', savedResults)
+		indexedDbState.set('interceptorTransactionStack', serializedStack())
+		const rpcNetwork = { name: 'Ethereum', chainId: 1n, httpsRpc: 'https://ethereum.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+		const ethereum = new EthereumClientService({
+			rpcUrl: rpcNetwork.httpsRpc,
+			clearCache: () => undefined,
+			jsonRpcRequest: async () => assert.fail('must not simulate an unreadable stack'),
+		}, async () => undefined, async () => undefined, rpcNetwork)
+
+		await assert.rejects(updatePopupVisualisationState(ethereum, new TokenPriceService(ethereum, 0), undefined, true), (caught: unknown) => caught === error)
+		assert.deepEqual(indexedDbState.get('popupVisualisation'), savedResults)
+		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
+		assert.deepEqual(storageState, {})
+	})
+
+	for (const operation of ['write', 'delete']) {
+		test(`rejects ${ operation } when the local fallback cannot persist the operation`, async () => {
+			const error = new Error('local persistence failed')
+			const { indexedDbState } = installLargeStateEnvironment({ putError: new Error('put failed'), deleteError: new Error('delete failed') }, async () => { throw error })
+			indexedDbState.set('interceptorTransactionStack', serializedStack())
+
+			await assert.rejects(
+				operation === 'write'
+					? setLargeStateValue('interceptorTransactionStack', InterceptorTransactionStack, staleStack)
+					: removeLargeStateValue('interceptorTransactionStack'),
+				(caught: unknown) => caught === error,
+			)
+			assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
 		})
 	}
 

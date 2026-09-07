@@ -38,7 +38,6 @@ export type PreparedLargeStateWrite = {
 
 let indexedDbPromise: Promise<IDBDatabase | undefined> | undefined
 let indexedDbSource: IDBFactory | undefined
-let indexedDbOpenError: unknown
 const largeStateSemaphore = new Semaphore(1)
 
 function canUseIndexedDb() {
@@ -50,7 +49,6 @@ async function openLargeStateDb() {
 	if (indexedDbSource !== indexedDB) {
 		indexedDbSource = indexedDB
 		indexedDbPromise = undefined
-		indexedDbOpenError = undefined
 	}
 	if (indexedDbPromise !== undefined) return indexedDbPromise
 	const openPromise = new Promise<IDBDatabase>((resolve, reject) => {
@@ -59,19 +57,13 @@ async function openLargeStateDb() {
 			const db = request.result
 			if (!db.objectStoreNames.contains(LARGE_STATE_STORE_NAME)) db.createObjectStore(LARGE_STATE_STORE_NAME)
 		}
-		request.onsuccess = () => {
-			indexedDbOpenError = undefined
-			resolve(request.result)
-		}
+		request.onsuccess = () => resolve(request.result)
 		request.onerror = () => reject(request.error ?? new Error('Failed to open large state IndexedDB database'))
 		request.onblocked = () => reject(new Error('Large state IndexedDB database open was blocked'))
 	})
 	const retryableOpenPromise = openPromise.catch((error) => {
-		console.warn('IndexedDB unavailable for large state persistence.')
-		console.warn(error)
-		indexedDbOpenError = error
 		if (indexedDbPromise === retryableOpenPromise) indexedDbPromise = undefined
-		return undefined
+		throw error
 	})
 	indexedDbPromise = retryableOpenPromise
 	return indexedDbPromise
@@ -109,10 +101,7 @@ function warnIndexedDbRequestFailure(action: string, error: unknown, consequence
 async function getIndexedDbValue(key: LargeStateStorageKey): Promise<IndexedDbLookup> {
 	try {
 		const result = await runIndexedDbRequest('readonly', (store) => store.get(key))
-		if (result.kind === 'unavailable') {
-			if (canUseIndexedDb()) throw indexedDbOpenError ?? new Error('IndexedDB unavailable while reading large state')
-			return result
-		}
+		if (result.kind === 'unavailable') return result
 		if (result.value === undefined) return { kind: 'available', found: false }
 		return { kind: 'available', found: true, value: result.value }
 	} catch (error) {
@@ -121,6 +110,7 @@ async function getIndexedDbValue(key: LargeStateStorageKey): Promise<IndexedDbLo
 	}
 }
 
+// A failed migration leaves the authoritative local value intact; callers may keep using it.
 async function setIndexedDbValue(key: LargeStateStorageKey, value: unknown) {
 	try {
 		const result = await runIndexedDbRequest('readwrite', (store) => store.put(value, key))
@@ -131,10 +121,11 @@ async function setIndexedDbValue(key: LargeStateStorageKey, value: unknown) {
 	}
 }
 
+// Failure is recoverable only by committing the requested values and authority markers to storage.local.
 async function setIndexedDbValues(writes: readonly PreparedLargeStateWrite[]) {
-	const db = await openLargeStateDb()
-	if (db === undefined) return false
 	try {
+		const db = await openLargeStateDb()
+		if (db === undefined) return false
 		await new Promise<void>((resolve, reject) => {
 			const transaction = db.transaction(LARGE_STATE_STORE_NAME, 'readwrite')
 			const store = transaction.objectStore(LARGE_STATE_STORE_NAME)
@@ -153,6 +144,7 @@ async function setIndexedDbValues(writes: readonly PreparedLargeStateWrite[]) {
 	}
 }
 
+// Mutation callers persist a local tombstone on failure; cleanup of already-invalid data may wait for a later read.
 async function removeIndexedDbValue(key: LargeStateStorageKey) {
 	try {
 		const result = await runIndexedDbRequest('readwrite', (store) => store.delete(key))
@@ -260,6 +252,14 @@ async function getLargeStateValueUnlocked<T>(key: LargeStateStorageKey, codec: f
 	return undefined
 }
 
+/**
+ * Reads authoritative state. Resolves undefined for missing or invalid data (or an absent IndexedDB API),
+ * and rejects when storage errors prevent determining the authoritative value. A migrated local backup
+ * cannot recover a failed IndexedDB read because it may be stale. Local-authoritative reads remain valid
+ * even if their optional migration fails. Callers must propagate rejection through read/modify/write
+ * operations; only a successful undefined result permits an empty default. Report failures at the owning
+ * request/task boundary and retry the operation after storage recovers; never persist an error default.
+ */
 export async function getLargeStateValue<T>(key: LargeStateStorageKey, codec: funtypes.Codec<T>): Promise<T | undefined> {
 	return await largeStateSemaphore.execute(async () => await getLargeStateValueUnlocked(key, codec))
 }
@@ -285,6 +285,7 @@ async function setLargeStateValuesUnlocked(writes: readonly PreparedLargeStateWr
 	await setLegacyLocalValues(writes)
 }
 
+/** Commits to IndexedDB or an authoritative local fallback; rejects if persistence cannot complete. */
 export async function setLargeStateValues(writes: readonly PreparedLargeStateWrite[]) {
 	await largeStateSemaphore.execute(async () => await setLargeStateValuesUnlocked(writes))
 }
@@ -304,6 +305,7 @@ async function removeLargeStateValueUnlocked(key: LargeStateStorageKey) {
 	await setLegacyLocalDeleted(key)
 }
 
+/** Deletes from IndexedDB or persists a local tombstone; rejects if persistence cannot complete. */
 export async function removeLargeStateValue(key: LargeStateStorageKey) {
 	await largeStateSemaphore.execute(async () => await removeLargeStateValueUnlocked(key))
 }
