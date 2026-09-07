@@ -1,7 +1,17 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import * as ts from 'typescript'
-import { inlineInpageSourceIntoDocumentStart } from '../../scripts/inline-inpage-document-start.mts'
+import { metamaskCompatibilityModeGlobalSymbolKey, metamaskCompatibilityModeGlobalSymbolKeyMarker } from '../../app/ts/utils/contentScriptInjectionConfiguration.js'
+import { inlineContentScriptInjectionConfiguration, inlineInpageSourceIntoDocumentStart } from '../../scripts/inline-inpage-document-start.mts'
+
+test('generated page-world scripts share the configured compatibility mode symbol key', async () => {
+	for (const sourceFileName of ['document_start.ts', 'inpage.ts', 'metamaskCompatibilityMode.ts']) {
+		const source = await Bun.file(new URL(`../../app/inpage/ts/${ sourceFileName }`, import.meta.url)).text()
+		const generatedSource = inlineContentScriptInjectionConfiguration(source, sourceFileName.replace(/\.ts$/, '.js'))
+		assert.equal(generatedSource.includes(`Symbol.for(${ JSON.stringify(metamaskCompatibilityModeGlobalSymbolKey) })`), true)
+		assert.equal(generatedSource.includes(metamaskCompatibilityModeGlobalSymbolKeyMarker), false)
+	}
+})
 
 test('active MV2 compatibility mode keeps both generated page-world scripts external and ordered', async () => {
 	const documentStartTypeScript = await Bun.file(new URL('../../app/inpage/ts/document_start.ts', import.meta.url)).text()
@@ -11,7 +21,7 @@ test('active MV2 compatibility mode keeps both generated page-world scripts exte
 			target: ts.ScriptTarget.ES2022,
 		},
 	}).outputText
-	const generatedDocumentStart = inlineInpageSourceIntoDocumentStart(compiledDocumentStart, 'globalThis.unexpectedInlineInpageExecution = true')
+	const generatedDocumentStart = inlineInpageSourceIntoDocumentStart(compiledDocumentStart, 'Symbol.for(\'[[metamaskCompatibilityModeGlobalSymbolKey]]\'); globalThis.unexpectedInlineInpageExecution = true')
 	const injectedScripts: { readonly async: boolean, readonly src: string, readonly textContent: string }[] = []
 	const fakeGlobalThis = {
 		[Symbol.for('TheInterceptor.listenContentScript')]: () => undefined,

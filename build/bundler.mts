@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import * as url from 'node:url'
 import * as fs from 'node:fs'
 import * as ts from 'typescript'
+import { inpageRuntimeEntrypointPaths } from '../app/ts/utils/contentScriptInjectionConfiguration.ts'
 
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))
 const appDirectory = path.join(directoryOfThisFile, '..', 'app')
@@ -380,21 +381,11 @@ const runtimeEntrypointPaths = [
 	path.join(appDirectory, 'js', 'settingsView.js'),
 	path.join(appDirectory, 'js', 'simulationStack.js'),
 	path.join(appDirectory, 'js', 'websiteAccess.js'),
-	path.join(appDirectory, 'inpage', 'js', 'document_start.js'),
-	path.join(appDirectory, 'inpage', 'js', 'inpage.js'),
-	path.join(appDirectory, 'inpage', 'js', 'listenContentScript.js'),
-	path.join(appDirectory, 'inpage', 'js', 'listenContentScriptBootstrap.js'),
-	path.join(appDirectory, 'inpage', 'js', 'metamaskCompatibilityMode.js'),
+	...inpageRuntimeEntrypointPaths.map((scriptPath) => path.join(appDirectory, scriptPath)),
 	path.join(appDirectory, 'js', 'utils', 'ethereumPrimitives.js'),
 ]
 
-const classicRuntimeEntrypointPaths = new Set([
-	path.join(appDirectory, 'inpage', 'js', 'document_start.js'),
-	path.join(appDirectory, 'inpage', 'js', 'inpage.js'),
-	path.join(appDirectory, 'inpage', 'js', 'listenContentScript.js'),
-	path.join(appDirectory, 'inpage', 'js', 'listenContentScriptBootstrap.js'),
-	path.join(appDirectory, 'inpage', 'js', 'metamaskCompatibilityMode.js'),
-])
+const classicRuntimeEntrypointPaths = new Set(inpageRuntimeEntrypointPaths.map((scriptPath) => path.join(appDirectory, scriptPath)))
 
 export function assertClassicEntrypointHasNoModuleSyntax(filePath: string, source: string) {
 	try {

@@ -1,1 +1,1 @@
-Reflect.set(globalThis, Symbol.for('TheInterceptor.metamaskCompatibilityMode'), true)
+Reflect.set(globalThis, Symbol.for('[[metamaskCompatibilityModeGlobalSymbolKey]]'), true)

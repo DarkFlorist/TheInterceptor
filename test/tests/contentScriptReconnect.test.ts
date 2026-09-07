@@ -1,6 +1,8 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
+import * as ts from 'typescript'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../app/ts/background/bridgeRequestDelivery.js'
+import { inlineInpageSourceIntoDocumentStart } from '../../scripts/inline-inpage-document-start.mts'
 
 type ContentScriptMockState = {
 	readonly backgroundMessageListeners: ((message: unknown) => void)[]
@@ -66,8 +68,7 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	}
 	Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: browserMock })
 	Object.defineProperty(globalThis, 'addEventListener', { configurable: true, writable: true, value: addEventListener })
-	if (metamaskCompatibilityMode) Reflect.set(globalThis, metamaskCompatibilityModeGlobalKey, true)
-	else Reflect.deleteProperty(globalThis, metamaskCompatibilityModeGlobalKey)
+	Reflect.set(globalThis, metamaskCompatibilityModeGlobalKey, metamaskCompatibilityMode)
 	if (legacyListenerDescriptor !== undefined) Object.defineProperty(globalThis, 'listenContentScript', legacyListenerDescriptor)
 	const scriptContainer = {
 		children: [{}, {}],
@@ -89,7 +90,17 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	try {
 		contentScriptMockImportId += 1
 		await import(`../../app/inpage/ts/listenContentScript.js?shared-background-port-recovery-${ contentScriptMockImportId }`)
-		if (source === 'manifest-v2-document-start') await import(`../../app/inpage/ts/document_start.js?manifest-v2-background-port-recovery-${ contentScriptMockImportId }`)
+		if (source === 'manifest-v2-document-start') {
+			const documentStartTypeScript = await Bun.file(new URL('../../app/inpage/ts/document_start.ts', import.meta.url)).text()
+			const compiledDocumentStart = ts.transpileModule(documentStartTypeScript, {
+				compilerOptions: {
+					module: ts.ModuleKind.ESNext,
+					target: ts.ScriptTarget.ES2022,
+				},
+			}).outputText
+			const generatedDocumentStart = inlineInpageSourceIntoDocumentStart(compiledDocumentStart, 'Symbol.for(\'[[metamaskCompatibilityModeGlobalSymbolKey]]\')')
+			Function(generatedDocumentStart)()
+		}
 		else await import(`../../app/inpage/ts/listenContentScriptBootstrap.js?background-port-recovery-${ contentScriptMockImportId }`)
 		await run({ backgroundMessageListeners, runtimeMessageListeners, disconnectListeners, eventListeners, injectedScripts, postedMessages, connectionNames, runtime, getConnectionCount: () => connectionCount, failNextPost: () => { shouldFailNextPost = true } })
 	} finally {

@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { metamaskCompatibilityModeGlobalSymbolKey, metamaskCompatibilityModeGlobalSymbolKeyMarker } from '../../app/ts/utils/contentScriptInjectionConfiguration.js'
 
 type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[], stopImmediatePropagation?: () => void }
 type Listener = (event: WindowEvent) => void
@@ -289,6 +290,8 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 	const previousWindow = (globalThis as { window?: unknown }).window
 	const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
 	;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
+	const metamaskCompatibilityMode = Reflect.get(fakeWindow, Symbol.for(metamaskCompatibilityModeGlobalSymbolKey))
+	if (typeof metamaskCompatibilityMode === 'boolean') Reflect.set(fakeWindow, Symbol.for(metamaskCompatibilityModeGlobalSymbolKeyMarker), metamaskCompatibilityMode)
 	if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
 		;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<TDetail = unknown> extends Event {
 			public detail: TDetail

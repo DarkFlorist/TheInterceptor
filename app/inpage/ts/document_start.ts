@@ -12,27 +12,30 @@ function injectScript(_content: string) {
 		if (typeof contentScriptListener !== 'function') throw new Error('Interceptor content script listener was not initialized')
 		contentScriptListener(undefined, 'document-start')
 		const container = document.head || document.documentElement
-		const metamaskCompatibilityMode = Reflect.get(globalThis, Symbol.for('TheInterceptor.metamaskCompatibilityMode')) === true
-		if (metamaskCompatibilityMode) {
-			const compatibilityModeScript = document.createElement('script')
-			compatibilityModeScript.async = false
-			compatibilityModeScript.src = browser.runtime.getURL('inpage/js/metamaskCompatibilityMode.js')
-			container.insertBefore(compatibilityModeScript, container.children[1])
-			container.removeChild(compatibilityModeScript)
-
+		const injectScriptElement = (scriptTag: HTMLScriptElement) => {
+			container.insertBefore(scriptTag, container.children[1])
+			container.removeChild(scriptTag)
+		}
+		const injectExternalScript = (scriptPath: string) => {
 			const scriptTag = document.createElement('script')
 			scriptTag.async = false
-			scriptTag.src = browser.runtime.getURL('inpage/js/inpage.js')
-			container.insertBefore(scriptTag, container.children[1])
-			container.removeChild(scriptTag)
-		} else {
+			scriptTag.src = browser.runtime.getURL(scriptPath)
+			injectScriptElement(scriptTag)
+		}
+		const injectInlineScript = (content: string) => {
 			const scriptTag = document.createElement('script')
+			scriptTag.textContent = content
+			injectScriptElement(scriptTag)
+		}
+		const pageWorldScriptPathsByCompatibilityMode: { readonly disabled: readonly string[], readonly enabled: readonly string[] } = JSON.parse('[[pageWorldScriptPaths]]')
+		const metamaskCompatibilityMode = Reflect.get(globalThis, Symbol.for('[[metamaskCompatibilityModeGlobalSymbolKey]]'))
+		if (typeof metamaskCompatibilityMode !== 'boolean') throw new Error('MetaMask compatibility mode was not initialized')
+		if (metamaskCompatibilityMode) {
+			for (const scriptPath of pageWorldScriptPathsByCompatibilityMode.enabled) injectExternalScript(scriptPath)
+		} else {
 			if (_content === '[[injected.ts]]') {
-				scriptTag.async = false
-				scriptTag.src = browser.runtime.getURL('inpage/js/inpage.js')
-			} else scriptTag.textContent = _content
-			container.insertBefore(scriptTag, container.children[1])
-			container.removeChild(scriptTag)
+				for (const scriptPath of pageWorldScriptPathsByCompatibilityMode.disabled) injectExternalScript(scriptPath)
+			} else injectInlineScript(_content)
 		}
 		checkAndThrowRuntimeLastError()
 	} catch (error) {

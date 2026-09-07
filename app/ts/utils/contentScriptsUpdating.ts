@@ -1,6 +1,7 @@
 import { getInterceptorDisabledSites, getMetamaskCompatibilityMode, getSettings } from '../background/settings.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
+import { getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from './contentScriptInjectionConfiguration.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
@@ -9,6 +10,7 @@ const otherExtensionInjectionTargetErrorMessage = 'Cannot access a chrome-extens
 const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cannot be scripted.'
 const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
 const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
+const asRootRelativePaths = (paths: readonly string[]) => paths.map((scriptPath) => `/${ scriptPath }`)
 
 function getManifestV3ExcludeMatchesForOrigin(origin: string) {
 	if (origin === '') return ['file:///*']
@@ -58,7 +60,7 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 			allFrames: true,
 			matches: injectableSitesWildcard,
 			excludeMatches,
-			js: [...(metamaskCompatibilityMode ? ['/inpage/js/metamaskCompatibilityMode.js'] : []), '/inpage/js/inpage.js'],
+			js: asRootRelativePaths(getPageWorldScriptPaths(metamaskCompatibilityMode)),
 			runAt: 'document_start',
 			world: 'MAIN',
 			matchOriginAsFallback: true
@@ -89,10 +91,10 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 	const noMatches = disabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
 	if (!noMatches) return false
 	try {
-		await browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/dist/browser-polyfill.js', allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/listenContentScript.js', allFrames: false, runAt: 'document_start' })
-		if (metamaskCompatibilityMode) await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/metamaskCompatibilityMode.js', allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/document_start.js', allFrames: false, runAt: 'document_start' })
+		for (const injection of getManifestV2IsolatedWorldInjections(metamaskCompatibilityMode)) {
+			const script = 'file' in injection ? { file: `/${ injection.file }` } : { code: injection.code }
+			await browser.tabs.executeScript(content.tabId, { ...script, allFrames: false, runAt: 'document_start' })
+		}
 		checkAndThrowRuntimeLastError()
 	} catch(error) {
 		if (isMissingBrowserTargetError(error) || isExpectedManifestV2InjectionTargetError(error)) return false

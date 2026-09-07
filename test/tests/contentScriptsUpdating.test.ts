@@ -2,6 +2,7 @@ import * as assert from 'assert'
 import * as fs from 'node:fs'
 import { describe, test } from 'bun:test'
 import { withSilencedConsole } from './consoleSilence.js'
+import { getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from '../../app/ts/utils/contentScriptInjectionConfiguration.js'
 
 type RuntimeMessage = {
 	readonly method?: string
@@ -31,6 +32,7 @@ function installBrowserMock({ metamaskCompatibilityMode, registerError, updateEr
 	}
 	const sentMessages: RuntimeMessage[] = []
 	const executedScriptFiles: string[] = []
+	const executedScriptCode: string[] = []
 	const registeredContentScripts = new Map(registeredContentScriptIds.map((id) => [id, { id }]))
 	let executeScriptCalls = 0
 	const scriptingOperations: string[] = []
@@ -94,9 +96,10 @@ function installBrowserMock({ metamaskCompatibilityMode, registerError, updateEr
 				async query() { return [{ id: 42, url: currentTabUrl }] },
 				async get() { return hasVisibleTabUrl ? { id: 42, url: currentTabUrl } : { id: 42 } },
 				async update() { return undefined },
-				async executeScript(_tabId: number, injection: { readonly file?: string }) {
+				async executeScript(_tabId: number, injection: { readonly code?: string, readonly file?: string }) {
 					executeScriptCalls++
 					if (injection.file !== undefined) executedScriptFiles.push(injection.file)
+					if (injection.code !== undefined) executedScriptCode.push(injection.code)
 					if (executeScriptError !== undefined) throw executeScriptError
 					return undefined
 				},
@@ -137,6 +140,7 @@ function installBrowserMock({ metamaskCompatibilityMode, registerError, updateEr
 		getScriptingOperations() { return [...scriptingOperations] },
 		getUnregisteredContentScriptIdBatches() { return unregisteredContentScriptIdBatches.map((ids) => [...ids]) },
 		getExecuteScriptCalls() { return executeScriptCalls },
+		getExecutedScriptCode() { return [...executedScriptCode] },
 		getExecutedScriptFiles() { return [...executedScriptFiles] },
 		getCommittedListener() {
 			if (committedListener === undefined) throw new Error('webNavigation listener was not registered')
@@ -200,7 +204,7 @@ describe('content script injection strategy', () => {
 	})
 
 	test('exposes every manifest v2 injected file to Firefox', async () => {
-		const { getCommittedListener, getExecutedScriptFiles } = installBrowserMock()
+		const { getCommittedListener, getExecutedScriptCode, getExecutedScriptFiles } = installBrowserMock()
 		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
 
 		await updateContentScriptInjectionStrategyManifestV2()
@@ -212,13 +216,10 @@ describe('content script injection strategy', () => {
 			'/inpage/js/document_start.js',
 		]
 		assert.deepEqual(getExecutedScriptFiles(), injectedFiles)
-		assert.deepEqual(getManifestV2WebAccessibleResources(), [
-			'vendor/webextension-polyfill/dist/browser-polyfill.js',
-			'inpage/js/listenContentScript.js',
-			'inpage/js/metamaskCompatibilityMode.js',
-			'inpage/js/document_start.js',
-			'inpage/js/inpage.js',
-		])
+		assert.deepEqual(getExecutedScriptCode(), ['Reflect.set(globalThis, Symbol.for("TheInterceptor.metamaskCompatibilityMode"), false)'])
+		const configuredInjectedFiles = getManifestV2IsolatedWorldInjections(true).flatMap((injection) => 'file' in injection ? [injection.file] : [])
+		const configuredPageWorldScripts = getPageWorldScriptPaths(true)
+		assert.deepEqual(getManifestV2WebAccessibleResources().sort(), [...new Set([...configuredInjectedFiles, ...configuredPageWorldScripts])].sort())
 	})
 
 	test('registers the main-world compatibility prelude only when MetaMask compatibility mode is active', async () => {
@@ -238,7 +239,7 @@ describe('content script injection strategy', () => {
 
 	test('injects the Firefox compatibility prelude only when MetaMask compatibility mode is active', async () => {
 		for (const metamaskCompatibilityMode of [false, true]) {
-			const { getCommittedListener, getExecutedScriptFiles } = installBrowserMock({ metamaskCompatibilityMode })
+			const { getCommittedListener, getExecutedScriptCode, getExecutedScriptFiles } = installBrowserMock({ metamaskCompatibilityMode })
 			const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
 
 			await updateContentScriptInjectionStrategyManifestV2()
@@ -247,9 +248,9 @@ describe('content script injection strategy', () => {
 			assert.deepEqual(getExecutedScriptFiles(), [
 				'/vendor/webextension-polyfill/dist/browser-polyfill.js',
 				'/inpage/js/listenContentScript.js',
-				...(metamaskCompatibilityMode ? ['/inpage/js/metamaskCompatibilityMode.js'] : []),
 				'/inpage/js/document_start.js',
 			])
+			assert.deepEqual(getExecutedScriptCode(), [`Reflect.set(globalThis, Symbol.for("TheInterceptor.metamaskCompatibilityMode"), ${ metamaskCompatibilityMode })`])
 		}
 	})
 

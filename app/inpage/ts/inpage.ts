@@ -330,7 +330,7 @@ type InpageWindow = Window & {
 }
 
 const inpageWindow: InpageWindow = window
-const metamaskCompatibilityModeAtPageLoad = Reflect.get(inpageWindow, Symbol.for('TheInterceptor.metamaskCompatibilityMode')) === true
+const metamaskCompatibilityModeAtPageLoad = Reflect.get(inpageWindow, Symbol.for('[[metamaskCompatibilityModeGlobalSymbolKey]]')) === true
 
 interface EIP6963ProviderInfo {
 	uuid: string
