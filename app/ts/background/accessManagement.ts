@@ -289,6 +289,12 @@ function addIconRefreshTarget(iconRefreshTargets: Map<string, { tabId: number, w
 	iconRefreshTargets.set(key, { tabId, websiteOrigin })
 }
 
+async function getConnectionAccess(websiteTabConnections: WebsiteTabConnections, connection: TabConnection['connections'][string], settings: Settings) {
+	const activeAddress = await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, connection.socket.tabId, async () => await getActiveAddress(settings, connection.socket.tabId))
+	const access = activeAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, activeAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
+	return { activeAddress, access }
+}
+
 async function updateTabConnections(
 	websiteTabConnections: WebsiteTabConnections,
 	tabConnection: TabConnection,
@@ -298,19 +304,13 @@ async function updateTabConnections(
 	for (const key in tabConnection.connections) {
 		const connection = tabConnection.connections[key]
 		if (connection === undefined) throw new Error('missing connection')
-		const currentActiveAddress = await getActiveAddressForCurrentSignerState(
-			websiteTabConnections,
-			settings,
-			connection.socket.tabId,
-			async () => await getActiveAddress(settings, connection.socket.tabId),
-		)
+		const { activeAddress, access } = await getConnectionAccess(websiteTabConnections, connection, settings)
 		addIconRefreshTarget(iconRefreshTargets, connection.socket.tabId, connection.websiteOrigin)
-		const access = currentActiveAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, currentActiveAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
 
 		if (access !== 'hasAccess' && connection.approved) {
 			disconnectFromPort(websiteTabConnections, connection.socket)
 		} else if (access === 'hasAccess' && !connection.approved) {
-			connectToPort(websiteTabConnections, connection.socket, settings, currentActiveAddress?.address)
+			connectToPort(websiteTabConnections, connection.socket, settings, activeAddress?.address)
 		}
 	}
 	return iconRefreshTargets
@@ -318,20 +318,20 @@ async function updateTabConnections(
 
 // Prompts acquire the access-dialog lock, so callers holding the active-settings lock must defer this phase.
 export async function promptForWebsiteAccesses(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, throwOnError = false) {
-	try {
-		for (const tabConnection of websiteTabConnections.values()) {
-			for (const connection of Object.values(tabConnection.connections)) {
-				if (!connection.wantsToConnect) continue
+	for (const tabConnection of websiteTabConnections.values()) {
+		for (const connection of Object.values(tabConnection.connections)) {
+			if (!connection.wantsToConnect) continue
+			try {
+				// Reconciliation uses the committed snapshot; deferred prompts must recheck the latest settings.
 				const settings = await getSettings()
-				const activeAddress = await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, connection.socket.tabId, async () => await getActiveAddress(settings, connection.socket.tabId))
-				const access = activeAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, activeAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
+				const { activeAddress, access } = await getConnectionAccess(websiteTabConnections, connection, settings)
 				if (access !== 'askAccess') continue
 				await askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
+			} catch (error) {
+				if (throwOnError) throw error
+				await reportUnexpectedError(error)
 			}
 		}
-	} catch (error) {
-		if (throwOnError) throw error
-		await reportUnexpectedError(error)
 	}
 }
 

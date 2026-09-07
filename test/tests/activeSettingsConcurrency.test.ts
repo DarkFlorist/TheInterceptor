@@ -1,7 +1,7 @@
 import * as assert from 'node:assert'
 import { describe, expect, test } from 'bun:test'
 import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookTypes.js'
-import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
+import type { TabConnection, WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import type { ResetSimulationServices } from '../../app/ts/simulation/serviceLifecycle.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
@@ -213,5 +213,46 @@ describe('active settings concurrency', () => {
 		assert.equal((await getSettings()).activeSimulationAddress, selectedAddress.address)
 		assert.equal((await getLatestUnexpectedError())?.data.message, 'Access popup failed to open')
 		await assert.rejects(updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, connections, await getSettings(), true, true), /Access popup failed to open/u)
+	})
+
+	test.each([1, 2])('continues prompting after a failure when the next connection is in tab %j', async (secondTabId) => {
+		installBrowserMock()
+		const { changeActiveAddressAndChain, getLatestUnexpectedError, updateUserAddressBookEntries, websiteSocketToString, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
+		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
+		await updateUserAddressBookEntries(() => [selectedAddress])
+		const connections: WebsiteTabConnections = new Map()
+		for (const [tabId, connectionName, websiteOrigin] of [[1, 0n, 'first.test'], [secondTabId, 1n, 'second.test']] as const) {
+			const socket = { tabId, connectionName }
+			const { port } = createPort(tabId, undefined, undefined, connectionName)
+			const tab: TabConnection = connections.get(tabId) ?? { connections: {} }
+			tab.connections[websiteSocketToString(socket)] = { port, socket, websiteOrigin, approved: false, wantsToConnect: true }
+			connections.set(tabId, tab)
+		}
+		const originalCreate = browser.windows.create.bind(browser.windows)
+		let promptAttempts = 0
+		Object.defineProperty(browser.windows, 'create', {
+			configurable: true,
+			value: async (...args: Parameters<typeof browser.windows.create>) => {
+				promptAttempts += 1
+				if (promptAttempts === 1) throw new Error('First connection prompt failed')
+				return await originalCreate(...args)
+			},
+		})
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, connections, { simulationMode: true, activeAddress: selectedAddress.address })
+		const pending = await getPendingAccessRequests()
+		try {
+			assert.equal(promptAttempts, 2)
+			assert.equal((await getLatestUnexpectedError())?.data.message, 'First connection prompt failed')
+			expect(pending.map((request) => request.website.websiteOrigin)).toEqual(['second.test'])
+		} finally {
+			// Close the successful prompt so the shared dialog state cannot leak into another test.
+			for (const request of pending) {
+				await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, connections, {
+					userReply: 'noResponse', accessRequestId: request.accessRequestId,
+					originalRequestAccessToAddress: selectedAddress.address, requestAccessToAddress: selectedAddress.address,
+				}, noopPublishRpcConnectionStatus)
+			}
+		}
 	})
 })

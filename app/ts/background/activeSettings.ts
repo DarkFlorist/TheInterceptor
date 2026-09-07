@@ -59,6 +59,19 @@ type ActiveAddressAndChainChange = {
 }
 
 const changeActiveAddressAndChainSemaphore = new Semaphore(1)
+async function runActiveSettingsChange(
+	ethereum: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	resetSimulationServices: ResetSimulationServices,
+	websiteTabConnections: WebsiteTabConnections,
+	promptForAccessesIfNeeded: boolean,
+	change: () => Promise<void>,
+) {
+	await changeActiveAddressAndChainSemaphore.execute(change)
+	// Access approvals can change the active address while holding the dialog lock; prompt only after releasing our lock.
+	if (promptForAccessesIfNeeded) await promptForWebsiteAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections)
+}
+
 async function changeActiveAddressAndChainUnlocked(
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
@@ -87,7 +100,6 @@ async function changeActiveAddressAndChainUnlocked(
 	}
 
 	const updatedSettings = await getSettings()
-	// Access approvals can change the active address while holding the dialog lock; prompt only after releasing our lock.
 	const popupRefreshGeneration = await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings, false)
 	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration })
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
@@ -117,14 +129,13 @@ export async function changeActiveAddressAndChain(
 	websiteTabConnections: WebsiteTabConnections,
 	change: ActiveAddressAndChainChange,
 ) {
-	await changeActiveAddressAndChainSemaphore.execute(async () => await changeActiveAddressAndChainUnlocked(
+	await runActiveSettingsChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, change.promptForAccessesIfNeeded ?? true, async () => await changeActiveAddressAndChainUnlocked(
 		ethereum,
 		tokenPriceService,
 		resetSimulationServices,
 		websiteTabConnections,
 		change,
 	))
-	if (change.promptForAccessesIfNeeded ?? true) await promptForWebsiteAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections)
 }
 
 export async function activateAddressSelection(
@@ -140,7 +151,7 @@ export async function activateAddressSelection(
 		readonly promptForAccessesIfNeeded?: boolean
 	},
 ) {
-	await changeActiveAddressAndChainSemaphore.execute(async () => {
+	await runActiveSettingsChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, options.promptForAccessesIfNeeded ?? true, async () => {
 		const useSignerAddress = selection?.type === 'signer' || (!options.simulationMode && selection === undefined)
 		if (options.simulationMode) {
 			await setUseSignersAddressAsActiveAddress(useSignerAddress, useSignerAddress ? selection?.type === 'signer' ? selection.address : options.signerAddress : undefined)
@@ -164,7 +175,6 @@ export async function activateAddressSelection(
 			chainId: selection.entry.chainId,
 		})
 	})
-	if (options.promptForAccessesIfNeeded ?? true) await promptForWebsiteAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections)
 }
 
 export async function changeActiveRpc(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean, signerTabId: number | undefined) {
