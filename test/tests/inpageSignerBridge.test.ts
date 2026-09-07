@@ -427,6 +427,38 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
+	for (const blockedStage of ['wallet', 'background']) {
+		test(`publishes signer accounts while ${ blockedStage } chain initialization is pending`, async () => {
+			let finishChain: (() => void) | undefined
+			let chainInitializationPending = false
+			const chainReply = new Promise<string>((resolve) => { finishChain = () => resolve('0x1') })
+			const { fakeWindow, backgroundEthAccountsReplies, sendBackgroundMessage, signerRequests } = createFakeWindow({
+				handleSignerRequest: ({ method }) => {
+					if (method !== 'eth_chainId' || blockedStage !== 'wallet') return undefined
+					chainInitializationPending = true
+					return chainReply
+				},
+				handleRequest: (request, reply) => {
+					if (request.method !== 'signer_chainChanged' || blockedStage !== 'background') return false
+					chainInitializationPending = true
+					finishChain = () => reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: '0x' })
+					return true
+				},
+			})
+			await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?accounts-independent-of-chain-${ blockedStage }`, async () => {
+				try {
+					await waitFor(() => chainInitializationPending)
+					sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'request_signer_to_eth_accounts', result: [] })
+					await waitFor(() => signerRequests.includes('eth_accounts'))
+					await waitFor(() => backgroundEthAccountsReplies.length === 1)
+					assert.deepEqual(backgroundEthAccountsReplies[0], { type: 'success', accounts: ['0x1111111111111111111111111111111111111111'], requestAccounts: false, signerProviderGeneration: 2 })
+				} finally {
+					finishChain?.()
+				}
+			})
+		})
+	}
+
 	test('completes direct-app discovery after initial ineligibility without replaying transactions', async () => {
 		let publishCompatibility: ((enabled: boolean) => void) | undefined
 		const forwardedMethods: (string | undefined)[] = []

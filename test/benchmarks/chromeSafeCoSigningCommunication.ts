@@ -362,7 +362,7 @@ const fakeSignerPreload = `(() => {
 		request: async ({ method, params }) => {
 			requests.push({ method, params })
 			switch (method) {
-				case 'eth_chainId': return '0x1'
+				case 'eth_chainId': return sessionStorage.getItem('fake-signer-block-chain') === 'true' ? new Promise(() => {}) : '0x1'
 				case 'eth_accounts': return authorized ? [${ JSON.stringify(addressString(OWNER_ADDRESS)) }] : []
 				case 'eth_requestAccounts': authorized = true; sessionStorage.setItem('fake-signer-authorized', 'true'); return [${ JSON.stringify(addressString(OWNER_ADDRESS)) }]
 				case 'eth_signTypedData_v4':
@@ -493,6 +493,7 @@ async function main() {
 			if (safeAppsOnly && !safeAppsMessage) {
 				const accountRequests = await pageConnection.evaluate<number>(`globalThis.__fakeSafeSignerRequests.filter(request => request.method === 'eth_requestAccounts').length`)
 				if (accountRequests !== 1) throw new Error(`Expected one MetaMask connection prompt, received ${ accountRequests }`)
+				await pageConnection.evaluate(`sessionStorage.setItem('fake-signer-block-chain', 'true')`)
 				for (let reload = 0; reload < 3; reload += 1) {
 					await pageConnection.evaluate('globalThis.__interceptorChromeCommunicationState = undefined')
 					await pageConnection.send('Page.reload')
@@ -505,7 +506,7 @@ async function main() {
 					const prompts = await pageConnection.evaluate<number>(`globalThis.__fakeSafeSignerRequests.filter(request => request.method === 'eth_requestAccounts').length`)
 					if (prompts !== 0) throw new Error(`Reload requested signer access ${ prompts } times`)
 				}
-				console.warn('Safe Apps discovery connected an initially unauthorized signer and survived three reloads without prompting.')
+				console.warn('Safe Apps discovery connected an initially unauthorized signer and survived three reloads with stalled signer chain queries without prompting.')
 				return
 			}
 			if (safeAppsMessage) {

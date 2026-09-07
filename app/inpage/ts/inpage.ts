@@ -1768,7 +1768,10 @@ class InterceptorMessageListener {
 			const connection = await connectToSigner()
 			if (selectionGeneration !== this.signerSelectionGeneration) return
 			this.enableMetamaskCompatibilityMode(connection.metamaskCompatibilityMode)
-			if (signerName !== 'NoSigner') await this.requestChainIdFromSigner()
+			// Account replies only require confirmed provider identity; chain initialization must not hold them back.
+			if (signerName !== 'NoSigner') void this.requestChainIdFromSigner().catch((error: unknown) => {
+				this.reportSignerDiscoveryError('initialize signer chain', error)
+			})
 		}
 		// A fresh status report must not wait behind an older bridge request whose reply may have been lost during a background-worker or content-port replacement. The generation checks on both sides make late replies from superseded reports harmless.
 		const transition = completeTransition().catch((error: unknown) => {
