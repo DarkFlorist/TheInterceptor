@@ -20,11 +20,3 @@ export function getManifestV2IsolatedWorldInjections(metamaskCompatibilityMode: 
 		{ file: `${ inpageScriptDirectory }/document_start.js` },
 	] as const
 }
-
-export const inpageRuntimeEntrypointPaths = [
-	`${ inpageScriptDirectory }/document_start.js`,
-	pageWorldProviderScriptPath,
-	`${ inpageScriptDirectory }/listenContentScript.js`,
-	`${ inpageScriptDirectory }/listenContentScriptBootstrap.js`,
-	metamaskCompatibilityModeScriptPath,
-] as const
