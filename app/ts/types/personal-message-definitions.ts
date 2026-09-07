@@ -399,7 +399,7 @@ const VisualizedPersonalSignRequestEIP712 = funtypes.Intersect(
 		message: EnrichedEIP712,
 		messageHash: funtypes.String,
 		domainHash: funtypes.String,
-	}).And(funtypes.ReadonlyPartial({ safeMessageText: funtypes.String }))
+	}).And(funtypes.ReadonlyPartial({ safeMessageText: funtypes.String, safeMessageIsTypedData: funtypes.Boolean }))
 )
 
 export type VisualizedPersonalSignRequestPermit = funtypes.Static<typeof VisualizedPersonalSignRequestPermit>

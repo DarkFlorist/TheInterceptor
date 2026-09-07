@@ -11,8 +11,9 @@ const originalMessage = 'Hello Safe 👋'
 const typedData = () => createSafeMessageTypedData(fakeRpcNetwork.chainId, activeAddress, originalMessage)
 const signRequest = () => ({ method: 'eth_signTypedData_v4' as const, params: [activeAddress, EIP712Message.parse(JSON.stringify(typedData()))] as const })
 
-async function prepareMessageReview() {
-	fakeSafeContract.messageHash = BigInt(hashTypedData(typedData()))
+async function prepareMessageReview(data = typedData()) {
+	const signRequest = () => ({ method: 'eth_signTypedData_v4' as const, params: [activeAddress, EIP712Message.parse(JSON.stringify(data))] as const })
+	fakeSafeContract.messageHash = BigInt(hashTypedData(data))
 	fakeSafeContract.owners = [safeTestOwnerAddress]
 	fakeSafeContract.threshold = 1n
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
@@ -107,4 +108,51 @@ test('Safe message service submits validated owner signatures and requires the l
 	} finally {
 		globalThis.fetch = originalFetch
 	}
+})
+
+const appTypedData = {
+	types: { EIP712Domain: [{ name: 'name', type: 'string' }], Mail: [{ name: 'contents', type: 'string' }, { name: 'amount', type: 'uint256' }] },
+	primaryType: 'Mail', domain: { name: 'Safe test' }, message: { contents: 'Hello typed Safe', amount: '9007199254740993' },
+}
+
+test('Safe typed messages authenticate the original EIP-712 data through review, owner signing and gateway retrieval', async () => {
+	const original = JSON.stringify(appTypedData, undefined, 2)
+	const envelope = createSafeMessageTypedData(fakeRpcNetwork.chainId, activeAddress, original, true)
+	assert.equal(envelope.message.message, hashTypedData(appTypedData))
+	assert.equal(createSafeMessageTypedData(fakeRpcNetwork.chainId, activeAddress, JSON.stringify({ domain: appTypedData.domain, types: { Mail: appTypedData.types.Mail }, message: appTypedData.message }), true).message.message, envelope.message.message)
+	assert.notEqual(envelope.message.message, hashMessage(original))
+	const command = await getSafeAppsRequestCommand({ method: 'signTypedMessage', params: { typedData: appTypedData } }, 'app.example', activeAddress, fakeRpcNetwork, async () => { throw new Error('Unexpected state lookup') })
+	if (command.kind !== 'ethereumRequest' || command.mapResult !== 'safeMessage') throw new Error('Missing typed signing command')
+	assert.equal(command.isTypedData, true)
+	assert.equal(command.message, original)
+	const pending = await prepareMessageReview(envelope)
+	if (pending.visualizedPersonalSignRequest.type !== 'EIP712') throw new Error('Missing EIP-712 review')
+	assert.equal(pending.visualizedPersonalSignRequest.safeMessageText, original)
+	assert.equal(pending.visualizedPersonalSignRequest.safeMessageIsTypedData, true)
+	const resolution = await modules.resolveSafeConfirmation(simulator.ethereum, pending, 'accept', { selectedSigner: safeTestOwnerAddress, verificationError: undefined })
+	if (resolution.status !== 'ready' || resolution.signerFacingRequest?.method !== 'eth_signTypedData_v4') throw new Error('Missing owner signature request')
+	assert.equal(resolution.signerFacingRequest.params[0], safeTestOwnerAddress)
+	assert.equal(hashTypedData(resolution.signerFacingRequest.params[1]), hashTypedData(envelope))
+	const signature = await safeTestOwnerAccount.signTypedData(envelope)
+	assert.equal((await modules.resolveSafeSignerReply(simulator.ethereum, simulator.tokenPriceService, pending, signature)).status, 'success')
+	assert.equal(SafeMessage.safeParse(EIP712Message.parse(JSON.stringify({ ...envelope, safeMessageIsTypedData: false }))).success, false)
+	const services = createSafeAppsMessageServices(simulator.ethereum, activeAddress, fakeRpcNetwork.chainId)
+	const messageHash = hashTypedData(envelope)
+	const originalFetch = globalThis.fetch
+	let stored = false
+	globalThis.fetch = async (_url, init) => {
+		if (init?.method === 'POST') {
+			assert.equal(typeof init.body, 'string')
+			assert.deepEqual(JSON.parse(String(init.body)), { message: appTypedData, signature })
+			stored = true
+			return new Response(undefined, { status: 202 })
+		}
+		return stored ? Response.json({ messageHash, message: appTypedData, confirmations: [{ signature }] }) : new Response(undefined, { status: 404 })
+	}
+	try {
+		assert.deepEqual(await services.submit(original, signature, true), { messageHash })
+		assert.equal(await services.getSignature(messageHash), signature)
+		await assert.rejects(services.submit(original, signature, false))
+	} finally { globalThis.fetch = originalFetch }
+	await assert.rejects(getSafeAppsRequestCommand({ method: 'signTypedMessage', params: { typedData: { ...appTypedData, message: { contents: 'Missing amount' } } } }, 'app.example', activeAddress, fakeRpcNetwork, async () => { throw new Error('Unexpected state lookup') }), /Invalid Safe typed message/)
 })

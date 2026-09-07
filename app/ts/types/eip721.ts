@@ -14,7 +14,7 @@ const EIP712MessageUnderlying = funtypes.ReadonlyObject({
 	primaryType: funtypes.String,
 	domain: JSONEncodeableObject,
 	message: JSONEncodeableObject,
-}).And(funtypes.ReadonlyPartial({ safeMessageText: funtypes.String }))
+}).And(funtypes.ReadonlyPartial({ safeMessageText: funtypes.String, safeMessageIsTypedData: funtypes.Boolean }))
 
 const EIP712MessageParser: funtypes.ParsedValue<funtypes.String, EIP712MessageUnderlying>['config'] = {
 	parse: value => {

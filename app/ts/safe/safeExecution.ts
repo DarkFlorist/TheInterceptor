@@ -50,6 +50,24 @@ function parseSafeExecutionArguments(args: readonly unknown[]) {
 	}
 }
 
+export function decodeSafeExecution(chainId: bigint, safeAddress: bigint, nonce: bigint, input: Uint8Array) {
+	const decoded = decodeFunctionDataStrict(SAFE_EXECUTION_ABI, bytesToHex(input))
+	const execution = parseSafeExecutionArguments(decoded.args)
+	const safeTx = createSafeTxFromMessage(chainId, safeAddress, {
+		to: BigInt(execution.to),
+		value: execution.value,
+		data: bytesFromHex(execution.data),
+		operation: execution.operation,
+		safeTxGas: execution.safeTxGas,
+		baseGas: execution.baseGas,
+		gasPrice: execution.gasPrice,
+		gasToken: BigInt(execution.gasToken),
+		refundReceiver: BigInt(execution.refundReceiver),
+		nonce,
+	})
+	return { execution, safeTx }
+}
+
 export async function completeSafeExecutionWithConfiguredSigner(
 	chainId: bigint,
 	safeAddress: bigint,
@@ -57,8 +75,7 @@ export async function completeSafeExecutionWithConfiguredSigner(
 	safeState: SafeContractState,
 	input: Uint8Array,
 ) {
-	const decoded = decodeFunctionDataStrict(SAFE_EXECUTION_ABI, bytesToHex(input))
-	const execution = parseSafeExecutionArguments(decoded.args)
+	const { execution, safeTx } = decodeSafeExecution(chainId, safeAddress, safeState.nonce, input)
 	const signatures = bytesFromHex(execution.signatures)
 	if (signatures.length % SAFE_SIGNATURE_BYTES !== 0) {
 		throw createSafeContractValidationFailure('The incomplete Gnosis Safe execution contains a malformed signature payload.')
@@ -71,18 +88,6 @@ export async function completeSafeExecutionWithConfiguredSigner(
 	if (!safeState.owners.includes(configuredSigner)) {
 		throw createSafeContractValidationFailure('The account selected in your wallet is no longer an owner of this Gnosis Safe.')
 	}
-	const safeTx = createSafeTxFromMessage(chainId, safeAddress, {
-			to: BigInt(execution.to),
-			value: execution.value,
-			data: bytesFromHex(execution.data),
-			operation: execution.operation,
-			safeTxGas: execution.safeTxGas,
-			baseGas: execution.baseGas,
-			gasPrice: execution.gasPrice,
-			gasToken: BigInt(execution.gasToken),
-			refundReceiver: BigInt(execution.refundReceiver),
-			nonce: safeState.nonce,
-	})
 	assertInterceptorSafeTransactionPolicy(safeTx)
 	const safeTxHash = BigInt(getSafeTxHash(safeTx))
 	const existingSignatures = await Promise.all(Array.from(

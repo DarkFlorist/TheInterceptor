@@ -294,6 +294,7 @@ async function refreshSafeProposalNonce(
 			to: currentRequest.safeTx.message.to,
 			value: currentRequest.safeTx.message.value,
 			input: currentRequest.safeTx.message.data,
+			operation: currentRequest.safeTx.message.operation,
 			gas: executionGasLimit,
 		},
 		firstUncommittedNonce,

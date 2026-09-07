@@ -37,7 +37,10 @@ export function getSafeModeRpcPolicyReply(options: {
 	readonly chainId: bigint
 	readonly hasRpcConnection: boolean
 }): RPCReply | undefined {
-	if (!options.safeSigningMode) return undefined
+	if (!options.safeSigningMode) {
+		if (options.parsedRequest?.method === 'eth_sendTransaction' && options.parsedRequest.params[0].safeOperation !== undefined) return safeModeUnsupportedMethod('eth_sendTransaction', 'Safe operations require an active Safe signing account.')
+		return undefined
+	}
 	if (options.parsedRequest === undefined) {
 		return options.forwardToSigner
 			? safeModeUnsupportedMethod(

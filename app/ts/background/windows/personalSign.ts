@@ -113,7 +113,7 @@ export async function craftPersonalSignPopupMessage(ethereumClientService: Ether
 			...basicParams,
 			rpcNetwork: chainid !== undefined && rpcNetwork.chainId !== chainid ? await getRpcNetworkForChain(chainid) : rpcNetwork,
 			type: 'EIP712' as const,
-			...(safeMessage.success ? { safeMessageText: safeMessage.value.safeMessageText } : {}),
+			...(safeMessage.success ? { safeMessageText: safeMessage.value.safeMessageText, safeMessageIsTypedData: safeMessage.value.safeMessageIsTypedData } : {}),
 			message,
 			account,
 			...getSigningQuarantineCodes(chainid, rpcNetwork.chainId, account.address, activeAddressWithMetadata.address, undefined),

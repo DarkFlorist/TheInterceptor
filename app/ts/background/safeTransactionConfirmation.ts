@@ -1,3 +1,7 @@
+import { getSafeMessageDigest } from '../safe/safeMessage.js'
+import { SAFE_SIGN_MESSAGE_LIB, SAFE_SIGN_MESSAGE_ABI } from '../safe/safeDelegateCalls.js'
+import { encodeFunctionCall } from '../utils/abiRuntime.js'
+import { dataStringWith0xStart } from '../utils/bigint.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { SafeEntry } from '../types/addressBookTypes.js'
@@ -259,11 +263,15 @@ async function createSafeSigningRequestForTransaction(
 	}))
 	let nonce = firstUncommittedNonce
 	while (pendingSafeTransactionNonces.has(nonce)) nonce += 1n
+	const original = transactionParams.params[0]
+	if (original.safeMessageText !== undefined && (original.safeOperation !== 1n || transactionToSimulate.transaction.to !== SAFE_SIGN_MESSAGE_LIB
+		|| dataStringWith0xStart(transactionToSimulate.transaction.input) !== encodeFunctionCall(SAFE_SIGN_MESSAGE_ABI, 'signMessage', [getSafeMessageDigest(original.safeMessageText, original.safeMessageIsTypedData)]))) throw createSafeContractValidationFailure('The Safe message review text does not match the on-chain approval.')
 	const transaction = {
 		to: transactionToSimulate.transaction.to,
 		value: transactionToSimulate.transaction.value,
 		input: transactionToSimulate.transaction.input,
 		gas: transactionToSimulate.transaction.gas,
+		operation: transactionParams.params[0].safeOperation ?? 0n,
 	}
 	return validateOwner && walletSignerAddress !== undefined
 		? await createSafeTransactionSigningRequest(ethereum, safeEntry.address, walletSignerAddress, transaction, nonce)

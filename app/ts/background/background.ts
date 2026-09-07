@@ -503,7 +503,8 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 			if (!safeAppsEligible) return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'safe_apps_request', uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: { code: -32602, message: 'Interceptor Safe Apps compatibility is not enabled for this connection.' } })
 			try {
 				const command = await getSafeAppsRequestCommand('params' in request ? request.params?.[0] : undefined, website.websiteOrigin, activeAddress.address, settings.activeRpcNetwork, async () => await getSafeContractState(ethereum, activeAddress.address), createSafeAppsMessageServices(ethereum, activeAddress.address, settings.activeRpcNetwork.chainId))
-				return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'safe_apps_request', result: command, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
+				const result = command.kind === 'settings' ? { kind: 'result' as const, value: { offChainSigning: command.offChainSigning } } : command
+				return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'safe_apps_request', result, uniqueRequestIdentifier: request.uniqueRequestIdentifier })
 			} catch (error: unknown) {
 				if (isSafeAppsRequestPolicyError(error)) return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'safe_apps_request', uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: { code: -32602, message: error.message } })
 				if (isSafeContractValidationFailure(error) || isSafeOwnerValidationFailure(error)) return replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'safe_apps_request', uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: { code: -32000, message: error.message } })

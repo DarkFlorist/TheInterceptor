@@ -25,7 +25,7 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 type SafeAppsRequestCandidate = { readonly id?: unknown, readonly method?: unknown, readonly env?: unknown, readonly params?: unknown }
 type SafeAppsEnvironmentCandidate = { readonly sdkVersion?: unknown }
 type SafeAppsCompatibilityCandidate = { readonly enabled?: unknown, readonly canRequestAccess?: unknown }
-type SafeAppsCommandCandidate = { readonly kind?: unknown, readonly value?: unknown, readonly method?: unknown, readonly params?: unknown, readonly mapResult?: unknown, readonly message?: unknown, readonly safeAddress?: unknown, readonly chainId?: unknown }
+type SafeAppsCommandCandidate = { readonly kind?: unknown, readonly value?: unknown, readonly method?: unknown, readonly params?: unknown, readonly mapResult?: unknown, readonly message?: unknown, readonly isTypedData?: unknown, readonly safeAddress?: unknown, readonly chainId?: unknown }
 
 const isSafeAppsRequestCandidate = (value: unknown): value is SafeAppsRequestCandidate => isRecord(value)
 const isSafeAppsEnvironmentCandidate = (value: unknown): value is SafeAppsEnvironmentCandidate => isRecord(value)
@@ -63,7 +63,7 @@ async function executeSafeAppsCommand(command: unknown, requestEthereum: Ethereu
 	if (command.mapResult === 'passthrough') return result
 	if (command.mapResult === 'safeMessage') {
 		if (typeof result !== 'string' || !/^0x[0-9a-f]{130}$/i.test(result)) throw new Error('Interceptor returned an invalid Safe owner signature.')
-		const submitted = await requestSafeApps({ method: 'submitOffChainMessage', params: { message: command.message, signature: result, safeAddress: command.safeAddress, chainId: command.chainId } })
+		const submitted = await requestSafeApps({ method: 'submitOffChainMessage', params: { message: command.message, signature: result, safeAddress: command.safeAddress, chainId: command.chainId, ...(command.isTypedData === true ? { isTypedData: true } : {}) } })
 		if (!isSafeAppsCommandCandidate(submitted) || submitted.kind !== 'result') throw new Error('Interceptor returned an invalid Safe message submission response.')
 		return submitted.value
 	}
@@ -73,6 +73,25 @@ async function executeSafeAppsCommand(command: unknown, requestEthereum: Ethereu
 
 // Retain read-only discovery while ineligible and reissue it after eligibility changes so stale account data is never published.
 const isSafeAppsDiscoveryRequest = (request: ParsedSafeAppsRequest) => 'request' in request && (request.request.method === 'getSafeInfo' || request.request.method === 'getChainInfo' || request.request.method === 'getEnvironmentInfo')
+
+function createSafeAppsRequestHandler(requestBackground: (request: unknown) => Promise<unknown>, requestEthereum: EthereumRequest) {
+	let offChainSigning = true
+	return async (request: Pick<SafeAppsRequest, 'method' | 'params'>) => {
+		const signingRequest = request.method === 'signMessage' || request.method === 'signTypedMessage'
+		const command = await requestBackground({ method: request.method, ...(request.params === undefined ? {} : { params: request.params }), ...(signingRequest ? { offChainSigning } : {}) })
+		const result = await executeSafeAppsCommand(command, requestEthereum, requestBackground)
+		if (request.method === 'rpcCall' && isRecord(request.params)) {
+			const { call } = request.params
+			if (call === 'safe_setSettings') {
+				if (!isRecord(result)) throw new Error('Interceptor returned invalid Safe Apps settings.')
+				const { offChainSigning: updated } = result
+				if (typeof updated !== 'boolean') throw new Error('Interceptor returned invalid Safe Apps settings.')
+				offChainSigning = updated
+			}
+		}
+		return result
+	}
+}
 
 function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (request: Pick<SafeAppsRequest, 'method' | 'params'>) => Promise<unknown>, requestAccess: () => Promise<void>) {
 	let enabled: boolean | undefined
@@ -685,10 +704,11 @@ class InterceptorMessageListener {
 	private connected = false
 	private requestId = 0
 	private metamaskCompatibilityMode = false
-	private readonly safeAppsBridge = createSafeAppsBridge(inpageWindow, async (request) => {
-		const command = await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [{ method: request.method, ...(request.params === undefined ? {} : { params: request.params }) }] })
-		return await executeSafeAppsCommand(command, async (ethereumRequest) => await this.WindowEthereumRequest(ethereumRequest), async (followup) => await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [followup] }))
-	}, async () => {
+	// The page owns SDK settings; every signing request carries its mode across background port recreation.
+	private readonly safeAppsBridge = createSafeAppsBridge(inpageWindow, createSafeAppsRequestHandler(
+		async (request) => await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [request] }),
+		async (request) => await this.WindowEthereumRequest(request),
+	), async () => {
 		// Restore persisted access after reload before considering an interactive wallet connection.
 		const accounts = await this.WindowEthereumRequest({ method: 'eth_accounts' })
 		if (!Array.isArray(accounts) || accounts.length === 0) await this.WindowEthereumRequest({ method: 'eth_requestAccounts' })

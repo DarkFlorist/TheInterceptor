@@ -17,7 +17,8 @@ import { encodeStorageReaderCall, STORAGE_READER_ABI } from '../../app/ts/simula
 import { closeTarget, connectTarget, createTargetPage, launchChromeSession, readExtensionLargeStateValue, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
 import type { CdpConnection } from './chromeHarness.js'
 
-const safeAppsMessage = process.argv.includes('--safe-apps-message')
+const safeAppsTypedMessage = process.argv.includes('--safe-apps-typed-message')
+const safeAppsMessage = process.argv.includes('--safe-apps-message') || safeAppsTypedMessage
 const safeAppsOnly = process.argv.includes('--safe-apps-only') || safeAppsMessage
 const ACCESS_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.is-primary:not(.is-danger)'
 const CONFIRM_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.dialog-action-button.is-primary:not(.is-danger)'
@@ -41,8 +42,10 @@ const SAFE_TX = createSafeTx(1n, SAFE_ADDRESS, {
 }, 7n)
 const SAFE_TX_HASH = BigInt(getSafeTxHash(SAFE_TX))
 const SAFE_TYPED_DATA = safeTxToTypedDataJson(SAFE_TX)
-const SAFE_MESSAGE_TEXT = 'Hello from the Safe Apps browser test'
-const SAFE_MESSAGE_DATA = createSafeMessageTypedData(1n, SAFE_ADDRESS, SAFE_MESSAGE_TEXT)
+const APP_TYPED_MESSAGE = { types: { EIP712Domain: [{ name: 'name', type: 'string' }], Mail: [{ name: 'contents', type: 'string' }] }, primaryType: 'Mail', domain: { name: 'Safe Apps browser test' }, message: { contents: 'Typed browser message' } }
+const SAFE_MESSAGE_TEXT = safeAppsTypedMessage ? JSON.stringify(APP_TYPED_MESSAGE, undefined, 2) : 'Hello from the Safe Apps browser test'
+const SERVICE_MESSAGE = safeAppsTypedMessage ? APP_TYPED_MESSAGE : SAFE_MESSAGE_TEXT
+const SAFE_MESSAGE_DATA = createSafeMessageTypedData(1n, SAFE_ADDRESS, SAFE_MESSAGE_TEXT, safeAppsTypedMessage)
 const SAFE_MESSAGE_HASH = hashTypedData(SAFE_MESSAGE_DATA)
 const SAFE_MESSAGE_SIGNATURE = await OWNER_ACCOUNT.signTypedData(SAFE_MESSAGE_DATA)
 const SAFE_MESSAGE_SIGNER_DATA = JSON.stringify({ types: SAFE_MESSAGE_DATA.types, primaryType: SAFE_MESSAGE_DATA.primaryType, domain: SAFE_MESSAGE_DATA.domain, message: SAFE_MESSAGE_DATA.message })
@@ -517,21 +520,38 @@ async function main() {
 						globalThis.__safeMessageSubmissions = []
 						globalThis.fetch = async (url, init) => {
 							if (!String(url).startsWith('https://safe-client.safe.global/')) return originalFetch(url, init)
+							if (String(url).includes('/transactions/')) return Response.json({
+								safeAddress: ${ JSON.stringify(addressString(SAFE_ADDRESS)) },
+								txId: ${ JSON.stringify(`multisig_${ addressString(SAFE_ADDRESS) }_${ bytes32String(SAFE_TX_HASH) }`) },
+								txStatus: 'AWAITING_CONFIRMATIONS', txInfo: { type: 'Custom' },
+								detailedExecutionInfo: { type: 'MULTISIG', safeTxHash: ${ JSON.stringify(bytes32String(SAFE_TX_HASH)) }, nonce: 7, confirmations: [], confirmationsRequired: 2 },
+							})
 							if (String(url).includes('/balances/')) return Response.json({ fiatTotal: '42', items: [] })
 							if (init?.method === 'POST') {
 								globalThis.__safeMessageSubmissions.push(JSON.parse(init.body))
 								return new Response(undefined, { status: 202 })
 							}
-							return globalThis.__safeMessageSubmissions.length === 0 ? new Response(undefined, { status: 404 }) : Response.json({ messageHash: ${ JSON.stringify(SAFE_MESSAGE_HASH) }, message: ${ JSON.stringify(SAFE_MESSAGE_TEXT) }, confirmations: [{ signature: ${ JSON.stringify(SAFE_MESSAGE_SIGNATURE) } }] })
+							return globalThis.__safeMessageSubmissions.length === 0 ? new Response(undefined, { status: 404 }) : Response.json({ messageHash: ${ JSON.stringify(SAFE_MESSAGE_HASH) }, message: ${ JSON.stringify(SERVICE_MESSAGE) }, confirmations: [{ signature: ${ JSON.stringify(SAFE_MESSAGE_SIGNATURE) } }] })
 						}
 					})()`)
+					for (const offChainSigning of [false, true]) {
+						const settingsReply = await pageConnection.evaluate<{ success: boolean, data?: { offChainSigning: boolean } }>(`new Promise((resolve, reject) => {
+							const id = crypto.randomUUID()
+							const listener = ({ data }) => { if (data?.id === id && typeof data.success === 'boolean') { clearTimeout(timer); window.removeEventListener('message', listener); resolve(data) } }
+							const timer = setTimeout(() => { window.removeEventListener('message', listener); reject(new Error('Safe SDK settings acknowledgement timed out after 10s')) }, 10000)
+							window.addEventListener('message', listener)
+							window.postMessage({ id, method: 'rpcCall', params: { call: 'safe_setSettings', params: [{ offChainSigning: ${ offChainSigning } }] }, env: { sdkVersion: '9.0.0' } }, location.origin)
+						})`)
+						if (!settingsReply.success || settingsReply.data?.offChainSigning !== offChainSigning) throw new Error('Safe SDK settings were not acknowledged')
+					}
 					await pageConnection.evaluate(`(() => {
 						globalThis.__safeAppsReplies = {}
 						window.addEventListener('message', ({ data }) => {
 							if (typeof data?.success === 'boolean') globalThis.__safeAppsReplies[data.id] = data
 						})
+						window.postMessage({ id: 'transaction', method: 'getTxBySafeTxHash', params: { safeTxHash: ${ JSON.stringify(bytes32String(SAFE_TX_HASH)) } }, env: { sdkVersion: '9.0.0' } }, location.origin)
 						window.postMessage({ id: 'balances', method: 'getSafeBalances', params: { currency: 'usd' }, env: { sdkVersion: '9.0.0' } }, location.origin)
-						window.postMessage({ id: 'message', method: 'signMessage', params: { message: ${ JSON.stringify(SAFE_MESSAGE_TEXT) } }, env: { sdkVersion: '9.0.0' } }, location.origin)
+						window.postMessage({ id: 'message', method: ${ JSON.stringify(safeAppsTypedMessage ? 'signTypedMessage' : 'signMessage') }, params: ${ JSON.stringify(safeAppsTypedMessage ? { typedData: APP_TYPED_MESSAGE } : { message: SAFE_MESSAGE_TEXT }) }, env: { sdkVersion: '9.0.0' } }, location.origin)
 					})()`)
 					const confirmation = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/confirmTransactionV3.html`, 30_000)
 					confirmTargetId = confirmation.id
@@ -548,12 +568,15 @@ async function main() {
 					const result = await pageConnection.evaluate<{ message: { success: boolean, data?: { messageHash: string } }, balances: { success: boolean, data?: { fiatTotal: string } } }>('globalThis.__safeAppsReplies')
 					if (!result.message.success || result.message.data?.messageHash !== SAFE_MESSAGE_HASH || !result.balances.success || result.balances.data?.fiatTotal !== '42') throw new Error(`Unexpected Safe Apps replies: ${ JSON.stringify(result) }`)
 					const submissions = await gatewayConnection.evaluate<readonly { message: string, signature: string }[]>('globalThis.__safeMessageSubmissions')
-					if (submissions.length !== 1 || submissions[0]?.message !== SAFE_MESSAGE_TEXT || submissions[0]?.signature !== SAFE_MESSAGE_SIGNATURE) throw new Error('The reviewed Safe signature was not submitted exactly once')
+					if (submissions.length !== 1 || JSON.stringify(submissions[0]?.message) !== JSON.stringify(SERVICE_MESSAGE) || submissions[0]?.signature !== SAFE_MESSAGE_SIGNATURE) throw new Error('The reviewed Safe signature was not submitted exactly once')
 					await pageConnection.evaluate(`window.postMessage({ id: 'pending-signature', method: 'getOffChainSignature', params: ${ JSON.stringify(SAFE_MESSAGE_HASH) }, env: { sdkVersion: '9.0.0' } }, location.origin)`)
 					await waitForCondition(async () => await pageConnection.evaluate('globalThis.__safeAppsReplies["pending-signature"] !== undefined'), 15_000, 'pending Safe signature polling reply')
 					const pending = await pageConnection.evaluate<{ success: boolean, data?: string }>('globalThis.__safeAppsReplies["pending-signature"]')
 					if (!pending.success || pending.data !== '') throw new Error(`A pending Safe signature must be a successful empty response: ${ JSON.stringify(pending) }`)
-					console.warn('Safe Apps balances and off-chain message signing passed through the real extension confirmation and signer bridge.')
+					await waitForCondition(async () => await pageConnection.evaluate('globalThis.__safeAppsReplies.transaction !== undefined'), 15_000, 'Safe transaction lookup reply')
+					const transaction = await pageConnection.evaluate<{ success: boolean, data?: { txStatus: string, detailedExecutionInfo: { safeTxHash: string } } }>('globalThis.__safeAppsReplies.transaction')
+					if (!transaction.success || transaction.data?.txStatus !== 'AWAITING_CONFIRMATIONS' || transaction.data.detailedExecutionInfo.safeTxHash !== bytes32String(SAFE_TX_HASH)) throw new Error(`Unexpected Safe transaction lookup: ${ JSON.stringify(transaction) }`)
+					console.warn('Safe Apps transaction lookup, balances and off-chain message signing passed through the real extension confirmation and signer bridge.')
 					return
 				} finally {
 					gatewayConnection.close()

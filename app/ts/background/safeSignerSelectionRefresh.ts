@@ -68,6 +68,7 @@ async function refreshSafeTransactionSignerSelection(
 				to: pending.safeTransaction.safeTx.message.to,
 				value: pending.safeTransaction.safeTx.message.value,
 				input: pending.safeTransaction.safeTx.message.data,
+				operation: pending.safeTransaction.safeTx.message.operation,
 				gas: executionGasLimit,
 			},
 			pending.safeTransaction.safeTx.message.nonce,

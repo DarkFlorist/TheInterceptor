@@ -4,7 +4,7 @@ import type { JsonValue } from '../types/safeApps.js'
 
 export const safeAppsServiceError = (message: string) => new JsonRpcResponseError({ jsonrpc: '2.0', id: 1, error: { code: -32000, message } })
 
-export async function requestSafeAppsGateway(path: string, service: 'balance' | 'message', body?: JsonValue, allowMissing = false): Promise<unknown> {
+export async function requestSafeAppsGateway(path: string, service: 'balance' | 'message' | 'transaction', body?: JsonValue, allowMissing = false): Promise<unknown> {
 	try {
 		const response = await fetchWithTimeout(`https://safe-client.safe.global/v1/${ path }`, {
 			credentials: 'omit', redirect: 'error',

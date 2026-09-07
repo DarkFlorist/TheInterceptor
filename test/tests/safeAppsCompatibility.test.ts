@@ -3,6 +3,9 @@ import { describe, test } from 'bun:test'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { getSafeAppsChainInfo, getSafeAppsRequestCommand, isSafeAppsRequestPolicyError } from '../../app/ts/background/safeAppsRequestPolicy.js'
 import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
+import { decodeSafeBatch, SAFE_MULTI_SEND_CALL_ONLY } from '../../app/ts/safe/safeDelegateCalls.js'
+import { addressString, stringToUint8Array } from '../../app/ts/utils/bigint.js'
+import { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 
 const activeAddress = 0x1111111111111111111111111111111111111111n
@@ -156,7 +159,16 @@ describe('Safe Apps compatibility policy', () => {
 			params: [{ from: '0x1111111111111111111111111111111111111111', to: transaction.to, value: '0xf', data: transaction.data, gas: '0x5208' }],
 			mapResult: 'safeTxHash',
 		})
-		await assert.rejects(async () => await getSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [transaction, transaction] } }, 'https://app.example', activeAddress, rpcNetwork, getSafeState), /Safe batches require atomic MultiSend support/)
+		const batch = await getSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [transaction, { ...transaction, value: '20' }] } }, 'https://app.example', activeAddress, rpcNetwork, getSafeState)
+		if (batch.kind !== 'ethereumRequest') throw new Error('Missing batch command')
+		const request = SendTransactionParams.parse({ method: batch.method, params: batch.params })
+		assert.equal(request.params[0].to, SAFE_MULTI_SEND_CALL_ONLY)
+		assert.equal(request.params[0].safeOperation, 1n)
+		assert.equal(request.params[0].value, 0n)
+		assert.deepEqual(decodeSafeBatch(request.params[0].data ?? new Uint8Array()), [
+			{ to: BigInt(transaction.to), value: 15n, data: stringToUint8Array(transaction.data) },
+			{ to: BigInt(transaction.to), value: 20n, data: stringToUint8Array(transaction.data) },
+		])
 		await assert.rejects(async () => await getSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [{ ...transaction, operation: 1 }] } }, 'https://app.example', activeAddress, rpcNetwork, getSafeState), /delegate calls are not supported/)
 	})
 
@@ -183,4 +195,23 @@ describe('Safe Apps compatibility policy', () => {
 		await assert.rejects(async () => await getSafeAppsRequestCommand({ method: 'getSafeInfo' }, 'https://app.example', activeAddress, { ...rpcNetwork, chainId: BigInt(Number.MAX_SAFE_INTEGER) + 1n }, getSafeState), /chain ID is too large/)
 		await assert.rejects(async () => await getSafeAppsRequestCommand({ method: 'getSafeInfo' }, 'https://app.example', activeAddress, rpcNetwork, async () => ({ ...safeState, nonce: BigInt(Number.MAX_SAFE_INTEGER) + 1n })), /nonce is too large/)
 	})
+})
+
+ test('Safe SDK settings select off-chain signing or one on-chain message proposal', async () => {
+	for (const offChainSigning of [true, false]) {
+		assert.deepEqual(await getSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'safe_setSettings', params: [{ offChainSigning }] } }, 'app.example', activeAddress, rpcNetwork, getSafeState), { kind: 'settings', offChainSigning })
+		const command = await getSafeAppsRequestCommand({ method: 'signMessage', params: { message: 'Hello' }, offChainSigning }, 'app.example', activeAddress, rpcNetwork, getSafeState)
+		if (command.kind !== 'ethereumRequest') throw new Error('Missing message command')
+		assert.equal(command.method, offChainSigning ? 'eth_signTypedData_v4' : 'eth_sendTransaction')
+		assert.equal(command.mapResult, offChainSigning ? 'safeMessage' : 'safeTxHash')
+		if (!offChainSigning) {
+			const request = SendTransactionParams.parse({ method: command.method, params: command.params })
+			assert.equal(request.params[0].safeOperation, 1n)
+			assert.equal(request.params[0].safeMessageText, 'Hello')
+			assert.equal(addressString(request.params[0].from), addressString(activeAddress))
+		}
+	}
+	for (const params of [[], [{}], [{ offChainSigning: 'false' }], [{ offChainSigning: false }, {}], [{ offChainSigning: false, unknown: true }]]) {
+		await assert.rejects(getSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'safe_setSettings', params } }, 'app.example', activeAddress, rpcNetwork, getSafeState), /settings object/)
+	}
 })

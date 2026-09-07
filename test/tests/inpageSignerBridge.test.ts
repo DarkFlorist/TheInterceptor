@@ -847,10 +847,16 @@ describe('inpage signer bridge', () => {
 			assert.deepEqual(zeroGasSendReply.data, { safeTxHash: '0xsafehash' })
 			const delegateCallReply = await safeRequest('sendTransactions', { txs: [{ ...transaction, operation: 1 }] })
 			assert.equal(delegateCallReply.success, false)
-			assert.equal(delegateCallReply.error, 'Interceptor Safe compatibility supports only CALL transactions; delegate calls are not supported.')
+			assert.equal(delegateCallReply.error, 'Safe Apps delegate calls are not supported inside a batch or as app-provided transactions.')
 			const batchReply = await safeRequest('sendTransactions', { txs: [transaction, transaction] })
-			assert.equal(batchReply.success, false)
-			assert.equal(batchReply.error, 'Interceptor Safe compatibility currently supports exactly one transaction per request; Safe batches require atomic MultiSend support.')
+			assert.equal(batchReply.success, true)
+			assert.deepEqual(batchReply.data, { safeTxHash: '0xsafehash' })
+			const batchRequest = ethereumRequests.pop()
+			assert.equal(batchRequest?.method, 'eth_sendTransaction')
+			const batchTransaction = batchRequest?.params?.[0]
+			if (!isRecord(batchTransaction)) throw new Error('Missing batch transaction')
+			assert.equal(batchTransaction.safeOperation, '0x1')
+			assert.equal(batchTransaction.to, '0x9641d764fc13c8b624c04430c7356c1c7c8102e2')
 			assert.deepEqual(ethereumRequests.map(({ method, params }) => ({ method, params })), [
 				{ method: 'eth_getLogs', params: [{ fromBlock: 'latest' }] },
 				{ method: 'eth_getBlockByNumber', params: ['latest', false] },
@@ -3972,7 +3978,9 @@ describe('inpage signer bridge', () => {
 })
 
 test('Safe Apps message signing submits only a successful owner signature and returns the SDK message hash', async () => {
-	for (const rejected of [false, true]) {
+	for (const rejected of [false, true]) for (const isTypedData of [false, true]) {
+		const method = isTypedData ? 'signTypedMessage' : 'signMessage'
+		const typedMetadata = isTypedData ? { isTypedData: true } : {}
 		const signature = `0x${ '12'.repeat(65) }`
 		const messageHash = `0x${ '34'.repeat(32) }`
 		const safeAddress = '0x1111111111111111111111111111111111111111'
@@ -3984,8 +3992,8 @@ test('Safe Apps message signing submits only a successful owner signature and re
 					sendSafeAppsCompatibility(reply, true)
 					return true
 				}
-				if (getSafeAppsMethod(request) === 'signMessage') {
-					replyToSafeAppsRequest(request, reply, { kind: 'ethereumRequest', method: 'eth_signTypedData_v4', params: [safeAddress, '{}'], mapResult: 'safeMessage', message: 'Hello Safe', safeAddress, chainId: '1' })
+				if (getSafeAppsMethod(request) === method) {
+					replyToSafeAppsRequest(request, reply, { kind: 'ethereumRequest', method: 'eth_signTypedData_v4', params: [safeAddress, '{}'], mapResult: 'safeMessage', message: 'Hello Safe', ...typedMetadata, safeAddress, chainId: '1' })
 					return true
 				}
 				if (request.method === 'eth_signTypedData_v4') {
@@ -3994,20 +4002,20 @@ test('Safe Apps message signing submits only a successful owner signature and re
 				}
 				if (getSafeAppsMethod(request) === 'submitOffChainMessage') {
 					submissions++
-					assert.deepEqual(request.params?.[0], { method: 'submitOffChainMessage', params: { message: 'Hello Safe', signature, safeAddress, chainId: '1' } })
+					assert.deepEqual(request.params?.[0], { method: 'submitOffChainMessage', params: { message: 'Hello Safe', signature, ...typedMetadata, safeAddress, chainId: '1' } })
 					replyToSafeAppsRequest(request, reply, { kind: 'result', value: { messageHash } })
 					return true
 				}
 				return false
 			},
 		})
-		await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?safe-message-${ rejected }`, async () => {
+		await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?safe-message-${ rejected }-${ isTypedData }`, async () => {
 			let response: unknown
 			fakeWindow.addEventListener('message', (event) => {
 				if (isRecord(event.data) && event.data.id === 'sign-message' && typeof event.data.success === 'boolean') response = event.data
 			})
 			await new Promise((resolve) => setTimeout(resolve, 0))
-			fakeWindow.postMessage({ id: 'sign-message', method: 'signMessage', params: { message: 'Hello Safe' }, env: { sdkVersion: '9.0.0' } }, fakeWindow.location.origin)
+			fakeWindow.postMessage({ id: 'sign-message', method, params: { message: 'Hello Safe' }, env: { sdkVersion: '9.0.0' } }, fakeWindow.location.origin)
 			await waitFor(() => response !== undefined)
 			if (!isRecord(response)) throw new Error('Missing Safe Apps response')
 			assert.equal(response.success, !rejected)
@@ -4016,4 +4024,59 @@ test('Safe Apps message signing submits only a successful owner signature and re
 			else assert.deepEqual(response.data, { messageHash })
 		})
 	}
+})
+
+test('Safe SDK settings belong to the page and survive background connection reinitialization for both signing methods', async () => {
+	const network: RpcNetwork = { name: 'Ethereum', chainId: 1n, httpsRpc: 'https://example.test', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const safe = 0x1111111111111111111111111111111111111111n
+	let handshakes = 0
+	let proposalCount = 0
+	const { fakeWindow, sendBackgroundMessage } = createFakeWindow({ handleRequest: (request, reply) => {
+		if (request.method === 'connected_to_signer') {
+			handshakes++
+			reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
+			sendSafeAppsCompatibility(reply, true)
+			return true
+		}
+		if (request.method === 'safe_apps_request') {
+			// Each invocation uses fresh background policy state, just as after an MV3 worker restart.
+			void getSafeAppsRequestCommand(request.params?.[0], 'example.test', safe, network, async () => { throw new Error('Unexpected Safe state lookup') }).then((command) => {
+				if (command.kind === 'ethereumRequest') {
+					assert.equal(command.method, 'eth_sendTransaction')
+					assert.equal(command.mapResult, 'safeTxHash')
+					assert.ok(isRecord(command.params[0]))
+					assert.equal(command.params[0].safeOperation, '0x1')
+					assert.equal(command.params[0].to, '0xd53cd0ab83d845ac265be939c57f53ad838012c9')
+				}
+				replyToSafeAppsRequest(request, reply, command.kind === 'settings' ? { kind: 'result', value: { offChainSigning: command.offChainSigning } } : command)
+			}, (error) => rejectSafeAppsRequest(request, reply, String(error)))
+			return true
+		}
+		if (request.method === 'eth_sendTransaction') {
+			proposalCount++
+			reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: '0x' + 'ab'.repeat(32) })
+			return true
+		}
+		return false
+	} })
+	await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?safe-settings-reconnect', async () => {
+		await waitFor(() => handshakes === 1)
+		const replies = new Map<string, unknown>()
+		fakeWindow.addEventListener('message', ({ data }) => {
+			if (isRecord(data) && typeof data.id === 'string' && typeof data.success === 'boolean') replies.set(data.id, data)
+		})
+		fakeWindow.postMessage({ id: 'settings', method: 'rpcCall', params: { call: 'safe_setSettings', params: [{ offChainSigning: false }] }, env: { sdkVersion: '9.0.0' } }, fakeWindow.location.origin)
+		await waitFor(() => replies.has('settings'))
+		assert.deepEqual(replies.get('settings'), { id: 'settings', success: true, data: { offChainSigning: false }, version: '9.1.0' })
+		sendSafeAppsCompatibility(sendBackgroundMessage, false)
+		sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'request_signer_connection_status', result: [] })
+		await waitFor(() => handshakes === 2)
+		for (const method of ['signMessage', 'signTypedMessage']) {
+			const params = method === 'signMessage' ? { message: 'On-chain only' } : { typedData: { domain: {}, types: { Note: [{ name: 'text', type: 'string' }] }, message: { text: 'On-chain typed' } } }
+			fakeWindow.postMessage({ id: method, method, params, env: { sdkVersion: '9.0.0' } }, fakeWindow.location.origin)
+			await waitFor(() => replies.has(method))
+			assert.deepEqual(replies.get(method), { id: method, success: true, data: { safeTxHash: '0x' + 'ab'.repeat(32) }, version: '9.1.0' })
+		}
+		assert.equal(proposalCount, 2)
+	})
 })

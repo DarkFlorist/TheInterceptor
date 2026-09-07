@@ -13,6 +13,7 @@ export const JsonValue: funtypes.Runtype<JsonValue> = funtypes.Lazy(() => funtyp
 
 export type SafeAppsRequestCommand = funtypes.Static<typeof SafeAppsRequestCommand>
 export const SafeAppsRequestCommand = funtypes.Union(
+	funtypes.ReadonlyObject({ kind: funtypes.Literal('settings'), offChainSigning: funtypes.Boolean }),
 	funtypes.ReadonlyObject({ kind: funtypes.Literal('result'), value: JsonValue }),
 	funtypes.ReadonlyObject({
 		kind: funtypes.Literal('ethereumRequest'),
@@ -20,6 +21,6 @@ export const SafeAppsRequestCommand = funtypes.Union(
 		params: funtypes.ReadonlyArray(JsonValue),
 	}).And(funtypes.Union(
 		funtypes.ReadonlyObject({ mapResult: funtypes.Union(funtypes.Literal('passthrough'), funtypes.Literal('safeTxHash')) }),
-		funtypes.ReadonlyObject({ mapResult: funtypes.Literal('safeMessage'), message: funtypes.String, safeAddress: funtypes.String, chainId: funtypes.String }),
+		funtypes.ReadonlyObject({ mapResult: funtypes.Literal('safeMessage'), message: funtypes.String, safeAddress: funtypes.String, chainId: funtypes.String }).And(funtypes.ReadonlyPartial({ isTypedData: funtypes.Boolean })),
 	)),
 )
