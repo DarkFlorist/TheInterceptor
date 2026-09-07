@@ -254,6 +254,7 @@ const createPendingSignedMessageSimulationResults = (): SimulationAndVisualisati
 
 function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 	return {
+		isActiveAddressChanging: new Signal(false),
 		changeActiveAddress: () => undefined,
 		makeCurrentAddressRich: new Signal(false),
 		activeAddresses: new Signal([activeAddressEntry]),
@@ -402,6 +403,34 @@ function getMessageWithMethod(messages: readonly unknown[], method: string) {
 }
 
 describe('Home popup clear empty state', () => {
+	for (const succeeds of [true, false]) {
+		test(`shows the address shimmer during a switch and restores the address after ${ succeeds ? 'success' : 'failure' }`, async () => {
+			const dom = installDomMock()
+			const params = createHomeParams()
+			const addressRow = () => collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('class')?.split(/\s+/).includes('active-address-row'))
+			try {
+				await act(() => { render(h(Home, params), dom.document.body) })
+				assert.equal(addressRow()?.getAttribute?.('aria-busy'), undefined)
+				await act(() => { params.isActiveAddressChanging.value = true })
+				assert.equal(addressRow()?.getAttribute?.('aria-label'), 'Switching active address')
+				assert.equal(String(addressRow()?.getAttribute?.('aria-busy')), 'true')
+				assert.equal(collectElements(addressRow(), 'button').every((button) => button.getAttribute?.('disabled') !== undefined), true)
+				await act(() => {
+					if (succeeds) {
+						params.activeAddresses.value = [{ ...activeAddressEntry, address: 2n, name: 'New wallet' }]
+						params.activeSimulationAddress.value = 2n
+					}
+					params.isActiveAddressChanging.value = false
+				})
+				assert.equal(addressRow()?.getAttribute?.('aria-busy'), undefined)
+				assert.equal(addressRow()?.textContent?.includes(succeeds ? 'New wallet' : activeAddressEntry.name ?? ''), true)
+			} finally {
+				render(undefined, dom.document.body)
+				dom.restore()
+			}
+		})
+	}
+
 	test('shows a skeleton until initial simulation status is known', async () => {
 		const dom = installDomMock()
 		const simulationUpdatingState = new Signal<'done' | 'updating' | 'failed' | undefined>(undefined)

@@ -32,6 +32,7 @@ export type AddAddressParam = {
 }
 
 export type HomeParams = {
+	isActiveAddressChanging: Signal<boolean>
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>
 	activeAddresses: Signal<AddressBookEntries>
@@ -73,6 +74,7 @@ export type ChangeActiveAddressParam = {
 }
 
 export type FirstCardParams = {
+	isActiveAddressChanging: Signal<boolean>
 	activeAddress: Signal<AddressBookEntry | undefined>
 	useSignersAddressAsActiveAddress: Signal<boolean>
 	activeAddresses: Signal<AddressBookEntries | undefined>

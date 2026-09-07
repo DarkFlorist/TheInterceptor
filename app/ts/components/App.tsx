@@ -71,20 +71,26 @@ export function App() {
 		},
 	})
 	const boundaryResetKey = useSignal(0)
+	const isActiveAddressChanging = useSignal(false)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer', persistedEntry?: AddressBookEntry) {
-		if (!isSettingsLoaded.value) return
+		if (!isSettingsLoaded.value || isActiveAddressChanging.value) return
 		const selectableAddresses = includePersistedAddressBookEntry(activeAddresses.value, persistedEntry)
 		if (!isActiveAddressSelectionAllowed(address, selectableAddresses, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])) return
-		await requestActiveAddressChange(address, simulationMode.value)
-		const optimisticSelection = getOptimisticActiveAddressSelection(address, simulationMode.value, tabState.value?.signerAccounts ?? [])
-		if (optimisticSelection.mode === 'simulation') {
-			activeSimulationAddress.value = optimisticSelection.activeSimulationAddress
-			useSignersAddressAsActiveAddress.value = optimisticSelection.useSignersAddressAsActiveAddress
-			return
+		isActiveAddressChanging.value = true
+		try {
+			await requestActiveAddressChange(address, simulationMode.value)
+			const optimisticSelection = getOptimisticActiveAddressSelection(address, simulationMode.value, tabState.value?.signerAccounts ?? [])
+			if (optimisticSelection.mode === 'simulation') {
+				activeSimulationAddress.value = optimisticSelection.activeSimulationAddress
+				useSignersAddressAsActiveAddress.value = optimisticSelection.useSignersAddressAsActiveAddress
+				return
+			}
+			displayedSigningAddress.value = optimisticSelection.displayedSigningAddress
+			activeSigningSafeAddress.value = address === 'signer' ? undefined : optimisticSelection.displayedSigningAddress
+		} finally {
+			isActiveAddressChanging.value = false
 		}
-		displayedSigningAddress.value = optimisticSelection.displayedSigningAddress
-		activeSigningSafeAddress.value = address === 'signer' ? undefined : optimisticSelection.displayedSigningAddress
 	}
 
 	function isSignerConnected() {
@@ -250,6 +256,7 @@ export function App() {
 					<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 					<ProviderErrors tabState = { tabState }/>
 					<Home
+						isActiveAddressChanging = { isActiveAddressChanging }
 						setActiveRpcAndInformAboutIt = { setActiveRpcAndInformAboutIt }
 						rpcNetwork = { rpcNetwork }
 						simVisResults = { simVisResults }

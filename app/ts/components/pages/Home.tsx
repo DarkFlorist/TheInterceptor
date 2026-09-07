@@ -471,7 +471,7 @@ function FirstCard(param: FirstCardParams) {
 		&& param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE
 		&& param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE_WITH_SHIELD
 	)
-	const isActiveAddressLoading = !param.isFreshHomeDataLoaded.value && param.activeAddress.value === undefined
+	const isActiveAddressLoading = param.isActiveAddressChanging.value || (!param.isFreshHomeDataLoaded.value && param.activeAddress.value === undefined)
 
 	const connectToSigner = () => {
 		if (!param.isInitialHomeDataLoaded.value) return
@@ -615,7 +615,7 @@ function FirstCard(param: FirstCardParams) {
 				}
 
 				{ isActiveAddressLoading
-					? <ActiveAddressLoadingSkeleton ariaLabel = 'Loading active address'/>
+					? <ActiveAddressLoadingSkeleton ariaLabel = { param.isActiveAddressChanging.value ? 'Switching active address' : 'Loading active address' }/>
 					: <div class = 'popup-data-reveal'>
 						<ActiveAddressComponent
 							activeAddress = { param.activeAddress }
@@ -941,6 +941,7 @@ export function Home(param: HomeParams) {
 		: <></> }
 
 		<FirstCard
+			isActiveAddressChanging = { param.isActiveAddressChanging }
 			preSimulationBlockTimeManipulation = { param.preSimulationBlockTimeManipulation }
 			activeAddresses = { param.activeAddresses }
 			walletSelectedAddressBookEntry = { param.walletSelectedAddressBookEntry }
