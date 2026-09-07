@@ -1,3 +1,4 @@
+import { Future } from '../utils/future.js'
 import type { SimulationServices } from '../simulation/serviceLifecycle.js'
 import { getAddressesbeingMadeRich, getCurrentSimulationInput } from './simulationUpdating.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
@@ -9,36 +10,48 @@ import { type PopupSimulationSnapshot, updatePopupVisualisationIfNeeded } from '
 export type PopupSimulationRefresh = SimulationServices & { readonly invalidateOldState?: boolean }
 export type RevisionedPopupSimulationRefresh = PopupSimulationRefresh & { readonly revision: string | symbol }
 
-// Identical revisions join active work unless a newer request is queued: in A → B → A, the last A must replace pending B.
+// Identical revisions share their own outcome; superseded queued work resolves false because it was not refreshed.
 export function createPopupSimulationRefresher<T extends RevisionedPopupSimulationRefresh>(refresh: (services: T) => Promise<boolean>) {
-	let pendingServices: T | undefined
-	let activeServices: T | undefined
-	let running: Promise<boolean> | undefined
+	type Entry = { services: T, readonly result: Future<boolean> }
+	let pending: Entry | undefined
+	let active: Entry | undefined
+	let draining = false
+	const sameRevision = (left: T, right: T) => left.revision === right.revision
+		&& left.ethereum === right.ethereum && left.tokenPriceService === right.tokenPriceService
+
+	const drain = async () => {
+		while (pending !== undefined) {
+			const entry = pending
+			pending = undefined
+			active = entry
+			// Settle only this entry, including thrown failures, then continue with independently queued work.
+			await Promise.resolve().then(() => refresh(entry.services)).then(
+				value => { active = undefined; entry.result.resolve(value) },
+				error => { active = undefined; entry.result.reject(error) },
+			)
+		}
+		draining = false
+	}
+
 	return (services: T): Promise<boolean> => {
-		if (pendingServices === undefined && running !== undefined && activeServices !== undefined
-			&& activeServices.revision === services.revision
-			&& activeServices.ethereum === services.ethereum
-			&& activeServices.tokenPriceService === services.tokenPriceService
-			&& (!services.invalidateOldState || activeServices.invalidateOldState)) return running
-		pendingServices = { ...services, invalidateOldState: services.invalidateOldState || pendingServices?.invalidateOldState }
-		if (running !== undefined) return running
-		running = Promise.resolve().then(async () => {
-			try {
-				let refreshed = true
-				while (pendingServices !== undefined) {
-					const currentServices = pendingServices
-					pendingServices = undefined
-					activeServices = currentServices
-					refreshed = await refresh(currentServices)
-				}
-				return refreshed
-			} finally {
-				pendingServices = undefined
-				activeServices = undefined
-				running = undefined
-			}
-		})
-		return running
+		if (pending !== undefined && sameRevision(pending.services, services)) {
+			pending.services = { ...services, invalidateOldState: services.invalidateOldState || pending.services.invalidateOldState }
+			return pending.result.asPromise
+		}
+		// In A → B → A, the last A must replace pending B rather than join the active A.
+		if (pending === undefined && active !== undefined && sameRevision(active.services, services)
+			&& (!services.invalidateOldState || active.services.invalidateOldState)) return active.result.asPromise
+		const entry: Entry = {
+			services: { ...services, invalidateOldState: services.invalidateOldState || pending?.services.invalidateOldState },
+			result: new Future<boolean>(),
+		}
+		pending?.result.resolve(false)
+		pending = entry
+		if (!draining) {
+			draining = true
+			void Promise.resolve().then(drain)
+		}
+		return entry.result.asPromise
 	}
 }
 
