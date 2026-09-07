@@ -22,7 +22,7 @@ import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSigner
 import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from './signingAddressSelection.js'
 import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { getActiveAddressEntryForChain } from './metadataUtils.js'
-import { publishWebsiteLifecycle } from './websiteLifecycle.js'
+import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import type { ApprovalState } from './websiteAccessPolicy.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
@@ -95,7 +95,7 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 				},
 			})
 			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
-			publishWebsiteLifecycle(websiteTabConnections, { type: 'signerAccountsChanged', socket: signerStateToken.socket })
+			notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.signerAccountsChanged, signerStateToken.socket)
 			return returnValue
 		}
 		const signerAccounts = signerAccountsReply.accounts
@@ -141,7 +141,7 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 				signerProviderGeneration: signerStateToken.signerProviderGeneration,
 			},
 		})
-		publishWebsiteLifecycle(websiteTabConnections, { type: 'signerAccountsChanged', socket: signerStateToken.socket })
+		notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.signerAccountsChanged, signerStateToken.socket)
 		return returnValue
 	})
 }
@@ -288,7 +288,7 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 		&& currentSigner.signerProviderGeneration === signerProviderGeneration
 		&& sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_to_eth_accounts', result: [] })
 	// Observers see the completed signer handshake without delaying it.
-	publishWebsiteLifecycle(websiteTabConnections, { type: 'signerConnected', socket, accountsRequested })
+	notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.signerConnected, socket, accountsRequested)
 	return result
 }
 

@@ -1,3 +1,4 @@
+import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import type { ResetSimulationServices } from '../../app/ts/simulation/serviceLifecycle.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
@@ -135,13 +136,19 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 }
 
 export async function loadModules() {
+	const safeApps = await import('../../app/ts/background/safeAppsCompatibilityCoordinator.js')
 	return {
 		...await import('../../app/ts/background/accessManagement.js'),
 		...await import('../../app/ts/background/activeSettings.js'),
 		...await import('../../app/ts/background/background.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
-		...await import('../../app/ts/background/safeAppsCompatibilityCoordinator.js'),
+		...safeApps,
+		initializeSafeAppsCompatibility: async (connections: WebsiteTabConnections) => {
+			const feature = safeApps.createSafeAppsCompatibilityFeature(connections)
+			Object.assign(connections, { lifecycle: feature.lifecycle })
+			return await safeApps.initializeSafeAppsCompatibility(feature)
+		},
 		...await import('../../app/ts/background/websiteLifecycle.js'),
 		...await import('../../app/ts/background/settings.js'),
 		...await import('../../app/ts/background/storageVariables.js'),

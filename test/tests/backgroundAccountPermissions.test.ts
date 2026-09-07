@@ -1,11 +1,13 @@
-import { publishWebsiteLifecycle } from '../../app/ts/background/websiteLifecycle.js'
+import { notifyWebsiteLifecycle } from '../../app/ts/background/websiteLifecycle.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import * as assert from 'assert'
 import { describe, spyOn, test } from 'bun:test'
 import { addressString, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
+const lifecycle = (connections: WebsiteTabConnections) => connections.lifecycle
+
 async function refreshSafeAppsPorts(connections: WebsiteTabConnections) {
-	publishWebsiteLifecycle(connections, { type: 'accessReconciled' })
+	notifyWebsiteLifecycle(lifecycle(connections)?.accessReconciled)
 	await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
@@ -21,19 +23,19 @@ describe('background eth_accounts', () => {
 		const dispose = await initializeSafeAppsCompatibility(connections)
 		const read = spyOn(browser.storage.local, 'get')
 		try {
-			publishWebsiteLifecycle(connections, { type: 'approvalChanged', socket, approved: true })
-			publishWebsiteLifecycle(connections, { type: 'signerConnected', socket, accountsRequested: true })
-			publishWebsiteLifecycle(connections, { type: 'signerAccountsChanged', socket })
-			publishWebsiteLifecycle(connections, { type: 'accessReconciled' })
-			publishWebsiteLifecycle(connections, { type: 'approvalChanged', socket, approved: false })
-			publishWebsiteLifecycle(connections, { type: 'connectionRemoved', socket })
+			notifyWebsiteLifecycle(lifecycle(connections)?.approvalChanged, socket, true)
+			notifyWebsiteLifecycle(lifecycle(connections)?.signerConnected, socket, true)
+			notifyWebsiteLifecycle(lifecycle(connections)?.signerAccountsChanged, socket)
+			notifyWebsiteLifecycle(lifecycle(connections)?.accessReconciled)
+			notifyWebsiteLifecycle(lifecycle(connections)?.approvalChanged, socket, false)
+			notifyWebsiteLifecycle(lifecycle(connections)?.connectionRemoved, socket)
 			await new Promise((resolve) => setTimeout(resolve, 0))
 			assert.equal(read.mock.calls.length, 0)
 			assert.deepEqual(messages, [])
 		} finally { read.mockRestore(); dispose() }
 	})
 
-	test('Safe Apps settings attach and detach the lifecycle subscription for existing ports', async () => {
+	test('Safe Apps settings activate and dispose the coordinator for existing ports', async () => {
 		installBrowserMock()
 		const { initializeSafeAppsCompatibility, setSafeAppsCompatibilityMode, websiteSocketToString } = await loadModules()
 		const socket = { tabId: 1, connectionName: 0n }
@@ -50,8 +52,8 @@ describe('background eth_accounts', () => {
 			assert.equal(messages.filter((message) => message.method === 'safe_apps_compatibility').length, 2)
 			const read = spyOn(browser.storage.local, 'get')
 			try {
-				publishWebsiteLifecycle(connections, { type: 'signerAccountsChanged', socket })
-				publishWebsiteLifecycle(connections, { type: 'accessReconciled' })
+				notifyWebsiteLifecycle(lifecycle(connections)?.signerAccountsChanged, socket)
+				notifyWebsiteLifecycle(lifecycle(connections)?.accessReconciled)
 				await new Promise((resolve) => setTimeout(resolve, 0))
 				assert.equal(read.mock.calls.length, 0)
 				assert.equal(messages.length, 2)
@@ -63,14 +65,40 @@ describe('background eth_accounts', () => {
 
 	test('optional lifecycle observers do not block or fail strict access reconciliation', async () => {
 		const { runtimeMessages } = installBrowserMock()
-		const { updateWebsiteApprovalAccesses, getSettings, subscribeWebsiteLifecycle } = await loadModules()
-		const connections = new Map()
-		const unsubscribe = subscribeWebsiteLifecycle(connections, () => { throw new Error('Observer failed') })
-		try {
-			assert.equal(typeof await updateWebsiteApprovalAccesses(undefined, undefined, undefined, connections, await getSettings(), false, true), 'number')
-			await new Promise((resolve) => setTimeout(resolve, 0))
-			assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_UnexpectedErrorOccured'), true)
-		} finally { unsubscribe() }
+		const { updateWebsiteApprovalAccesses, getSettings } = await loadModules()
+		const connections = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { throw new Error('Observer failed') } } })
+		assert.equal(typeof await updateWebsiteApprovalAccesses(undefined, undefined, undefined, connections, await getSettings(), false, true), 'number')
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_UnexpectedErrorOccured'), true)
+	})
+
+	test('async lifecycle callback rejection is reported without delaying access reconciliation', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { updateWebsiteApprovalAccesses, getSettings } = await loadModules()
+		const releaseCallback = createDeferredValue<undefined>()
+		const connections = Object.assign(new Map(), { lifecycle: { accessReconciled: async () => {
+			await releaseCallback.promise
+			throw new Error('Async observer failed')
+		} } })
+		assert.equal(typeof await updateWebsiteApprovalAccesses(undefined, undefined, undefined, connections, await getSettings(), false, true), 'number')
+		releaseCallback.resolve(undefined)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_UnexpectedErrorOccured'), true)
+	})
+
+	test('access reconciliation invokes only the explicitly supplied connection callbacks', async () => {
+		installBrowserMock()
+		const { updateWebsiteApprovalAccesses, getSettings } = await loadModules()
+		const calls: string[] = []
+		const first = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { calls.push('first') } } })
+		const second = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { calls.push('second') } } })
+		const settings = await getSettings()
+		await updateWebsiteApprovalAccesses(undefined, undefined, undefined, first, settings, false, true)
+		assert.deepEqual(calls, ['first'])
+		await updateWebsiteApprovalAccesses(undefined, undefined, undefined, new Map(), settings, false, true)
+		assert.deepEqual(calls, ['first'])
+		await updateWebsiteApprovalAccesses(undefined, undefined, undefined, second, settings, false, true)
+		assert.deepEqual(calls, ['first', 'second'])
 	})
 
 	test('refreshes the cached signing visualization when selecting another Safe on the same chain', async () => {
@@ -1097,7 +1125,7 @@ describe('background eth_accounts', () => {
 					method: 'connected_to_signer',
 					params: [true, 'MetaMask', 1],
 				}, websiteTabConnections, noopPublishRpcConnectionStatus)
-			} else publishWebsiteLifecycle(websiteTabConnections, { type: 'signerConnected', socket, accountsRequested: false })
+			} else notifyWebsiteLifecycle(lifecycle(websiteTabConnections)?.signerConnected, socket, false)
 			await waitForPortMessageCount(messages, 'request_signer_to_eth_accounts', 1)
 			assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_accounts').length, 1)
 			assert.equal(messages.some((message) => message.method === 'safe_apps_compatibility' && message.result?.enabled === true), false)

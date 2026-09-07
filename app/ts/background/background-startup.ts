@@ -1,4 +1,4 @@
-import { initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
+import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import 'webextension-polyfill'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
@@ -40,7 +40,9 @@ import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './sig
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
 
-const websiteTabConnections = new Map<number, TabConnection>()
+const connections = new Map<number, TabConnection>()
+const safeAppsCompatibility = createSafeAppsCompatibilityFeature(connections)
+const websiteTabConnections: WebsiteTabConnections = Object.assign(connections, { lifecycle: safeAppsCompatibility.lifecycle })
 let simulationServices: SimulationServices | undefined
 let resetActiveRpcNetwork: ResetSimulationServices | undefined
 const slowRpcRequests = new Map<string, SlowRpcRequest>()
@@ -272,7 +274,7 @@ async function startup() {
 	await tabStateInitializationPromise
 	await migrateAddressBook()
 	await migrateWebsiteAccess()
-	await initializeSafeAppsCompatibility(websiteTabConnections).catch(async (error: unknown) => { await reportUnexpectedError(error) })
+	await initializeSafeAppsCompatibility(safeAppsCompatibility).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	await initializePopupRefreshGeneration()
 	bumpPopupRefreshGeneration()
 	const settings = await getSettings()

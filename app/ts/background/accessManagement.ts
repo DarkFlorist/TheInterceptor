@@ -21,7 +21,7 @@ import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
-import { publishWebsiteLifecycle } from './websiteLifecycle.js'
+import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 
@@ -186,7 +186,7 @@ function connectToPort(
 ): true {
 	const wasApproved = getWebsiteSocketConnection(websiteTabConnections, socket)?.approved === true
 	setWebsitePortApproval(websiteTabConnections, socket, true)
-	if (!wasApproved) publishWebsiteLifecycle(websiteTabConnections, { type: 'approvalChanged', socket, approved: true })
+	if (!wasApproved) notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.approvalChanged, socket, true)
 	if (!shouldSendUnscopedConnectionEvents(socket)) return true
 	sendProviderConnectionEventsToPort(websiteTabConnections, socket, settings, connectWithActiveAddress === undefined ? [] : [connectWithActiveAddress])
 	return true
@@ -216,7 +216,7 @@ function disconnectFromPort(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 ): false {
-	publishWebsiteLifecycle(websiteTabConnections, { type: 'approvalChanged', socket, approved: false })
+	notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.approvalChanged, socket, false)
 	setWebsitePortApproval(websiteTabConnections, socket, false)
 	// Account access can be revoked without the provider losing chain connectivity. Notify account listeners before the legacy disconnect event so dapps clear stale account state.
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: [] })
@@ -417,7 +417,7 @@ export async function reconcileWebsiteApprovalAccesses(
 		await reportUnexpectedError(error)
 	}
 
-	publishWebsiteLifecycle(websiteTabConnections, { type: 'accessReconciled' })
+	notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.accessReconciled)
 	return { popupRefreshGeneration, iconRefreshTargets: [...iconRefreshTargets.values()] }
 }
 

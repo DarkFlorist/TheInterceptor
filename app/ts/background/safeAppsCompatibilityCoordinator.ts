@@ -1,6 +1,6 @@
 import { verifyAccess } from './accessManagement.js'
 import { getConfiguredSigningSafe } from './signingAddressSelection.js'
-import { subscribeWebsiteLifecycle } from './websiteLifecycle.js'
+import type { WebsiteLifecycleCallbacks } from '../types/websiteLifecycle.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { WebsiteSocket } from '../utils/requests.js'
@@ -137,34 +137,26 @@ function createSafeAppsCompatibilityCoordinator() {
 	}
 }
 
-// The composition root owns this opt-in subscription; disabled mode has no lifecycle listener or coordinator state.
+// The composition root injects these named callbacks; disabled mode retains no coordinator state.
 export function createSafeAppsCompatibilityFeature(connections: WebsiteTabConnections) {
 	let coordinator: ReturnType<typeof createSafeAppsCompatibilityCoordinator> | undefined
-	let unsubscribe: (() => void) | undefined
+	const lifecycle: WebsiteLifecycleCallbacks = {
+		approvalChanged: (socket, approved) => approved ? coordinator?.connectionApproved(connections, socket) : coordinator?.connectionDisconnected(connections, socket),
+		connectionRemoved: (socket) => coordinator?.connectionRemoved(socket),
+		signerConnected: (socket, accountsRequested) => coordinator?.signerConnectionChanged(connections, socket, accountsRequested),
+		signerAccountsChanged: (socket) => coordinator?.signerAccountsChanged(connections, socket),
+		accessReconciled: () => { void coordinator?.refreshPorts(connections).catch(async (error: unknown) => { await reportUnexpectedError(error) }) },
+	}
 	const setEnabled = (enabled: boolean) => {
 		if (enabled === (coordinator !== undefined)) return
-		unsubscribe?.()
-		unsubscribe = undefined
 		coordinator?.dispose(connections)
 		coordinator = enabled ? createSafeAppsCompatibilityCoordinator() : undefined
-		const current = coordinator
-		if (current === undefined) return
-		unsubscribe = subscribeWebsiteLifecycle(connections, (event) => {
-			switch (event.type) {
-				case 'approvalChanged': return event.approved ? current.connectionApproved(connections, event.socket) : current.connectionDisconnected(connections, event.socket)
-				case 'connectionRemoved': return current.connectionRemoved(event.socket)
-				case 'signerConnected': return current.signerConnectionChanged(connections, event.socket, event.accountsRequested)
-				case 'signerAccountsChanged': return current.signerAccountsChanged(connections, event.socket)
-				case 'accessReconciled': void current.refreshPorts(connections).catch(async (error: unknown) => { await reportUnexpectedError(error) }); return
-			}
-		})
-		void current.refreshPorts(connections, true).catch(async (error: unknown) => { await reportUnexpectedError(error) })
+		void coordinator?.refreshPorts(connections, true).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	}
-	return { setEnabled, dispose: () => setEnabled(false) }
+	return { lifecycle, setEnabled, dispose: () => setEnabled(false) }
 }
 
-export async function initializeSafeAppsCompatibility(connections: WebsiteTabConnections) {
-	const feature = createSafeAppsCompatibilityFeature(connections)
+export async function initializeSafeAppsCompatibility(feature: ReturnType<typeof createSafeAppsCompatibilityFeature>) {
 	let changedDuringInitialization = false
 	const onChanged = (changes: { readonly safeAppsCompatibilityMode?: browser.storage.StorageChange }, area: string) => {
 		if (area !== 'local' || !('safeAppsCompatibilityMode' in changes)) return
