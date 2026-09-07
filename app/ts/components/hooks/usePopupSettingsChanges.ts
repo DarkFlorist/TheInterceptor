@@ -1,7 +1,7 @@
 import { useEffect } from 'preact/hooks'
 import { useComputed, useSignal } from '@preact/signals'
 import { MessageToPopup, type PopupSettingsChangeStatus } from '../../types/interceptor-messages.js'
-import { acceptPopupSettingsChangeStatus, getPopupSettingsOperationLabel } from '../../types/popupSettingsProtocol.js'
+import { acceptPopupSettingsChangeStatus, type PopupSettingsOperation } from '../../types/popupSettingsProtocol.js'
 import type { PopupSettingsRequestWithSharedReply } from '../../types/popupSettingsRequests.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { RpcEntry } from '../../types/rpc.js'
@@ -10,6 +10,13 @@ import { includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } fro
 import { requestActiveAddressChange } from '../activeAddressChange.js'
 import { requestPopupSettingsChange } from '../popupSettingsChange.js'
 import type { useLiveSimulationHomeData } from './useLiveSimulationHomeData.js'
+
+const popupSettingsOperationLabels: Readonly<Record<PopupSettingsOperation, string>> = {
+	wallet: 'Changing wallet...',
+	mode: 'Changing mode...',
+	rpc: 'Changing network. Check your wallet if approval is required.',
+	rich: 'Updating balances...',
+}
 
 type SettingsChangeHomeData = Pick<ReturnType<typeof useLiveSimulationHomeData>, 'isSettingsLoaded' | 'activeAddresses' | 'simulationMode' | 'rpcNetwork' | 'tabState' | 'displayedSigningAddress'>
 
@@ -20,7 +27,7 @@ export function usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, sim
 	const pendingSettingsChange = useSignal(false)
 	const backgroundSettingsChange = useSignal<PopupSettingsChangeStatus['data']>({ revision: 0, operation: undefined })
 	const isActiveAddressChangePending = useComputed(() => pendingAddressChangeRequestId.value !== undefined)
-	const sharedStatusLabel = useComputed(() => !pendingSettingsChange.value && !isActiveAddressChangePending.value && backgroundSettingsChange.value.operation !== undefined ? getPopupSettingsOperationLabel(backgroundSettingsChange.value.operation) : undefined)
+	const sharedStatusLabel = useComputed(() => !pendingSettingsChange.value && !isActiveAddressChangePending.value && backgroundSettingsChange.value.operation !== undefined ? popupSettingsOperationLabels[backgroundSettingsChange.value.operation] : undefined)
 	const isSettingsChangePending = useComputed(() => isActiveAddressChangePending.value || pendingSettingsChange.value || backgroundSettingsChange.value.operation !== undefined)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer', persistedEntry?: AddressBookEntry) {
