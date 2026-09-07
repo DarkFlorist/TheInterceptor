@@ -178,7 +178,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 					checkAndThrowRuntimeLastError()
 				})
 				if (!shouldHandleRequest) return
-				const { resetActiveRpcNetwork, simulationServices } = await getConnectionInitializationPromise()
+				const { resetActiveRpcNetwork } = await getConnectionInitializationPromise()
 				await pendingRequestLimiter.execute(async () => {
 					const request = {
 						method: rawMessage.method,
@@ -188,6 +188,8 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 						uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
 						...(rawMessage.interceptorInternalRequest === true ? { interceptorInternalRequest: true as const } : {}),
 					}
+					// A connected port outlives RPC switches; select services only when its queued request starts.
+					const simulationServices = getSimulationServices()
 					return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServices.ethereum, simulationServices.tokenPriceService, resetActiveRpcNetwork, socket, request, websiteTabConnections, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 				})
 			})

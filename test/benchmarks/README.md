@@ -85,6 +85,8 @@ The JSON report includes each sample and per-scenario minimum, median (upper mid
 
 The popup is brought to the foreground for frame sampling. These are animation-frame observations, not GPU paint timestamps. The benchmark fails for wrong outcomes, missing visual feedback or successful-setting persistence events, unsupported fixture RPC calls, wallet switches completing before the configured wallet delay, or rejected switches changing persisted RPC state. It imposes no machine-dependent speed threshold.
 
+After a successful chain switch and return to simulation mode, the same connected page must report the new `eth_chainId` and `net_version`. This catches content ports retaining the service pair from startup.
+
 The transient RPC failure scenario expects the rich setting to be saved while the popup displays a failed simulation; an explicit refresh must recover once the fixture RPC is restored.
 
 The wallet-response deadline is covered by focused tests using a shortened timeout; the browser fixture holds and releases replies explicitly rather than waiting two minutes. Timing samples cover ten scenarios; popup lifecycle/conflict and RPC-recovery assertions run alongside them without speed thresholds.
