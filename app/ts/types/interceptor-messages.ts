@@ -1,3 +1,4 @@
+import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress } from './popupSettingsRequests.js'
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, PendingWatchAssetRequest, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
@@ -12,7 +13,7 @@ import { PendingAccessRequests, PopupPendingTransactionOrSignableMessage } from 
 import { RpcEntries, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
-import { ChangeActiveAddress, ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, EnrichedRichListElement, PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
+import { EnrichedRichListElement, PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
 import { SimulateExecutionReply as SharedSimulateExecutionReply, SimulateExecutionReplyData as SharedSimulateExecutionReplyData } from './simulateExecutionReply.js'
 import { SimulateGnosisSafeTransaction as SharedSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as SharedSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
@@ -285,9 +286,9 @@ export const InterceptorAccessChangeAddress = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
-export { ChangeActiveAddress } from './interceptor-reply-messages.js'
+export { ChangeActiveAddress } from './popupSettingsRequests.js'
 
-export { ModifyMakeMeRich } from './interceptor-reply-messages.js'
+export { ModifyMakeMeRich } from './popupSettingsRequests.js'
 
 export type AddressBookCategory = funtypes.Static<typeof AddressBookCategory>
 export const AddressBookCategory = funtypes.Union(
@@ -328,7 +329,7 @@ export const RequestAccountsFromSigner = funtypes.ReadonlyObject({
 	data: funtypes.Boolean
 }).asReadonly()
 
-export { EnableSimulationMode } from './interceptor-reply-messages.js'
+export { EnableSimulationMode } from './popupSettingsRequests.js'
 
 export type TransactionOrMessageIdentifier = funtypes.Static<typeof TransactionOrMessageIdentifier>
 export const TransactionOrMessageIdentifier = funtypes.Union(
@@ -712,7 +713,7 @@ const UpdateRPCList = funtypes.ReadonlyObject({
 	data: RpcEntries,
 })
 
-export { ChangeActiveChain } from './interceptor-reply-messages.js'
+export { ChangeActiveChain } from './popupSettingsRequests.js'
 
 export type ChainChangeConfirmation = funtypes.Static<typeof ChainChangeConfirmation>
 export const ChainChangeConfirmation = funtypes.ReadonlyObject({

@@ -1,5 +1,6 @@
 import { getMissingPopupReplyErrorMessage, sendPopupMessageWithReply } from '../background/backgroundUtils.js'
-import type { ChangeActiveAddress, ChangeActiveAddressReply } from '../types/interceptor-reply-messages.js'
+import type { ChangeActiveAddress } from '../types/popupSettingsRequests.js'
+import type { ChangeActiveAddressReply } from '../types/interceptor-reply-messages.js'
 
 export async function requestActiveAddressChange(
 	activeAddress: bigint | 'signer',

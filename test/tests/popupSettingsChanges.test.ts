@@ -178,6 +178,32 @@ describe('popup settings changes', () => {
 		assert.deepEqual((await getSettings()).activeRpcNetwork, editedRpc)
 	})
 
+	test('activation returns the installed services and preserves them when the endpoint is unchanged', async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getSettings } = await loadModules()
+		const { activateAddressSelection } = await import('../../app/ts/background/activeSettings.js')
+		await changeSimulationMode({ simulationMode: true })
+		const currentRpc = (await getSettings()).activeRpcNetwork
+		if (currentRpc.httpsRpc === undefined) throw new Error('Expected a configured RPC')
+		const nextRpc = { ...currentRpc, httpsRpc: 'https://replacement.example' }
+		const original = createEthereumWithGetBlockCounter({ count: 0 })
+		const installed = createEthereumWithGetBlockCounter({ count: 0 })
+		let resets = 0
+		const reset = (rpc: typeof nextRpc) => {
+			assert.deepEqual(rpc, nextRpc)
+			resets += 1
+			return installed
+		}
+		const options = { simulationMode: true, signerAddress: undefined, rpcNetwork: nextRpc }
+		const active = await activateAddressSelection(original.ethereum, original.tokenPriceService, reset, new Map(), undefined, options)
+		assert.equal(active.ethereum, installed.ethereum)
+		assert.equal(active.tokenPriceService, installed.tokenPriceService)
+		const unchanged = await activateAddressSelection(active.ethereum, active.tokenPriceService, reset, new Map(), undefined, options)
+		assert.equal(unchanged.ethereum, installed.ethereum)
+		assert.equal(unchanged.tokenPriceService, installed.tokenPriceService)
+		assert.equal(resets, 1)
+	})
+
 	test('publishes a saved mode before slow permission work finishes', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { changeSimulationMode, changeActiveAddressAndChain, updateWebsiteAccess } = await loadModules()

@@ -146,12 +146,13 @@ async function changeSignerChain(ethereum: EthereumClientService, tokenPriceServ
 	if ((settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && (settings.activeRpcNetwork.chainId !== signerChain || (requestedRpcNetwork !== undefined && settings.activeRpcNetwork.httpsRpc !== requestedRpcNetwork.httpsRpc))) {
 		const rpcNetwork = requestedRpcNetwork ?? await getRpcNetworkForChain(signerChain)
 		const signerAddress = getWalletSelectedAccount(tabStateChange.newState)
-		return changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			simulationMode: settings.simulationMode,
 			rpcNetwork,
 			activeAddress: signerAddress,
 			...(!settings.simulationMode ? { signingAddressSelection: 'signer' as const } : {}),
 		})
+		return
 	}
 	if (oldSignerChain !== signerChain) sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 }

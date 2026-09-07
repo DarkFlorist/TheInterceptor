@@ -1,5 +1,4 @@
-import { RpcEntry } from './rpc.js'
-
+import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress } from './popupSettingsRequests.js'
 import * as funtypes from 'funtypes'
 import { AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import { PopupOrTabId } from './websiteAccessTypes.js'
@@ -95,41 +94,11 @@ export const AddOrModifyAddressBookEntryReply = funtypes.Union(
 	}),
 )
 
-export type ModifyMakeMeRich = funtypes.Static<typeof ModifyMakeMeRich>
-export const ModifyMakeMeRich = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_modifyMakeMeRich'),
-	data: funtypes.ReadonlyObject({
-		add: funtypes.Boolean,
-		address: funtypes.Union(funtypes.Literal('CurrentAddress'), EthereumAddress),
-	})
-}).asReadonly()
-
-export type EnableSimulationMode = funtypes.Static<typeof EnableSimulationMode>
-export const EnableSimulationMode = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_enableSimulationMode'),
-	data: funtypes.Boolean
-}).asReadonly()
-
-export type ChangeActiveChain = funtypes.Static<typeof ChangeActiveChain>
-export const ChangeActiveChain = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_changeActiveRpc'),
-	data: RpcEntry,
-}).asReadonly()
-
 export type PopupSettingsChangeReply = funtypes.Static<typeof PopupSettingsChangeReply>
 export const PopupSettingsChangeReply = funtypes.Union(
 	funtypes.ReadonlyObject({ type: funtypes.Literal('PopupSettingsChangeReply'), ok: funtypes.Literal(true) }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('PopupSettingsChangeReply'), ok: funtypes.Literal(false), message: funtypes.String }),
 )
-
-export type ChangeActiveAddress = funtypes.Static<typeof ChangeActiveAddress>
-export const ChangeActiveAddress = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_changeActiveAddress'),
-	data: funtypes.ReadonlyObject({
-		simulationMode: funtypes.Boolean,
-		activeAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer')),
-	}).And(funtypes.ReadonlyPartial({ addressChangeRequestId: funtypes.String }))
-}).asReadonly()
 
 export type ChangeActiveAddressReply = funtypes.Static<typeof ChangeActiveAddressReply>
 export const ChangeActiveAddressReply = funtypes.Union(

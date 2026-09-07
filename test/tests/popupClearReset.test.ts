@@ -586,6 +586,7 @@ describe('popup clear reset', () => {
 		const resets: RpcNetwork[] = []
 		const resetSimulationServices = (nextRpcEntry: RpcNetwork) => {
 			resets.push(nextRpcEntry)
+			return { ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }
 		}
 		const interceptorTransactionStack = { operations: [{ type: 'TimeManipulation', blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] as const }
 		await browserStorageLocalSet({
@@ -614,6 +615,7 @@ describe('popup clear reset', () => {
 		const resets: RpcNetwork[] = []
 		const resetSimulationServices = (nextRpcEntry: RpcNetwork) => {
 			resets.push(nextRpcEntry)
+			return { ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }
 		}
 		await browserStorageLocalSet({
 			independentActiveSimulationAddress: activeAddress,

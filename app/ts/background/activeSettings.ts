@@ -1,6 +1,6 @@
 import { refreshPopupSimulation } from './popupSimulationRefresh.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
+import type { ResetSimulationServices, SimulationServices } from '../simulation/serviceLifecycle.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { RpcNetwork } from '../types/rpc.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -69,7 +69,7 @@ export async function changeActiveAddressAndChain(
 		promptForAccessesIfNeeded?: boolean,
 		addressChangeRequestId?: string,
 	},
-) {
+): Promise<SimulationServices> {
 	if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList()
 	const previousSettings = await getSettings()
 
@@ -94,7 +94,7 @@ export async function changeActiveAddressAndChain(
 	const rpcChainChanged = previousSettings.activeRpcNetwork.chainId !== updatedSettings.activeRpcNetwork.chainId
 	const rpcEndpointChanged = rpcChainChanged || previousSettings.activeRpcNetwork.httpsRpc !== updatedSettings.activeRpcNetwork.httpsRpc
 	const activeServices = rpcEndpointChanged && change.rpcNetwork?.httpsRpc !== undefined
-		? resetSimulationServices(change.rpcNetwork) ?? { ethereum, tokenPriceService }
+		? resetSimulationServices(change.rpcNetwork)
 		: { ethereum, tokenPriceService }
 	if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig()
 	// Publish only after the selected provider and stack are ready for requests using the new settings.
@@ -115,6 +115,7 @@ export async function changeActiveAddressAndChain(
 		}
 		await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 	})
+	return activeServices
 }
 
 export async function activateAddressSelection(
@@ -130,12 +131,12 @@ export async function activateAddressSelection(
 		readonly promptForAccessesIfNeeded?: boolean
 		readonly addressChangeRequestId?: string
 	},
-) {
+): Promise<SimulationServices> {
 	const useSignerAddress = selection?.type === 'signer' || (!options.simulationMode && selection === undefined)
 	if (options.simulationMode) {
 		await setUseSignersAddressAsActiveAddress(useSignerAddress, useSignerAddress ? selection?.type === 'signer' ? selection.address : options.signerAddress : undefined)
 	}
-	await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+	const activeServices = await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 		simulationMode: options.simulationMode,
 		addressChangeRequestId: options.addressChangeRequestId,
 		activeAddress: selection?.type === 'signer' ? selection.address : selection?.entry.address,
@@ -143,10 +144,10 @@ export async function activateAddressSelection(
 		...(options.rpcNetwork === undefined ? {} : { rpcNetwork: options.rpcNetwork }),
 		...(options.promptForAccessesIfNeeded === undefined ? {} : { promptForAccessesIfNeeded: options.promptForAccessesIfNeeded }),
 	})
-	if (options.simulationMode || options.signerAddress === undefined || selection === undefined) return
+	if (options.simulationMode || options.signerAddress === undefined || selection === undefined) return activeServices
 	if (selection.type === 'signer') {
 		await rememberSigningAddressSelection({ signerAddress: options.signerAddress, selection: 'signer' })
-		return
+		return activeServices
 	}
 	if (selection.entry.type !== 'safe') throw new Error('Signing mode can only activate the external signer or an owned Gnosis Safe.')
 	await rememberSigningAddressSelection({
@@ -155,6 +156,7 @@ export async function activateAddressSelection(
 		safeAddress: selection.entry.address,
 		chainId: selection.entry.chainId,
 	})
+	return activeServices
 }
 
 export async function changeActiveRpc(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean, signerTabId: number | undefined) {

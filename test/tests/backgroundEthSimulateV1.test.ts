@@ -132,11 +132,12 @@ function createEthereum(rpcEntry: RpcEntry, ethSimulateV1Result?: unknown) {
 			},
 		},
 	)
+	const tokenPriceService = new TokenPriceService(ethereum, 60_000)
 	return {
 		ethereum,
 		requestHandler,
-		tokenPriceService: new TokenPriceService(ethereum, 60_000),
-		resetSimulationServices: (() => undefined) satisfies ResetSimulationServices,
+		tokenPriceService,
+		resetSimulationServices: (() => ({ ethereum, tokenPriceService })) satisfies ResetSimulationServices,
 	}
 }
 
