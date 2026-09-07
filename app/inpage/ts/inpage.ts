@@ -71,7 +71,7 @@ async function executeSafeAppsCommand(command: unknown, requestEthereum: Ethereu
 	return { safeTxHash: result }
 }
 
-// SDK discovery is read-only and has no retry: retain it until this page becomes eligible.
+// Retain read-only discovery while ineligible and reissue it after eligibility changes so stale account data is never published.
 const isSafeAppsDiscoveryRequest = (request: ParsedSafeAppsRequest) => 'request' in request && (request.request.method === 'getSafeInfo' || request.request.method === 'getChainInfo' || request.request.method === 'getEnvironmentInfo')
 
 function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (request: Pick<SafeAppsRequest, 'method' | 'params'>) => Promise<unknown>, requestAccess: () => Promise<void>) {
@@ -88,13 +88,25 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 		}
 		const request = parsedRequest.request
 		const requestEnablementGeneration = enablementGeneration
+		const isCurrentResponse = () => {
+			if (enabled && requestEnablementGeneration === enablementGeneration) return true
+			// Startup queries must survive a temporary loss of eligibility, but their old account data must never be published.
+			if (isSafeAppsDiscoveryRequest(parsedRequest)) {
+				if (enabled) answerRequest(parsedRequest, origin)
+				else if (pendingRequests.length < SAFE_APPS_PENDING_REQUEST_LIMIT) {
+					pendingRequests.push({ parsedRequest, origin })
+					requestAccessForDiscovery()
+				}
+			}
+			return false
+		}
 		void requestSafeApps(request).then(
 			(data) => {
-				if (!enabled || requestEnablementGeneration !== enablementGeneration) return
+				if (!isCurrentResponse()) return
 				windowObject.postMessage({ id: request.id, success: true, data, version: SAFE_APPS_RESPONSE_VERSION }, origin)
 			},
 			(error: unknown) => {
-				if (!enabled || requestEnablementGeneration !== enablementGeneration) return
+				if (!isCurrentResponse()) return
 				windowObject.postMessage({ id: request.id, success: false, error: error instanceof Error ? error.message : 'Safe Apps request failed.', version: SAFE_APPS_RESPONSE_VERSION }, origin)
 			},
 		)
@@ -677,7 +689,9 @@ class InterceptorMessageListener {
 		const command = await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [{ method: request.method, ...(request.params === undefined ? {} : { params: request.params }) }] })
 		return await executeSafeAppsCommand(command, async (ethereumRequest) => await this.WindowEthereumRequest(ethereumRequest), async (followup) => await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [followup] }))
 	}, async () => {
-		await this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
+		// Restore persisted access after reload before considering an interactive wallet connection.
+		const accounts = await this.WindowEthereumRequest({ method: 'eth_accounts' })
+		if (!Array.isArray(accounts) || accounts.length === 0) await this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
 		// Recheck Safe eligibility after the ordinary wallet/site approval flow completes.
 		await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [{ method: 'getEnvironmentInfo' }] })
 	})

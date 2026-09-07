@@ -134,6 +134,18 @@
 								await new Promise((resolve) => requestAnimationFrame(() => resolve()))
 							}
 							if (globalThis.__earlySafeAppsInfoResult?.status !== 'fulfilled') throw new Error(globalThis.__earlySafeAppsInfoResult?.error ?? 'Safe Apps discovery failed')
+							const chainInfo = await new Promise((resolve, reject) => {
+								const id = crypto.randomUUID()
+								const listener = ({ data }) => {
+									if (data?.id !== id || typeof data.success !== 'boolean') return
+									globalThis.removeEventListener('message', listener)
+									if (data.success) resolve(data.data)
+									else reject(new Error(data.error))
+								}
+								globalThis.addEventListener('message', listener)
+								globalThis.postMessage({ id, method: 'getChainInfo', env: { sdkVersion: '9.1.0' } }, location.origin)
+							})
+							if (chainInfo.chainId !== '1') throw new Error('Unexpected Safe chain')
 							updateState('safe-only-granted', { accounts: [globalThis.__earlySafeAppsInfoResult.data.safeAddress] })
 							return
 						}

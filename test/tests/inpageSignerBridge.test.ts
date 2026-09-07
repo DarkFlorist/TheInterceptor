@@ -471,6 +471,50 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
+	for (const settleWhileDisabled of [false, true]) {
+		test(`retries in-flight startup discovery after eligibility changes, settling ${ settleWhileDisabled ? 'before' : 'after' } re-enablement`, async () => {
+			let publishCompatibility: ((enabled: boolean) => void) | undefined
+			let settleOldRequest: (() => void) | undefined
+			let forwarded = 0
+			const { fakeWindow } = createFakeWindow({ handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method === 'connected_to_signer') {
+					publishCompatibility = (enabled) => sendSafeAppsCompatibility(sendBackgroundMessage, enabled)
+					sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
+					publishCompatibility(true)
+					return true
+				}
+				if (request.method !== 'safe_apps_request') return false
+				forwarded += 1
+				if (forwarded === 1) settleOldRequest = () => replyToSafeAppsRequest(request, sendBackgroundMessage, { kind: 'result', value: { safeAddress: 'old-safe' } })
+				else replyToSafeAppsRequest(request, sendBackgroundMessage, { kind: 'result', value: { safeAddress: 'current-safe' } })
+				return true
+			} })
+			await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?safe-apps-inflight-discovery-${ settleWhileDisabled }`, async () => {
+				const replies: Record<string, unknown>[] = []
+				fakeWindow.addEventListener('message', (event) => {
+					if (isRecord(event.data) && typeof event.data.success === 'boolean') replies.push(event.data)
+				})
+				await waitFor(() => publishCompatibility !== undefined)
+				fakeWindow.postMessage({ id: 'refresh-discovery', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+				await waitFor(() => settleOldRequest !== undefined)
+				publishCompatibility?.(false)
+				await new Promise((resolve) => setTimeout(resolve, 0))
+				if (!settleWhileDisabled) publishCompatibility?.(true)
+				settleOldRequest?.()
+				await new Promise((resolve) => setTimeout(resolve, 0))
+				if (settleWhileDisabled) {
+					assert.deepEqual(replies, [])
+					assert.equal(forwarded, 1)
+					publishCompatibility?.(true)
+				}
+				await waitFor(() => replies.length === 1)
+				assert.equal(replies[0]?.id, 'refresh-discovery')
+				assert.deepEqual(replies[0]?.data, { safeAddress: 'current-safe' })
+				assert.equal(forwarded, 2)
+			})
+		})
+	}
+
 	for (const rejected of [false, true]) {
 		test(`requests ordinary account access once for Safe discovery and ${ rejected ? 'returns rejection' : 'resumes discovery' }`, async () => {
 			let accessRequests = 0
@@ -478,6 +522,10 @@ describe('inpage signer bridge', () => {
 				if (request.method === 'connected_to_signer') {
 					sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
 					sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'safe_apps_compatibility', result: { enabled: false, canRequestAccess: true } })
+					return true
+				}
+				if (request.method === 'eth_accounts') {
+					sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: [] })
 					return true
 				}
 				if (request.method === 'eth_requestAccounts') {

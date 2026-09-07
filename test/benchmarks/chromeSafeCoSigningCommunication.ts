@@ -354,7 +354,7 @@ const testRpcNetwork = {
 
 const fakeSignerPreload = `(() => {
 	const requests = []
-	let authorized = ${ !safeAppsOnly }
+	let authorized = ${ !safeAppsOnly } || sessionStorage.getItem('fake-signer-authorized') === 'true'
 	const signer = {
 		isMetaMask: true,
 		selectedAddress: ${ JSON.stringify(addressString(OWNER_ADDRESS)) },
@@ -364,7 +364,7 @@ const fakeSignerPreload = `(() => {
 			switch (method) {
 				case 'eth_chainId': return '0x1'
 				case 'eth_accounts': return authorized ? [${ JSON.stringify(addressString(OWNER_ADDRESS)) }] : []
-				case 'eth_requestAccounts': authorized = true; return [${ JSON.stringify(addressString(OWNER_ADDRESS)) }]
+				case 'eth_requestAccounts': authorized = true; sessionStorage.setItem('fake-signer-authorized', 'true'); return [${ JSON.stringify(addressString(OWNER_ADDRESS)) }]
 				case 'eth_signTypedData_v4':
 					if (params?.[0]?.toLowerCase() !== ${ JSON.stringify(addressString(OWNER_ADDRESS).toLowerCase()) }) throw new Error('Unexpected Safe signer account')
 					if (JSON.stringify(params?.[1]) !== ${ JSON.stringify(JSON.stringify(safeAppsMessage ? SAFE_MESSAGE_SIGNER_DATA : SAFE_TYPED_DATA)) }) throw new Error('Unexpected Safe typed-data payload')
@@ -493,7 +493,19 @@ async function main() {
 			if (safeAppsOnly && !safeAppsMessage) {
 				const accountRequests = await pageConnection.evaluate<number>(`globalThis.__fakeSafeSignerRequests.filter(request => request.method === 'eth_requestAccounts').length`)
 				if (accountRequests !== 1) throw new Error(`Expected one MetaMask connection prompt, received ${ accountRequests }`)
-				console.warn('Safe Apps discovery connected an initially unauthorized signer and completed site approval.')
+				for (let reload = 0; reload < 3; reload += 1) {
+					await pageConnection.evaluate('globalThis.__interceptorChromeCommunicationState = undefined')
+					await pageConnection.send('Page.reload')
+					try {
+						await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'safe-only-granted'`).catch(() => false), 30_000, 'Safe discovery after reload')
+					} catch (error) {
+						const diagnostics = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, requests: globalThis.__fakeSafeSignerRequests })')
+						throw new Error(`Safe discovery stalled after reload: ${ JSON.stringify(diagnostics) }`, { cause: error })
+					}
+					const prompts = await pageConnection.evaluate<number>(`globalThis.__fakeSafeSignerRequests.filter(request => request.method === 'eth_requestAccounts').length`)
+					if (prompts !== 0) throw new Error(`Reload requested signer access ${ prompts } times`)
+				}
+				console.warn('Safe Apps discovery connected an initially unauthorized signer and survived three reloads without prompting.')
 				return
 			}
 			if (safeAppsMessage) {
