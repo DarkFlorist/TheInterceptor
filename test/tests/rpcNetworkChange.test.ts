@@ -1,6 +1,7 @@
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
-import { getRpcNetworkChange, type RpcNetwork } from '../../app/ts/types/rpc.js'
+import { getRpcNetworkChange } from '../../app/ts/utils/rpcNetworkChange.js'
+import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 
 const network: RpcNetwork = { chainId: 1n, httpsRpc: 'https://rpc.example', name: 'Network', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 

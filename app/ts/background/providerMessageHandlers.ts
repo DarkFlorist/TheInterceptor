@@ -1,4 +1,5 @@
-import { getRpcNetworkChange, type RpcNetwork } from '../types/rpc.js'
+import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
+import type { RpcNetwork } from '../types/rpc.js'
 import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply, WatchAssetSignerRequest } from '../types/interceptor-messages.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'

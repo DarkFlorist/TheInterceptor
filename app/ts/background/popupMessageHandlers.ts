@@ -1,4 +1,4 @@
-import { getRpcNetworkChange } from '../types/rpc.js'
+import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import { refreshPopupSimulation } from './popupSimulationRefresh.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain, changeActiveRpc } from './activeSettings.js'
