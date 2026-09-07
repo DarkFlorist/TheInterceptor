@@ -8,6 +8,7 @@ import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { getSafeAppsCompatibilityMode, getSettings } from './settings.js'
 import { getConfirmedSignerStateToken } from './signerStateOwnership.js'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
+import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 
 export function isSafeAppsTopFramePort(port: browser.runtime.Port) {
@@ -35,8 +36,8 @@ function createSafeAppsCompatibilityCoordinator() {
 		return { socketIdentifier, token }
 	}
 	const isCurrentPublication = (socketIdentifier: string, token: object) => publicationTokens.get(socketIdentifier) === token
-	const send = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, enabled: boolean) => {
-		sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'safe_apps_compatibility', result: { enabled } })
+	const send = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, enabled: boolean, canRequestAccess = false) => {
+		sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'safe_apps_compatibility', result: { enabled, canRequestAccess } })
 	}
 	const requestSignerAccountDiscovery = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) => {
 		if (signerAccountDiscoveryTabs.has(socket.tabId)) return true
@@ -67,7 +68,15 @@ function createSafeAppsCompatibilityCoordinator() {
 		const [latestEnabled, latestSettings] = await Promise.all([getSafeAppsCompatibilityMode(), getSettings()])
 		const latestEligible = latestEnabled && await isSafeAppsConnectionEligible(websiteTabConnections, socket, latestSettings)
 		if (!isCurrentPublication(socketIdentifier, token)) return
-		send(websiteTabConnections, socket, eligible && latestEligible)
+		const latestConnection = getWebsiteSocketConnection(websiteTabConnections, socket)
+		const entries = latestEnabled && !latestSettings.simulationMode ? await getUserAddressBookEntriesForChainIdMorePreciseFirst(latestSettings.activeRpcNetwork.chainId) : []
+		const configuredSafe = entries.find((entry) => entry.type === 'safe' && entry.address === latestSettings.activeSigningSafeAddress)
+		const siteAccess = latestConnection === undefined ? 'noAccess' : hasAccess(latestSettings.websiteAccess, latestConnection.websiteOrigin)
+		const safeAccess = configuredSafe === undefined || latestConnection === undefined ? 'noAccess' : hasAddressAccess(latestSettings.websiteAccess, latestConnection.websiteOrigin, configuredSafe)
+		const canRequestAccess = latestEnabled && !latestSettings.simulationMode && configuredSafe !== undefined && latestConnection !== undefined && isSafeAppsTopFramePort(latestConnection.port)
+			&& siteAccess !== 'noAccess' && siteAccess !== 'interceptorDisabled' && safeAccess !== 'noAccess' && safeAccess !== 'interceptorDisabled'
+		if (!isCurrentPublication(socketIdentifier, token)) return
+		send(websiteTabConnections, socket, eligible && latestEligible, canRequestAccess)
 	}
 	const refreshApprovedTabPorts = async (websiteTabConnections: WebsiteTabConnections, tabId: number, signerAccountsKnown: boolean) => {
 		const connections = Object.values(websiteTabConnections.get(tabId)?.connections ?? {})

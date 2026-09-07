@@ -24,7 +24,7 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 
 type SafeAppsRequestCandidate = { readonly id?: unknown, readonly method?: unknown, readonly env?: unknown, readonly params?: unknown }
 type SafeAppsEnvironmentCandidate = { readonly sdkVersion?: unknown }
-type SafeAppsCompatibilityCandidate = { readonly enabled?: unknown }
+type SafeAppsCompatibilityCandidate = { readonly enabled?: unknown, readonly canRequestAccess?: unknown }
 type SafeAppsCommandCandidate = { readonly kind?: unknown, readonly value?: unknown, readonly method?: unknown, readonly params?: unknown, readonly mapResult?: unknown }
 
 const isSafeAppsRequestCandidate = (value: unknown): value is SafeAppsRequestCandidate => isRecord(value)
@@ -50,7 +50,8 @@ function parseSafeAppsRequest(data: unknown): ParsedSafeAppsRequest | undefined 
 
 function parseSafeAppsCompatibility(value: unknown) {
 	if (!isSafeAppsCompatibilityCandidate(value) || typeof value.enabled !== 'boolean') return undefined
-	return { enabled: value.enabled }
+	if (value.canRequestAccess !== undefined && typeof value.canRequestAccess !== 'boolean') return undefined
+	return { enabled: value.enabled, canRequestAccess: value.canRequestAccess === true }
 }
 
 async function executeSafeAppsCommand(command: unknown, requestEthereum: EthereumRequest): Promise<unknown> {
@@ -66,9 +67,12 @@ async function executeSafeAppsCommand(command: unknown, requestEthereum: Ethereu
 // SDK discovery is read-only and has no retry: retain it until this page becomes eligible.
 const isSafeAppsDiscoveryRequest = (request: ParsedSafeAppsRequest) => 'request' in request && (request.request.method === 'getSafeInfo' || request.request.method === 'getChainInfo' || request.request.method === 'getEnvironmentInfo')
 
-function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (request: SafeAppsRequest) => Promise<unknown>) {
+function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (request: SafeAppsRequest) => Promise<unknown>, requestAccess: () => Promise<void>) {
 	let enabled: boolean | undefined
 	let enablementGeneration = 0
+	let canRequestAccess = false
+	let accessRequested = false
+	let accessFailure: string | undefined
 	const pendingRequests: { readonly parsedRequest: ParsedSafeAppsRequest, readonly origin: string }[] = []
 	const answerRequest = (parsedRequest: ParsedSafeAppsRequest, origin: string) => {
 		if ('error' in parsedRequest) {
@@ -88,6 +92,25 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 			},
 		)
 	}
+	const rejectPendingDiscovery = (message: string) => {
+		for (const { parsedRequest, origin } of pendingRequests.splice(0)) {
+			windowObject.postMessage({ id: parsedRequest.id, success: false, error: message, version: SAFE_APPS_RESPONSE_VERSION }, origin)
+		}
+	}
+	const requestAccessForDiscovery = () => {
+		if (enabled || !canRequestAccess || !pendingRequests.some(({ parsedRequest }) => isSafeAppsDiscoveryRequest(parsedRequest))) return
+		if (accessFailure !== undefined) {
+			rejectPendingDiscovery(accessFailure)
+			return
+		}
+		if (accessRequested) return
+		accessRequested = true
+		void requestAccess().catch((error: unknown) => {
+			accessFailure = error instanceof Error ? error.message : 'Safe Apps connection failed.'
+			if (!canRequestAccess || enabled) return
+			rejectPendingDiscovery(accessFailure)
+		})
+	}
 	const onMessage = (event: Event) => {
 		const messageEvent = parseSafeAppsMessageEvent(event)
 		if (messageEvent === undefined) return
@@ -101,13 +124,15 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 				return
 			}
 			pendingRequests.push({ parsedRequest, origin: messageEvent.origin })
+			requestAccessForDiscovery()
 			return
 		}
 		if (enabled) answerRequest(parsedRequest, messageEvent.origin)
 	}
 	windowObject.addEventListener('message', onMessage)
 	return {
-		setEnabled(nextEnabled: boolean) {
+		setEnabled(nextEnabled: boolean, nextCanRequestAccess = false) {
+			canRequestAccess = nextCanRequestAccess
 			if (enabled !== nextEnabled) enablementGeneration += 1
 			enabled = nextEnabled
 			const queuedRequests = pendingRequests.splice(0)
@@ -116,6 +141,7 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 			} else {
 				// Never defer signing or transaction requests across a disabled state.
 				pendingRequests.push(...queuedRequests.filter(({ parsedRequest }) => isSafeAppsDiscoveryRequest(parsedRequest)))
+				requestAccessForDiscovery()
 			}
 		},
 		dispose() {
@@ -643,6 +669,10 @@ class InterceptorMessageListener {
 	private readonly safeAppsBridge = createSafeAppsBridge(inpageWindow, async (request) => {
 		const command = await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [{ method: request.method, ...(request.params === undefined ? {} : { params: request.params }) }] })
 		return await executeSafeAppsCommand(command, async (ethereumRequest) => await this.WindowEthereumRequest(ethereumRequest))
+	}, async () => {
+		await this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
+		// Recheck Safe eligibility after the ordinary wallet/site approval flow completes.
+		await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [{ method: 'getEnvironmentInfo' }] })
 	})
 	private signerName: Signer = 'NoSigner'
 	private signerWindowEthereumProvider: WindowEthereum | undefined = undefined
@@ -1515,7 +1545,7 @@ class InterceptorMessageListener {
 				}
 				case 'safe_apps_compatibility': {
 					const safeAppsCompatibility = parseSafeAppsCompatibility(replyRequest.result)
-					if (safeAppsCompatibility !== undefined) this.safeAppsBridge.setEnabled(safeAppsCompatibility.enabled)
+					if (safeAppsCompatibility !== undefined) this.safeAppsBridge.setEnabled(safeAppsCompatibility.enabled, safeAppsCompatibility.canRequestAccess)
 					return
 				}
 				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner()

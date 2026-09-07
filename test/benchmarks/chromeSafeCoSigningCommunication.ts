@@ -16,6 +16,7 @@ import { encodeStorageReaderCall, STORAGE_READER_ABI } from '../../app/ts/simula
 import { closeTarget, connectTarget, createTargetPage, launchChromeSession, readExtensionLargeStateValue, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
 import type { CdpConnection } from './chromeHarness.js'
 
+const safeAppsOnly = process.argv.includes('--safe-apps-only')
 const ACCESS_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.is-primary:not(.is-danger)'
 const CONFIRM_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.dialog-action-button.is-primary:not(.is-danger)'
 const SAFE_ADDRESS = 0x1234567890123456789012345678901234567890n
@@ -340,6 +341,7 @@ const testRpcNetwork = {
 
 const fakeSignerPreload = `(() => {
 	const requests = []
+	let authorized = ${ !safeAppsOnly }
 	const signer = {
 		isMetaMask: true,
 		selectedAddress: ${ JSON.stringify(addressString(OWNER_ADDRESS)) },
@@ -348,8 +350,8 @@ const fakeSignerPreload = `(() => {
 			requests.push({ method, params })
 			switch (method) {
 				case 'eth_chainId': return '0x1'
-				case 'eth_accounts':
-				case 'eth_requestAccounts': return [${ JSON.stringify(addressString(OWNER_ADDRESS)) }]
+				case 'eth_accounts': return authorized ? [${ JSON.stringify(addressString(OWNER_ADDRESS)) }] : []
+				case 'eth_requestAccounts': authorized = true; return [${ JSON.stringify(addressString(OWNER_ADDRESS)) }]
 				case 'eth_signTypedData_v4':
 					if (params?.[0]?.toLowerCase() !== ${ JSON.stringify(addressString(OWNER_ADDRESS).toLowerCase()) }) throw new Error('Unexpected Safe signer account')
 					if (JSON.stringify(params?.[1]) !== ${ JSON.stringify(JSON.stringify(SAFE_TYPED_DATA)) }) throw new Error('Unexpected Safe typed-data payload')
@@ -393,6 +395,7 @@ async function main() {
 			await waitForRegisteredContentScripts(workerConnection, ['inpage', 'inpage2'], 30_000)
 			const storedSettings = {
 				simulationMode: false,
+				safeAppsCompatibilityMode: safeAppsOnly,
 				useSignersAddressAsActiveAddress: false,
 				independentActiveSimulationAddress: addressString(SAFE_ADDRESS),
 				activeSigningAddress: addressString(OWNER_ADDRESS),
@@ -446,9 +449,9 @@ async function main() {
 		try {
 			await pageConnection.send('Page.enable')
 			await pageConnection.send('Page.addScriptToEvaluateOnNewDocument', { source: fakeSignerPreload })
-			await pageConnection.send('Page.navigate', { url: `http://127.0.0.1:${ server.port }/` })
+			await pageConnection.send('Page.navigate', { url: `http://127.0.0.1:${ server.port }/${ safeAppsOnly ? '?safe-probe=early&safe-only=true' : '' }` })
 			try {
-				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'requesting-access'`).catch(() => false), 30_000, 'Safe access request')
+				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === '${ safeAppsOnly ? 'requesting-safe-only' : 'requesting-access' }'`).catch(() => false), 30_000, 'Safe access request')
 			} catch (error) {
 				const accessDiagnostics = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, signerRequests: globalThis.__fakeSafeSignerRequests, url: location.href, body: document.body.textContent })')
 				throw new Error(`Safe access request did not open: ${ JSON.stringify(accessDiagnostics) }`, { cause: error })
@@ -465,7 +468,7 @@ async function main() {
 			}
 
 			try {
-				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'access-granted'`).catch(() => false), 30_000, 'Safe access approval')
+				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === '${ safeAppsOnly ? 'safe-only-granted' : 'access-granted' }'`).catch(() => false), 30_000, 'Safe access approval')
 			} catch (error) {
 				const pageDiagnostics = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, signerRequests: globalThis.__fakeSafeSignerRequests })')
 				throw new Error(`Safe access approval failed: ${ JSON.stringify(pageDiagnostics) }`, { cause: error })
@@ -473,6 +476,12 @@ async function main() {
 			const grantedAccounts = await pageConnection.evaluate<readonly string[]>('globalThis.__interceptorChromeCommunicationState.accounts')
 			if (grantedAccounts[0]?.toLowerCase() !== addressString(SAFE_ADDRESS).toLowerCase()) {
 				throw new Error(`Dapp received ${ grantedAccounts[0] ?? 'no account' } instead of the Safe address`)
+			}
+			if (safeAppsOnly) {
+				const accountRequests = await pageConnection.evaluate<number>(`globalThis.__fakeSafeSignerRequests.filter(request => request.method === 'eth_requestAccounts').length`)
+				if (accountRequests !== 1) throw new Error(`Expected one MetaMask connection prompt, received ${ accountRequests }`)
+				console.warn('Safe Apps discovery connected an initially unauthorized signer and completed site approval.')
+				return
 			}
 			const tabStateConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
 			try {

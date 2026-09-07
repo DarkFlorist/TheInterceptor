@@ -471,6 +471,47 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
+	for (const rejected of [false, true]) {
+		test(`requests ordinary account access once for Safe discovery and ${ rejected ? 'returns rejection' : 'resumes discovery' }`, async () => {
+			let accessRequests = 0
+			const { fakeWindow } = createFakeWindow({ handleRequest: (request, sendBackgroundMessage) => {
+				if (request.method === 'connected_to_signer') {
+					sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
+					sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'safe_apps_compatibility', result: { enabled: false, canRequestAccess: true } })
+					return true
+				}
+				if (request.method === 'eth_requestAccounts') {
+					accessRequests += 1
+					if (rejected) sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, error: { code: 4001, message: 'Connection rejected.' } })
+					else {
+						sendSafeAppsCompatibility(sendBackgroundMessage, true)
+						sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: ['0x1111111111111111111111111111111111111111'] })
+					}
+					return true
+				}
+				if (request.method !== 'safe_apps_request') return false
+				replyToSafeAppsRequest(request, sendBackgroundMessage, { kind: 'result', value: { chainId: 1 } })
+				return true
+			} })
+			await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?safe-connect-${ rejected }`, async () => {
+				const replies: Record<string, unknown>[] = []
+				fakeWindow.addEventListener('message', (event) => {
+					if (isRecord(event.data) && typeof event.data.success === 'boolean') replies.push(event.data)
+				})
+				for (const id of ['first-discovery', 'second-discovery']) fakeWindow.postMessage({ id, method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+				await waitFor(() => replies.length === 2)
+				assert.equal(accessRequests, 1)
+				assert.equal(replies.every((reply) => reply.success === !rejected), true)
+				if (rejected) {
+					fakeWindow.postMessage({ id: 'after-rejection', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+					await waitFor(() => replies.length === 3)
+					assert.equal(replies.every((reply) => reply.error === 'Connection rejected.'), true)
+					assert.equal(accessRequests, 1)
+				}
+			})
+		})
+	}
+
 	test('bounds Safe Apps requests queued before the experimental setting arrives', async () => {
 		let replyToConnection: (() => void) | undefined
 		const { fakeWindow } = createFakeWindow({

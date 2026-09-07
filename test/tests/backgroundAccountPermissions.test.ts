@@ -771,7 +771,7 @@ describe('background eth_accounts', () => {
 		const connectedReplies = messages.filter((message) => message.method === 'connected_to_signer' && message.requestId === 12)
 		const connectedResult = connectedReplies.at(-1)?.result
 		assert.equal(connectedResult?.metamaskCompatibilityMode, false)
-		assert.deepEqual(messages.find((message) => message.method === 'safe_apps_compatibility')?.result, { enabled: false })
+		assert.deepEqual(messages.find((message) => message.method === 'safe_apps_compatibility')?.result, { enabled: false, canRequestAccess: false })
 		assert.equal('activeAddress' in (connectedResult ?? {}), false)
 	})
 
@@ -1040,6 +1040,7 @@ describe('background eth_accounts', () => {
 			if (!safeConsent || !featureEnabled) {
 				await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
 				assert.equal(replyToDiscovery, undefined)
+				assert.equal(messages.some((message) => message.method === 'safe_apps_compatibility' && message.result?.canRequestAccess === true), false)
 				assert.equal(websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.approved, false)
 				return
 			}
