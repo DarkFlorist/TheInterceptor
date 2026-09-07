@@ -771,8 +771,9 @@ describe('background eth_accounts', () => {
 		const connectedReplies = messages.filter((message) => message.method === 'connected_to_signer' && message.requestId === 12)
 		const connectedResult = connectedReplies.at(-1)?.result
 		assert.equal(connectedResult?.metamaskCompatibilityMode, false)
-		assert.deepEqual(messages.find((message) => message.method === 'safe_apps_compatibility')?.result, { enabled: false, canRequestAccess: false })
+		assert.deepEqual(messages.find((message) => message.method === 'safe_apps_compatibility')?.result, { enabled: false, canRequestAccess: true })
 		assert.equal('activeAddress' in (connectedResult ?? {}), false)
+		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.approved, false)
 	})
 
 	test('does not advertise an approved EOA as a Safe on top-frame reload or child-frame approval', async () => {

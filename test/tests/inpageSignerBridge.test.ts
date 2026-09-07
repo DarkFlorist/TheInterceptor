@@ -547,6 +547,36 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
+	test('settles overflow discovery requests while account approval is pending', async () => {
+		let rejectAccess: (() => void) | undefined
+		const { fakeWindow } = createFakeWindow({ handleRequest: (request, sendBackgroundMessage) => {
+			if (request.method === 'connected_to_signer') {
+				sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
+				sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'safe_apps_compatibility', result: { enabled: false, canRequestAccess: true } })
+				return true
+			}
+			if (request.method !== 'eth_requestAccounts') return false
+			rejectAccess = () => sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, error: { code: 4001, message: 'Connection rejected.' } })
+			return true
+		} })
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?safe-connecting-overflow', async () => {
+			const replies: Record<string, unknown>[] = []
+			fakeWindow.addEventListener('message', (event) => {
+				if (isRecord(event.data) && typeof event.data.success === 'boolean') replies.push(event.data)
+			})
+			for (let index = 0; index < 40; index += 1) {
+				fakeWindow.postMessage({ id: `discovery-${ index }`, method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+				if (index === 0) await waitFor(() => rejectAccess !== undefined)
+			}
+			await waitFor(() => replies.length === 8 && rejectAccess !== undefined)
+			rejectAccess?.()
+			await waitFor(() => replies.length === 40)
+			assert.equal(new Set(replies.map((reply) => reply.id)).size, 40)
+			assert.equal(replies.filter((reply) => reply.error === 'Connection rejected.').length, 32)
+			assert.equal(replies.filter((reply) => reply.error === 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.').length, 8)
+		})
+	})
+
 	test('drops an in-flight Safe Apps response when website approval is revoked', async () => {
 		let pendingRpcRequest: InpageRequest | undefined
 		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({

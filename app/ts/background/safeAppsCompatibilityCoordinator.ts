@@ -72,8 +72,9 @@ function createSafeAppsCompatibilityCoordinator() {
 		const entries = latestEnabled && !latestSettings.simulationMode ? await getUserAddressBookEntriesForChainIdMorePreciseFirst(latestSettings.activeRpcNetwork.chainId) : []
 		const configuredSafe = entries.find((entry) => entry.type === 'safe' && entry.address === latestSettings.activeSigningSafeAddress)
 		const siteAccess = latestConnection === undefined ? 'noAccess' : hasAccess(latestSettings.websiteAccess, latestConnection.websiteOrigin)
-		const safeAccess = configuredSafe === undefined || latestConnection === undefined ? 'noAccess' : hasAddressAccess(latestSettings.websiteAccess, latestConnection.websiteOrigin, configuredSafe)
-		const canRequestAccess = latestEnabled && !latestSettings.simulationMode && configuredSafe !== undefined && latestConnection !== undefined && isSafeAppsTopFramePort(latestConnection.port)
+		// The Safe selection may be restored only after MetaMask exposes its account; connection must not require that selection upfront.
+		const safeAccess = latestConnection === undefined ? 'noAccess' : configuredSafe === undefined ? 'askAccess' : hasAddressAccess(latestSettings.websiteAccess, latestConnection.websiteOrigin, configuredSafe)
+		const canRequestAccess = latestEnabled && !latestSettings.simulationMode && latestConnection !== undefined && isSafeAppsTopFramePort(latestConnection.port)
 			&& siteAccess !== 'noAccess' && siteAccess !== 'interceptorDisabled' && safeAccess !== 'noAccess' && safeAccess !== 'interceptorDisabled'
 		if (!isCurrentPublication(socketIdentifier, token)) return
 		send(websiteTabConnections, socket, eligible && latestEligible, canRequestAccess)

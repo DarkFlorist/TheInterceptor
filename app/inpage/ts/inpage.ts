@@ -119,7 +119,7 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 		if (parsedRequest === undefined) return
 		if (enabled === undefined || (!enabled && isSafeAppsDiscoveryRequest(parsedRequest))) {
 			if (pendingRequests.length >= SAFE_APPS_PENDING_REQUEST_LIMIT) {
-				if (enabled === false) return
+				if (enabled === false && !canRequestAccess) return
 				windowObject.postMessage({ id: parsedRequest.id, success: false, error: 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.', version: SAFE_APPS_RESPONSE_VERSION }, messageEvent.origin)
 				return
 			}
