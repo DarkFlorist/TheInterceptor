@@ -4,7 +4,7 @@ import type { TokenPriceService } from '../simulation/services/priceEstimator.js
 import type { RpcNetwork } from '../types/rpc.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { Semaphore } from '../utils/semaphore.js'
-import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
+import { promptForWebsiteAccesses, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
@@ -87,7 +87,8 @@ async function changeActiveAddressAndChainUnlocked(
 	}
 
 	const updatedSettings = await getSettings()
-	const popupRefreshGeneration = await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings, change.promptForAccessesIfNeeded ?? true)
+	// Access approvals can change the active address while holding the dialog lock; prompt only after releasing our lock.
+	const popupRefreshGeneration = await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings, false)
 	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration })
 	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	const activeSigningSafeContextChanged = !updatedSettings.simulationMode
@@ -123,6 +124,7 @@ export async function changeActiveAddressAndChain(
 		websiteTabConnections,
 		change,
 	))
+	if (change.promptForAccessesIfNeeded ?? true) await promptForWebsiteAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections)
 }
 
 export async function activateAddressSelection(
@@ -148,7 +150,6 @@ export async function activateAddressSelection(
 			activeAddress: selection?.type === 'signer' ? selection.address : selection?.entry.address,
 			...(!options.simulationMode ? { signingAddressSelection: selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? 'safe' as const : 'signer' as const } : {}),
 			...(options.rpcNetwork === undefined ? {} : { rpcNetwork: options.rpcNetwork }),
-			...(options.promptForAccessesIfNeeded === undefined ? {} : { promptForAccessesIfNeeded: options.promptForAccessesIfNeeded }),
 		})
 		if (options.simulationMode || options.signerAddress === undefined || selection === undefined) return
 		if (selection.type === 'signer') {
@@ -163,6 +164,7 @@ export async function activateAddressSelection(
 			chainId: selection.entry.chainId,
 		})
 	})
+	if (options.promptForAccessesIfNeeded ?? true) await promptForWebsiteAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections)
 }
 
 export async function changeActiveRpc(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean, signerTabId: number | undefined) {

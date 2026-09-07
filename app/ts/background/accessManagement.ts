@@ -290,12 +290,8 @@ function addIconRefreshTarget(iconRefreshTargets: Map<string, { tabId: number, w
 }
 
 async function updateTabConnections(
-	ethereum: EthereumClientService | undefined,
-	tokenPriceService: TokenPriceService | undefined,
-	resetSimulationServices: ResetSimulationServices | undefined,
 	websiteTabConnections: WebsiteTabConnections,
 	tabConnection: TabConnection,
-	promptForAccessesIfNeeded: boolean,
 	settings: Settings,
 ): Promise<Map<string, { tabId: number, websiteOrigin: string }>> {
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
@@ -316,13 +312,27 @@ async function updateTabConnections(
 		} else if (access === 'hasAccess' && !connection.approved) {
 			connectToPort(websiteTabConnections, connection.socket, settings, currentActiveAddress?.address)
 		}
-
-		if (access === 'askAccess' && connection.wantsToConnect && promptForAccessesIfNeeded && ethereum !== undefined && tokenPriceService !== undefined && resetSimulationServices !== undefined) {
-			const activeAddress = currentActiveAddress !== undefined ? currentActiveAddress : undefined
-			await askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
-		}
 	}
 	return iconRefreshTargets
+}
+
+// Prompts acquire the access-dialog lock, so callers holding the active-settings lock must defer this phase.
+export async function promptForWebsiteAccesses(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, throwOnError = false) {
+	try {
+		for (const tabConnection of websiteTabConnections.values()) {
+			for (const connection of Object.values(tabConnection.connections)) {
+				if (!connection.wantsToConnect) continue
+				const settings = await getSettings()
+				const activeAddress = await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, connection.socket.tabId, async () => await getActiveAddress(settings, connection.socket.tabId))
+				const access = activeAddress ? hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, activeAddress) : hasAccess(settings.websiteAccess, connection.websiteOrigin)
+				if (access !== 'askAccess') continue
+				await askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
+			}
+		}
+	} catch (error) {
+		if (throwOnError) throw error
+		await reportUnexpectedError(error)
+	}
 }
 
 const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
@@ -441,7 +451,7 @@ export async function updateWebsiteApprovalAccesses(
 	}
 	// update port connections and disconnect from ports that should not have access anymore
 	const updatePromises = [...websiteTabConnections.entries()].map(async ([_tab, tabConnection]) => {
-		const tabIconRefreshTargets = await updateTabConnections(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, tabConnection, promptForAccessesIfNeeded, settings)
+		const tabIconRefreshTargets = await updateTabConnections(websiteTabConnections, tabConnection, settings)
 		for (const iconRefreshTarget of tabIconRefreshTargets.values()) addIconRefreshTarget(iconRefreshTargets, iconRefreshTarget.tabId, iconRefreshTarget.websiteOrigin)
 	})
 	for (const tabState of allTabStates) {
@@ -451,6 +461,9 @@ export async function updateWebsiteApprovalAccesses(
 	}
 	try {
 		await Promise.all(updatePromises)
+		if (promptForAccessesIfNeeded && ethereum !== undefined && tokenPriceService !== undefined && resetSimulationServices !== undefined) {
+			await promptForWebsiteAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, throwOnError)
+		}
 	} catch (error) {
 		if (throwOnError) throw error
 		await reportUnexpectedError(error)
