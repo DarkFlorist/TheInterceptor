@@ -141,6 +141,8 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 export async function getUpdatedSimulationState(ethereum: EthereumClientService, simulationInput?: SimulationStateInput) {
 	// An unreadable persisted stack must abort refresh, otherwise the simulation fallback could overwrite saved popup results.
 	const currentSimulationInput = simulationInput ?? await getCurrentSimulationInput()
+	// Signer-only networks have no simulation endpoint; the retained supported provider must not execute their stack.
+	if ((await getSettings()).activeRpcNetwork.httpsRpc === undefined) return PASSTHROUGH_STATE
 	try {
 		return toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(currentSimulationInput, ethereum))
 	} catch(error: unknown) {

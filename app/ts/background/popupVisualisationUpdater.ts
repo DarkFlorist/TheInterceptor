@@ -1,3 +1,4 @@
+import { getSettings } from './settings.js'
 // Shared execution layer for popup visualization refreshes; the optional interactive queue adds caller-local scheduling, not global ordering. See docs/popup-simulation-refresh.md.
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -70,7 +71,7 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 		}
 		const isSimulationDataConsumerOpenReply = await requestIsSimulationDataConsumerOpen()
 		if (!(isSimulationDataConsumerOpenReply?.data.isOpen === true)) return popupVisualisation
-		if (skipIfUnchanged && popupVisualisation.simulationState.kind === 'simulated') {
+		if (skipIfUnchanged && popupVisualisation.simulationState.kind === 'simulated' && (await getSettings()).activeRpcNetwork.httpsRpc !== undefined) {
 			const currentSimulationInput = await getCurrentSimulationStateInput(ethereum, snapshot)
 			const currentFingerprint = getPopupVisualisationFingerprint(currentSimulationInput.simulationStateInput, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)
 			const cachedFingerprint = getPopupVisualisationFingerprint(

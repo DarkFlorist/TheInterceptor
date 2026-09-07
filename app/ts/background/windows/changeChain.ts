@@ -315,7 +315,14 @@ export async function applyWalletSwitchReply(
 				const requestedRpc = getPendingSignerChainChangeRpc(callbackSignerStateToken, params.chainId)
 				await applyChain(currentSignerStateToken, params.chainId, requestedRpc)
 				const activeRpc = (await getSettings()).activeRpcNetwork
-				if (requestedRpc !== undefined && !getRpcNetworkChange(activeRpc, requestedRpc).endpointChanged) await promoteRpcAsPrimary(requestedRpc)
+				if (requestedRpc !== undefined && getRpcNetworkChange(activeRpc, requestedRpc).endpointChanged) {
+					resolveSignerChainChange(callbackSignerStateToken, {
+						method: 'popup_signerChangeChainDialog',
+						data: [{ accept: false, chainId: params.chainId, walletSwitchRequestId: params.walletSwitchRequestId, signerProviderGeneration: params.signerProviderGeneration, error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'The wallet switched networks, but Interceptor could not activate the requested network.' } }],
+					})
+					return
+				}
+				if (requestedRpc !== undefined) await promoteRpcAsPrimary(requestedRpc)
 			}
 			resolveSignerChainChange(callbackSignerStateToken, {
 				method: 'popup_signerChangeChainDialog',

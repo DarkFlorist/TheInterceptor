@@ -378,7 +378,7 @@ describe('popup settings changes', () => {
 				port.postMessage = message => {
 					postMessage(message)
 					// Simulate delivery before changeActiveRpc has returned its signer token.
-					if (message.method === 'request_signer_to_wallet_switchEthereumChain') delivery = applyWalletSwitchReply(connections, port, { accept: true, chainId: 2n, walletSwitchRequestId: getWalletSwitchRequestId(messages), signerProviderGeneration: token.signerProviderGeneration }, async () => await application.promise)
+					if (message.method === 'request_signer_to_wallet_switchEthereumChain') delivery = applyWalletSwitchReply(connections, port, { accept: true, chainId: 2n, walletSwitchRequestId: getWalletSwitchRequestId(messages), signerProviderGeneration: token.signerProviderGeneration }, async () => { await application.promise; await changeSimulationMode({ simulationMode: false, rpcNetwork: rpc }) })
 				}
 			}
 			const pending = request(30)
@@ -399,7 +399,8 @@ describe('popup settings changes', () => {
 				await new Promise(resolve => setTimeout(resolve, 60))
 				application.resolve(undefined)
 				await delivery
-				assert.equal((await pending).result, null)
+				assert.equal((await pending).error, undefined)
+				assert.strictEqual((await pending).result, null)
 			} else {
 				assert.match((await pending).error?.message ?? '', /did not answer/)
 				const expiredId = getWalletSwitchRequestId(messages)
@@ -436,8 +437,9 @@ describe('popup settings changes', () => {
 		})
 	}
 
-	for (const accept of [true, false]) {
-		test(`waits for the matching wallet network ${ accept ? 'acceptance' : 'rejection' }`, async () => {
+	for (const outcome of ['acceptance', 'rejection', 'endpoint mismatch'] as const) {
+		const accept = outcome !== 'rejection'
+		test(`waits for the matching wallet network ${ outcome }`, async () => {
 			installBrowserMock()
 			const { changeSimulationMode, getSettings, websiteSocketToString } = await loadModules()
 			const { requestSignerChainChange, applyWalletSwitchReply } = await import('../../app/ts/background/windows/changeChain.js')
@@ -460,10 +462,15 @@ describe('popup settings changes', () => {
 			const token = getConfirmedSignerStateToken(connections, 1)
 			if (token === undefined) throw new Error('Expected signer owner')
 			const replyBase = { chainId: rpc.chainId, walletSwitchRequestId: getWalletSwitchRequestId(messages), signerProviderGeneration: token.signerProviderGeneration }
-			await applyWalletSwitchReply(connections, port, accept ? { ...replyBase, accept: true } : { ...replyBase, accept: false, error: { code: 4001, message: 'User rejected network change' } }, async () => undefined)
+			await applyWalletSwitchReply(connections, port, accept ? { ...replyBase, accept: true } : { ...replyBase, accept: false, error: { code: 4001, message: 'User rejected network change' } }, async () => { if (outcome === 'acceptance') await changeSimulationMode({ simulationMode: false, rpcNetwork: rpc }) })
 			const result = await pending
-			if (accept) assert.equal(result.result, null)
-			else assert.equal(result.error?.message, 'User rejected network change')
+			if (outcome === 'acceptance') {
+				assert.equal(result.error, undefined)
+				assert.strictEqual(result.result, null)
+			} else if (outcome === 'endpoint mismatch') {
+				assert.match(result.error?.message ?? '', /could not activate the requested network/)
+				assert.notEqual((await getSettings()).activeRpcNetwork.httpsRpc, rpc.httpsRpc)
+			} else assert.equal(result.error?.message, 'User rejected network change')
 		})
 	}
 })

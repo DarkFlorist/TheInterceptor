@@ -114,6 +114,7 @@ async function runActiveSettingsChange(
 			const updatedSettings = await getSettings()
 			const { chainChanged: rpcChainChanged, endpointChanged: rpcEndpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
 			try {
+				// A signer-only chain has no provider to install; simulation is disabled until a configured endpoint is selected.
 				if (rpcEndpointChanged && change.rpcNetwork?.httpsRpc !== undefined) activeServices = resetSimulationServices(change.rpcNetwork)
 				if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig()
 				// Publish settings exactly once when committed; access reconciliation later publishes account and icon updates.

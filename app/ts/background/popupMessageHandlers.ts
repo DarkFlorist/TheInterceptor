@@ -1,5 +1,4 @@
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
-import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain, changeActiveRpc } from './activeSettings.js'
 import { getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
@@ -674,8 +673,6 @@ export async function popupChangeActiveRpc(ethereum: EthereumClientService, toke
 		if (await getConfiguredSigningSafe(settings, (await getTabState(tabId)).signerAccounts) !== undefined) return { type: 'PopupSettingsChangeReply', ok: false, message: 'This Safe is tied to its current network. Select your wallet account before switching networks.' } as const
 		const result = await requestSignerChainChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, params.data, tabId)
 		if ('error' in result && result.error !== undefined) return { type: 'PopupSettingsChangeReply', ok: false, message: result.error.message } as const
-		const activeRpc = (await getSettings()).activeRpcNetwork
-		if (getRpcNetworkChange(activeRpc, params.data).endpointChanged) return { type: 'PopupSettingsChangeReply', ok: false, message: 'The wallet switched networks, but the active Interceptor network did not change. Please select the network again.' } as const
 	} else {
 		await changeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, params.data, settings.simulationMode, await getLastKnownCurrentTabId())
 	}
@@ -1287,8 +1284,7 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 }
 
 export async function requestCompleteVisualizedSimulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
-	await queuePopupSimulationRefresh({ ethereum, tokenPriceService })
-	const visualizedSimulatorState = await getPopupVisualisationState()
+	const visualizedSimulatorState = await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
 	return { method: 'popup_requestCompleteVisualizedSimulation' as const, visualizedSimulatorState }
 }
 

@@ -390,6 +390,63 @@ const fakeEthereum = createFakeEthereum(rpcNetwork) as never as Parameters<typeo
 const fakeTokenPriceService = {} as never as Parameters<typeof updatePopupVisualisationIfNeeded>[1]
 
 describe('popup clear reset', () => {
+	test('signer-only networks publish passthrough without reading the previous provider', async () => {
+		browserMock.reset()
+		const signerOnly: RpcNetwork = { chainId: 99999n, httpsRpc: undefined, name: 'Signer only', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
+		await browserStorageLocalSet({ activeRpcNetwork: signerOnly, independentActiveSimulationAddress: activeAddress, popupVisualisation: stalePopupVisualisation, interceptorTransactionStack: { operations: [] } })
+		const originalBlock = fakeEthereum.getBlock
+		const originalNumber = fakeEthereum.getBlockNumber
+		let providerReads = 0
+		fakeEthereum.getBlock = async (...args) => { providerReads++; return await originalBlock(...args) }
+		fakeEthereum.getBlockNumber = async (...args) => { providerReads++; return await originalNumber(...args) }
+		try {
+			const result = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, false, false, true)
+			assert.equal(providerReads, 0)
+			assert.equal(result.simulationState.kind, 'passthrough')
+			assert.equal(result.simulationUpdatingState, 'done')
+			assert.equal(result.simulationResultState, 'done')
+		} finally {
+			fakeEthereum.getBlock = originalBlock
+			fakeEthereum.getBlockNumber = originalNumber
+		}
+	})
+
+	test('complete visualization requests do not join a held interactive queue entry', async () => {
+		browserMock.reset()
+		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, independentActiveSimulationAddress: activeAddress, popupVisualisation: stalePopupVisualisation, interceptorTransactionStack: { operations: [] } })
+		const { queuePopupSimulationRefresh } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
+		const { requestCompleteVisualizedSimulation } = await import('../../app/ts/background/popupMessageHandlers.js')
+		const { Future } = await import('../../app/ts/utils/future.js')
+		const started = new Future<void>()
+		const release = new Future<void>()
+		const originalSend = browser.runtime.sendMessage
+		let held = false
+		browser.runtime.sendMessage = async message => {
+			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen' && !held) {
+				held = true
+				started.resolve(undefined)
+				await release
+			}
+			return await originalSend(message)
+		}
+		const queued = queuePopupSimulationRefresh({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService, invalidateOldState: true })
+		let timeout: ReturnType<typeof setTimeout> | undefined
+		try {
+			await started
+			const result = await Promise.race([
+				requestCompleteVisualizedSimulation(fakeEthereum, fakeTokenPriceService),
+				new Promise<never>((_resolve, reject) => { timeout = setTimeout(() => reject(new Error('Complete visualization request joined the held queue')), 1000) }),
+			])
+			assert.equal(result.visualizedSimulatorState.simulationUpdatingState, 'done')
+			assert.equal(result.visualizedSimulatorState.simulationResultState, 'done')
+		} finally {
+			clearTimeout(timeout)
+			release.resolve(undefined)
+			await queued
+			browser.runtime.sendMessage = originalSend
+		}
+	})
+
 	test('keeps the cached popup timestamp when refresh finds no simulation change', async () => {
 		browserMock.reset()
 		await browserStorageLocalSet({
