@@ -43,6 +43,8 @@ describe('background eth_accounts', () => {
 			await change
 		}
 		assert.equal((await change).ok, true)
+		const settingsBroadcasts = runtimeMessages.map(message => MessageToPopup.safeParse(message)).filter(parsed => parsed.success && parsed.value.method === 'popup_settingsUpdated')
+		assert.equal(settingsBroadcasts.length, 1, 'One authoritative settings broadcast must cover the entire transition')
 	})
 
 	test('refreshes the cached signing visualization when selecting another Safe on the same chain', async () => {

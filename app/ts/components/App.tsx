@@ -1,17 +1,16 @@
-import { acceptPopupSettingsChangeStatus, getPopupSettingsOperationLabel } from '../types/popupSettingsProtocol.js'
+import { usePopupSettingsChanges } from './hooks/usePopupSettingsChanges.js'
 import { useEffect } from 'preact/hooks'
 import { Home } from './pages/Home.js'
 import Hint from './subcomponents/Hint.js'
 import { getAddress, isAddress } from '../utils/ethereumPrimitives.js'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
-import type { PopupSettingsChangeStatus, Settings } from '../types/interceptor-messages.js'
+import type { Settings } from '../types/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import type { EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
-import type { RpcEntry } from '../types/rpc.js'
 import { UnexpectedError } from './subcomponents/Error.js'
 import { addressEditEntry } from './ui-utils.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
@@ -21,20 +20,12 @@ import { useLiveSimulationHomeData } from './hooks/useLiveSimulationHomeData.js'
 import { NetworkErrors } from './subcomponents/NetworkErrors.js'
 import { ProviderErrors } from './subcomponents/ProviderErrors.js'
 import { PopupModal, type PopupPage } from './PopupModal.js'
-import { getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../utils/activeAddressSelection.js'
-import { requestPopupSettingsChange } from './popupSettingsChange.js'
-import type { PopupSettingsRequestWithSharedReply } from '../types/popupSettingsRequests.js'
-import { requestActiveAddressChange } from './activeAddressChange.js'
+import { getSelectableActiveAddresses } from '../utils/activeAddressSelection.js'
 import { useModeActiveAddress } from './hooks/useModeActiveAddress.js'
 export { NetworkErrors } from './subcomponents/NetworkErrors.js'
 
 export function App() {
 	const appPage = useSignal<PopupPage>({ page: 'Unknown' })
-	const pendingAddressChangeRequestId = useSignal<string | undefined>(undefined)
-	const isActiveAddressChanging = useSignal(false)
-	// Local state covers dispatch latency; shared status coordinates other and reopened popups.
-	const pendingSettingsChange = useSignal(false)
-	const backgroundSettingsChange = useSignal<PopupSettingsChangeStatus['data']>({ revision: 0, operation: undefined })
 	const {
 		activeAddresses,
 		walletSelectedAddressBookEntry,
@@ -69,14 +60,6 @@ export function App() {
 		answerSimulationDataConsumerOpen: true,
 		requestFreshHomeDataOnMount: true,
 		requestHomeDataOnSimulationStateChange: true,
-		onAddressSelectionCommitted({ requestId, activeAddress }, settings) {
-			if (pendingAddressChangeRequestId.value !== requestId) return
-			if (!settings.simulationMode) displayedSigningAddress.value = activeAddress
-			isActiveAddressChanging.value = false
-		},
-		onSettingsChangeStatus(status) {
-			backgroundSettingsChange.value = acceptPopupSettingsChangeStatus(backgroundSettingsChange.value, status)
-		},
 		onInitialSettings(settings: Settings) {
 			if (appPage.value.page !== 'Unknown') return
 			if (settings.openedPage.page === 'AddNewAddress' || settings.openedPage.page === 'ModifyAddress') {
@@ -87,49 +70,7 @@ export function App() {
 		},
 	})
 	const boundaryResetKey = useSignal(0)
-	const isActiveAddressChangePending = useComputed(() => pendingAddressChangeRequestId.value !== undefined)
-	const isSettingsChangePending = useComputed(() => isActiveAddressChangePending.value || pendingSettingsChange.value || backgroundSettingsChange.value.operation !== undefined)
-
-	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer', persistedEntry?: AddressBookEntry) {
-		if (!isSettingsLoaded.value) return
-		if (isSettingsChangePending.value) throw new Error('A settings change is already in progress. Please wait for it to finish.')
-		const selectableAddresses = includePersistedAddressBookEntry(activeAddresses.value, persistedEntry)
-		if (!isActiveAddressSelectionAllowed(address, selectableAddresses, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])) return
-		const requestId = crypto.randomUUID()
-		pendingAddressChangeRequestId.value = requestId
-		isActiveAddressChanging.value = true
-		try {
-			await requestActiveAddressChange(address, simulationMode.value, undefined, requestId)
-			// Recover a missed commit notification from current background state, never from the original selection.
-			if (isActiveAddressChanging.value) {
-				await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData', data: { refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: true } })
-			}
-		} finally {
-			pendingAddressChangeRequestId.value = undefined
-			isActiveAddressChanging.value = false
-		}
-	}
-
-	async function changePopupSettings(message: PopupSettingsRequestWithSharedReply) {
-		if (!isSettingsLoaded.value) return
-		if (isSettingsChangePending.value) throw new Error('A settings change is already in progress. Please wait for it to finish.')
-		pendingSettingsChange.value = true
-		try {
-			await requestPopupSettingsChange(message)
-		} finally {
-			pendingSettingsChange.value = false
-		}
-	}
-
-	async function setActiveRpcAndInformAboutIt(entry: RpcEntry) {
-		await changePopupSettings({ method: 'popup_changeActiveRpc', data: entry })
-	}
-	async function setSimulationMode(enabled: boolean) {
-		await changePopupSettings({ method: 'popup_enableSimulationMode', data: enabled })
-	}
-	async function setRichState(add: boolean, address: bigint | 'CurrentAddress') {
-		await changePopupSettings({ method: 'popup_modifyMakeMeRich', data: { add, address } })
-	}
+	const { isActiveAddressChanging, isActiveAddressChangePending, isSettingsChangePending, sharedStatusLabel, setActiveAddressAndInformAboutIt, setActiveRpcAndInformAboutIt, setSimulationMode, setRichState } = usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, simulationMode, rpcNetwork, tabState, displayedSigningAddress })
 
 	useEffect(() => {
 		markPerformanceOnce(POPUP_PERFORMANCE_MARKS.homeFirstCommit)
@@ -282,8 +223,8 @@ export function App() {
 				<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>
 					<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 					<ProviderErrors tabState = { tabState }/>
-					{ backgroundSettingsChange.value.operation !== undefined && !pendingSettingsChange.value && !isActiveAddressChangePending.value
-						? <div role = 'status' aria-live = 'polite' class = 'notification popup-settings-change-status'>{ getPopupSettingsOperationLabel(backgroundSettingsChange.value.operation) }</div> : <></> }
+					{ sharedStatusLabel.value !== undefined
+						? <div role = 'status' aria-live = 'polite' class = 'notification popup-settings-change-status'>{ sharedStatusLabel.value }</div> : <></> }
 					<Home
 						isActiveAddressChanging = { isActiveAddressChanging }
 						isActiveAddressChangePending = { isActiveAddressChangePending }

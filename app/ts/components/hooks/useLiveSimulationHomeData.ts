@@ -1,5 +1,5 @@
 import { useEffect } from 'preact/hooks'
-import { MessageToPopup, type HomePageBootstrap, type UpdateHomePage, type Settings, type PopupSettingsChangeStatus } from '../../types/interceptor-messages.js'
+import { MessageToPopup, type HomePageBootstrap, type UpdateHomePage, type Settings } from '../../types/interceptor-messages.js'
 import type { RpcConnectionStatus, TabIconDetails, TabState } from '../../types/user-interface-types.js'
 import { PASSTHROUGH_STATE, type BlockTimeManipulation, type CompleteVisualizedSimulation, type NamedTokenId, type ResolvedSimulationResults, type ResolvedSimulationState, type SimulationResultState, type SimulationUpdatingState, type TokenPriceEstimate, type VisualizedSimulationState, toResolvedSimulationResults } from '../../types/visualizer-types.js'
 import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -20,9 +20,7 @@ type LiveSimulationHomeDataOptions = {
 	filterByTabId?: boolean
 	requireActiveModeAddress?: boolean
 	requestHomeDataOnSimulationStateChange?: boolean
-	onSettingsChangeStatus?: (status: PopupSettingsChangeStatus['data']) => void
 	onInitialSettings?: (settings: Settings) => void
-	onAddressSelectionCommitted?: (selection: { requestId: string, activeAddress: bigint | undefined }, settings: Settings) => void
 }
 
 type CachedHomeDataRequest = {
@@ -234,9 +232,6 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 			const parsed = maybeParsed.value
 			if (parsed.role === 'confirmTransaction') return undefined
 			switch(parsed.method) {
-				case 'popup_settingsChangeStatus':
-					options.onSettingsChangeStatus?.(parsed.data)
-					return undefined
 				case 'popup_homePageBootstrap':
 					updateHomePageBootstrap(parsed)
 					return undefined
@@ -249,7 +244,6 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 					const previousActiveStackContext = getCurrentActiveStackContext()
 					const updatedActiveStackContext = getActiveStackContext(parsed.data)
 					updateHomePageSettings(parsed.data)
-					if (parsed.committedAddressChange !== undefined) options.onAddressSelectionCommitted?.(parsed.committedAddressChange, parsed.data)
 					if (rpcChanged || parsed.committedAddressChange !== undefined || previousActiveStackContext === undefined || !activeStackContextsEqual(previousActiveStackContext, updatedActiveStackContext)) {
 						simVisResults.value = PASSTHROUGH_STATE
 						simulationUpdatingState.value = undefined
@@ -312,15 +306,14 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 
 	useEffect(() => {
 		void (async () => {
-			const settingsStatusRequest = options.answerMainPopupOpen ? sendPopupMessageToBackgroundPage({ method: 'popup_requestSettingsChangeStatus' }) : undefined
 			if (options.requestFreshHomeDataOnMount) {
 				const homePageBootstrapRequest = options.answerMainPopupOpen
 					? sendPopupMessageToBackgroundPage({ method: 'popup_requestHomePageBootstrap' })
 					: undefined
-				await Promise.all([settingsStatusRequest, homePageBootstrapRequest, requestFreshHomeData()])
+				await Promise.all([homePageBootstrapRequest, requestFreshHomeData()])
 				return
 			}
-			await Promise.all([settingsStatusRequest, requestCachedHomeData({ refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: false })])
+			await requestCachedHomeData({ refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: false })
 		})()
 	}, [])
 

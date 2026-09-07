@@ -117,7 +117,7 @@ async function runActiveSettingsChange(
 			try {
 				if (rpcEndpointChanged && change.rpcNetwork?.httpsRpc !== undefined) activeServices = resetSimulationServices(change.rpcNetwork)
 				if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig()
-				// Publish the committed selection once its provider and stack are ready, before slow access work.
+				// Publish settings exactly once when committed; access reconciliation later publishes account and icon updates.
 				await sendPopupMessageToOpenWindows({
 					method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration: bumpPopupRefreshGeneration(),
 					...(change.addressChangeRequestId === undefined ? {} : { committedAddressChange: { requestId: change.addressChangeRequestId, activeAddress: change.activeAddress } }),
@@ -126,7 +126,6 @@ async function runActiveSettingsChange(
 				// Persisted settings still need access reconciliation if provider preparation or publication fails.
 				accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, updatedSettings)
 			}
-			await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration: accessUpdate.popupRefreshGeneration })
 			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 			if (rpcChainChanged) {
 				sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: updatedSettings.activeRpcNetwork.chainId })
