@@ -1,4 +1,4 @@
-
+// Shared execution layer for popup visualization refreshes; the optional interactive queue adds caller-local scheduling, not global ordering. See docs/popup-simulation-refresh.md.
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { CompleteVisualizedSimulation, SimulationState, SimulationStateInput } from '../types/visualizer-types.js'
@@ -59,6 +59,7 @@ const hasSimulationInputOperations = (simulationState: SimulationState) => (
 	simulationState.simulationStateInput.some((block) => block.transactions.length > 0 || block.signedMessages.length > 0)
 )
 
+// Visibility/throttle-aware execution: callers such as block updates can replace obsolete work without entering the interactive queue.
 export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, invalidateOldState = false, onlyIfNotAlreadyUpdating = false, skipIfUnchanged = false, snapshot?: PopupSimulationSnapshot) => {
 	try {
 		const popupVisualisation = await getPopupVisualisationState()
@@ -101,6 +102,7 @@ export type OpenConsumerVisualisationDependencies = {
 	readonly reportError?: typeof reportUnexpectedError
 }
 
+// Bootstrap already knows a consumer is open; refresh without the visibility probe and retain the stored fallback on reported errors.
 export async function refreshPopupVisualisationForOpenConsumer(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, dependencies: OpenConsumerVisualisationDependencies = {}) {
 	try {
 		await (dependencies.update ?? updatePopupVisualisationState)(ethereum, tokenPriceService, undefined, true)
@@ -111,6 +113,7 @@ export async function refreshPopupVisualisationForOpenConsumer(ethereum: Ethereu
 }
 
 const updateSimulationVisualisationSemaphore = new Semaphore(1)
+// Serialized execution without a visibility probe; persistence callers can require unexpected errors to propagate.
 export async function updatePopupVisualisationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, abortController: AbortController | undefined, throwOnUnexpectedError = false, snapshot?: PopupSimulationSnapshot) {
 	try {
 		return await updateSimulationVisualisationSemaphore.execute(async () => {

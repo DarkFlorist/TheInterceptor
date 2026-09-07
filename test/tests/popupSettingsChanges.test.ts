@@ -1,12 +1,12 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
-import type { RevisionedPopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefresh.js'
+import type { RevisionedPopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefreshQueue.js'
 
 describe('popup settings changes', () => {
 	for (const firstSucceeded of [true, false]) test(`keeps overlapping refresh outcomes independent (first=${ firstSucceeded })`, async () => {
 		installBrowserMock()
-		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefresh.js')
+		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const first = createDeferredValue<boolean>()
 		const last = createDeferredValue<boolean>()
 		const started = createDeferredValue<void>()
@@ -29,7 +29,7 @@ describe('popup settings changes', () => {
 	for (const change of ['same', 'revision', 'provider', 'force'] as const) {
 		test(`shares only refresh work that covers the requested revision and invalidation (${ change })`, async () => {
 			installBrowserMock()
-			const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefresh.js')
+			const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 			const release = createDeferredValue<boolean>()
 			const started = createDeferredValue<void>()
 			let calls = 0
@@ -54,7 +54,7 @@ describe('popup settings changes', () => {
 
 	test('supersedes queued B with the latest A and carries forward invalidation', async () => {
 		installBrowserMock()
-		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefresh.js')
+		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const release = createDeferredValue<boolean>()
 		const started = createDeferredValue<void>()
 		const calls: RevisionedPopupSimulationRefresh[] = []
@@ -75,7 +75,7 @@ describe('popup settings changes', () => {
 
 	test('merges invalidation for equivalent work before it starts', async () => {
 		installBrowserMock()
-		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefresh.js')
+		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const refresh = createPopupSimulationRefresher(async services => services.invalidateOldState === true)
 		const services = { ...createEthereumWithGetBlockCounter({ count: 0 }), revision: 'A' }
 		const result = refresh(services)
@@ -85,7 +85,7 @@ describe('popup settings changes', () => {
 
 	test('rejects only the failed entry and continues queued work and retries', async () => {
 		installBrowserMock()
-		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefresh.js')
+		const { createPopupSimulationRefresher } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
 		const release = createDeferredValue<void>()
 		const started = createDeferredValue<void>()
 		let attempts = 0

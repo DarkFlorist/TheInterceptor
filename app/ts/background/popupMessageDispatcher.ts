@@ -2,7 +2,7 @@ import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getPopupSettingsOperation } from '../types/popupSettingsProtocol.js'
 import { createPopupSettingsCoordinator } from './popupSettingsCoordinator.js'
 import { getSettings } from './settings.js'
-import { refreshPopupSimulation } from './popupSimulationRefresh.js'
+import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { PopupMessage } from '../types/interceptor-messages.js'
 import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js'
@@ -22,7 +22,7 @@ const popupMessageHandlers = {
 	popup_confirmDialog: popupMessageHandler('popup_confirmDialog', async (context, request) => await confirmDialog(context.ethereum, context.tokenPriceService, context.websiteTabConnections, request)),
 	popup_changeActiveAddress: popupMessageHandler('popup_changeActiveAddress', async (context, request) => await changeActiveAddress(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
 	popup_modifyMakeMeRich: popupMessageHandler('popup_modifyMakeMeRich', async (context, request) => {
-		if (await modifyMakeMeRich(request) && !await refreshPopupSimulation({ ethereum: context.ethereum, tokenPriceService: context.tokenPriceService, invalidateOldState: true })) {
+		if (await modifyMakeMeRich(request) && !await queuePopupSimulationRefresh({ ethereum: context.ethereum, tokenPriceService: context.tokenPriceService, invalidateOldState: true })) {
 			return { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but balances could not be refreshed. Please refresh the simulation to retry.' }
 		}
 		return { type: 'PopupSettingsChangeReply', ok: true }
@@ -32,7 +32,7 @@ const popupMessageHandlers = {
 	popup_resetSimulation: popupMessageHandler('popup_resetSimulation', async (context) => await context.resetSimulationState()),
 	popup_removeTransactionOrSignedMessage: popupMessageHandler('popup_removeTransactionOrSignedMessage', async (context, request) => await removeTransactionOrSignedMessage(context.ethereum, context.tokenPriceService, request)),
 	popup_refreshSimulation: popupMessageHandler('popup_refreshSimulation', async (context) => {
-		await refreshPopupSimulation({ ...context, invalidateOldState: true })
+		await queuePopupSimulationRefresh({ ...context, invalidateOldState: true })
 	}),
 	popup_refreshConfirmTransactionDialogSimulation: popupMessageHandler('popup_refreshConfirmTransactionDialogSimulation', async (context) => await refreshPopupConfirmTransactionSimulation(context.ethereum, context.tokenPriceService)),
 	popup_refreshConfirmTransactionMetadata: popupMessageHandler('popup_refreshConfirmTransactionMetadata', async (context) => await refreshPopupConfirmTransactionMetadata(context.ethereum, context.tokenPriceService, context.confirmTransactionAbortController)),

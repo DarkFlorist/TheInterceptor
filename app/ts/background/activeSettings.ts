@@ -1,4 +1,4 @@
-import { refreshPopupSimulation } from './popupSimulationRefresh.js'
+import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { ResetSimulationServices, SimulationServices } from '../simulation/serviceLifecycle.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -10,7 +10,6 @@ import { Semaphore } from '../utils/semaphore.js'
 import type { WebsiteAccessUpdate } from './accessManagement.js'
 import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { changeSimulationMode, getSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
@@ -50,7 +49,7 @@ async function clearSimulationStateFromConfig() {
 
 export async function resetSimulationStateFromConfig(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
 	await clearSimulationStateFromConfig()
-	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
+	await queuePopupSimulationRefresh({ ethereum, tokenPriceService, invalidateOldState: true })
 }
 
 const keepTrackOfPreviousAddressForRichList = async () => {
@@ -132,7 +131,7 @@ async function runActiveSettingsChange(
 				await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 			}
 			if (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings))) {
-				await refreshPopupSimulation(activeServices)
+				await queuePopupSimulationRefresh(activeServices)
 			}
 			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 			if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)

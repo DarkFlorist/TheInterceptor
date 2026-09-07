@@ -536,7 +536,10 @@ describe('popup clear reset', () => {
 		assertDefinedEmptyPopupVisualisation(popupVisualisation, DEFAULT_BLOCK_MANIPULATION)
 
 		const changedMessages = getSimulationStateChangedMessages(browserMock.sentMessages)
-		assert.equal(changedMessages.length > 0, true)
+		assert.equal(changedMessages.some(message => {
+			const parsed = PopupSimulationChangedMessage.safeParse(message)
+			return parsed.success && parsed.value.data.visualizedSimulatorState.simulationResultState === 'invalid'
+		}), true, 'Reset must invalidate the old visualization before publishing the cleared stack')
 		assert.deepEqual(changedMessages.at(-1), getExpectedPopupSimulationChangedMessage(popupVisualisation))
 	})
 

@@ -1,3 +1,4 @@
+// Optional interactive scheduling above popupVisualisationUpdater; queue guarantees do not cover direct block, bootstrap or persistence updates. See docs/popup-simulation-refresh.md.
 import { Future } from '../utils/future.js'
 import type { SimulationServices } from '../simulation/serviceLifecycle.js'
 import { getAddressesbeingMadeRich, getCurrentSimulationInput } from './simulationUpdating.js'
@@ -60,7 +61,7 @@ const refreshRevision = createPopupSimulationRefresher<RevisionedPopupSimulation
 	return result.simulationUpdatingState !== 'failed' && result.simulationResultState !== 'invalid'
 })
 
-export async function refreshPopupSimulation(services: PopupSimulationRefresh) {
+export async function queuePopupSimulationRefresh(services: PopupSimulationRefresh) {
 	const richAddresses = await getAddressesbeingMadeRich()
 	const [input, settings] = await Promise.all([getCurrentSimulationInput(richAddresses), getSettings()])
 	// Keep the revision and the input consumed after asynchronous consumer/storage checks together.

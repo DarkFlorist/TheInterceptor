@@ -1,5 +1,5 @@
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
-import { refreshPopupSimulation } from './popupSimulationRefresh.js'
+import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain, changeActiveRpc } from './activeSettings.js'
 import { getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
@@ -1287,7 +1287,7 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 }
 
 export async function requestCompleteVisualizedSimulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
-	await refreshPopupSimulation({ ethereum, tokenPriceService })
+	await queuePopupSimulationRefresh({ ethereum, tokenPriceService })
 	const visualizedSimulatorState = await getPopupVisualisationState()
 	return { method: 'popup_requestCompleteVisualizedSimulation' as const, visualizedSimulatorState }
 }
