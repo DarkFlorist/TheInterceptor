@@ -357,7 +357,8 @@ function installBrowserMock(replyToMessage?: (message: unknown) => unknown) {
 			runtime: {
 				lastError: null,
 				async sendMessage(message: unknown) {
-					sentMessages.push(message)
+					// Browser messaging clones payloads, including schema objects with no prototype.
+					sentMessages.push(structuredClone(message))
 					return replyToMessage?.(message)
 				},
 			},
