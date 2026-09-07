@@ -110,17 +110,11 @@ const popupRefreshGenerationRepository = createStoredValueRepository({
 export const getPopupRefreshGeneration = popupRefreshGenerationRepository.get
 export const setPopupRefreshGeneration = popupRefreshGenerationRepository.set
 
+// Large-state getters share getLargeStateValue's failure contract: defaults apply only to successful absent/invalid reads. Rejections abort updates and reach the owning request/task boundary (e.g. catchAllErrorsAndCall in background-startup.ts), which reports the error; recovery is a later retry, never an empty-state write.
 const simulationResultsSemaphore = new Semaphore(1)
 export async function getPopupVisualisationState() {
 	const emptyResults = createPassthroughCompleteVisualizedSimulation()
-	try {
-		return await getLargeStateValue('popupVisualisation', CompleteVisualizedSimulation) ?? emptyResults
-	} catch (error) {
-		console.warn('Simulation results were corrupt:')
-		console.warn(error)
-		await setLargeStateValue('popupVisualisation', CompleteVisualizedSimulation, emptyResults)
-		return emptyResults
-	}
+	return await getLargeStateValue('popupVisualisation', CompleteVisualizedSimulation) ?? emptyResults
 }
 
 export const setPopupVisualisationState = async (newResults: CompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
