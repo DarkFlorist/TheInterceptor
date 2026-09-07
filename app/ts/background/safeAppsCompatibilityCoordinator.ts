@@ -42,7 +42,7 @@ function createSafeAppsCompatibilityCoordinator() {
 	const requestSignerAccountDiscovery = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) => {
 		if (signerAccountDiscoveryTabs.has(socket.tabId)) return true
 		const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
-		if (signerStateToken === undefined) return false
+		if (signerStateToken === undefined || signerStateToken.socket.connectionName !== socket.connectionName) return false
 		signerAccountDiscoveryTabs.add(socket.tabId)
 		const sent = sendSubscriptionReplyOrCallBack(websiteTabConnections, signerStateToken.socket, { type: 'result' as const, method: 'request_signer_to_eth_accounts', result: [] })
 		if (!sent) signerAccountDiscoveryTabs.delete(socket.tabId)
@@ -97,8 +97,10 @@ function createSafeAppsCompatibilityCoordinator() {
 			publicationTokens.delete(websiteSocketToString(socket))
 			signerAccountDiscoveryTabs.delete(socket.tabId)
 		},
-		signerConnectionChanged(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
+		signerConnectionChanged(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, refreshSignerAccounts = false) {
 			signerAccountDiscoveryTabs.delete(socket.tabId)
+			// Share the passive request with eligibility discovery, including when Safe compatibility is disabled.
+			if (refreshSignerAccounts) requestSignerAccountDiscovery(websiteTabConnections, socket)
 			void refreshPort(websiteTabConnections, socket, false).catch((error: unknown) => { void reportUnexpectedError(error) })
 		},
 		signerAccountsSettled(socket: WebsiteSocket) {

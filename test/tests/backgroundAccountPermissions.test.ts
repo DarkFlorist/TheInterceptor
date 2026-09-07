@@ -972,6 +972,7 @@ describe('background eth_accounts', () => {
 			installBrowserMock()
 			const {
 				changeSimulationMode,
+				getTabState,
 				rememberSigningAddressPreference,
 				handleInterceptedRequest,
 				safeAppsCompatibilityCoordinator,
@@ -1038,18 +1039,15 @@ describe('background eth_accounts', () => {
 					params: [true, 'MetaMask', 1],
 				}, websiteTabConnections, noopPublishRpcConnectionStatus)
 			} else safeAppsCompatibilityCoordinator.signerConnectionChanged(websiteTabConnections, socket)
-			if (!safeConsent || !featureEnabled) {
-				await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
-				assert.equal(replyToDiscovery, undefined)
-				assert.equal(messages.some((message) => message.method === 'safe_apps_compatibility' && message.result?.canRequestAccess === true), false)
-				assert.equal(websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.approved, false)
-				return
-			}
 			await waitForPortMessageCount(messages, 'request_signer_to_eth_accounts', 1)
+			assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_accounts').length, 1)
 			assert.equal(messages.some((message) => message.method === 'safe_apps_compatibility' && message.result?.enabled === true), false)
 			if (coldStart) assert.equal(websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.approved, false)
 			if (replyToDiscovery === undefined) throw new Error('Safe Apps signer-account discovery was not requested')
 			await replyToDiscovery()
+			const refreshedTabState = await getTabState(socket.tabId)
+			assert.deepEqual(refreshedTabState.signerAccounts, [discoveredAccount])
+			assert.equal(refreshedTabState.activeSigningAddress, discoveredAccount)
 			if (coldStart) assert.equal(websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]?.approved, expectedCompatibility)
 			await safeAppsCompatibilityCoordinator.refreshApprovedPorts(websiteTabConnections)
 			assert.equal(messages.some((message) => message.method === 'safe_apps_compatibility' && message.result?.enabled === true), expectedCompatibility)

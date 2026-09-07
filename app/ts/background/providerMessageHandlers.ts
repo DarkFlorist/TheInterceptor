@@ -23,7 +23,7 @@ import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from '
 import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { getActiveAddressEntryForChain } from './metadataUtils.js'
 import { isSafeAppsTopFramePort, safeAppsCompatibilityCoordinator } from './safeAppsCompatibilityCoordinator.js'
-import { hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
+import type { ApprovalState } from './websiteAccessPolicy.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
@@ -238,6 +238,7 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName) return await getConnectedToSignerResult()
 	// Persisted origin approval must not let a newly connected child frame claim tab-wide signer ownership or bootstrap address access.
 	if (!isTopFrame && !isApprovedWebsitePort(websiteTabConnections, port)) return await getConnectedToSignerResult()
+	let shouldRefreshSignerAccounts = false
 	const result = await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
 		const tabConnection = websiteTabConnections.get(socket.tabId)
 		if (!isCurrentWebsiteConnection(tabConnection, socket, port) || tabConnection?.signerStateOwner?.connectionName !== socket.connectionName) {
@@ -282,18 +283,12 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 				verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, activeAddressEntry, settings)
 			}
 		}
-		if (isTopFrame && approval === 'hasAccess' && activeAddress === undefined && signerConnected && !signerMissing && !settings.simulationMode && settings.activeSigningSafeAddress !== undefined && await getSafeAppsCompatibilityMode()) {
-			const safe = await getActiveAddressEntryForChain(settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId)
-			const connection = getWebsiteConnectionForPort(websiteTabConnections, port)
-			if (safe.type === 'safe' && connection !== undefined && hasAddressAccess(settings.websiteAccess, connection.websiteOrigin, safe) === 'hasAccess') {
-				// Discover ownership without approving the port or publishing the configured Safe.
-				sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_to_eth_accounts', result: [] })
-			}
-		}
+		// A reload clears signer accounts. Refresh approved sites independently of Safe consent; publication still checks address access.
+		shouldRefreshSignerAccounts = isTopFrame && approval === 'hasAccess' && signerConnected && !signerMissing && !settings.simulationMode
 		return await getConnectedToSignerResult()
 	})
 	// Safe Apps compatibility is an optional subscription and must not delay or fail the core signer handshake.
-	safeAppsCompatibilityCoordinator.signerConnectionChanged(websiteTabConnections, socket)
+	safeAppsCompatibilityCoordinator.signerConnectionChanged(websiteTabConnections, socket, shouldRefreshSignerAccounts)
 	return result
 }
 
