@@ -69,8 +69,18 @@ const isSafeAppsPolicyErrorCandidate = (value: unknown): value is SafeAppsPolicy
 const safeAppsPolicyError = (message: string) => Object.assign(new Error(message), { safeAppsPolicyError: true as const })
 export const isSafeAppsRequestPolicyError = (error: unknown): error is Error & { readonly safeAppsPolicyError: true } => error instanceof Error && isSafeAppsPolicyErrorCandidate(error) && error.safeAppsPolicyError === true
 
+function normalizeSafeTransactionOptions(value: unknown) {
+	if (!isRecord(value)) return value
+	const { method, params } = value
+	if (method !== 'sendTransactions' || !isRecord(params) || Array.isArray(params)) return value
+	const { params: options, ...transactionParams } = params
+	if (options !== undefined) return value
+	// The SDK includes params: undefined when options are omitted; Firefox preserves it during structured cloning.
+	return { ...value, params: transactionParams }
+}
+
 function parseSafeAppsRequest(value: unknown): funtypes.Static<typeof SafeAppsRequest> {
-	const parsed = SafeAppsRequest.safeParse(value)
+	const parsed = SafeAppsRequest.safeParse(normalizeSafeTransactionOptions(value))
 	if (!parsed.success) {
 		const parsedMethod = funtypes.ReadonlyObject({ method: funtypes.String }).safeParse(value)
 		if (!parsedMethod.success) throw safeAppsPolicyError('Safe Apps request must contain a method string.')

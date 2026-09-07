@@ -172,6 +172,24 @@ describe('Safe Apps compatibility policy', () => {
 		await assert.rejects(async () => await getSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [{ ...transaction, operation: 1 }] } }, 'https://app.example', activeAddress, rpcNetwork, getSafeState), /delegate calls are not supported/)
 	})
 
+	test('accepts structured-cloned SDK requests with explicitly undefined transaction options', async () => {
+		const transaction = { to: '0x2222222222222222222222222222222222222222', value: '0', data: '0x' }
+		for (const txs of [[transaction], [transaction, transaction]]) {
+			const sdkRequest = structuredClone({ method: 'sendTransactions', params: { txs, params: undefined } })
+			assert.equal(Object.hasOwn(sdkRequest.params, 'params'), true)
+			assert.deepEqual(
+				await getSafeAppsRequestCommand(sdkRequest, 'app.example', activeAddress, rpcNetwork, getSafeState),
+				await getSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs } }, 'app.example', activeAddress, rpcNetwork, getSafeState),
+			)
+			assert.equal(Object.hasOwn(sdkRequest.params, 'params'), true)
+		}
+		for (const params of [
+			{ txs: [undefined], params: undefined },
+			{ txs: [{ ...transaction, value: undefined }], params: undefined },
+			{ txs: [transaction], params: undefined, unknown: undefined },
+		]) await assert.rejects(getSafeAppsRequestCommand({ method: 'sendTransactions', params }, 'app.example', activeAddress, rpcNetwork, getSafeState), /JSON-compatible/)
+	})
+
 	test('rejects malformed Safe Apps shapes at the shared runtype boundaries', async () => {
 		await assert.rejects(
 			async () => await getSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [{ to: 1, value: '0', data: '0x' }] } }, 'https://app.example', activeAddress, rpcNetwork, getSafeState),

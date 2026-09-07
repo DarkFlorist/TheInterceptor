@@ -848,7 +848,7 @@ describe('inpage signer bridge', () => {
 			const delegateCallReply = await safeRequest('sendTransactions', { txs: [{ ...transaction, operation: 1 }] })
 			assert.equal(delegateCallReply.success, false)
 			assert.equal(delegateCallReply.error, 'Safe Apps delegate calls are not supported inside a batch or as app-provided transactions.')
-			const batchReply = await safeRequest('sendTransactions', { txs: [transaction, transaction] })
+			const batchReply = await safeRequest('sendTransactions', { txs: [transaction, transaction], params: undefined })
 			assert.equal(batchReply.success, true)
 			assert.deepEqual(batchReply.data, { safeTxHash: '0xsafehash' })
 			const batchRequest = ethereumRequests.pop()
