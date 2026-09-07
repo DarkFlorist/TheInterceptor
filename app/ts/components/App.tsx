@@ -4,7 +4,7 @@ import Hint from './subcomponents/Hint.js'
 import { getAddress, isAddress } from '../utils/ethereumPrimitives.js'
 import { PasteCatcher } from './subcomponents/PasteCatcher.js'
 import { truncateAddr } from '../utils/ethereum.js'
-import type { Settings } from '../types/interceptor-messages.js'
+import type { PopupSettingsChangeStatus, Settings } from '../types/interceptor-messages.js'
 import { version, gitCommitSha } from '../version.js'
 import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.js'
 import type { EthereumBytes32 } from '../types/wire-types.js'
@@ -32,6 +32,7 @@ export function App() {
 	const pendingAddressChangeRequestId = useSignal<string | undefined>(undefined)
 	const isActiveAddressChanging = useSignal(false)
 	const pendingSettingsChange = useSignal(false)
+	const backgroundSettingsChange = useSignal<PopupSettingsChangeStatus['data']>({ revision: 0, operation: undefined })
 	const {
 		activeAddresses,
 		walletSelectedAddressBookEntry,
@@ -71,6 +72,9 @@ export function App() {
 			if (!settings.simulationMode) displayedSigningAddress.value = activeAddress
 			isActiveAddressChanging.value = false
 		},
+		onSettingsChangeStatus(status) {
+			if (status.revision >= backgroundSettingsChange.value.revision) backgroundSettingsChange.value = status
+		},
 		onInitialSettings(settings: Settings) {
 			if (appPage.value.page !== 'Unknown') return
 			if (settings.openedPage.page === 'AddNewAddress' || settings.openedPage.page === 'ModifyAddress') {
@@ -82,10 +86,11 @@ export function App() {
 	})
 	const boundaryResetKey = useSignal(0)
 	const isActiveAddressChangePending = useComputed(() => pendingAddressChangeRequestId.value !== undefined)
-	const isSettingsChangePending = useComputed(() => isActiveAddressChangePending.value || pendingSettingsChange.value)
+	const isSettingsChangePending = useComputed(() => isActiveAddressChangePending.value || pendingSettingsChange.value || backgroundSettingsChange.value.operation !== undefined)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer', persistedEntry?: AddressBookEntry) {
-		if (!isSettingsLoaded.value || isSettingsChangePending.value) return
+		if (!isSettingsLoaded.value) return
+		if (isSettingsChangePending.value) throw new Error('A settings change is already in progress. Please wait for it to finish.')
 		const selectableAddresses = includePersistedAddressBookEntry(activeAddresses.value, persistedEntry)
 		if (!isActiveAddressSelectionAllowed(address, selectableAddresses, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])) return
 		const requestId = crypto.randomUUID()
@@ -104,7 +109,8 @@ export function App() {
 	}
 
 	async function changePopupSettings(message: ChangeActiveChain | EnableSimulationMode | ModifyMakeMeRich) {
-		if (!isSettingsLoaded.value || isSettingsChangePending.value) return
+		if (!isSettingsLoaded.value) return
+		if (isSettingsChangePending.value) throw new Error('A settings change is already in progress. Please wait for it to finish.')
 		pendingSettingsChange.value = true
 		try {
 			await requestPopupSettingsChange(message)
@@ -274,6 +280,10 @@ export function App() {
 				<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>
 					<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 					<ProviderErrors tabState = { tabState }/>
+					{ backgroundSettingsChange.value.operation !== undefined && !pendingSettingsChange.value && !isActiveAddressChangePending.value
+						? <div role = 'status' aria-live = 'polite' class = 'notification popup-settings-change-status'>{ {
+							wallet: 'Changing wallet...', mode: 'Changing mode...', rpc: 'Changing network. Check your wallet if approval is required.', rich: 'Updating balances...',
+						}[backgroundSettingsChange.value.operation] }</div> : <></> }
 					<Home
 						isActiveAddressChanging = { isActiveAddressChanging }
 						isActiveAddressChangePending = { isActiveAddressChangePending }

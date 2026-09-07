@@ -14,7 +14,7 @@ import type { EthereumClientService } from '../../simulation/services/EthereumCl
 import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
 import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
-import { addSignerStateReplacementListener, doSignerStateTokensMatch, signerUnavailableError, type SignerStateToken } from '../signerStateOwnership.js'
+import { addSignerStateReplacementListener, doSignerStateTokensMatch, getConfirmedSignerStateToken, signerUnavailableError, type SignerStateToken } from '../signerStateOwnership.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined 
 
@@ -22,7 +22,9 @@ type PendingSignerChainChange = {
 	readonly future: Future<
 		| { readonly type: 'reply', readonly confirmation: SignerChainChangeConfirmation }
 		| { readonly type: 'replacement', readonly error: typeof signerUnavailableError }
+		| { readonly type: 'timeout' }
 	>
+	timeout: ReturnType<typeof setTimeout> | undefined
 	readonly requestTabId: number
 	readonly requestedRpcNetwork: RpcNetwork
 	signerStateToken: SignerStateToken | undefined
@@ -31,6 +33,22 @@ type PendingSignerChainChange = {
 }
 
 let pendingSignerChainChange: PendingSignerChainChange | undefined
+// The wallet protocol has no per-command identifier. Keep timed-out commands isolated until their reply or a new signer generation, so a late reply cannot complete a retry.
+const expiredSignerChainChanges = new WeakMap<browser.runtime.Port, { readonly token: SignerStateToken, readonly chainId: bigint }>()
+const WALLET_SWITCH_TIMEOUT_MS = 120_000
+
+export function consumeExpiredSignerChainReply(port: browser.runtime.Port, signerProviderGeneration: number, chainId: bigint) {
+	const expired = expiredSignerChainChanges.get(port)
+	if (expired === undefined || expired.token.signerProviderGeneration !== signerProviderGeneration || expired.chainId !== chainId) return false
+	expiredSignerChainChanges.delete(port)
+	return true
+}
+
+export function markSignerChainReplyReceived(token: SignerStateToken, chainId: bigint) {
+	const pending = pendingSignerChainChange
+	if (pending !== undefined && doesPendingSignerChainChangeMatch(pending, token, chainId)) clearTimeout(pending.timeout)
+}
+
 let chainChangeResolutionInProgress = false
 
 let openedDialog: PopupOrTab | undefined 
@@ -95,6 +113,8 @@ export function getPendingSignerChainChangeRpc(signerStateToken: SignerStateToke
 }
 
 export function resolveSignerChainChange(signerStateToken: SignerStateToken, confirmation: SignerChainChangeConfirmation) {
+	if (consumeExpiredSignerChainReply(signerStateToken.port, signerStateToken.signerProviderGeneration, confirmation.data[0].chainId)) return false
+	markSignerChainReplyReceived(signerStateToken, confirmation.data[0].chainId)
 	const pending = pendingSignerChainChange
 	if (pending === undefined || !doesPendingSignerChainChangeMatch(pending, signerStateToken, confirmation.data[0].chainId)) return false
 	if (pending.signerStateToken === undefined) {
@@ -203,12 +223,17 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 	return userDeniedChange
 }
 
-export async function requestSignerChainChange(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, requestTabId: number) {
+export async function requestSignerChainChange(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, requestTabId: number, timeoutMs = WALLET_SWITCH_TIMEOUT_MS) {
 	if (pendingSignerChainChange !== undefined) return { error: { code: -32002, message: 'A network switch is already waiting for your wallet.' } }
+	const currentToken = getConfirmedSignerStateToken(websiteTabConnections, requestTabId)
+	const expired = currentToken === undefined ? undefined : expiredSignerChainChanges.get(currentToken.port)
+	if (expired !== undefined && currentToken !== undefined && expired.token.signerProviderGeneration === currentToken.signerProviderGeneration) return { error: { code: -32002, message: 'The previous network request is still open in your wallet. Dismiss it or reconnect the wallet before trying again.' } }
 	const pending: PendingSignerChainChange = {
+		timeout: undefined,
 		future: new Future<
 			| { readonly type: 'reply', readonly confirmation: SignerChainChangeConfirmation }
 			| { readonly type: 'replacement', readonly error: typeof signerUnavailableError }
+			| { readonly type: 'timeout' }
 		>(),
 		requestTabId: requestTabId,
 		requestedRpcNetwork: rpcNetwork,
@@ -232,6 +257,10 @@ export async function requestSignerChainChange(ethereum: EthereumClientService, 
 				: { error: signerUnavailableError } as const
 		}
 		pending.signerStateToken = changeActiveRpcResult.signerStateToken
+		pending.timeout = setTimeout(() => {
+			expiredSignerChainChanges.set(changeActiveRpcResult.signerStateToken.port, { token: changeActiveRpcResult.signerStateToken, chainId: rpcNetwork.chainId })
+			pending.future.resolve({ type: 'timeout' })
+		}, timeoutMs)
 		const precedingReply = pending.repliesBeforeToken.find(({ signerStateToken, confirmation }) => {
 			return doSignerStateTokensMatch(changeActiveRpcResult.signerStateToken, signerStateToken)
 				&& confirmation.data[0].chainId === pending.requestedRpcNetwork.chainId
@@ -240,10 +269,12 @@ export async function requestSignerChainChange(ethereum: EthereumClientService, 
 		const precedingReplacement = pending.replacementsBeforeToken.find(({ signerStateToken }) => doSignerStateTokensMatch(changeActiveRpcResult.signerStateToken, signerStateToken))
 		if (precedingReplacement !== undefined) pending.future.resolve({ type: 'replacement', error: precedingReplacement.error })
 		const signerResult = await pending.future
+		if (signerResult.type === 'timeout') return { error: { code: -32002, message: 'Your wallet did not answer the network request in time. Other settings are available again. Dismiss the request in your wallet or reconnect it before retrying.' } }
 		if (signerResult.type === 'replacement') return { error: signerResult.error } as const
 		if (signerResult.confirmation.data[0].accept === false) return { error: signerResult.confirmation.data[0].error } as const // forward signers error to the application
 		if (signerResult.confirmation.data[0].chainId === rpcNetwork.chainId) return { result: null }
 	} finally {
+		clearTimeout(pending.timeout)
 		removeReplacementListener()
 		if (pendingSignerChainChange === pending) pendingSignerChainChange = undefined
 	}

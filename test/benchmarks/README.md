@@ -64,7 +64,7 @@ After `bun run setup-chrome`, run:
 bun run benchmark:popup-switching
 ```
 
-This benchmark uses the existing Chromium/CDP harness, an isolated temporary profile, a local JSON-RPC fixture, and an EIP-6963 fake wallet. Each iteration starts a fresh profile and seeds two contact wallets and RPC endpoints before measurement. It covers wallet selection, both modes, same-chain RPC switching, rich on/off, and wallet-required network acceptance/rejection. It deliberately uses an empty transaction stack; these results do not predict real-wallet or large-stack performance.
+This benchmark uses the existing Chromium/CDP harness, an isolated temporary profile, a local JSON-RPC fixture, and an EIP-6963 fake wallet. Each iteration starts a fresh profile and seeds two contact wallets and RPC endpoints before measurement. It covers wallet selection, both modes, same-chain RPC switching, rich on/off, and wallet-required network acceptance/rejection. It measures empty-stack switching and rich-mode changes with one simulated transaction, injects an uncached RPC simulation failure, and verifies recovery. It also holds a wallet reply while opening a second popup and closing/reopening the initiating popup, checking shared pending status and disabled controls. These results do not predict real-wallet or large-stack performance.
 
 Configure the fixture delays and sample count:
 
@@ -84,5 +84,9 @@ The JSON report includes each sample and per-scenario minimum, median (upper mid
 - `rpcRequests`: local fixture RPC requests completed during the sample; cache hits and empty-stack changes can require none.
 
 The popup is brought to the foreground for frame sampling. These are animation-frame observations, not GPU paint timestamps. The benchmark fails for wrong outcomes, missing visual feedback or successful-setting persistence events, unsupported fixture RPC calls, wallet switches completing before the configured wallet delay, or rejected switches changing persisted RPC state. It imposes no machine-dependent speed threshold.
+
+The transient RPC failure scenario expects the rich setting to be saved while the popup displays a failed simulation; an explicit refresh must recover once the fixture RPC is restored.
+
+The wallet-response deadline is covered by focused tests using a shortened timeout; the browser fixture holds and releases replies explicitly rather than waiting two minutes. Timing samples cover ten scenarios; popup lifecycle/conflict and RPC-recovery assertions run alongside them without speed thresholds.
 
 For comparisons, build each revision and run the same command with the same browser, delays, iteration count, and host load. Compare feedback and selected-value timings separately from total completion time. Fixture setup is excluded from sample timings.

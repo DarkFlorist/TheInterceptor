@@ -2,7 +2,7 @@ import { refreshPopupSimulation } from './popupSimulationRefresh.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import type { RpcNetwork } from '../types/rpc.js'
+import { RpcNetwork } from '../types/rpc.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts, updateWebsiteApprovalAccesses } from './accessManagement.js'
@@ -159,7 +159,8 @@ export async function activateAddressSelection(
 
 export async function changeActiveRpc(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean, signerTabId: number | undefined) {
 	const currentRpc = (await getSettings()).activeRpcNetwork
-	if (currentRpc.chainId === rpcNetwork.chainId && currentRpc.httpsRpc === rpcNetwork.httpsRpc) {
+	// Metadata edits at the same endpoint still need to update the active selection.
+	if (JSON.stringify(RpcNetwork.serialize(currentRpc)) === JSON.stringify(RpcNetwork.serialize(rpcNetwork))) {
 		return simulationMode ? { type: 'completedLocally' as const } : { type: 'signerRequestNotNeeded' as const }
 	}
 	if (simulationMode) {

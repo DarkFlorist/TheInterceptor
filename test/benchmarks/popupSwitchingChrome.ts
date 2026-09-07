@@ -1,5 +1,7 @@
-import { Multicall3ABI } from '../../app/ts/utils/constants.js'
-import { encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
+import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
+import { JSON_RPC_ERROR_CODE_RESOURCE_UNAVAILABLE, Multicall3ABI } from '../../app/ts/utils/constants.js'
+import { decodeFunctionDataStrict, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts } from './chromeHarness.js'
 import type { CdpConnection } from './chromeHarness.js'
@@ -25,9 +27,23 @@ const block = EthereumBlockHeader.parse({ ...blockResponse.result, transactions:
 if (block === null) throw new Error('Missing fixture block')
 const rpcRequests: { method: string, elapsedMs: number }[] = []
 const unexpectedMethods = new Set<string>()
+let failSimulation = false
+let injectedFailures = 0
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function simulationReturnData(call: unknown) {
+	if (!isRecord(call)) throw new Error('Invalid fixture call')
+	const input = call.input ?? call.data
+	if (input === undefined || input === '0x') return new Uint8Array()
+	if (typeof input !== 'string' || !input.startsWith('0x82ad56cb')) throw new Error('Unsupported fixture call data')
+	const decoded = decodeFunctionDataStrict(Multicall3ABI, Uint8Array.from(Buffer.from(input.slice(2), 'hex')))
+	if (decoded.functionName !== 'aggregate3') throw new Error('Expected aggregate balance query')
+	const balance = encodeFunctionReturn(Multicall3ABI, 'getEthBalance', [0n])
+	const result = encodeFunctionReturn(Multicall3ABI, 'aggregate3', [decoded.args[0].map(() => ({ success: true, returnData: balance }))])
+	return Uint8Array.from(Buffer.from(result.slice(2), 'hex'))
 }
 
 const pageHtml = await Bun.file(new URL('./chromeCommunicationPage.html', import.meta.url)).text()
@@ -51,14 +67,17 @@ const server = Bun.serve({
 			case 'eth_maxPriorityFeePerGas': result = '0x0'; break
 			case 'eth_getCode': result = '0x'; break
 			case 'eth_simulateV1': {
+				if (failSimulation) {
+					injectedFailures++
+					rpcRequests.push({ method: rpc.method, elapsedMs: performance.now() - started })
+					return Response.json({ jsonrpc: '2.0', id: rpc.id, error: { code: JSON_RPC_ERROR_CODE_RESOURCE_UNAVAILABLE, message: 'Benchmark RPC simulation failure' } })
+				}
 				const payload = Array.isArray(rpc.params) ? rpc.params[0] : undefined
 				if (!isRecord(payload) || !Array.isArray(payload.blockStateCalls)) throw new Error('Invalid simulation request')
-				const balance = encodeFunctionReturn(Multicall3ABI, 'getEthBalance', [0n])
-				const aggregate = encodeFunctionReturn(Multicall3ABI, 'aggregate3', [[{ success: true, returnData: balance }]])
 				result = serialize(EthSimulateV1Result, payload.blockStateCalls.map((stateCall: unknown, index: number) => {
 					if (!isRecord(stateCall) || !Array.isArray(stateCall.calls)) throw new Error('Invalid simulation calls')
 					return { number: block.number + BigInt(index + 1), hash: 0x1234n, timestamp: BigInt(Math.floor(Date.now() / 1000)), gasLimit: 30_000_000n, gasUsed: 0n, baseFeePerGas: 1n,
-						calls: stateCall.calls.map(() => ({ status: 'success' as const, gasUsed: 0n, logs: [], returnData: Uint8Array.from(Buffer.from(aggregate.slice(2), 'hex')) })) }
+						calls: stateCall.calls.map((call: unknown) => ({ status: 'success' as const, gasUsed: 21_000n, logs: [], returnData: simulationReturnData(call) })) }
 				}))
 				break
 			}
@@ -87,6 +106,7 @@ const fakeSigner = `(() => {
 			if (method === 'eth_accounts' || method === 'eth_requestAccounts') return [${ JSON.stringify(walletA) }];
 			if (method !== 'wallet_switchEthereumChain') throw new Error('Unsupported benchmark wallet method: ' + method);
 			await new Promise(resolve => setTimeout(resolve, ${ walletDelayMs }));
+			if (globalThis.__benchmarkHoldSwitch) await new Promise(resolve => { globalThis.__benchmarkReleaseSwitch = resolve; });
 			if (globalThis.__benchmarkRejectSwitch) throw Object.assign(new Error('Benchmark wallet rejected network change'), { code: 4001 });
 			chain = params[0].chainId;
 			for (const listener of listeners.get('chainChanged') ?? []) listener(chain);
@@ -104,13 +124,13 @@ const fakeSigner = `(() => {
 async function waitFor(connection: CdpConnection, expression: string, label: string) {
 	const deadline = Date.now() + 30_000
 	while (!await connection.evaluate<boolean>(expression)) {
-		if (Date.now() > deadline) throw new Error(`Timed out waiting for ${ label }`)
+		if (Date.now() > deadline) throw new Error(`Timed out waiting for ${ label }: ${ await connection.evaluate<string>('document.body.textContent') }`)
 		await delay(25)
 	}
 }
 const modeButton = (name: string) => `Array.from(document.querySelectorAll('.popup-home-mode-selector button')).find(button => button.textContent.trim() === ${ JSON.stringify(name) })`
 const rpcButton = (name: string) => `Array.from(document.querySelectorAll('.popup-home-rpc-selector .dropdown-item')).find(button => button.textContent.trim() === ${ JSON.stringify(name) })`
-const ready = `document.querySelector('.active-address-row button')?.disabled === false && !document.querySelector('.popup-home-header-layout [aria-busy="true"]')`
+const ready = `document.querySelector('.popup-home-rpc-selector .dropdown-trigger > button')?.disabled === false && !document.querySelector('.popup-settings-change-status') && !document.querySelector('.popup-home-header-layout [aria-busy="true"]')`
 
 type SwitchSample = {
 	name: string
@@ -184,7 +204,9 @@ async function runIteration() {
 			websiteAccess: [{ website: { websiteOrigin: server.url.host }, access: true, addressAccess: [walletA, walletB].map(address => ({ address, access: true })) }],
 			userAddressBookEntriesV3: [walletA, walletB].map((address, index) => ({ type: 'contact', address, name: `Wallet ${ index === 0 ? 'A' : 'B' }`, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false })),
 		}) })`)
-		const popup = await connectTarget(chrome.browserDebugPort, await createTargetPage(chrome.browserConnection, `chrome-extension://${ new URL(worker.url).host }/html3/popupV3.html`))
+		const popupUrl = `chrome-extension://${ new URL(worker.url).host }/html3/popupV3.html`
+		const popupTarget = await createTargetPage(chrome.browserConnection, popupUrl)
+		const popup = await connectTarget(chrome.browserDebugPort, popupTarget)
 		connections.push(popup)
 		await waitFor(popup, `typeof browser !== 'undefined'`, 'popup runtime')
 		await popup.evaluate(`browser.runtime.sendMessage({ method: 'popup_changeActiveRpc', data: ${ JSON.stringify(networkA) } })`)
@@ -212,6 +234,46 @@ async function runIteration() {
 		await page.evaluate('globalThis.__benchmarkRejectSwitch = false')
 		samples.push(await measure(popup, 'wallet RPC acceptance', 'popup_changeActiveRpc', `${ rpcButton(networkC.name) }.click()`, `!!document.querySelector('.popup-home-rpc-selector [role="status"]')`, `document.querySelector('.popup-home-rpc-selector .dropdown-trigger button')?.title === ${ JSON.stringify(networkC.name) }`))
 		samples.push(await measure(popup, 'simulating', 'popup_enableSimulationMode', `${ modeButton('Simulating') }.click()`, `${ modeButton('Simulating') }?.getAttribute('aria-busy') === 'true'`, `${ modeButton('Simulating') }?.classList.contains('is-outlined') === false`))
+		const transaction = { from: BigInt(walletA), to: BigInt(walletB), value: 0n, input: new Uint8Array() }
+		const stack: InterceptorTransactionStack = { operations: [{ type: 'Transaction', preSimulationTransaction: {
+			signedTransaction: mockSignTransaction({ type: '1559', ...transaction, nonce: 0n, gas: 21_000n, chainId: 2n, maxFeePerGas: 2n, maxPriorityFeePerGas: 1n }),
+			website: { websiteOrigin: server.url.host }, created: new Date(), originalRequestParameters: { method: 'eth_sendTransaction', params: [{ ...transaction, maxFeePerGas: 2n, maxPriorityFeePerGas: 1n }] },
+			transactionIdentifier: 1n, simulationOptions: { requiredChainId: 2n, simulateWithZeroBaseFee: false },
+		} }] }
+		await workerConnection.evaluate(`browser.storage.local.set({ interceptorTransactionStack: ${ JSON.stringify(serialize(InterceptorTransactionStack, stack)) } })`)
+		await popup.evaluate(`browser.runtime.sendMessage({ method: 'popup_refreshSimulation' })`)
+		await waitFor(popup, `document.body.textContent.includes('Contract Fallback Method')`, 'populated simulation stack')
+		samples.push(await measure(popup, 'stacked rich on', 'popup_modifyMakeMeRich', `document.querySelector('input[type="checkbox"]').click()`, `document.body.textContent.includes('Updating balances...')`, `document.querySelector('input[type="checkbox"]')?.checked === true`))
+		// Change the input before injecting failure so an earlier successful cached response cannot satisfy the request.
+		await workerConnection.evaluate(`browser.storage.local.set({ preSimulationBlockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: '0x9d', deltaUnit: 'Seconds' } })`)
+		const failuresBefore = injectedFailures
+		failSimulation = true
+		try {
+			samples.push(await measure(popup, 'stacked rich off with RPC failure', 'popup_modifyMakeMeRich', `document.querySelector('input[type="checkbox"]').click()`, `document.body.textContent.includes('Updating balances...')`, `document.querySelector('input[type="checkbox"]')?.checked === false`))
+			if (injectedFailures === failuresBefore) throw new Error('RPC failure scenario did not exercise the fixture')
+			await waitFor(popup, `document.body.textContent.includes('Benchmark RPC simulation failure')`, 'visible RPC simulation failure')
+		} finally { failSimulation = false }
+		await popup.evaluate(`browser.runtime.sendMessage({ method: 'popup_refreshSimulation' })`)
+		await waitFor(popup, `!document.body.textContent.includes('Benchmark RPC simulation failure')`, 'RPC recovery')
+		await popup.evaluate(`browser.runtime.sendMessage({ method: 'popup_enableSimulationMode', data: false })`)
+		const second = await connectTarget(chrome.browserDebugPort, await createTargetPage(chrome.browserConnection, popupUrl))
+		connections.push(second)
+		await waitFor(second, ready, 'second popup ready')
+		await page.evaluate('globalThis.__benchmarkHoldSwitch = true; globalThis.__benchmarkRejectSwitch = true')
+		await popup.evaluate(`${ rpcButton(networkA.name) }.click()`)
+		await waitFor(page, `typeof globalThis.__benchmarkReleaseSwitch === 'function'`, 'held wallet switch')
+		const sharedBusy = `!!document.querySelector('.popup-settings-change-status') && document.querySelector('.active-address-row .media-right > button')?.disabled === true && Array.from(document.querySelectorAll('.popup-home-mode-selector button, .popup-home-rpc-selector .dropdown-trigger button, input[type="checkbox"]')).every(button => button.disabled)`
+		await waitFor(second, sharedBusy, 'pending status in second popup')
+		const conflict = await second.evaluate<{ ok: boolean }>(`browser.runtime.sendMessage({ method: 'popup_enableSimulationMode', data: true })`)
+		if (conflict.ok !== false) throw new Error('Second popup bypassed background coordination')
+		await chrome.browserConnection.send('Target.closeTarget', { targetId: popupTarget })
+		const reopened = await connectTarget(chrome.browserDebugPort, await createTargetPage(chrome.browserConnection, popupUrl))
+		connections.push(reopened)
+		await waitFor(reopened, sharedBusy, 'pending status after close and reopen')
+		await page.evaluate('globalThis.__benchmarkHoldSwitch = false; globalThis.__benchmarkReleaseSwitch()')
+		await waitFor(second, ready, 'second popup released after wallet rejection')
+		await waitFor(reopened, ready, 'reopened popup released after wallet rejection')
+		if (await reopened.evaluate(`!!document.querySelector('.popup-settings-change-status')`)) throw new Error('Stale pending status after completion')
 		return samples
 	} finally {
 		for (const connection of connections) connection.close()
@@ -241,6 +303,6 @@ async function main() {
 			completion: timingStats(group.map(sample => sample.completedFrameMs)),
 		}
 	})
-	process.stdout.write(JSON.stringify({ rpcDelayMs, walletDelayMs, iterations, fixture: 'empty stack, local RPC, fake EIP-6963 wallet', summaries, samples }, undefined, 2) + '\n')
+	process.stdout.write(JSON.stringify({ rpcDelayMs, walletDelayMs, iterations, fixture: 'empty and one-transaction stacks, local RPC including failure/recovery, fake EIP-6963 wallet, concurrent and reopened popups', summaries, samples }, undefined, 2) + '\n')
 }
 try { await main() } finally { server.stop(true) }

@@ -1182,6 +1182,31 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
+	test('popup displays shared pending work and ignores an older busy status after completion', async () => {
+		const dom = installDomMock()
+		const { listeners, sentMessages } = installBrowserMock()
+		try {
+			await act(() => { render(h(App, {}), dom.document.body) })
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected a runtime listener')
+			await act(() => { listener({ role: 'all', ...serialize(UpdateHomePage, createSimulationStackHomePageUpdate(25, 1, 'Popup')) }, {}, () => undefined) })
+			assert.ok(sentMessages.some(message => PopupMessage.safeParse(message).success && typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestSettingsChangeStatus'))
+			const status = async (revision: number, operation: 'rpc' | undefined) => await act(() => {
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsChangeStatus', data: { revision, operation } }), {}, () => undefined)
+			})
+			await status(10, 'rpc')
+			assert.ok(dom.document.body.textContent.includes('Changing network. Check your wallet'))
+			assert.equal(String(getButtonByText(dom.document.body, 'Change').getAttribute?.('disabled')), 'true')
+			await status(11, undefined)
+			await status(10, 'rpc')
+			assert.equal(dom.document.body.textContent.includes('Changing network. Check your wallet'), false)
+			assert.equal(getButtonByText(dom.document.body, 'Change').getAttribute?.('disabled'), undefined)
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	test('popup reveals the committed wallet before the address-change reply and preserves later settings', async () => {
 		const dom = installDomMock()
 		let finishChange: (reply: unknown) => void = () => undefined

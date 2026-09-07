@@ -943,7 +943,17 @@ const PopupIsMainPopupWindowOpen = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_isMainPopupWindowOpen'),
 }).asReadonly()
 
+export type PopupSettingsChangeStatus = funtypes.Static<typeof PopupSettingsChangeStatus>
+export const PopupSettingsChangeStatus = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_settingsChangeStatus'),
+	data: funtypes.ReadonlyObject({
+		revision: funtypes.Number,
+		operation: funtypes.Union(funtypes.Undefined, funtypes.Literal('wallet'), funtypes.Literal('mode'), funtypes.Literal('rpc'), funtypes.Literal('rich')),
+	}),
+})
+
 const messageToPopupPayloadCodecs: [
+	typeof PopupSettingsChangeStatus,
 	typeof MessageToPopupSimple,
 	typeof WebsiteIconChanged,
 	typeof GetAddressBookDataReply,
@@ -970,6 +980,7 @@ const messageToPopupPayloadCodecs: [
 	typeof FetchSimulationStackRequest,
 	typeof PopupIsMainPopupWindowOpen,
 ] = [
+	PopupSettingsChangeStatus,
 	MessageToPopupSimple,
 	WebsiteIconChanged,
 	GetAddressBookDataReply,
@@ -1036,6 +1047,7 @@ const PopupMessageRuntype = funtypes.Union(
 		}),
 	}),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestHomePageBootstrap') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSettingsChangeStatus') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_clearUnexpectedError') }),

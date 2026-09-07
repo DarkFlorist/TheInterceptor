@@ -33,6 +33,7 @@ export const popupMessageProtocol = {
 	popup_openAddressBook: { domain: 'navigation' },
 	popup_requestNewHomeData: { domain: 'home' },
 	popup_requestHomePageBootstrap: { domain: 'home' },
+	popup_requestSettingsChangeStatus: { domain: 'home' },
 	popup_refreshHomeData: { domain: 'home' },
 	popup_requestSettings: { domain: 'settings' },
 	popup_refreshInterceptorAccessMetadata: { domain: 'website-access' },
