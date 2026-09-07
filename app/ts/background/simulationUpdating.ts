@@ -139,8 +139,10 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 }
 
 export async function getUpdatedSimulationState(ethereum: EthereumClientService, simulationInput?: SimulationStateInput) {
+	// An unreadable persisted stack must abort refresh, otherwise the simulation fallback could overwrite saved popup results.
+	const currentSimulationInput = simulationInput ?? await getCurrentSimulationInput()
 	try {
-		return toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(simulationInput ?? await getCurrentSimulationInput(), ethereum))
+		return toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(currentSimulationInput, ethereum))
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return PASSTHROUGH_STATE
 		await reportUnexpectedError(error, { code: 'simulation_state_refresh_failed' })
