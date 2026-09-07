@@ -256,6 +256,9 @@ function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 	return {
 		isActiveAddressChanging: new Signal(false),
 		isActiveAddressChangePending: new Signal(false),
+		isSettingsChangePending: new Signal(false),
+		setSimulationMode: async () => undefined,
+		setRichState: async () => undefined,
 		changeActiveAddress: () => undefined,
 		makeCurrentAddressRich: new Signal(false),
 		activeAddresses: new Signal([activeAddressEntry]),
@@ -267,7 +270,7 @@ function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 		useSignersAddressAsActiveAddress: new Signal(false),
 		simVisResults: new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createSimulationResults())),
 		rpcNetwork: new Signal(rpcNetwork),
-		setActiveRpcAndInformAboutIt: () => undefined,
+		setActiveRpcAndInformAboutIt: async () => undefined,
 		simulationMode: new Signal(true),
 		tabIconDetails: new Signal({ icon: ICON_SIMULATING, iconReason: 'Simulating transactions.' }),
 		currentBlockNumber: new Signal<bigint | undefined>(101n),
@@ -404,6 +407,111 @@ function getMessageWithMethod(messages: readonly unknown[], method: string) {
 }
 
 describe('Home popup clear empty state', () => {
+	test('keeps mode switching busy after the saved mode arrives and exposes failures', async () => {
+		const dom = installDomMock()
+		let rejectChange: ((error: Error) => void) | undefined
+		const change = new Promise<void>((_resolve, reject) => { rejectChange = reject })
+		const params = createHomeParams({ setSimulationMode: async () => { await change } })
+		try {
+			await act(() => { render(h(Home, params), dom.document.body) })
+			await act(async () => { await clickElement(getButtonByText(dom.document.body, 'Signing')) })
+			assert.equal(getButtonByText(dom.document.body, 'Signing').getAttribute?.('aria-busy'), true)
+			await act(() => { params.simulationMode.value = false })
+			assert.equal(getButtonByText(dom.document.body, 'Signing').getAttribute?.('aria-busy'), true)
+			assert.equal(String(getButtonByText(dom.document.body, 'Simulating').getAttribute?.('disabled')), 'true')
+			await act(async () => {
+				if (rejectChange === undefined) throw new Error('Expected pending change')
+				rejectChange(new Error('Unable to refresh mode'))
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.equal(dom.document.body.textContent?.includes('Unable to refresh mode'), true)
+			assert.equal(getButtonByText(dom.document.body, 'Simulating').getAttribute?.('disabled'), undefined)
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('shows wallet approval progress for RPC changes and keeps the old network on rejection', async () => {
+		const dom = installDomMock()
+		const nextRpc = { ...rpcNetwork, name: 'Other network', chainId: 2n, httpsRpc: 'https://other.example.test' }
+		let rejectChange: ((error: Error) => void) | undefined
+		const change = new Promise<void>((_resolve, reject) => { rejectChange = reject })
+		const params = createHomeParams({ simulationMode: new Signal(false), rpcEntries: new Signal([rpcNetwork, nextRpc]), setActiveRpcAndInformAboutIt: async () => { await change } })
+		try {
+			await act(() => { render(h(Home, params), dom.document.body) })
+			await act(async () => { await clickElement(getButtonByText(dom.document.body, 'Other network')) })
+			assert.equal(dom.document.body.textContent?.includes('Waiting for wallet to switch network...'), true)
+			assert.equal(params.rpcNetwork.value?.httpsRpc, rpcNetwork.httpsRpc)
+			await act(async () => {
+				if (rejectChange === undefined) throw new Error('Expected pending change')
+				rejectChange(new Error('Wallet rejected network change'))
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.equal(dom.document.body.textContent?.includes('Wallet rejected network change'), true)
+			assert.equal(dom.document.body.textContent?.includes('Waiting for wallet to switch network...'), false)
+			assert.equal(params.rpcNetwork.value?.httpsRpc, rpcNetwork.httpsRpc)
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('shows progress for a rich toggle and reconciles persisted settings after a refresh failure', async () => {
+		const dom = installDomMock()
+		const previousInputElement = globalThis.HTMLInputElement
+		Object.defineProperty(globalThis, 'HTMLInputElement', { configurable: true, writable: true, value: globalThis.Element })
+		const browserMock = installBrowserMock()
+		let rejectChange: ((error: Error) => void) | undefined
+		const change = new Promise<void>((_resolve, reject) => { rejectChange = reject })
+		const params = createHomeParams({ setRichState: async (enabled, address) => {
+			assert.equal(enabled, true)
+			assert.equal(address, 'CurrentAddress')
+			await change
+		} })
+		try {
+			await act(() => { render(h(Home, params), dom.document.body) })
+			const checkbox = collectElements(dom.document.body, 'input').find((element) => element.getAttribute?.('type') === 'checkbox')
+			if (checkbox === undefined) throw new Error('Expected rich checkbox')
+			const handler = Object.entries(checkbox.l ?? {}).find(([key]) => key.toLowerCase().startsWith('input'))?.[1]
+			if (handler === undefined) throw new Error('Expected rich toggle handler')
+			Reflect.set(checkbox, 'checked', true)
+			await act(async () => { await handler({ target: checkbox }) })
+			assert.equal(params.makeCurrentAddressRich.value, true)
+			assert.equal(dom.document.body.textContent?.includes('Updating balances...'), true)
+			assert.equal(String(checkbox.getAttribute?.('disabled')), 'true')
+			await act(async () => {
+				if (rejectChange === undefined) throw new Error('Expected pending change')
+				rejectChange(new Error('Balances could not be refreshed'))
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.equal(dom.document.body.textContent?.includes('Balances could not be refreshed'), true)
+			assert.equal(dom.document.body.textContent?.includes('Updating balances...'), false)
+			assert.ok(getMessageWithMethod(browserMock.sentMessages, 'popup_requestNewHomeData'))
+		} finally {
+			render(undefined, dom.document.body)
+			globalThis.HTMLInputElement = previousInputElement
+			browserMock.restore()
+			dom.restore()
+		}
+	})
+
+	test('disables wallet, mode, RPC and rich controls during another settings change', async () => {
+		const dom = installDomMock()
+		const params = createHomeParams({ isSettingsChangePending: new Signal(true) })
+		try {
+			await act(() => { render(h(Home, params), dom.document.body) })
+			assert.equal(String(getButtonByText(dom.document.body, 'Signing').getAttribute?.('disabled')), 'true')
+			assert.equal(String(getButtonByText(dom.document.body, 'Change').getAttribute?.('disabled')), 'true')
+			for (const input of collectElements(dom.document.body, 'input').filter((element) => element.getAttribute?.('type') === 'checkbox')) {
+				assert.equal(String(input.getAttribute?.('disabled')), 'true')
+			}
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	for (const succeeds of [true, false]) {
 		test(`shows the address shimmer during a switch and restores the address after ${ succeeds ? 'success' : 'failure' }`, async () => {
 			const dom = installDomMock()

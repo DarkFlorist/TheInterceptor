@@ -495,7 +495,7 @@ describe('background eth_accounts', () => {
 		assert.equal(reply?.result, null)
 	})
 
-	test('does not let another tab chain reply settle the pending dapp switch', async () => {
+	test('rejects a conflicting popup switch and ignores another tab reply while a dapp switch is pending', async () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
@@ -574,11 +574,12 @@ describe('background eth_accounts', () => {
 		await new Promise((resolve) => setTimeout(resolve, 0))
 
 		await saveCurrentTabId(popupSocket.tabId)
-		await popupChangeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+		const popupReply = await popupChangeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			method: 'popup_changeActiveRpc',
 			data: popupRpcNetwork,
 		}, await getSettings())
-		await waitForPortMessageCount(popupMessages, 'request_signer_to_wallet_switchEthereumChain', 1)
+		assert.deepEqual(popupReply, { type: 'PopupSettingsChangeReply', ok: false, message: 'A network switch is already waiting for your wallet.' })
+		assert.equal(popupMessages.some((message) => message.method === 'request_signer_to_wallet_switchEthereumChain'), false)
 		await handleInterceptedRequest(popupPort, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, popupSocket, {
 			interceptorRequest: true,
 			interceptorInternalRequest: true,

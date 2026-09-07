@@ -20,7 +20,9 @@ import { useLiveSimulationHomeData } from './hooks/useLiveSimulationHomeData.js'
 import { NetworkErrors } from './subcomponents/NetworkErrors.js'
 import { ProviderErrors } from './subcomponents/ProviderErrors.js'
 import { PopupModal, type PopupPage } from './PopupModal.js'
-import { getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode } from '../utils/activeAddressSelection.js'
+import { getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../utils/activeAddressSelection.js'
+import { requestPopupSettingsChange } from './popupSettingsChange.js'
+import type { ChangeActiveChain, EnableSimulationMode, ModifyMakeMeRich } from '../types/interceptor-reply-messages.js'
 import { requestActiveAddressChange } from './activeAddressChange.js'
 import { useModeActiveAddress } from './hooks/useModeActiveAddress.js'
 export { NetworkErrors } from './subcomponents/NetworkErrors.js'
@@ -29,6 +31,7 @@ export function App() {
 	const appPage = useSignal<PopupPage>({ page: 'Unknown' })
 	const pendingAddressChangeRequestId = useSignal<string | undefined>(undefined)
 	const isActiveAddressChanging = useSignal(false)
+	const pendingSettingsChange = useSignal(false)
 	const {
 		activeAddresses,
 		walletSelectedAddressBookEntry,
@@ -79,9 +82,10 @@ export function App() {
 	})
 	const boundaryResetKey = useSignal(0)
 	const isActiveAddressChangePending = useComputed(() => pendingAddressChangeRequestId.value !== undefined)
+	const isSettingsChangePending = useComputed(() => isActiveAddressChangePending.value || pendingSettingsChange.value)
 
 	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer', persistedEntry?: AddressBookEntry) {
-		if (!isSettingsLoaded.value || isActiveAddressChangePending.value) return
+		if (!isSettingsLoaded.value || isSettingsChangePending.value) return
 		const selectableAddresses = includePersistedAddressBookEntry(activeAddresses.value, persistedEntry)
 		if (!isActiveAddressSelectionAllowed(address, selectableAddresses, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])) return
 		const requestId = crypto.randomUUID()
@@ -99,17 +103,26 @@ export function App() {
 		}
 	}
 
-	function isSignerConnected() {
-		return isSignerConnectedForMode(simulationMode.value, activeSimulationAddress.value, tabState.value)
+	async function changePopupSettings(message: ChangeActiveChain | EnableSimulationMode | ModifyMakeMeRich) {
+		if (!isSettingsLoaded.value || isSettingsChangePending.value) return
+		pendingSettingsChange.value = true
+		try {
+			await requestPopupSettingsChange(message)
+		} finally {
+			pendingSettingsChange.value = false
+		}
 	}
 
 	async function setActiveRpcAndInformAboutIt(entry: RpcEntry) {
-		if (!isSettingsLoaded.value) return
-		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveRpc', data: entry })
-		if(!isSignerConnected()) {
-			rpcNetwork.value = entry
-		}
+		await changePopupSettings({ method: 'popup_changeActiveRpc', data: entry })
 	}
+	async function setSimulationMode(enabled: boolean) {
+		await changePopupSettings({ method: 'popup_enableSimulationMode', data: enabled })
+	}
+	async function setRichState(add: boolean, address: bigint | 'CurrentAddress') {
+		await changePopupSettings({ method: 'popup_modifyMakeMeRich', data: { add, address } })
+	}
+
 	useEffect(() => {
 		markPerformanceOnce(POPUP_PERFORMANCE_MARKS.homeFirstCommit)
 	}, [])
@@ -264,6 +277,9 @@ export function App() {
 					<Home
 						isActiveAddressChanging = { isActiveAddressChanging }
 						isActiveAddressChangePending = { isActiveAddressChangePending }
+						isSettingsChangePending = { isSettingsChangePending }
+						setSimulationMode = { setSimulationMode }
+						setRichState = { setRichState }
 						setActiveRpcAndInformAboutIt = { setActiveRpcAndInformAboutIt }
 						rpcNetwork = { rpcNetwork }
 						simVisResults = { simVisResults }

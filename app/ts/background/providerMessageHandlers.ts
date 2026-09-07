@@ -1,11 +1,12 @@
+import type { RpcNetwork } from '../types/rpc.js'
 import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply, WatchAssetSignerRequest } from '../types/interceptor-messages.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
+import { getRpcNetworkForChain, promoteRpcAsPrimary, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
-import { getPendingSignerChainChangeTokenForCallback, isPendingSignerChainChangeReply, resolveSignerChainChange } from './windows/changeChain.js'
+import { getPendingSignerChainChangeRpc, getPendingSignerChainChangeTokenForCallback, isPendingSignerChainChangeReply, resolveSignerChainChange } from './windows/changeChain.js'
 import { type ApprovalState, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
@@ -124,7 +125,7 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 	})
 }
 
-async function changeSignerChain(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, signerStateToken: SignerStateToken, signerChain: bigint, approval: ApprovalState) {
+async function changeSignerChain(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, signerStateToken: SignerStateToken, signerChain: bigint, approval: ApprovalState, requestedRpcNetwork?: RpcNetwork) {
 	if (approval !== 'hasAccess') return
 	const tabStateChange = await updateTabState(signerStateToken.socket.tabId, (previousState: TabState) => {
 		return previousState.signerChain === signerChain ? previousState : modifyObject(previousState, { signerChain })
@@ -142,8 +143,8 @@ async function changeSignerChain(ethereum: EthereumClientService, tokenPriceServ
 		}
 		return
 	}
-	if ((settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && settings.activeRpcNetwork.chainId !== signerChain) {
-		const rpcNetwork = await getRpcNetworkForChain(signerChain)
+	if ((settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && (settings.activeRpcNetwork.chainId !== signerChain || (requestedRpcNetwork !== undefined && settings.activeRpcNetwork.httpsRpc !== requestedRpcNetwork.httpsRpc))) {
+		const rpcNetwork = requestedRpcNetwork ?? await getRpcNetworkForChain(signerChain)
 		const signerAddress = getWalletSelectedAccount(tabStateChange.newState)
 		return changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 			simulationMode: settings.simulationMode,
@@ -192,7 +193,12 @@ export async function walletSwitchEthereumChainReply(ethereum: EthereumClientSer
 			})
 			return returnValue
 		}
-		if (params.accept) await changeSignerChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, currentSignerStateToken, params.chainId, 'hasAccess')
+		if (params.accept) {
+			const requestedRpc = getPendingSignerChainChangeRpc(callbackSignerStateToken, params.chainId)
+			await changeSignerChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, currentSignerStateToken, params.chainId, 'hasAccess', requestedRpc)
+			const activeRpc = (await getSettings()).activeRpcNetwork
+			if (requestedRpc !== undefined && activeRpc.chainId === requestedRpc.chainId && activeRpc.httpsRpc === requestedRpc.httpsRpc) await promoteRpcAsPrimary(requestedRpc)
+		}
 		resolveSignerChainChange(callbackSignerStateToken, {
 			method: 'popup_signerChangeChainDialog',
 			data: [params],

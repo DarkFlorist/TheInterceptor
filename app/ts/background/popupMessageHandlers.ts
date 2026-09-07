@@ -1,3 +1,4 @@
+import { refreshPopupSimulation } from './popupSimulationRefresh.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain, changeActiveRpc } from './activeSettings.js'
 import { getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
@@ -7,7 +8,7 @@ import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type WatchAssetConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type ForceSetGasLimitForTransaction, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
-import { resolveChainChange } from './windows/changeChain.js'
+import { requestSignerChainChange, resolveChainChange } from './windows/changeChain.js'
 import { updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
@@ -58,7 +59,7 @@ export { exportSettings, importSettings, setNewRpcList, settingsOpened } from '.
 export { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, disableInterceptor, reloadConnectedTabs, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from './popupMessageHandlers/websiteAccess.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
 import { disableInterceptorForPage } from './popupMessageHandlers/websiteAccess.js'
-import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
+import { getConfiguredSigningSafe, getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
 
 type TimestampedPopupVisualisation = {
 	data: {
@@ -259,11 +260,10 @@ export async function changeActiveAddress(ethereum: EthereumClientService, token
 
 export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich) {
 	if (makeMeRichChange.data.address === 'CurrentAddress') {
-		await updateMakeCurrentAddressRich(() => makeMeRichChange.data.add)
-		return
+		return await updateMakeCurrentAddressRich(() => makeMeRichChange.data.add)
 	}
 	const address = makeMeRichChange.data.address
-	await updateFixedMakeMeRichList((currentList) => updateRichListAddress(
+	return await updateFixedMakeMeRichList((currentList) => updateRichListAddress(
 		currentList,
 		address,
 		makeMeRichChange.data.add,
@@ -667,7 +667,18 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 }
 
 export async function popupChangeActiveRpc(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
-	await changeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, params.data, settings.simulationMode, await getLastKnownCurrentTabId())
+	if (!settings.simulationMode && params.data.chainId !== settings.activeRpcNetwork.chainId) {
+		const tabId = await getLastKnownCurrentTabId()
+		if (tabId === undefined) return { type: 'PopupSettingsChangeReply', ok: false, message: 'No wallet is connected to switch networks.' } as const
+		if (await getConfiguredSigningSafe(settings, (await getTabState(tabId)).signerAccounts) !== undefined) return { type: 'PopupSettingsChangeReply', ok: false, message: 'This Safe is tied to its current network. Select your wallet account before switching networks.' } as const
+		const result = await requestSignerChainChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, params.data, tabId)
+		if ('error' in result && result.error !== undefined) return { type: 'PopupSettingsChangeReply', ok: false, message: result.error.message } as const
+		const activeRpc = (await getSettings()).activeRpcNetwork
+		if (activeRpc.chainId !== params.data.chainId || activeRpc.httpsRpc !== params.data.httpsRpc) return { type: 'PopupSettingsChangeReply', ok: false, message: 'The wallet switched networks, but the active Interceptor network did not change. Please select the network again.' } as const
+	} else {
+		await changeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, params.data, settings.simulationMode, await getLastKnownCurrentTabId())
+	}
+	return { type: 'PopupSettingsChangeReply', ok: true } as const
 }
 
 export async function changeChainDialog(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, chainChange: ChainChangeConfirmation) {
@@ -683,6 +694,7 @@ export async function enableSimulationMode(
 	signerAccountRefreshOptions: SignerAccountRefreshOptions = {},
 ) {
 	const settings = await getSettings()
+	if (settings.simulationMode === params.data) return
 	// if we are on unsupported chain, force change to a supported one
 	if (settings.useSignersAddressAsActiveAddress || params.data === false) {
 		const tabId = await getLastKnownCurrentTabId()
@@ -1274,7 +1286,8 @@ export async function importSimulationStack(ethereum: EthereumClientService, tok
 }
 
 export async function requestCompleteVisualizedSimulation(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
-	const visualizedSimulatorState = await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false, true)
+	await refreshPopupSimulation({ ethereum, tokenPriceService })
+	const visualizedSimulatorState = await getPopupVisualisationState()
 	return { method: 'popup_requestCompleteVisualizedSimulation' as const, visualizedSimulatorState }
 }
 

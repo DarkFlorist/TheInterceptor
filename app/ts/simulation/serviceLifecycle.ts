@@ -6,7 +6,7 @@ import { TokenPriceService } from './services/priceEstimator.js'
 
 export type NewBlockAttemptCallback = (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
 export type OnErrorBlockCallback = (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
-export type ResetSimulationServices = (rpcNetwork: RpcEntry) => void
+export type ResetSimulationServices = (rpcNetwork: RpcEntry) => SimulationServices | void
 
 export type SimulationServices = {
 	ethereum: EthereumClientService

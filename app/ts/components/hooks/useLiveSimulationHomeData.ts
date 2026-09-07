@@ -241,11 +241,12 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 					return undefined
 				case 'popup_settingsUpdated': {
 					if (shouldIgnoreOutdatedPopupRefreshMessage(parsed.popupRefreshGeneration, Math.max(popupRefreshGeneration.value, pendingPopupRefreshGeneration.value))) return undefined
+					const rpcChanged = rpcNetwork.value?.chainId !== parsed.data.activeRpcNetwork.chainId || rpcNetwork.value?.httpsRpc !== parsed.data.activeRpcNetwork.httpsRpc
 					const previousActiveStackContext = getCurrentActiveStackContext()
 					const updatedActiveStackContext = getActiveStackContext(parsed.data)
 					updateHomePageSettings(parsed.data)
 					if (parsed.committedAddressChange !== undefined) options.onAddressSelectionCommitted?.(parsed.committedAddressChange, parsed.data)
-					if (parsed.committedAddressChange !== undefined || previousActiveStackContext === undefined || !activeStackContextsEqual(previousActiveStackContext, updatedActiveStackContext)) {
+					if (rpcChanged || parsed.committedAddressChange !== undefined || previousActiveStackContext === undefined || !activeStackContextsEqual(previousActiveStackContext, updatedActiveStackContext)) {
 						simVisResults.value = PASSTHROUGH_STATE
 						simulationUpdatingState.value = undefined
 						simulationResultState.value = undefined

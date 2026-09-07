@@ -1,3 +1,4 @@
+import { refreshPopupSimulation } from './popupSimulationRefresh.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -10,12 +11,12 @@ import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { changeSimulationMode, getSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
-import { promoteRpcAsPrimary, updateTransactionState } from './storageVariables.js'
+import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
 
-export async function resetSimulationStateFromConfig(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
+async function clearSimulationStateFromConfig() {
 	const settings = await getSettings()
 	const activeStackContext = getActiveStackContext(settings)
 	await updateTransactionState((previousState) => {
@@ -42,6 +43,10 @@ export async function resetSimulationStateFromConfig(ethereum: EthereumClientSer
 			),
 		}
 	})
+}
+
+export async function resetSimulationStateFromConfig(ethereum: EthereumClientService, tokenPriceService: TokenPriceService) {
+	await clearSimulationStateFromConfig()
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
 }
 
@@ -86,30 +91,28 @@ export async function changeActiveAddressAndChain(
 	}
 
 	const updatedSettings = await getSettings()
-	if (change.addressChangeRequestId !== undefined) {
-		// Confirm the persisted selection before waiting for website permissions, icons, and simulation work.
-		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration: bumpPopupRefreshGeneration(), committedAddressChange: { requestId: change.addressChangeRequestId, activeAddress: change.activeAddress } })
-	}
-	const popupRefreshGeneration = await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings, change.promptForAccessesIfNeeded ?? true)
-	sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration })
-	sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
+	const rpcChainChanged = previousSettings.activeRpcNetwork.chainId !== updatedSettings.activeRpcNetwork.chainId
+	const rpcEndpointChanged = rpcChainChanged || previousSettings.activeRpcNetwork.httpsRpc !== updatedSettings.activeRpcNetwork.httpsRpc
+	const activeServices = rpcEndpointChanged && change.rpcNetwork?.httpsRpc !== undefined
+		? resetSimulationServices(change.rpcNetwork) ?? { ethereum, tokenPriceService }
+		: { ethereum, tokenPriceService }
+	if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig()
+	// Publish only after the selected provider and stack are ready for requests using the new settings.
+	await sendPopupMessageToOpenWindows({
+		method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration: bumpPopupRefreshGeneration(),
+		...(change.addressChangeRequestId === undefined ? {} : { committedAddressChange: { requestId: change.addressChangeRequestId, activeAddress: change.activeAddress } }),
+	})
+	const popupRefreshGeneration = await updateWebsiteApprovalAccesses(activeServices.ethereum, activeServices.tokenPriceService, resetSimulationServices, websiteTabConnections, updatedSettings, change.promptForAccessesIfNeeded ?? true)
+	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration })
+	await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 	await changeActiveAddressAndChainSemaphore.execute(async () => {
-		const activeSigningSafeContextChanged = !updatedSettings.simulationMode
-			&& updatedSettings.activeSigningSafeAddress !== undefined
-			&& !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings))
-		if (change.rpcNetwork !== undefined) {
-			const rpcChainChanged = previousSettings.activeRpcNetwork.chainId !== change.rpcNetwork.chainId
-			if (change.rpcNetwork.httpsRpc !== undefined) resetSimulationServices(change.rpcNetwork)
-			sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: change.rpcNetwork.chainId })
-			sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
-
-			if (updatedSettings.simulationMode && rpcChainChanged) {
-				await resetSimulationStateFromConfig(ethereum, tokenPriceService)
-			} else if (updatedSettings.simulationMode) {
-				await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
-			}
+		if (rpcChainChanged) {
+			sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: updatedSettings.activeRpcNetwork.chainId })
+			await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 		}
-		if (activeSigningSafeContextChanged) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, false)
+		if (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings))) {
+			await refreshPopupSimulation(activeServices)
+		}
 		await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 	})
 }
@@ -155,6 +158,10 @@ export async function activateAddressSelection(
 }
 
 export async function changeActiveRpc(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean, signerTabId: number | undefined) {
+	const currentRpc = (await getSettings()).activeRpcNetwork
+	if (currentRpc.chainId === rpcNetwork.chainId && currentRpc.httpsRpc === rpcNetwork.httpsRpc) {
+		return simulationMode ? { type: 'completedLocally' as const } : { type: 'signerRequestNotNeeded' as const }
+	}
 	if (simulationMode) {
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, { simulationMode, rpcNetwork })
 		return { type: 'completedLocally' as const }
@@ -168,7 +175,6 @@ export async function changeActiveRpc(ethereum: EthereumClientService, tokenPric
 	const settings = await getSettings()
 	const popupRefreshGeneration = bumpPopupRefreshGeneration()
 	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: settings, popupRefreshGeneration })
-	await promoteRpcAsPrimary(rpcNetwork)
 	return signerStateToken === false
 		? { type: 'signerUnavailable' as const }
 		: { type: 'signerRequestSent' as const, signerStateToken }

@@ -24,7 +24,7 @@ type PendingSignerChainChange = {
 		| { readonly type: 'replacement', readonly error: typeof signerUnavailableError }
 	>
 	readonly requestTabId: number
-	readonly requestedChainId: bigint
+	readonly requestedRpcNetwork: RpcNetwork
 	signerStateToken: SignerStateToken | undefined
 	readonly repliesBeforeToken: Array<{ readonly signerStateToken: SignerStateToken, readonly confirmation: SignerChainChangeConfirmation }>
 	readonly replacementsBeforeToken: Array<{ readonly signerStateToken: SignerStateToken, readonly error: typeof signerUnavailableError }>
@@ -71,7 +71,7 @@ async function runExclusiveChainChangeResolution<T>(resolution: () => Promise<T>
 }
 
 function doesPendingSignerChainChangeMatch(pending: PendingSignerChainChange, signerStateToken: SignerStateToken, chainId: bigint) {
-	if (pending.requestedChainId !== chainId) return false
+	if (pending.requestedRpcNetwork.chainId !== chainId) return false
 	return pending.signerStateToken === undefined
 		? pending.requestTabId === signerStateToken.socket.tabId
 		: doSignerStateTokensMatch(pending.signerStateToken, signerStateToken)
@@ -79,13 +79,19 @@ function doesPendingSignerChainChangeMatch(pending: PendingSignerChainChange, si
 
 export function getPendingSignerChainChangeTokenForCallback(port: browser.runtime.Port, signerProviderGeneration: number, chainId: bigint) {
 	const signerStateToken = pendingSignerChainChange?.signerStateToken
-	if (signerStateToken === undefined || pendingSignerChainChange?.requestedChainId !== chainId) return undefined
+	if (signerStateToken === undefined || pendingSignerChainChange?.requestedRpcNetwork.chainId !== chainId) return undefined
 	if (signerStateToken.port !== port || signerStateToken.signerProviderGeneration !== signerProviderGeneration) return undefined
 	return signerStateToken
 }
 
 export function isPendingSignerChainChangeReply(signerStateToken: SignerStateToken, chainId: bigint) {
 	return pendingSignerChainChange !== undefined && doesPendingSignerChainChangeMatch(pendingSignerChainChange, signerStateToken, chainId)
+}
+
+// Keep the requested endpoint in memory until the matching wallet accepts; a rejected request must not change RPC preferences.
+export function getPendingSignerChainChangeRpc(signerStateToken: SignerStateToken, chainId: bigint) {
+	const pending = pendingSignerChainChange
+	return pending !== undefined && doesPendingSignerChainChangeMatch(pending, signerStateToken, chainId) ? pending.requestedRpcNetwork : undefined
 }
 
 export function resolveSignerChainChange(signerStateToken: SignerStateToken, confirmation: SignerChainChangeConfirmation) {
@@ -192,48 +198,54 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 			await changeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, reply.data.rpcNetwork, simulationMode, reply.data.uniqueRequestIdentifier.requestSocket.tabId)
 			return { result: null }
 		}
-		const pending: PendingSignerChainChange = {
-			future: new Future<
-				| { readonly type: 'reply', readonly confirmation: SignerChainChangeConfirmation }
-				| { readonly type: 'replacement', readonly error: typeof signerUnavailableError }
-			>(),
-			requestTabId: reply.data.uniqueRequestIdentifier.requestSocket.tabId,
-			requestedChainId: reply.data.rpcNetwork.chainId,
-			signerStateToken: undefined,
-			repliesBeforeToken: [],
-			replacementsBeforeToken: [],
+		return await requestSignerChainChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, reply.data.rpcNetwork, reply.data.uniqueRequestIdentifier.requestSocket.tabId)
+	}
+	return userDeniedChange
+}
+
+export async function requestSignerChainChange(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, requestTabId: number) {
+	if (pendingSignerChainChange !== undefined) return { error: { code: -32002, message: 'A network switch is already waiting for your wallet.' } }
+	const pending: PendingSignerChainChange = {
+		future: new Future<
+			| { readonly type: 'reply', readonly confirmation: SignerChainChangeConfirmation }
+			| { readonly type: 'replacement', readonly error: typeof signerUnavailableError }
+		>(),
+		requestTabId: requestTabId,
+		requestedRpcNetwork: rpcNetwork,
+		signerStateToken: undefined,
+		repliesBeforeToken: [],
+		replacementsBeforeToken: [],
+	}
+	const removeReplacementListener = addSignerStateReplacementListener((signerStateToken, error) => {
+		if (pending.signerStateToken === undefined) {
+			pending.replacementsBeforeToken.push({ signerStateToken, error })
+			return
 		}
-		const removeReplacementListener = addSignerStateReplacementListener((signerStateToken, error) => {
-			if (pending.signerStateToken === undefined) {
-				pending.replacementsBeforeToken.push({ signerStateToken, error })
-				return
-			}
-			if (doSignerStateTokensMatch(pending.signerStateToken, signerStateToken)) pending.future.resolve({ type: 'replacement', error })
+		if (doSignerStateTokensMatch(pending.signerStateToken, signerStateToken)) pending.future.resolve({ type: 'replacement', error })
+	})
+	pendingSignerChainChange = pending
+	try {
+		const changeActiveRpcResult = await changeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, rpcNetwork, false, requestTabId)
+		if (changeActiveRpcResult.type !== 'signerRequestSent') {
+			return changeActiveRpcResult.type === 'signerRequestNotNeeded'
+				? { result: null } as const
+				: { error: signerUnavailableError } as const
+		}
+		pending.signerStateToken = changeActiveRpcResult.signerStateToken
+		const precedingReply = pending.repliesBeforeToken.find(({ signerStateToken, confirmation }) => {
+			return doSignerStateTokensMatch(changeActiveRpcResult.signerStateToken, signerStateToken)
+				&& confirmation.data[0].chainId === pending.requestedRpcNetwork.chainId
 		})
-		pendingSignerChainChange = pending
-		try {
-			const changeActiveRpcResult = await changeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, reply.data.rpcNetwork, simulationMode, reply.data.uniqueRequestIdentifier.requestSocket.tabId)
-			if (changeActiveRpcResult.type !== 'signerRequestSent') {
-				return changeActiveRpcResult.type === 'signerRequestNotNeeded'
-					? { result: null } as const
-					: { error: signerUnavailableError } as const
-			}
-			pending.signerStateToken = changeActiveRpcResult.signerStateToken
-			const precedingReply = pending.repliesBeforeToken.find(({ signerStateToken, confirmation }) => {
-				return doSignerStateTokensMatch(changeActiveRpcResult.signerStateToken, signerStateToken)
-					&& confirmation.data[0].chainId === pending.requestedChainId
-			})
-			if (precedingReply !== undefined) pending.future.resolve({ type: 'reply', confirmation: precedingReply.confirmation })
-			const precedingReplacement = pending.replacementsBeforeToken.find(({ signerStateToken }) => doSignerStateTokensMatch(changeActiveRpcResult.signerStateToken, signerStateToken))
-			if (precedingReplacement !== undefined) pending.future.resolve({ type: 'replacement', error: precedingReplacement.error })
-			const signerResult = await pending.future
-			if (signerResult.type === 'replacement') return { error: signerResult.error } as const
-			if (signerResult.confirmation.data[0].accept === false) return { error: signerResult.confirmation.data[0].error } as const // forward signers error to the application
-			if (signerResult.confirmation.data[0].chainId === reply.data.rpcNetwork.chainId) return { result: null }
-		} finally {
-			removeReplacementListener()
-			if (pendingSignerChainChange === pending) pendingSignerChainChange = undefined
-		}
+		if (precedingReply !== undefined) pending.future.resolve({ type: 'reply', confirmation: precedingReply.confirmation })
+		const precedingReplacement = pending.replacementsBeforeToken.find(({ signerStateToken }) => doSignerStateTokensMatch(changeActiveRpcResult.signerStateToken, signerStateToken))
+		if (precedingReplacement !== undefined) pending.future.resolve({ type: 'replacement', error: precedingReplacement.error })
+		const signerResult = await pending.future
+		if (signerResult.type === 'replacement') return { error: signerResult.error } as const
+		if (signerResult.confirmation.data[0].accept === false) return { error: signerResult.confirmation.data[0].error } as const // forward signers error to the application
+		if (signerResult.confirmation.data[0].chainId === rpcNetwork.chainId) return { result: null }
+	} finally {
+		removeReplacementListener()
+		if (pendingSignerChainChange === pending) pendingSignerChainChange = undefined
 	}
 	return userDeniedChange
 }

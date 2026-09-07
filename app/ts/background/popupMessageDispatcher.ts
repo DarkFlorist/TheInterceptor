@@ -1,9 +1,9 @@
+import { refreshPopupSimulation } from './popupSimulationRefresh.js'
 import type { PopupMessage } from '../types/interceptor-messages.js'
 import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js'
 import { setLatestUnexpectedError } from './storageVariables.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { changeActiveAddress, changeChainDialog, changePage, changePreSimulationBlockTimeManipulation, confirmDialog, enableSimulationMode, fetchSimulationStackRequestConfirmation, forceSetGasLimitForTransaction, importSafeStack, importSimulationStack, modifyMakeMeRich, openNewTab, openWebPage, popupReadyAndListening, refreshHomeData, refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation, removeTransactionOrSignedMessage, reportUnexpectedErrorInWindow, requestAccountsFromSigner, requestActiveAddresses, requestCompleteVisualizedSimulation, requestHomePageBootstrap, requestInterceptorSimulationInput, requestLatestUnexpectedError, requestMakeMeRichList, requestNewHomeData, requestSafeStackExport, requestSimulationMetadata, requestSimulationMode, setSafeSimulationSigner, setTransactionOrMessageBlockTimeManipulator, simulateGnosisSafeTransactionOnPass, simulateGovernanceContractExecutionOnPass, watchAssetDialog } from './popupMessageHandlers.js'
 import { popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
 import { addressBookPopupMessageHandlers } from './popupMessageHandlerRegistries/addressBook.js'
@@ -16,19 +16,27 @@ export type { PopupMessageDispatcherContext } from './popupMessageHandlerRegistr
 const popupMessageHandlers = {
 	popup_confirmDialog: popupMessageHandler('popup_confirmDialog', async (context, request) => await confirmDialog(context.ethereum, context.tokenPriceService, context.websiteTabConnections, request)),
 	popup_changeActiveAddress: popupMessageHandler('popup_changeActiveAddress', async (context, request) => await changeActiveAddress(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
-	popup_modifyMakeMeRich: popupMessageHandler('popup_modifyMakeMeRich', async (_context, request) => await modifyMakeMeRich(request)),
+	popup_modifyMakeMeRich: popupMessageHandler('popup_modifyMakeMeRich', async (context, request) => {
+		if (await modifyMakeMeRich(request) && !await refreshPopupSimulation({ ethereum: context.ethereum, tokenPriceService: context.tokenPriceService, invalidateOldState: true })) {
+			return { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but balances could not be refreshed. Please refresh the simulation to retry.' }
+		}
+		return { type: 'PopupSettingsChangeReply', ok: true }
+	}),
 	popup_changePage: popupMessageHandler('popup_changePage', async (_context, request) => await changePage(request)),
 	popup_requestAccountsFromSigner: popupMessageHandler('popup_requestAccountsFromSigner', async (context, request) => await requestAccountsFromSigner(context.websiteTabConnections, request)),
 	popup_resetSimulation: popupMessageHandler('popup_resetSimulation', async (context) => await context.resetSimulationState()),
 	popup_removeTransactionOrSignedMessage: popupMessageHandler('popup_removeTransactionOrSignedMessage', async (context, request) => await removeTransactionOrSignedMessage(context.ethereum, context.tokenPriceService, request)),
 	popup_refreshSimulation: popupMessageHandler('popup_refreshSimulation', async (context) => {
-		await updatePopupVisualisationIfNeeded(context.ethereum, context.tokenPriceService, false, false, true)
+		await refreshPopupSimulation({ ...context, invalidateOldState: true })
 	}),
 	popup_refreshConfirmTransactionDialogSimulation: popupMessageHandler('popup_refreshConfirmTransactionDialogSimulation', async (context) => await refreshPopupConfirmTransactionSimulation(context.ethereum, context.tokenPriceService)),
 	popup_refreshConfirmTransactionMetadata: popupMessageHandler('popup_refreshConfirmTransactionMetadata', async (context) => await refreshPopupConfirmTransactionMetadata(context.ethereum, context.tokenPriceService, context.confirmTransactionAbortController)),
 	popup_changeChainDialog: popupMessageHandler('popup_changeChainDialog', async (context, request) => await changeChainDialog(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
 	popup_watchAssetDialog: popupMessageHandler('popup_watchAssetDialog', async (context, request) => await watchAssetDialog(context.websiteTabConnections, request)),
-	popup_enableSimulationMode: popupMessageHandler('popup_enableSimulationMode', async (context, request) => await enableSimulationMode(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
+	popup_enableSimulationMode: popupMessageHandler('popup_enableSimulationMode', async (context, request) => {
+		await enableSimulationMode(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)
+		return { type: 'PopupSettingsChangeReply', ok: true }
+	}),
 	popup_setSafeSimulationSigner: popupMessageHandler('popup_setSafeSimulationSigner', async (context, request) => await setSafeSimulationSigner(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
 	popup_requestNewHomeData: popupMessageHandler('popup_requestNewHomeData', async (context, request) => await requestNewHomeData(context.ethereum, context.websiteTabConnections, request.data.refreshSignerAccounts, request.data.includeWebsiteAccessAddressMetadata, context.simulationAbortController, bumpPopupRefreshGeneration())),
 	popup_requestHomePageBootstrap: popupMessageHandler('popup_requestHomePageBootstrap', async (context) => await requestHomePageBootstrap(context.websiteTabConnections, bumpPopupRefreshGeneration())),

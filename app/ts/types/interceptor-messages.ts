@@ -9,10 +9,10 @@ import { Page } from './exportedSettingsTypes.js'
 import { Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { PendingAccessRequests, PopupPendingTransactionOrSignableMessage } from './accessRequest.js'
-import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
+import { RpcEntries, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
-import { ChangeActiveAddress, EnrichedRichListElement, PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
+import { ChangeActiveAddress, ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, EnrichedRichListElement, PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
 import { SimulateExecutionReply as SharedSimulateExecutionReply, SimulateExecutionReplyData as SharedSimulateExecutionReplyData } from './simulateExecutionReply.js'
 import { SimulateGnosisSafeTransaction as SharedSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as SharedSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
@@ -287,14 +287,7 @@ export const InterceptorAccessChangeAddress = funtypes.ReadonlyObject({
 
 export { ChangeActiveAddress } from './interceptor-reply-messages.js'
 
-export type ModifyMakeMeRich = funtypes.Static<typeof ModifyMakeMeRich>
-export const ModifyMakeMeRich = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_modifyMakeMeRich'),
-	data: funtypes.ReadonlyObject({
-		add: funtypes.Boolean,
-		address: funtypes.Union(funtypes.Literal('CurrentAddress'), EthereumAddress),
-	})
-}).asReadonly()
+export { ModifyMakeMeRich } from './interceptor-reply-messages.js'
 
 export type AddressBookCategory = funtypes.Static<typeof AddressBookCategory>
 export const AddressBookCategory = funtypes.Union(
@@ -335,11 +328,7 @@ export const RequestAccountsFromSigner = funtypes.ReadonlyObject({
 	data: funtypes.Boolean
 }).asReadonly()
 
-export type EnableSimulationMode = funtypes.Static<typeof EnableSimulationMode>
-export const EnableSimulationMode = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_enableSimulationMode'),
-	data: funtypes.Boolean
-}).asReadonly()
+export { EnableSimulationMode } from './interceptor-reply-messages.js'
 
 export type TransactionOrMessageIdentifier = funtypes.Static<typeof TransactionOrMessageIdentifier>
 export const TransactionOrMessageIdentifier = funtypes.Union(
@@ -723,11 +712,7 @@ const UpdateRPCList = funtypes.ReadonlyObject({
 	data: RpcEntries,
 })
 
-export type ChangeActiveChain = funtypes.Static<typeof ChangeActiveChain>
-export const ChangeActiveChain = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_changeActiveRpc'),
-	data: RpcEntry,
-}).asReadonly()
+export { ChangeActiveChain } from './interceptor-reply-messages.js'
 
 export type ChainChangeConfirmation = funtypes.Static<typeof ChainChangeConfirmation>
 export const ChainChangeConfirmation = funtypes.ReadonlyObject({
