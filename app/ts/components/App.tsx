@@ -1,3 +1,4 @@
+import { acceptPopupSettingsChangeStatus, getPopupSettingsOperationLabel } from '../types/popupSettingsProtocol.js'
 import { useEffect } from 'preact/hooks'
 import { Home } from './pages/Home.js'
 import Hint from './subcomponents/Hint.js'
@@ -22,7 +23,7 @@ import { ProviderErrors } from './subcomponents/ProviderErrors.js'
 import { PopupModal, type PopupPage } from './PopupModal.js'
 import { getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../utils/activeAddressSelection.js'
 import { requestPopupSettingsChange } from './popupSettingsChange.js'
-import type { ChangeActiveChain, EnableSimulationMode, ModifyMakeMeRich } from '../types/popupSettingsRequests.js'
+import type { PopupSettingsRequestWithSharedReply } from '../types/popupSettingsRequests.js'
 import { requestActiveAddressChange } from './activeAddressChange.js'
 import { useModeActiveAddress } from './hooks/useModeActiveAddress.js'
 export { NetworkErrors } from './subcomponents/NetworkErrors.js'
@@ -31,6 +32,7 @@ export function App() {
 	const appPage = useSignal<PopupPage>({ page: 'Unknown' })
 	const pendingAddressChangeRequestId = useSignal<string | undefined>(undefined)
 	const isActiveAddressChanging = useSignal(false)
+	// Local state covers dispatch latency; shared status coordinates other and reopened popups.
 	const pendingSettingsChange = useSignal(false)
 	const backgroundSettingsChange = useSignal<PopupSettingsChangeStatus['data']>({ revision: 0, operation: undefined })
 	const {
@@ -73,7 +75,7 @@ export function App() {
 			isActiveAddressChanging.value = false
 		},
 		onSettingsChangeStatus(status) {
-			if (status.revision >= backgroundSettingsChange.value.revision) backgroundSettingsChange.value = status
+			backgroundSettingsChange.value = acceptPopupSettingsChangeStatus(backgroundSettingsChange.value, status)
 		},
 		onInitialSettings(settings: Settings) {
 			if (appPage.value.page !== 'Unknown') return
@@ -108,7 +110,7 @@ export function App() {
 		}
 	}
 
-	async function changePopupSettings(message: ChangeActiveChain | EnableSimulationMode | ModifyMakeMeRich) {
+	async function changePopupSettings(message: PopupSettingsRequestWithSharedReply) {
 		if (!isSettingsLoaded.value) return
 		if (isSettingsChangePending.value) throw new Error('A settings change is already in progress. Please wait for it to finish.')
 		pendingSettingsChange.value = true
@@ -281,9 +283,7 @@ export function App() {
 					<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 					<ProviderErrors tabState = { tabState }/>
 					{ backgroundSettingsChange.value.operation !== undefined && !pendingSettingsChange.value && !isActiveAddressChangePending.value
-						? <div role = 'status' aria-live = 'polite' class = 'notification popup-settings-change-status'>{ {
-							wallet: 'Changing wallet...', mode: 'Changing mode...', rpc: 'Changing network. Check your wallet if approval is required.', rich: 'Updating balances...',
-						}[backgroundSettingsChange.value.operation] }</div> : <></> }
+						? <div role = 'status' aria-live = 'polite' class = 'notification popup-settings-change-status'>{ getPopupSettingsOperationLabel(backgroundSettingsChange.value.operation) }</div> : <></> }
 					<Home
 						isActiveAddressChanging = { isActiveAddressChanging }
 						isActiveAddressChangePending = { isActiveAddressChangePending }

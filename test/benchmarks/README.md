@@ -89,6 +89,6 @@ After a successful chain switch and return to simulation mode, the same connecte
 
 The transient RPC failure scenario expects the rich setting to be saved while the popup displays a failed simulation; an explicit refresh must recover once the fixture RPC is restored.
 
-The wallet-response deadline is covered by focused tests using a shortened timeout; the browser fixture holds and releases replies explicitly rather than waiting two minutes. Timing samples cover ten scenarios; popup lifecycle/conflict and RPC-recovery assertions run alongside them without speed thresholds.
+The wallet-response deadline and a later dapp request on the same signer connection are covered by focused tests using a shortened timeout. Per-command IDs prevent expired or reordered wallet replies from completing another switch; the browser fixture holds and releases replies explicitly rather than waiting two minutes. Timing samples cover ten scenarios; popup lifecycle/conflict and RPC-recovery assertions run alongside them without speed thresholds.
 
 For comparisons, build each revision and run the same command with the same browser, delays, iteration count, and host load. Compare feedback and selected-value timings separately from total completion time. Fixture setup is excluded from sample timings.

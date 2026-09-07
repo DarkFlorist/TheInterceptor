@@ -1,3 +1,4 @@
+import { PopupSettingsChangeStatus } from './popupSettingsProtocol.js'
 import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress } from './popupSettingsRequests.js'
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, PendingWatchAssetRequest, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
@@ -25,12 +26,14 @@ const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
 		accept: funtypes.Literal(true),
 		chainId: EthereumQuantity,
 		signerProviderGeneration: funtypes.Number,
+		walletSwitchRequestId: funtypes.String,
 	}),
 	funtypes.ReadonlyObject({
 		accept: funtypes.Literal(false),
 		chainId: EthereumQuantity,
 		error: ErrorWithCodeAndOptionalData,
 		signerProviderGeneration: funtypes.Number,
+		walletSwitchRequestId: funtypes.String,
 	})
 ))
 
@@ -80,7 +83,7 @@ export const InpageScriptCallBack = funtypes.Union(
 	ErrorReturn,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_connection_status'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_chainId'), result: funtypes.ReadonlyTuple() }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_switchEthereumChain'), result: EthereumQuantity }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_switchEthereumChain'), result: EthereumQuantity, walletSwitchRequestId: funtypes.String }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_watchAsset'), result: WatchAssetSignerRequest }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_eth_requestAccounts'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_eth_accounts'), result: funtypes.ReadonlyTuple() }),
@@ -944,14 +947,7 @@ const PopupIsMainPopupWindowOpen = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_isMainPopupWindowOpen'),
 }).asReadonly()
 
-export type PopupSettingsChangeStatus = funtypes.Static<typeof PopupSettingsChangeStatus>
-export const PopupSettingsChangeStatus = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_settingsChangeStatus'),
-	data: funtypes.ReadonlyObject({
-		revision: funtypes.Number,
-		operation: funtypes.Union(funtypes.Undefined, funtypes.Literal('wallet'), funtypes.Literal('mode'), funtypes.Literal('rpc'), funtypes.Literal('rich')),
-	}),
-})
+export { PopupSettingsChangeStatus } from './popupSettingsProtocol.js'
 
 const messageToPopupPayloadCodecs: [
 	typeof PopupSettingsChangeStatus,

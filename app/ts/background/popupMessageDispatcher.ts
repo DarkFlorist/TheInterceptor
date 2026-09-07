@@ -1,5 +1,6 @@
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import type { PopupSettingsChangeStatus } from '../types/interceptor-messages.js'
+import { getPopupSettingsOperation } from '../types/popupSettingsProtocol.js'
+import { createPopupSettingsCoordinator } from './popupSettingsCoordinator.js'
 import { getSettings } from './settings.js'
 import { refreshPopupSimulation } from './popupSimulationRefresh.js'
 import type { PopupMessage } from '../types/interceptor-messages.js'
@@ -17,7 +18,7 @@ import { websiteAccessPopupMessageHandlers } from './popupMessageHandlerRegistri
 export type { PopupMessageDispatcherContext } from './popupMessageHandlerRegistry.js'
 
 const popupMessageHandlers = {
-	popup_requestSettingsChangeStatus: popupMessageHandler('popup_requestSettingsChangeStatus', async () => await publishSettingsChangeStatus()),
+	popup_requestSettingsChangeStatus: popupMessageHandler('popup_requestSettingsChangeStatus', async () => await settingsCoordinator.publish()),
 	popup_confirmDialog: popupMessageHandler('popup_confirmDialog', async (context, request) => await confirmDialog(context.ethereum, context.tokenPriceService, context.websiteTabConnections, request)),
 	popup_changeActiveAddress: popupMessageHandler('popup_changeActiveAddress', async (context, request) => await changeActiveAddress(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
 	popup_modifyMakeMeRich: popupMessageHandler('popup_modifyMakeMeRich', async (context, request) => {
@@ -74,27 +75,15 @@ const popupMessageHandlers = {
 	...websiteAccessPopupMessageHandlers,
 } satisfies PopupMessageHandlerMap
 
-let settingsChangeStatus: PopupSettingsChangeStatus['data'] = { revision: Date.now(), operation: undefined }
-const publishSettingsChangeStatus = async () => await sendPopupMessageToOpenWindows({ method: 'popup_settingsChangeStatus', data: settingsChangeStatus })
-function setSettingsChangeOperation(operation: PopupSettingsChangeStatus['data']['operation']) {
-	settingsChangeStatus = { revision: Math.max(Date.now(), settingsChangeStatus.revision + 1), operation }
-}
+const settingsCoordinator = createPopupSettingsCoordinator(async (data) => await sendPopupMessageToOpenWindows({ method: 'popup_settingsChangeStatus', data }))
 
 export async function dispatchPopupMessage(context: PopupMessageDispatcherContext, request: PopupMessage): Promise<PopupReplyOption | void> {
-	const isSettingsChange = request.method === 'popup_changeActiveAddress' || request.method === 'popup_enableSimulationMode' || request.method === 'popup_changeActiveRpc' || request.method === 'popup_modifyMakeMeRich'
-	if (!isSettingsChange) return await popupMessageHandlers[request.method](context, request)
-	if (settingsChangeStatus.operation !== undefined) return {
-		type: request.method === 'popup_changeActiveAddress' ? 'ChangeActiveAddressReply' : 'PopupSettingsChangeReply',
+	const descriptor = getPopupSettingsOperation(request.method)
+	if (descriptor === undefined) return await popupMessageHandlers[request.method](context, request)
+	const admission = await settingsCoordinator.run(descriptor.operation, async () => await popupMessageHandlers[request.method]({ ...context, settings: await getSettings() }, request))
+	return admission.accepted ? admission.result : {
+		type: descriptor.replyType,
 		ok: false,
 		message: 'Another popup is changing settings. Please wait for it to finish, then try again.',
-	}
-	// Admit before the first await. Provider callbacks and read requests remain available while a wallet reply is pending.
-	setSettingsChangeOperation(request.method === 'popup_changeActiveAddress' ? 'wallet' : request.method === 'popup_enableSimulationMode' ? 'mode' : request.method === 'popup_changeActiveRpc' ? 'rpc' : 'rich')
-	try {
-		await publishSettingsChangeStatus()
-		return await popupMessageHandlers[request.method]({ ...context, settings: await getSettings() }, request)
-	} finally {
-		setSettingsChangeOperation(undefined)
-		await publishSettingsChangeStatus()
 	}
 }

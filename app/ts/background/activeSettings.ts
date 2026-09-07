@@ -82,6 +82,7 @@ async function runActiveSettingsChange(
 ): Promise<SimulationServices> {
 	const { change } = transition
 	let accessUpdate: WebsiteAccessUpdate | undefined
+	// This is the transition snapshot, not a second registry of the currently installed services.
 	let activeServices: SimulationServices = { ethereum, tokenPriceService }
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
@@ -195,7 +196,7 @@ export async function activateAddressSelection(
 	})
 }
 
-export async function changeActiveRpc(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean, signerTabId: number | undefined) {
+export async function changeActiveRpc(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean, signerTabId: number | undefined, walletSwitchRequestId: string = crypto.randomUUID()) {
 	const currentRpc = (await getSettings()).activeRpcNetwork
 	// Metadata edits at the same endpoint still need to update the active selection.
 	if (JSON.stringify(RpcNetwork.serialize(currentRpc)) === JSON.stringify(RpcNetwork.serialize(rpcNetwork))) {
@@ -210,7 +211,7 @@ export async function changeActiveRpc(ethereum: EthereumClientService, tokenPric
 		return { type: 'signerRequestNotNeeded' as const }
 	}
 	const signerStateToken = signerTabId !== undefined
-		&& sendCallbackToConfirmedSignerOwner(websiteTabConnections, signerTabId, { method: 'request_signer_to_wallet_switchEthereumChain', result: rpcNetwork.chainId })
+		&& sendCallbackToConfirmedSignerOwner(websiteTabConnections, signerTabId, { method: 'request_signer_to_wallet_switchEthereumChain', result: rpcNetwork.chainId, walletSwitchRequestId })
 	const settings = await getSettings()
 	const popupRefreshGeneration = bumpPopupRefreshGeneration()
 	await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: settings, popupRefreshGeneration })

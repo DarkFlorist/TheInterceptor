@@ -1,4 +1,5 @@
 import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress } from './popupSettingsRequests.js'
+import type { popupSettingsOperations } from './popupSettingsProtocol.js'
 import * as funtypes from 'funtypes'
 import { AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import { PopupOrTabId } from './websiteAccessTypes.js'
@@ -276,7 +277,17 @@ const PopupReadyAndListeningReply = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
-type PopupRequestsRepliesMap = {
+type PopupSettingsReplyCodecs = {
+	ChangeActiveAddressReply: typeof ChangeActiveAddressReply
+	PopupSettingsChangeReply: typeof PopupSettingsChangeReply
+}
+
+// Every registered settings operation must provide the reply codec declared by its descriptor.
+type PopupSettingsRepliesMap = {
+	[Method in keyof typeof popupSettingsOperations]: PopupSettingsReplyCodecs[typeof popupSettingsOperations[Method]['replyType']]
+}
+
+type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
 	popup_requestMakeMeRichData: typeof RequestMakeMeRichDataReply
 	popup_requestActiveAddresses: typeof RequestActiveAddressesReply
 	popup_requestSimulationMode: typeof RequestSimulationModeReply
@@ -284,10 +295,6 @@ type PopupRequestsRepliesMap = {
 	popup_requestInterceptorSimulationInput: typeof RequestInterceptorSimulationInputReply
 	popup_importSimulationStack: typeof ImportSimulationStackReply
 	popup_addOrModifyAddressBookEntry: typeof AddOrModifyAddressBookEntryReply
-	popup_changeActiveAddress: typeof ChangeActiveAddressReply
-	popup_enableSimulationMode: typeof PopupSettingsChangeReply
-	popup_changeActiveRpc: typeof PopupSettingsChangeReply
-	popup_modifyMakeMeRich: typeof PopupSettingsChangeReply
 	popup_setSafeSimulationSigner: typeof SetSafeSimulationSignerReply
 	popup_requestSafeStackExport: typeof RequestSafeStackExportReply
 	popup_importSafeStack: typeof ImportSafeStackReply

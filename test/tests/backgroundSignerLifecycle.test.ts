@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
+import { getWalletSwitchRequestId, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
 	test('awaits retry-state publishing before replying to a waking RPC request', async () => {
@@ -257,7 +257,7 @@ describe('background eth_accounts', () => {
 		assert.equal(interactiveRequestsBeforePassiveReply, 0)
 		assert.equal(childMessages.some((message) => message.method === 'request_signer_to_eth_accounts' || message.method === 'request_signer_to_eth_requestAccounts'), false)
 		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 71).at(-1)?.result, [accountString])
-		const signerStateToken = sendCallbackToConfirmedSignerOwner(websiteTabConnections, socket.tabId, { method: 'request_signer_to_wallet_switchEthereumChain', result: 2n })
+		const signerStateToken = sendCallbackToConfirmedSignerOwner(websiteTabConnections, socket.tabId, { method: 'request_signer_to_wallet_switchEthereumChain', result: 2n, walletSwitchRequestId: 'test-switch' })
 		assert.notEqual(signerStateToken, false)
 		if (signerStateToken === false) throw new Error('Expected a confirmed signer owner')
 		assert.equal(signerStateToken.port, port)
@@ -305,7 +305,7 @@ describe('background eth_accounts', () => {
 
 		assert.deepEqual((await getTabState(socket.tabId)).signerAccounts, [0x2424242424242424242424242424242424242424n])
 		assert.equal(childMessages.some((message) => message.method === 'request_signer_to_eth_accounts'), false)
-		const signerStateToken = sendCallbackToConfirmedSignerOwner(websiteTabConnections, socket.tabId, { method: 'request_signer_to_wallet_switchEthereumChain', result: 2n })
+		const signerStateToken = sendCallbackToConfirmedSignerOwner(websiteTabConnections, socket.tabId, { method: 'request_signer_to_wallet_switchEthereumChain', result: 2n, walletSwitchRequestId: 'test-switch' })
 		assert.notEqual(signerStateToken, false)
 		assert.equal(messages.filter((message) => message.method === 'request_signer_to_wallet_switchEthereumChain').length, 1)
 		assert.equal(childMessages.some((message) => message.method === 'request_signer_to_wallet_switchEthereumChain'), false)
@@ -338,7 +338,7 @@ describe('background eth_accounts', () => {
 			connectionName: expectedSocket.connectionName,
 			ownerGeneration: 1,
 			signerProviderGeneration: 1,
-		}, { method: 'request_signer_to_wallet_switchEthereumChain', result: 2n })
+		}, { method: 'request_signer_to_wallet_switchEthereumChain', result: 2n, walletSwitchRequestId: 'test-switch' })
 
 		assert.equal(result, false)
 		assert.equal(currentSignerMessages.length, 0)
@@ -484,7 +484,7 @@ describe('background eth_accounts', () => {
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 96, requestSocket: ownerSocket },
 			method: 'wallet_switchEthereumChain_reply',
-			params: [{ accept: true, chainId: '0xaa36a7', signerProviderGeneration: 1 }],
+			params: [{ accept: true, chainId: '0xaa36a7', signerProviderGeneration: 1, walletSwitchRequestId: getWalletSwitchRequestId(ownerMessages) }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		await Promise.race([
 			resolution,
@@ -586,7 +586,7 @@ describe('background eth_accounts', () => {
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 98, requestSocket: popupSocket },
 			method: 'wallet_switchEthereumChain_reply',
-			params: [{ accept: false, chainId: '0x4268', error: { code: 4001, message: 'Popup tab rejected' }, signerProviderGeneration: 1 }],
+			params: [{ accept: false, chainId: '0x4268', error: { code: 4001, message: 'Popup tab rejected' }, walletSwitchRequestId: getWalletSwitchRequestId(requestMessages), signerProviderGeneration: 1 }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		assert.equal(requestSettled, false)
@@ -597,7 +597,7 @@ describe('background eth_accounts', () => {
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 99, requestSocket },
 			method: 'wallet_switchEthereumChain_reply',
-			params: [{ accept: false, chainId: '0xaa36a7', error: { code: 4001, message: 'Dapp tab rejected' }, signerProviderGeneration: 1 }],
+			params: [{ accept: false, chainId: '0xaa36a7', error: { code: 4001, message: 'Dapp tab rejected' }, walletSwitchRequestId: getWalletSwitchRequestId(requestMessages), signerProviderGeneration: 1 }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		await resolution
 
@@ -718,7 +718,7 @@ describe('background eth_accounts', () => {
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 102, requestSocket: socket },
 			method: 'wallet_switchEthereumChain_reply',
-			params: [{ accept: false, chainId: '0xaa36a7', error: { code: 4001, message: 'First signer rejected' }, signerProviderGeneration: 1 }],
+			params: [{ accept: false, chainId: '0xaa36a7', error: { code: 4001, message: 'First signer rejected' }, walletSwitchRequestId: getWalletSwitchRequestId(messages), signerProviderGeneration: 1 }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 		const firstResult = await Promise.race([
 			firstResolution,

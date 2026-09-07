@@ -6,7 +6,7 @@ import { activateAddressSelection, changeActiveAddressAndChain } from './activeS
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, promoteRpcAsPrimary, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
-import { consumeExpiredSignerChainReply, markSignerChainReplyReceived, getPendingSignerChainChangeRpc, getPendingSignerChainChangeTokenForCallback, isPendingSignerChainChangeReply, resolveSignerChainChange } from './windows/changeChain.js'
+import { isPendingWalletSwitchRequest, markSignerChainReplyReceived, getPendingSignerChainChangeRpc, getPendingSignerChainChangeTokenForCallback, isPendingSignerChainChangeReply, resolveSignerChainChange } from './windows/changeChain.js'
 import { type ApprovalState, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
 import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
@@ -172,7 +172,7 @@ export async function signerChainChanged(ethereum: EthereumClientService, tokenP
 	})
 }
 
-export async function walletSwitchEthereumChainReply(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
+export async function walletSwitchEthereumChainReply(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'wallet_switchEthereumChain_reply' as const, result: '0x' as const }
 	const params = WalletSwitchEthereumChainReply.parse(request).params[0]
 	const socket = getSocketFromPort(port)
@@ -180,22 +180,22 @@ export async function walletSwitchEthereumChainReply(ethereum: EthereumClientSer
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
 		const currentSignerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 		if (currentSignerStateToken?.socket.connectionName !== socket.connectionName || currentSignerStateToken.port !== port) return returnValue
-		if (consumeExpiredSignerChainReply(port, params.signerProviderGeneration, params.chainId)) return returnValue
+		if (!isPendingWalletSwitchRequest(params.walletSwitchRequestId)) return returnValue
 		const pendingSignerStateToken = getPendingSignerChainChangeTokenForCallback(port, params.signerProviderGeneration, params.chainId)
 		const callbackSignerStateToken = pendingSignerStateToken
 			?? (currentSignerStateToken.signerProviderGeneration === params.signerProviderGeneration ? currentSignerStateToken : undefined)
 		if (callbackSignerStateToken === undefined) return returnValue
 		const solicitedReply = isPendingSignerChainChangeReply(callbackSignerStateToken, params.chainId)
-		// A solicited wallet reply retains the tab authorization captured when its command was dispatched. Unsolicited chainChanged-style updates still require a currently approved frame.
-		if (!solicitedReply && !hasSignerCallbackAccess(websiteTabConnections, socket.tabId, approval)) return returnValue
+		// Only this command's owner and chain may apply its reply. Unsolicited chain events use signerChainChanged.
+		if (!solicitedReply) return returnValue
 		if (currentSignerStateToken.signerProviderGeneration !== params.signerProviderGeneration) {
 			resolveSignerChainChange(callbackSignerStateToken, {
 				method: 'popup_signerChangeChainDialog',
-				data: [{ accept: false, chainId: params.chainId, error: signerConnectionReplacedError, signerProviderGeneration: params.signerProviderGeneration }],
+				data: [{ accept: false, chainId: params.chainId, walletSwitchRequestId: params.walletSwitchRequestId, error: signerConnectionReplacedError, signerProviderGeneration: params.signerProviderGeneration }],
 			})
 			return returnValue
 		}
-		markSignerChainReplyReceived(callbackSignerStateToken, params.chainId)
+		markSignerChainReplyReceived(callbackSignerStateToken, params.chainId, params.walletSwitchRequestId)
 		try {
 			if (params.accept) {
 				const requestedRpc = getPendingSignerChainChangeRpc(callbackSignerStateToken, params.chainId)
@@ -211,7 +211,7 @@ export async function walletSwitchEthereumChainReply(ethereum: EthereumClientSer
 			// Delivery ended the wallet deadline; a failure while applying the reply must also release the waiting popup.
 			resolveSignerChainChange(callbackSignerStateToken, {
 				method: 'popup_signerChangeChainDialog',
-				data: [{ accept: false, chainId: params.chainId, signerProviderGeneration: params.signerProviderGeneration, error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'The wallet replied, but updating the selected network failed. Refresh the popup and try again.' } }],
+				data: [{ accept: false, chainId: params.chainId, walletSwitchRequestId: params.walletSwitchRequestId, signerProviderGeneration: params.signerProviderGeneration, error: { code: JSON_RPC_ERROR_CODE_INTERNAL_ERROR, message: 'The wallet replied, but updating the selected network failed. Refresh the popup and try again.' } }],
 			})
 			throw error
 		}

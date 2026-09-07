@@ -25,7 +25,7 @@ import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { removeWebsiteTabConnection } from './websiteTabConnections.js'
-import { createSimulationServices, resetSimulationServices, type ResetSimulationServices, type SimulationServices } from '../simulation/serviceLifecycle.js'
+import { createSimulationServicesOwner, type SimulationServicesOwner, type ResetSimulationServices, type SimulationServices } from '../simulation/serviceLifecycle.js'
 import { addWindowTabListeners } from '../utils/popupOrTab.js'
 import { migrateAddressBook } from './addressBookMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'
@@ -40,15 +40,14 @@ import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
 
 const websiteTabConnections = new Map<number, TabConnection>()
-let simulationServices: SimulationServices | undefined
-let resetActiveRpcNetwork: ResetSimulationServices | undefined
+let simulationServicesOwner: SimulationServicesOwner | undefined
 const slowRpcRequests = new Map<string, SlowRpcRequest>()
 // Keep request watermarks across port reconnects so replayed messages are acknowledged without being handled twice. Tab removal clears them.
 const latestReceivedBridgeRequestIds = new Map<string, number>()
 
 function getSimulationServices() {
-	if (simulationServices === undefined) throw new Error('Simulation services are not initialized')
-	return simulationServices
+	if (simulationServicesOwner === undefined) throw new Error('Simulation services are not initialized')
+	return simulationServicesOwner.getCurrent()
 }
 
 async function publishRpcConnectionStatus(method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus) {
@@ -278,11 +277,7 @@ async function startup() {
 	const settings = await getSettings()
 	const userSpecifiedSimulatorNetwork = settings.activeRpcNetwork.httpsRpc === undefined ? await getPrimaryRpcForChain(1n) : settings.activeRpcNetwork
 	const simulatorNetwork = userSpecifiedSimulatorNetwork === undefined ? DEFAULT_RPCS[0] : userSpecifiedSimulatorNetwork
-	simulationServices = createSimulationServices(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
-	resetActiveRpcNetwork = (rpcNetwork) => {
-		simulationServices = resetSimulationServices(getSimulationServices(), rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
-		return simulationServices
-	}
+	simulationServicesOwner = createSimulationServicesOwner(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
 	await recoverPendingTerminalState()
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
 		await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum, rpcConnectionStatusPublisher.publishRpcConnectionStatus))
@@ -315,10 +310,10 @@ const backgroundStartupPromise = startup()
 
 async function waitForBackgroundStartup() {
 	await backgroundStartupPromise
-	const currentResetActiveRpcNetwork = resetActiveRpcNetwork
-	if (currentResetActiveRpcNetwork === undefined) throw new Error('Background startup reset handler is not initialized')
+	const owner = simulationServicesOwner
+	if (owner === undefined) throw new Error('Background startup reset handler is not initialized')
 	return {
-		resetActiveRpcNetwork: currentResetActiveRpcNetwork,
+		resetActiveRpcNetwork: owner.reset,
 		simulationServices: getSimulationServices(),
 	}
 }

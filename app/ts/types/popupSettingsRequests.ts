@@ -31,3 +31,7 @@ export const ChangeActiveAddress = funtypes.ReadonlyObject({
 		activeAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer')),
 	}).And(funtypes.ReadonlyPartial({ addressChangeRequestId: funtypes.String }))
 }).asReadonly()
+
+export type PopupSettingsRequest = ModifyMakeMeRich | EnableSimulationMode | ChangeActiveChain | ChangeActiveAddress
+
+export type PopupSettingsRequestWithSharedReply = Exclude<PopupSettingsRequest, ChangeActiveAddress>

@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
+import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 import type { RevisionedPopupSimulationRefresh } from '../../app/ts/background/popupSimulationRefresh.js'
 
 describe('popup settings changes', () => {
@@ -132,7 +132,7 @@ describe('popup settings changes', () => {
 		} finally {
 			const token = getConfirmedSignerStateToken(connections, 1)
 			if (token === undefined) throw new Error('Missing signer token')
-			resolveSignerChainChange(token, { method: 'popup_signerChangeChainDialog', data: [{ accept: false, chainId: 2n, error: { code: 4001, message: 'Rejected' } }] })
+			resolveSignerChainChange(token, { method: 'popup_signerChangeChainDialog', data: [{ accept: false, chainId: 2n, walletSwitchRequestId: getWalletSwitchRequestId(messages), error: { code: 4001, message: 'Rejected' } }] })
 			await pending
 		}
 		assert.equal(statuses().at(-1)?.operation, undefined)
@@ -309,7 +309,7 @@ describe('popup settings changes', () => {
 				assert.deepEqual(await getRpcList(), originalRpcList)
 				await walletSwitchEthereumChainReply(ethereum, tokenPriceService, resetSimulationServices, connections, port, {
 					method: 'wallet_switchEthereumChain_reply',
-					params: outcome === 'accept' ? [{ accept: true, chainId: '0x2', signerProviderGeneration: 1 }] : [{ accept: false, chainId: '0x2', error: { code: 4001, message: 'Rejected' }, signerProviderGeneration: 1 }],
+					params: outcome === 'accept' ? [{ accept: true, chainId: '0x2', walletSwitchRequestId: getWalletSwitchRequestId(messages), signerProviderGeneration: 1 }] : [{ accept: false, chainId: '0x2', walletSwitchRequestId: getWalletSwitchRequestId(messages), error: { code: 4001, message: 'Rejected' }, signerProviderGeneration: 1 }],
 				}, 'hasAccess', 1n)
 			}
 			const reply = await pending
@@ -345,60 +345,67 @@ describe('popup settings changes', () => {
 			const rpc = { ...(await getSettings()).activeRpcNetwork, chainId: 2n, httpsRpc: 'https://timeout.example.test' }
 			const services = createEthereumWithGetBlockCounter({ count: 0 })
 			const request = (timeoutMs: number) => requestSignerChainChange(services.ethereum, services.tokenPriceService, services.resetSimulationServices, connections, rpc, 1, timeoutMs)
-			const pending = request(30)
-			await waitForPortMessageCount(messages, 'request_signer_to_wallet_switchEthereumChain', 1)
 			const token = getConfirmedSignerStateToken(connections, 1)
 			if (token === undefined) throw new Error('Missing signer token')
-			const reply = { method: 'popup_signerChangeChainDialog', data: [{ accept: false, chainId: 2n, error: { code: 4001, message: 'Rejected' } }] } as const
+			if (outcome === 'reply') {
+				const postMessage = port.postMessage
+				port.postMessage = message => {
+					postMessage(message)
+					// Simulate delivery before changeActiveRpc has returned its signer token.
+					markSignerChainReplyReceived(token, 2n, getWalletSwitchRequestId(messages))
+				}
+			}
+			const pending = request(30)
+			await waitForPortMessageCount(messages, 'request_signer_to_wallet_switchEthereumChain', 1)
+			const reply = { method: 'popup_signerChangeChainDialog', data: [{ accept: false, chainId: 2n, walletSwitchRequestId: getWalletSwitchRequestId(messages), error: { code: 4001, message: 'Rejected' } }] } as const
 			if (outcome === 'failure') {
 				const { walletSwitchEthereumChainReply } = await import('../../app/ts/background/providerMessageHandlers.js')
 				const originalSet = browser.storage.local.set
 				try {
 					Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: async () => { throw new Error('Storage write failed') } })
 					await assert.rejects(walletSwitchEthereumChainReply(services.ethereum, services.tokenPriceService, services.resetSimulationServices, connections, port, {
-						method: 'wallet_switchEthereumChain_reply', params: [{ accept: true, chainId: '0x2', signerProviderGeneration: token.signerProviderGeneration }],
+						method: 'wallet_switchEthereumChain_reply', params: [{ accept: true, chainId: '0x2', walletSwitchRequestId: getWalletSwitchRequestId(messages), signerProviderGeneration: token.signerProviderGeneration }],
 						interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
 					}, 'hasAccess', undefined), /Storage write failed/)
 				} finally { Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet }) }
 				assert.match((await pending).error?.message ?? '', /updating the selected network failed/)
 			} else if (outcome === 'reply') {
 				// Delivery has begun, but applying the accepted wallet state can involve slower RPC work.
-				await new Promise(resolve => setTimeout(resolve, 0))
-				markSignerChainReplyReceived(token, 2n)
 				await new Promise(resolve => setTimeout(resolve, 60))
 				resolveSignerChainChange(token, reply)
 				assert.equal((await pending).error?.code, 4001)
 			} else {
 				assert.match((await pending).error?.message ?? '', /did not answer/)
-				assert.match((await request(30)).error?.message ?? '', /previous network request/)
-				assert.equal(messages.filter(message => message.method === 'request_signer_to_wallet_switchEthereumChain').length, 1)
+				const expiredId = getWalletSwitchRequestId(messages)
 				const { walletSwitchEthereumChainReply } = await import('../../app/ts/background/providerMessageHandlers.js')
-				const beforeLateReply = await getSettings()
-				await walletSwitchEthereumChainReply(services.ethereum, services.tokenPriceService, services.resetSimulationServices, connections, port, {
-					method: 'wallet_switchEthereumChain_reply', params: [{ accept: true, chainId: '0x2', signerProviderGeneration: token.signerProviderGeneration }],
+				const { setChainChangeConfirmationPromise, resolveChainChange } = await loadModules()
+				const dappRpc = { ...rpc, httpsRpc: 'https://dapp-switch.example.test' }
+				const uniqueRequestIdentifier = { requestId: 55, requestSocket: socket }
+				await setChainChangeConfirmationPromise({
+					website: { websiteOrigin: 'https://example.test' }, popupOrTabId: { type: 'popup', id: 10 }, simulationMode: false, rpcNetwork: dappRpc,
+					request: { method: 'wallet_switchEthereumChain', params: [{ chainId: 2n }], interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier },
+				})
+				let completed = false
+				const dappSwitch = resolveChainChange(services.ethereum, services.tokenPriceService, services.resetSimulationServices, connections, {
+					method: 'popup_changeChainDialog', data: { rpcNetwork: dappRpc, uniqueRequestIdentifier, accept: true },
+				}).then(() => { completed = true })
+				await waitForPortMessageCount(messages, 'request_signer_to_wallet_switchEthereumChain', 2)
+				const dappId = getWalletSwitchRequestId(messages)
+				assert.notEqual(dappId, expiredId)
+				const deliver = (walletSwitchRequestId: string) => walletSwitchEthereumChainReply(services.ethereum, services.tokenPriceService, services.resetSimulationServices, connections, port, {
+					method: 'wallet_switchEthereumChain_reply', params: [{ accept: true, chainId: '0x2', walletSwitchRequestId, signerProviderGeneration: token.signerProviderGeneration }],
 					interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
 				}, 'hasAccess', undefined)
-				assert.deepEqual((await getSettings()).activeRpcNetwork, beforeLateReply.activeRpcNetwork)
-				const retry = request(1000)
-				await waitForPortMessageCount(messages, 'request_signer_to_wallet_switchEthereumChain', 2)
-				resolveSignerChainChange(token, reply)
-				assert.equal((await retry).error?.code, 4001)
-				await request(30)
-				const tab = connections.get(1)
-				if (tab === undefined) throw new Error('Missing tab')
-				tab.signerStateOwner.providerGeneration++
-				let newRequestCompleted = false
-				const newRequest = request(1000).then(result => { newRequestCompleted = true; return result })
-				await waitForPortMessageCount(messages, 'request_signer_to_wallet_switchEthereumChain', 4)
-				await walletSwitchEthereumChainReply(services.ethereum, services.tokenPriceService, services.resetSimulationServices, connections, port, {
-					method: 'wallet_switchEthereumChain_reply', params: [{ accept: true, chainId: '0x2', signerProviderGeneration: token.signerProviderGeneration }],
-					interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 2, requestSocket: socket },
-				}, 'hasAccess', undefined)
-				assert.equal(newRequestCompleted, false)
-				const newToken = getConfirmedSignerStateToken(connections, 1)
-				if (newToken === undefined) throw new Error('Missing reconnected signer')
-				resolveSignerChainChange(newToken, reply)
-				assert.equal((await newRequest).error?.code, 4001)
+				const beforeLateReply = (await getSettings()).activeRpcNetwork
+				await deliver(expiredId)
+				assert.equal(completed, false)
+				assert.deepEqual((await getSettings()).activeRpcNetwork, beforeLateReply)
+				await deliver(dappId)
+				await dappSwitch
+				assert.equal((await getSettings()).activeRpcNetwork.httpsRpc, dappRpc.httpsRpc)
+				assert.equal(messages.find(message => message.method === 'wallet_switchEthereumChain' && message.requestId === 55)?.result, null)
+				await deliver(expiredId)
+				assert.equal((await getSettings()).activeRpcNetwork.httpsRpc, dappRpc.httpsRpc)
 			}
 		})
 	}
@@ -428,7 +435,7 @@ describe('popup settings changes', () => {
 			if (token === undefined) throw new Error('Expected signer owner')
 			resolveSignerChainChange(token, {
 				method: 'popup_signerChangeChainDialog',
-				data: accept ? [{ accept: true, chainId: rpc.chainId }] : [{ accept: false, chainId: rpc.chainId, error: { code: 4001, message: 'User rejected network change' } }],
+				data: accept ? [{ accept: true, chainId: rpc.chainId, walletSwitchRequestId: getWalletSwitchRequestId(messages) }] : [{ accept: false, chainId: rpc.chainId, walletSwitchRequestId: getWalletSwitchRequestId(messages), error: { code: 4001, message: 'User rejected network change' } }],
 			})
 			const result = await pending
 			if (accept) assert.equal(result.result, null)

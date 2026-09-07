@@ -10,8 +10,8 @@ export type OnErrorBlockCallback = (ethereumClientService: EthereumClientService
 export type ResetSimulationServices = (rpcNetwork: RpcEntry) => SimulationServices
 
 export type SimulationServices = {
-	ethereum: EthereumClientService
-	tokenPriceService: TokenPriceService
+	readonly ethereum: EthereumClientService
+	readonly tokenPriceService: TokenPriceService
 }
 
 export function createEthereumClientService(
@@ -62,4 +62,23 @@ export function resetSimulationServices(
 		currentServices.tokenPriceService.cacheAge,
 		rpcRequestLifecycleCallbacks,
 	)
+}
+
+export type SimulationServicesOwner = ReturnType<typeof createSimulationServicesOwner>
+
+// One owner publishes installed services. Returned pairs are snapshots for an operation; independent message handlers must read getCurrent() when their work starts.
+export function createSimulationServicesOwner(
+	rpcNetwork: RpcEntry,
+	newBlockAttemptCallback: NewBlockAttemptCallback,
+	onErrorBlockCallback: OnErrorBlockCallback,
+	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
+) {
+	let current = createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
+	return {
+		getCurrent: () => current,
+		reset: (nextRpc: RpcEntry): SimulationServices => {
+			current = resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
+			return current
+		},
+	}
 }
