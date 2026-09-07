@@ -1,8 +1,27 @@
 import * as assert from 'assert'
-import { describe, test } from 'bun:test'
+import { describe, spyOn, test } from 'bun:test'
 import { addressString, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
+	test('reports optional Safe Apps refresh failures and honors strict access updates', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { safeAppsCompatibilityCoordinator, updateWebsiteApprovalAccesses, getSettings } = await loadModules()
+		const failure = new Error('Safe Apps eligibility storage unavailable')
+		const refresh = spyOn(safeAppsCompatibilityCoordinator, 'refreshApprovedPorts').mockRejectedValue(failure)
+		try {
+			const settings = await getSettings()
+			const generation = await updateWebsiteApprovalAccesses(undefined, undefined, undefined, new Map(), settings, false)
+			assert.equal(typeof generation, 'number')
+			assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_UnexpectedErrorOccured'), true)
+			await assert.rejects(
+				async () => await updateWebsiteApprovalAccesses(undefined, undefined, undefined, new Map(), settings, false, true),
+				(error: unknown) => error === failure,
+			)
+		} finally {
+			refresh.mockRestore()
+		}
+	})
+
 	test('refreshes the cached signing visualization when selecting another Safe on the same chain', async () => {
 		installBrowserMock()
 		const messages: unknown[] = []

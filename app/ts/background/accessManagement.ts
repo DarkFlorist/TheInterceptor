@@ -412,7 +412,12 @@ export async function updateWebsiteApprovalAccesses(
 		if (throwOnError) throw error
 		await reportUnexpectedError(error)
 	}
-	await safeAppsCompatibilityCoordinator.refreshApprovedPorts(websiteTabConnections)
+	try {
+		await safeAppsCompatibilityCoordinator.refreshApprovedPorts(websiteTabConnections)
+	} catch (error) {
+		if (throwOnError) throw error
+		await reportUnexpectedError(error)
+	}
 	const iconRefreshPromises = [...iconRefreshTargets.values()].map(({ tabId, websiteOrigin }) =>
 		updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, popupRefreshGeneration)
 	)

@@ -4,7 +4,7 @@ type JsonObject = { readonly [key: string]: JsonValue }
 export type JsonValue = string | number | boolean | null | readonly JsonValue[] | JsonObject
 export const JsonValue: funtypes.Runtype<JsonValue> = funtypes.Lazy(() => funtypes.Union(
 	funtypes.String,
-	funtypes.Number,
+	funtypes.Number.withConstraint(Number.isFinite),
 	funtypes.Boolean,
 	funtypes.Null,
 	funtypes.ReadonlyArray(JsonValue),

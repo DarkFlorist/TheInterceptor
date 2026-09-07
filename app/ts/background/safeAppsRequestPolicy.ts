@@ -93,13 +93,13 @@ function parseSafeTransaction(params: unknown, from: string) {
 	return { from, to: transaction.to, value: toEthereumQuantity(transaction.value), data: transaction.data, ...(safeTxGas === undefined || safeTxGas === 0 ? {} : { gas: `0x${ safeTxGas.toString(16) }` }) }
 }
 
-function parseRpcCall(params: unknown) {
+function parseRpcCall(params: JsonValue | undefined) {
 	const parsedCall = SafeRpcCall.safeParse(params)
-	if (!parsedCall.success) throw safeAppsPolicyError('Unsupported Safe Apps RPC call.')
+	if (!parsedCall.success) throw safeAppsPolicyError(`Unsupported Safe Apps RPC call. Received params: ${ JSON.stringify(params) }`)
 	const parsedMethod = SafeAppsRpcMethod.safeParse(parsedCall.value.call)
-	if (!parsedMethod.success) throw safeAppsPolicyError('Unsupported Safe Apps RPC call.')
+	if (!parsedMethod.success) throw safeAppsPolicyError(`Unsupported Safe Apps RPC call. Received params: ${ JSON.stringify(params) }`)
 	const parsedParams = funtypes.ReadonlyArray(JsonValue).safeParse(parsedCall.value.params)
-	if (!parsedParams.success) throw safeAppsPolicyError('Safe Apps RPC params must be an array.')
+	if (!parsedParams.success) throw safeAppsPolicyError(`Safe Apps RPC params must be an array. Received params: ${ JSON.stringify(params) }`)
 	const rpcParams = parsedMethod.value === 'eth_getBlockByNumber' && parsedParams.value.length === 1 ? [...parsedParams.value, false] : parsedParams.value
 	return { method: SAFE_APPS_RPC_ALIASES.get(parsedMethod.value) ?? parsedMethod.value, params: rpcParams }
 }

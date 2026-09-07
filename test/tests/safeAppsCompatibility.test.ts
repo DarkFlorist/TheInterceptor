@@ -124,6 +124,30 @@ describe('Safe Apps compatibility policy', () => {
 		assert.equal(isSafeAppsRequestPolicyError(new Error('unexpected storage failure')), false)
 	})
 
+	test('rejects non-finite numbers before serializing RPC diagnostics', async () => {
+		for (const value of [NaN, Infinity, -Infinity]) {
+			await assert.rejects(
+				async () => await getSafeAppsRequestCommand({ method: 'rpcCall', params: { call: 'unsupported_method', params: [value] } }, 'https://app.example', activeAddress, rpcNetwork, getSafeState),
+				(error: unknown) => isSafeAppsRequestPolicyError(error) && error.message === 'Safe Apps request params must be JSON-compatible.',
+			)
+		}
+	})
+
+	test('includes the supplied RPC call params in policy errors', async () => {
+		const cases = [
+			{ params: undefined, reason: 'Unsupported Safe Apps RPC call.' },
+			{ params: { params: ['latest'] }, reason: 'Unsupported Safe Apps RPC call.' },
+			{ params: { call: 'unsupported_method', params: [{ address: '0x1234' }] }, reason: 'Unsupported Safe Apps RPC call.' },
+			{ params: { call: 'eth_call', params: {} }, reason: 'Safe Apps RPC params must be an array.' },
+		]
+		for (const { params, reason } of cases) {
+			await assert.rejects(
+				async () => await getSafeAppsRequestCommand({ method: 'rpcCall', ...(params === undefined ? {} : { params }) }, 'https://app.example', activeAddress, rpcNetwork, getSafeState),
+				(error: unknown) => isSafeAppsRequestPolicyError(error) && error.message === `${ reason } Received params: ${ JSON.stringify(params) }`,
+			)
+		}
+	})
+
 	test('validates and maps a single CALL transaction from the active Safe', async () => {
 		const transaction = { to: '0x2222222222222222222222222222222222222222', value: '15', data: '0x1234' }
 		assert.deepEqual(await getSafeAppsRequestCommand({ method: 'sendTransactions', params: { txs: [transaction], params: { safeTxGas: 21000 } } }, 'https://app.example', activeAddress, rpcNetwork, getSafeState), {
