@@ -1,4 +1,4 @@
-import { prepareSafeDelegateSimulationInput, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } from '../safe/safeSimulation.js'
+import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } from '../safe/safeSimulation.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { calculateRealizedEffectiveGasPrice } from '../simulation/services/simulationBlockParameters.js'
@@ -363,10 +363,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			let gnosisSafeCode = await getSimulatedCode(ethereumClientService, undefined, { kind: 'simulated', value: resolvedSimulationState }, gnosisSafeMessage.verifyingContract.address)
 			if (gnosisSafeCode?.getCodeReturn !== undefined && dataStringWith0xStart(gnosisSafeCode.getCodeReturn) === dataStringWith0xStart(getGnosisSafeProxyProxy())) gnosisSafeCode = await getSimulatedCode(ethereumClientService, undefined, { kind: 'simulated', value: resolvedSimulationState }, ORIGINAL_GNOSIS_SAFE)
 			if (gnosisSafeCode?.getCodeReturn === undefined) throw new Error('Failed to simulate gnosis safe transaction. Could not retrieve gnosis safe code.')
-			return {
-				[addressString(gnosisSafeMessage.verifyingContract.address)]: { code: getGnosisSafeProxyProxy() },
-				[addressString(ORIGINAL_GNOSIS_SAFE)]: { code: gnosisSafeCode.getCodeReturn }
-			}
+			return prepareSafeDelegateStateOverrides(gnosisSafeMessage.verifyingContract.address, gnosisSafeCode.getCodeReturn)
 		}
 		const temporaryAccountOverrides = await getTemporaryAccountOverrides()
 		const gasLimit = gnosisSafeMessage.message.message.baseGas !== 0n ? {

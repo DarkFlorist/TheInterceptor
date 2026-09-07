@@ -1,3 +1,4 @@
+import type { StateOverrides } from '../types/ethSimulate-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { encodeFunctionCall } from '../utils/abiRuntime.js'
 import { addressString, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
@@ -96,6 +97,15 @@ export function createSafeExecutionPreSimulationTransaction(
 	}
 }
 
+// Shared proxy redirection; callers supply code from their own state view (pinned chain state or the simulated stack).
+export function prepareSafeDelegateStateOverrides(safeAddress: bigint, code: Uint8Array, overrides: StateOverrides = {}): StateOverrides {
+	return {
+		...overrides,
+		[addressString(safeAddress)]: { ...overrides[addressString(safeAddress)], code: getGnosisSafeProxyProxy() },
+		[addressString(ORIGINAL_GNOSIS_SAFE)]: { ...overrides[addressString(ORIGINAL_GNOSIS_SAFE)], code },
+	}
+}
+
 export async function prepareSafeDelegateSimulationInput(input: SimulationStateInput, ethereum: EthereumClientService, blockNumber: bigint): Promise<SimulationStateInput> {
 	const delegates = input.flatMap((block) => block.transactions.flatMap((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n ? [transaction.safeTransaction.safeTx] : []))
 	if (delegates.length === 0) return input
@@ -113,10 +123,5 @@ export async function prepareSafeDelegateSimulationInput(input: SimulationStateI
 	}
 	const code = await ethereum.getCode(safeAddress, blockNumber, undefined)
 	if (code.length === 0) throw createSafeValidationError('The Safe proxy code is unavailable for batch simulation.', 'safe_contract_validation')
-	// Reuse the Safe delegate simulator so every inner call runs from the Safe and a failure reverts the whole batch.
-	return input.map((block) => ({ ...block, stateOverrides: {
-		...block.stateOverrides,
-		[addressString(safeAddress)]: { ...block.stateOverrides[addressString(safeAddress)], code: getGnosisSafeProxyProxy() },
-		[addressString(ORIGINAL_GNOSIS_SAFE)]: { ...block.stateOverrides[addressString(ORIGINAL_GNOSIS_SAFE)], code },
-	} }))
+	return input.map((block) => ({ ...block, stateOverrides: prepareSafeDelegateStateOverrides(safeAddress, code, block.stateOverrides) }))
 }

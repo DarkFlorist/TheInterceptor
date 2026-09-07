@@ -864,6 +864,33 @@ describe('background eth_accounts', () => {
 		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.approved, false)
 	})
 
+	test('ordinary signer reload restores EOA consent and requests accounts without a lifecycle observer', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, updateTabState, getSettings } = await loadModules()
+		const account = 0x5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bn
+		const websiteOrigin = 'https://ordinary.example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: account })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId, undefined, 0)
+		await updateTabState(socket.tabId, (previous) => ({ ...previous, signerAccounts: [account], activeSigningAddress: account }))
+		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
+		const connections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: connection } }]])
+		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		assert.equal((await getSettings()).activeSigningSafeAddress, undefined)
+		assert.equal('lifecycle' in connections, false)
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+			interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 13, requestSocket: socket },
+			method: 'connected_to_signer', params: [true, 'MetaMask', 1],
+		}, connections, noopPublishRpcConnectionStatus)
+		assert.equal(connection.approved, true)
+		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_accounts').length, 1)
+		assert.equal(messages.some((message) => message.method === 'safe_apps_compatibility'), false)
+	})
+
 	test('does not advertise an approved EOA as a Safe on top-frame reload or child-frame approval', async () => {
 		installBrowserMock()
 		const {

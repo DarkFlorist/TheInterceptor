@@ -269,6 +269,7 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 			}
 		}
 		const settings = await getSettings()
+		// Restore cached address consent for ordinary EOAs as well as Safes, even without lifecycle observers.
 		if (isTopFrame && approval === 'hasAccess' && activeAddress !== undefined) {
 			const activeAddressEntry = await getActiveAddressEntryForChain(activeAddress, settings.activeRpcNetwork.chainId)
 			const connection = getWebsiteConnectionForPort(websiteTabConnections, port)

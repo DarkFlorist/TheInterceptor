@@ -1,6 +1,6 @@
 import type { WebsiteSocket } from '../utils/requests.js'
 
-// Optional observers are injected by background startup alongside the connection state.
+// Startup injects observers of connection transitions, including changes during pending RPCs. Callback returns never authorize access or signer ownership; consumers use the core APIs for those decisions.
 export type WebsiteLifecycleCallbacks = {
 	readonly approvalChanged?: (socket: WebsiteSocket, approved: boolean) => void | Promise<void>
 	readonly connectionRemoved?: (socket: WebsiteSocket) => void | Promise<void>
