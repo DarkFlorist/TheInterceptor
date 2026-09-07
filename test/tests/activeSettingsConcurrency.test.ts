@@ -317,9 +317,9 @@ describe('active settings concurrency', () => {
 		expect((await getTabState(1)).tabIconDetails).toEqual({ icon: ICON_NOT_ACTIVE, iconReason: expectedTitle })
 	})
 
-	test.each(['immediate', 'scoped'])('%s access updates prompt for the latest address rather than the reconciliation snapshot', async (completion) => {
+	test.each(['immediate', 'staged'])('%s access updates prompt for the latest address rather than the reconciliation snapshot', async (completion) => {
 		installBrowserMock()
-		const { changeSimulationMode, getSettings, updateUserAddressBookEntries, websiteSocketToString, runWithWebsiteAccessUpdates, updateWebsiteApprovalAccesses, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
+		const { changeSimulationMode, getSettings, updateUserAddressBookEntries, websiteSocketToString, reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, updateWebsiteApprovalAccesses, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
 		const originalAddress = { ...firstAddress, askForAddressAccess: true }
 		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
 		await updateUserAddressBookEntries(() => [originalAddress, selectedAddress])
@@ -331,14 +331,10 @@ describe('active settings concurrency', () => {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'example.test', approved: false, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
-		if (completion === 'scoped') {
-			await runWithWebsiteAccessUpdates(ethereum, tokenPriceService, resetSimulationServices, connections, true,
-				async (operation) => await operation(),
-				async (reconcile) => {
-					await reconcile(snapshot)
-					await changeSimulationMode({ simulationMode: true, activeSimulationAddress: selectedAddress.address })
-				},
-			)
+		if (completion === 'staged') {
+			const update = await reconcileWebsiteApprovalAccesses(connections, snapshot)
+			await changeSimulationMode({ simulationMode: true, activeSimulationAddress: selectedAddress.address })
+			await finishWebsiteAccessUpdate(ethereum, tokenPriceService, resetSimulationServices, connections, update, true)
 		} else {
 			await changeSimulationMode({ simulationMode: true, activeSimulationAddress: selectedAddress.address })
 			await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, connections, snapshot, true)

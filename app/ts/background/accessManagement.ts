@@ -429,15 +429,17 @@ export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections
 	return false
 }
 
-async function reconcileWebsiteApprovalAccesses(
-	ethereum: EthereumClientService | undefined,
-	tokenPriceService: TokenPriceService | undefined,
-	resetSimulationServices: ResetSimulationServices | undefined,
+export type WebsiteAccessUpdate = {
+	readonly popupRefreshGeneration: number
+	readonly iconRefreshTargets: readonly { readonly tabId: number, readonly websiteOrigin: string }[]
+}
+
+// Reconcile approvals with the committed settings while the caller owns the settings lock.
+export async function reconcileWebsiteApprovalAccesses(
 	websiteTabConnections: WebsiteTabConnections,
 	settings: Settings,
-	promptForAccessesIfNeeded: boolean,
 	throwOnError = false,
-) {
+): Promise<WebsiteAccessUpdate> {
 	const popupRefreshGeneration = bumpPopupRefreshGeneration()
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 
@@ -458,50 +460,36 @@ async function reconcileWebsiteApprovalAccesses(
 		await reportUnexpectedError(error)
 	}
 
-	const finish = async () => {
-		if (promptForAccessesIfNeeded && ethereum !== undefined && tokenPriceService !== undefined && resetSimulationServices !== undefined) {
-			await promptForWebsiteAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, throwOnError)
-		}
-		try {
-			for (const tabState of await getAllTabStates()) {
-				if (websiteTabConnections.has(tabState.tabId)) continue
-				if (tabState.website?.websiteOrigin === undefined) continue
-				addIconRefreshTarget(iconRefreshTargets, tabState.tabId, tabState.website.websiteOrigin)
-			}
-			await Promise.all([...iconRefreshTargets.values()].map(({ tabId, websiteOrigin }) =>
-				updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, popupRefreshGeneration)
-			))
-		} catch (error) {
-			if (throwOnError) throw error
-			await reportUnexpectedError(error)
-		}
-	}
-	return { popupRefreshGeneration, finish }
+	return { popupRefreshGeneration, iconRefreshTargets: [...iconRefreshTargets.values()] }
 }
 
-export type WebsiteAccessReconciler = (settings: Settings) => Promise<number>
-
-// Own all completion work so a caller cannot omit it or skip it by throwing after a committed access update.
-export async function runWithWebsiteAccessUpdates<T>(
+// Call after releasing the settings lock: access dialogs can activate another address.
+export async function finishWebsiteAccessUpdate(
 	ethereum: EthereumClientService | undefined,
 	tokenPriceService: TokenPriceService | undefined,
 	resetSimulationServices: ResetSimulationServices | undefined,
 	websiteTabConnections: WebsiteTabConnections,
+	update: WebsiteAccessUpdate,
 	promptForAccessesIfNeeded: boolean,
-	runOrdered: (operation: () => Promise<T>) => Promise<T>,
-	change: (reconcile: WebsiteAccessReconciler) => Promise<T>,
 	throwOnError = false,
-): Promise<T> {
-	const completions: Array<() => Promise<void>> = []
+) {
+	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
+	for (const target of update.iconRefreshTargets) addIconRefreshTarget(iconRefreshTargets, target.tabId, target.websiteOrigin)
+	if (promptForAccessesIfNeeded && ethereum !== undefined && tokenPriceService !== undefined && resetSimulationServices !== undefined) {
+		await promptForWebsiteAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, throwOnError)
+	}
 	try {
-		return await runOrdered(async () => await change(async (settings) => {
-			const update = await reconcileWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, settings, promptForAccessesIfNeeded, throwOnError)
-			completions.push(update.finish)
-			return update.popupRefreshGeneration
-		}))
-	} finally {
-		// The ordered executor has released its lock before access dialogs or toolbar updates begin.
-		for (const complete of completions) await complete()
+		for (const tabState of await getAllTabStates()) {
+			if (websiteTabConnections.has(tabState.tabId)) continue
+			if (tabState.website?.websiteOrigin === undefined) continue
+			addIconRefreshTarget(iconRefreshTargets, tabState.tabId, tabState.website.websiteOrigin)
+		}
+		await Promise.all([...iconRefreshTargets.values()].map(({ tabId, websiteOrigin }) =>
+			updateExtensionIcon(websiteTabConnections, tabId, websiteOrigin, update.popupRefreshGeneration)
+		))
+	} catch (error) {
+		if (throwOnError) throw error
+		await reportUnexpectedError(error)
 	}
 }
 
@@ -514,11 +502,9 @@ export async function updateWebsiteApprovalAccesses(
 	promptForAccessesIfNeeded: boolean,
 	throwOnError = false,
 ): Promise<number> {
-	return await runWithWebsiteAccessUpdates<number>(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, promptForAccessesIfNeeded,
-		async (operation) => await operation(),
-		async (reconcile) => await reconcile(settings),
-		throwOnError,
-	)
+	const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings, throwOnError)
+	await finishWebsiteAccessUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, update, promptForAccessesIfNeeded, throwOnError)
+	return update.popupRefreshGeneration
 }
 
 export async function finalizeWebsiteAccessChange(
