@@ -1545,6 +1545,34 @@ describe('inpage signer bridge', () => {
 		await waitFor(() => backgroundMessages.some((message) => message.method === 'signer_chainChanged' && message.params?.[0] === '0x3'))
 	})
 
+	test('does not let a root MetaMask self-announcement block a later distinct MetaMask provider', async () => {
+		const genuineSignerRequests: string[] = []
+		const { fakeWindow } = createFakeWindow({ metamaskCompatibilityMode: false })
+		const rootMetaMaskProvider = fakeWindow.ethereum
+		const genuineMetaMaskProvider = {
+			isMetaMask: true,
+			isConnected: () => true,
+			request: async ({ method }: { readonly method: string }) => {
+				genuineSignerRequests.push(method)
+				if (method === 'eth_chainId') return '0x1'
+				if (method === 'eth_accounts') return ['0x2222222222222222222222222222222222222222']
+				return undefined
+			},
+			on: () => genuineMetaMaskProvider,
+			removeListener: () => genuineMetaMaskProvider,
+		}
+		const rootInfo = { uuid: '12121212-1212-4212-8212-121212121212', name: 'MetaMask', icon: 'data:image/png;base64,dGVzdA', rdns: 'io.metamask' }
+		const genuineInfo = { ...rootInfo, uuid: '34343434-3434-4434-8434-343434343434' }
+		fakeWindow.addEventListener('eip6963:requestProvider', () => {
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: rootInfo, provider: rootMetaMaskProvider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: genuineInfo, provider: genuineMetaMaskProvider } })
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?root-self-announcement-before-genuine-metamask', async () => {
+			await waitFor(() => genuineSignerRequests.includes('eth_chainId'))
+		})
+	})
+
 	test('replaces MetaMask EIP-6963 announcements with the Interceptor provider in compatibility mode', async () => {
 		const dappAnnouncements: unknown[] = []
 		const metaMaskInfo = {
