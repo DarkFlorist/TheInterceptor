@@ -267,7 +267,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 	}
 }
 
-export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings, setMetamaskCompatibilityMode: (metamaskCompatibilityMode: boolean) => Promise<void>) {
+export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings) {
 	// Pre-1.5 exports contain the legacy address shared by signing and simulation. Apply the same explicit default reset as startup rather than heuristically assigning ambiguous state to either independent mode.
 	const defaultActiveAddress = defaultActiveAddresses[0]?.address
 	if (defaultActiveAddress === undefined) throw new Error('Default active address was missing')
@@ -304,10 +304,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])
 		})
 	}
-	const metamaskCompatibilityMode = exportedSetings.version === '1.0' || exportedSetings.version === '1.1'
-		? await getMetamaskCompatibilityMode()
-		: exportedSetings.settings.metamaskCompatibilityMode
-	await setMetamaskCompatibilityMode(metamaskCompatibilityMode)
+	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') await persistMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
 }
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })

@@ -10,6 +10,7 @@ const sentMessages: unknown[] = []
 const dynamicRuleUpdates: unknown[] = []
 const dispatcherEvents: ({ type: 'message', message: unknown } | { type: 'dynamicRuleUpdate' })[] = []
 const registeredContentScripts = new Map<string, { readonly id: string, readonly js?: readonly string[], readonly excludeMatches?: readonly string[] }>()
+const contentScriptRegistrationOperations: string[] = []
 const reloadedTabs: number[] = []
 let storageSetError: Error | undefined
 let dynamicRuleUpdateError: Error | undefined
@@ -50,13 +51,16 @@ Reflect.set(globalThis, 'browser', {
 	scripting: {
 		getRegisteredContentScripts: async () => [...registeredContentScripts.values()],
 		unregisterContentScripts: async (filter?: { readonly ids?: readonly string[] }) => {
+			contentScriptRegistrationOperations.push('unregister')
 			const ids = filter?.ids ?? [...registeredContentScripts.keys()]
 			for (const id of ids) registeredContentScripts.delete(id)
 		},
 		registerContentScripts: async (scripts: readonly { readonly id: string, readonly js?: readonly string[] }[]) => {
+			contentScriptRegistrationOperations.push('register')
 			for (const script of scripts) registeredContentScripts.set(script.id, script)
 		},
 		updateContentScripts: async (scripts: readonly { readonly id: string, readonly js?: readonly string[] }[]) => {
+			contentScriptRegistrationOperations.push('update')
 			for (const script of scripts) registeredContentScripts.set(script.id, script)
 		},
 	},
@@ -154,6 +158,7 @@ beforeEach(() => {
 	dynamicRuleUpdates.splice(0, dynamicRuleUpdates.length)
 	dispatcherEvents.splice(0, dispatcherEvents.length)
 	registeredContentScripts.clear()
+	contentScriptRegistrationOperations.splice(0, contentScriptRegistrationOperations.length)
 	reloadedTabs.splice(0, reloadedTabs.length)
 })
 
@@ -369,7 +374,7 @@ describe('popup message dispatcher seams', () => {
 				simulationMode: false,
 				addressBookEntries: [],
 				useTabsInsteadOfPopup: false,
-				metamaskCompatibilityMode: false,
+				metamaskCompatibilityMode: true,
 			},
 		})
 
@@ -391,7 +396,7 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(messages[1].data.activeSimulationAddress, 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n)
 		assert.equal(messages[1].data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
 		assert.equal(messages[1].data.simulationMode, false)
-		assert.deepEqual(registeredContentScripts.get('inpage')?.js, ['/inpage/js/inpage.js'])
+		assert.deepEqual(registeredContentScripts.get('inpage')?.js, ['/inpage/js/metamaskCompatibilityMode.js', '/inpage/js/inpage.js'])
 		assert.deepEqual(reloadedTabs, [42])
 		assert.deepEqual(dynamicRuleUpdates, [{
 			removeRuleIds: [],
@@ -407,6 +412,12 @@ describe('popup message dispatcher seams', () => {
 		const settingsUpdatedEventIndex = dispatcherEvents.findIndex((event) => event.type === 'message' && MessageToPopup.parse(event.message).method === 'popup_settingsUpdated')
 		assert.ok(successReplyEventIndex < dynamicRuleEventIndex)
 		assert.ok(dynamicRuleEventIndex < settingsUpdatedEventIndex)
+
+		const registrationOperationCount = contentScriptRegistrationOperations.length
+		reloadedTabs.splice(0, reloadedTabs.length)
+		await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: importedSettings } })
+		assert.equal(contentScriptRegistrationOperations.length, registrationOperationCount)
+		assert.deepEqual(reloadedTabs, [])
 	})
 
 	test('legacy imports preserve compatibility mode while refreshing content scripts and connected tabs', async () => {

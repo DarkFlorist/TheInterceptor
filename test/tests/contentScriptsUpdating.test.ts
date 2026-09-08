@@ -179,6 +179,21 @@ function getManifestV2WebAccessibleResources() {
 	return resources
 }
 
+function getManifestV3WebAccessibleResources() {
+	const manifest: unknown = JSON.parse(fs.readFileSync('app/manifestV3.json', 'utf8'))
+	if (typeof manifest !== 'object' || manifest === null || !('web_accessible_resources' in manifest)) throw new Error('Manifest V3 must declare web-accessible resources')
+	const resourceGroups = manifest.web_accessible_resources
+	if (!Array.isArray(resourceGroups)) throw new Error('Manifest V3 web-accessible resources must be grouped')
+	return resourceGroups.flatMap((resourceGroup) => {
+		if (typeof resourceGroup !== 'object' || resourceGroup === null || !('resources' in resourceGroup) || !('matches' in resourceGroup)) throw new Error('Manifest V3 resource group must declare resources and matches')
+		const resources = resourceGroup.resources
+		const matches = resourceGroup.matches
+		if (!Array.isArray(resources) || !resources.every((resource) => typeof resource === 'string')) throw new Error('Manifest V3 resources must be strings')
+		if (!Array.isArray(matches) || !matches.every((match) => typeof match === 'string')) throw new Error('Manifest V3 matches must be strings')
+		return matches.includes('<all_urls>') ? resources : []
+	})
+}
+
 describe('content script injection strategy', () => {
 	test('serializes malformed compatibility mode values as disabled MV2 bootstrap code', () => {
 		const maliciousValue = 'true); globalThis.unexpectedCodeExecution = true; Reflect.set(globalThis, Symbol.for("ignored"), (true'
@@ -228,6 +243,11 @@ describe('content script injection strategy', () => {
 			if (manifestVersion === 2) assert.equal(typeof getCommittedListener(), 'function')
 			else assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/metamaskCompatibilityMode.js', '/inpage/js/inpage.js'])
 		}
+	})
+
+	test('exposes every manifest v3 main-world script to Chromium', () => {
+		const webAccessibleResources = getManifestV3WebAccessibleResources()
+		for (const scriptPath of getPageWorldScriptPaths(true)) assert.equal(webAccessibleResources.includes(scriptPath), true)
 	})
 
 	test('exposes every manifest v2 injected file to Firefox', async () => {
