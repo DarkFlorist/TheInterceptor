@@ -305,13 +305,13 @@ describe('popup settings changes', () => {
 		assert.equal(refreshRequests(), refreshedCount)
 	})
 
-	for (const outcome of ['accept', 'reject', 'safe', 'metadata after chain event'] as const) {
+	for (const outcome of ['accept', 'reject', 'safe', 'metadata after chain event', 'unavailable simulation'] as const) {
 		test(`preserves RPC preferences until a popup wallet switch is accepted (${ outcome })`, async () => {
 			installBrowserMock()
 			const { changeSimulationMode, getSettings, websiteSocketToString, updateTabState, updateUserAddressBookEntries, saveCurrentTabId } = await loadModules()
 			const { popupChangeActiveRpc } = await import('../../app/ts/background/popupMessageHandlers.js')
 			const { walletSwitchEthereumChainReply, signerChainChanged } = await import('../../app/ts/background/providerMessageHandlers.js')
-			const { setRpcList, getRpcList } = await import('../../app/ts/background/storageVariables.js')
+			const { setRpcList, getRpcList, getPrimaryRpcForChain } = await import('../../app/ts/background/storageVariables.js')
 			const currentRpc = (await getSettings()).activeRpcNetwork
 			const primaryRpc = { ...currentRpc, chainId: 2n, httpsRpc: 'https://primary.example.test', primary: true }
 			const requestedRpc = { ...primaryRpc, name: 'Requested network', httpsRpc: outcome === 'metadata after chain event' ? primaryRpc.httpsRpc : 'https://alternative.example.test', primary: false }
@@ -327,6 +327,11 @@ describe('popup settings changes', () => {
 				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
 			} }]])
 			const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+			let simulationReads = 0
+			if (outcome === 'unavailable simulation') Object.defineProperty(ethereum, 'getCachedBlock', { value: () => {
+				simulationReads += 1
+				throw new Error('Simulation RPC is unavailable')
+			} })
 			const pending = popupChangeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, connections, { method: 'popup_changeActiveRpc', data: requestedRpc }, await getSettings())
 			if (outcome !== 'safe') {
 				await waitForPortMessageCount(messages, 'request_signer_to_wallet_switchEthereumChain', 1)
@@ -342,11 +347,14 @@ describe('popup settings changes', () => {
 			}
 			const reply = await pending
 			const activeRpc = (await getSettings()).activeRpcNetwork
-			if (outcome === 'accept' || outcome === 'metadata after chain event') {
+			if (outcome !== 'reject' && outcome !== 'safe') {
+				assert.equal(simulationReads, 0, 'External-wallet signing must not read simulation state before acknowledging the switch')
 				assert.equal(reply.ok, true)
 				assert.deepEqual(activeRpc, requestedRpc)
 				assert.equal((await getRpcList()).find((entry) => entry.name === requestedRpc.name)?.primary, true)
 				assert.equal((await getRpcList()).find((entry) => entry.chainId === 2n && entry.primary)?.httpsRpc, requestedRpc.httpsRpc)
+				assert.equal((await getRpcList()).filter((entry) => entry.chainId === 2n && entry.primary).length, 1)
+				assert.deepEqual(await getPrimaryRpcForChain(2n), { ...requestedRpc, primary: true })
 			} else {
 				assert.equal(reply.ok, false)
 				assert.equal(activeRpc.httpsRpc, currentRpc.httpsRpc)

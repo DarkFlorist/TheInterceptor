@@ -432,6 +432,21 @@ describe('Home popup clear empty state', () => {
 		}
 	})
 
+	for (const selection of ['other chain', 'metadata edit'] as const) test(`selects an RPC with the same URL and a different ${ selection }`, async () => {
+		const dom = installDomMock()
+		const nextRpc = { ...rpcNetwork, name: 'Requested network', chainId: selection === 'other chain' ? rpcNetwork.chainId + 1n : rpcNetwork.chainId }
+		const requests: RpcEntry[] = []
+		const params = createHomeParams({ rpcEntries: new Signal([rpcNetwork, nextRpc]), setActiveRpcAndInformAboutIt: async (entry) => { requests.push(entry) } })
+		try {
+			await act(() => { render(h(Home, params), dom.document.body) })
+			await act(async () => { await clickElement(getButtonByText(dom.document.body, 'Requested network')) })
+			assert.deepEqual(requests, [nextRpc])
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	test('shows wallet approval progress for RPC changes and keeps the old network on rejection', async () => {
 		const dom = installDomMock()
 		const nextRpc = { ...rpcNetwork, name: 'Other network', chainId: 2n, httpsRpc: 'https://other.example.test' }

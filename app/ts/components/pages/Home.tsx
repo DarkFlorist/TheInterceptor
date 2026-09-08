@@ -1,3 +1,4 @@
+import { getRpcNetworkChange } from '../../utils/rpcNetworkChange.js'
 import type { HomeParams, FirstCardParams, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
 import { type SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { ActiveAddressComponent, SmallAddress, StaticBigAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
@@ -257,7 +258,7 @@ function FirstCardHeader(param: FirstCardParams) {
 	const rpcPending = rpcChangeState.value.state === 'pending'
 	const controlsDisabled = !param.isInitialHomeDataLoaded.value || param.isSettingsChangePending.value || simulatingPending || signingPending || rpcPending
 	const changeRpc = (entry: RpcEntry) => {
-		if (controlsDisabled || entry.httpsRpc === param.rpcNetwork.value?.httpsRpc) return
+		if (controlsDisabled || !getRpcNetworkChange(param.rpcNetwork.value, entry).selectionChanged) return
 		requestedRpc.value = entry
 		void waitForRpcChange(async () => { await param.changeActiveRpc(entry) })
 	}

@@ -1,14 +1,11 @@
-import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getPopupSettingsOperation } from '../types/popupSettingsProtocol.js'
-import { createPopupSettingsCoordinator } from './popupSettingsCoordinator.js'
-import { getSettings } from './settings.js'
+import { popupSettingsCommandHandlers } from './popupSettingsCommands.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { PopupMessage } from '../types/interceptor-messages.js'
 import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { getSimulationStackTargetHash } from '../utils/simulationStackTargets.js'
 import { setLatestUnexpectedError } from './storageVariables.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { changeActiveAddress, changeChainDialog, changePage, changePreSimulationBlockTimeManipulation, confirmDialog, enableSimulationMode, fetchSimulationStackRequestConfirmation, forceSetGasLimitForTransaction, importSafeStack, importSimulationStack, modifyMakeMeRich, openNewTab, openWebPage, popupReadyAndListening, refreshHomeData, refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation, removeTransactionOrSignedMessage, reportUnexpectedErrorInWindow, requestAccountsFromSigner, requestActiveAddresses, requestCompleteVisualizedSimulation, requestHomePageBootstrap, requestInterceptorSimulationInput, requestLatestUnexpectedError, requestMakeMeRichList, requestNewHomeData, requestSafeStackExport, requestSimulationMetadata, requestSimulationMode, setSafeSimulationSigner, setTransactionOrMessageBlockTimeManipulator, simulateGnosisSafeTransactionOnPass, simulateGovernanceContractExecutionOnPass, watchAssetDialog } from './popupMessageHandlers.js'
+import { changeChainDialog, changePage, changePreSimulationBlockTimeManipulation, confirmDialog, fetchSimulationStackRequestConfirmation, forceSetGasLimitForTransaction, importSafeStack, importSimulationStack, openNewTab, openWebPage, popupReadyAndListening, refreshHomeData, refreshPopupConfirmTransactionMetadata, refreshPopupConfirmTransactionSimulation, removeTransactionOrSignedMessage, reportUnexpectedErrorInWindow, requestAccountsFromSigner, requestActiveAddresses, requestCompleteVisualizedSimulation, requestHomePageBootstrap, requestInterceptorSimulationInput, requestLatestUnexpectedError, requestMakeMeRichList, requestNewHomeData, requestSafeStackExport, requestSimulationMetadata, requestSimulationMode, setSafeSimulationSigner, setTransactionOrMessageBlockTimeManipulator, simulateGnosisSafeTransactionOnPass, simulateGovernanceContractExecutionOnPass, watchAssetDialog } from './popupMessageHandlers.js'
 import { popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
 import { addressBookPopupMessageHandlers } from './popupMessageHandlerRegistries/addressBook.js'
 import { settingsPopupMessageHandlers } from './popupMessageHandlerRegistries/settings.js'
@@ -18,15 +15,7 @@ import { websiteAccessPopupMessageHandlers } from './popupMessageHandlerRegistri
 export type { PopupMessageDispatcherContext } from './popupMessageHandlerRegistry.js'
 
 const popupMessageHandlers = {
-	popup_requestSettingsChangeStatus: popupMessageHandler('popup_requestSettingsChangeStatus', async () => await settingsCoordinator.publish()),
 	popup_confirmDialog: popupMessageHandler('popup_confirmDialog', async (context, request) => await confirmDialog(context.ethereum, context.tokenPriceService, context.websiteTabConnections, request)),
-	popup_changeActiveAddress: popupMessageHandler('popup_changeActiveAddress', async (context, request) => await changeActiveAddress(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
-	popup_modifyMakeMeRich: popupMessageHandler('popup_modifyMakeMeRich', async (context, request) => {
-		if (await modifyMakeMeRich(request) && !await queuePopupSimulationRefresh({ ethereum: context.ethereum, tokenPriceService: context.tokenPriceService, invalidateOldState: true })) {
-			return { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but balances could not be refreshed. Please refresh the simulation to retry.' }
-		}
-		return { type: 'PopupSettingsChangeReply', ok: true }
-	}),
 	popup_changePage: popupMessageHandler('popup_changePage', async (_context, request) => await changePage(request)),
 	popup_requestAccountsFromSigner: popupMessageHandler('popup_requestAccountsFromSigner', async (context, request) => await requestAccountsFromSigner(context.websiteTabConnections, request)),
 	popup_resetSimulation: popupMessageHandler('popup_resetSimulation', async (context) => await context.resetSimulationState()),
@@ -38,10 +27,6 @@ const popupMessageHandlers = {
 	popup_refreshConfirmTransactionMetadata: popupMessageHandler('popup_refreshConfirmTransactionMetadata', async (context) => await refreshPopupConfirmTransactionMetadata(context.ethereum, context.tokenPriceService, context.confirmTransactionAbortController)),
 	popup_changeChainDialog: popupMessageHandler('popup_changeChainDialog', async (context, request) => await changeChainDialog(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
 	popup_watchAssetDialog: popupMessageHandler('popup_watchAssetDialog', async (context, request) => await watchAssetDialog(context.websiteTabConnections, request)),
-	popup_enableSimulationMode: popupMessageHandler('popup_enableSimulationMode', async (context, request) => {
-		await enableSimulationMode(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)
-		return { type: 'PopupSettingsChangeReply', ok: true }
-	}),
 	popup_setSafeSimulationSigner: popupMessageHandler('popup_setSafeSimulationSigner', async (context, request) => await setSafeSimulationSigner(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
 	popup_requestNewHomeData: popupMessageHandler('popup_requestNewHomeData', async (context, request) => await requestNewHomeData(context.ethereum, context.websiteTabConnections, request.data.refreshSignerAccounts, request.data.includeWebsiteAccessAddressMetadata, context.simulationAbortController, bumpPopupRefreshGeneration())),
 	popup_requestHomePageBootstrap: popupMessageHandler('popup_requestHomePageBootstrap', async (context) => await requestHomePageBootstrap(context.websiteTabConnections, bumpPopupRefreshGeneration())),
@@ -72,18 +57,10 @@ const popupMessageHandlers = {
 	...addressBookPopupMessageHandlers,
 	...safePopupMessageHandlers,
 	...settingsPopupMessageHandlers,
+	...popupSettingsCommandHandlers,
 	...websiteAccessPopupMessageHandlers,
 } satisfies PopupMessageHandlerMap
 
-const settingsCoordinator = createPopupSettingsCoordinator(async (data) => await sendPopupMessageToOpenWindows({ method: 'popup_settingsChangeStatus', data }))
-
 export async function dispatchPopupMessage(context: PopupMessageDispatcherContext, request: PopupMessage): Promise<PopupReplyOption | void> {
-	const descriptor = getPopupSettingsOperation(request.method)
-	if (descriptor === undefined) return await popupMessageHandlers[request.method](context, request)
-	const admission = await settingsCoordinator.run(descriptor.operation, async () => await popupMessageHandlers[request.method]({ ...context, settings: await getSettings() }, request))
-	return admission.accepted ? admission.result : {
-		type: descriptor.replyType,
-		ok: false,
-		message: 'Another popup is changing settings. Please wait for it to finish, then try again.',
-	}
+	return await popupMessageHandlers[request.method](context, request)
 }

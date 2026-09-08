@@ -12,7 +12,6 @@ export const popupSettingsOperations = {
 const operations = Object.values(popupSettingsOperations)
 export type PopupSettingsOperation = typeof operations[number]['operation']
 export const PopupSettingsOperation = funtypes.String.withGuard((value): value is PopupSettingsOperation => operations.some(entry => entry.operation === value))
-export const getPopupSettingsOperation = (method: string) => Object.entries(popupSettingsOperations).find(([key]) => key === method)?.[1]
 
 export type PopupSettingsChangeStatus = funtypes.Static<typeof PopupSettingsChangeStatus>
 export const PopupSettingsChangeStatus = funtypes.ReadonlyObject({

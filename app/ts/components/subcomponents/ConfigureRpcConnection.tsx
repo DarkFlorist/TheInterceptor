@@ -1,9 +1,10 @@
+import { getRpcEntryIdentityKey } from '../../utils/rpcNetworkChange.js'
 import { createContext, type ComponentChildren } from 'preact'
 import { useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useContext, useRef } from 'preact/hooks'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { TextInput } from './TextField.js'
-import type { RpcEntries, RpcEntry } from '../../types/rpc.js'
+import type { RpcEntries, RpcEntry, RpcNetwork } from '../../types/rpc.js'
 import { sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport } from '../../background/backgroundUtils.js'
 import { getSettings } from '../../background/settings.js'
 import { getChainName } from '../../utils/constants.js'
@@ -121,15 +122,15 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 
 	const saveRpcEntry = async (rpcEntry: RpcEntry) => {
 		const { activeRpcNetwork } = await getSettings()
-		await saveRpcEntryAndKeepActiveRpcConsistent(rpcEntry, rpcEntries.value, activeRpcNetwork,
+		await saveRpcEntryAndKeepActiveRpcConsistent(rpcEntry, rpcInfo, rpcEntries.value, activeRpcNetwork,
 			async (entries) => await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_set_rpc_list', data: entries }),
 			async (entry) => await requestPopupSettingsChange({ method: 'popup_changeActiveRpc', data: entry })
 		)
 	}
 
-	const removeRpcEntryByUrl = async (url: string) => {
+	const removeRpcEntry = async (entry: RpcEntry) => {
 		const { activeRpcNetwork } = await getSettings()
-		await removeRpcEntryAndKeepActiveRpcConsistent(url, rpcEntries.value, activeRpcNetwork,
+		await removeRpcEntryAndKeepActiveRpcConsistent(entry, rpcEntries.value, activeRpcNetwork,
 			async (entries) => await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_set_rpc_list', data: entries }),
 			async (entry) => await requestPopupSettingsChange({ method: 'popup_changeActiveRpc', data: entry })
 		)
@@ -142,7 +143,7 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 				: <button type = 'button' onClick = { showConfigurationModal } class = 'btn btn--outline rpc-add-button'>+ New RPC Connection</button>
 			}
 			<dialog class = 'dialog' ref = { modalRef }>
-				<ConfigureRpcForm defaultValues = { rpcInfo } onCancel = { cancelAndCloseModal } onSave = { saveRpcEntry } onRemove = { rpcEntries.value.length > 1 ? removeRpcEntryByUrl : undefined } />
+				<ConfigureRpcForm defaultValues = { rpcInfo } onCancel = { cancelAndCloseModal } onSave = { saveRpcEntry } onRemove = { rpcEntries.value.length > 1 ? removeRpcEntry : undefined } />
 			</dialog>
 		</RpcQueryProvider>
 	)
@@ -150,24 +151,27 @@ export const ConfigureRpcConnection = ({ rpcInfo }: { rpcInfo?: RpcEntry }) => {
 
 type PersistRpcEntries = (entries: RpcEntries) => Promise<void>
 type ChangeActiveRpc = (entry: RpcEntry) => Promise<void>
-type ActiveRpcSelection = { readonly httpsRpc: string | undefined, readonly chainId: bigint }
-
-export async function saveRpcEntryAndKeepActiveRpcConsistent(rpcEntry: RpcEntry, rpcEntries: RpcEntries, activeRpcNetwork: ActiveRpcSelection, persistRpcEntries: PersistRpcEntries, changeActiveRpc: ChangeActiveRpc) {
-	const updatedRpcEntries = [rpcEntry].concat(rpcEntries.filter(entry => entry.httpsRpc !== rpcEntry.httpsRpc))
-	if (activeRpcNetwork.httpsRpc === rpcEntry.httpsRpc) {
-		if (activeRpcNetwork.chainId !== rpcEntry.chainId) throw new Error('Switch to another RPC before changing the active connection chain ID.')
-		console.warn(`Automatically switched to recently added or modified RPC (${ rpcEntry.httpsRpc })`)
-		await changeActiveRpc(rpcEntry)
+export async function saveRpcEntryAndKeepActiveRpcConsistent(rpcEntry: RpcEntry, originalEntry: RpcEntry | undefined, rpcEntries: RpcEntries, activeRpcNetwork: RpcNetwork, persistRpcEntries: PersistRpcEntries, changeActiveRpc: ChangeActiveRpc) {
+	const originalIndex = originalEntry === undefined ? -1 : rpcEntries.findIndex(entry => getRpcEntryIdentityKey(entry) === getRpcEntryIdentityKey(originalEntry))
+	if (originalEntry !== undefined && originalIndex === -1) throw new Error('This RPC connection changed. Reopen the editor and try again.')
+	if (rpcEntries.some((entry, index) => index !== originalIndex && getRpcEntryIdentityKey(entry) === getRpcEntryIdentityKey(rpcEntry))) throw new Error('An identical RPC connection already exists.')
+	const previousEntry = rpcEntries[originalIndex]
+	const savedEntry = previousEntry === undefined ? rpcEntry : { ...rpcEntry, primary: previousEntry.primary, minimized: previousEntry.minimized }
+	const updatedRpcEntries = originalIndex === -1 ? [...rpcEntries, savedEntry] : rpcEntries.map((entry, index) => index === originalIndex ? savedEntry : entry)
+	if (originalEntry !== undefined && getRpcEntryIdentityKey(activeRpcNetwork) === getRpcEntryIdentityKey(originalEntry)) {
+		if (activeRpcNetwork.chainId !== savedEntry.chainId) throw new Error('Switch to another RPC before changing the active connection chain ID.')
+		await changeActiveRpc(savedEntry)
 	}
 	await persistRpcEntries(updatedRpcEntries)
 }
 
-export async function removeRpcEntryAndKeepActiveRpcConsistent(url: string, rpcEntries: RpcEntries, activeRpcNetwork: ActiveRpcSelection, persistRpcEntries: PersistRpcEntries, changeActiveRpc: ChangeActiveRpc) {
-	const reducedRpcEntries = rpcEntries.filter(entry => entry.httpsRpc !== url)
-	if (url === activeRpcNetwork.httpsRpc) {
+export async function removeRpcEntryAndKeepActiveRpcConsistent(removedEntry: RpcEntry, rpcEntries: RpcEntries, activeRpcNetwork: RpcNetwork, persistRpcEntries: PersistRpcEntries, changeActiveRpc: ChangeActiveRpc) {
+	const removedIndex = rpcEntries.findIndex(entry => getRpcEntryIdentityKey(entry) === getRpcEntryIdentityKey(removedEntry))
+	if (removedIndex === -1) throw new Error('This RPC connection changed. Reopen the editor and try again.')
+	const reducedRpcEntries = rpcEntries.filter((_entry, index) => index !== removedIndex)
+	if (getRpcEntryIdentityKey(removedEntry) === getRpcEntryIdentityKey(activeRpcNetwork)) {
 		const rpcToSwitchTo = reducedRpcEntries.find(entry => entry.chainId === activeRpcNetwork.chainId)
 		if (rpcToSwitchTo === undefined) throw new Error('Switch to another RPC on this chain before removing the active connection.')
-		console.warn('Switching RPC as a result of the removal of the currently active connection')
 		await changeActiveRpc(rpcToSwitchTo)
 	}
 	await persistRpcEntries(reducedRpcEntries)
@@ -177,7 +181,7 @@ type ConfigureRpcFormProps = {
 	defaultValues?: RpcEntry,
 	onCancel: () => void
 	onSave: (rpcEntry: RpcEntry) => Promise<void>
-	onRemove?: (rpcUrl: string) => Promise<void>
+	onRemove?: (rpcEntry: RpcEntry) => Promise<void>
 }
 
 export async function completeRpcFormMutation(mutation: () => Promise<void>, onSuccess: () => void) {
@@ -215,7 +219,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 				case 'remove':
 					if (defaultValues !== undefined && onRemove !== undefined) {
 						void waitForMutation(async () => await completeRpcFormMutation(
-							async () => await onRemove(defaultValues.httpsRpc),
+							async () => await onRemove(defaultValues),
 							() => completeForm(form)
 						))
 					}
