@@ -1,8 +1,5 @@
 import type { TransactionConfirmationRequest } from '../types/confirmationRequest.js'
-import { getSafeMessageDigest } from '../safe/safeMessage.js'
-import { SAFE_SIGN_MESSAGE_LIB, SAFE_SIGN_MESSAGE_ABI } from '../safe/safeDelegateCalls.js'
-import { encodeFunctionCall } from '../utils/abiRuntime.js'
-import { dataStringWith0xStart } from '../utils/bigint.js'
+import { matchesSafeMessageApproval } from '../safe/safeMessageApproval.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { SafeEntry } from '../types/addressBookTypes.js'
@@ -269,8 +266,6 @@ async function createSafeSigningRequestForTransaction(
 	let nonce = firstUncommittedNonce
 	while (pendingSafeTransactionNonces.has(nonce)) nonce += 1n
 	const review = safeTransaction?.messageReview
-	if (review !== undefined && (safeTransaction?.operation !== 1 || transactionToSimulate.transaction.to !== SAFE_SIGN_MESSAGE_LIB
-		|| dataStringWith0xStart(transactionToSimulate.transaction.input) !== encodeFunctionCall(SAFE_SIGN_MESSAGE_ABI, 'signMessage', [getSafeMessageDigest(review.text, review.isTypedData)]))) throw createSafeContractValidationFailure('The Safe message review text does not match the on-chain approval.')
 	const transaction = {
 		to: transactionToSimulate.transaction.to,
 		value: transactionToSimulate.transaction.value,
@@ -278,6 +273,7 @@ async function createSafeSigningRequestForTransaction(
 		gas: transactionToSimulate.transaction.gas,
 		operation: BigInt(safeTransaction?.operation ?? 0),
 	}
+	if (review !== undefined && !matchesSafeMessageApproval({ ...transaction, data: transaction.input }, review)) throw createSafeContractValidationFailure('The Safe message review text does not match the on-chain approval.')
 	const signingRequest = validateOwner && walletSignerAddress !== undefined
 		? await createSafeTransactionSigningRequest(ethereum, safeEntry.address, walletSignerAddress, transaction, nonce)
 		: await createSafeTransactionReviewRequest(ethereum, safeEntry.address, walletSignerAddress, transaction, nonce)

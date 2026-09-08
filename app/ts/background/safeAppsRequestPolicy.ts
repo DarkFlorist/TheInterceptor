@@ -1,7 +1,8 @@
-import { encodeSafeBatch, SAFE_MULTI_SEND_CALL_ONLY, SAFE_SIGN_MESSAGE_LIB, SAFE_SIGN_MESSAGE_ABI } from '../safe/safeDelegateCalls.js'
-import { encodeFunctionCall } from '../utils/abiRuntime.js'
+import { SafeReviewInput } from '../types/safeReview.js'
+import { encodeSafeBatch, SAFE_MULTI_SEND_CALL_ONLY } from '../safe/safeDelegateCalls.js'
+import { buildSafeMessageApproval } from '../safe/safeMessageApproval.js'
 import { addressString, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
-import { createSafeMessageTypedData, getSafeMessageDigest } from '../safe/safeMessage.js'
+import { createSafeMessageTypedData } from '../safe/safeMessage.js'
 import type { SafeAppsMessageServices } from './safeAppsMessages.js'
 import * as funtypes from 'funtypes'
 import type { RpcNetwork } from '../types/rpc.js'
@@ -127,10 +128,12 @@ function parseSafeTransaction(params: unknown, from: string): { transaction: Jso
 }
 
 function createOnChainMessageCommand(from: string, message: string, isTypedData: boolean): SafeAppsRequestCommand {
+	const review = { text: message, isTypedData }
+	const approval = buildSafeMessageApproval(review)
 	return { kind: 'ethereumRequest', method: 'eth_sendTransaction', params: [{
-		from, to: addressString(SAFE_SIGN_MESSAGE_LIB), value: '0x0', gas: SAFE_PROPOSAL_GAS_LIMIT,
-		data: encodeFunctionCall(SAFE_SIGN_MESSAGE_ABI, 'signMessage', [getSafeMessageDigest(message, isTypedData)]),
-	}], safeRequestContext: { operation: 1, message: { text: message, isTypedData } }, mapResult: 'safeTxHash' }
+		from, to: addressString(approval.to), value: `0x${ approval.value.toString(16) }`, gas: SAFE_PROPOSAL_GAS_LIMIT,
+		data: dataStringWith0xStart(approval.data),
+	}], safeRequestContext: SafeReviewInput.parse({ operation: Number(approval.operation), message: review }), mapResult: 'safeTxHash' }
 }
 
 function parseRpcCall(params: JsonValue | undefined) {

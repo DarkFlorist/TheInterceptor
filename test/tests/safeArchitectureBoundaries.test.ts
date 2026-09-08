@@ -102,3 +102,13 @@ test('Safe Apps request policy receives gateway operations through injected serv
 	assert.match(policy, /services\.getTransaction\(/u)
 	assert.match(policy, /services\.messages\./u)
 })
+
+test('Safe message approval encoding and review matching have domain owners', async () => {
+	const policy = await Bun.file(new URL('../../app/ts/background/safeAppsRequestPolicy.ts', import.meta.url)).text()
+	const details = await Bun.file(new URL('../../app/ts/components/pages/SafeProposalDetails.tsx', import.meta.url)).text()
+	const delegates = await Bun.file(new URL('../../app/ts/safe/safeDelegateCalls.ts', import.meta.url)).text()
+	assert.match(policy, /buildSafeMessageApproval\(/u)
+	for (const source of [safeTransactionConfirmationSource, details]) assert.match(source, /matchesSafeMessageApproval\(/u)
+	assert.match(delegates, /decodeSafeMessageApproval\(/u)
+	for (const source of [policy, safeTransactionConfirmationSource, details]) assert.doesNotMatch(source, /SAFE_SIGN_MESSAGE_ABI|getSafeMessageDigest/u)
+})

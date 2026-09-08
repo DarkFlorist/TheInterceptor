@@ -1,3 +1,5 @@
+import { decodeSafeMessageApproval, SAFE_SIGN_MESSAGE_LIB } from './safeMessageApproval.js'
+export { SAFE_SIGN_MESSAGE_LIB, SAFE_SIGN_MESSAGE_ABI } from './safeMessageApproval.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { SafeTx } from '../types/personal-message-definitions.js'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
@@ -7,14 +9,11 @@ import { createSafeValidationError } from './safeErrors.js'
 
 // Canonical Safe deployments v1.4.1: safe-global/safe-deployments/src/assets/v1.4.1/{multi_send_call_only,sign_message_lib}.json.
 export const SAFE_MULTI_SEND_CALL_ONLY = 0x9641d764fc13c8b624c04430c7356c1c7c8102e2n
-export const SAFE_SIGN_MESSAGE_LIB = 0xd53cd0ab83d845ac265be939c57f53ad838012c9n
 const libraryCodeHashes = new Map([
 	[SAFE_MULTI_SEND_CALL_ONLY, '0xecd5bd14a08c5d2122379900b2f272bdf107a7e92423c10dd5fe3254386c9939'],
 	[SAFE_SIGN_MESSAGE_LIB, '0x525c754a46b79e05543a59bb61e8de3c9eee0d955a59352409cbe67ea1077528'],
 ])
 export const SAFE_MULTI_SEND_ABI = [{ type: 'function', name: 'multiSend', stateMutability: 'payable', inputs: [{ name: 'transactions', type: 'bytes' }], outputs: [] }] as const
-// Safe v1.4.1 exposes signMessage(bytes), selector 0x85a5affe; a 32-byte digest still uses dynamic bytes encoding: https://github.com/safe-global/safe-smart-account/blob/v1.4.1/contracts/libraries/SignMessageLib.sol
-export const SAFE_SIGN_MESSAGE_ABI = [{ type: 'function', name: 'signMessage', stateMutability: 'nonpayable', inputs: [{ name: 'message', type: 'bytes' }], outputs: [] }] as const
 const invalid = (message: string) => createSafeValidationError(message, 'safe_contract_validation')
 export type SafeBatchCall = { readonly to: bigint, readonly value: bigint, readonly data: Uint8Array }
 const MAX_BATCH_CALLS = 100
@@ -59,12 +58,7 @@ export function assertSafeDelegateCall(safeTx: SafeTx) {
 		decodeSafeBatch(safeTx.message.data)
 		return
 	}
-	if (safeTx.message.to === SAFE_SIGN_MESSAGE_LIB) {
-		const decoded = decodeSafeLibraryCall(SAFE_SIGN_MESSAGE_ABI, safeTx.message.data)
-		const digest = decoded?.args[0]
-		if (decoded?.name === 'signMessage' && typeof digest === 'string' && /^0x[0-9a-f]{64}$/i.test(digest)
-			&& encodeFunctionCall(SAFE_SIGN_MESSAGE_ABI, 'signMessage', [stringToUint8Array(digest)]) === dataStringWith0xStart(safeTx.message.data)) return
-	}
+	if (decodeSafeMessageApproval(safeTx.message) !== undefined) return
 	throw invalid('DELEGATECALL is supported only for verified Safe MultiSendCallOnly and SignMessageLib proposals.')
 }
 
@@ -75,7 +69,7 @@ export async function validateSafeDelegateCode(ethereum: EthereumClientService, 
 	if (keccak256(code) !== libraryCodeHashes.get(safeTx.message.to)) throw invalid('The required Safe library is missing or has unexpected bytecode on this chain.')
 }
 
-function decodeSafeLibraryCall(abi: typeof SAFE_MULTI_SEND_ABI | typeof SAFE_SIGN_MESSAGE_ABI, data: Uint8Array) {
+function decodeSafeLibraryCall(abi: typeof SAFE_MULTI_SEND_ABI, data: Uint8Array) {
 	try { return decodeCallDataLoose(abi, dataStringWith0xStart(data)) } catch (error) {
 		if (!isAbiDataDecodeError(error)) throw error
 		throw invalid('Safe library calldata must use complete canonical ABI encoding.')
