@@ -2,30 +2,14 @@ import type { ImportSettings, ImportSettingsReply, SetRpcList, Settings } from '
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
+import { getContentScriptInjectionConfiguration, hasSameContentScriptInjectionConfiguration } from '../../utils/contentScriptInjectionConfiguration.js'
 import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
 import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
-import { exportSettingsAndAddressBook, getInterceptorDisabledSites, getMetamaskCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, importSettingsAndAddressBook } from '../settings.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, importSettingsAndAddressBook } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { refreshContentScriptInjectionStrategy } from '../contentScriptInjectionStrategy.js'
-
-type ContentScriptInjectionConfiguration = {
-	readonly metamaskCompatibilityMode: boolean
-	readonly disabledSites: readonly string[]
-}
-
-async function getContentScriptInjectionConfiguration(): Promise<ContentScriptInjectionConfiguration> {
-	const [settings, metamaskCompatibilityMode] = await Promise.all([getSettings(), getMetamaskCompatibilityMode()])
-	return { metamaskCompatibilityMode, disabledSites: getInterceptorDisabledSites(settings) }
-}
-
-function hasSameContentScriptInjectionConfiguration(first: ContentScriptInjectionConfiguration, second: ContentScriptInjectionConfiguration) {
-	if (first.metamaskCompatibilityMode !== second.metamaskCompatibilityMode) return false
-	const firstDisabledSites = new Set(first.disabledSites)
-	const secondDisabledSites = new Set(second.disabledSites)
-	return firstDisabledSites.size === secondDisabledSites.size && [...firstDisabledSites].every((disabledSite) => secondDisabledSites.has(disabledSite))
-}
+import { refreshContentScriptInjectionStrategyAndReloadConnectedTabs } from '../contentScriptInjectionStrategy.js'
 
 export async function settingsOpened() {
 	const useTabsInsteadOfPopupPromise = silenceChromeUnCaughtPromise(getUseTabsInsteadOfPopup())
@@ -55,7 +39,7 @@ export async function importSettings(settingsData: ImportSettings, websiteTabCon
 	const configurationBeforeImport = await getContentScriptInjectionConfiguration()
 	await importSettingsAndAddressBook(parsed.value)
 	const configurationAfterImport = await getContentScriptInjectionConfiguration()
-	if (!hasSameContentScriptInjectionConfiguration(configurationBeforeImport, configurationAfterImport)) await refreshContentScriptInjectionStrategy(websiteTabConnections)
+	if (!hasSameContentScriptInjectionConfiguration(configurationBeforeImport, configurationAfterImport)) await refreshContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections)
 	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
 }
 

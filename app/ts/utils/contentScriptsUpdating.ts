@@ -1,7 +1,6 @@
-import { getInterceptorDisabledSites, getMetamaskCompatibilityMode, getSettings } from '../background/settings.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
-import { getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from './contentScriptInjectionConfiguration.js'
+import { getContentScriptInjectionConfiguration, getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from './contentScriptInjectionConfiguration.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
@@ -41,8 +40,8 @@ export function getManifestV3ExcludeMatches(origins: readonly string[]) {
 }
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
-	const [settings, metamaskCompatibilityMode] = await Promise.all([getSettings(), getMetamaskCompatibilityMode()])
-	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(settings))
+	const { metamaskCompatibilityMode, interceptorDisabledSites } = await getContentScriptInjectionConfiguration()
+	const excludeMatches = getManifestV3ExcludeMatches(interceptorDisabledSites)
 	try {
 		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
@@ -81,14 +80,13 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 
 const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {
 	if (!isInjectableSite(content.url)) return false
-	const [settings, metamaskCompatibilityMode] = await Promise.all([getSettings(), getMetamaskCompatibilityMode()])
-	const disabledSites = getInterceptorDisabledSites(settings)
+	const { metamaskCompatibilityMode, interceptorDisabledSites } = await getContentScriptInjectionConfiguration()
 	// The tab can navigate while settings are loading, including to another extension page where injection is prohibited.
 	const thisTab = await getTabIfExists(content.tabId)
 	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false
 	const urls = [content.url, thisTab.url]
 	const hostnames = urls.map((url) => getHostWithPort(url))
-	const noMatches = disabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
+	const noMatches = interceptorDisabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
 	if (!noMatches) return false
 	try {
 		for (const injection of getManifestV2IsolatedWorldInjections(metamaskCompatibilityMode)) {

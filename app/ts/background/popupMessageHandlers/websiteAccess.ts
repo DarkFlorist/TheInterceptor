@@ -4,7 +4,6 @@ import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.
 import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequests, DisableInterceptor, RemoveWebsiteAccess, RemoveWebsiteAddressAccess, RetrieveWebsiteAccess } from '../../types/interceptor-messages.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
-import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../../utils/contentScriptsUpdating.js'
 import { modifyObject } from '../../utils/typescript.js'
 import { setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
@@ -13,14 +12,13 @@ import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAddressMetadataForAccess } from '../windows/interceptorAccess.js'
 import { searchWebsiteAccess } from '../websiteAccessSearch.js'
 import { reloadConnectedTabs } from '../reloadConnectedTabs.js'
+import { refreshContentScriptInjectionStrategyAndReloadConnectedTabs } from '../contentScriptInjectionStrategy.js'
 
 export { reloadConnectedTabs } from '../reloadConnectedTabs.js'
 
 export const disableInterceptorForPage = async (websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) => {
 	await setInterceptorDisabledForWebsite(website, interceptorDisabled)
-	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
-	else await updateContentScriptInjectionStrategyManifestV2()
-	await reloadConnectedTabs(websiteTabConnections)
+	await refreshContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections)
 }
 
 export async function disableInterceptor(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
