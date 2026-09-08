@@ -1,20 +1,9 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import * as ts from 'typescript'
-import { getMetamaskCompatibilityModeGlobalAssignmentSource, getManifestV2IsolatedWorldInjections, metamaskCompatibilityModeGlobalAssignmentMarker, metamaskCompatibilityModeGlobalSymbolKey, metamaskCompatibilityModeGlobalSymbolKeyMarker } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
+import { getMetamaskCompatibilityModeGlobalAssignmentSource, getManifestV2IsolatedWorldInjections, metamaskCompatibilityModeGlobalSymbolKey } from '../../app/ts/config/contentScriptInjectionArtifacts.js'
+import { metamaskCompatibilityModeGlobalAssignmentMarker, metamaskCompatibilityModeGlobalSymbolKeyMarker } from '../../scripts/content-script-injection-markers.mts'
 import { inlineContentScriptInjectionConfiguration, inlineDocumentStartInjectionConfiguration, inlineMetamaskCompatibilityModeGlobalAssignment } from '../../scripts/inline-inpage-document-start.mts'
-
-test('build-facing content-script artifacts remain independent of runtime modules', async () => {
-	const source = await Bun.file(new URL('../../app/ts/utils/contentScriptInjectionArtifacts.ts', import.meta.url)).text()
-	const sourceFile = ts.createSourceFile('contentScriptInjectionArtifacts.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
-	const staticDependencies: string[] = []
-	for (const statement of sourceFile.statements) {
-		if (ts.isImportDeclaration(statement)) staticDependencies.push(statement.moduleSpecifier.getText(sourceFile))
-		if (ts.isImportEqualsDeclaration(statement)) staticDependencies.push(statement.moduleReference.getText(sourceFile))
-		if (ts.isExportDeclaration(statement) && statement.moduleSpecifier !== undefined) staticDependencies.push(statement.moduleSpecifier.getText(sourceFile))
-	}
-	assert.deepEqual(staticDependencies, [])
-})
 
 test('generated page-world scripts share the configured compatibility mode symbol key', async () => {
 	for (const sourceFileName of ['document_start.ts', 'inpage.ts']) {

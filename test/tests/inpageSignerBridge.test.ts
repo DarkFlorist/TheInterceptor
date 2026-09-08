@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { metamaskCompatibilityModeGlobalSymbolKey, metamaskCompatibilityModeGlobalSymbolKeyMarker } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
+import { metamaskCompatibilityModeGlobalSymbolKey } from '../../app/ts/config/contentScriptInjectionArtifacts.js'
+import { metamaskCompatibilityModeGlobalSymbolKeyMarker } from '../../scripts/content-script-injection-markers.mts'
 
 type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[], stopImmediatePropagation?: () => void }
 type Listener = (event: WindowEvent) => void
