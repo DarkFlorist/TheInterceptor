@@ -1,4 +1,4 @@
-import { getInterceptorDisabledSites, getMetamaskCompatibilityMode, getSettings } from '../background/settings.js'
+import { getInterceptorDisabledSites, getMetamaskCompatibilityMode, getSettings } from './settings.js'
 
 export type ContentScriptInjectionConfiguration = {
 	readonly metamaskCompatibilityMode: boolean

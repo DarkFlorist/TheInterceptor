@@ -1,7 +1,7 @@
 import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
 import { getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from './contentScriptInjectionArtifacts.js'
-import { getContentScriptInjectionConfiguration } from './contentScriptInjectionConfiguration.js'
+import { getContentScriptInjectionConfiguration } from '../background/contentScriptInjectionConfiguration.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
