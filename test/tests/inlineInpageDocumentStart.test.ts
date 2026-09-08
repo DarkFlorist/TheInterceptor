@@ -1,8 +1,8 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import * as ts from 'typescript'
-import { metamaskCompatibilityModeGlobalSymbolKey, metamaskCompatibilityModeGlobalSymbolKeyMarker } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
-import { inlineContentScriptInjectionConfiguration, inlineDocumentStartInjectionConfiguration } from '../../scripts/inline-inpage-document-start.mts'
+import { getMetamaskCompatibilityModeGlobalAssignmentSource, getManifestV2IsolatedWorldInjections, metamaskCompatibilityModeGlobalAssignmentMarker, metamaskCompatibilityModeGlobalSymbolKey, metamaskCompatibilityModeGlobalSymbolKeyMarker } from '../../app/ts/utils/contentScriptInjectionArtifacts.js'
+import { inlineContentScriptInjectionConfiguration, inlineDocumentStartInjectionConfiguration, inlineMetamaskCompatibilityModeGlobalAssignment } from '../../scripts/inline-inpage-document-start.mts'
 
 test('build-facing content-script artifacts remain independent of runtime modules', async () => {
 	const source = await Bun.file(new URL('../../app/ts/utils/contentScriptInjectionArtifacts.ts', import.meta.url)).text()
@@ -17,12 +17,27 @@ test('build-facing content-script artifacts remain independent of runtime module
 })
 
 test('generated page-world scripts share the configured compatibility mode symbol key', async () => {
-	for (const sourceFileName of ['document_start.ts', 'inpage.ts', 'metamaskCompatibilityMode.ts']) {
+	for (const sourceFileName of ['document_start.ts', 'inpage.ts']) {
 		const source = await Bun.file(new URL(`../../app/inpage/ts/${ sourceFileName }`, import.meta.url)).text()
 		const generatedSource = inlineContentScriptInjectionConfiguration(source, sourceFileName.replace(/\.ts$/, '.js'))
 		assert.equal(generatedSource.includes(`Symbol.for(${ JSON.stringify(metamaskCompatibilityModeGlobalSymbolKey) })`), true)
 		assert.equal(generatedSource.includes(metamaskCompatibilityModeGlobalSymbolKeyMarker), false)
 	}
+})
+
+test('page-world and isolated-world compatibility bootstraps share one generated assignment', async () => {
+	const source = await Bun.file(new URL('../../app/inpage/ts/metamaskCompatibilityMode.ts', import.meta.url)).text()
+	const compiledSource = ts.transpileModule(source, {
+		compilerOptions: {
+			module: ts.ModuleKind.ESNext,
+			target: ts.ScriptTarget.ES2022,
+		},
+	}).outputText
+	const generatedPageWorldSource = inlineMetamaskCompatibilityModeGlobalAssignment(compiledSource).trim()
+	const isolatedWorldSource = getManifestV2IsolatedWorldInjections(true).find((injection) => 'code' in injection)?.code
+	assert.equal(generatedPageWorldSource, getMetamaskCompatibilityModeGlobalAssignmentSource(true))
+	assert.equal(isolatedWorldSource, generatedPageWorldSource)
+	assert.equal(generatedPageWorldSource.includes(metamaskCompatibilityModeGlobalAssignmentMarker), false)
 })
 
 test('MV2 loads the configured external page-world scripts in both compatibility modes', async () => {

@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import * as url from 'node:url'
 import { promises as fs } from 'node:fs'
-import { getPageWorldScriptPaths, metamaskCompatibilityModeGlobalSymbolKey, metamaskCompatibilityModeGlobalSymbolKeyMarker } from '../app/ts/utils/contentScriptInjectionArtifacts.ts'
+import { getMetamaskCompatibilityModeGlobalAssignmentSource, getPageWorldScriptPaths, metamaskCompatibilityModeGlobalAssignmentMarker, metamaskCompatibilityModeGlobalSymbolKey, metamaskCompatibilityModeGlobalSymbolKeyMarker } from '../app/ts/utils/contentScriptInjectionArtifacts.ts'
 
 const projectRoot = path.join(path.dirname(url.fileURLToPath(import.meta.url)), '..')
 const documentStartPath = path.join(projectRoot, 'app', 'inpage', 'js', 'document_start.js')
@@ -9,6 +9,7 @@ const inpagePath = path.join(projectRoot, 'app', 'inpage', 'js', 'inpage.js')
 const pageWorldScriptPathsMarkerPattern = /(['"])\[\[pageWorldScriptPaths\]\]\1/
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const metamaskCompatibilityModeGlobalSymbolKeyMarkerPattern = new RegExp(`(['"])${ escapeRegExp(metamaskCompatibilityModeGlobalSymbolKeyMarker) }\\1`)
+const metamaskCompatibilityModeGlobalAssignmentMarkerPattern = new RegExp(`(['"])${ escapeRegExp(metamaskCompatibilityModeGlobalAssignmentMarker) }\\1;?`)
 
 const pageWorldScriptPathsByCompatibilityMode = {
 	disabled: getPageWorldScriptPaths(false),
@@ -18,6 +19,11 @@ const pageWorldScriptPathsByCompatibilityMode = {
 export function inlineContentScriptInjectionConfiguration(source: string, artifactName: string) {
 	if (!metamaskCompatibilityModeGlobalSymbolKeyMarkerPattern.test(source)) throw new Error(`Could not find MetaMask compatibility mode global symbol key marker in ${ artifactName }`)
 	return source.replace(metamaskCompatibilityModeGlobalSymbolKeyMarkerPattern, JSON.stringify(metamaskCompatibilityModeGlobalSymbolKey))
+}
+
+export function inlineMetamaskCompatibilityModeGlobalAssignment(source: string) {
+	if (!metamaskCompatibilityModeGlobalAssignmentMarkerPattern.test(source)) throw new Error('Could not find MetaMask compatibility mode global assignment marker in metamaskCompatibilityMode.js')
+	return source.replace(metamaskCompatibilityModeGlobalAssignmentMarkerPattern, getMetamaskCompatibilityModeGlobalAssignmentSource(true))
 }
 
 export function inlineDocumentStartInjectionConfiguration(documentStartSource: string) {
@@ -34,7 +40,7 @@ async function inlineInpageScript() {
 		fs.readFile(metamaskCompatibilityModePath, 'utf8'),
 	])
 	const updatedInpageSource = inlineContentScriptInjectionConfiguration(inpageSource, 'inpage.js')
-	const updatedMetamaskCompatibilityModeSource = inlineContentScriptInjectionConfiguration(metamaskCompatibilityModeSource, 'metamaskCompatibilityMode.js')
+	const updatedMetamaskCompatibilityModeSource = inlineMetamaskCompatibilityModeGlobalAssignment(metamaskCompatibilityModeSource)
 	const updatedDocumentStartSource = inlineDocumentStartInjectionConfiguration(documentStartSource)
 	await Promise.all([
 		fs.writeFile(documentStartPath, updatedDocumentStartSource),
