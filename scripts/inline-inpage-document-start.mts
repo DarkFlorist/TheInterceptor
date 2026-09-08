@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import * as url from 'node:url'
 import { promises as fs } from 'node:fs'
-import { getPageWorldScriptPaths, metamaskCompatibilityModeGlobalSymbolKey, metamaskCompatibilityModeGlobalSymbolKeyMarker } from '../app/ts/utils/contentScriptInjectionConfiguration.ts'
+import { getPageWorldScriptPaths, metamaskCompatibilityModeGlobalSymbolKey, metamaskCompatibilityModeGlobalSymbolKeyMarker } from '../app/ts/utils/contentScriptInjectionArtifacts.ts'
 
 const projectRoot = path.join(path.dirname(url.fileURLToPath(import.meta.url)), '..')
 const documentStartPath = path.join(projectRoot, 'app', 'inpage', 'js', 'document_start.js')
