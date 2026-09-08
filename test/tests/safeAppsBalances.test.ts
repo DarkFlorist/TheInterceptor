@@ -1,3 +1,4 @@
+import { fetchSafeAppsBalances } from '../../app/ts/background/safeAppsBalances.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { getSafeAppsRequestCommand } from '../../app/ts/background/safeAppsRequestPolicy.js'
@@ -6,7 +7,7 @@ import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 const safeAddress = 0x1111111111111111111111111111111111111111n
 const network = { name: 'Ethereum', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: false, minimized: false }
 const unusedSafeState = async (): Promise<never> => { throw new Error('Balances do not need an owner or nonce lookup') }
-const requestBalances = (params?: unknown) => getSafeAppsRequestCommand({ method: 'getSafeBalances', ...(params === undefined ? {} : { params }) }, 'app.example', safeAddress, network, unusedSafeState)
+const requestBalances = (params?: unknown) => getSafeAppsRequestCommand({ method: 'getSafeBalances', ...(params === undefined ? {} : { params }) }, 'app.example', safeAddress, network, unusedSafeState, { getBalances: async (currency) => await fetchSafeAppsBalances(network.chainId, safeAddress, currency) })
 const balances = {
 	fiatTotal: '23.50',
 	items: [{

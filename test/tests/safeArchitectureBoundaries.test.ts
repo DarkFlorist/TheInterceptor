@@ -85,3 +85,20 @@ test('dialog and RPC delegate simulation share state-override construction', asy
 	assert.match(safeSimulation, /stateOverrides: prepareSafeDelegateStateOverrides\(/u)
 	assert.doesNotMatch(simulationUpdatingSource, /code: getGnosisSafeProxyProxy\(\)/u)
 })
+
+test('the content-script router delegates Safe Apps admission and error mapping to its feature handler', async () => {
+	const handler = await Bun.file(new URL('../../app/ts/background/safeAppsRequestHandler.ts', import.meta.url)).text()
+	assert.match(backgroundSource, /await prepareSafeAppsRequest\(/u)
+	assert.doesNotMatch(backgroundSource, /getSafeAppsCompatibilityMode|isSafeAppsConnectionEligible|getSafeAppsExecution|getSafeAppsRequestCommand|isSafeAppsRequestPolicyError/u)
+	assert.match(handler, /isSafeAppsConnectionEligible\(/u)
+	assert.match(handler, /isSafeAppsRequestPolicyError\(/u)
+	assert.doesNotMatch(handler, /handleRPCRequest|openConfirmTransactionDialogFor/u)
+})
+
+test('Safe Apps request policy receives gateway operations through injected services', async () => {
+	const policy = await Bun.file(new URL('../../app/ts/background/safeAppsRequestPolicy.ts', import.meta.url)).text()
+	assert.doesNotMatch(policy, /from '\.\/safeApps(?:Balances|Transactions|Gateway)\.js'|\bfetch\(/u)
+	assert.match(policy, /services\.getBalances\(/u)
+	assert.match(policy, /services\.getTransaction\(/u)
+	assert.match(policy, /services\.messages\./u)
+})

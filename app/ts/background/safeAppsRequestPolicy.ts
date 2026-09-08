@@ -7,8 +7,12 @@ import * as funtypes from 'funtypes'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { SafeContractState } from '../safe/safeCore.js'
 import { JsonValue, type SafeAppsRequestCommand } from '../types/safeApps.js'
-import { fetchSafeAppsBalances } from './safeAppsBalances.js'
-import { fetchSafeAppsTransaction } from './safeAppsTransactions.js'
+
+export type SafeAppsRequestServices = {
+	readonly messages?: SafeAppsMessageServices
+	readonly getBalances?: (currency: string) => Promise<JsonValue>
+	readonly getTransaction?: (safeTxHash: string) => Promise<JsonValue>
+}
 
 export type SafeAppsChainInfo = funtypes.Static<typeof SafeAppsChainInfo>
 export const SafeAppsChainInfo = funtypes.ReadonlyObject({
@@ -156,7 +160,7 @@ export function getSafeAppsChainInfo(rpcNetwork: RpcNetwork): SafeAppsChainInfo 
 	}
 }
 
-export async function getSafeAppsRequestCommand(value: unknown, websiteOrigin: string, activeSafeAddress: bigint, rpcNetwork: RpcNetwork, getSafeContractState: () => Promise<SafeContractState>, messageServices?: SafeAppsMessageServices): Promise<SafeAppsRequestCommand> {
+export async function getSafeAppsRequestCommand(value: unknown, websiteOrigin: string, activeSafeAddress: bigint, rpcNetwork: RpcNetwork, getSafeContractState: () => Promise<SafeContractState>, services?: SafeAppsRequestServices): Promise<SafeAppsRequestCommand> {
 	const request = parseSafeAppsRequest(value)
 	const offChainSigning = request.offChainSigning ?? true
 	const safeAddress = addressString(activeSafeAddress)
@@ -186,23 +190,25 @@ export async function getSafeAppsRequestCommand(value: unknown, websiteOrigin: s
 		case 'submitOffChainMessage': {
 			const params = SafeSubmitMessageParams.safeParse(request.params)
 			if (!params.success || params.value.safeAddress !== safeAddress || params.value.chainId !== rpcNetwork.chainId.toString()) throw safeAppsPolicyError('The signed Safe message account or chain changed. Request the message again.')
-			if (messageServices === undefined) throw safeAppsPolicyError('Safe message services are unavailable.')
-			return { kind: 'result', value: await messageServices.submit(params.value.message, params.value.signature, params.value.isTypedData) }
+			if (services?.messages === undefined) throw safeAppsPolicyError('Safe message services are unavailable.')
+			return { kind: 'result', value: await services.messages.submit(params.value.message, params.value.signature, params.value.isTypedData) }
 		}
 		case 'getOffChainSignature': {
 			if (typeof request.params !== 'string' || !/^0x[0-9a-f]{64}$/i.test(request.params)) throw safeAppsPolicyError('Safe Apps getOffChainSignature requires a message hash.')
-			if (messageServices === undefined) throw safeAppsPolicyError('Safe message services are unavailable.')
-			return { kind: 'result', value: await messageServices.getSignature(request.params.toLowerCase()) }
+			if (services?.messages === undefined) throw safeAppsPolicyError('Safe message services are unavailable.')
+			return { kind: 'result', value: await services.messages.getSignature(request.params.toLowerCase()) }
 		}
 		case 'getTxBySafeTxHash': {
 			const params = SafeTransactionLookupParams.safeParse(request.params)
 			if (!params.success) throw safeAppsPolicyError('Safe Apps getTxBySafeTxHash requires a 32-byte Safe transaction hash prefixed with 0x.')
-			return { kind: 'result', value: await fetchSafeAppsTransaction(rpcNetwork.chainId, activeSafeAddress, params.value.safeTxHash.toLowerCase()) }
+			if (services?.getTransaction === undefined) throw safeAppsPolicyError('Safe transaction services are unavailable.')
+			return { kind: 'result', value: await services.getTransaction(params.value.safeTxHash.toLowerCase()) }
 		}
 		case 'getSafeBalances': {
 			const params = SafeBalanceParams.safeParse(request.params === undefined ? {} : request.params)
 			if (!params.success || (params.value.currency !== undefined && !/^[a-zA-Z]{3,10}$/.test(params.value.currency))) throw safeAppsPolicyError('Safe Apps balance currency must be a fiat currency code, such as usd or eur.')
-			return { kind: 'result', value: await fetchSafeAppsBalances(rpcNetwork.chainId, activeSafeAddress, params.value.currency?.toLowerCase() ?? 'usd') }
+			if (services?.getBalances === undefined) throw safeAppsPolicyError('Safe balance services are unavailable.')
+			return { kind: 'result', value: await services.getBalances(params.value.currency?.toLowerCase() ?? 'usd') }
 		}
 		case 'wallet_getPermissions': return { kind: 'result', value: [] }
 		case 'wallet_requestPermissions': {

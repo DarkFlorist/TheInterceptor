@@ -260,3 +260,23 @@ test('Safe Apps execution normalizes transaction and message commands for the or
 		assert.deepEqual(execution.request.uniqueRequestIdentifier, uniqueRequestIdentifier)
 	}
 })
+
+test('Safe Apps policy validates and normalizes gateway requests before invoking injected services', async () => {
+	const calls: string[] = []
+	const services = {
+		getBalances: async (currency: string) => { calls.push(`balances:${ currency }`); return { items: [] } },
+		getTransaction: async (hash: string) => { calls.push(`transaction:${ hash }`); return { safeTxHash: hash } },
+	}
+	const request = async (value: unknown) => await getSafeAppsRequestCommand(value, 'app.example', activeAddress, rpcNetwork, getSafeState, services)
+	const hash = `0x${ 'AB'.repeat(32) }`
+	assert.deepEqual(await request({ method: 'getSafeBalances', params: { currency: 'EUR' } }), { kind: 'result', value: { items: [] } })
+	assert.deepEqual(await request({ method: 'getTxBySafeTxHash', params: { safeTxHash: hash } }), { kind: 'result', value: { safeTxHash: hash.toLowerCase() } })
+	assert.deepEqual(calls, ['balances:eur', `transaction:${ hash.toLowerCase() }`])
+	await assert.rejects(request({ method: 'getSafeBalances', params: { currency: '../usd' } }), /fiat currency code/)
+	await assert.rejects(request({ method: 'getTxBySafeTxHash', params: { safeTxHash: 'invalid' } }), /32-byte Safe transaction hash/)
+	assert.equal(calls.length, 2)
+	const unavailable = new Error('Service failed')
+	await assert.rejects(getSafeAppsRequestCommand({ method: 'getSafeBalances' }, 'app.example', activeAddress, rpcNetwork, getSafeState, { getBalances: async () => { throw unavailable } }), (error) => error === unavailable)
+	await assert.rejects(getSafeAppsRequestCommand({ method: 'getSafeBalances' }, 'app.example', activeAddress, rpcNetwork, getSafeState), /balance services are unavailable/)
+	await assert.rejects(getSafeAppsRequestCommand({ method: 'getTxBySafeTxHash', params: { safeTxHash: hash } }, 'app.example', activeAddress, rpcNetwork, getSafeState), /transaction services are unavailable/)
+})

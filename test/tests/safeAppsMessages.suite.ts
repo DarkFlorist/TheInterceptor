@@ -106,7 +106,7 @@ test('Safe message service submits validated owner signatures and requires the l
 		await assert.rejects(services.getSignature(messageHash), /did not accept/)
 		fakeSafeContract.messageSignatureValid = true
 		fakeSafeContract.threshold = 2n
-		assert.deepEqual(await getSafeAppsRequestCommand({ method: 'getOffChainSignature', params: messageHash }, 'safe-app.example', activeAddress, fakeRpcNetwork, async () => { throw new Error('Unexpected state lookup') }, services), { kind: 'result', value: '' })
+		assert.deepEqual(await getSafeAppsRequestCommand({ method: 'getOffChainSignature', params: messageHash }, 'safe-app.example', activeAddress, fakeRpcNetwork, async () => { throw new Error('Unexpected state lookup') }, { messages: services }), { kind: 'result', value: '' })
 		await assert.rejects(services.submit('Different message', signature))
 		assert.equal(submitted.length, 1)
 		globalThis.fetch = async () => Response.json({ messageHash, message: 'Wrong text', confirmations: [{ signature }] })

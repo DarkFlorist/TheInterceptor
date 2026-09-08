@@ -1,3 +1,4 @@
+import { fetchSafeAppsTransaction } from '../../app/ts/background/safeAppsTransactions.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { getSafeAppsRequestCommand } from '../../app/ts/background/safeAppsRequestPolicy.js'
@@ -8,7 +9,7 @@ const hash = `0x${ 'ab'.repeat(32) }`
 const transactionId = `multisig_${ safeAddress }_${ hash }`
 const network = { name: 'Ethereum', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: false, minimized: false }
 const unusedSafeState = async (): Promise<never> => { throw new Error('Indexed lookup does not need an RPC owner or nonce lookup') }
-const requestTransaction = (params: unknown = { safeTxHash: hash }) => getSafeAppsRequestCommand({ method: 'getTxBySafeTxHash', params }, 'app.example', BigInt(safeAddress), network, unusedSafeState)
+const requestTransaction = (params: unknown = { safeTxHash: hash }) => getSafeAppsRequestCommand({ method: 'getTxBySafeTxHash', params }, 'app.example', BigInt(safeAddress), network, unusedSafeState, { getTransaction: async (safeTxHash) => await fetchSafeAppsTransaction(network.chainId, BigInt(safeAddress), safeTxHash) })
 const details = {
 	safeAddress, txId: transactionId, txStatus: 'AWAITING_CONFIRMATIONS',
 	txInfo: { type: 'Custom', to: { value: safeAddress }, dataSize: '0', value: '0', isCancellation: false },
