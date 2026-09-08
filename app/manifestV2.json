@@ -34,6 +34,7 @@
 	"web_accessible_resources": [
 		"vendor/webextension-polyfill/dist/browser-polyfill.js",
 		"inpage/js/listenContentScript.js",
+		"inpage/js/metamaskCompatibilityMode.js",
 		"inpage/js/document_start.js",
 		"inpage/js/inpage.js"
 	],

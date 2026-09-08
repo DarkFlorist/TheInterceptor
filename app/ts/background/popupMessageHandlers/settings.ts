@@ -1,4 +1,5 @@
 import type { ImportSettings, ImportSettingsReply, SetRpcList, Settings } from '../../types/interceptor-messages.js'
+import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
@@ -7,6 +8,8 @@ import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.
 import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, importSettingsAndAddressBook } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { getContentScriptInjectionConfiguration, hasSameContentScriptInjectionConfiguration } from '../contentScriptInjectionConfiguration.js'
+import { refreshContentScriptInjectionStrategyAndReloadConnectedTabs } from '../contentScriptInjectionStrategy.js'
 
 export async function settingsOpened() {
 	const useTabsInsteadOfPopupPromise = silenceChromeUnCaughtPromise(getUseTabsInsteadOfPopup())
@@ -25,7 +28,7 @@ export async function settingsOpened() {
 	})
 }
 
-export async function importSettings(settingsData: ImportSettings): Promise<ImportSettingsReply> {
+export async function importSettings(settingsData: ImportSettings, websiteTabConnections: WebsiteTabConnections): Promise<ImportSettingsReply> {
 	if (!isJSON(settingsData.data.fileContents)) {
 		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSON file.' } }
 	}
@@ -33,7 +36,10 @@ export async function importSettings(settingsData: ImportSettings): Promise<Impo
 	if (!parsed.success) {
 		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }
 	}
+	const configurationBeforeImport = await getContentScriptInjectionConfiguration()
 	await importSettingsAndAddressBook(parsed.value)
+	const configurationAfterImport = await getContentScriptInjectionConfiguration()
+	if (!hasSameContentScriptInjectionConfiguration(configurationBeforeImport, configurationAfterImport)) await refreshContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections)
 	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
 }
 

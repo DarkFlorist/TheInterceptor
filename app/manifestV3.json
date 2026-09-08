@@ -26,7 +26,7 @@
 	],
 	"web_accessible_resources": [
 		{
-			"resources": ["inpage/js/inpage.js"],
+			"resources": ["inpage/js/metamaskCompatibilityMode.js", "inpage/js/inpage.js"],
 			"matches": ["<all_urls>"]
 		}
 	],

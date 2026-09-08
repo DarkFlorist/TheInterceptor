@@ -1,6 +1,7 @@
-import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
+import { getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from '../config/contentScriptInjectionArtifacts.js'
+import { getContentScriptInjectionConfiguration } from '../background/contentScriptInjectionConfiguration.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
@@ -9,6 +10,7 @@ const otherExtensionInjectionTargetErrorMessage = 'Cannot access a chrome-extens
 const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cannot be scripted.'
 const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
 const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
+const asRootRelativePaths = (paths: readonly string[]) => paths.map((scriptPath) => `/${ scriptPath }`)
 
 function getManifestV3ExcludeMatchesForOrigin(origin: string) {
 	if (origin === '') return ['file:///*']
@@ -39,7 +41,8 @@ export function getManifestV3ExcludeMatches(origins: readonly string[]) {
 }
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
-	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(await getSettings()))
+	const { metamaskCompatibilityMode, interceptorDisabledSites } = await getContentScriptInjectionConfiguration()
+	const excludeMatches = getManifestV3ExcludeMatches(interceptorDisabledSites)
 	try {
 		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
@@ -57,7 +60,7 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 			allFrames: true,
 			matches: injectableSitesWildcard,
 			excludeMatches,
-			js: ['/inpage/js/inpage.js'],
+			js: asRootRelativePaths(getPageWorldScriptPaths(metamaskCompatibilityMode)),
 			runAt: 'document_start',
 			world: 'MAIN',
 			matchOriginAsFallback: true
@@ -78,18 +81,19 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 
 const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {
 	if (!isInjectableSite(content.url)) return false
-	const disabledSites = getInterceptorDisabledSites(await getSettings())
+	const { metamaskCompatibilityMode, interceptorDisabledSites } = await getContentScriptInjectionConfiguration()
 	// The tab can navigate while settings are loading, including to another extension page where injection is prohibited.
 	const thisTab = await getTabIfExists(content.tabId)
 	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false
 	const urls = [content.url, thisTab.url]
 	const hostnames = urls.map((url) => getHostWithPort(url))
-	const noMatches = disabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
+	const noMatches = interceptorDisabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
 	if (!noMatches) return false
 	try {
-		await browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/dist/browser-polyfill.js', allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/listenContentScript.js', allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/document_start.js', allFrames: false, runAt: 'document_start' })
+		for (const injection of getManifestV2IsolatedWorldInjections(metamaskCompatibilityMode)) {
+			const script = 'file' in injection ? { file: `/${ injection.file }` } : { code: injection.code }
+			await browser.tabs.executeScript(content.tabId, { ...script, allFrames: false, runAt: 'document_start' })
+		}
 		checkAndThrowRuntimeLastError()
 	} catch(error) {
 		if (isMissingBrowserTargetError(error) || isExpectedManifestV2InjectionTargetError(error)) return false

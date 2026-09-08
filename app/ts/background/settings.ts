@@ -241,7 +241,7 @@ export const getUseTabsInsteadOfPopup = async() => (await browserStorageLocalGet
 export const setUseTabsInsteadOfPopup = async(useTabsInsteadOfPopup: boolean) => await browserStorageLocalSet({ useTabsInsteadOfPopup })
 
 export const getMetamaskCompatibilityMode = async() => (await browserStorageLocalGet('metamaskCompatibilityMode'))?.metamaskCompatibilityMode ?? false
-export const setMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean) => await browserStorageLocalSet({ metamaskCompatibilityMode })
+export const persistMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean) => await browserStorageLocalSet({ metamaskCompatibilityMode })
 
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
@@ -298,15 +298,13 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
 	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
 	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup)
-	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') {
-		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
-	}
 	if (exportedSetings.version !== '1.4' && exportedSetings.version !== '1.5') {
 		await updateUserAddressBookEntries((previousEntries) => {
 			const convertActiveAddressToAddressBookEntry = (info: ActiveAddress): AddressBookEntry => ({ ...info, type: 'contact' as const, useAsActiveAddress: true, entrySource: 'User' as const })
 			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])
 		})
 	}
+	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') await persistMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
 }
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })

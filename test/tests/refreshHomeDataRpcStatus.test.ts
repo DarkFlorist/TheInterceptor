@@ -29,9 +29,16 @@ type PortMessage = {
 	method?: string
 }
 
+type RegisteredContentScript = {
+	readonly id: string
+	readonly js?: readonly string[]
+}
+
 function installBrowserMock() {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
+	const registeredContentScripts: RegisteredContentScript[] = []
+	const reloadedTabs: number[] = []
 
 	Object.defineProperty(globalThis, 'browser', {
 		configurable: true,
@@ -63,10 +70,33 @@ function installBrowserMock() {
 					},
 				},
 			},
+			scripting: {
+				async getRegisteredContentScripts() {
+					return [...registeredContentScripts]
+				},
+				async unregisterContentScripts(filter?: { readonly ids?: readonly string[] }) {
+					const ids = new Set(filter?.ids ?? registeredContentScripts.map(({ id }) => id))
+					for (let index = registeredContentScripts.length - 1; index >= 0; index--) {
+						const registration = registeredContentScripts[index]
+						if (registration !== undefined && ids.has(registration.id)) registeredContentScripts.splice(index, 1)
+					}
+				},
+				async registerContentScripts(scripts: readonly RegisteredContentScript[]) {
+					registeredContentScripts.push(...scripts)
+				},
+				async updateContentScripts(scripts: readonly RegisteredContentScript[]) {
+					for (const script of scripts) {
+						const index = registeredContentScripts.findIndex(({ id }) => id === script.id)
+						if (index === -1) registeredContentScripts.push(script)
+						else registeredContentScripts[index] = script
+					}
+				},
+			},
 			tabs: {
 				async query() { return [] },
 				async get() { return undefined },
 				async update() { return undefined },
+				async reload(tabId: number) { reloadedTabs.push(tabId) },
 				onUpdated: { addListener: () => undefined, removeListener: () => undefined },
 				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 			},
@@ -107,7 +137,7 @@ function installBrowserMock() {
 	})
 	Object.defineProperty(globalThis, 'location', { configurable: true, writable: true, value: { origin: '' } })
 
-	return { sentMessages }
+	return { sentMessages, registeredContentScripts, reloadedTabs }
 }
 
 function createPort(tabId: number, onPostMessage?: (message: PortMessage) => void) {
@@ -720,7 +750,7 @@ describe('refreshHomeData', () => {
 		assert.equal(homeUpdate?.data?.tabState?.signerAccounts?.length, 0)
 	})
 
-	test('changeSettings refreshes home without triggering signer account refresh', async () => {
+	test('changeSettings refreshes home and MetaMask compatibility registration without triggering signer account refresh', async () => {
 		const browserMock = installBrowserMock()
 		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, setRpcConnectionStatus, changeSettings, defaultActiveAddresses, defaultRpcs, EthereumClientService, TokenPriceService } = await loadModules()
 
@@ -767,7 +797,7 @@ describe('refreshHomeData', () => {
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		try {
-			await changeSettings(ethereum, tokenPriceService, {} as never, { method: 'popup_ChangeSettings', data: {} } as never, undefined)
+			await changeSettings(ethereum, tokenPriceService, {} as never, new Map(), { method: 'popup_ChangeSettings', data: { metamaskCompatibilityMode: true } } as never, undefined)
 		} finally {
 			ethereum.cleanup()
 		}
@@ -776,5 +806,10 @@ describe('refreshHomeData', () => {
 		const homeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage') as { data?: { websiteAccessAddressMetadata?: readonly unknown[] } } | undefined
 		assert.equal(requestMessages.length, 0)
 		assert.equal(homeUpdate?.data?.websiteAccessAddressMetadata?.length, 1)
+		assert.deepEqual(browserMock.registeredContentScripts.find((registration) => registration.id === 'inpage')?.js, [
+			'/inpage/js/metamaskCompatibilityMode.js',
+			'/inpage/js/inpage.js',
+		])
+		assert.deepEqual(browserMock.reloadedTabs, [1])
 	})
 })

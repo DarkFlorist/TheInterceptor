@@ -1,4 +1,4 @@
-function injectScript(_content: string) {
+function injectPageWorldScripts() {
 	if ((globalThis as unknown as { interceptorInjected: true | undefined }).interceptorInjected) return
 	;(globalThis as unknown as { interceptorInjected?: boolean }).interceptorInjected = true
 
@@ -12,16 +12,25 @@ function injectScript(_content: string) {
 		if (typeof contentScriptListener !== 'function') throw new Error('Interceptor content script listener was not initialized')
 		contentScriptListener(undefined, 'document-start')
 		const container = document.head || document.documentElement
-		const scriptTag = document.createElement('script')
-		scriptTag.setAttribute('async', 'false')
-		if (_content === '[[injected.ts]]') scriptTag.src = browser.runtime.getURL('inpage/js/inpage.js')
-		else scriptTag.textContent = _content
-		container.insertBefore(scriptTag, container.children[1])
-		container.removeChild(scriptTag)
+		const injectScriptElement = (scriptTag: HTMLScriptElement) => {
+			container.insertBefore(scriptTag, container.children[1])
+			container.removeChild(scriptTag)
+		}
+		const injectExternalScript = (scriptPath: string) => {
+			const scriptTag = document.createElement('script')
+			scriptTag.async = false
+			scriptTag.src = browser.runtime.getURL(scriptPath)
+			injectScriptElement(scriptTag)
+		}
+		const pageWorldScriptPathsByCompatibilityMode: { readonly disabled: readonly string[], readonly enabled: readonly string[] } = JSON.parse('[[pageWorldScriptPaths]]')
+		const metamaskCompatibilityMode = Reflect.get(globalThis, Symbol.for('[[metamaskCompatibilityModeGlobalSymbolKey]]'))
+		if (typeof metamaskCompatibilityMode !== 'boolean') throw new Error('MetaMask compatibility mode was not initialized')
+		const pageWorldScriptPaths = metamaskCompatibilityMode ? pageWorldScriptPathsByCompatibilityMode.enabled : pageWorldScriptPathsByCompatibilityMode.disabled
+		for (const scriptPath of pageWorldScriptPaths) injectExternalScript(scriptPath)
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
 		console.error('Interceptor: Provider injection failed.', error)
 	}
 }
 
-injectScript('[[injected.ts]]')
+injectPageWorldScripts()
