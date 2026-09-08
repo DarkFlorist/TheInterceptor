@@ -1,3 +1,4 @@
+import { usePopupSettingsChanges } from '../../app/ts/components/hooks/usePopupSettingsChanges.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
@@ -1175,15 +1176,57 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
+	test('signer selection reveals the current wallet account before permission work finishes', async () => {
+		const dom = installDomMock()
+		let finishChange: (reply: unknown) => void = () => undefined
+		const changeReply = new Promise<unknown>((resolve) => { finishChange = resolve })
+		const { dispatchMessage: listener } = installBrowserMock((message) => {
+			const parsed = PopupMessage.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_changeActiveAddress' ? changeReply : undefined
+		})
+		function Harness() {
+			const home = useLiveSimulationHomeData({ answerMainPopupOpen: true, answerSimulationDataConsumerOpen: true, requestFreshHomeDataOnMount: false })
+			const changes = usePopupSettingsChanges(home)
+			return h('div', {}, [
+				h('button', { onClick: () => changes.setActiveAddressAndInformAboutIt('signer') }, 'Select signer'),
+				h('span', {}, `${home.displayedSigningAddress.value}:${changes.isActiveAddressChanging.value}:${changes.isActiveAddressChangePending.value}`),
+			])
+		}
+		try {
+			await act(() => { render(h(Harness, {}), dom.document.body) })
+			const initial = createStackHomePageUpdate(25, 1, 'Signing popup')
+			await act(() => { listener({ role: 'all', ...serialize(UpdateHomePage, initial) }, {}, () => undefined) })
+			// Start the request without awaiting its deliberately delayed permission-work reply.
+			await act(() => { void clickElement(getButtonByText(dom.document.body, 'Select signer')) })
+			assert.ok(dom.document.body.textContent.includes(':true:true'))
+			await act(() => {
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: { ...initial.data.settings, activeSigningSafeAddress: undefined }, popupRefreshGeneration: 2 }), {}, () => undefined)
+			})
+			assert.ok(dom.document.body.textContent.includes(`${initial.data.tabState.activeSigningAddress}:false:true`))
+			// A newer authoritative selection must survive the original request's eventual reply.
+			await act(() => { listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: initial.data.settings, popupRefreshGeneration: 3 }), {}, () => undefined) })
+			await act(async () => {
+				finishChange({ type: 'ChangeActiveAddressReply', ok: true })
+				await changeReply
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.ok(dom.document.body.textContent.includes(`${initial.data.settings.activeSigningSafeAddress}:false:false`))
+		} finally {
+			finishChange(undefined)
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	test('popup reveals the committed wallet before the address-change reply and preserves later settings', async () => {
 		const dom = installDomMock()
 		let finishChange: (reply: unknown) => void = () => undefined
 		const changeReply = new Promise<unknown>((resolve) => { finishChange = resolve })
-		let requestId: string | undefined
+		let changeRequested = false
 		const { dispatchMessage: listener } = installBrowserMock((message) => {
 			const parsed = PopupMessage.safeParse(message)
 			if (parsed.success && parsed.value.method === 'popup_changeActiveAddress') {
-				requestId = parsed.value.data.addressChangeRequestId
+				changeRequested = true
 				return changeReply
 			}
 			return undefined
@@ -1203,15 +1246,15 @@ describe('simulation visualizer open replies', () => {
 			const nextCard = collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('class') === 'card hoverable' && element.textContent?.includes('Next wallet'))
 			if (nextCard === undefined) throw new Error('Expected the next wallet in the address picker')
 			await act(async () => { await clickElement(nextCard) })
-			assert.ok(requestId)
+			assert.ok(changeRequested)
 			const addressRow = () => collectElements(dom.document.body, 'div').find((element) => hasClass(element, 'active-address-row'))
 			assert.equal(addressRow()?.getAttribute?.('aria-label'), 'Switching active address')
 			await act(() => {
-				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: initial.data.settings, popupRefreshGeneration: 2, committedAddressChange: { requestId: 'another-popup-request', activeAddress: initial.data.settings.activeSimulationAddress } }), {}, () => undefined)
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: initial.data.settings, popupRefreshGeneration: 2 }), {}, () => undefined)
 			})
 			assert.equal(addressRow()?.getAttribute?.('aria-label'), 'Switching active address')
 			await act(() => {
-				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: { ...initial.data.settings, activeSimulationAddress: 2n }, popupRefreshGeneration: 3, committedAddressChange: { requestId, activeAddress: 2n } }), {}, () => undefined)
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: { ...initial.data.settings, activeSimulationAddress: 2n }, popupRefreshGeneration: 3 }), {}, () => undefined)
 			})
 			assert.equal(addressRow()?.textContent?.includes('Next wallet'), true)
 			assert.equal(String(getButtonByText(dom.document.body, 'Change').getAttribute?.('disabled')), 'true')
@@ -1246,11 +1289,11 @@ describe('simulation visualizer open replies', () => {
 			await act(() => { listener({ role: 'all', ...serialize(UpdateHomePage, initial) }, {}, () => undefined) })
 			const settings = { ...initial.data.settings, activeSimulationAddress: 2n }
 			await act(() => {
-				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: settings, popupRefreshGeneration: 3, committedAddressChange: { requestId: 'switch-2', activeAddress: 2n } }), {}, () => undefined)
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: settings, popupRefreshGeneration: 3 }), {}, () => undefined)
 			})
 			assert.equal(dom.document.body.textContent, '2/passthrough/loading')
 			await act(() => {
-				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: initial.data.settings, popupRefreshGeneration: 2, committedAddressChange: { requestId: 'older-switch', activeAddress: initial.data.settings.activeSimulationAddress } }), {}, () => undefined)
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: initial.data.settings, popupRefreshGeneration: 2 }), {}, () => undefined)
 				listener({ role: 'all', ...serialize(UpdateHomePage, initial) }, {}, () => undefined)
 				listener(serialize(MessageToPopup, createSimulationStateChangedMessage(initial.data.visualizedSimulatorState)), {}, () => undefined)
 			})

@@ -18,15 +18,15 @@ const popupSettingsOperationLabels: Readonly<Record<PopupSettingsOperation, stri
 	rich: 'Updating balances...',
 }
 
-type SettingsChangeHomeData = Pick<ReturnType<typeof useLiveSimulationHomeData>, 'isSettingsLoaded' | 'activeAddresses' | 'simulationMode' | 'rpcNetwork' | 'tabState' | 'displayedSigningAddress'>
+type SettingsChangeHomeData = Pick<ReturnType<typeof useLiveSimulationHomeData>, 'isSettingsLoaded' | 'activeAddresses' | 'simulationMode' | 'rpcNetwork' | 'tabState'>
 
-export function usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, simulationMode, rpcNetwork, tabState, displayedSigningAddress }: SettingsChangeHomeData) {
-	const pendingAddressChangeRequestId = useSignal<string | undefined>(undefined)
+export function usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, simulationMode, rpcNetwork, tabState }: SettingsChangeHomeData) {
+	const pendingAddressSelection = useSignal<{ address: bigint | 'signer', simulationMode: boolean } | undefined>(undefined)
 	const isActiveAddressChanging = useSignal(false)
 	// Local state covers dispatch latency; shared status coordinates other and reopened popups.
 	const pendingSettingsChange = useSignal(false)
 	const backgroundSettingsChange = useSignal<PopupSettingsChangeStatus['data']>({ revision: 0, operation: undefined })
-	const isActiveAddressChangePending = useComputed(() => pendingAddressChangeRequestId.value !== undefined)
+	const isActiveAddressChangePending = useComputed(() => pendingAddressSelection.value !== undefined)
 	const sharedStatusLabel = useComputed(() => !pendingSettingsChange.value && !isActiveAddressChangePending.value && backgroundSettingsChange.value.operation !== undefined ? popupSettingsOperationLabels[backgroundSettingsChange.value.operation] : undefined)
 	const isSettingsChangePending = useComputed(() => isActiveAddressChangePending.value || pendingSettingsChange.value || backgroundSettingsChange.value.operation !== undefined)
 
@@ -35,17 +35,16 @@ export function usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, sim
 		if (isSettingsChangePending.value) throw new Error('A settings change is already in progress. Please wait for it to finish.')
 		const selectableAddresses = includePersistedAddressBookEntry(activeAddresses.value, persistedEntry)
 		if (!isActiveAddressSelectionAllowed(address, selectableAddresses, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])) return
-		const requestId = crypto.randomUUID()
-		pendingAddressChangeRequestId.value = requestId
+		pendingAddressSelection.value = { address, simulationMode: simulationMode.value }
 		isActiveAddressChanging.value = true
 		try {
-			await requestActiveAddressChange(address, simulationMode.value, undefined, requestId)
+			await requestActiveAddressChange(address, simulationMode.value)
 			// Recover a missed commit notification from current background state, never from the original selection.
 			if (isActiveAddressChanging.value) {
 				await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData', data: { refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: true } })
 			}
 		} finally {
-			pendingAddressChangeRequestId.value = undefined
+			pendingAddressSelection.value = undefined
 			isActiveAddressChanging.value = false
 		}
 	}
@@ -84,10 +83,16 @@ export function usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, sim
 				if (update.popupRefreshGeneration < latestSettingsGeneration) return
 				latestSettingsGeneration = update.popupRefreshGeneration
 			}
-			if (update.method !== 'popup_settingsUpdated' || update.committedAddressChange === undefined) return
-			const { requestId, activeAddress } = update.committedAddressChange
-			if (pendingAddressChangeRequestId.value !== requestId) return
-			if (!update.data.simulationMode) displayedSigningAddress.value = activeAddress
+			const pending = pendingAddressSelection.value
+			if (update.method !== 'popup_settingsUpdated' || pending === undefined || !isActiveAddressChanging.value) return
+			const settings = update.data
+			if (settings.simulationMode !== pending.simulationMode) return
+			// Reveal canonical settings as soon as they match the selection; the request reply still owns completion and errors.
+			const selectedAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningSafeAddress
+			const matchesSelection = pending.address === 'signer'
+				? settings.simulationMode ? settings.useSignersAddressAsActiveAddress : settings.activeSigningSafeAddress === undefined
+				: selectedAddress === pending.address
+			if (!matchesSelection) return
 			isActiveAddressChanging.value = false
 		}
 		browser.runtime.onMessage.addListener(listener)

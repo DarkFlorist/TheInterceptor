@@ -8,7 +8,8 @@ import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type WatchAssetConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type ForceSetGasLimitForTransaction, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
 import { formEthSendTransaction, formSendRawTransaction, resolvePendingTransactionOrMessage, updateConfirmTransactionView, setGasLimitForTransaction, toPopupPendingTransactionOrSignableMessage } from './windows/confirmTransaction.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, getAddressMetadataForAccess, refreshSignerAccountsForTab, refreshSignerAccountsFromApprovedWebsitePorts, requestAddressChange, resolveInterceptorAccess, type SignerAccountRefreshOptions } from './windows/interceptorAccess.js'
-import { requestSignerChainChange, resolveChainChange } from './windows/changeChain.js'
+import { resolveChainChange } from './windows/changeChain.js'
+import { requestSignerChainChange } from './walletSwitch.js'
 import { updateWebsiteApprovalAccesses } from './accessManagement.js'
 import { getActiveOrFirstSignerAddress, getHtmlFile, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getActiveAddressForCurrentSignerState, sendCallbackToAllConfirmedSignerOwners, sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
@@ -233,7 +234,6 @@ export async function changeActiveAddress(ethereum: EthereumClientService, token
 			if (addressChange.data.activeAddress === 'signer') {
 				await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, undefined, {
 					simulationMode: false,
-					addressChangeRequestId: addressChange.data.addressChangeRequestId,
 					signerAddress: undefined,
 				})
 				return { type: 'ChangeActiveAddressReply', ok: true } as const
@@ -252,7 +252,6 @@ export async function changeActiveAddress(ethereum: EthereumClientService, token
 	}
 	await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, selection, {
 		simulationMode: addressChange.data.simulationMode,
-		addressChangeRequestId: addressChange.data.addressChangeRequestId,
 		signerAddress: signerAccount,
 	})
 	return { type: 'ChangeActiveAddressReply', ok: true } as const

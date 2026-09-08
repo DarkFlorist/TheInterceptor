@@ -1,3 +1,4 @@
+import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup, type HomePageBootstrap, type UpdateHomePage, type Settings } from '../../types/interceptor-messages.js'
 import type { RpcConnectionStatus, TabIconDetails, TabState } from '../../types/user-interface-types.js'
@@ -242,10 +243,12 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 				case 'popup_settingsUpdated': {
 					if (shouldIgnoreOutdatedPopupRefreshMessage(parsed.popupRefreshGeneration, Math.max(popupRefreshGeneration.value, pendingPopupRefreshGeneration.value))) return undefined
 					const rpcChanged = getRpcNetworkChange(rpcNetwork.value, parsed.data.activeRpcNetwork).endpointChanged
+					const simulationAddressChanged = activeSimulationAddress.value !== parsed.data.activeSimulationAddress
 					const previousActiveStackContext = getCurrentActiveStackContext()
 					const updatedActiveStackContext = getActiveStackContext(parsed.data)
 					updateHomePageSettings(parsed.data)
-					if (rpcChanged || parsed.committedAddressChange !== undefined || previousActiveStackContext === undefined || !activeStackContextsEqual(previousActiveStackContext, updatedActiveStackContext)) {
+					if (!parsed.data.simulationMode) displayedSigningAddress.value = parsed.data.activeSigningSafeAddress ?? getWalletSelectedAccount(tabState.value)
+					if (rpcChanged || simulationAddressChanged || previousActiveStackContext === undefined || !activeStackContextsEqual(previousActiveStackContext, updatedActiveStackContext)) {
 						simVisResults.value = PASSTHROUGH_STATE
 						simulationUpdatingState.value = undefined
 						simulationResultState.value = undefined

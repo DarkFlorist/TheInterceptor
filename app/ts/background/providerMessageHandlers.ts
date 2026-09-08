@@ -7,7 +7,7 @@ import { activateAddressSelection, changeActiveAddressAndChain } from './activeS
 import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
-import { applyWalletSwitchReply } from './windows/changeChain.js'
+import { applyWalletSwitchReply } from './walletSwitch.js'
 import { type ApprovalState, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
@@ -146,7 +146,7 @@ async function changeSignerChain(ethereum: EthereumClientService, tokenPriceServ
 	}
 	if (settings.useSignersAddressAsActiveAddress || !settings.simulationMode) {
 		const rpcNetwork = requestedRpcNetwork ?? (settings.activeRpcNetwork.chainId === signerChain ? settings.activeRpcNetwork : await getRpcNetworkForChain(signerChain))
-		if (getRpcNetworkChange(settings.activeRpcNetwork, rpcNetwork).endpointChanged) {
+		if (getRpcNetworkChange(settings.activeRpcNetwork, rpcNetwork).selectionChanged) {
 			const signerAddress = getWalletSelectedAccount(tabStateChange.newState)
 			await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 				simulationMode: settings.simulationMode,

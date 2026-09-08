@@ -110,7 +110,7 @@ describe('popup settings changes', () => {
 		const { changeSimulationMode, getSettings, saveCurrentTabId, websiteSocketToString } = await loadModules()
 		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
 		const { getConfirmedSignerStateToken } = await import('../../app/ts/background/signerStateOwnership.js')
-		const { applyWalletSwitchReply } = await import('../../app/ts/background/windows/changeChain.js')
+		const { applyWalletSwitchReply } = await import('../../app/ts/background/walletSwitch.js')
 		await changeSimulationMode({ simulationMode: false })
 		await saveCurrentTabId(1)
 		const socket = { tabId: 1, connectionName: 0n }
@@ -305,16 +305,16 @@ describe('popup settings changes', () => {
 		assert.equal(refreshRequests(), refreshedCount)
 	})
 
-	for (const outcome of ['accept', 'reject', 'safe'] as const) {
+	for (const outcome of ['accept', 'reject', 'safe', 'metadata after chain event'] as const) {
 		test(`preserves RPC preferences until a popup wallet switch is accepted (${ outcome })`, async () => {
 			installBrowserMock()
 			const { changeSimulationMode, getSettings, websiteSocketToString, updateTabState, updateUserAddressBookEntries, saveCurrentTabId } = await loadModules()
 			const { popupChangeActiveRpc } = await import('../../app/ts/background/popupMessageHandlers.js')
-			const { walletSwitchEthereumChainReply } = await import('../../app/ts/background/providerMessageHandlers.js')
+			const { walletSwitchEthereumChainReply, signerChainChanged } = await import('../../app/ts/background/providerMessageHandlers.js')
 			const { setRpcList, getRpcList } = await import('../../app/ts/background/storageVariables.js')
 			const currentRpc = (await getSettings()).activeRpcNetwork
 			const primaryRpc = { ...currentRpc, chainId: 2n, httpsRpc: 'https://primary.example.test', primary: true }
-			const requestedRpc = { ...primaryRpc, httpsRpc: 'https://alternative.example.test', primary: false }
+			const requestedRpc = { ...primaryRpc, name: 'Requested network', httpsRpc: outcome === 'metadata after chain event' ? primaryRpc.httpsRpc : 'https://alternative.example.test', primary: false }
 			const originalRpcList = [currentRpc, primaryRpc, requestedRpc]
 			await setRpcList(originalRpcList)
 			await changeSimulationMode({ simulationMode: false, activeSigningAddress: 1n, activeSigningSafeAddress: outcome === 'safe' ? 3n : undefined })
@@ -331,16 +331,21 @@ describe('popup settings changes', () => {
 			if (outcome !== 'safe') {
 				await waitForPortMessageCount(messages, 'request_signer_to_wallet_switchEthereumChain', 1)
 				assert.deepEqual(await getRpcList(), originalRpcList)
+				if (outcome === 'metadata after chain event') {
+					await signerChainChanged(ethereum, tokenPriceService, resetSimulationServices, connections, port, { method: 'signer_chainChanged', params: ['0x2', 1] }, 'hasAccess', 1n)
+					assert.deepEqual((await getSettings()).activeRpcNetwork, primaryRpc)
+				}
 				await walletSwitchEthereumChainReply(ethereum, tokenPriceService, resetSimulationServices, connections, port, {
 					method: 'wallet_switchEthereumChain_reply',
-					params: outcome === 'accept' ? [{ accept: true, chainId: '0x2', walletSwitchRequestId: getWalletSwitchRequestId(messages), signerProviderGeneration: 1 }] : [{ accept: false, chainId: '0x2', walletSwitchRequestId: getWalletSwitchRequestId(messages), error: { code: 4001, message: 'Rejected' }, signerProviderGeneration: 1 }],
+					params: outcome !== 'reject' ? [{ accept: true, chainId: '0x2', walletSwitchRequestId: getWalletSwitchRequestId(messages), signerProviderGeneration: 1 }] : [{ accept: false, chainId: '0x2', walletSwitchRequestId: getWalletSwitchRequestId(messages), error: { code: 4001, message: 'Rejected' }, signerProviderGeneration: 1 }],
 				}, 'hasAccess', 1n)
 			}
 			const reply = await pending
 			const activeRpc = (await getSettings()).activeRpcNetwork
-			if (outcome === 'accept') {
+			if (outcome === 'accept' || outcome === 'metadata after chain event') {
 				assert.equal(reply.ok, true)
-				assert.equal(activeRpc.httpsRpc, requestedRpc.httpsRpc)
+				assert.deepEqual(activeRpc, requestedRpc)
+				assert.equal((await getRpcList()).find((entry) => entry.name === requestedRpc.name)?.primary, true)
 				assert.equal((await getRpcList()).find((entry) => entry.chainId === 2n && entry.primary)?.httpsRpc, requestedRpc.httpsRpc)
 			} else {
 				assert.equal(reply.ok, false)
@@ -358,7 +363,7 @@ describe('popup settings changes', () => {
 		test(`wallet deadline releases a silent request but does not expire a received reply (${ outcome })`, async () => {
 			installBrowserMock()
 			const { changeSimulationMode, getSettings, websiteSocketToString } = await loadModules()
-			const { requestSignerChainChange, applyWalletSwitchReply } = await import('../../app/ts/background/windows/changeChain.js')
+			const { requestSignerChainChange, applyWalletSwitchReply } = await import('../../app/ts/background/walletSwitch.js')
 			const { getConfirmedSignerStateToken } = await import('../../app/ts/background/signerStateOwnership.js')
 			await changeSimulationMode({ simulationMode: false })
 			const socket = { tabId: 1, connectionName: 0n }
@@ -442,7 +447,7 @@ describe('popup settings changes', () => {
 		test(`waits for the matching wallet network ${ outcome }`, async () => {
 			installBrowserMock()
 			const { changeSimulationMode, getSettings, websiteSocketToString } = await loadModules()
-			const { requestSignerChainChange, applyWalletSwitchReply } = await import('../../app/ts/background/windows/changeChain.js')
+			const { requestSignerChainChange, applyWalletSwitchReply } = await import('../../app/ts/background/walletSwitch.js')
 			await changeSimulationMode({ simulationMode: false })
 			const socket = { tabId: 1, connectionName: 0n }
 			const ownership = confirmedSignerOwnership(socket)

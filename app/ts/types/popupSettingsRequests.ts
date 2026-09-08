@@ -29,7 +29,7 @@ export const ChangeActiveAddress = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		simulationMode: funtypes.Boolean,
 		activeAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer')),
-	}).And(funtypes.ReadonlyPartial({ addressChangeRequestId: funtypes.String }))
+	})
 }).asReadonly()
 
 export type PopupSettingsRequest = ModifyMakeMeRich | EnableSimulationMode | ChangeActiveChain | ChangeActiveAddress

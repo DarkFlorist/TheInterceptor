@@ -26,17 +26,16 @@ describe('background eth_accounts', () => {
 		let completed = false
 		const change = changeActiveAddress(ethereum, tokenPriceService, resetSimulationServices, new Map(), {
 			method: 'popup_changeActiveAddress',
-			data: { activeAddress: nextAddress, simulationMode: true, addressChangeRequestId: 'test-switch' },
+			data: { activeAddress: nextAddress, simulationMode: true },
 		}).then((reply) => { completed = true; return reply })
 		try {
 			await permissionWorkStarted.promise
 			assert.equal(completed, false)
 			assert.equal((await getSettings()).activeSimulationAddress, nextAddress)
-			const committed = runtimeMessages.map((message) => MessageToPopup.safeParse(message)).find((parsed) => parsed.success && parsed.value.method === 'popup_settingsUpdated' && parsed.value.committedAddressChange?.requestId === 'test-switch')
+			const committed = runtimeMessages.map((message) => MessageToPopup.safeParse(message)).find((parsed) => parsed.success && parsed.value.method === 'popup_settingsUpdated')
 			assert.ok(committed?.success && committed.value.method === 'popup_settingsUpdated')
 			if (committed?.success && committed.value.method === 'popup_settingsUpdated') {
 				assert.equal(committed.value.data.activeSimulationAddress, nextAddress)
-				assert.equal(committed.value.committedAddressChange?.activeAddress, nextAddress)
 			}
 		} finally {
 			releasePermissionWork.resolve(undefined)

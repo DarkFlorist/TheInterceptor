@@ -774,7 +774,7 @@ const SettingsUpdated = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_settingsUpdated'),
 	data: Settings,
 	popupRefreshGeneration: PopupRefreshGeneration,
-}).And(funtypes.ReadonlyPartial({ committedAddressChange: funtypes.ReadonlyObject({ requestId: funtypes.String, activeAddress: OptionalEthereumAddress }) }))
+})
 
 type PartiallyParsedSimulateExecutionReply = funtypes.Static<typeof PartiallyParsedSimulateExecutionReply>
 const PartiallyParsedSimulateExecutionReply = funtypes.ReadonlyObject({

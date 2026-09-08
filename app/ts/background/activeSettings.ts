@@ -63,7 +63,6 @@ type ActiveAddressAndChainChange = {
 	signingAddressSelection?: 'signer' | 'safe'
 	rpcNetwork?: RpcNetwork
 	promptForAccessesIfNeeded?: boolean
-	addressChangeRequestId?: string
 }
 
 type ActiveSettingsTransition = {
@@ -120,7 +119,6 @@ async function runActiveSettingsChange(
 				// Publish settings exactly once when committed; access reconciliation later publishes account and icon updates.
 				await sendPopupMessageToOpenWindows({
 					method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration: bumpPopupRefreshGeneration(),
-					...(change.addressChangeRequestId === undefined ? {} : { committedAddressChange: { requestId: change.addressChangeRequestId, activeAddress: change.activeAddress } }),
 				})
 			} finally {
 				// Persisted settings still need access reconciliation if provider preparation or publication fails.
@@ -166,7 +164,6 @@ export async function activateAddressSelection(
 		readonly signerAddress: bigint | undefined
 		readonly rpcNetwork?: RpcNetwork
 		readonly promptForAccessesIfNeeded?: boolean
-		readonly addressChangeRequestId?: string
 	},
 ): Promise<void> {
 	const selectedSafe = selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? selection.entry : undefined
@@ -180,7 +177,6 @@ export async function activateAddressSelection(
 	return await runActiveSettingsChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
 		change: {
 			simulationMode: options.simulationMode,
-			addressChangeRequestId: options.addressChangeRequestId,
 			activeAddress: selection?.type === 'signer' ? selection.address : selection?.entry.address,
 			...(!options.simulationMode ? { signingAddressSelection: selectedSafe === undefined ? 'signer' as const : 'safe' as const } : {}),
 			...(options.rpcNetwork === undefined ? {} : { rpcNetwork: options.rpcNetwork }),

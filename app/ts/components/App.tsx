@@ -70,7 +70,7 @@ export function App() {
 		},
 	})
 	const boundaryResetKey = useSignal(0)
-	const { isActiveAddressChanging, isActiveAddressChangePending, isSettingsChangePending, sharedStatusLabel, setActiveAddressAndInformAboutIt, setActiveRpcAndInformAboutIt, setSimulationMode, setRichState } = usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, simulationMode, rpcNetwork, tabState, displayedSigningAddress })
+	const { isActiveAddressChanging, isActiveAddressChangePending, isSettingsChangePending, sharedStatusLabel, setActiveAddressAndInformAboutIt, setActiveRpcAndInformAboutIt, setSimulationMode, setRichState } = usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, simulationMode, rpcNetwork, tabState })
 
 	useEffect(() => {
 		markPerformanceOnce(POPUP_PERFORMANCE_MARKS.homeFirstCommit)
