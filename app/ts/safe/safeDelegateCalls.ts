@@ -13,6 +13,7 @@ const libraryCodeHashes = new Map([
 	[SAFE_SIGN_MESSAGE_LIB, '0x525c754a46b79e05543a59bb61e8de3c9eee0d955a59352409cbe67ea1077528'],
 ])
 export const SAFE_MULTI_SEND_ABI = [{ type: 'function', name: 'multiSend', stateMutability: 'payable', inputs: [{ name: 'transactions', type: 'bytes' }], outputs: [] }] as const
+// Safe v1.4.1 exposes signMessage(bytes), selector 0x85a5affe; a 32-byte digest still uses dynamic bytes encoding: https://github.com/safe-global/safe-smart-account/blob/v1.4.1/contracts/libraries/SignMessageLib.sol
 export const SAFE_SIGN_MESSAGE_ABI = [{ type: 'function', name: 'signMessage', stateMutability: 'nonpayable', inputs: [{ name: 'message', type: 'bytes' }], outputs: [] }] as const
 const invalid = (message: string) => createSafeValidationError(message, 'safe_contract_validation')
 export type SafeBatchCall = { readonly to: bigint, readonly value: bigint, readonly data: Uint8Array }

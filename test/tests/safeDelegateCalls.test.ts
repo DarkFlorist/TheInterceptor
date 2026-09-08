@@ -36,3 +36,15 @@ test('delegate proposals require the exact deployed Safe library bytecode at the
 	}
 	assert.deepEqual(requestedBlocks, [100n, 100n])
 })
+
+
+test('SignMessageLib uses the canonical bytes selector and dynamic argument layout', () => {
+	const digest = '12'.repeat(32)
+	// Independent ABI vector for the v1.4.1 contract cited beside SAFE_SIGN_MESSAGE_ABI: selector, offset, byte length, payload.
+	const expected = '0x85a5affe' + '0'.repeat(62) + '20' + '0'.repeat(62) + '20' + digest
+	assert.equal(encodeFunctionCall(SAFE_SIGN_MESSAGE_ABI, 'signMessage', [`0x${ digest }`]), expected)
+	const proposal = createSafeTx(1n, 123n, { to: SAFE_SIGN_MESSAGE_LIB, operation: 1n, value: 0n, input: stringToUint8Array(expected) }, 7n)
+	assert.doesNotThrow(() => assertInterceptorSafeTransactionPolicy(proposal))
+	// signMessage(bytes32) has a different selector and is not an entry point of the deployed library.
+	assert.throws(() => assertInterceptorSafeTransactionPolicy({ ...proposal, message: { ...proposal.message, data: stringToUint8Array(`0xa08519b5${ digest }`) } }))
+})

@@ -6,7 +6,7 @@ import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { getSafeAppsChainInfo, getSafeAppsRequestCommand, isSafeAppsRequestPolicyError } from '../../app/ts/background/safeAppsRequestPolicy.js'
 import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
 import { decodeSafeBatch, SAFE_MULTI_SEND_CALL_ONLY } from '../../app/ts/safe/safeDelegateCalls.js'
-import { addressString, stringToUint8Array } from '../../app/ts/utils/bigint.js'
+import { addressString, dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
 
@@ -229,6 +229,9 @@ describe('Safe Apps compatibility policy', () => {
 			assert.equal(command.safeRequestContext?.operation, 1)
 			assert.equal(command.safeRequestContext?.message?.text, 'Hello')
 			assert.equal(addressString(request.params[0].from), addressString(activeAddress))
+			// Literal contract ABI vector, independent of the production ABI encoder; payload is the EIP-191 digest of Hello.
+			const expected = '0x85a5affe' + '0'.repeat(62) + '20' + '0'.repeat(62) + '20' + 'aa744ba2ca576ec62ca0045eca00ad3917fdf7ffa34fbbae50828a5a69c1580e'
+			assert.equal(dataStringWith0xStart(request.params[0].data ?? new Uint8Array()), expected)
 		}
 	}
 	for (const params of [[], [{}], [{ offChainSigning: 'false' }], [{ offChainSigning: false }, {}], [{ offChainSigning: false, unknown: true }]]) {
