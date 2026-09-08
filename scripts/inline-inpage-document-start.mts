@@ -6,7 +6,6 @@ import { getPageWorldScriptPaths, metamaskCompatibilityModeGlobalSymbolKey, meta
 const projectRoot = path.join(path.dirname(url.fileURLToPath(import.meta.url)), '..')
 const documentStartPath = path.join(projectRoot, 'app', 'inpage', 'js', 'document_start.js')
 const inpagePath = path.join(projectRoot, 'app', 'inpage', 'js', 'inpage.js')
-const injectedMarkerPattern = /injectScript\((['"])\[\[injected\.ts\]\]\1\)/
 const pageWorldScriptPathsMarkerPattern = /(['"])\[\[pageWorldScriptPaths\]\]\1/
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const metamaskCompatibilityModeGlobalSymbolKeyMarkerPattern = new RegExp(`(['"])${ escapeRegExp(metamaskCompatibilityModeGlobalSymbolKeyMarker) }\\1`)
@@ -21,13 +20,10 @@ export function inlineContentScriptInjectionConfiguration(source: string, artifa
 	return source.replace(metamaskCompatibilityModeGlobalSymbolKeyMarkerPattern, JSON.stringify(metamaskCompatibilityModeGlobalSymbolKey))
 }
 
-export function inlineInpageSourceIntoDocumentStart(documentStartSource: string, inpageSource: string) {
-	if (!injectedMarkerPattern.test(documentStartSource)) throw new Error('Could not find inpage injection marker in document_start.js')
+export function inlineDocumentStartInjectionConfiguration(documentStartSource: string) {
 	if (!pageWorldScriptPathsMarkerPattern.test(documentStartSource)) throw new Error('Could not find page-world script paths marker in document_start.js')
-	const updatedInpageSource = inlineContentScriptInjectionConfiguration(inpageSource, 'inpage.js')
 	return inlineContentScriptInjectionConfiguration(documentStartSource, 'document_start.js')
 		.replace(pageWorldScriptPathsMarkerPattern, JSON.stringify(JSON.stringify(pageWorldScriptPathsByCompatibilityMode)))
-		.replace(injectedMarkerPattern, `injectScript(${ JSON.stringify(updatedInpageSource) })`)
 }
 
 async function inlineInpageScript() {
@@ -39,7 +35,7 @@ async function inlineInpageScript() {
 	])
 	const updatedInpageSource = inlineContentScriptInjectionConfiguration(inpageSource, 'inpage.js')
 	const updatedMetamaskCompatibilityModeSource = inlineContentScriptInjectionConfiguration(metamaskCompatibilityModeSource, 'metamaskCompatibilityMode.js')
-	const updatedDocumentStartSource = inlineInpageSourceIntoDocumentStart(documentStartSource, inpageSource)
+	const updatedDocumentStartSource = inlineDocumentStartInjectionConfiguration(documentStartSource)
 	await Promise.all([
 		fs.writeFile(documentStartPath, updatedDocumentStartSource),
 		fs.writeFile(inpagePath, updatedInpageSource),

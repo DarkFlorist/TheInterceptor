@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import * as ts from 'typescript'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from '../../app/ts/background/bridgeRequestDelivery.js'
-import { inlineInpageSourceIntoDocumentStart } from '../../scripts/inline-inpage-document-start.mts'
+import { inlineDocumentStartInjectionConfiguration } from '../../scripts/inline-inpage-document-start.mts'
 
 type ContentScriptMockState = {
 	readonly backgroundMessageListeners: ((message: unknown) => void)[]
@@ -98,7 +98,7 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 					target: ts.ScriptTarget.ES2022,
 				},
 			}).outputText
-			const generatedDocumentStart = inlineInpageSourceIntoDocumentStart(compiledDocumentStart, 'Symbol.for(\'[[metamaskCompatibilityModeGlobalSymbolKey]]\')')
+			const generatedDocumentStart = inlineDocumentStartInjectionConfiguration(compiledDocumentStart)
 			Function(generatedDocumentStart)()
 		}
 		else await import(`../../app/inpage/ts/listenContentScriptBootstrap.js?background-port-recovery-${ contentScriptMockImportId }`)

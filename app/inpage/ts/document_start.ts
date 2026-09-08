@@ -1,4 +1,4 @@
-function injectScript(_content: string) {
+function injectPageWorldScripts() {
 	if ((globalThis as unknown as { interceptorInjected: true | undefined }).interceptorInjected) return
 	;(globalThis as unknown as { interceptorInjected?: boolean }).interceptorInjected = true
 
@@ -22,25 +22,15 @@ function injectScript(_content: string) {
 			scriptTag.src = browser.runtime.getURL(scriptPath)
 			injectScriptElement(scriptTag)
 		}
-		const injectInlineScript = (content: string) => {
-			const scriptTag = document.createElement('script')
-			scriptTag.textContent = content
-			injectScriptElement(scriptTag)
-		}
 		const pageWorldScriptPathsByCompatibilityMode: { readonly disabled: readonly string[], readonly enabled: readonly string[] } = JSON.parse('[[pageWorldScriptPaths]]')
 		const metamaskCompatibilityMode = Reflect.get(globalThis, Symbol.for('[[metamaskCompatibilityModeGlobalSymbolKey]]'))
 		if (typeof metamaskCompatibilityMode !== 'boolean') throw new Error('MetaMask compatibility mode was not initialized')
-		if (metamaskCompatibilityMode) {
-			for (const scriptPath of pageWorldScriptPathsByCompatibilityMode.enabled) injectExternalScript(scriptPath)
-		} else {
-			if (_content === '[[injected.ts]]') {
-				for (const scriptPath of pageWorldScriptPathsByCompatibilityMode.disabled) injectExternalScript(scriptPath)
-			} else injectInlineScript(_content)
-		}
+		const pageWorldScriptPaths = metamaskCompatibilityMode ? pageWorldScriptPathsByCompatibilityMode.enabled : pageWorldScriptPathsByCompatibilityMode.disabled
+		for (const scriptPath of pageWorldScriptPaths) injectExternalScript(scriptPath)
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
 		console.error('Interceptor: Provider injection failed.', error)
 	}
 }
 
-injectScript('[[injected.ts]]')
+injectPageWorldScripts()
