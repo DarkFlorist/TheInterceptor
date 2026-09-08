@@ -93,7 +93,11 @@ function createBrowserStorageMock() {
 }
 
 const browserMock = createBrowserStorageMock()
-const settingsModulePromise = import('../../app/ts/background/settings.js')
+const settingsModulePromise = import('../../app/ts/background/settings.js').then((settingsModule) => ({
+	...settingsModule,
+	importSettingsAndAddressBook: async (exportedSettings: ExportedSettings) => await settingsModule.importSettingsAndAddressBook(exportedSettings, settingsModule.persistMetamaskCompatibilityMode),
+	setMetamaskCompatibilityMode: settingsModule.persistMetamaskCompatibilityMode,
+}))
 const signingAddressSelectionModulePromise = import('../../app/ts/background/signingAddressSelection.js')
 const storageVariablesModulePromise = import('../../app/ts/background/storageVariables.js')
 

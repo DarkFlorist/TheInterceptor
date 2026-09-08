@@ -38,6 +38,7 @@ function installBrowserMock() {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: RuntimeMessage[] = []
 	const registeredContentScripts: RegisteredContentScript[] = []
+	const reloadedTabs: number[] = []
 
 	Object.defineProperty(globalThis, 'browser', {
 		configurable: true,
@@ -95,6 +96,7 @@ function installBrowserMock() {
 				async query() { return [] },
 				async get() { return undefined },
 				async update() { return undefined },
+				async reload(tabId: number) { reloadedTabs.push(tabId) },
 				onUpdated: { addListener: () => undefined, removeListener: () => undefined },
 				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 			},
@@ -135,7 +137,7 @@ function installBrowserMock() {
 	})
 	Object.defineProperty(globalThis, 'location', { configurable: true, writable: true, value: { origin: '' } })
 
-	return { sentMessages, registeredContentScripts }
+	return { sentMessages, registeredContentScripts, reloadedTabs }
 }
 
 function createPort(tabId: number, onPostMessage?: (message: PortMessage) => void) {
@@ -795,7 +797,7 @@ describe('refreshHomeData', () => {
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
 
 		try {
-			await changeSettings(ethereum, tokenPriceService, {} as never, { method: 'popup_ChangeSettings', data: { metamaskCompatibilityMode: true } } as never, undefined)
+			await changeSettings(ethereum, tokenPriceService, {} as never, new Map(), { method: 'popup_ChangeSettings', data: { metamaskCompatibilityMode: true } } as never, undefined)
 		} finally {
 			ethereum.cleanup()
 		}
@@ -808,5 +810,6 @@ describe('refreshHomeData', () => {
 			'/inpage/js/metamaskCompatibilityMode.js',
 			'/inpage/js/inpage.js',
 		])
+		assert.deepEqual(browserMock.reloadedTabs, [1])
 	})
 })

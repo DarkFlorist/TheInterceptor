@@ -5,36 +5,16 @@ import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequest
 import type { EthereumAddress } from '../../types/wire-types.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../../utils/contentScriptsUpdating.js'
-import { getErrorMessage, reportUnexpectedError } from '../../utils/errors.js'
-import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { modifyObject } from '../../utils/typescript.js'
 import { setInterceptorDisabledForWebsite, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { getLastKnownCurrentTabId } from '../currentTab.js'
 import { getSettings, updateWebsiteAccess } from '../settings.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAddressMetadataForAccess } from '../windows/interceptorAccess.js'
 import { searchWebsiteAccess } from '../websiteAccessSearch.js'
+import { reloadConnectedTabs } from '../reloadConnectedTabs.js'
 
-const isMissingTabReloadError = (error: unknown) => {
-	const message = getErrorMessage(error)
-	return message !== undefined && (message.startsWith('No tab with id') || message.includes('Invalid tab ID'))
-}
-
-export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
-	const tabIdsToRefresh = Array.from(websiteTabConnections.keys())
-	const currentTabId = await getLastKnownCurrentTabId()
-	const withCurrentTabId = currentTabId === undefined ? tabIdsToRefresh : [...tabIdsToRefresh, currentTabId]
-	for (const tabId of new Set(withCurrentTabId)) {
-		try {
-			await browser.tabs.reload(tabId)
-			checkAndThrowRuntimeLastError()
-		} catch (error) {
-			if (isMissingTabReloadError(error)) continue
-			await reportUnexpectedError(error, { code: 'connected_tab_reload_failed' })
-		}
-	}
-}
+export { reloadConnectedTabs } from '../reloadConnectedTabs.js'
 
 export const disableInterceptorForPage = async (websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) => {
 	await setInterceptorDisabledForWebsite(website, interceptorDisabled)

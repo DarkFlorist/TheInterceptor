@@ -9,7 +9,8 @@ const storageState: Record<string, unknown> = {}
 const sentMessages: unknown[] = []
 const dynamicRuleUpdates: unknown[] = []
 const dispatcherEvents: ({ type: 'message', message: unknown } | { type: 'dynamicRuleUpdate' })[] = []
-const registeredContentScripts = new Map<string, { readonly id: string, readonly js?: readonly string[] }>()
+const registeredContentScripts = new Map<string, { readonly id: string, readonly js?: readonly string[], readonly excludeMatches?: readonly string[] }>()
+const reloadedTabs: number[] = []
 let storageSetError: Error | undefined
 let dynamicRuleUpdateError: Error | undefined
 let addressBookBroadcastWait: Promise<void> | undefined
@@ -63,6 +64,7 @@ Reflect.set(globalThis, 'browser', {
 		query: async () => [],
 		get: async () => undefined,
 		update: async () => undefined,
+		reload: async (tabId: number) => { reloadedTabs.push(tabId) },
 		onUpdated: { addListener: () => undefined, removeListener: () => undefined },
 		onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 	},
@@ -152,6 +154,7 @@ beforeEach(() => {
 	dynamicRuleUpdates.splice(0, dynamicRuleUpdates.length)
 	dispatcherEvents.splice(0, dispatcherEvents.length)
 	registeredContentScripts.clear()
+	reloadedTabs.splice(0, reloadedTabs.length)
 })
 
 describe('popup message dispatcher seams', () => {
@@ -370,8 +373,10 @@ describe('popup message dispatcher seams', () => {
 			},
 		})
 
+		const context = createDispatcherContext(async () => undefined)
+		context.websiteTabConnections.set(42, { connections: {} })
 		await dispatchPopupMessage(
-			createDispatcherContext(async () => undefined),
+			context,
 			{ method: 'popup_import_settings', data: { fileContents: importedSettings } },
 		)
 
@@ -387,6 +392,7 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(messages[1].data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
 		assert.equal(messages[1].data.simulationMode, false)
 		assert.deepEqual(registeredContentScripts.get('inpage')?.js, ['/inpage/js/inpage.js'])
+		assert.deepEqual(reloadedTabs, [42])
 		assert.deepEqual(dynamicRuleUpdates, [{
 			removeRuleIds: [],
 			addRules: [{
@@ -401,5 +407,38 @@ describe('popup message dispatcher seams', () => {
 		const settingsUpdatedEventIndex = dispatcherEvents.findIndex((event) => event.type === 'message' && MessageToPopup.parse(event.message).method === 'popup_settingsUpdated')
 		assert.ok(successReplyEventIndex < dynamicRuleEventIndex)
 		assert.ok(dynamicRuleEventIndex < settingsUpdatedEventIndex)
+	})
+
+	test('legacy imports preserve compatibility mode while refreshing content scripts and connected tabs', async () => {
+		storageState.metamaskCompatibilityMode = true
+		const importedSettings = JSON.stringify({
+			name: 'InterceptorSettingsAndAddressBook',
+			version: '1.0',
+			exportedDate: '2026-09-07',
+			settings: {
+				activeSimulationAddress: '0x0000000000000000000000000000000000000002',
+				activeChain: '0x1',
+				useSignersAddressAsActiveAddress: false,
+				websiteAccess: [{
+					website: { websiteOrigin: 'legacy-disabled.test', title: 'Legacy disabled website' },
+					addressAccess: [],
+					access: true,
+					interceptorDisabled: true,
+					declarativeNetRequestBlockMode: 'block-all',
+				}],
+				simulationMode: false,
+				addressInfos: [],
+				useTabsInsteadOfPopup: false,
+			},
+		})
+
+		const context = createDispatcherContext(async () => undefined)
+		context.websiteTabConnections.set(43, { connections: {} })
+		await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: importedSettings } })
+
+		assert.equal(storageState.metamaskCompatibilityMode, true)
+		assert.deepEqual(registeredContentScripts.get('inpage')?.js, ['/inpage/js/metamaskCompatibilityMode.js', '/inpage/js/inpage.js'])
+		assert.deepEqual(registeredContentScripts.get('inpage')?.excludeMatches, ['*://*.legacy-disabled.test/*'])
+		assert.deepEqual(reloadedTabs, [43])
 	})
 })

@@ -12,11 +12,12 @@ export function getPageWorldScriptPaths(metamaskCompatibilityMode: boolean): rea
 	]
 }
 
-export function getManifestV2IsolatedWorldInjections(metamaskCompatibilityMode: boolean) {
+export function getManifestV2IsolatedWorldInjections(metamaskCompatibilityMode: unknown) {
+	const enabled = metamaskCompatibilityMode === true
 	return [
 		{ file: 'vendor/webextension-polyfill/dist/browser-polyfill.js' },
 		{ file: `${ inpageScriptDirectory }/listenContentScript.js` },
-		{ code: `Reflect.set(globalThis, Symbol.for(${ JSON.stringify(metamaskCompatibilityModeGlobalSymbolKey) }), ${ metamaskCompatibilityMode })` },
+		{ code: `Reflect.set(globalThis, Symbol.for(${ JSON.stringify(metamaskCompatibilityModeGlobalSymbolKey) }), ${ JSON.stringify(enabled) })` },
 		{ file: `${ inpageScriptDirectory }/document_start.js` },
 	] as const
 }

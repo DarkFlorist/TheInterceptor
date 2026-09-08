@@ -7,10 +7,10 @@ import { getSettings } from '../settings.js'
 export const settingsPopupMessageHandlers = {
 	popup_changeActiveRpc: popupMessageHandler('popup_changeActiveRpc', async (context, request) => await popupChangeActiveRpc(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request, context.settings)),
 	popup_requestSettings: popupMessageHandler('popup_requestSettings', async () => await settingsOpened()),
-	popup_ChangeSettings: popupMessageHandler('popup_ChangeSettings', async (context, request) => await changeSettings(context.ethereum, context.tokenPriceService, context.resetSimulationServices, request, context.simulationAbortController)),
+	popup_ChangeSettings: popupMessageHandler('popup_ChangeSettings', async (context, request) => await changeSettings(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request, context.simulationAbortController)),
 	popup_openSettings: popupMessageHandler('popup_openSettings', async () => await openNewTab('settingsView')),
 	popup_import_settings: popupMessageHandler('popup_import_settings', async (context, request) => {
-		const importSettingsReply = await importSettings(request)
+		const importSettingsReply = await importSettings(request, context.websiteTabConnections)
 		await sendPopupMessageToOpenWindows(importSettingsReply)
 		if (!importSettingsReply.data.success) return
 		const importedSettings = await getSettings()

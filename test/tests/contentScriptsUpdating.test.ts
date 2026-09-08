@@ -11,6 +11,7 @@ type RuntimeMessage = {
 
 type BrowserMockOptions = {
 	readonly metamaskCompatibilityMode?: boolean
+	readonly manifestVersion?: 2 | 3
 	readonly registerError?: Error
 	readonly updateError?: Error
 	readonly executeScriptError?: Error
@@ -26,13 +27,14 @@ type RegisteredContentScript = {
 	readonly excludeMatches?: readonly string[]
 }
 
-function installBrowserMock({ metamaskCompatibilityMode, registerError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [] }: BrowserMockOptions = {}) {
+function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, registerError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [] }: BrowserMockOptions = {}) {
 	const storageState: Record<string, unknown> = {
 		...(metamaskCompatibilityMode === undefined ? {} : { metamaskCompatibilityMode }),
 	}
 	const sentMessages: RuntimeMessage[] = []
 	const executedScriptFiles: string[] = []
 	const executedScriptCode: string[] = []
+	const reloadedTabs: number[] = []
 	const registeredContentScripts = new Map(registeredContentScriptIds.map((id) => [id, { id }]))
 	let executeScriptCalls = 0
 	const scriptingOperations: string[] = []
@@ -56,7 +58,7 @@ function installBrowserMock({ metamaskCompatibilityMode, registerError, updateEr
 					sentMessages.push(message)
 					return undefined
 				},
-				getManifest: () => ({ manifest_version: 3 }),
+				getManifest: () => ({ manifest_version: manifestVersion }),
 				onMessage: { addListener: () => undefined, removeListener: () => undefined },
 				onConnect: { addListener: () => undefined, removeListener: () => undefined },
 			},
@@ -96,6 +98,7 @@ function installBrowserMock({ metamaskCompatibilityMode, registerError, updateEr
 				async query() { return [{ id: 42, url: currentTabUrl }] },
 				async get() { return hasVisibleTabUrl ? { id: 42, url: currentTabUrl } : { id: 42 } },
 				async update() { return undefined },
+				async reload(tabId: number) { reloadedTabs.push(tabId) },
 				async executeScript(_tabId: number, injection: { readonly code?: string, readonly file?: string }) {
 					executeScriptCalls++
 					if (injection.file !== undefined) executedScriptFiles.push(injection.file)
@@ -142,6 +145,7 @@ function installBrowserMock({ metamaskCompatibilityMode, registerError, updateEr
 		getExecuteScriptCalls() { return executeScriptCalls },
 		getExecutedScriptCode() { return [...executedScriptCode] },
 		getExecutedScriptFiles() { return [...executedScriptFiles] },
+		getReloadedTabs() { return [...reloadedTabs] },
 		getCommittedListener() {
 			if (committedListener === undefined) throw new Error('webNavigation listener was not registered')
 			return committedListener
@@ -176,6 +180,17 @@ function getManifestV2WebAccessibleResources() {
 }
 
 describe('content script injection strategy', () => {
+	test('serializes malformed compatibility mode values as disabled MV2 bootstrap code', () => {
+		const maliciousValue = 'true); globalThis.unexpectedCodeExecution = true; Reflect.set(globalThis, Symbol.for("ignored"), (true'
+		const code = getManifestV2IsolatedWorldInjections(maliciousValue).find((injection) => 'code' in injection)?.code
+		if (code === undefined) throw new Error('Missing MV2 compatibility mode bootstrap code')
+		Function(code)()
+
+		assert.equal(Reflect.get(globalThis, Symbol.for('TheInterceptor.metamaskCompatibilityMode')), false)
+		assert.equal(Reflect.get(globalThis, 'unexpectedCodeExecution'), undefined)
+		Reflect.deleteProperty(globalThis, Symbol.for('TheInterceptor.metamaskCompatibilityMode'))
+	})
+
 	test('creates valid manifest v3 exclusions without admitting malformed stored origins', async () => {
 		installBrowserMock()
 		const { getManifestV3ExcludeMatches } = await loadModules()
@@ -201,6 +216,18 @@ describe('content script injection strategy', () => {
 			'https://*.secure.example/*',
 			'https://localhost:4443/*',
 		])
+	})
+
+	test('compatibility setting changes refresh the current manifest strategy and reload connected tabs', async () => {
+		for (const manifestVersion of [2, 3] as const) {
+			const { getCommittedListener, getRegisteredContentScripts, getReloadedTabs } = installBrowserMock({ manifestVersion })
+			const { setMetamaskCompatibilityMode } = await import('../../app/ts/background/metamaskCompatibilityMode.js')
+			await setMetamaskCompatibilityMode(new Map([[42, { connections: {} }]]), true)
+
+			assert.deepEqual(getReloadedTabs(), [42])
+			if (manifestVersion === 2) assert.equal(typeof getCommittedListener(), 'function')
+			else assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/metamaskCompatibilityMode.js', '/inpage/js/inpage.js'])
+		}
 	})
 
 	test('exposes every manifest v2 injected file to Firefox', async () => {
