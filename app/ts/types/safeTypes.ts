@@ -1,3 +1,4 @@
+import { SafeMessageReview } from './safeReview.js'
 import * as funtypes from 'funtypes'
 import { SafeTx } from './personal-message-definitions.js'
 import { EthereumAddress, EthereumBytes32, EthereumQuantity, EthereumTimestamp } from './wire-types.js'
@@ -15,9 +16,11 @@ export type SafeMessageCoSignSnapshot = funtypes.Static<typeof SafeMessageCoSign
 export const SafeMessageCoSignSnapshot = funtypes.ReadonlyObject({
 	safeAddress: EthereumAddress,
 	safeSignerAddress: EthereumAddress,
-	safeTxHash: EthereumBytes32,
 	reviewedSafeState: SafeContractStateSnapshot,
-})
+}).And(funtypes.Union(
+	funtypes.ReadonlyObject({ safeTxHash: EthereumBytes32 }),
+	funtypes.ReadonlyObject({ safeMessageHash: EthereumBytes32 }),
+))
 
 export type SafeSignerErrorDetails = funtypes.Static<typeof SafeSignerErrorDetails>
 export const SafeSignerErrorDetails = funtypes.Union(
@@ -50,6 +53,7 @@ export const SafeTransactionSigningRequest = funtypes.ReadonlyObject({
 	// Undefined only while a reviewed proposal is waiting for the signer wallet to select an owner.
 	safeSignerAddress: EthereumAddress,
 	executionGasLimit: EthereumQuantity,
+	messageReview: SafeMessageReview,
 	reviewedSafeState: SafeContractStateSnapshot,
 }))
 

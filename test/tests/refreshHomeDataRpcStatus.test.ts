@@ -27,6 +27,7 @@ type RuntimeMessage = {
 
 type PortMessage = {
 	method?: string
+	result?: unknown
 }
 
 function installBrowserMock() {
@@ -765,9 +766,10 @@ describe('refreshHomeData', () => {
 			},
 		}, async () => undefined, async () => undefined, rpcNetwork)
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
+		const { messages } = createPort(1)
 
 		try {
-			await changeSettings(ethereum, tokenPriceService, {} as never, { method: 'popup_ChangeSettings', data: {} } as never, undefined)
+			await changeSettings(ethereum, tokenPriceService, {} as never, { method: 'popup_ChangeSettings', data: { safeAppsCompatibilityMode: false } } as never, undefined)
 		} finally {
 			ethereum.cleanup()
 		}
@@ -776,5 +778,6 @@ describe('refreshHomeData', () => {
 		const homeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage') as { data?: { websiteAccessAddressMetadata?: readonly unknown[] } } | undefined
 		assert.equal(requestMessages.length, 0)
 		assert.equal(homeUpdate?.data?.websiteAccessAddressMetadata?.length, 1)
+		assert.equal(messages.some((message) => message.method === 'safe_apps_compatibility'), false)
 	})
 })
