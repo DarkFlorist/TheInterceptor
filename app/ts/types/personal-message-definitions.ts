@@ -1,3 +1,4 @@
+import { SafeMessageReview } from './safeReview.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBytes32, EthereumTimestamp, LiteralConverterParserFactory, NonHexBigInt, EthereumInput, EthereumQuantity } from './wire-types.js'
 import { RpcNetwork } from './rpc.js'
@@ -402,6 +403,18 @@ const VisualizedPersonalSignRequestEIP712 = funtypes.Intersect(
 	})
 )
 
+const VisualizedPersonalSignRequestSafeMessage = funtypes.Intersect(
+	PersonalSignRequestBase,
+	funtypes.ReadonlyObject({
+		method: EthSignTyped,
+		type: funtypes.Literal('SafeMessage'),
+		message: EnrichedEIP712,
+		messageHash: funtypes.String,
+		domainHash: funtypes.String,
+		review: SafeMessageReview,
+	}),
+)
+
 export type VisualizedPersonalSignRequestPermit = funtypes.Static<typeof VisualizedPersonalSignRequestPermit>
 export const VisualizedPersonalSignRequestPermit = funtypes.Intersect(
 	PersonalSignRequestBase,
@@ -510,6 +523,7 @@ export type VisualizedPersonalSignRequest = funtypes.Static<typeof VisualizedPer
 export const VisualizedPersonalSignRequest = funtypes.Union(
 	VisualizedPersonalSignRequestNotParsed,
 	VisualizedPersonalSignRequestEIP712,
+	VisualizedPersonalSignRequestSafeMessage,
 	VisualizedPersonalSignRequestPermit,
 	VisualizedPersonalSignRequestPermit2,
 	VisualizedPersonalSignRequestSafeTx,

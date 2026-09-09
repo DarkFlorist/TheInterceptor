@@ -180,7 +180,7 @@ export async function validateSafeMessageCoSignature(
 	if (currentCoSignContext === undefined) throw createSafeSignerSelectionFailure('This Gnosis Safe transaction is not eligible for Interceptor co-signing.')
 	if (typeof signerReply !== 'string') throw createSafeOwnerValidationFailure('The signer returned a non-string Gnosis Safe owner signature.')
 	const ownerSignature = await currentCoSignContext.ownerValidator.validateSignature(
-		currentCoSignContext.safeTxHash,
+		currentCoSignContext.signingHash,
 		signerReply,
 		currentCoSignContext.safeSignerAddress,
 	)
@@ -192,10 +192,7 @@ async function getRequiredSafeCoSignContext(
 	flow: SafeMessageCoSignFlow,
 ) {
 	const pending = flow.pending
-	if (
-		pending.transactionOrMessageCreationStatus !== 'Simulated'
-		|| pending.visualizedPersonalSignRequest.type !== 'SafeTx'
-	) return undefined
+	if (pending.transactionOrMessageCreationStatus !== 'Simulated') return undefined
 	const context = await getSafeMessageCoSignContext(ethereum, flow)
 	if (context === undefined) throw createSafeSignerSelectionFailure('This Gnosis Safe transaction is not eligible for Interceptor co-signing.')
 	return context
@@ -281,11 +278,12 @@ async function refreshSafeProposalNonce(
 			to: currentRequest.safeTx.message.to,
 			value: currentRequest.safeTx.message.value,
 			input: currentRequest.safeTx.message.data,
+			operation: currentRequest.safeTx.message.operation,
 			gas: executionGasLimit,
 		},
 		firstUncommittedNonce,
 	)
-	return modifyObject(pending, { safeTransaction: refreshedSafeRequest })
+	return modifyObject(pending, { safeTransaction: { ...refreshedSafeRequest, ...(currentRequest.messageReview !== undefined ? { messageReview: currentRequest.messageReview } : {}) } })
 }
 
 function getSafeSignerFacingRequest(
@@ -293,11 +291,12 @@ function getSafeSignerFacingRequest(
 	coSignContext: SafeMessageCoSignContext | undefined,
 ): SignMessageParams | undefined {
 	if (coSignContext !== undefined) {
+		const { types, primaryType, domain, message } = coSignContext.typedData
 		return {
 			method: 'eth_signTypedData_v4',
 			params: [
 				coSignContext.safeSignerAddress,
-				EIP712Message.parse(safeTxToTypedDataJson(coSignContext.safeTx)),
+				EIP712Message.parse(JSON.stringify({ types, primaryType, domain, message })),
 			],
 		}
 	}

@@ -40,7 +40,6 @@ export async function resolveSafeSignerReply(
 	if (
 		flow?.kind === 'messageCoSign'
 		&& flow.pending.transactionOrMessageCreationStatus === 'Simulated'
-		&& flow.pending.visualizedPersonalSignRequest.type === 'SafeTx'
 	) {
 		try {
 			return { status: 'success', result: await validateSafeMessageCoSignature(ethereum, flow.pending, signerReply) }

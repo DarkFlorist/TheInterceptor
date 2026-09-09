@@ -82,7 +82,7 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		request,
-		transactionParams,
+		{ kind: 'transaction', parameters: transactionParams },
 		false,
 		activeAddress,
 		{ websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
@@ -155,7 +155,7 @@ test('keeps a disconnected Safe proposal reviewable and attaches the owner after
 		input: new Uint8Array(),
 	}, 0n)
 	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
-	const preparation = await prepareSafeTransactionConfirmation(simulator.ethereum, transactionParams, false, activeAddress, undefined)
+	const preparation = await prepareSafeTransactionConfirmation(simulator.ethereum, { kind: 'transaction', parameters: transactionParams }, false, activeAddress, undefined)
 	const website = { websiteOrigin: 'https://disconnected-safe.example', icon: undefined, title: 'Disconnected Safe' }
 	const transactionToSimulate = await modules.formEthSendTransaction(
 		simulator.ethereum,

@@ -1196,7 +1196,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		for (const requestId of [210, 211]) {
 			const reply = messages.find((message) => message.requestId === requestId)
 			assert.equal(reply?.error?.code, 4200)
-			assert.match(reply?.error?.message ?? '', /Safe message signing is not supported/u)
+			assert.match(reply?.error?.message ?? '', /Safe message signing request is not supported/u)
 		}
 		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
 		assert.deepEqual(await getPendingTransactionsAndMessages(), [])
@@ -1342,7 +1342,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		for (const requestId of [213, 214, 215]) {
 			const reply = messages.find((message) => message.requestId === requestId)
 			assert.equal(reply?.error?.code, 4200)
-			assert.match(reply?.error?.message ?? '', /Safe message signing is not supported/u)
+			assert.match(reply?.error?.message ?? '', /Safe message signing request is not supported/u)
 		}
 		const transactionReply = messages.find((message) => message.requestId === 216)
 		assert.equal(transactionReply?.error?.code, 4200)

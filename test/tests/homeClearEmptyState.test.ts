@@ -362,6 +362,7 @@ function installBrowserMock(replyToMessage?: (message: unknown) => unknown) {
 			runtime: {
 				lastError: null,
 				async sendMessage(message: unknown) {
+					// Browser messaging clones serialized records into ordinary objects.
 					sentMessages.push(structuredClone(message))
 					return replyToMessage?.(message)
 				},

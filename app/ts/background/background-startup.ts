@@ -1,3 +1,4 @@
+import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import 'webextension-polyfill'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
@@ -11,7 +12,7 @@ import type { EthereumBlockHeader } from '../types/wire-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { RpcRequestLifecycleCallbacks, SlowRpcRequest } from '../simulation/services/EthereumJSONRpcRequestHandler.js'
 import { createRpcConnectionStatusPublisher, slowRpcRequestKey, type DefinedRpcConnectionStatus, type RpcConnectionStatusChangeMethod } from './rpcSlowRequestTracking.js'
-import { getSocketFromPort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
+import { getSocketFromPort, isTopFramePort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
@@ -39,7 +40,9 @@ import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './sig
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
 
-const websiteTabConnections = new Map<number, TabConnection>()
+const connections = new Map<number, TabConnection>()
+const safeAppsCompatibility = createSafeAppsCompatibilityFeature(connections)
+const websiteTabConnections: WebsiteTabConnections = Object.assign(connections, { lifecycle: safeAppsCompatibility.lifecycle })
 let simulationServicesOwner: SimulationServicesOwner | undefined
 const slowRpcRequests = new Map<string, SlowRpcRequest>()
 // Keep request watermarks across port reconnects so replayed messages are acknowledged without being handled twice. Tab removal clears them.
@@ -145,7 +148,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ resetAct
 	silenceChromeUnCaughtPromise(websitePromise)
 
 	const newConnection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
-	const isTopFrame = port.sender.frameId === undefined || port.sender.frameId === 0
+	const isTopFrame = isTopFramePort(port)
 	let connectionInitializationPromise: ReturnType<typeof waitForStartup> | undefined
 	const getConnectionInitializationPromise = () => {
 		if (connectionInitializationPromise === undefined) throw new Error('Content script connection initialization did not start')
@@ -272,6 +275,7 @@ async function startup() {
 	await tabStateInitializationPromise
 	await migrateAddressBook()
 	await migrateWebsiteAccess()
+	await initializeSafeAppsCompatibility(safeAppsCompatibility).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	await initializePopupRefreshGeneration()
 	bumpPopupRefreshGeneration()
 	const settings = await getSettings()
