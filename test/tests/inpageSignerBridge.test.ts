@@ -3256,6 +3256,31 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
+	test('does not invoke an accessor-backed window.web3 compatibility shim', async () => {
+		let connectedToSigner = false
+		let web3GetterCalls = 0
+		const { fakeWindow } = createFakeWindow({
+			onConnectedToSignerRequest: () => {
+				connectedToSigner = true
+			},
+		})
+		Object.defineProperty(fakeWindow, 'web3', {
+			configurable: true,
+			enumerable: true,
+			get: () => {
+				web3GetterCalls++
+				return { currentProvider: fakeWindow.ethereum }
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?accessor-backed-web3-compatibility', async () => {
+			await waitFor(() => connectedToSigner)
+			assert.equal(web3GetterCalls, 0)
+			const descriptor = Object.getOwnPropertyDescriptor(fakeWindow, 'web3')
+			assert.equal(descriptor !== undefined && 'value' in descriptor, true)
+		})
+	})
+
 	test('skips non-configurable accessor compatibility arrays without reading descriptor value', async () => {
 		let connectedToSigner = false
 		const { fakeWindow } = createFakeWindow({
