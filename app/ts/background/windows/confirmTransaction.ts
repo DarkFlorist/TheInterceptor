@@ -1,3 +1,6 @@
+import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
+import { SafeMessage } from '../../safe/safeMessage.js'
+import { isSafeMessageCoSignRequest } from '../../safe/safeRequestPolicy.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Balance, getSimulatedTransactionCount, simulateEstimateGas } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { simulatePersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
@@ -38,7 +41,7 @@ import { identifyAddress } from '../metadataUtils.js'
 import { resolveInsufficientBalanceMessage } from '../../utils/insufficientBalance.js'
 import { prepareSafeTransactionConfirmation } from '../safeTransactionConfirmation.js'
 import { createSafeMessageCoSignSnapshot, getPendingSafeSignerAddress, getSafeSignerMismatchApprovalStatus, isExpectedSafeMessageCoSignSnapshotFailure, isSafeMessageAccountMismatchFailure, isSafeSignerSelectionFailure, resolveSafeConfirmation, SAFE_SIGNER_SELECTION_ERROR_CODE, type RefreshedSafeSignerSelection } from '../safeConfirmationResolver.js'
-import { refreshAndPersistSafeSignerSelection } from '../safeSignerSelectionRefresh.js'
+import { createSafeOffChainMessageSnapshot, refreshAndPersistSafeSignerSelection } from '../safeSignerSelectionRefresh.js'
 import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
@@ -624,12 +627,13 @@ export async function openConfirmTransactionDialogForMessage(
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	request: InterceptedRequest,
-	transactionParams: SignMessageParams,
+	confirmation: MessageConfirmationRequest,
 	simulationMode: boolean,
 	activeAddress: bigint | undefined,
 	website: Website,
 	websiteTabConnections: WebsiteTabConnections,
 ) {
+	const transactionParams = confirmation.parameters
 	if (activeAddress === undefined) return { type: 'result' as const, ...ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS }
 	const activeAddressEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereumClientService.getChainId()))
 		.find((entry) => entry.address === activeAddress)
@@ -645,6 +649,8 @@ export async function openConfirmTransactionDialogForMessage(
 	const uniqueRequestIdentifierString = getUniqueRequestIdentifierString(request.uniqueRequestIdentifier)
 	const messageIdentifier = EthereumQuantity.parse(keccak256(stringToBytes(uniqueRequestIdentifierString)))
 	const created = new Date()
+	const safeMessage = transactionParams.method === 'eth_signTypedData_v4' && confirmation.review !== undefined
+		? SafeMessage.parse({ typedData: transactionParams.params[1], review: confirmation.review }) : undefined
 	const signedMessageTransaction = {
 		website,
 		created,
@@ -654,16 +660,19 @@ export async function openConfirmTransactionDialogForMessage(
 		simulationMode,
 		request,
 		messageIdentifier,
+		...(safeMessage === undefined ? {} : { safeMessageReview: safeMessage.review }),
 	}
 	try {
 		const visualizedPersonalSignRequest = await craftPersonalSignPopupMessage(ethereumClientService, undefined, signedMessageTransaction, ethereumClientService.getRpcEntry())
 		const walletSignerAddress = getWalletSelectedAccount(signerTabState)
-		let safeMessageCoSignSnapshot: Awaited<ReturnType<typeof createSafeMessageCoSignSnapshot>> | undefined
+		let safeMessageCoSignSnapshot: Awaited<ReturnType<typeof createSafeMessageCoSignSnapshot | typeof createSafeOffChainMessageSnapshot>> | undefined
 			let safeMessageValidationError: string | undefined
 			let safeMessageValidationDetails: SafeSignerErrorDetails | undefined
-		if (!simulationMode && activeAddressEntry?.type === 'safe' && visualizedPersonalSignRequest.type === 'SafeTx') {
+		if (!simulationMode && activeAddressEntry?.type === 'safe' && (visualizedPersonalSignRequest.type === 'SafeTx' || isSafeMessageCoSignRequest(transactionParams, activeAddress, ethereumClientService.getChainId(), confirmation.review))) {
 				try {
-					safeMessageCoSignSnapshot = await createSafeMessageCoSignSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, visualizedPersonalSignRequest.message)
+					safeMessageCoSignSnapshot = visualizedPersonalSignRequest.type === 'SafeTx'
+						? await createSafeMessageCoSignSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, visualizedPersonalSignRequest.message)
+						: await createSafeOffChainMessageSnapshot(ethereumClientService, activeAddress, walletSignerAddress, transactionParams, safeMessage?.review)
 				} catch (error) {
 					if (!isExpectedSafeMessageCoSignSnapshotFailure(error)) throw error
 					safeMessageValidationError = getErrorMessage(error) ?? 'The Gnosis Safe transaction could not be validated.'
@@ -726,7 +735,7 @@ export async function openConfirmTransactionDialogForTransaction(
 	ethereumClientService: EthereumClientService,
 	tokenPriceService: TokenPriceService,
 	request: InterceptedRequest,
-	transactionParams: SendTransactionParams | SendRawTransactionParams,
+	confirmation: TransactionConfirmationRequest,
 	simulationMode: boolean,
 	activeAddress: bigint | undefined,
 	website: Website,
@@ -740,7 +749,7 @@ export async function openConfirmTransactionDialogForTransaction(
 	const walletSignerAddress = getWalletSelectedAccount(signerTabState)
 	const safePreparation = await prepareSafeTransactionConfirmation(
 		ethereumClientService,
-		transactionParams,
+		confirmation,
 		simulationMode,
 		activeAddress,
 		walletSignerAddress,

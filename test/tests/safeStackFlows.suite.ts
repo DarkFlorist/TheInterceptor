@@ -347,7 +347,7 @@ test('extension Safe stack import reconciles executed transactions and rejects a
 	}]))
 	assert.equal(delegateCallReply.ok, false)
 	if (delegateCallReply.ok) throw new Error('Expected delegatecall Safe stack failure')
-	assert.match(delegateCallReply.message, /CALL operations only/u)
+	assert.match(delegateCallReply.message, /DELEGATECALL is supported only/u)
 })
 
 test('extension Safe stack export rejects an empty selected-chain stack', async () => {

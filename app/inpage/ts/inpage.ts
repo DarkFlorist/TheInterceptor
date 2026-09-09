@@ -1,3 +1,196 @@
+const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
+const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
+
+type SafeAppsWindow = {
+	readonly location: { readonly origin: string }
+	addEventListener(type: 'message', listener: (event: Event) => void): void
+	removeEventListener(type: 'message', listener: (event: Event) => void): void
+	postMessage(message: unknown, targetOrigin: string): void
+}
+
+type SafeAppsRequest = {
+	readonly id: string
+	readonly method: string
+	readonly params?: unknown
+}
+
+type ParsedSafeAppsRequest =
+	| { readonly id: string, readonly request: SafeAppsRequest }
+	| { readonly id: string, readonly error: string }
+
+type SafeAppsMessageEvent = { readonly data: unknown, readonly origin: string, readonly source: unknown }
+
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null
+
+type SafeAppsRequestCandidate = { readonly id?: unknown, readonly method?: unknown, readonly env?: unknown, readonly params?: unknown }
+type SafeAppsEnvironmentCandidate = { readonly sdkVersion?: unknown }
+type SafeAppsCompatibilityCandidate = { readonly enabled?: unknown, readonly canRequestAccess?: unknown }
+type SafeAppsCommandCandidate = { readonly kind?: unknown, readonly value?: unknown, readonly method?: unknown, readonly params?: unknown, readonly mapResult?: unknown, readonly message?: unknown, readonly isTypedData?: unknown, readonly safeAddress?: unknown, readonly chainId?: unknown, readonly safeRequestContext?: unknown }
+
+const isSafeAppsRequestCandidate = (value: unknown): value is SafeAppsRequestCandidate => isRecord(value)
+const isSafeAppsEnvironmentCandidate = (value: unknown): value is SafeAppsEnvironmentCandidate => isRecord(value)
+const isSafeAppsCompatibilityCandidate = (value: unknown): value is SafeAppsCompatibilityCandidate => isRecord(value)
+const isSafeAppsCommandCandidate = (value: unknown): value is SafeAppsCommandCandidate => isRecord(value)
+
+function parseSafeAppsMessageEvent(event: Event): SafeAppsMessageEvent | undefined {
+	if (!('data' in event) || !('origin' in event) || !('source' in event) || typeof event.origin !== 'string') return undefined
+	return { data: event.data, origin: event.origin, source: event.source }
+}
+
+function parseSafeAppsRequest(data: unknown): ParsedSafeAppsRequest | undefined {
+	if (!isSafeAppsRequestCandidate(data) || typeof data.id !== 'string') return undefined
+	// The SDK envelope distinguishes Safe Apps requests from unrelated page postMessage protocols.
+	if (!isSafeAppsEnvironmentCandidate(data.env)) return undefined
+	if (typeof data.env.sdkVersion !== 'string' || !/^[1-9][0-9]*\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/.test(data.env.sdkVersion)) {
+		return { id: data.id, error: 'Safe Apps env.sdkVersion must be a supported semantic version.' }
+	}
+	if (typeof data.method !== 'string') return { id: data.id, error: 'Safe Apps method must be a string.' }
+	return { id: data.id, request: { id: data.id, method: data.method, ...(data.params === undefined ? {} : { params: data.params }) } }
+}
+
+function parseSafeAppsCompatibility(value: unknown) {
+	if (!isSafeAppsCompatibilityCandidate(value) || typeof value.enabled !== 'boolean') return undefined
+	if (value.canRequestAccess !== undefined && typeof value.canRequestAccess !== 'boolean') return undefined
+	return { enabled: value.enabled, canRequestAccess: value.canRequestAccess === true }
+}
+
+async function executeSafeAppsCommand(command: unknown, requestEthereum: EthereumRequest, requestSafeApps: (request: Pick<SafeAppsRequest, 'method' | 'params'>) => Promise<unknown>): Promise<unknown> {
+	if (!isSafeAppsCommandCandidate(command) || (command.kind !== 'result' && command.kind !== 'ethereumRequest')) throw new Error('Interceptor returned an invalid Safe Apps command.')
+	if (command.kind === 'result') return command.value
+	if (typeof command.method !== 'string' || !Array.isArray(command.params) || (command.mapResult !== 'passthrough' && command.mapResult !== 'safeTxHash' && command.mapResult !== 'safeMessage')) throw new Error('Interceptor returned an invalid Safe Apps Ethereum request.')
+	if (command.mapResult === 'safeMessage' && (typeof command.message !== 'string' || typeof command.safeAddress !== 'string' || typeof command.chainId !== 'string')) throw new Error('Interceptor returned an invalid Safe message request.')
+	const result = command.safeRequestContext === undefined
+		? await requestEthereum({ method: command.method, params: command.params })
+		: await requestSafeApps({ method: 'execute', params: command })
+	if (command.mapResult === 'passthrough') return result
+	if (command.mapResult === 'safeMessage') {
+		if (typeof result !== 'string' || !/^0x[0-9a-f]{130}$/i.test(result)) throw new Error('Interceptor returned an invalid Safe owner signature.')
+		const submitted = await requestSafeApps({ method: 'submitOffChainMessage', params: { message: command.message, signature: result, safeAddress: command.safeAddress, chainId: command.chainId, ...(command.isTypedData === true ? { isTypedData: true } : {}) } })
+		if (!isSafeAppsCommandCandidate(submitted) || submitted.kind !== 'result') throw new Error('Interceptor returned an invalid Safe message submission response.')
+		return submitted.value
+	}
+	if (typeof result !== 'string') throw new Error('Interceptor returned an invalid transaction hash.')
+	return { safeTxHash: result }
+}
+
+// Retain read-only discovery while ineligible and reissue it after eligibility changes so stale account data is never published.
+const isSafeAppsDiscoveryRequest = (request: ParsedSafeAppsRequest) => 'request' in request && (request.request.method === 'getSafeInfo' || request.request.method === 'getChainInfo' || request.request.method === 'getEnvironmentInfo')
+
+function createSafeAppsRequestHandler(requestBackground: (request: unknown) => Promise<unknown>, requestEthereum: EthereumRequest) {
+	let offChainSigning = true
+	return async (request: Pick<SafeAppsRequest, 'method' | 'params'>) => {
+		const signingRequest = request.method === 'signMessage' || request.method === 'signTypedMessage'
+		const command = await requestBackground({ method: request.method, ...(request.params === undefined ? {} : { params: request.params }), ...(signingRequest ? { offChainSigning } : {}) })
+		const result = await executeSafeAppsCommand(command, requestEthereum, requestBackground)
+		if (request.method === 'rpcCall' && isRecord(request.params)) {
+			const { call } = request.params
+			if (call === 'safe_setSettings') {
+				if (!isRecord(result)) throw new Error('Interceptor returned invalid Safe Apps settings.')
+				const { offChainSigning: updated } = result
+				if (typeof updated !== 'boolean') throw new Error('Interceptor returned invalid Safe Apps settings.')
+				offChainSigning = updated
+			}
+		}
+		return result
+	}
+}
+
+function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (request: Pick<SafeAppsRequest, 'method' | 'params'>) => Promise<unknown>, requestAccess: () => Promise<void>) {
+	let enabled = false
+	let enablementGeneration = 0
+	let canRequestAccess = false
+	let accessRequested = false
+	let accessFailure: string | undefined
+	const pendingRequests: { readonly parsedRequest: ParsedSafeAppsRequest, readonly origin: string }[] = []
+	const answerRequest = (parsedRequest: ParsedSafeAppsRequest, origin: string) => {
+		if ('error' in parsedRequest) {
+			windowObject.postMessage({ id: parsedRequest.id, success: false, error: parsedRequest.error, version: SAFE_APPS_RESPONSE_VERSION }, origin)
+			return
+		}
+		const request = parsedRequest.request
+		const requestEnablementGeneration = enablementGeneration
+		const isCurrentResponse = () => {
+			if (enabled && requestEnablementGeneration === enablementGeneration) return true
+			// Startup queries must survive a temporary loss of eligibility, but their old account data must never be published.
+			if (isSafeAppsDiscoveryRequest(parsedRequest)) {
+				if (enabled) answerRequest(parsedRequest, origin)
+				else if (pendingRequests.length < SAFE_APPS_PENDING_REQUEST_LIMIT) {
+					pendingRequests.push({ parsedRequest, origin })
+					requestAccessForDiscovery()
+				}
+			}
+			return false
+		}
+		void requestSafeApps(request).then(
+			(data) => {
+				if (!isCurrentResponse()) return
+				windowObject.postMessage({ id: request.id, success: true, data, version: SAFE_APPS_RESPONSE_VERSION }, origin)
+			},
+			(error: unknown) => {
+				if (!isCurrentResponse()) return
+				windowObject.postMessage({ id: request.id, success: false, error: error instanceof Error ? error.message : 'Safe Apps request failed.', version: SAFE_APPS_RESPONSE_VERSION }, origin)
+			},
+		)
+	}
+	const rejectPendingDiscovery = (message: string) => {
+		for (const { parsedRequest, origin } of pendingRequests.splice(0)) {
+			windowObject.postMessage({ id: parsedRequest.id, success: false, error: message, version: SAFE_APPS_RESPONSE_VERSION }, origin)
+		}
+	}
+	const requestAccessForDiscovery = () => {
+		if (enabled || !canRequestAccess || !pendingRequests.some(({ parsedRequest }) => isSafeAppsDiscoveryRequest(parsedRequest))) return
+		if (accessFailure !== undefined) {
+			rejectPendingDiscovery(accessFailure)
+			return
+		}
+		if (accessRequested) return
+		accessRequested = true
+		void requestAccess().catch((error: unknown) => {
+			accessFailure = error instanceof Error ? error.message : 'Safe Apps connection failed.'
+			if (!canRequestAccess || enabled) return
+			rejectPendingDiscovery(accessFailure)
+		})
+	}
+	const onMessage = (event: Event) => {
+		const messageEvent = parseSafeAppsMessageEvent(event)
+		if (messageEvent === undefined) return
+		if (messageEvent.source !== windowObject || messageEvent.origin !== windowObject.location.origin) return
+		const parsedRequest = parseSafeAppsRequest(messageEvent.data)
+		if (parsedRequest === undefined) return
+		if (!enabled && isSafeAppsDiscoveryRequest(parsedRequest)) {
+			if (pendingRequests.length >= SAFE_APPS_PENDING_REQUEST_LIMIT) {
+				if (enabled === false && !canRequestAccess) return
+				windowObject.postMessage({ id: parsedRequest.id, success: false, error: 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.', version: SAFE_APPS_RESPONSE_VERSION }, messageEvent.origin)
+				return
+			}
+			pendingRequests.push({ parsedRequest, origin: messageEvent.origin })
+			requestAccessForDiscovery()
+			return
+		}
+		if (enabled) answerRequest(parsedRequest, messageEvent.origin)
+	}
+	windowObject.addEventListener('message', onMessage)
+	return {
+		setEnabled(nextEnabled: boolean, nextCanRequestAccess = false) {
+			canRequestAccess = nextCanRequestAccess
+			if (enabled !== nextEnabled) enablementGeneration += 1
+			enabled = nextEnabled
+			const queuedRequests = pendingRequests.splice(0)
+			if (nextEnabled) {
+				for (const { parsedRequest, origin } of queuedRequests) answerRequest(parsedRequest, origin)
+			} else {
+				// Never defer signing or transaction requests across a disabled state.
+				pendingRequests.push(...queuedRequests.filter(({ parsedRequest }) => isSafeAppsDiscoveryRequest(parsedRequest)))
+				requestAccessForDiscovery()
+			}
+		},
+		dispose() {
+			pendingRequests.splice(0)
+			windowObject.removeEventListener('message', onMessage)
+		},
+	}
+}
+
 const METAMASK_ERROR_USER_REJECTED_REQUEST = 4001
 const METAMASK_ERROR_PROVIDER_DISCONNECTED = 4900
 const METAMASK_ERROR_BLANKET_ERROR = -32603
@@ -66,6 +259,7 @@ const INTERNAL_BACKGROUND_METHODS = [
 	'connected_to_signer',
 	'eth_accounts_reply',
 	'InterceptorError',
+	'safe_apps_request',
 	'signer_chainChanged',
 	'signer_reply',
 	'wallet_switchEthereumChain_reply',
@@ -520,6 +714,17 @@ class InterceptorMessageListener {
 	private connected = false
 	private requestId = 0
 	private metamaskCompatibilityMode = false
+	// The page owns SDK settings; every signing request carries its mode across background port recreation.
+	private readonly safeAppsBridge = createSafeAppsBridge(inpageWindow, createSafeAppsRequestHandler(
+		async (request) => await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [request] }),
+		async (request) => await this.WindowEthereumRequest(request),
+	), async () => {
+		// Restore persisted access after reload before considering an interactive wallet connection.
+		const accounts = await this.WindowEthereumRequest({ method: 'eth_accounts' })
+		if (!Array.isArray(accounts) || accounts.length === 0) await this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
+		// Recheck Safe eligibility after the ordinary wallet/site approval flow completes.
+		await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [{ method: 'getEnvironmentInfo' }] })
+	})
 	private signerName: Signer = 'NoSigner'
 	private signerWindowEthereumProvider: WindowEthereum | undefined = undefined
 	private signerWindowEthereumRequest: EthereumRequest | undefined = undefined
@@ -1394,6 +1599,11 @@ class InterceptorMessageListener {
 					}
 					return
 				}
+				case 'safe_apps_compatibility': {
+					const safeAppsCompatibility = parseSafeAppsCompatibility(replyRequest.result)
+					if (safeAppsCompatibility !== undefined) this.safeAppsBridge.setEnabled(safeAppsCompatibility.enabled, safeAppsCompatibility.canRequestAccess)
+					return
+				}
 				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner()
 				case 'request_signer_to_eth_accounts': return await this.getAccountsFromSigner()
 				case 'request_signer_to_wallet_switchEthereumChain': return await this.requestChangeChainFromSigner(replyRequest.result as string)
@@ -1594,7 +1804,11 @@ class InterceptorMessageListener {
 			const connection = await connectToSigner()
 			if (selectionGeneration !== this.signerSelectionGeneration) return
 			this.enableMetamaskCompatibilityMode(connection.metamaskCompatibilityMode)
-			if (signerName !== 'NoSigner') await this.requestChainIdFromSigner()
+			// Account replies only require confirmed provider identity; chain initialization must not hold them back.
+			if (signerName !== 'NoSigner') void this.requestChainIdFromSigner().catch((error: unknown) => {
+				// Use the same discovery diagnostic helper as provider selection and account initialization.
+				this.reportSignerDiscoveryError('initialize signer chain', error)
+			})
 		}
 		// A fresh status report must not wait behind an older bridge request whose reply may have been lost during a background-worker or content-port replacement. The generation checks on both sides make late replies from superseded reports harmless.
 		const transition = completeTransition().catch((error: unknown) => {

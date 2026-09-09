@@ -201,10 +201,10 @@ describe('settings import', () => {
 		assert.deepEqual(await getPage(), { page: 'Settings' })
 	})
 
-	test('round-trips the independent signing Safe selection in version 1.5 exports', async () => {
+	test('round-trips Safe settings in version 1.6 exports', async () => {
 		const signingSafeAddress = 0x4444444444444444444444444444444444444444n
 		const signerAddress = 0x4545454545454545454545454545454545454545n
-		const { changeSimulationMode, exportSettingsAndAddressBook, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
+		const { changeSimulationMode, exportSettingsAndAddressBook, getSafeAppsCompatibilityMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference, setSafeAppsCompatibilityMode } = await settingsModulePromise
 		const { updateUserAddressBookEntries, getTabState } = await storageVariablesModulePromise
 		const { getSigningAddressSelectionTransition } = await signingAddressSelectionModulePromise
 		await updateUserAddressBookEntries(() => [{
@@ -222,17 +222,20 @@ describe('settings import', () => {
 			activeSigningSafeAddress: signingSafeAddress,
 		})
 		await rememberSigningAddressPreference({ signerAddress, selection: 'safe', safeAddress: signingSafeAddress, chainId: testRpcNetwork.chainId })
+		await setSafeAppsCompatibilityMode(true)
 
 		const exportedSettings = await exportSettingsAndAddressBook()
-		assert.equal(exportedSettings.version, '1.5')
-		if (exportedSettings.version !== '1.5') throw new Error('Expected current settings export version')
+		assert.equal(exportedSettings.version, '1.6')
+		if (exportedSettings.version !== '1.6') throw new Error('Expected current settings export version')
 		assert.equal(exportedSettings.settings.activeSigningSafeAddress, signingSafeAddress)
 		assert.deepEqual(exportedSettings.settings.signingAddressPreferences, [{ signerAddress, selection: 'safe', safeAddress: signingSafeAddress, chainId: testRpcNetwork.chainId }])
+		assert.equal(exportedSettings.settings.safeAppsCompatibilityMode, true)
 
 		browserMock.reset()
 		await importSettingsAndAddressBook(exportedSettings)
 		const importedSettings = await getSettings()
 		assert.equal(importedSettings.activeSigningSafeAddress, signingSafeAddress)
+		assert.equal(await getSafeAppsCompatibilityMode(), true)
 		assert.deepEqual(await getSigningAddressPreferences(), exportedSettings.settings.signingAddressPreferences)
 		const previousTabState = await getTabState(1)
 		const transition = await getSigningAddressSelectionTransition(importedSettings, previousTabState, {
@@ -318,6 +321,16 @@ describe('settings import', () => {
 		})
 		assert.equal(transition.shouldActivate, true)
 		assert.deepEqual(transition.selection, { type: 'signer', address: signerAddress })
+	})
+
+	test('keeps experimental Safe Apps compatibility disabled for legacy imports', async () => {
+		const { getSafeAppsCompatibilityMode, importSettingsAndAddressBook, setSafeAppsCompatibilityMode } = await settingsModulePromise
+		assert.equal(await getSafeAppsCompatibilityMode(), false)
+		await setSafeAppsCompatibilityMode(true)
+
+		await importSettingsAndAddressBook(buildVersion14Import(false, false))
+
+		assert.equal(await getSafeAppsCompatibilityMode(), false)
 	})
 
 	test('serializes legacy preference clearing after an in-flight preference write', async () => {

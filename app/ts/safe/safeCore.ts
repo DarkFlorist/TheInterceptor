@@ -1,3 +1,4 @@
+import { assertSafeDelegateCall, validateSafeDelegateCode } from './safeDelegateCalls.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { SafeTx } from '../types/personal-message-definitions.js'
 import type { SafeOwnerSignature, SafeTransactionSigningRequest, SafeTransactionStack } from '../types/safeTypes.js'
@@ -250,7 +251,7 @@ export function assertUniqueSafeTransactionStacks(stacks: readonly SafeTransacti
 
 export function assertInterceptorSafeTransactionPolicy(safeTx: SafeTx) {
 	if (safeTx.message.operation !== 0n) {
-		throw createSafeContractValidationFailure('Interceptor Gnosis Safe stacks support CALL operations only. DELEGATECALL transactions cannot be signed.')
+		assertSafeDelegateCall(safeTx)
 	}
 	if (
 		safeTx.message.safeTxGas !== 0n
@@ -267,12 +268,13 @@ export function createSafeTx(chainId: bigint, safeAddress: EthereumAddress, tran
 	readonly to: EthereumAddress
 	readonly value: bigint
 	readonly input: Uint8Array
+	readonly operation?: bigint
 }, nonce: bigint): SafeTx {
 	return createSafeTxFromMessage(chainId, safeAddress, {
 		to: transaction.to,
 		value: transaction.value,
 		data: transaction.input,
-		operation: 0n,
+		operation: transaction.operation ?? 0n,
 		safeTxGas: 0n,
 		baseGas: 0n,
 		gasPrice: 0n,
@@ -332,6 +334,7 @@ async function validateSafeTransactionForSigningAtBlock(
 	expectedSafeVersion?: string,
 ) {
 	assertSafeTransactionContext(ethereum, safeAddress, safeTx)
+	await validateSafeDelegateCode(ethereum, safeTx, blockNumber)
 	const { snapshot, ownerValidator } = await validateSafeOwnerIsEoaAtBlock(ethereum, safeAddress, safeSignerAddress, blockNumber)
 	const context = validateSafeTransactionState(snapshot.state, safeTx, ownerValidator, expectedSafeVersion)
 	return await validateSafeTransactionHashAtBlock(ethereum, safeAddress, safeTx, blockNumber, context)
@@ -345,6 +348,7 @@ async function validateSafeTransactionForReviewAtBlock(
 	expectedSafeVersion?: string,
 ) {
 	assertSafeTransactionContext(ethereum, safeAddress, safeTx)
+	await validateSafeDelegateCode(ethereum, safeTx, blockNumber)
 	const state = await getSafeContractStateAtBlock(ethereum, safeAddress, blockNumber)
 	const context = validateSafeTransactionState(state, safeTx, createSafeOwnerValidator(ethereum, safeAddress, { blockNumber, state }), expectedSafeVersion)
 	return await validateSafeTransactionHashAtBlock(ethereum, safeAddress, safeTx, blockNumber, context)
@@ -394,7 +398,7 @@ async function createSafeTransactionRequest(
 	ethereum: EthereumClientService,
 	safeAddress: EthereumAddress,
 	safeSignerAddress: EthereumAddress | undefined,
-	transaction: { readonly to: EthereumAddress, readonly value: bigint, readonly input: Uint8Array, readonly gas: bigint },
+	transaction: { readonly to: EthereumAddress, readonly value: bigint, readonly input: Uint8Array, readonly gas: bigint, readonly operation?: bigint },
 	nonce: bigint,
 	validateOwner: boolean,
 ): Promise<SafeTransactionSigningRequest> {
@@ -423,7 +427,7 @@ export async function createSafeTransactionSigningRequest(
 	ethereum: EthereumClientService,
 	safeAddress: EthereumAddress,
 	safeSignerAddress: EthereumAddress,
-	transaction: { readonly to: EthereumAddress, readonly value: bigint, readonly input: Uint8Array, readonly gas: bigint },
+	transaction: { readonly to: EthereumAddress, readonly value: bigint, readonly input: Uint8Array, readonly gas: bigint, readonly operation?: bigint },
 	nonce: bigint,
 ): Promise<SafeTransactionSigningRequest> {
 	return await createSafeTransactionRequest(ethereum, safeAddress, safeSignerAddress, transaction, nonce, true)
@@ -433,7 +437,7 @@ export async function createSafeTransactionReviewRequest(
 	ethereum: EthereumClientService,
 	safeAddress: EthereumAddress,
 	safeSignerAddress: EthereumAddress | undefined,
-	transaction: { readonly to: EthereumAddress, readonly value: bigint, readonly input: Uint8Array, readonly gas: bigint },
+	transaction: { readonly to: EthereumAddress, readonly value: bigint, readonly input: Uint8Array, readonly gas: bigint, readonly operation?: bigint },
 	nonce: bigint,
 ): Promise<SafeTransactionSigningRequest> {
 	return await createSafeTransactionRequest(ethereum, safeAddress, safeSignerAddress, transaction, nonce, false)

@@ -2,11 +2,11 @@ import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply, WatchAs
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
-import { getSocketFromPort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { getPendingSignerChainChangeTokenForCallback, isPendingSignerChainChangeReply, resolveSignerChainChange } from './windows/changeChain.js'
-import { type ApprovalState, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
+import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { reportUnexpectedError } from '../utils/errors.js'
@@ -21,6 +21,9 @@ import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from './signingAddressSelection.js'
 import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
+import { getActiveAddressEntryForChain } from './metadataUtils.js'
+import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
+import type { ApprovalState } from './websiteAccessPolicy.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
@@ -33,7 +36,24 @@ function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, po
 }
 
 async function getConnectedToSignerResult() {
-	return { type: 'result' as const, method: 'connected_to_signer' as const, result: { metamaskCompatibilityMode: await getMetamaskCompatibilityMode() } }
+	const metamaskCompatibilityMode = await getMetamaskCompatibilityMode()
+	return {
+		type: 'result' as const,
+		method: 'connected_to_signer' as const,
+		result: {
+			metamaskCompatibilityMode,
+		},
+	}
+}
+
+function getWebsiteConnectionForPort(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port) {
+	const socket = getSocketFromPort(port)
+	if (socket === undefined) return undefined
+	return Object.values(websiteTabConnections.get(socket.tabId)?.connections ?? {}).find((connection) => connection.port === port)
+}
+
+function isApprovedWebsitePort(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port) {
+	return getWebsiteConnectionForPort(websiteTabConnections, port)?.approved === true
 }
 
 function hasSignerCallbackAccess(websiteTabConnections: WebsiteTabConnections, tabId: number, approval: ApprovalState) {
@@ -75,6 +95,7 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 				},
 			})
 			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
+			notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.signerAccountsChanged, signerStateToken.socket)
 			return returnValue
 		}
 		const signerAccounts = signerAccountsReply.accounts
@@ -120,6 +141,7 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 				signerProviderGeneration: signerStateToken.signerProviderGeneration,
 			},
 		})
+		notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.signerAccountsChanged, signerStateToken.socket)
 		return returnValue
 	})
 }
@@ -201,17 +223,16 @@ export async function walletSwitchEthereumChainReply(ethereum: EthereumClientSer
 	})
 }
 
-export async function connectedToSigner(_ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
+export async function connectedToSigner(_ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined) {
 	const [signerConnected, signerName, signerProviderGeneration] = ConnectedToSigner.parse(request).params
-	// MV2 and test ports may omit frameId. Treat those as the top frame, while preventing an unapproved MV3 child frame from taking ownership of tab-wide signer state.
-	const isTopFrame = port.sender?.frameId === undefined || port.sender.frameId === 0
-	if (approval !== 'hasAccess' && !isTopFrame) {
-		return await getConnectedToSignerResult()
-	}
+	const isTopFrame = isTopFramePort(port)
 	const socket = getSocketFromPort(port)
 	const requestSocket = request.uniqueRequestIdentifier.requestSocket
 	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName) return await getConnectedToSignerResult()
-	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
+	// Persisted origin approval must not let a newly connected child frame claim tab-wide signer ownership or bootstrap address access.
+	if (!isTopFrame && !isApprovedWebsitePort(websiteTabConnections, port)) return await getConnectedToSignerResult()
+	let shouldRefreshSignerAccounts = false
+	const result = await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
 		const tabConnection = websiteTabConnections.get(socket.tabId)
 		if (!isCurrentWebsiteConnection(tabConnection, socket, port) || tabConnection?.signerStateOwner?.connectionName !== socket.connectionName) {
 			return await getConnectedToSignerResult()
@@ -247,8 +268,28 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 				sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_chainId', result: [] })
 			}
 		}
+		const settings = await getSettings()
+		// Restore cached address consent for ordinary EOAs as well as Safes, even without lifecycle observers.
+		if (isTopFrame && approval === 'hasAccess' && activeAddress !== undefined) {
+			const activeAddressEntry = await getActiveAddressEntryForChain(activeAddress, settings.activeRpcNetwork.chainId)
+			const connection = getWebsiteConnectionForPort(websiteTabConnections, port)
+			if (connection !== undefined) {
+				verifyAccess(websiteTabConnections, socket, false, connection.websiteOrigin, activeAddressEntry, settings)
+			}
+		}
+		// A reload clears signer accounts. Refresh approved sites independently of Safe consent; publication still checks address access.
+		shouldRefreshSignerAccounts = isTopFrame && approval === 'hasAccess' && signerConnected && !signerMissing && !settings.simulationMode
 		return await getConnectedToSignerResult()
 	})
+	// Passive account refresh is core signer behavior, independent of Safe Apps compatibility.
+	const currentSigner = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+	const accountsRequested = shouldRefreshSignerAccounts
+		&& currentSigner?.port === port
+		&& currentSigner.signerProviderGeneration === signerProviderGeneration
+		&& sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_to_eth_accounts', result: [] })
+	// Observers see the completed signer handshake without delaying it.
+	notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.signerConnected, socket, accountsRequested)
+	return result
 }
 
 export async function signerReply(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {
