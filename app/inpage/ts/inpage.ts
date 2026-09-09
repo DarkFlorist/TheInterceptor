@@ -682,6 +682,7 @@ function setCompatibilityProperty(target: object, property: PropertyKey, value: 
 function getLegacyWeb3WithoutInvokingAccessors(target: InpageWindow): LegacyWeb3 | undefined {
 	const descriptor = Object.getOwnPropertyDescriptor(target, 'web3')
 	if (descriptor === undefined || !('value' in descriptor) || typeof descriptor.value !== 'object' || descriptor.value === null) return undefined
+	if (Object.getOwnPropertyDescriptor(descriptor.value, '__isMetaMaskShim__')?.value === true) return undefined
 	return descriptor.value
 }
 
