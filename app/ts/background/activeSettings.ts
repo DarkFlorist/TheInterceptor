@@ -1,3 +1,4 @@
+import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { ResetSimulationServices, SimulationServices } from '../simulation/serviceLifecycle.js'
@@ -111,15 +112,22 @@ async function runActiveSettingsChange(
 			const updatedSettings = await getSettings()
 			const { chainChanged: rpcChainChanged, endpointChanged: rpcEndpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
 			try {
-				// A signer-only chain has no provider to install; simulation is disabled until a configured endpoint is selected.
-				if (rpcEndpointChanged && change.rpcNetwork?.httpsRpc !== undefined) activeServices = resetSimulationServices(change.rpcNetwork)
-				if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig()
-				// Publish settings exactly once when committed; access reconciliation later publishes account and icon updates.
-				await sendPopupMessageToOpenWindows({
-					method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration: bumpPopupRefreshGeneration(),
-				})
+				try {
+					// The preference belongs to the committed selection, even if later provider preparation fails.
+					if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)
+					// A signer-only chain has no provider to install; simulation is disabled until a configured endpoint is selected.
+					if (rpcEndpointChanged && change.rpcNetwork?.httpsRpc !== undefined) activeServices = resetSimulationServices(change.rpcNetwork)
+					if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig()
+				} finally {
+					// Publish committed settings even if installing their services fails.
+					await sendPopupMessageToOpenWindows({
+						method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration: bumpPopupRefreshGeneration(),
+					})
+				}
+			} catch (error) {
+				await publishFailedPopupVisualisation()
+				throw error
 			} finally {
-				// Persisted settings still need access reconciliation if provider preparation or publication fails.
 				accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, updatedSettings)
 			}
 			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
@@ -132,7 +140,6 @@ async function runActiveSettingsChange(
 				await queuePopupSimulationRefresh(activeServices)
 			}
 			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
-			if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)
 		})
 	} finally {
 		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.

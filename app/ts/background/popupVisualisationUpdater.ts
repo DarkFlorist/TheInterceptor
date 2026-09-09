@@ -110,6 +110,19 @@ export async function refreshPopupVisualisationForOpenConsumer(ethereum: Ethereu
 }
 
 const updateSimulationVisualisationSemaphore = new Semaphore(1)
+// Failed provider preparation must retire old results without executing the retained provider.
+export async function publishFailedPopupVisualisation() {
+	abortController.abort(NEW_BLOCK_ABORT)
+	await updateSimulationVisualisationSemaphore.execute(async () => {
+		const previous = await getPopupVisualisationState()
+		const failed = await setPopupVisualisationState({
+			...createPassthroughCompleteVisualizedSimulation(previous.simulationId + 1, 'invalid'),
+			simulationUpdatingState: 'failed',
+		})
+		await sendPopupMessageToOpenWindows({ method: 'popup_simulation_state_changed', data: { visualizedSimulatorState: failed } })
+	})
+}
+
 // Serialized execution without a visibility probe; persistence callers can require unexpected errors to propagate.
 export async function updatePopupVisualisationState(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, abortController: AbortController | undefined, throwOnUnexpectedError = false, snapshot?: SimulationSnapshot) {
 	try {

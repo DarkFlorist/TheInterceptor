@@ -125,6 +125,30 @@ describe('active settings concurrency', () => {
 		])
 	})
 
+	test('retains committed Safe preferences and invalidates the popup after provider reset failure', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { activateAddressSelection, getSettings, getSigningAddressPreferences, updateUserAddressBookEntries } = await loadModules()
+		const { getPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
+		const safe: SafeEntry = { type: 'safe', name: 'Owned Safe', address: 3n, chainId: (await getSettings()).activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
+		await updateUserAddressBookEntries(() => [firstAddress, safe])
+		const counter = { count: 0 }
+		const services = createEthereumWithGetBlockCounter(counter)
+		const rpcNetwork = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://failed-install.example' }
+		const failure = new Error('Injected provider reset failure')
+		await assert.rejects(activateAddressSelection(services.ethereum, services.tokenPriceService, () => { throw failure }, new Map(), { type: 'addressBookEntry', entry: safe }, {
+			simulationMode: false, signerAddress: firstAddress.address, rpcNetwork, promptForAccessesIfNeeded: false,
+		}), error => error === failure)
+		assert.equal((await getSettings()).activeSigningSafeAddress, safe.address)
+		assert.deepEqual(await getSigningAddressPreferences(), [{ signerAddress: firstAddress.address, selection: 'safe', safeAddress: safe.address, chainId: safe.chainId }])
+		const visualisation = await getPopupVisualisationState()
+		assert.equal(visualisation.simulationUpdatingState, 'failed')
+		assert.equal(visualisation.simulationResultState, 'invalid')
+		assert.equal(visualisation.simulationState.kind, 'passthrough')
+		assert.equal(counter.count, 0, 'Failure handling must not simulate on the old provider')
+		assert.equal(runtimeMessages.some(message => message.method === 'popup_simulation_state_changed'), true)
+		assert.equal(runtimeMessages.some(message => message.method === 'popup_settingsUpdated'), true)
+	})
+
 	test('settles an address change that prompts for access alongside an approval that selects another address', async () => {
 		installBrowserMock()
 		const { changeActiveAddressAndChain, changeSimulationMode, getSettings, updateUserAddressBookEntries, websiteSocketToString, requestAccessFromUser, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
