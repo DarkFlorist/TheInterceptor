@@ -20,7 +20,7 @@ type PendingSignerChainChange = {
 		| { readonly type: 'replacement', readonly error: typeof signerUnavailableError }
 		| { readonly type: 'timeout' }
 	>
-	replyReceived: boolean
+	readonly receivedReplyTokens: SignerStateToken[]
 	timeout: ReturnType<typeof setTimeout> | undefined
 	readonly requestTabId: number
 	readonly requestedRpcNetwork: RpcNetwork
@@ -40,8 +40,9 @@ function isPendingWalletSwitchRequest(walletSwitchRequestId: string) {
 function markSignerChainReplyReceived(token: SignerStateToken, chainId: bigint, walletSwitchRequestId: string) {
 	const pending = pendingSignerChainChange
 	if (pending !== undefined && pending.walletSwitchRequestId === walletSwitchRequestId && doesPendingSignerChainChangeMatch(pending, token, chainId)) {
-		pending.replyReceived = true
-		clearTimeout(pending.timeout)
+		// Early delivery cannot disarm the deadline until the dispatched request's token is known.
+		if (pending.signerStateToken === undefined) pending.receivedReplyTokens.push(token)
+		else clearTimeout(pending.timeout)
 	}
 }
 
@@ -88,7 +89,7 @@ export async function requestSignerChainChange(ethereum: EthereumClientService, 
 	if (pendingSignerChainChange !== undefined) return { error: { code: -32002, message: 'A network switch is already waiting for your wallet.' } }
 	const pending: PendingSignerChainChange = {
 		walletSwitchRequestId: crypto.randomUUID(),
-		replyReceived: false,
+		receivedReplyTokens: [],
 		timeout: undefined,
 		future: new Future<
 			| { readonly type: 'reply', readonly confirmation: SignerChainChangeConfirmation }
@@ -117,7 +118,7 @@ export async function requestSignerChainChange(ethereum: EthereumClientService, 
 				: { error: signerUnavailableError } as const
 		}
 		pending.signerStateToken = changeActiveRpcResult.signerStateToken
-		if (!pending.replyReceived) pending.timeout = setTimeout(() => {
+		if (!pending.receivedReplyTokens.some(token => doSignerStateTokensMatch(changeActiveRpcResult.signerStateToken, token))) pending.timeout = setTimeout(() => {
 			pending.future.resolve({ type: 'timeout' })
 		}, timeoutMs)
 		const precedingReply = pending.repliesBeforeToken.find(({ signerStateToken, confirmation }) => {

@@ -383,6 +383,43 @@ describe('popup settings changes', () => {
 		})
 	}
 
+	for (const matchesDispatchedToken of [true, false]) test(`early reply deadline ownership matches the dispatched signer token (${ matchesDispatchedToken })`, async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getSettings, websiteSocketToString } = await loadModules()
+		const { requestSignerChainChange, applyWalletSwitchReply } = await import('../../app/ts/background/walletSwitch.js')
+		await changeSimulationMode({ simulationMode: false })
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(1)
+		const ownership = confirmedSignerOwnership(socket)
+		const connections = new Map([[1, { ...ownership, connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+		} }]])
+		const rpc = { ...(await getSettings()).activeRpcNetwork, chainId: 2n, httpsRpc: 'https://early-reply.example.test' }
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		let delivery: Promise<void> | undefined
+		const originalPost = port.postMessage
+		port.postMessage = message => {
+			originalPost(message)
+			if (message.method !== 'request_signer_to_wallet_switchEthereumChain') return
+			// Exercise receipt before the send path returns its captured token, independently of replacement notifications.
+			if (!matchesDispatchedToken) ownership.signerStateOwner.generation += 1
+			delivery = applyWalletSwitchReply(connections, port, {
+				accept: false, chainId: rpc.chainId, walletSwitchRequestId: getWalletSwitchRequestId(messages),
+				signerProviderGeneration: ownership.signerStateOwner.providerGeneration,
+				error: { code: 4001, message: 'Rejected early' },
+			}, async () => { throw new Error('A rejected reply must not apply a chain') })
+		}
+		const originalSend = browser.runtime.sendMessage
+		try {
+			Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: async (message: unknown) => {
+				await delivery
+				return await originalSend(message)
+			} })
+			const result = await requestSignerChainChange(services.ethereum, services.tokenPriceService, services.resetSimulationServices, connections, rpc, 1, 20)
+			assert.match(result.error?.message ?? '', matchesDispatchedToken ? /Rejected early/ : /did not answer/)
+		} finally { Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: originalSend }) }
+	})
+
 	for (const outcome of ['timeout', 'reply', 'failure'] as const) {
 		test(`wallet deadline releases a silent request but does not expire a received reply (${ outcome })`, async () => {
 			installBrowserMock()

@@ -73,16 +73,14 @@ type ActiveSettingsTransition = {
 
 const changeActiveAddressAndChainSemaphore = new Semaphore(1)
 async function runActiveSettingsChange(
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
+	activeServices: SimulationServices,
 	resetSimulationServices: ResetSimulationServices,
 	websiteTabConnections: WebsiteTabConnections,
 	transition: ActiveSettingsTransition,
 ): Promise<void> {
 	const { change } = transition
 	let accessUpdate: WebsiteAccessUpdate | undefined
-	// Use the installed pair for work within this transition; nested access prompts may install another pair before completion.
-	let activeServices: SimulationServices = { ethereum, tokenPriceService }
+	// This pair is the sole service reference for the transition and is replaced when an endpoint is installed.
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
 		await changeActiveAddressAndChainSemaphore.execute(async () => {
@@ -151,7 +149,7 @@ export async function changeActiveAddressAndChain(
 	websiteTabConnections: WebsiteTabConnections,
 	change: ActiveAddressAndChainChange,
 ): Promise<void> {
-	return await runActiveSettingsChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, { change })
+	return await runActiveSettingsChange({ ethereum, tokenPriceService }, resetSimulationServices, websiteTabConnections, { change })
 }
 
 export async function activateAddressSelection(
@@ -175,7 +173,7 @@ export async function activateAddressSelection(
 		: selectedSafe === undefined
 			? { signerAddress: options.signerAddress, selection: 'signer' }
 			: { signerAddress: options.signerAddress, selection: 'safe', safeAddress: selectedSafe.address, chainId: selectedSafe.chainId }
-	return await runActiveSettingsChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+	return await runActiveSettingsChange({ ethereum, tokenPriceService }, resetSimulationServices, websiteTabConnections, {
 		change: {
 			simulationMode: options.simulationMode,
 			activeAddress: selection?.type === 'signer' ? selection.address : selection?.entry.address,
