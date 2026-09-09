@@ -518,12 +518,14 @@ type WindowEthereum = InjectFunctions & {
 	networkVersion?: string,
 }
 
+type LegacyWeb3 = {
+	currentProvider?: WindowEthereum
+	accounts?: readonly string[]
+}
+
 type InpageWindow = Window & {
 	ethereum?: WindowEthereum
-	web3?: {
-		currentProvider: WindowEthereum
-		accounts: readonly string[]
-	}
+	web3?: LegacyWeb3
 }
 
 const inpageWindow: InpageWindow = window
@@ -680,6 +682,13 @@ function setCompatibilityProperty(target: object, property: PropertyKey, value: 
 	}
 }
 
+function getLegacyWeb3WithoutInvokingAccessors(target: InpageWindow): LegacyWeb3 | undefined {
+	const descriptor = Object.getOwnPropertyDescriptor(target, 'web3')
+	if (descriptor === undefined || !('value' in descriptor) || typeof descriptor.value !== 'object' || descriptor.value === null) return undefined
+	if (Object.getOwnPropertyDescriptor(descriptor.value, '__isMetaMaskShim__')?.value === true) return undefined
+	return descriptor.value
+}
+
 function serializeForwardedDiagnostics(source: 'inpage' | 'content-script' | 'document-start', phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): string {
 	return formatForwardedDiagnostics(source, phase, getForwardedDiagnosticsSummary(error), error, context)
 }
@@ -771,14 +780,16 @@ class InterceptorMessageListener {
 		if (this.metamaskCompatibilityMode && inpageWindow.ethereum !== undefined && !this.ethereumSelectedAddressControlled) {
 			setCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', address, 'window.ethereum.selectedAddress')
 		}
-		if (this.metamaskCompatibilityMode && 'web3' in inpageWindow && inpageWindow.web3 !== undefined && !this.web3AccountsControlled) {
-			setCompatibilityProperty(inpageWindow.web3, 'accounts', accounts, 'window.web3.accounts')
+		const legacyWeb3 = getLegacyWeb3WithoutInvokingAccessors(inpageWindow)
+		if (this.metamaskCompatibilityMode && legacyWeb3 !== undefined && !this.web3AccountsControlled) {
+			setCompatibilityProperty(legacyWeb3, 'accounts', accounts, 'window.web3.accounts')
 		}
 	}
 
 	private readonly hasNonConfigurableAccountCompatibilityProperty = () => {
 		if (inpageWindow.ethereum !== undefined && Object.getOwnPropertyDescriptor(inpageWindow.ethereum, 'selectedAddress')?.configurable === false) return true
-		if ('web3' in inpageWindow && inpageWindow.web3 !== undefined && Object.getOwnPropertyDescriptor(inpageWindow.web3, 'accounts')?.configurable === false) return true
+		const legacyWeb3 = getLegacyWeb3WithoutInvokingAccessors(inpageWindow)
+		if (legacyWeb3 !== undefined && Object.getOwnPropertyDescriptor(legacyWeb3, 'accounts')?.configurable === false) return true
 		return false
 	}
 
@@ -839,12 +850,15 @@ class InterceptorMessageListener {
 		if (inpageWindow.ethereum !== undefined) {
 			this.ethereumSelectedAddressControlled = this.installControlledCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', this.getControlledSelectedAddress, 'window.ethereum.selectedAddress')
 		}
-		if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) {
-			if (Object.getOwnPropertyDescriptor(inpageWindow.web3, 'accounts')?.configurable === false) {
+		const legacyWeb3 = getLegacyWeb3WithoutInvokingAccessors(inpageWindow)
+		if (legacyWeb3 !== undefined) {
+			if (Object.getOwnPropertyDescriptor(legacyWeb3, 'accounts')?.configurable === false) {
 				setCompatibilityProperty(inpageWindow, 'web3', { accounts: this.getControlledAccounts(), currentProvider: inpageWindow.ethereum as WindowEthereum }, 'window.web3')
 			}
-			this.web3AccountsControlled = this.installControlledCompatibilityProperty(inpageWindow.web3, 'accounts', this.getControlledAccounts, 'window.web3.accounts')
-			setCompatibilityProperty(inpageWindow.web3, 'currentProvider', inpageWindow.ethereum as WindowEthereum, 'window.web3.currentProvider')
+			const controlledLegacyWeb3 = getLegacyWeb3WithoutInvokingAccessors(inpageWindow)
+			if (controlledLegacyWeb3 === undefined) return
+			this.web3AccountsControlled = this.installControlledCompatibilityProperty(controlledLegacyWeb3, 'accounts', this.getControlledAccounts, 'window.web3.accounts')
+			setCompatibilityProperty(controlledLegacyWeb3, 'currentProvider', inpageWindow.ethereum as WindowEthereum, 'window.web3.currentProvider')
 		}
 	}
 
@@ -1760,8 +1774,9 @@ class InterceptorMessageListener {
 		if (enable) {
 			if (inpageWindow.ethereum === undefined) return
 			if (!('isMetamask' in inpageWindow.ethereum)) setCompatibilityProperty(inpageWindow.ethereum, 'isMetaMask', true, 'window.ethereum.isMetaMask')
-			if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) {
-				setCompatibilityProperty(inpageWindow.web3, 'currentProvider', inpageWindow.ethereum, 'window.web3.currentProvider')
+			const legacyWeb3 = getLegacyWeb3WithoutInvokingAccessors(inpageWindow)
+			if (legacyWeb3 !== undefined) {
+				setCompatibilityProperty(legacyWeb3, 'currentProvider', inpageWindow.ethereum, 'window.web3.currentProvider')
 			} else {
 				setCompatibilityProperty(inpageWindow, 'web3', { accounts: [], currentProvider: inpageWindow.ethereum }, 'window.web3')
 			}
