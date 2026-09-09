@@ -1,6 +1,6 @@
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
-import { getRpcNetworkChange, isSignerOnlyNetwork } from '../../app/ts/utils/rpcNetworkChange.js'
+import { getRpcNetworkChange, getRpcChangeRoute, isSignerOnlyNetwork } from '../../app/ts/utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 
 const network: RpcNetwork = { chainId: 1n, httpsRpc: 'https://rpc.example', name: 'Network', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
@@ -25,4 +25,13 @@ describe('RPC network change classification', () => {
 		assert.deepEqual(getRpcNetworkChange(signerOnly, network), { chainChanged: false, endpointChanged: true, selectionChanged: true })
 		assert.deepEqual(getRpcNetworkChange(undefined, network), { chainChanged: true, endpointChanged: true, selectionChanged: true })
 	})
+})
+
+for (const simulationMode of [true, false]) test(`RPC routing uses one policy for local and wallet commands (simulation=${ simulationMode })`, () => {
+	assert.equal(getRpcChangeRoute(network, { ...network }, simulationMode), 'unchanged')
+	assert.equal(getRpcChangeRoute(network, { ...network, name: 'Renamed' }, simulationMode), 'local')
+	assert.equal(getRpcChangeRoute(network, { ...network, httpsRpc: 'https://second.example' }, simulationMode), 'local')
+	assert.equal(getRpcChangeRoute(network, { ...network, chainId: 2n }, simulationMode), simulationMode ? 'local' : 'wallet')
+	const signerOnly: RpcNetwork = { chainId: 2n, httpsRpc: undefined, name: 'Signer only', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
+	assert.equal(getRpcChangeRoute(network, signerOnly, simulationMode), simulationMode ? 'local' : 'wallet')
 })

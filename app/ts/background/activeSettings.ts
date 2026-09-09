@@ -3,7 +3,7 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import type { ResetSimulationServices, SimulationServices } from '../simulation/serviceLifecycle.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
-import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
+import { getRpcNetworkChange, getRpcChangeRoute } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -191,21 +191,15 @@ export async function activateAddressSelection(
 
 export async function changeActiveRpc(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, simulationMode: boolean, signerTabId: number | undefined, walletSwitchRequestId: string = crypto.randomUUID()) {
 	const currentRpc = (await getSettings()).activeRpcNetwork
-	const { chainChanged, selectionChanged } = getRpcNetworkChange(currentRpc, rpcNetwork)
-	if (!selectionChanged) {
+	const route = getRpcChangeRoute(currentRpc, rpcNetwork, simulationMode)
+	if (route === 'unchanged') {
 		await promoteRpcAsPrimary(rpcNetwork)
 		return simulationMode ? { type: 'completedLocally' as const } : { type: 'signerRequestNotNeeded' as const }
 	}
-	if (simulationMode) {
+	if (route === 'local') {
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, { simulationMode, rpcNetwork })
 		await promoteRpcAsPrimary(rpcNetwork)
-		return { type: 'completedLocally' as const }
-	}
-	// Same-chain endpoint and metadata edits are local, even when a signer is connected.
-	if (!chainChanged) {
-		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, { simulationMode, rpcNetwork })
-		await promoteRpcAsPrimary(rpcNetwork)
-		return { type: 'signerRequestNotNeeded' as const }
+		return simulationMode ? { type: 'completedLocally' as const } : { type: 'signerRequestNotNeeded' as const }
 	}
 	const signerStateToken = signerTabId !== undefined
 		&& sendCallbackToConfirmedSignerOwner(websiteTabConnections, signerTabId, { method: 'request_signer_to_wallet_switchEthereumChain', result: rpcNetwork.chainId, walletSwitchRequestId })

@@ -17,6 +17,6 @@ Queue identity and supersession apply only among queue callers. Direct execution
 
 When adding a trigger, choose the required cancellation, visibility, error, and return-value contract from the table. Changes to visualization execution belong in `popupVisualisationUpdater.ts`; changes to interactive sharing/supersession belong in `popupSimulationRefreshQueue.ts`.
 
-Signer-only networks keep a supported provider available for a later configured selection, but simulation returns passthrough without executing that provider. Cache-fingerprint checks also skip provider reads on signer-only networks. A missing RPC URL cannot be used to construct replacement RPC services.
+`captureSimulationSnapshot` reads the selected network, stack context, input and rich count at the storage boundary. Execution requires that snapshot; cache checks and execution share `getSimulationProviderForSnapshot`, which uses its network selection without re-reading global settings. Signer-only snapshots expose no simulation provider even though the service owner retains a supported provider for a later configured selection. The interactive queue carries the same snapshot through fingerprinting and execution. A missing RPC URL cannot be used to construct replacement RPC services.
 
 External-wallet signing transitions do not enqueue simulation refreshes: wallet acknowledgment depends on applying the selected network, not RPC simulation availability. Simulation-mode transitions and selected Safe signing stacks retain their visualization refreshes.

@@ -1,7 +1,7 @@
-import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
+import { getRpcChangeRoute } from '../utils/rpcNetworkChange.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain, changeActiveRpc } from './activeSettings.js'
-import { getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
+import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, updateWebsiteAccess, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
@@ -666,7 +666,7 @@ export async function refreshPopupConfirmTransactionSimulation(ethereum: Ethereu
 }
 
 export async function popupChangeActiveRpc(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, params: ChangeActiveChain, settings: Settings) {
-	if (!settings.simulationMode && getRpcNetworkChange(settings.activeRpcNetwork, params.data).chainChanged) {
+	if (getRpcChangeRoute(settings.activeRpcNetwork, params.data, settings.simulationMode) === 'wallet') {
 		const tabId = await getLastKnownCurrentTabId()
 		if (tabId === undefined) return { type: 'PopupSettingsChangeReply', ok: false, message: 'No wallet is connected to switch networks.' } as const
 		if (await getConfiguredSigningSafe(settings, (await getTabState(tabId)).signerAccounts) !== undefined) return { type: 'PopupSettingsChangeReply', ok: false, message: 'This Safe is tied to its current network. Select your wallet account before switching networks.' } as const
@@ -1292,7 +1292,7 @@ export async function requestCompleteVisualizedSimulation(ethereum: EthereumClie
 
 export async function requestSimulationMetadata(ethereumClientService: EthereumClientService) {
 	const settings = await getSettings()
-	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService) : { kind: 'passthrough' as const }
+	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot()) : { kind: 'passthrough' as const }
 	if (simulationState.kind === 'passthrough' || simulationState.value.success === false) return {
 		method: 'popup_requestSimulationMetadata' as const,
 		metadata: {

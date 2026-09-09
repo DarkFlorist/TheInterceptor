@@ -24,3 +24,10 @@ export function getRpcNetworkChange(previous: RpcNetwork | undefined, next: RpcN
 
 // Signer-only selections retain a fallback service, but it must not be used for simulation or cache probes.
 export const isSignerOnlyNetwork = (network: RpcNetwork) => network.httpsRpc === undefined
+
+// Re-evaluate at each command boundary using fresh settings, but keep the routing policy shared.
+export function getRpcChangeRoute(previous: RpcNetwork, next: RpcNetwork, simulationMode: boolean) {
+	const change = getRpcNetworkChange(previous, next)
+	if (!change.selectionChanged) return 'unchanged'
+	return !simulationMode && change.chainChanged ? 'wallet' : 'local'
+}

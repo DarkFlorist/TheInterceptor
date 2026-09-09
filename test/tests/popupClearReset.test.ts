@@ -390,17 +390,21 @@ const fakeEthereum = createFakeEthereum(rpcNetwork) as never as Parameters<typeo
 const fakeTokenPriceService = {} as never as Parameters<typeof updatePopupVisualisationIfNeeded>[1]
 
 describe('popup clear reset', () => {
-	test('signer-only networks publish passthrough without reading the previous provider', async () => {
+	for (const captured of [false, true]) test(`signer-only snapshots publish passthrough without reading the previous provider (captured=${ captured })`, async () => {
 		browserMock.reset()
 		const signerOnly: RpcNetwork = { chainId: 99999n, httpsRpc: undefined, name: 'Signer only', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
 		await browserStorageLocalSet({ activeRpcNetwork: signerOnly, independentActiveSimulationAddress: activeAddress, popupVisualisation: stalePopupVisualisation, interceptorTransactionStack: { operations: [] } })
+		const { captureSimulationSnapshot, getUpdatedSimulationState } = await import('../../app/ts/background/simulationUpdating.js')
+		const snapshot = captured ? await captureSimulationSnapshot() : undefined
+		if (captured) await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork })
 		const originalBlock = fakeEthereum.getBlock
 		const originalNumber = fakeEthereum.getBlockNumber
 		let providerReads = 0
 		fakeEthereum.getBlock = async (...args) => { providerReads++; return await originalBlock(...args) }
 		fakeEthereum.getBlockNumber = async (...args) => { providerReads++; return await originalNumber(...args) }
 		try {
-			const result = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, false, false, true)
+			const result = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, false, false, true, snapshot)
+			if (snapshot !== undefined) assert.equal((await getUpdatedSimulationState(fakeEthereum, snapshot)).kind, 'passthrough')
 			assert.equal(providerReads, 0)
 			assert.equal(result.simulationState.kind, 'passthrough')
 			assert.equal(result.simulationUpdatingState, 'done')
@@ -409,6 +413,30 @@ describe('popup clear reset', () => {
 			fakeEthereum.getBlock = originalBlock
 			fakeEthereum.getBlockNumber = originalNumber
 		}
+	})
+
+	for (const nextSimulationMode of [true, false]) test(`capture keeps the original rich address and stack mode during a settings change (nextSimulationMode=${ nextSimulationMode })`, async () => {
+		browserMock.reset()
+		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, independentActiveSimulationAddress: activeAddress, simulationMode: true, makeCurrentAddressRich: true, interceptorTransactionStack: { operations: [] } })
+		const { captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
+		const originalGet = browser.storage.local.get
+		let changed = false
+		browser.storage.local.get = async keys => {
+			const result = await originalGet(keys)
+			if (!changed && Array.isArray(keys) && keys.includes('activeRpcNetwork')) {
+				changed = true
+				// Initial settings reads have captured their values; rich-address resolution has not started yet.
+				await browserStorageLocalSet({ independentActiveSimulationAddress: activeAddress + 1n, simulationMode: nextSimulationMode })
+			}
+			return result
+		}
+		try {
+			const snapshot = await captureSimulationSnapshot()
+			assert.equal(changed, true)
+			assert.deepEqual(snapshot.activeStackContext, { simulationMode: true })
+			assert.equal(snapshot.numberOfAddressesMadeRich, 1)
+			assert.deepEqual(snapshot.simulationStateInput.flatMap(block => Object.keys(block.stateOverrides)), [`0x${ activeAddress.toString(16).padStart(40, '0') }`])
+		} finally { browser.storage.local.get = originalGet }
 	})
 
 	test('complete visualization requests do not join a held interactive queue entry', async () => {
@@ -486,7 +514,8 @@ describe('popup clear reset', () => {
 		browserMock.reset()
 		await browserStorageLocalSet({ independentActiveSimulationAddress: activeAddress, makeCurrentAddressRich: false, interceptorTransactionStack: { operations: [] } })
 		const modules = await modulesPromise
-		const snapshot = { simulationStateInput: await modules.getCurrentSimulationInput(), numberOfAddressesMadeRich: 0 }
+		const { captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
+		const snapshot = await captureSimulationSnapshot()
 		await browserStorageLocalSet({ makeCurrentAddressRich: true })
 		assert.notDeepEqual(await modules.getCurrentSimulationInput(), snapshot.simulationStateInput)
 		const result = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, false, false, false, snapshot)
