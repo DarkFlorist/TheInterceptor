@@ -26,7 +26,7 @@ import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { removeWebsiteTabConnection } from './websiteTabConnections.js'
-import { createSimulationServicesOwner, type SimulationServicesOwner, type ResetSimulationServices, type SimulationServices } from '../simulation/serviceLifecycle.js'
+import { createSimulationServicesOwner, type SimulationServicesOwner, type ResetSimulationServices } from '../simulation/serviceLifecycle.js'
 import { addWindowTabListeners } from '../utils/popupOrTab.js'
 import { migrateAddressBook } from './addressBookMigration.js'
 import { migrateWebsiteAccess } from './websiteAccessMigration.js'
@@ -132,7 +132,7 @@ if (isManifestV2) {
 
 const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
 
-async function onContentScriptConnected(waitForStartup: () => Promise<{ resetActiveRpcNetwork: ResetSimulationServices, simulationServices: SimulationServices }>, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
+async function onContentScriptConnected(waitForStartup: () => Promise<{ resetActiveRpcNetwork: ResetSimulationServices }>, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
 	const socket = getSocketFromPort(port)
 	if (port?.sender?.url === undefined || socket === undefined) {
 		printError(`Could not connect to a port: ${ port.name}`)
@@ -318,7 +318,6 @@ async function waitForBackgroundStartup() {
 	if (owner === undefined) throw new Error('Background startup reset handler is not initialized')
 	return {
 		resetActiveRpcNetwork: owner.reset,
-		simulationServices: getSimulationServices(),
 	}
 }
 
@@ -335,12 +334,14 @@ const onTabUpdated = async (tabId: number, changeInfo: browser.tabs._OnUpdatedCh
 })
 
 const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => {
-	const { simulationServices } = await waitForBackgroundStartup()
+	await waitForBackgroundStartup()
+	const simulationServices = getSimulationServices()
 	return await onCloseWindowOrTab({ type: 'popup' as const, id }, simulationServices.ethereum, simulationServices.tokenPriceService, websiteTabConnections)
 })
 
 const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () => {
-	const { simulationServices } = await waitForBackgroundStartup()
+	await waitForBackgroundStartup()
+	const simulationServices = getSimulationServices()
 	return await onCloseWindowOrTab({ type: 'tab' as const, id }, simulationServices.ethereum, simulationServices.tokenPriceService, websiteTabConnections)
 })
 
