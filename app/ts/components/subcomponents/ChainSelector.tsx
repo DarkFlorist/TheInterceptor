@@ -31,7 +31,7 @@ export function getRpcEntryLabel(rpcEntries: RpcEntries, entry: RpcNetwork) {
 		.filter(other => !currencyDiffers || other.currencyName === entry.currencyName && other.currencyTicker === entry.currencyTicker)
 		.map(other => [getRpcEntryIdentityKey(other), other])).keys())
 	const index = variants.indexOf(getRpcEntryIdentityKey(entry))
-	// List order gives otherwise identical labels a stable discriminator without exposing credentials from metadata.
+	// Presentation only: ordinals can change with the list. Entry keys own selection; see docs/rpc-entry-identity.md.
 	return variants.length > 1 && index !== -1 ? `${ label } (connection ${ index + 1 })` : label
 }
 

@@ -6,6 +6,7 @@ export type RpcNetworkChange = {
 	readonly selectionChanged: boolean
 }
 
+// Transient snapshot keys, not persistent connection IDs; schema/edit tradeoffs are in docs/rpc-entry-identity.md.
 export const getRpcNetworkSelectionKey = (network: RpcNetwork) => JSON.stringify(RpcNetwork.serialize(network))
 
 // List preferences can change independently of the active selection; they do not identify a different RPC entry.
