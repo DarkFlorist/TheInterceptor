@@ -3864,6 +3864,62 @@ describe('inpage signer bridge', () => {
 		}
 	})
 
+	test('does not invoke an accessor-backed window.web3 compatibility shim', async () => {
+		let connectedToSigner = false
+		let web3GetterCalls = 0
+		const { fakeWindow } = createFakeWindow({
+			onConnectedToSignerRequest: () => {
+				connectedToSigner = true
+			},
+		})
+		Object.defineProperty(fakeWindow, 'web3', {
+			configurable: true,
+			enumerable: true,
+			get: () => {
+				web3GetterCalls++
+				return { currentProvider: fakeWindow.ethereum }
+			},
+		})
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?accessor-backed-web3-compatibility', async () => {
+			await waitFor(() => connectedToSigner)
+			assert.equal(web3GetterCalls, 0)
+			const descriptor = Object.getOwnPropertyDescriptor(fakeWindow, 'web3')
+			assert.equal(descriptor !== undefined && 'value' in descriptor, true)
+		})
+	})
+
+	test('does not assign through the MetaMask window.web3 proxy shim', async () => {
+		let connectedToSigner = false
+		let web3ShimAssignments = 0
+		const { fakeWindow } = createFakeWindow({
+			onConnectedToSignerRequest: () => {
+				connectedToSigner = true
+			},
+		})
+		const web3ShimTarget = { currentProvider: fakeWindow.ethereum }
+		Object.defineProperty(web3ShimTarget, '__isMetaMaskShim__', {
+			configurable: false,
+			enumerable: true,
+			value: true,
+			writable: false,
+		})
+		const web3Shim = new Proxy(web3ShimTarget, {
+			set: (target, property, value) => {
+				web3ShimAssignments++
+				return Reflect.set(target, property, value)
+			},
+		})
+		fakeWindow.web3 = web3Shim
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?metamask-web3-proxy-compatibility', async () => {
+			await waitFor(() => connectedToSigner)
+			assert.equal(web3ShimAssignments, 0)
+			assert.notEqual(fakeWindow.web3, web3Shim)
+			assert.equal(fakeWindow.web3?.currentProvider, fakeWindow.ethereum)
+		})
+	})
+
 	test('skips non-configurable accessor compatibility arrays without reading descriptor value', async () => {
 		let connectedToSigner = false
 		const { fakeWindow } = createFakeWindow({
