@@ -1,6 +1,6 @@
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
-import { getRpcNetworkChange } from '../../app/ts/utils/rpcNetworkChange.js'
+import { getRpcNetworkChange, isSignerOnlyNetwork } from '../../app/ts/utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 
 const network: RpcNetwork = { chainId: 1n, httpsRpc: 'https://rpc.example', name: 'Network', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
@@ -20,6 +20,8 @@ describe('RPC network change classification', () => {
 	})
 	test('signer-only and missing networks are distinct from a configured endpoint', () => {
 		const signerOnly: RpcNetwork = { chainId: 1n, httpsRpc: undefined, name: 'Signer', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
+		assert.equal(isSignerOnlyNetwork(signerOnly), true)
+		assert.equal(isSignerOnlyNetwork(network), false)
 		assert.deepEqual(getRpcNetworkChange(signerOnly, network), { chainChanged: false, endpointChanged: true, selectionChanged: true })
 		assert.deepEqual(getRpcNetworkChange(undefined, network), { chainChanged: true, endpointChanged: true, selectionChanged: true })
 	})

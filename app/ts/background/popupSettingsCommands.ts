@@ -33,8 +33,11 @@ export const popupSettingsCommandHandlers = {
 		return { type: 'PopupSettingsChangeReply', ok: true }
 	}),
 	popup_modifyMakeMeRich: settingsCommand('popup_modifyMakeMeRich', async (context, request) => {
-		if (await modifyMakeMeRich(request) && !await queuePopupSimulationRefresh({ ethereum: context.ethereum, tokenPriceService: context.tokenPriceService, invalidateOldState: true })) {
-			return { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but balances could not be refreshed. Please refresh the simulation to retry.' }
+		if (await modifyMakeMeRich(request)) {
+			const outcome = await queuePopupSimulationRefresh({ ethereum: context.ethereum, tokenPriceService: context.tokenPriceService, invalidateOldState: true })
+			if (outcome.status === 'observed' && !outcome.available) {
+				return { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.' }
+			}
 		}
 		return { type: 'PopupSettingsChangeReply', ok: true }
 	}),

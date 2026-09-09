@@ -1,3 +1,4 @@
+import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } from '../safe/safeSimulation.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
@@ -129,7 +130,7 @@ export async function getUpdatedSimulationState(ethereum: EthereumClientService,
 	// An unreadable persisted stack must abort refresh, otherwise the simulation fallback could overwrite saved popup results.
 	const currentSimulationInput = simulationInput ?? await getCurrentSimulationInput()
 	// Signer-only networks have no simulation endpoint; the retained supported provider must not execute their stack.
-	if ((await getSettings()).activeRpcNetwork.httpsRpc === undefined) return PASSTHROUGH_STATE
+	if (isSignerOnlyNetwork((await getSettings()).activeRpcNetwork)) return PASSTHROUGH_STATE
 	try {
 		return toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(currentSimulationInput, ethereum))
 	} catch(error: unknown) {

@@ -20,3 +20,6 @@ export function getRpcNetworkChange(previous: RpcNetwork | undefined, next: RpcN
 		selectionChanged: previous === undefined || getRpcNetworkSelectionKey(previous) !== getRpcNetworkSelectionKey(next),
 	}
 }
+
+// Signer-only selections retain a fallback service, but it must not be used for simulation or cache probes.
+export const isSignerOnlyNetwork = (network: RpcNetwork) => network.httpsRpc === undefined

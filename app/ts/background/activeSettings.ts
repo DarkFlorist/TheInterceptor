@@ -13,7 +13,7 @@ import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { sendCallbackToConfirmedSignerOwner } from './signerStateOwnership.js'
 import { changeSimulationMode, getSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
-import { updateTransactionState } from './storageVariables.js'
+import { promoteRpcAsPrimary, updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
@@ -195,15 +195,18 @@ export async function changeActiveRpc(ethereum: EthereumClientService, tokenPric
 	const currentRpc = (await getSettings()).activeRpcNetwork
 	const { chainChanged, selectionChanged } = getRpcNetworkChange(currentRpc, rpcNetwork)
 	if (!selectionChanged) {
+		await promoteRpcAsPrimary(rpcNetwork)
 		return simulationMode ? { type: 'completedLocally' as const } : { type: 'signerRequestNotNeeded' as const }
 	}
 	if (simulationMode) {
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, { simulationMode, rpcNetwork })
+		await promoteRpcAsPrimary(rpcNetwork)
 		return { type: 'completedLocally' as const }
 	}
 	// Same-chain endpoint and metadata edits are local, even when a signer is connected.
 	if (!chainChanged) {
 		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, { simulationMode, rpcNetwork })
+		await promoteRpcAsPrimary(rpcNetwork)
 		return { type: 'signerRequestNotNeeded' as const }
 	}
 	const signerStateToken = signerTabId !== undefined

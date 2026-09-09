@@ -1,4 +1,4 @@
-// Optional interactive scheduling above popupVisualisationUpdater; queue guarantees do not cover direct block, bootstrap or persistence updates. See docs/popup-simulation-refresh.md.
+// Coalesce interactive requests only; popupVisualisationUpdater owns execution, cancellation and stored state. See docs/popup-simulation-refresh.md.
 import { Future } from '../utils/future.js'
 import type { SimulationServices } from '../simulation/serviceLifecycle.js'
 import { getAddressesbeingMadeRich, getCurrentSimulationInput } from './simulationUpdating.js'
@@ -11,9 +11,11 @@ import { type PopupSimulationSnapshot, updatePopupVisualisationIfNeeded } from '
 export type PopupSimulationRefresh = SimulationServices & { readonly invalidateOldState?: boolean }
 export type RevisionedPopupSimulationRefresh = PopupSimulationRefresh & { readonly revision: string | symbol }
 
-// Identical revisions share their own outcome; superseded queued work resolves false because it was not refreshed.
+export type PopupSimulationRefreshOutcome = { readonly status: 'superseded' } | { readonly status: 'observed', readonly available: boolean }
+
+// An observed result describes stored availability after an attempt, not which request published it.
 export function createPopupSimulationRefresher<T extends RevisionedPopupSimulationRefresh>(refresh: (services: T) => Promise<boolean>) {
-	type Entry = { services: T, readonly result: Future<boolean> }
+	type Entry = { services: T, readonly result: Future<PopupSimulationRefreshOutcome> }
 	let pending: Entry | undefined
 	let active: Entry | undefined
 	let draining = false
@@ -27,14 +29,14 @@ export function createPopupSimulationRefresher<T extends RevisionedPopupSimulati
 			active = entry
 			// Settle only this entry, including thrown failures, then continue with independently queued work.
 			await Promise.resolve().then(() => refresh(entry.services)).then(
-				value => { active = undefined; entry.result.resolve(value) },
+				value => { active = undefined; entry.result.resolve({ status: 'observed', available: value }) },
 				error => { active = undefined; entry.result.reject(error) },
 			)
 		}
 		draining = false
 	}
 
-	return (services: T): Promise<boolean> => {
+	return (services: T): Promise<PopupSimulationRefreshOutcome> => {
 		if (pending !== undefined && sameRevision(pending.services, services)) {
 			pending.services = { ...services, invalidateOldState: services.invalidateOldState || pending.services.invalidateOldState }
 			return pending.result.asPromise
@@ -44,9 +46,9 @@ export function createPopupSimulationRefresher<T extends RevisionedPopupSimulati
 			&& (!services.invalidateOldState || active.services.invalidateOldState)) return active.result.asPromise
 		const entry: Entry = {
 			services: { ...services, invalidateOldState: services.invalidateOldState || pending?.services.invalidateOldState },
-			result: new Future<boolean>(),
+			result: new Future<PopupSimulationRefreshOutcome>(),
 		}
-		pending?.result.resolve(false)
+		pending?.result.resolve({ status: 'superseded' })
 		pending = entry
 		if (!draining) {
 			draining = true

@@ -1,3 +1,4 @@
+import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import { getSettings } from './settings.js'
 // Shared execution layer for popup visualization refreshes; the optional interactive queue adds caller-local scheduling, not global ordering. See docs/popup-simulation-refresh.md.
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -71,7 +72,7 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 		}
 		const isSimulationDataConsumerOpenReply = await requestIsSimulationDataConsumerOpen()
 		if (!(isSimulationDataConsumerOpenReply?.data.isOpen === true)) return popupVisualisation
-		if (skipIfUnchanged && popupVisualisation.simulationState.kind === 'simulated' && (await getSettings()).activeRpcNetwork.httpsRpc !== undefined) {
+		if (skipIfUnchanged && popupVisualisation.simulationState.kind === 'simulated' && !isSignerOnlyNetwork((await getSettings()).activeRpcNetwork)) {
 			const currentSimulationInput = await getCurrentSimulationStateInput(ethereum, snapshot)
 			const currentFingerprint = getPopupVisualisationFingerprint(currentSimulationInput.simulationStateInput, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)
 			const cachedFingerprint = getPopupVisualisationFingerprint(

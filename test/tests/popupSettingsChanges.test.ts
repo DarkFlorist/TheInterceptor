@@ -21,9 +21,9 @@ describe('popup settings changes', () => {
 		const next = refresh({ ...services, revision: 'second' })
 		assert.notEqual(next, result)
 		first.resolve(firstSucceeded)
-		assert.equal(await result, firstSucceeded)
+		assert.deepEqual(await result, { status: 'observed', available: firstSucceeded })
 		last.resolve(!firstSucceeded)
-		assert.equal(await next, !firstSucceeded)
+		assert.deepEqual(await next, { status: 'observed', available: !firstSucceeded })
 	})
 
 	for (const change of ['same', 'revision', 'provider', 'force'] as const) {
@@ -44,8 +44,8 @@ describe('popup settings changes', () => {
 			assert.equal(nextResult === pending, change === 'same')
 			for (let i = 0; i < 5; i++) assert.equal(refresh(next), nextResult)
 			release.resolve(true)
-			assert.equal(await pending, true)
-			assert.equal(await nextResult, true)
+			assert.deepEqual(await pending, { status: 'observed', available: true })
+			assert.deepEqual(await nextResult, { status: 'observed', available: true })
 			assert.equal(calls, change === 'same' ? 1 : 2)
 			await refresh(next)
 			assert.equal(calls, change === 'same' ? 2 : 3)
@@ -65,10 +65,10 @@ describe('popup settings changes', () => {
 		const skipped = refresh({ ...services, revision: 'B', invalidateOldState: true })
 		const last = refresh(services)
 		assert.notEqual(first, last)
-		assert.equal(await skipped, false)
+		assert.deepEqual(await skipped, { status: 'superseded' })
 		release.resolve(true)
-		assert.equal(await first, true)
-		assert.equal(await last, true)
+		assert.deepEqual(await first, { status: 'observed', available: true })
+		assert.deepEqual(await last, { status: 'observed', available: true })
 		assert.deepEqual(calls.map(call => call.revision), ['A', 'A'])
 		assert.equal(calls[1]?.invalidateOldState, true)
 	})
@@ -80,7 +80,7 @@ describe('popup settings changes', () => {
 		const services = { ...createEthereumWithGetBlockCounter({ count: 0 }), revision: 'A' }
 		const result = refresh(services)
 		assert.equal(refresh({ ...services, invalidateOldState: true }), result)
-		assert.equal(await result, true)
+		assert.deepEqual(await result, { status: 'observed', available: true })
 	})
 
 	test('rejects only the failed entry and continues queued work and retries', async () => {
@@ -99,8 +99,8 @@ describe('popup settings changes', () => {
 		const queued = refresh({ ...services, revision: 'second' })
 		release.resolve(undefined)
 		await failed
-		assert.equal(await queued, true)
-		assert.equal(await refresh(services), true)
+		assert.deepEqual(await queued, { status: 'observed', available: true })
+		assert.deepEqual(await refresh(services), { status: 'observed', available: true })
 	})
 
 	test('coordinates settings changes across dispatchers without blocking wallet replies or reads', async () => {
@@ -202,6 +202,22 @@ describe('popup settings changes', () => {
 		assert.deepEqual(await popupChangeActiveRpc(ethereum, tokenPriceService, reset, connections, { method: 'popup_changeActiveRpc', data: popupEdit }, await getSettings()), { type: 'PopupSettingsChangeReply', ok: true })
 		assert.deepEqual((await getSettings()).activeRpcNetwork, popupEdit)
 		assert.equal(messages.some(message => message.method === 'request_signer_to_wallet_switchEthereumChain'), false, 'Metadata edits must not ask a connected wallet to switch chains')
+	})
+
+	for (const simulationMode of [true, false]) for (const reselect of [true, false]) test(`local RPC selection persists the chain preference (simulation=${ simulationMode }, reselect=${ reselect })`, async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getSettings } = await loadModules()
+		const { changeActiveRpc } = await import('../../app/ts/background/activeSettings.js')
+		const { setRpcList, getPrimaryRpcForChain } = await import('../../app/ts/background/storageVariables.js')
+		const current = (await getSettings()).activeRpcNetwork
+		if (current.httpsRpc === undefined) throw new Error('Expected a configured RPC')
+		const selected = { ...current, httpsRpc: 'https://selected.example', primary: false }
+		await setRpcList([{ ...current, primary: true }, selected])
+		await changeSimulationMode({ simulationMode, rpcNetwork: reselect ? selected : current })
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		await changeActiveRpc(services.ethereum, services.tokenPriceService, () => services, new Map(), selected, simulationMode, undefined)
+		assert.equal((await getPrimaryRpcForChain(selected.chainId))?.httpsRpc, selected.httpsRpc)
+		assert.equal((await getSettings()).activeRpcNetwork.httpsRpc, selected.httpsRpc)
 	})
 
 	test('activation installs services once without exposing a potentially superseded snapshot', async () => {
