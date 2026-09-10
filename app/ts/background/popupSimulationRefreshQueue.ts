@@ -57,7 +57,7 @@ export function createPopupSimulationRefresher<T extends RevisionedPopupSimulati
 }
 
 const refreshRevision = createPopupSimulationRefresher<RevisionedPopupSimulationRefresh & { readonly snapshot: SimulationSnapshot }>(async ({ ethereum, tokenPriceService, invalidateOldState = false, snapshot }) => {
-	const result = await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, invalidateOldState, false, !invalidateOldState, snapshot)
+	const result = await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState, skipIfUnchanged: !invalidateOldState, snapshot })
 	return result.simulationUpdatingState !== 'failed' && result.simulationResultState !== 'invalid'
 })
 

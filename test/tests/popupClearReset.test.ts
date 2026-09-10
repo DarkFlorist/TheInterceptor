@@ -1,3 +1,4 @@
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import * as funtypes from 'funtypes'
 import type { CompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
@@ -180,6 +181,7 @@ async function loadModules() {
 	const settings = await import('../../app/ts/background/settings.js')
 	const background = await import('../../app/ts/background/background.js')
 	const activeSettings = await import('../../app/ts/background/activeSettings.js')
+	const walletSwitch = await import('../../app/ts/background/walletSwitch.js')
 	const popupMessageRouting = await import('../../app/ts/background/popupMessageRouting.js')
 	const storageVariables = await import('../../app/ts/background/storageVariables.js')
 	const simulationUpdating = await import('../../app/ts/background/simulationUpdating.js')
@@ -193,6 +195,7 @@ async function loadModules() {
 		...settings,
 		...background,
 		...activeSettings,
+		...walletSwitch,
 		...popupMessageRouting,
 		updateTransactionState: storageVariables.updateTransactionState,
 		getSafeTransactionStacks: storageVariables.getSafeTransactionStacks,
@@ -403,7 +406,7 @@ describe('popup clear reset', () => {
 		fakeEthereum.getBlock = async (...args) => { providerReads++; return await originalBlock(...args) }
 		fakeEthereum.getBlockNumber = async (...args) => { providerReads++; return await originalNumber(...args) }
 		try {
-			const result = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, false, false, true, snapshot)
+			const result = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, { skipIfUnchanged: true, snapshot })
 			if (snapshot !== undefined) assert.equal((await getUpdatedSimulationState(fakeEthereum, snapshot)).kind, 'passthrough')
 			assert.equal(providerReads, 0)
 			assert.equal(result.simulationState.kind, 'passthrough')
@@ -502,7 +505,7 @@ describe('popup clear reset', () => {
 			modules.getPopupVisualisationFingerprint(currentSimulationInput, rpcNetwork, 123n),
 			modules.getPopupVisualisationFingerprint(storedSimulationState.value.simulationStateInput, storedSimulationState.value.rpcNetwork, storedSimulationState.value.blockNumber),
 		)
-		const popupVisualisation = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, false, false, true)
+		const popupVisualisation = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, { skipIfUnchanged: true })
 		assert.equal(popupVisualisation.simulationId, matchingPopupVisualisation.simulationId)
 		assert.equal(popupVisualisation.simulationState.kind, 'simulated')
 		assert.equal(matchingPopupVisualisation.simulationState.kind, 'simulated')
@@ -518,7 +521,7 @@ describe('popup clear reset', () => {
 		const snapshot = await captureSimulationSnapshot()
 		await browserStorageLocalSet({ makeCurrentAddressRich: true })
 		assert.notDeepEqual(await modules.getCurrentSimulationInput(), snapshot.simulationStateInput)
-		const result = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, false, false, false, snapshot)
+		const result = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, { snapshot })
 		assert.equal(result.numberOfAddressesMadeRich, 0)
 		assert.equal(result.simulationState.kind, 'simulated')
 		if (result.simulationState.kind !== 'simulated') throw new Error('Expected a simulated snapshot')
@@ -582,7 +585,7 @@ describe('popup clear reset', () => {
 			interceptorTransactionStack: { operations: [] },
 		})
 
-		await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, false, false)
+		await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService)
 
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
 		assert.ok(popupVisualisation)
@@ -612,7 +615,7 @@ describe('popup clear reset', () => {
 			popupVisualisation: stalePopupVisualisation,
 		})
 
-		await resetSimulationStateFromConfig(fakeEthereum, fakeTokenPriceService)
+		await resetSimulationStateFromConfig(createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }))
 
 		const interceptorTransactionStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
 		const popupVisualisation = (await browserStorageLocalGet('popupVisualisation')).popupVisualisation
@@ -659,7 +662,7 @@ describe('popup clear reset', () => {
 			popupVisualisation: stalePopupVisualisation,
 		})
 
-		await resetSimulationStateFromConfig(fakeEthereum, fakeTokenPriceService)
+		await resetSimulationStateFromConfig(createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }))
 
 		const storedStack = (await browserStorageLocalGet('interceptorTransactionStack')).interceptorTransactionStack
 		assert.deepEqual(storedStack.operations.map((operation) => operation.preSimulationTransaction.transactionIdentifier), [1n, 3n, 4n])
@@ -673,10 +676,10 @@ describe('popup clear reset', () => {
 		browserMock.reset()
 		browserMock.setPopupOpen(false)
 		const resets: RpcNetwork[] = []
-		const resetSimulationServices = (nextRpcEntry: RpcNetwork) => {
+		const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }, (nextRpcEntry: RpcNetwork) => {
 			resets.push(nextRpcEntry)
 			return { ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }
-		}
+		})
 		const interceptorTransactionStack = { operations: [{ type: 'TimeManipulation', blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] as const }
 		await browserStorageLocalSet({
 			independentActiveSimulationAddress: activeAddress,
@@ -686,7 +689,7 @@ describe('popup clear reset', () => {
 			interceptorTransactionStack,
 		})
 
-		await changeActiveRpc(fakeEthereum, fakeTokenPriceService, resetSimulationServices, new Map(), sameChainRpcNetwork, true, undefined)
+		await changeActiveRpc(simulationServicesOwner, new Map(), sameChainRpcNetwork, { source: 'dapp', simulationMode: true, signerTabId: undefined })
 
 		const modules = await modulesPromise
 		const updatedSettings = await modules.getSettings()
@@ -702,10 +705,10 @@ describe('popup clear reset', () => {
 	test('clears the interceptor stack when changing rpc to another chain', async () => {
 		browserMock.reset()
 		const resets: RpcNetwork[] = []
-		const resetSimulationServices = (nextRpcEntry: RpcNetwork) => {
+		const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }, (nextRpcEntry: RpcNetwork) => {
 			resets.push(nextRpcEntry)
 			return { ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }
-		}
+		})
 		await browserStorageLocalSet({
 			independentActiveSimulationAddress: activeAddress,
 			activeRpcNetwork: rpcNetwork,
@@ -714,7 +717,7 @@ describe('popup clear reset', () => {
 			interceptorTransactionStack: { operations: [{ type: 'TimeManipulation', blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION }] },
 		})
 
-		await changeActiveRpc(fakeEthereum, fakeTokenPriceService, resetSimulationServices, new Map(), otherChainRpcNetwork, true, undefined)
+		await changeActiveRpc(simulationServicesOwner, new Map(), otherChainRpcNetwork, { source: 'dapp', simulationMode: true, signerTabId: undefined })
 
 		const modules = await modulesPromise
 		const updatedSettings = await modules.getSettings()

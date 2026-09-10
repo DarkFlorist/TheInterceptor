@@ -1,6 +1,6 @@
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import type { ResetSimulationServices } from '../../app/ts/simulation/serviceLifecycle.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import { EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
@@ -137,7 +137,7 @@ function createEthereum(rpcEntry: RpcEntry, ethSimulateV1Result?: unknown) {
 		ethereum,
 		requestHandler,
 		tokenPriceService,
-		resetSimulationServices: (() => ({ ethereum, tokenPriceService })) satisfies ResetSimulationServices,
+		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }, (() => ({ ethereum, tokenPriceService }))),
 	}
 }
 
@@ -158,16 +158,16 @@ async function createApprovedDappHarness(ethSimulateV1Result?: unknown) {
 	const websiteTabConnections = new Map([[socket.tabId, { connections: {
 		[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 	} }]])
-	const { ethereum, requestHandler, tokenPriceService, resetSimulationServices } = createEthereum(rpcEntry, ethSimulateV1Result)
-	return { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, ethereum, requestHandler, tokenPriceService, resetSimulationServices }
+	const { ethereum, requestHandler, tokenPriceService, simulationServicesOwner } = createEthereum(rpcEntry, ethSimulateV1Result)
+	return { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, ethereum, requestHandler, tokenPriceService, simulationServicesOwner }
 }
 
 describe('background eth_simulateV1', () => {
 	test('replies to approved dapp eth_simulateV1 requests', async () => {
-		const { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, ethereum, requestHandler, tokenPriceService, resetSimulationServices } = await createApprovedDappHarness()
+		const { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, ethereum, requestHandler, tokenPriceService, simulationServicesOwner } = await createApprovedDappHarness()
 		const parentBlockHash = '0x000000000000000000000000000000000000000000000000000000000000abcd'
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 42, requestSocket: socket },
@@ -210,10 +210,10 @@ describe('background eth_simulateV1', () => {
 	})
 
 	test('preserves blob transaction fields in dapp eth_simulateV1 requests', async () => {
-		const { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, ethereum, requestHandler, tokenPriceService, resetSimulationServices } = await createApprovedDappHarness()
+		const { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, ethereum, requestHandler, tokenPriceService, simulationServicesOwner } = await createApprovedDappHarness()
 		const blobVersionedHash = '0x01'.padEnd(66, '0')
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 44, requestSocket: socket },
@@ -260,9 +260,9 @@ describe('background eth_simulateV1', () => {
 	})
 
 	test('accepts one-parameter eth_simulateV1 requests and preserves blobBaseFee', async () => {
-		const { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, ethereum, requestHandler, tokenPriceService, resetSimulationServices } = await createApprovedDappHarness()
+		const { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, ethereum, requestHandler, tokenPriceService, simulationServicesOwner } = await createApprovedDappHarness()
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 43, requestSocket: socket },
@@ -331,9 +331,9 @@ describe('background eth_simulateV1', () => {
 				}],
 			}],
 		}]
-		const { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, ethereum, tokenPriceService, resetSimulationServices } = await createApprovedDappHarness(ethSimulateV1Result)
+		const { handleInterceptedRequest, websiteOrigin, website, socket, port, messages, websiteTabConnections, ethereum, tokenPriceService, simulationServicesOwner } = await createApprovedDappHarness(ethSimulateV1Result)
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 45, requestSocket: socket },

@@ -1,9 +1,8 @@
-import { isSignerChainChangePending, requestSignerChainChange } from '../walletSwitch.js'
+import { isSignerChainChangePending, changeActiveRpc } from '../walletSwitch.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import type { ChainChangeConfirmation } from '../../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
-import { changeActiveRpc } from '../activeSettings.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { getChainChangeConfirmationPromise, getRpcNetworkForChain, setChainChangeConfirmationPromise } from '../storageVariables.js'
 import type { RpcNetwork } from '../../types/rpc.js'
@@ -13,7 +12,7 @@ import type { SwitchEthereumChainParams } from '../../types/JsonRpc-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
-import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
 
 let pendForUserReply: Future<ChainChangeConfirmation> | undefined 
@@ -28,7 +27,7 @@ export async function updateChainChangeViewWithPendingRequest() {
 	return
 }
 
-export async function resolveChainChange(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, confirmation: ChainChangeConfirmation) {
+export async function resolveChainChange(_ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: ChainChangeConfirmation) {
 	if (pendForUserReply !== undefined) {
 		pendForUserReply.resolve(confirmation)
 		return
@@ -36,7 +35,7 @@ export async function resolveChainChange(ethereum: EthereumClientService, tokenP
 	await runExclusiveChainChangeResolution(async () => {
 		const data = await getChainChangeConfirmationPromise()
 		if (data === undefined || !doesUniqueRequestIdentifiersMatch(confirmation.data.uniqueRequestIdentifier, data.request.uniqueRequestIdentifier)) throw new Error('Unique request identifier mismatch in change chain')
-		const resolved = await resolve(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, confirmation, data.simulationMode)
+		const resolved = await resolve(simulationServicesOwner, websiteTabConnections, confirmation, data.simulationMode)
 		if (resolved.error !== undefined) {
 			replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: 'wallet_switchEthereumChain' as const, error: resolved.error, uniqueRequestIdentifier: data.request.uniqueRequestIdentifier })
 		} else {
@@ -78,7 +77,7 @@ const userDeniedChange = {
 export const openChangeChainDialog = async (
 	ethereum: EthereumClientService,
 	tokenPriceService: TokenPriceService,
-	resetSimulationServices: ResetSimulationServices,
+	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	request: InterceptedRequest,
 	simulationMode: boolean,
@@ -93,7 +92,7 @@ export const openChangeChainDialog = async (
 		if (openedDialog === undefined || openedDialog.id !== popupOrTab.id || openedDialog.type !== popupOrTab.type) return
 		openedDialog = undefined
 		if (pendForUserReply === undefined) return
-		resolveChainChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, rejectMessage(await getRpcNetworkForChain(params.params[0].chainId), request.uniqueRequestIdentifier))
+		resolveChainChange(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, rejectMessage(await getRpcNetworkForChain(params.params[0].chainId), request.uniqueRequestIdentifier))
 	}
 	const onCloseWindow = async (id: number) => onCloseWindowOrTab({ type: 'popup' as const, id })
 	const onCloseTab = async (id: number) => onCloseWindowOrTab({ type: 'tab' as const, id })
@@ -125,7 +124,7 @@ export const openChangeChainDialog = async (
 			await resolveChainChange(
 				ethereum,
 				tokenPriceService,
-				resetSimulationServices,
+				simulationServicesOwner,
 				websiteTabConnections,
 				rejectMessage(await getRpcNetworkForChain(params.params[0].chainId), request.uniqueRequestIdentifier),
 			)
@@ -133,7 +132,7 @@ export const openChangeChainDialog = async (
 		const reply = await pendForUserReply
 
 		// forward message to content script
-		const resolution = runExclusiveChainChangeResolution(async () => await resolve(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, reply, simulationMode))
+		const resolution = runExclusiveChainChangeResolution(async () => await resolve(simulationServicesOwner, websiteTabConnections, reply, simulationMode))
 		return resolution.then((result) => result ?? userDeniedChange)
 	} finally {
 		removeWindowTabListeners(onCloseWindow, onCloseTab)
@@ -143,14 +142,10 @@ export const openChangeChainDialog = async (
 	}
 }
 
-async function resolve(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, reply: ChainChangeConfirmation, simulationMode: boolean) {
+async function resolve(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, reply: ChainChangeConfirmation, simulationMode: boolean) {
 	await setChainChangeConfirmationPromise(undefined)
 	if (reply.data.accept) {
-		if (simulationMode) {
-			await changeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, reply.data.rpcNetwork, simulationMode, reply.data.uniqueRequestIdentifier.requestSocket.tabId)
-			return { result: null }
-		}
-		return await requestSignerChainChange(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, reply.data.rpcNetwork, reply.data.uniqueRequestIdentifier.requestSocket.tabId)
+		return await changeActiveRpc(simulationServicesOwner, websiteTabConnections, reply.data.rpcNetwork, { source: 'dapp', simulationMode, signerTabId: reply.data.uniqueRequestIdentifier.requestSocket.tabId })
 	}
 	return userDeniedChange
 }

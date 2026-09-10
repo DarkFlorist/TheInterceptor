@@ -196,7 +196,7 @@ export async function updateConfirmTransactionView(ethereum: EthereumClientServi
 		if (pendingTransactionAndSignableMessages.length === 0) return false
 		const settings = await settingsPromise
 		const visualizedSimulatorState = settings.simulationMode
-			? await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false, onlyIfNotAlreadyUpdating)
+			? await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { onlyIfNotAlreadyUpdating })
 			: createPassthroughCompleteVisualizedSimulation()
 		const message: UpdateConfirmTransactionDialog = { method: 'popup_update_confirm_transaction_dialog', data: {
 			currentBlockNumber: await currentBlockNumberPromise,
@@ -407,7 +407,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 				...prevStack.operations,
 				{ type: 'Message' as const, signedMessageTransaction: pendingTransactionOrMessage.signedMessageTransaction }
 			] }))
-			await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false)
+			await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService)
 			return reply({ type: 'result', result: (await simulatePersonalSign(pendingTransactionOrMessage.originalRequestParameters, pendingTransactionOrMessage.signedMessageTransaction.fakeSignedFor)).signature })
 		}
 		case 'Transaction': {
@@ -417,7 +417,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 				...prevStack.operations,
 				{ type: 'Transaction' as const, preSimulationTransaction: transaction}
 			] }))
-			await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, false)
+			await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService)
 			markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionStackAppended)
 			return reply({ type: 'result', result: EthereumBytes32.serialize(signedTransaction.hash) })
 		}

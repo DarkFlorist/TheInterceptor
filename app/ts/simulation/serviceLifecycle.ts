@@ -6,8 +6,6 @@ import { TokenPriceService } from './services/priceEstimator.js'
 
 export type NewBlockAttemptCallback = (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
 export type OnErrorBlockCallback = (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
-// Installs the selected RPC services and returns the pair that subsequent work must use.
-export type ResetSimulationServices = (rpcNetwork: RpcEntry) => SimulationServices
 
 export type SimulationServices = {
 	readonly ethereum: EthereumClientService
@@ -64,7 +62,10 @@ export function resetSimulationServices(
 	)
 }
 
-export type SimulationServicesOwner = ReturnType<typeof createSimulationServicesOwner>
+export type SimulationServicesOwner = {
+	readonly getCurrent: () => SimulationServices
+	readonly reset: (rpcNetwork: RpcEntry) => SimulationServices
+}
 
 // One owner publishes installed services. Returned pairs are snapshots for an operation; independent message handlers must read getCurrent() when their work starts.
 export function createSimulationServicesOwner(

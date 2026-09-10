@@ -15,7 +15,7 @@ import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookT
 import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
@@ -232,12 +232,12 @@ export async function getAssociatedAddresses(settings: Settings, websiteOrigin: 
 	return getUniqueItemsByProperties(all, ['address'])
 }
 
-async function askUserForAccessOnConnectionUpdate(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressBookEntry | undefined, settings: Settings) {
+async function askUserForAccessOnConnectionUpdate(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressBookEntry | undefined, settings: Settings) {
 	const details = getWebsiteSocketConnection(websiteTabConnections, socket)
 	if (details === undefined) return
 
 	const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
-	await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress, undefined)
+	await requestAccessFromUser(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress, undefined)
 }
 
 function addIconRefreshTarget(iconRefreshTargets: Map<string, { tabId: number, websiteOrigin: string }>, tabId: number, websiteOrigin: string) {
@@ -273,7 +273,7 @@ async function updateTabConnections(
 	return iconRefreshTargets
 }
 
-async function promptForWebsiteAccesses(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, throwOnError = false) {
+async function promptForWebsiteAccesses(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, throwOnError = false) {
 	for (const tabConnection of websiteTabConnections.values()) {
 		for (const connection of Object.values(tabConnection.connections)) {
 			if (!connection.wantsToConnect) continue
@@ -282,7 +282,7 @@ async function promptForWebsiteAccesses(ethereum: EthereumClientService, tokenPr
 				const settings = await getSettings()
 				const { activeAddress, access } = await getConnectionAccess(websiteTabConnections, connection, settings)
 				if (access !== 'askAccess') continue
-				await askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
+				await askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 			} catch (error) {
 				if (throwOnError) throw error
 				await reportUnexpectedError(error)
@@ -425,7 +425,7 @@ export async function reconcileWebsiteApprovalAccesses(
 export async function finishWebsiteAccessUpdate(
 	ethereum: EthereumClientService | undefined,
 	tokenPriceService: TokenPriceService | undefined,
-	resetSimulationServices: ResetSimulationServices | undefined,
+	simulationServicesOwner: SimulationServicesOwner | undefined,
 	websiteTabConnections: WebsiteTabConnections,
 	update: WebsiteAccessUpdate,
 	promptForAccessesIfNeeded: boolean,
@@ -433,8 +433,8 @@ export async function finishWebsiteAccessUpdate(
 ) {
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 	for (const target of update.iconRefreshTargets) addIconRefreshTarget(iconRefreshTargets, target.tabId, target.websiteOrigin)
-	if (promptForAccessesIfNeeded && ethereum !== undefined && tokenPriceService !== undefined && resetSimulationServices !== undefined) {
-		await promptForWebsiteAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, throwOnError)
+	if (promptForAccessesIfNeeded && ethereum !== undefined && tokenPriceService !== undefined && simulationServicesOwner !== undefined) {
+		await promptForWebsiteAccesses(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, throwOnError)
 	}
 	try {
 		for (const tabState of await getAllTabStates()) {
@@ -454,21 +454,21 @@ export async function finishWebsiteAccessUpdate(
 export async function updateWebsiteApprovalAccesses(
 	ethereum: EthereumClientService | undefined,
 	tokenPriceService: TokenPriceService | undefined,
-	resetSimulationServices: ResetSimulationServices | undefined,
+	simulationServicesOwner: SimulationServicesOwner | undefined,
 	websiteTabConnections: WebsiteTabConnections,
 	settings: Settings,
 	promptForAccessesIfNeeded: boolean,
 	throwOnError = false,
 ): Promise<number> {
 	const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings, throwOnError)
-	await finishWebsiteAccessUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, update, promptForAccessesIfNeeded, throwOnError)
+	await finishWebsiteAccessUpdate(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded, throwOnError)
 	return update.popupRefreshGeneration
 }
 
 export async function finalizeWebsiteAccessChange(
 	ethereum: EthereumClientService | undefined,
 	tokenPriceService: TokenPriceService | undefined,
-	resetSimulationServices: ResetSimulationServices | undefined,
+	simulationServicesOwner: SimulationServicesOwner | undefined,
 	websiteTabConnections: WebsiteTabConnections,
 	settings: Settings,
 	promptForAccessesIfNeeded: boolean,
@@ -476,7 +476,7 @@ export async function finalizeWebsiteAccessChange(
 	await updateWebsiteApprovalAccesses(
 		ethereum,
 		tokenPriceService,
-		resetSimulationServices,
+		simulationServicesOwner,
 		websiteTabConnections,
 		settings,
 		promptForAccessesIfNeeded,
@@ -488,7 +488,7 @@ export async function finalizeWebsiteAccessChange(
 export async function persistWebsiteAccessChange(
 	ethereum: EthereumClientService | undefined,
 	tokenPriceService: TokenPriceService | undefined,
-	resetSimulationServices: ResetSimulationServices | undefined,
+	simulationServicesOwner: SimulationServicesOwner | undefined,
 	websiteTabConnections: WebsiteTabConnections,
 	website: Website,
 	access: boolean,
@@ -499,7 +499,7 @@ export async function persistWebsiteAccessChange(
 	return await finalizeWebsiteAccessChange(
 		ethereum,
 		tokenPriceService,
-		resetSimulationServices,
+		simulationServicesOwner,
 		websiteTabConnections,
 		await getSettings(),
 		promptForAccessesIfNeeded,

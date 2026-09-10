@@ -1,3 +1,4 @@
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
@@ -44,7 +45,7 @@ test('accepts a signer reply from the current approved child-frame port', async 
 		}],
 	})
 
-	await modules.signerReply(simulator.ethereum, simulator.tokenPriceService, () => undefined, websiteTabConnections, childPort, {
+	await modules.signerReply(simulator.ethereum, simulator.tokenPriceService, createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }), websiteTabConnections, childPort, {
 		method: 'signer_reply',
 		params: [{
 			success: true,
@@ -115,7 +116,7 @@ test('preserves a MetaMask keyring scan error on a retryable Safe signature', as
 		}],
 	})
 
-	await modules.signerReply(simulator.ethereum, simulator.tokenPriceService, () => undefined, websiteTabConnections, port, {
+	await modules.signerReply(simulator.ethereum, simulator.tokenPriceService, createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }), websiteTabConnections, port, {
 		method: 'signer_reply',
 		params: [{
 			success: false,
@@ -278,7 +279,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 		accountReply = modules.ethAccountsReply(
 			simulator.ethereum,
 			simulator.tokenPriceService,
-			() => undefined,
+			createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }),
 			websiteTabConnections,
 			port,
 			{
@@ -968,7 +969,7 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	const reply = await modules.setSafeSimulationSigner(
 		ethereum,
 		simulator.tokenPriceService,
-		() => undefined,
+		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
 		new Map(),
 		{
 			method: 'popup_setSafeSimulationSigner',
@@ -991,7 +992,7 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	const unsupportedVersionFailure = await withSilencedConsole(async () => modules.setSafeSimulationSigner(
 		ethereum,
 		simulator.tokenPriceService,
-		() => undefined,
+		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
 		new Map(),
 		{
 			method: 'popup_setSafeSimulationSigner',
@@ -1012,7 +1013,7 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	const unsupportedVersionSaveFailure = await withSilencedConsole(async () => addOrModifyAddressBookEntry(
 		ethereum,
 		simulator.tokenPriceService,
-		() => undefined,
+		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
 		new Map(),
 		{
 			method: 'popup_addOrModifyAddressBookEntry',
@@ -1041,7 +1042,7 @@ test('refreshes Safe owner metadata and clears a stale simulation signer without
 	const reply = await modules.setSafeSimulationSigner(
 		ethereum,
 		simulator.tokenPriceService,
-		() => undefined,
+		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
 		new Map(),
 		{
 			method: 'popup_setSafeSimulationSigner',

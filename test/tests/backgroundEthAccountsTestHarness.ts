@@ -1,5 +1,5 @@
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import type { ResetSimulationServices } from '../../app/ts/simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
@@ -244,7 +244,7 @@ export function createEthereumWithGetBlockCounter(
 	return {
 		ethereum,
 		tokenPriceService,
-		resetSimulationServices: (() => ({ ethereum, tokenPriceService })) satisfies ResetSimulationServices,
+		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }),
 	}
 }
 
@@ -254,4 +254,12 @@ export function getWalletSwitchRequestId(messages: readonly PortMessage[], index
 	const id = messages.filter(message => message.method === 'request_signer_to_wallet_switchEthereumChain').at(index)?.walletSwitchRequestId
 	if (typeof id !== 'string') throw new Error('Missing wallet switch request ID')
 	return id
+}
+
+export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: SimulationServicesOwner['reset']): SimulationServicesOwner {
+	let current = initial
+	return {
+		getCurrent: () => current,
+		reset: network => { current = reset === undefined ? current : reset(network); return current },
+	}
 }

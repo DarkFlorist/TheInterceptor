@@ -1,17 +1,17 @@
+import { getConfiguredSigningSafe } from './signingAddressSelection.js'
+import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getSettings } from './settings.js'
 import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { Future } from '../utils/future.js'
 import type { SignerChainChangeConfirmation, WalletSwitchEthereumChainReply } from '../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import { changeActiveRpc } from './activeSettings.js'
-import { getSocketFromPort } from './backgroundUtils.js'
-import { promoteRpcAsPrimary } from './storageVariables.js'
-import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
+import { changeActiveAddressAndChain } from './activeSettings.js'
+import { getSocketFromPort, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
+import { promoteRpcAsPrimary, getTabState } from './storageVariables.js'
+import { getRpcNetworkChange, getRpcChangeRoute } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
-import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
-import { getConfirmedSignerStateToken, runSignerStateOperation, signerConnectionReplacedError, addSignerStateReplacementListener, doSignerStateTokensMatch, signerUnavailableError, type SignerStateToken } from './signerStateOwnership.js'
+import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import { sendCallbackToConfirmedSignerOwner, getConfirmedSignerStateToken, runSignerStateOperation, signerConnectionReplacedError, addSignerStateReplacementListener, doSignerStateTokensMatch, signerUnavailableError, type SignerStateToken } from './signerStateOwnership.js'
 
 type PendingSignerChainChange = {
 	readonly walletSwitchRequestId: string
@@ -85,7 +85,32 @@ function resolveSignerChainChange(signerStateToken: SignerStateToken, confirmati
 	return true
 }
 
-export async function requestSignerChainChange(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, requestTabId: number, timeoutMs = WALLET_SWITCH_TIMEOUT_MS) {
+export type RpcSwitchResult = { readonly result: null, readonly error?: undefined } | { readonly error: { readonly code: number, readonly message: string, readonly data?: string }, readonly result?: undefined }
+
+export type RpcSwitchRequest =
+	| { readonly source: 'popup', readonly signerTabId: number | undefined }
+	| { readonly source: 'dapp', readonly signerTabId: number | undefined, readonly simulationMode: boolean }
+
+// One command owns routing, origin-specific gates, local promotion and correlated wallet dispatch.
+export async function changeActiveRpc(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, request: RpcSwitchRequest, timeoutMs = WALLET_SWITCH_TIMEOUT_MS): Promise<RpcSwitchResult> {
+	const settings = await getSettings()
+	const simulationMode = request.source === 'popup' ? settings.simulationMode : request.simulationMode
+	const route = getRpcChangeRoute(settings.activeRpcNetwork, rpcNetwork, simulationMode)
+	if (route !== 'wallet') {
+		if (route === 'local') {
+			await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode, rpcNetwork })
+		}
+		await promoteRpcAsPrimary(rpcNetwork)
+		return { result: null }
+	}
+	if (request.signerTabId === undefined) return { error: signerUnavailableError }
+	if (request.source === 'popup' && await getConfiguredSigningSafe(settings, (await getTabState(request.signerTabId)).signerAccounts) !== undefined) {
+		return { error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'This Safe is tied to its current network. Select your wallet account before switching networks.' } }
+	}
+	return await requestSignerChainChange(websiteTabConnections, rpcNetwork, request.signerTabId, timeoutMs)
+}
+
+async function requestSignerChainChange(websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, requestTabId: number, timeoutMs: number) {
 	if (pendingSignerChainChange !== undefined) return { error: { code: -32002, message: 'A network switch is already waiting for your wallet.' } }
 	const pending: PendingSignerChainChange = {
 		walletSwitchRequestId: crypto.randomUUID(),
@@ -111,22 +136,19 @@ export async function requestSignerChainChange(ethereum: EthereumClientService, 
 	})
 	pendingSignerChainChange = pending
 	try {
-		const changeActiveRpcResult = await changeActiveRpc(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, rpcNetwork, false, requestTabId, pending.walletSwitchRequestId)
-		if (changeActiveRpcResult.type !== 'signerRequestSent') {
-			return changeActiveRpcResult.type === 'signerRequestNotNeeded'
-				? { result: null } as const
-				: { error: signerUnavailableError } as const
-		}
-		pending.signerStateToken = changeActiveRpcResult.signerStateToken
-		if (!pending.receivedReplyTokens.some(token => doSignerStateTokensMatch(changeActiveRpcResult.signerStateToken, token))) pending.timeout = setTimeout(() => {
+		const dispatchedToken = sendCallbackToConfirmedSignerOwner(websiteTabConnections, requestTabId, { method: 'request_signer_to_wallet_switchEthereumChain', result: rpcNetwork.chainId, walletSwitchRequestId: pending.walletSwitchRequestId })
+		if (dispatchedToken === false) return { error: signerUnavailableError }
+		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: await getSettings(), popupRefreshGeneration: bumpPopupRefreshGeneration() })
+		pending.signerStateToken = dispatchedToken
+		if (!pending.receivedReplyTokens.some(token => doSignerStateTokensMatch(dispatchedToken, token))) pending.timeout = setTimeout(() => {
 			pending.future.resolve({ type: 'timeout' })
 		}, timeoutMs)
 		const precedingReply = pending.repliesBeforeToken.find(({ signerStateToken, confirmation }) => {
-			return doSignerStateTokensMatch(changeActiveRpcResult.signerStateToken, signerStateToken)
+			return doSignerStateTokensMatch(dispatchedToken, signerStateToken)
 				&& confirmation.data[0].chainId === pending.requestedRpcNetwork.chainId
 		})
 		if (precedingReply !== undefined) pending.future.resolve({ type: 'reply', confirmation: precedingReply.confirmation })
-		const precedingReplacement = pending.replacementsBeforeToken.find(({ signerStateToken }) => doSignerStateTokensMatch(changeActiveRpcResult.signerStateToken, signerStateToken))
+		const precedingReplacement = pending.replacementsBeforeToken.find(({ signerStateToken }) => doSignerStateTokensMatch(dispatchedToken, signerStateToken))
 		if (precedingReplacement !== undefined) pending.future.resolve({ type: 'replacement', error: precedingReplacement.error })
 		const signerResult = await pending.future
 		if (signerResult.type === 'timeout') return { error: { code: -32002, message: 'Your wallet did not answer the network request in time. You can retry or change other settings. Your wallet may still show the previous request.' } }

@@ -54,8 +54,15 @@ const hasSimulationInputOperations = (simulationState: SimulationState) => (
 	simulationState.simulationStateInput.some((block) => block.transactions.length > 0 || block.signedMessages.length > 0)
 )
 
+export type PopupVisualisationOptions = {
+	readonly invalidateOldState?: boolean
+	readonly onlyIfNotAlreadyUpdating?: boolean
+	readonly skipIfUnchanged?: boolean
+	readonly snapshot?: SimulationSnapshot
+}
+
 // Visibility/throttle-aware execution: callers such as block updates can replace obsolete work without entering the interactive queue.
-export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, invalidateOldState = false, onlyIfNotAlreadyUpdating = false, skipIfUnchanged = false, snapshot?: SimulationSnapshot) => {
+export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, { invalidateOldState = false, onlyIfNotAlreadyUpdating = false, skipIfUnchanged = false, snapshot }: PopupVisualisationOptions = {}) => {
 	try {
 		const popupVisualisation = await getPopupVisualisationState()
 		if (onlyIfNotAlreadyUpdating && updateSimulationVisualisationSemaphore.getPermits() === 0) return popupVisualisation

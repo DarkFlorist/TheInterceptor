@@ -1,3 +1,4 @@
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { PopupMessageDispatcherContext } from '../../app/ts/background/popupMessageDispatcher.js'
@@ -120,7 +121,7 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 		websiteTabConnections: new Map(),
 		ethereum,
 		tokenPriceService,
-		resetSimulationServices: () => ({ ethereum, tokenPriceService }),
+		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService })),
 		settings,
 		publishRpcConnectionStatus: async () => undefined,
 		simulationAbortController: new AbortController(),

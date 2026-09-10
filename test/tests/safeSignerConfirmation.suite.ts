@@ -1,3 +1,4 @@
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
@@ -684,7 +685,7 @@ test('refreshes the selected signer before forwarding a Safe transaction', async
 		accountReply = modules.ethAccountsReply(
 			simulator.ethereum,
 			simulator.tokenPriceService,
-			() => undefined,
+			createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }),
 			websiteTabConnections,
 			port,
 			{
@@ -734,7 +735,7 @@ test('refreshes the selected signer before forwarding a Safe transaction', async
 	await modules.ethAccountsReply(
 		simulator.ethereum,
 		simulator.tokenPriceService,
-		() => undefined,
+		createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }),
 		websiteTabConnections,
 		port,
 		{

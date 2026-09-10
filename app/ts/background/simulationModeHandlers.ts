@@ -16,7 +16,7 @@ import { printError } from '../utils/errors.js'
 import { openFetchSimulationStackDialogOrGetCachedResult, type SimulationStackSnapshot } from './windows/fetchSimulationStack.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { addressString } from '../utils/bigint.js'
 
 export async function getBlockByHash(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EthBlockByHashParams) {
@@ -136,12 +136,12 @@ export async function personalSign(
 	return { method: confirmation.parameters.method, ...action }
 }
 
-export async function switchEthereumChain(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
+export async function switchEthereumChain(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService, simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
 	if (ethereumClientService.getChainId() === params.params[0].chainId) {
 		// we are already on the right chain
 		return { type: 'result' as const, method: params.method, result: null }
 	}
-	const change = await openChangeChainDialog(ethereumClientService, tokenPriceService, resetSimulationServices, websiteTabConnections, request, simulationMode, website, params)
+	const change = await openChangeChainDialog(ethereumClientService, tokenPriceService, simulationServicesOwner, websiteTabConnections, request, simulationMode, website, params)
 	return { type: 'result' as const, method: params.method, ...change }
 }
 

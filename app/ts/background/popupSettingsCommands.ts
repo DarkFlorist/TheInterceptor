@@ -26,15 +26,15 @@ function settingsCommand<Method extends PopupSettingsRequest['method']>(method: 
 // The protocol descriptor is the exhaustive operation/reply source; this boundary owns admission and command completion.
 export const popupSettingsCommandHandlers = {
 	popup_requestSettingsChangeStatus: popupMessageHandler('popup_requestSettingsChangeStatus', async () => await settingsCoordinator.publish()),
-	popup_changeActiveAddress: settingsCommand('popup_changeActiveAddress', async (context, request) => await changeActiveAddress(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)),
-	popup_changeActiveRpc: settingsCommand('popup_changeActiveRpc', async (context, request) => await popupChangeActiveRpc(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request, context.settings)),
+	popup_changeActiveAddress: settingsCommand('popup_changeActiveAddress', async (context, request) => await changeActiveAddress(context.simulationServicesOwner, context.websiteTabConnections, request)),
+	popup_changeActiveRpc: settingsCommand('popup_changeActiveRpc', async (context, request) => await popupChangeActiveRpc(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_enableSimulationMode: settingsCommand('popup_enableSimulationMode', async (context, request) => {
-		await enableSimulationMode(context.ethereum, context.tokenPriceService, context.resetSimulationServices, context.websiteTabConnections, request)
+		await enableSimulationMode(context.simulationServicesOwner, context.websiteTabConnections, request)
 		return { type: 'PopupSettingsChangeReply', ok: true }
 	}),
 	popup_modifyMakeMeRich: settingsCommand('popup_modifyMakeMeRich', async (context, request) => {
 		if (await modifyMakeMeRich(request)) {
-			const outcome = await queuePopupSimulationRefresh({ ethereum: context.ethereum, tokenPriceService: context.tokenPriceService, invalidateOldState: true })
+			const outcome = await queuePopupSimulationRefresh({ ...context.simulationServicesOwner.getCurrent(), invalidateOldState: true })
 			if (outcome.status === 'observed' && !outcome.available) {
 				return { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.' }
 			}

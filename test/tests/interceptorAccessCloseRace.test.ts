@@ -177,10 +177,10 @@ describe('interceptor access close handling', () => {
 		}
 		const ethereum = {} as never
 		const tokenPriceService = {} as never
-		const resetSimulationServices = (() => undefined) as never
+		const simulationServicesOwner = (() => undefined) as never
 
 		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
-		await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, request, undefined, await getSettings(), await getActiveAddressEntryForChain(account, 1n), async () => undefined)
+		await requestAccessFromUser(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, await getSettings(), await getActiveAddressEntryForChain(account, 1n), async () => undefined)
 
 		const postedMessages = browserMock.postedMessages as Array<{ method?: string, result?: unknown, requestId?: number }>
 		const providerRequestMessages = postedMessages
@@ -218,9 +218,9 @@ describe('interceptor access close handling', () => {
 		}
 		const ethereum = {} as never
 		const tokenPriceService = {} as never
-		const resetSimulationServices = (() => undefined) as never
+		const simulationServicesOwner = (() => undefined) as never
 
-		await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, undefined, undefined, settings, undefined, undefined)
+		await requestAccessFromUser(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, socket, website, undefined, undefined, settings, undefined, undefined)
 
 		const request: InterceptedRequest = {
 			interceptorRequest: true,
@@ -234,7 +234,7 @@ describe('interceptor access close handling', () => {
 			concurrentRequest = requestAccessFromUser(
 				ethereum,
 				tokenPriceService,
-				resetSimulationServices,
+				simulationServicesOwner,
 				websiteTabConnections,
 				socket,
 				website,
@@ -287,7 +287,7 @@ describe('interceptor access close handling', () => {
 		}
 		const ethereum = {} as never
 		const tokenPriceService = {} as never
-		const resetSimulationServices = (() => undefined) as never
+		const simulationServicesOwner = (() => undefined) as never
 		const request: InterceptedRequest = {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -295,7 +295,7 @@ describe('interceptor access close handling', () => {
 			method: 'eth_accounts',
 		}
 
-		await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, request, undefined, settings, undefined, async () => undefined)
+		await requestAccessFromUser(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, settings, undefined, async () => undefined)
 
 		let closeAccessDialog: Promise<unknown> | undefined
 		browserMock.onPendingAccessRead(() => {
@@ -305,7 +305,7 @@ describe('interceptor access close handling', () => {
 		await resolveInterceptorAccess(
 			ethereum,
 			tokenPriceService,
-			resetSimulationServices,
+			simulationServicesOwner,
 			websiteTabConnections,
 			{ originalRequestAccessToAddress: undefined, requestAccessToAddress: undefined, accessRequestId: 'undefined || https://example.test', userReply: 'Approved' },
 			async () => undefined,
@@ -358,7 +358,7 @@ describe('interceptor access close handling', () => {
 		])
 		const ethereum = {} as never
 		const tokenPriceService = {} as never
-		const resetSimulationServices = (() => undefined) as never
+		const simulationServicesOwner = (() => undefined) as never
 		const publishRpcConnectionStatus = async () => undefined
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
 		const activeAddress = await getActiveAddressEntryForChain(account, 1n)
@@ -383,7 +383,7 @@ describe('interceptor access close handling', () => {
 		await requestAccessFromUser(
 			ethereum,
 			tokenPriceService,
-			resetSimulationServices,
+			simulationServicesOwner,
 			websiteTabConnections,
 			firstSocket,
 			firstWebsite,
@@ -400,7 +400,7 @@ describe('interceptor access close handling', () => {
 			resolveInterceptorAccess(
 				ethereum,
 				tokenPriceService,
-				resetSimulationServices,
+				simulationServicesOwner,
 				websiteTabConnections,
 				{
 					userReply: 'Approved',
@@ -418,7 +418,7 @@ describe('interceptor access close handling', () => {
 		await resolveInterceptorAccess(
 			ethereum,
 			tokenPriceService,
-			resetSimulationServices,
+			simulationServicesOwner,
 			websiteTabConnections,
 			{
 				userReply: 'Rejected',
