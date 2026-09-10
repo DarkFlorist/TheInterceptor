@@ -384,6 +384,41 @@ describe('popup settings changes', () => {
 		})
 	}
 
+	for (const crossChain of [true, false]) test(`dapp RPC changes preserve the selected Safe chain (crossChain=${ crossChain })`, async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getSettings, websiteSocketToString, updateTabState, updateUserAddressBookEntries } = await loadModules()
+		const { changeActiveRpc, isSignerChainChangePending } = await import('../../app/ts/background/walletSwitch.js')
+		const { setRpcList, getRpcList } = await import('../../app/ts/background/storageVariables.js')
+		const currentRpc = (await getSettings()).activeRpcNetwork
+		const requestedRpc = { ...currentRpc, chainId: crossChain ? 2n : currentRpc.chainId, name: 'Alternative RPC', httpsRpc: 'https://alternative.example.test', primary: false }
+		const rpcList = [currentRpc, requestedRpc]
+		await setRpcList(rpcList)
+		await changeSimulationMode({ simulationMode: false, activeSigningAddress: 1n, activeSigningSafeAddress: 3n })
+		await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Signing Safe', address: 3n, chainId: currentRpc.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [1n] }])
+		await updateTabState(1, previous => ({ ...previous, signerAccounts: [1n], activeSigningAddress: 1n, signerChain: currentRpc.chainId }))
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(1)
+		const connections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const reply = await changeActiveRpc(simulationServicesOwner, connections, requestedRpc, { source: 'dapp', signerTabId: 1, simulationMode: false }, 10)
+		const settings = await getSettings()
+		assert.equal(settings.activeSigningSafeAddress, 3n)
+		assert.equal(messages.some(message => message.method === 'request_signer_to_wallet_switchEthereumChain'), false)
+		assert.equal(isSignerChainChangePending(), false)
+		if (crossChain) {
+			assert.equal(reply.error?.code, 4001)
+			assert.match(reply.error?.message ?? '', /Safe.*current network/u)
+			assert.deepEqual(settings.activeRpcNetwork, currentRpc)
+			assert.deepEqual(await getRpcList(), rpcList)
+		} else {
+			assert.deepEqual(reply, { result: null })
+			assert.deepEqual(settings.activeRpcNetwork, requestedRpc)
+			assert.equal((await getRpcList()).find(rpc => rpc.name === requestedRpc.name)?.primary, true)
+		}
+	})
+
 	for (const matchesDispatchedToken of [true, false]) test(`early reply deadline ownership matches the dispatched signer token (${ matchesDispatchedToken })`, async () => {
 		installBrowserMock()
 		const { changeSimulationMode, getSettings, websiteSocketToString } = await loadModules()

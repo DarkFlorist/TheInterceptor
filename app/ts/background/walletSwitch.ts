@@ -91,7 +91,7 @@ export type RpcSwitchRequest =
 	| { readonly source: 'popup', readonly signerTabId: number | undefined }
 	| { readonly source: 'dapp', readonly signerTabId: number | undefined, readonly simulationMode: boolean }
 
-// One command owns routing, origin-specific gates, local promotion and correlated wallet dispatch.
+// One command owns routing, Safe network restrictions, local promotion and correlated wallet dispatch.
 export async function changeActiveRpc(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, request: RpcSwitchRequest, timeoutMs = WALLET_SWITCH_TIMEOUT_MS): Promise<RpcSwitchResult> {
 	const settings = await getSettings()
 	const simulationMode = request.source === 'popup' ? settings.simulationMode : request.simulationMode
@@ -104,7 +104,8 @@ export async function changeActiveRpc(simulationServicesOwner: SimulationService
 		return { result: null }
 	}
 	if (request.signerTabId === undefined) return { error: signerUnavailableError }
-	if (request.source === 'popup' && await getConfiguredSigningSafe(settings, (await getTabState(request.signerTabId)).signerAccounts) !== undefined) {
+	// A selected Safe pins the active chain for both popup and dapp requests. Reject before the wallet can diverge.
+	if (await getConfiguredSigningSafe(settings, (await getTabState(request.signerTabId)).signerAccounts) !== undefined) {
 		return { error: { code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'This Safe is tied to its current network. Select your wallet account before switching networks.' } }
 	}
 	return await requestSignerChainChange(websiteTabConnections, rpcNetwork, request.signerTabId, timeoutMs)
