@@ -136,12 +136,12 @@ export async function personalSign(
 	return { method: confirmation.parameters.method, ...action }
 }
 
-export async function switchEthereumChain(ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService, simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
-	if (ethereumClientService.getChainId() === params.params[0].chainId) {
+export async function switchEthereumChain(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
+	if (simulationServicesOwner.getCurrent().ethereum.getChainId() === params.params[0].chainId) {
 		// we are already on the right chain
 		return { type: 'result' as const, method: params.method, result: null }
 	}
-	const change = await openChangeChainDialog(ethereumClientService, tokenPriceService, simulationServicesOwner, websiteTabConnections, request, simulationMode, website, params)
+	const change = await openChangeChainDialog(simulationServicesOwner, websiteTabConnections, request, simulationMode, website, params)
 	return { type: 'result' as const, method: params.method, ...change }
 }
 

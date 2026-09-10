@@ -139,8 +139,7 @@ async function runActiveSettingsChange(
 	} finally {
 		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.
 		if (accessUpdate !== undefined) {
-			const services = simulationServicesOwner.getCurrent()
-			await finishWebsiteAccessUpdate(services.ethereum, services.tokenPriceService, simulationServicesOwner, websiteTabConnections, accessUpdate, change.promptForAccessesIfNeeded ?? true)
+			await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, change.promptForAccessesIfNeeded ?? true)
 		}
 	}
 }

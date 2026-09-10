@@ -354,10 +354,10 @@ describe('popup settings changes', () => {
 				await waitForPortMessageCount(messages, 'request_signer_to_wallet_switchEthereumChain', 1)
 				assert.deepEqual(await getRpcList(), originalRpcList)
 				if (outcome === 'metadata after chain event') {
-					await signerChainChanged(ethereum, tokenPriceService, simulationServicesOwner, connections, port, { method: 'signer_chainChanged', params: ['0x2', 1] }, 'hasAccess', 1n)
+					await signerChainChanged(simulationServicesOwner, connections, port, { method: 'signer_chainChanged', params: ['0x2', 1] }, 'hasAccess', 1n)
 					assert.deepEqual((await getSettings()).activeRpcNetwork, primaryRpc)
 				}
-				await walletSwitchEthereumChainReply(ethereum, tokenPriceService, simulationServicesOwner, connections, port, {
+				await walletSwitchEthereumChainReply(simulationServicesOwner, connections, port, {
 					method: 'wallet_switchEthereumChain_reply',
 					params: outcome !== 'reject' ? [{ accept: true, chainId: '0x2', walletSwitchRequestId: getWalletSwitchRequestId(messages), signerProviderGeneration: 1 }] : [{ accept: false, chainId: '0x2', walletSwitchRequestId: getWalletSwitchRequestId(messages), error: { code: 4001, message: 'Rejected' }, signerProviderGeneration: 1 }],
 				}, 'hasAccess', 1n)
@@ -490,7 +490,7 @@ describe('popup settings changes', () => {
 				const originalSet = browser.storage.local.set
 				try {
 					Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: async () => { throw new Error('Storage write failed') } })
-					await assert.rejects(walletSwitchEthereumChainReply(services.ethereum, services.tokenPriceService, services.simulationServicesOwner, connections, port, {
+					await assert.rejects(walletSwitchEthereumChainReply(services.simulationServicesOwner, connections, port, {
 						method: 'wallet_switchEthereumChain_reply', params: [{ accept: true, chainId: '0x2', walletSwitchRequestId: getWalletSwitchRequestId(messages), signerProviderGeneration: token.signerProviderGeneration }],
 						interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
 					}, 'hasAccess', undefined), /Storage write failed/)
@@ -515,13 +515,13 @@ describe('popup settings changes', () => {
 					request: { method: 'wallet_switchEthereumChain', params: [{ chainId: 2n }], interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier },
 				})
 				let completed = false
-				const dappSwitch = resolveChainChange(services.ethereum, services.tokenPriceService, services.simulationServicesOwner, connections, {
+				const dappSwitch = resolveChainChange(services.simulationServicesOwner, connections, {
 					method: 'popup_changeChainDialog', data: { rpcNetwork: dappRpc, uniqueRequestIdentifier, accept: true },
 				}).then(() => { completed = true })
 				await waitForPortMessageCount(messages, 'request_signer_to_wallet_switchEthereumChain', 2)
 				const dappId = getWalletSwitchRequestId(messages)
 				assert.notEqual(dappId, expiredId)
-				const deliver = (walletSwitchRequestId: string) => walletSwitchEthereumChainReply(services.ethereum, services.tokenPriceService, services.simulationServicesOwner, connections, port, {
+				const deliver = (walletSwitchRequestId: string) => walletSwitchEthereumChainReply(services.simulationServicesOwner, connections, port, {
 					method: 'wallet_switchEthereumChain_reply', params: [{ accept: true, chainId: '0x2', walletSwitchRequestId, signerProviderGeneration: token.signerProviderGeneration }],
 					interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
 				}, 'hasAccess', undefined)

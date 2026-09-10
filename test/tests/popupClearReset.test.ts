@@ -745,9 +745,7 @@ describe('popup clear reset', () => {
 		const modules = await modulesPromise
 		const reply = await modules.popupMessageHandler(
 			new Map(),
-			fakeEthereum,
-			fakeTokenPriceService,
-			(() => undefined) as never,
+			createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }),
 			{ method: 'popup_requestCompleteVisualizedSimulation' },
 			await modules.getSettings(),
 			async () => undefined,

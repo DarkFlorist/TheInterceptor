@@ -117,7 +117,7 @@ describe('background eth_accounts', () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { updateWebsiteApprovalAccesses, getSettings } = await loadModules()
 		const connections = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { throw new Error('Observer failed') } } })
-		assert.equal(typeof await updateWebsiteApprovalAccesses(undefined, undefined, undefined, connections, await getSettings(), false, true), 'number')
+		assert.equal(typeof await updateWebsiteApprovalAccesses(undefined, connections, await getSettings(), false, true), 'number')
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_UnexpectedErrorOccured'), true)
 	})
@@ -130,7 +130,7 @@ describe('background eth_accounts', () => {
 			await releaseCallback.promise
 			throw new Error('Async observer failed')
 		} } })
-		assert.equal(typeof await updateWebsiteApprovalAccesses(undefined, undefined, undefined, connections, await getSettings(), false, true), 'number')
+		assert.equal(typeof await updateWebsiteApprovalAccesses(undefined, connections, await getSettings(), false, true), 'number')
 		releaseCallback.resolve(undefined)
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_UnexpectedErrorOccured'), true)
@@ -143,11 +143,11 @@ describe('background eth_accounts', () => {
 		const first = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { calls.push('first') } } })
 		const second = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { calls.push('second') } } })
 		const settings = await getSettings()
-		await updateWebsiteApprovalAccesses(undefined, undefined, undefined, first, settings, false, true)
+		await updateWebsiteApprovalAccesses(undefined, first, settings, false, true)
 		assert.deepEqual(calls, ['first'])
-		await updateWebsiteApprovalAccesses(undefined, undefined, undefined, new Map(), settings, false, true)
+		await updateWebsiteApprovalAccesses(undefined, new Map(), settings, false, true)
 		assert.deepEqual(calls, ['first'])
-		await updateWebsiteApprovalAccesses(undefined, undefined, undefined, second, settings, false, true)
+		await updateWebsiteApprovalAccesses(undefined, second, settings, false, true)
 		assert.deepEqual(calls, ['first', 'second'])
 	})
 
@@ -474,7 +474,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual((await getPendingAccessRequests())[0]?.requestAccessToAddress, selfOwnedSafe)
 
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
-		await resolveInterceptorAccess(ethereum, tokenPriceService, simulationServicesOwner, new Map(), {
+		await resolveInterceptorAccess(simulationServicesOwner, new Map(), {
 			userReply: 'Approved',
 			requestAccessToAddress: address,
 			originalRequestAccessToAddress: address,
@@ -739,7 +739,7 @@ describe('background eth_accounts', () => {
 			accessRequestId: 'safe-owner-changed-before-approval',
 		}])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
-		const approve = async () => await resolveInterceptorAccess(ethereum, tokenPriceService, simulationServicesOwner, new Map(), {
+		const approve = async () => await resolveInterceptorAccess(simulationServicesOwner, new Map(), {
 			userReply: 'Approved',
 			requestAccessToAddress: safeAddress,
 			originalRequestAccessToAddress: safeAddress,
@@ -997,7 +997,7 @@ describe('background eth_accounts', () => {
 		assert.equal(childConnection.approved, false)
 		assert.equal(childResult?.metamaskCompatibilityMode, false)
 
-		await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, simulationServicesOwner, childConnections, await getSettings(), false)
+		await updateWebsiteApprovalAccesses(simulationServicesOwner, childConnections, await getSettings(), false)
 		await waitForPortMessageCount(childMessages, 'safe_apps_compatibility', 1)
 		assert.equal(childConnection.approved, true)
 		assert.equal(childMessages.filter((message) => message.method === 'safe_apps_compatibility').every((message) => message.result?.enabled === false), true)
@@ -1050,7 +1050,7 @@ describe('background eth_accounts', () => {
 		assert.equal(messages.filter((message) => message.method === 'safe_apps_compatibility').every((message) => message.result?.enabled === false), true)
 
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
-		await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, await getSettings(), false)
+		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), false)
 		assert.equal(messages.filter((message) => message.method === 'safe_apps_compatibility').every((message) => message.result?.enabled === false), true)
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			...connectedRequest,
@@ -1346,7 +1346,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(pendingRequest.signerAccounts, [account])
 		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, undefined)
 
-		await resolveInterceptorAccess(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, {
+		await resolveInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
 			userReply: 'Approved',
 			requestAccessToAddress: account,
 			originalRequestAccessToAddress: account,
@@ -1458,7 +1458,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 23), [])
 		assert.equal((await getSettings()).websiteAccess[0]?.addressAccess, undefined)
 
-		await resolveInterceptorAccess(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, {
+		await resolveInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
 			userReply: 'Approved',
 			requestAccessToAddress: account,
 			originalRequestAccessToAddress: account,
@@ -1574,7 +1574,7 @@ describe('background eth_accounts', () => {
 		assert.equal(pendingRequest.requestAccessToAddress?.address, account)
 		assert.notEqual(pendingRequest.requestAccessToAddress?.type, 'safe')
 
-		await resolveInterceptorAccess(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, {
+		await resolveInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
 			userReply: 'Approved',
 			requestAccessToAddress: account,
 			originalRequestAccessToAddress: account,
@@ -1625,8 +1625,6 @@ describe('background eth_accounts', () => {
 		const settings = await getSettings()
 
 		await firstWorkerAccess.requestAccessFromUser(
-			ethereum,
-			tokenPriceService,
 			simulationServicesOwner,
 			websiteTabConnections,
 			socket,
@@ -1638,8 +1636,6 @@ describe('background eth_accounts', () => {
 			noopPublishRpcConnectionStatus,
 		)
 		await restartedWorkerAccess.requestAccessFromUser(
-			ethereum,
-			tokenPriceService,
 			simulationServicesOwner,
 			websiteTabConnections,
 			socket,
@@ -1656,8 +1652,6 @@ describe('background eth_accounts', () => {
 		const pendingRequest = (await getPendingAccessRequests())[0]
 		if (pendingRequest === undefined) throw new Error('Missing pending request after worker restart')
 		await restartedWorkerAccess.resolveInterceptorAccess(
-			ethereum,
-			tokenPriceService,
 			simulationServicesOwner,
 			websiteTabConnections,
 			{
@@ -2067,7 +2061,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 18), [])
 		assert.deepEqual(siblingMessages.filter((message) => message.method === 'connect' || message.method === 'accountsChanged' || message.method === 'chainChanged'), [])
 
-		await resolveInterceptorAccess(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, {
+		await resolveInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
 			userReply: 'Approved',
 			requestAccessToAddress: account,
 			originalRequestAccessToAddress: account,
@@ -2129,8 +2123,6 @@ describe('background eth_accounts', () => {
 		const pendingRequest = (await getPendingAccessRequests())[0]
 		if (pendingRequest === undefined) throw new Error('Missing pending request')
 		const siteApprovalResolution = resolveInterceptorAccess(
-			ethereum,
-			tokenPriceService,
 			simulationServicesOwner,
 			websiteTabConnections,
 			{
@@ -2190,8 +2182,6 @@ describe('background eth_accounts', () => {
 		const pendingRequest = (await getPendingAccessRequests())[0]
 		if (pendingRequest === undefined) throw new Error('Missing pending request')
 		const siteApprovalResolution = resolveInterceptorAccess(
-			ethereum,
-			tokenPriceService,
 			simulationServicesOwner,
 			websiteTabConnections,
 			{
@@ -2261,7 +2251,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged'), [])
 		assert.deepEqual(messages.filter((message) => message.method === 'wallet_requestPermissions' && message.requestId === 24), [])
 
-		await resolveInterceptorAccess(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, {
+		await resolveInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
 			userReply: 'Approved',
 			requestAccessToAddress: account,
 			originalRequestAccessToAddress: account,
@@ -2373,8 +2363,6 @@ describe('background eth_accounts', () => {
 		if (siteLevelPendingRequest === undefined) throw new Error('Missing combined site and address access request')
 		assert.equal(siteLevelPendingRequest.requestAccessToAddress?.address, account)
 		const siteApprovalResolution = resolveInterceptorAccess(
-			ethereum,
-			tokenPriceService,
 			simulationServicesOwner,
 			websiteTabConnections,
 			{
@@ -2454,8 +2442,6 @@ describe('background eth_accounts', () => {
 
 		await Promise.race([
 			requestAccessFromUser(
-				ethereum,
-				tokenPriceService,
 				simulationServicesOwner,
 				websiteTabConnections,
 				socket,
@@ -2476,7 +2462,7 @@ describe('background eth_accounts', () => {
 		if (pendingRequest === undefined) throw new Error('Missing address access request')
 		assert.equal(pendingRequest.requestAccessToAddress?.address, account)
 
-		await resolveInterceptorAccess(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, {
+		await resolveInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
 			userReply: 'Approved',
 			requestAccessToAddress: account,
 			originalRequestAccessToAddress: account,
@@ -2649,8 +2635,6 @@ describe('background eth_accounts', () => {
 		if (pendingRequest === undefined) throw new Error('Missing address access request')
 		assert.equal(pendingRequest.requestAccessToAddress?.address, nextAccount)
 		await resolveInterceptorAccess(
-			ethereum,
-			tokenPriceService,
 			simulationServicesOwner,
 			websiteTabConnections,
 			{
@@ -2813,7 +2797,7 @@ describe('background eth_accounts', () => {
 
 		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.approved, false)
 		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.wantsToConnect, false)
-		await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 		assert.equal((await getPendingAccessRequests()).length, 0)
 
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {

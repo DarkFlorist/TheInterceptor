@@ -208,8 +208,6 @@ describe('backgroundUtils messaging', () => {
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const reply = await popupMessageHandler(
 			new Map(),
-			ethereum,
-			tokenPriceService,
 			simulationServicesOwner,
 			{ method: 'popup_requestCompleteVisualizedSimulation' },
 			{
@@ -247,8 +245,6 @@ describe('backgroundUtils messaging', () => {
 		const tokenPriceService: import('../../app/ts/simulation/services/priceEstimator.js').TokenPriceService = Object.create(TokenPriceService.prototype)
 		const reply = await withSilencedConsole(async () => await popupMessageHandler(
 			new Map(),
-			ethereum,
-			tokenPriceService,
 			createTestSimulationServicesOwner({ ethereum, tokenPriceService }),
 			{ method: 'not_a_popup_method' },
 			{

@@ -1,5 +1,3 @@
-import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import type { PopupMessage, Settings } from '../types/interceptor-messages.js'
 import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
@@ -9,8 +7,6 @@ import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 
 export type PopupMessageDispatcherContext = {
 	websiteTabConnections: WebsiteTabConnections
-	ethereum: EthereumClientService
-	tokenPriceService: TokenPriceService
 	simulationServicesOwner: SimulationServicesOwner
 	settings: Settings
 	publishRpcConnectionStatus: PublishRpcConnectionStatus

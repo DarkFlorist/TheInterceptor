@@ -1,8 +1,6 @@
 import { PopupMessage, type Settings } from '../types/interceptor-messages.js'
 import { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST } from '../utils/constants.js'
 import { isExpectedInfrastructureError } from '../utils/errors.js'
@@ -15,8 +13,6 @@ const simulationAbortController = new AbortController()
 
 export async function popupMessageHandler(
 	websiteTabConnections: WebsiteTabConnections,
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
 	simulationServicesOwner: SimulationServicesOwner,
 	request: unknown,
 	settings: Settings,
@@ -36,8 +32,6 @@ export async function popupMessageHandler(
 	try {
 		const requestReply = await dispatchPopupMessage({
 			websiteTabConnections,
-			ethereum,
-			tokenPriceService,
 			simulationServicesOwner,
 			settings,
 			publishRpcConnectionStatus,

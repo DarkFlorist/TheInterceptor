@@ -119,8 +119,6 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 	const tokenPriceService: TokenPriceService = Object.create(TokenPriceServiceConstructor.prototype)
 	return {
 		websiteTabConnections: new Map(),
-		ethereum,
-		tokenPriceService,
 		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService })),
 		settings,
 		publishRpcConnectionStatus: async () => undefined,
@@ -278,7 +276,7 @@ describe('popup message dispatcher seams', () => {
 
 	test('does not identify an address using a different active chain', async () => {
 		const context = createDispatcherContext(async () => undefined)
-		Object.defineProperty(context.ethereum, 'getChainId', { value: () => 1n })
+		Object.defineProperty(context.simulationServicesOwner.getCurrent().ethereum, 'getChainId', { value: () => 1n })
 
 		assert.deepEqual(await dispatchPopupMessage(context, {
 			method: 'popup_requestIdentifyAddress',

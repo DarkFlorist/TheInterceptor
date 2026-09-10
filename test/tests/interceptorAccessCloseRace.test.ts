@@ -179,7 +179,7 @@ describe('interceptor access close handling', () => {
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 
 		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
-		await requestAccessFromUser(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, await getSettings(), await getActiveAddressEntryForChain(account, 1n), async () => undefined)
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, await getSettings(), await getActiveAddressEntryForChain(account, 1n), async () => undefined)
 
 		const postedMessages = browserMock.postedMessages as Array<{ method?: string, result?: unknown, requestId?: number }>
 		const providerRequestMessages = postedMessages
@@ -217,7 +217,7 @@ describe('interceptor access close handling', () => {
 		}
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 
-		await requestAccessFromUser(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, socket, website, undefined, undefined, settings, undefined, undefined)
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, undefined, undefined, settings, undefined, undefined)
 
 		const request: InterceptedRequest = {
 			interceptorRequest: true,
@@ -229,8 +229,6 @@ describe('interceptor access close handling', () => {
 		let concurrentRequest: Promise<void> | undefined
 		browserMock.onPendingAccessClear(() => {
 			concurrentRequest = requestAccessFromUser(
-				ethereum,
-				tokenPriceService,
 				simulationServicesOwner,
 				websiteTabConnections,
 				socket,
@@ -290,7 +288,7 @@ describe('interceptor access close handling', () => {
 			method: 'eth_accounts',
 		}
 
-		await requestAccessFromUser(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, settings, undefined, async () => undefined)
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, settings, undefined, async () => undefined)
 
 		let closeAccessDialog: Promise<unknown> | undefined
 		browserMock.onPendingAccessRead(() => {
@@ -298,8 +296,6 @@ describe('interceptor access close handling', () => {
 		})
 
 		await resolveInterceptorAccess(
-			ethereum,
-			tokenPriceService,
 			simulationServicesOwner,
 			websiteTabConnections,
 			{ originalRequestAccessToAddress: undefined, requestAccessToAddress: undefined, accessRequestId: 'undefined || https://example.test', userReply: 'Approved' },
@@ -374,8 +370,6 @@ describe('interceptor access close handling', () => {
 		}
 
 		await requestAccessFromUser(
-			ethereum,
-			tokenPriceService,
 			simulationServicesOwner,
 			websiteTabConnections,
 			firstSocket,
@@ -391,8 +385,6 @@ describe('interceptor access close handling', () => {
 
 		await Promise.race([
 			resolveInterceptorAccess(
-				ethereum,
-				tokenPriceService,
 				simulationServicesOwner,
 				websiteTabConnections,
 				{
@@ -409,8 +401,6 @@ describe('interceptor access close handling', () => {
 		const followUpRequest = (await getPendingAccessRequests()).find((request) => request.website.websiteOrigin === secondWebsite.websiteOrigin)
 		if (followUpRequest === undefined) throw new Error('Missing follow-up access request')
 		await resolveInterceptorAccess(
-			ethereum,
-			tokenPriceService,
 			simulationServicesOwner,
 			websiteTabConnections,
 			{
@@ -451,7 +441,7 @@ describe('interceptor access close handling', () => {
 		}
 		await setUseTabsInsteadOfPopup(true)
 		try {
-			await requestAccessFromUser({} as never, {} as never, (() => undefined) as never, websiteTabConnections, socket, website, undefined, undefined, settings, undefined, undefined)
+			await requestAccessFromUser((() => undefined) as never, websiteTabConnections, socket, website, undefined, undefined, settings, undefined, undefined)
 			const pendingRequests = await getPendingAccessRequests()
 			assert.equal(pendingRequests.length, 1)
 			assert.equal(pendingRequests[0]?.popupOrTabId.type, 'tab')

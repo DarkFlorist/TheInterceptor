@@ -201,7 +201,7 @@ describe('active settings concurrency', () => {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
-		await requestAccessFromUser(ethereum, tokenPriceService, simulationServicesOwner, connections, socket, { websiteOrigin }, undefined, originalAddress, await getSettings(), originalAddress, undefined)
+		await requestAccessFromUser(simulationServicesOwner, connections, socket, { websiteOrigin }, undefined, originalAddress, await getSettings(), originalAddress, undefined)
 		const pending = (await getPendingAccessRequests())[0]
 		if (pending === undefined) throw new Error('Missing pending access request')
 
@@ -222,7 +222,7 @@ describe('active settings concurrency', () => {
 				return result
 			},
 		})
-		const approval = resolveInterceptorAccess(ethereum, tokenPriceService, simulationServicesOwner, connections, {
+		const approval = resolveInterceptorAccess(simulationServicesOwner, connections, {
 			userReply: 'Approved',
 			accessRequestId: pending.accessRequestId,
 			originalRequestAccessToAddress: originalAddress.address,
@@ -275,7 +275,7 @@ describe('active settings concurrency', () => {
 		}
 		assert.equal((await getSettings()).activeSimulationAddress, selectedAddress.address)
 		assert.equal((await getLatestUnexpectedError())?.data.message, 'Access popup failed to open')
-		await assert.rejects(updateWebsiteApprovalAccesses(ethereum, tokenPriceService, simulationServicesOwner, connections, await getSettings(), true, true), /Access popup failed to open/u)
+		await assert.rejects(updateWebsiteApprovalAccesses(simulationServicesOwner, connections, await getSettings(), true, true), /Access popup failed to open/u)
 	})
 
 	test.each([1, 2])('continues prompting after a failure when the next connection is in tab %j', async (secondTabId) => {
@@ -311,7 +311,7 @@ describe('active settings concurrency', () => {
 		} finally {
 			// Close the successful prompt so the shared dialog state cannot leak into another test.
 			for (const request of pending) {
-				await resolveInterceptorAccess(ethereum, tokenPriceService, simulationServicesOwner, connections, {
+				await resolveInterceptorAccess(simulationServicesOwner, connections, {
 					userReply: 'noResponse', accessRequestId: request.accessRequestId,
 					originalRequestAccessToAddress: selectedAddress.address, requestAccessToAddress: selectedAddress.address,
 				}, noopPublishRpcConnectionStatus)
@@ -396,17 +396,17 @@ describe('active settings concurrency', () => {
 		if (completion === 'staged') {
 			const update = await reconcileWebsiteApprovalAccesses(connections, snapshot)
 			await changeSimulationMode({ simulationMode: true, activeSimulationAddress: selectedAddress.address })
-			await finishWebsiteAccessUpdate(ethereum, tokenPriceService, simulationServicesOwner, connections, update, true)
+			await finishWebsiteAccessUpdate(simulationServicesOwner, connections, update, true)
 		} else {
 			await changeSimulationMode({ simulationMode: true, activeSimulationAddress: selectedAddress.address })
-			await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, simulationServicesOwner, connections, snapshot, true)
+			await updateWebsiteApprovalAccesses(simulationServicesOwner, connections, snapshot, true)
 		}
 		const pending = await getPendingAccessRequests()
 		try {
 			expect(pending.map((request) => request.requestAccessToAddress?.address)).toEqual([selectedAddress.address])
 		} finally {
 			for (const request of pending) {
-				await resolveInterceptorAccess(ethereum, tokenPriceService, simulationServicesOwner, connections, {
+				await resolveInterceptorAccess(simulationServicesOwner, connections, {
 					userReply: 'noResponse', accessRequestId: request.accessRequestId,
 					originalRequestAccessToAddress: selectedAddress.address, requestAccessToAddress: selectedAddress.address,
 				}, noopPublishRpcConnectionStatus)
@@ -450,7 +450,7 @@ describe('active settings concurrency', () => {
 			expect((await getTabState(1)).tabIconDetails).toEqual({ icon: ICON_NOT_ACTIVE, iconReason: 'example.test has PENDING access request for Second address!' })
 		} finally {
 			for (const request of pending) {
-				await resolveInterceptorAccess(ethereum, tokenPriceService, simulationServicesOwner, connections, {
+				await resolveInterceptorAccess(simulationServicesOwner, connections, {
 					userReply: 'noResponse', accessRequestId: request.accessRequestId,
 					originalRequestAccessToAddress: selectedAddress.address, requestAccessToAddress: selectedAddress.address,
 				}, noopPublishRpcConnectionStatus)

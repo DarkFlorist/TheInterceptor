@@ -10,8 +10,6 @@ import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueReques
 import { replyToInterceptedRequest } from '../messageSending.js'
 import type { SwitchEthereumChainParams } from '../../types/JsonRpc-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
-import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
-import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
 
@@ -27,7 +25,7 @@ export async function updateChainChangeViewWithPendingRequest() {
 	return
 }
 
-export async function resolveChainChange(_ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: ChainChangeConfirmation) {
+export async function resolveChainChange(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: ChainChangeConfirmation) {
 	if (pendForUserReply !== undefined) {
 		pendForUserReply.resolve(confirmation)
 		return
@@ -75,8 +73,6 @@ const userDeniedChange = {
 } as const
 
 export const openChangeChainDialog = async (
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	request: InterceptedRequest,
@@ -92,7 +88,7 @@ export const openChangeChainDialog = async (
 		if (openedDialog === undefined || openedDialog.id !== popupOrTab.id || openedDialog.type !== popupOrTab.type) return
 		openedDialog = undefined
 		if (pendForUserReply === undefined) return
-		resolveChainChange(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, rejectMessage(await getRpcNetworkForChain(params.params[0].chainId), request.uniqueRequestIdentifier))
+		resolveChainChange(simulationServicesOwner, websiteTabConnections, rejectMessage(await getRpcNetworkForChain(params.params[0].chainId), request.uniqueRequestIdentifier))
 	}
 	const onCloseWindow = async (id: number) => onCloseWindowOrTab({ type: 'popup' as const, id })
 	const onCloseTab = async (id: number) => onCloseWindowOrTab({ type: 'tab' as const, id })
@@ -122,8 +118,6 @@ export const openChangeChainDialog = async (
 			await updateChainChangeViewWithPendingRequest()
 		} else {
 			await resolveChainChange(
-				ethereum,
-				tokenPriceService,
 				simulationServicesOwner,
 				websiteTabConnections,
 				rejectMessage(await getRpcNetworkForChain(params.params[0].chainId), request.uniqueRequestIdentifier),

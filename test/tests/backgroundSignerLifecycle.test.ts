@@ -398,7 +398,7 @@ describe('background eth_accounts', () => {
 			simulationMode: false,
 		})
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
-		const resolution = resolveChainChange(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, {
+		const resolution = resolveChainChange(simulationServicesOwner, websiteTabConnections, {
 			method: 'popup_changeChainDialog',
 			data: { rpcNetwork: requestedRpcNetwork, uniqueRequestIdentifier, accept: true },
 		})
@@ -470,7 +470,7 @@ describe('background eth_accounts', () => {
 			simulationMode: false,
 		})
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
-		const resolution = resolveChainChange(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, {
+		const resolution = resolveChainChange(simulationServicesOwner, websiteTabConnections, {
 			method: 'popup_changeChainDialog',
 			data: { rpcNetwork: requestedRpcNetwork, uniqueRequestIdentifier, accept: true },
 		})
@@ -566,7 +566,7 @@ describe('background eth_accounts', () => {
 		})
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		let requestSettled = false
-		const resolution = resolveChainChange(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, {
+		const resolution = resolveChainChange(simulationServicesOwner, websiteTabConnections, {
 			method: 'popup_changeChainDialog',
 			data: { rpcNetwork: requestedRpcNetwork, uniqueRequestIdentifier, accept: true },
 		}).then(() => { requestSettled = true })
@@ -669,8 +669,6 @@ describe('background eth_accounts', () => {
 		await changeSimulationMode({ simulationMode: false, rpcNetwork: currentRpcNetwork, activeSimulationAddress: undefined, activeSigningAddress: undefined })
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const firstResolution = openChangeChainDialog(
-			ethereum,
-			tokenPriceService,
 			simulationServicesOwner,
 			websiteTabConnections,
 			firstRequest,
@@ -685,7 +683,7 @@ describe('background eth_accounts', () => {
 			pendingChainChange = await getChainChangeConfirmationPromise()
 		}
 		if (pendingChainChange === undefined) throw new Error('Missing production chain-change dialog state')
-		await resolveChainChange(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, {
+		await resolveChainChange(simulationServicesOwner, websiteTabConnections, {
 			method: 'popup_changeChainDialog',
 			data: { rpcNetwork: requestedRpcNetwork, uniqueRequestIdentifier: firstUniqueRequestIdentifier, accept: true },
 		})
@@ -697,8 +695,6 @@ describe('background eth_accounts', () => {
 
 		const secondResolution = await Promise.race([
 			openChangeChainDialog(
-				ethereum,
-				tokenPriceService,
 				simulationServicesOwner,
 				websiteTabConnections,
 				secondRequest,

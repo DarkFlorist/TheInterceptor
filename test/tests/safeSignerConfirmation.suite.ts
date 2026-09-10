@@ -683,8 +683,6 @@ test('refreshes the selected signer before forwarding a Safe transaction', async
 	port = createWebsitePort(socket, 0, postedMessages, (message) => {
 		if (!isRecord(message) || message.method !== 'request_signer_to_eth_accounts') return
 		accountReply = modules.ethAccountsReply(
-			simulator.ethereum,
-			simulator.tokenPriceService,
 			createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }),
 			websiteTabConnections,
 			port,
@@ -733,8 +731,6 @@ test('refreshes the selected signer before forwarding a Safe transaction', async
 	assert.match(refreshedMismatch.approvalStatus.message.toLowerCase(), new RegExp(addressString(freshlySelectedSigner).toLowerCase(), 'u'))
 
 	await modules.ethAccountsReply(
-		simulator.ethereum,
-		simulator.tokenPriceService,
 		createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }),
 		websiteTabConnections,
 		port,
