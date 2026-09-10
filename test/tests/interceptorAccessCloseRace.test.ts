@@ -1,3 +1,4 @@
+import { createEthereumWithGetBlockCounter } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { Settings } from '../../app/ts/types/interceptor-messages.js'
@@ -175,9 +176,7 @@ describe('interceptor access close handling', () => {
 			uniqueRequestIdentifier: { requestId: 7, requestSocket: socket },
 			method: 'eth_requestAccounts',
 		}
-		const ethereum = {} as never
-		const tokenPriceService = {} as never
-		const simulationServicesOwner = (() => undefined) as never
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 
 		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
 		await requestAccessFromUser(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, await getSettings(), await getActiveAddressEntryForChain(account, 1n), async () => undefined)
@@ -216,9 +215,7 @@ describe('interceptor access close handling', () => {
 				minimized: true,
 			},
 		}
-		const ethereum = {} as never
-		const tokenPriceService = {} as never
-		const simulationServicesOwner = (() => undefined) as never
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 
 		await requestAccessFromUser(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, socket, website, undefined, undefined, settings, undefined, undefined)
 
@@ -285,9 +282,7 @@ describe('interceptor access close handling', () => {
 				minimized: true,
 			},
 		}
-		const ethereum = {} as never
-		const tokenPriceService = {} as never
-		const simulationServicesOwner = (() => undefined) as never
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const request: InterceptedRequest = {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -356,9 +351,7 @@ describe('interceptor access close handling', () => {
 				},
 			} }],
 		])
-		const ethereum = {} as never
-		const tokenPriceService = {} as never
-		const simulationServicesOwner = (() => undefined) as never
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const publishRpcConnectionStatus = async () => undefined
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
 		const activeAddress = await getActiveAddressEntryForChain(account, 1n)

@@ -190,9 +190,8 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 						uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
 						...(rawMessage.interceptorInternalRequest === true ? { interceptorInternalRequest: true as const } : {}),
 					}
-					// A connected port outlives RPC switches; select services only when its queued request starts.
-					const simulationServices = getSimulationServices()
-					return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServices.ethereum, simulationServices.tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
+					// A connected port outlives RPC switches; each request stage selects services from the owner.
+					return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 				})
 			})
 		},

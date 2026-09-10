@@ -524,7 +524,7 @@ describe('background eth_accounts', () => {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: true,
 			uniqueRequestIdentifier: { requestId: 42, requestSocket: socket },
@@ -641,7 +641,7 @@ describe('background eth_accounts', () => {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 12, requestSocket: socket },
@@ -789,7 +789,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_requestAccounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_requestAccounts'), false)
 		assert.equal(messages.some((message) => message.method === 'connect'), false)
@@ -846,7 +846,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_requestAccounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.equal(messages.some((message) => message.type === 'forwardToSigner'), false)
 		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_requestAccounts'), false)
@@ -896,7 +896,7 @@ describe('background eth_accounts', () => {
 			params: [true, 'MetaMask', 2],
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 		await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
 
 		const connectedReplies = messages.filter((message) => message.method === 'connected_to_signer' && message.requestId === 12)
@@ -924,7 +924,7 @@ describe('background eth_accounts', () => {
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		assert.equal((await getSettings()).activeSigningSafeAddress, undefined)
 		assert.equal('lifecycle' in connections, false)
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 13, requestSocket: socket },
 			method: 'connected_to_signer', params: [true, 'MetaMask', 1],
@@ -973,7 +973,7 @@ describe('background eth_accounts', () => {
 			params: [true, 'MetaMask', 1],
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const connectedResult = messages.find((message) => message.method === 'connected_to_signer' && message.requestId === 13)?.result
 		assert.equal(connection.approved, true)
@@ -989,7 +989,7 @@ describe('background eth_accounts', () => {
 		const childConnections = new Map([[childSocket.tabId, { ...confirmedSignerOwnership(childSocket), connections: { [websiteSocketToString(childSocket)]: childConnection } }]])
 		await initializeSafeAppsCompatibility(childConnections)
 		await updateTabState(childSocket.tabId, (previousState) => ({ ...previousState, signerAccounts: [account], activeSigningAddress: account }))
-		await handleInterceptedRequest(childPort, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, childSocket, {
+		await handleInterceptedRequest(childPort, websiteOrigin, website, simulationServicesOwner, childSocket, {
 			...request,
 			uniqueRequestIdentifier: { requestId: 14, requestSocket: childSocket },
 		}, childConnections, noopPublishRpcConnectionStatus)
@@ -1044,7 +1044,7 @@ describe('background eth_accounts', () => {
 			params: [true, 'MetaMask', 1],
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, connectedRequest, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, connectedRequest, websiteTabConnections, noopPublishRpcConnectionStatus)
 		await waitForPortMessageCount(messages, 'safe_apps_compatibility', 1)
 		assert.equal(messages.find((message) => message.method === 'connected_to_signer' && message.requestId === 15)?.result?.metamaskCompatibilityMode, false)
 		assert.equal(messages.filter((message) => message.method === 'safe_apps_compatibility').every((message) => message.result?.enabled === false), true)
@@ -1052,7 +1052,7 @@ describe('background eth_accounts', () => {
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
 		await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, await getSettings(), false)
 		assert.equal(messages.filter((message) => message.method === 'safe_apps_compatibility').every((message) => message.result?.enabled === false), true)
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			...connectedRequest,
 			uniqueRequestIdentifier: { requestId: 16, requestSocket: socket },
 			params: [false, 'NoSigner', 2],
@@ -1170,7 +1170,7 @@ describe('background eth_accounts', () => {
 			const { port, messages } = createPort(socket.tabId, (message) => {
 				if (message.method !== 'request_signer_to_eth_accounts') return
 				replyToDiscovery = async () => {
-					await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+					await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 						interceptorRequest: true,
 						interceptorInternalRequest: true,
 						usingInterceptorWithoutSigner: false,
@@ -1194,7 +1194,7 @@ describe('background eth_accounts', () => {
 			}))
 
 			if (coldStart) {
-				await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+				await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 					interceptorRequest: true,
 					interceptorInternalRequest: true,
 					usingInterceptorWithoutSigner: false,
@@ -1313,7 +1313,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId, (message) => {
 			if (message.method !== 'request_signer_to_eth_requestAccounts') return
-			void handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+			void handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 				interceptorRequest: true,
 				interceptorInternalRequest: true,
 				usingInterceptorWithoutSigner: false,
@@ -1334,7 +1334,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_requestAccounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_requestAccounts').length, 1)
 		assert.equal(messages.some((message) => message.method === 'connect'), false)
@@ -1392,7 +1392,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_requestAccounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.equal(messages.some((message) => message.method === 'connect' || message.method === 'accountsChanged'), false)
 		assert.equal(messages.filter((message) => message.method === 'eth_requestAccounts' && message.requestId === 22).at(-1)?.error?.code, 4100)
@@ -1430,14 +1430,14 @@ describe('background eth_accounts', () => {
 			[connectionKey]: connection,
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
-		const requestAccountsPromise = handleInterceptedRequest(port, websiteOrigin, pendingWebsite.promise, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+		const requestAccountsPromise = handleInterceptedRequest(port, websiteOrigin, pendingWebsite.promise, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 23, requestSocket: socket },
 			method: 'eth_requestAccounts',
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 24, requestSocket: socket },
@@ -1498,7 +1498,7 @@ describe('background eth_accounts', () => {
 			[connectionKey]: connection,
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
-		const requestAccountsPromise = handleInterceptedRequest(port, websiteOrigin, pendingWebsite.promise, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+		const requestAccountsPromise = handleInterceptedRequest(port, websiteOrigin, pendingWebsite.promise, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 25, requestSocket: socket },
@@ -1564,7 +1564,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_requestAccounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_requestAccounts'), false)
 		assert.equal(messages.some((message) => message.method === 'connect'), false)
@@ -1695,7 +1695,7 @@ describe('background eth_accounts', () => {
 			if (message.method !== 'request_signer_to_eth_requestAccounts') return
 			void (async () => {
 				await updateWebsiteAccess(() => [{ website, access: false, addressAccess: undefined }])
-				await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+				await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 					interceptorRequest: true,
 					interceptorInternalRequest: true,
 					usingInterceptorWithoutSigner: false,
@@ -1717,7 +1717,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_requestAccounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_requestAccounts').length, 1)
 		assert.equal(messages.some((message) => message.method === 'connect'), false)
@@ -1746,7 +1746,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId, (message) => {
 			if (message.method !== 'request_signer_to_eth_requestAccounts') return
-			void handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+			void handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 				interceptorRequest: true,
 				interceptorInternalRequest: true,
 				usingInterceptorWithoutSigner: false,
@@ -1767,7 +1767,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_requestAccounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_requestAccounts').length, 1)
 		assert.equal(messages.some((message) => message.method === 'connect'), false)
@@ -1795,7 +1795,7 @@ describe('background eth_accounts', () => {
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(socket.tabId, (message) => {
 			if (message.method !== 'request_signer_to_eth_requestAccounts') return
-			void handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+			void handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 				interceptorRequest: true,
 				interceptorInternalRequest: true,
 				usingInterceptorWithoutSigner: false,
@@ -1816,7 +1816,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_requestAccounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_requestAccounts').length, 1)
 		assert.equal(messages.some((message) => message.method === 'connect'), false)
@@ -1847,7 +1847,7 @@ describe('background eth_accounts', () => {
 		const { port: createdPort, messages } = createPort(socket.tabId, (message) => {
 			if (message.method !== 'request_signer_to_eth_requestAccounts') return
 			void (async () => {
-				await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+				await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 					interceptorRequest: true,
 					interceptorInternalRequest: true,
 					usingInterceptorWithoutSigner: false,
@@ -1870,7 +1870,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_requestAccounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.equal(messages.filter((message) => message.method === 'request_signer_to_eth_requestAccounts').length, 1)
 		const requestAccountsReplies = messages.filter((message) => message.method === 'eth_requestAccounts' && message.requestId === 8)
@@ -1915,7 +1915,7 @@ describe('background eth_accounts', () => {
 			const accountRequest = accountRequests.find((candidate) => candidate.signerRequestMethod === message.method)
 			if (accountRequest === undefined) return
 			internalRequestId += 1
-			void handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+			void handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 				interceptorRequest: true,
 				interceptorInternalRequest: true,
 				usingInterceptorWithoutSigner: true,
@@ -1933,7 +1933,7 @@ describe('background eth_accounts', () => {
 
 		for (const [requestIndex, accountRequest] of accountRequests.entries()) {
 			const requestId = 15 + requestIndex
-			await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 				interceptorRequest: true,
 				usingInterceptorWithoutSigner: true,
 				uniqueRequestIdentifier: { requestId, requestSocket: socket },
@@ -1990,7 +1990,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_requestAccounts',
 		}
 
-		const requestPromise = handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const requestPromise = handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 		await waitForPortMessageCount(messages, 'request_signer_to_eth_requestAccounts', 1)
 		sendInternalWindowMessage({
 			method: 'window_signer_accounts_changed',
@@ -2004,7 +2004,7 @@ describe('background eth_accounts', () => {
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		assert.equal(messages.some((message) => message.requestId === 18), false)
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			interceptorInternalRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -2059,7 +2059,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_requestAccounts',
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const pendingRequest = (await getPendingAccessRequests())[0]
 		if (pendingRequest === undefined) throw new Error('Missing address access request')
@@ -2124,7 +2124,7 @@ describe('background eth_accounts', () => {
 			params: [{ eth_accounts: {} }],
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const pendingRequest = (await getPendingAccessRequests())[0]
 		if (pendingRequest === undefined) throw new Error('Missing pending request')
@@ -2185,7 +2185,7 @@ describe('background eth_accounts', () => {
 			params: [{ eth_accounts: {} }],
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const pendingRequest = (await getPendingAccessRequests())[0]
 		if (pendingRequest === undefined) throw new Error('Missing pending request')
@@ -2253,7 +2253,7 @@ describe('background eth_accounts', () => {
 			params: [{ eth_accounts: {} }],
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const pendingRequest = (await getPendingAccessRequests())[0]
 		if (pendingRequest === undefined) throw new Error('Missing address access request')
@@ -2315,7 +2315,7 @@ describe('background eth_accounts', () => {
 			params: [{ eth_accounts: {}, wallet_snap: {} }],
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		assert.equal(connection.approved, false)
 		assert.equal((await getPendingAccessRequests()).length, 1)
@@ -2344,7 +2344,7 @@ describe('background eth_accounts', () => {
 		let port: browser.runtime.Port
 		const { port: createdPort, messages } = createPort(socket.tabId, (message) => {
 			if (message.method !== 'request_signer_to_eth_requestAccounts') return
-			void handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+			void handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 				interceptorRequest: true,
 				interceptorInternalRequest: true,
 				usingInterceptorWithoutSigner: false,
@@ -2367,7 +2367,7 @@ describe('background eth_accounts', () => {
 			params: [{ eth_accounts: {} }],
 		}
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
 
 		const siteLevelPendingRequest = (await getPendingAccessRequests())[0]
 		if (siteLevelPendingRequest === undefined) throw new Error('Missing combined site and address access request')
@@ -2429,7 +2429,7 @@ describe('background eth_accounts', () => {
 		let port: browser.runtime.Port
 		const { port: createdPort, messages } = createPort(socket.tabId, (message) => {
 			if (message.method !== 'request_signer_to_eth_requestAccounts') return
-			void handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+			void handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 				interceptorRequest: true,
 				interceptorInternalRequest: true,
 				usingInterceptorWithoutSigner: false,
@@ -2577,7 +2577,7 @@ describe('background eth_accounts', () => {
 		let accountReply: Promise<unknown> | undefined
 		const { port, messages } = createPort(socket.tabId, (message) => {
 			if (message.method !== 'request_signer_to_eth_accounts') return
-			accountReply = handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+			accountReply = handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 				interceptorRequest: true,
 				interceptorInternalRequest: true,
 				usingInterceptorWithoutSigner: false,
@@ -2682,7 +2682,7 @@ describe('background eth_accounts', () => {
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 10, requestSocket: socket },
@@ -2722,7 +2722,7 @@ describe('background eth_accounts', () => {
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 11, requestSocket: socket },
@@ -2738,7 +2738,7 @@ describe('background eth_accounts', () => {
 		assert.equal(access?.access, false)
 		assert.equal(access?.addressAccess, undefined)
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 15, requestSocket: socket },
@@ -2767,7 +2767,7 @@ describe('background eth_accounts', () => {
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 12, requestSocket: socket },
@@ -2803,7 +2803,7 @@ describe('background eth_accounts', () => {
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 13, requestSocket: socket },
@@ -2816,7 +2816,7 @@ describe('background eth_accounts', () => {
 		await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 		assert.equal((await getPendingAccessRequests()).length, 0)
 
-		await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 14, requestSocket: socket },
@@ -2854,7 +2854,7 @@ describe('background eth_accounts', () => {
 		]
 		for (const [index, params] of unsupportedParams.entries()) {
 			const requestId = 13 + index
-			await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 				interceptorRequest: true,
 				usingInterceptorWithoutSigner: false,
 				uniqueRequestIdentifier: { requestId, requestSocket: socket },
@@ -3109,7 +3109,7 @@ describe('background eth_accounts', () => {
 			if (message.method !== 'request_signer_to_eth_requestAccounts') return
 			accountReply = new Promise((resolve) => {
 				setTimeout(() => {
-					resolve(handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, socket, {
+					resolve(handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 						interceptorRequest: true,
 						interceptorInternalRequest: true,
 						usingInterceptorWithoutSigner: false,
@@ -3181,7 +3181,7 @@ describe('background eth_accounts', () => {
 		let accountReply: Promise<unknown> | undefined
 		const { port: currentPort, messages: currentMessages } = createPort(currentSocket.tabId, (message) => {
 			if (message.method !== 'request_signer_to_eth_accounts') return
-			accountReply = handleInterceptedRequest(currentPort, websiteOrigin, website, ethereum, tokenPriceService, simulationServicesOwner, currentSocket, {
+			accountReply = handleInterceptedRequest(currentPort, websiteOrigin, website, simulationServicesOwner, currentSocket, {
 				interceptorRequest: true,
 				interceptorInternalRequest: true,
 				usingInterceptorWithoutSigner: false,
