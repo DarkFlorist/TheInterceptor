@@ -110,7 +110,7 @@ export function getSafeSignerSelectionFromAccountRefresh(refreshResult: SafeSign
 	}
 }
 
-export async function confirmDialog(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
+export async function confirmDialog(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	const pending = confirmation.data.action === 'accept'
 		? (await getPendingTransactionsAndMessages()).find((entry) =>
 			doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, confirmation.data.uniqueRequestIdentifier)
@@ -126,6 +126,8 @@ export async function confirmDialog(ethereum: EthereumClientService, tokenPriceS
 			return getSafeSignerSelectionFromAccountRefresh(refreshResult)
 		})()
 		: undefined
+	// Wallet account refresh may outlive an RPC switch; resolution starts with the installed pair.
+	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 	await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, refreshedSafeSignerSelection)
 }
 

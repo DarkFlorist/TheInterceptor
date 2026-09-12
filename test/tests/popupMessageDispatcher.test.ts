@@ -1,4 +1,4 @@
-import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { PopupMessageDispatcherContext } from '../../app/ts/background/popupMessageDispatcher.js'
@@ -139,6 +139,38 @@ beforeEach(() => {
 })
 
 describe('popup message dispatcher seams', () => {
+	test('snapshot registration captures at invocation and keeps one pair across awaits', async () => {
+		const { popupSnapshotMessageHandler } = await import('../../app/ts/background/popupMessageHandlerRegistry.js')
+		const context = createDispatcherContext(async () => undefined)
+		const initial = context.simulationServicesOwner.getCurrent()
+		const replacement = createDispatcherContext(async () => undefined).simulationServicesOwner.getCurrent()
+		const last = createDispatcherContext(async () => undefined).simulationServicesOwner.getCurrent()
+		let next = replacement
+		context.simulationServicesOwner = createTestSimulationServicesOwner(initial, () => next)
+		const entered = createDeferredValue<void>()
+		const release = createDeferredValue<void>()
+		const observed: typeof initial[] = []
+		const handler = popupSnapshotMessageHandler('popup_requestSimulationMetadata', async snapshot => {
+			assert.equal('simulationServicesOwner' in snapshot, false)
+			assert.equal('resetSimulationState' in snapshot, false)
+			observed.push(snapshot.services)
+			entered.resolve(undefined)
+			await release.promise
+			observed.push(snapshot.services)
+		})
+		const network = { ...settings.activeRpcNetwork, httpsRpc: 'https://snapshot.example' }
+		context.simulationServicesOwner.reset(network)
+		const pending = handler(context, { method: 'popup_requestSimulationMetadata' })
+		await entered.promise
+		next = last
+		context.simulationServicesOwner.reset(network)
+		release.resolve(undefined)
+		await pending
+		await handler(context, { method: 'popup_requestSimulationMetadata' })
+		assert.equal(observed.length, 4)
+		for (const [index, expected] of [replacement, replacement, last, last].entries()) assert.strictEqual(observed[index], expected)
+	})
+
 	test('returns a save failure when address-book persistence fails', async () => {
 		storageSetError = new Error('Address-book storage unavailable.')
 

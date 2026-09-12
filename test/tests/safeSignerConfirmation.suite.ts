@@ -1,4 +1,4 @@
-import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
@@ -626,7 +626,7 @@ test('keeps signer refresh failures visible in the Safe proposal instead of abor
 	assert.equal(await getLatestUnexpectedError(), undefined)
 })
 
-test('refreshes the selected signer before forwarding a Safe transaction', async () => {
+test('refreshes the selected signer and uses services installed during the wallet wait', async () => {
 	const configuredSigner = recipientAddress
 	const freshlySelectedSigner = activeAddress
 	fakeSafeContract.owners = [configuredSigner]
@@ -663,6 +663,21 @@ test('refreshes the selected signer before forwarding a Safe transaction', async
 	})
 	const postedMessages: unknown[] = []
 	const socket = uniqueRequestIdentifier.requestSocket
+	const accountRequestEntered = createDeferredValue<void>()
+	const releaseAccountReply = createDeferredValue<void>()
+	let retiredClientRequests = 0
+	const retiredEthereum = new modules.EthereumClientService({
+		rpcUrl: fakeRpcNetwork.httpsRpc,
+		clearCache() { return undefined },
+		async jsonRpcRequest() {
+			retiredClientRequests++
+			throw new Error('Confirmation used services captured before the wallet refresh')
+		},
+	}, async () => undefined, async () => undefined, fakeRpcNetwork)
+	const owner = createTestSimulationServicesOwner({
+		ethereum: retiredEthereum,
+		tokenPriceService: new modules.TokenPriceService(retiredEthereum, 60_000),
+	}, () => simulator)
 	let accountReply: Promise<unknown> | undefined
 	let websiteTabConnections: Map<number, {
 		signerStateOwner: {
@@ -682,7 +697,8 @@ test('refreshes the selected signer before forwarding a Safe transaction', async
 	let port: browser.runtime.Port
 	port = createWebsitePort(socket, 0, postedMessages, (message) => {
 		if (!isRecord(message) || message.method !== 'request_signer_to_eth_accounts') return
-		accountReply = modules.ethAccountsReply(
+		accountRequestEntered.resolve(undefined)
+		accountReply = releaseAccountReply.promise.then(async () => await modules.ethAccountsReply(
 			createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }),
 			websiteTabConnections,
 			port,
@@ -697,7 +713,7 @@ test('refreshes the selected signer before forwarding a Safe transaction', async
 			},
 			'hasAccess',
 			activeAddress,
-		)
+		))
 	})
 	websiteTabConnections = new Map([[socket.tabId, {
 		signerStateOwner: {
@@ -717,11 +733,16 @@ test('refreshes the selected signer before forwarding a Safe transaction', async
 		},
 	}]])
 
-	await modules.confirmDialog(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
+	const confirmation = modules.confirmDialog(owner, websiteTabConnections, {
 		method: 'popup_confirmDialog',
 		data: { action: 'accept', uniqueRequestIdentifier },
 	})
+	await accountRequestEntered.promise
+	owner.reset(fakeRpcNetwork)
+	releaseAccountReply.resolve(undefined)
+	await confirmation
 	await accountReply
+	assert.equal(retiredClientRequests, 0)
 
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.method === 'request_signer_to_eth_accounts'), true)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)

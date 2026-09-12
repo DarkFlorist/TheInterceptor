@@ -52,6 +52,7 @@ export function resetSimulationServices(
 	onErrorBlockCallback: OnErrorBlockCallback,
 	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
 ): SimulationServices {
+	// Retire background polling; cleanup does not invalidate RPC methods used by an in-flight snapshot.
 	currentServices.ethereum.cleanup()
 	return createSimulationServices(
 		rpcNetwork,

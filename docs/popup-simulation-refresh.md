@@ -27,4 +27,15 @@ Active settings commands receive `SimulationServicesOwner`, not a service pair c
 
 The intercepted-request pipeline also carries only the service owner. Provider callbacks obtain services when their work starts. Access admission, dialog callbacks, resolution, and permission persistence carry only the owner across user waits; replayed requests select the current services after approval. RPC execution captures one pair after admission and uses it for both lazy simulation preparation and RPC handling; permission persistence carries the owner into any subsequent prompts. An in-flight RPC does not switch providers halfway through execution.
 
-`PopupMessageDispatcherContext` carries the owner without a service snapshot. Leaf popup handlers select a pair when invoked; handlers that can open or resolve prompts pass the owner instead.
+## Popup handler service contracts
+
+Choose the registration that describes the operation:
+
+| Registration | Handler context | Boundary |
+| --- | --- | --- |
+| `popupMessageHandler` | Live service owner | Orchestration, settings transitions, opening/resolving prompts, or work that must follow the current selection after a wait. Pass the owner through the wait and obtain services when the next execution stage begins. |
+| `popupSnapshotMessageHandler` | `PopupSnapshotContext.services`, without the owner or reset callback | One fixed-provider operation. The registry captures the pair at invocation, not registration; asynchronous work within that operation retains the same pair. A later invocation sees the newly installed pair. |
+
+Transaction confirmation uses the owner registration and obtains services after refreshing wallet accounts. Visualization, metadata, and simulation operations use the snapshot registration where their existing execution contract requires a fixed pair. Do not use a snapshot registration to orchestrate a new user prompt or continue against a newly selected endpoint after that prompt; those stages need the owner contract.
+
+`SimulationServicesOwner.reset()` stops the replaced client's background polling and installs a new pair. `EthereumClientService.cleanup()` does not destroy its request handler, clear its endpoint, or invalidate RPC methods: an already-started snapshot can still finish against its original provider. A snapshot is therefore a fixed endpoint, not a promise to represent the latest selection. It must not be reused for a later independent operation. The registry types make that choice visible and prevent snapshot handlers from calling owner-based lifecycle APIs through their context.
