@@ -867,13 +867,13 @@ export async function interceptorAccessChangeAddressOrRefresh(websiteTabConnecti
 	await requestAddressChange(websiteTabConnections, params)
 }
 
-export async function changeSettings(ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, parsedRequest: ChangeSettings, requestAbortController: AbortController | undefined) {
+export async function changeSettings(ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, parsedRequest: ChangeSettings, requestAbortController: AbortController | undefined) {
 	if (parsedRequest.data.useTabsInsteadOfPopup !== undefined) await setUseTabsInsteadOfPopup(parsedRequest.data.useTabsInsteadOfPopup)
 	if (parsedRequest.data.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(parsedRequest.data.metamaskCompatibilityMode)
 	if (parsedRequest.data.safeAppsCompatibilityMode !== undefined) {
 		await setSafeAppsCompatibilityMode(parsedRequest.data.safeAppsCompatibilityMode)
 	}
-	return await requestNewHomeData(ethereum, new Map(), false, true, requestAbortController, bumpPopupRefreshGeneration())
+	return await requestNewHomeData(ethereum, websiteTabConnections, false, true, requestAbortController, bumpPopupRefreshGeneration())
 }
 
 export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, request: SimulateGovernanceContractExecution) {
