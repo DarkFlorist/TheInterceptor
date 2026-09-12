@@ -769,7 +769,7 @@ describe('refreshHomeData', () => {
 		const { messages } = createPort(1)
 
 		try {
-			await changeSettings(ethereum, tokenPriceService, {} as never, { method: 'popup_ChangeSettings', data: { safeAppsCompatibilityMode: false } } as never, undefined)
+			await changeSettings(ethereum, tokenPriceService, {} as never, new Map(), { method: 'popup_ChangeSettings', data: { safeAppsCompatibilityMode: false } } as never, undefined)
 		} finally {
 			ethereum.cleanup()
 		}
