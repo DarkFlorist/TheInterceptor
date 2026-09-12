@@ -187,10 +187,12 @@ export async function signerChainChanged(simulationServicesOwner: SimulationServ
 	const [signerChain, signerProviderGeneration] = EthereumChainReply.parse(request.params)
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return returnValue
+	// Signer identity and website authorization are separate checks; a confirmed token alone grants no access.
 	if (!hasSignerCallbackAccess(websiteTabConnections, socket.tabId, approval)) return returnValue
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
 		const signerStateToken = getSignerCallbackToken(websiteTabConnections, port, signerProviderGeneration)
 		if (signerStateToken === undefined) return returnValue
+		// The origin or an approved connection in this tab authorized the callback above.
 		await changeSignerChain(simulationServicesOwner, websiteTabConnections, signerStateToken, signerChain, 'hasAccess')
 		return returnValue
 	})

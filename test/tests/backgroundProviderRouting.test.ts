@@ -1600,6 +1600,28 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal((await getSettings()).activeSimulationAddress, safeAddress)
 	})
 
+	for (const access of ['denied', 'origin', 'tab'] as const) test(`requires website authorization in addition to a confirmed signer (${ access })`, async () => {
+		installBrowserMock()
+		const { signerChainChanged } = await import('../../app/ts/background/providerMessageHandlers.js')
+		const { changeSimulationMode, getSettings, getTabState, updateTabState, websiteSocketToString, getPendingAccessRequests } = await loadModules()
+		await changeSimulationMode({ simulationMode: false, activeSigningAddress: 1n })
+		const socket = { tabId: 1, connectionName: 0n }
+		await updateTabState(1, previous => ({ ...previous, signerAccounts: [1n], activeSigningAddress: 1n, signerChain: 1n }))
+		const { port } = createPort(1)
+		const connections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://callback-authorization.example', approved: access === 'tab', wantsToConnect: false },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const before = { settings: await getSettings(), tab: await getTabState(1), prompts: await getPendingAccessRequests() }
+		await signerChainChanged(simulationServicesOwner, connections, port, { method: 'signer_chainChanged', params: ['0x2', 1] }, access === 'origin' ? 'hasAccess' : 'noAccess', 1n)
+		if (access === 'denied') {
+			assert.deepEqual({ settings: await getSettings(), tab: await getTabState(1), prompts: await getPendingAccessRequests() }, before)
+		} else {
+			assert.equal((await getSettings()).activeRpcNetwork.chainId, 2n)
+			assert.equal((await getTabState(1)).signerChain, 2n)
+		}
+	})
+
 	test('uses trusted signer state for simulation chain changes without website address access', async () => {
 		installBrowserMock()
 		const {
