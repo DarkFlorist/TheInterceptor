@@ -111,7 +111,15 @@ async function runActiveSettingsChange(
 					// The preference belongs to the committed selection, even if later provider preparation fails.
 					if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)
 					// A signer-only chain has no provider to install; simulation is disabled until a configured endpoint is selected.
-					if (rpcEndpointChanged && change.rpcNetwork?.httpsRpc !== undefined) simulationServicesOwner.reset(change.rpcNetwork)
+					if (rpcEndpointChanged && change.rpcNetwork?.httpsRpc !== undefined) {
+						try {
+							simulationServicesOwner.reset(change.rpcNetwork)
+						} catch (error) {
+							// Only failed provider installation invalidates simulation output here.
+							await publishFailedPopupVisualisation()
+							throw error
+						}
+					}
 					if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig()
 				} finally {
 					// Publish committed settings even if installing their services fails.
@@ -119,9 +127,6 @@ async function runActiveSettingsChange(
 						method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration: bumpPopupRefreshGeneration(),
 					})
 				}
-			} catch (error) {
-				await publishFailedPopupVisualisation()
-				throw error
 			} finally {
 				accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, updatedSettings)
 			}

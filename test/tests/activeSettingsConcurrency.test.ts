@@ -163,6 +163,53 @@ describe('active settings concurrency', () => {
 		])
 	})
 
+	test.each(['signing preference', 'stack storage', 'settings broadcast'])('preserves visualization when %s fails', async (failurePoint) => {
+		const { runtimeMessages } = installBrowserMock()
+		const { activateAddressSelection, getSettings } = await loadModules()
+		const { getPopupVisualisationState, setPopupVisualisationState, getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
+		const previousVisualisation = { ...await getPopupVisualisationState(), simulationId: 42 }
+		await setPopupVisualisationState(previousVisualisation)
+		const originalSet = browser.storage.local.set.bind(browser.storage.local)
+		const originalSend = browser.runtime.sendMessage.bind(browser.runtime)
+		const failure = new Error(`Injected ${ failurePoint } failure`)
+		Object.defineProperty(browser.storage.local, 'set', {
+			configurable: true,
+			value: async (items: object) => {
+				if (failurePoint === 'signing preference' && 'signingAddressPreferences' in items) throw failure
+				if (failurePoint === 'stack storage' && 'interceptorTransactionStack' in items) throw failure
+				await originalSet(items)
+			},
+		})
+		Object.defineProperty(browser.runtime, 'sendMessage', {
+			configurable: true,
+			value: async (message: { method?: string }) => {
+				if (failurePoint === 'settings broadcast' && message.method === 'popup_settingsUpdated') throw failure
+				return await originalSend(message)
+			},
+		})
+		try {
+			const services = createEthereumWithGetBlockCounter({ count: 0 })
+			const network = (await getSettings()).activeRpcNetwork
+			const transition = activateAddressSelection(createTestSimulationServicesOwner(services), new Map(), { type: 'signer', address: firstAddress.address }, {
+				simulationMode: failurePoint === 'stack storage', signerAddress: firstAddress.address, promptForAccessesIfNeeded: false,
+				...(failurePoint === 'stack storage' ? { rpcNetwork: { ...network, chainId: network.chainId + 1n } } : {}),
+			})
+			if (failurePoint === 'settings broadcast') {
+				// Broadcast failures already belong to the unexpected-error reporter.
+				await transition
+				assert.equal((await getLatestUnexpectedError())?.data.message, failure.message)
+			} else {
+				await assert.rejects(transition, error => error === failure)
+				assert.equal(runtimeMessages.some(message => message.method === 'popup_settingsUpdated'), true)
+			}
+			assert.deepEqual(await getPopupVisualisationState(), previousVisualisation)
+			assert.equal(runtimeMessages.some(message => message.method === 'popup_simulation_state_changed'), false)
+		} finally {
+			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet })
+			Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: originalSend })
+		}
+	})
+
 	test('retains committed Safe preferences and invalidates the popup after provider reset failure', async () => {
 		const { runtimeMessages } = installBrowserMock()
 		const { activateAddressSelection, getSettings, getSigningAddressPreferences, updateUserAddressBookEntries } = await loadModules()
