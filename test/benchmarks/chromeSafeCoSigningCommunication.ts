@@ -420,7 +420,6 @@ async function main() {
 				activeSigningAddress: addressString(OWNER_ADDRESS),
 				...(safeAppsOnly ? {} : { activeSigningSafeAddress: addressString(SAFE_ADDRESS) }),
 				signingAddressPreferences: [{ signerAddress: addressString(OWNER_ADDRESS), selection: 'safe', safeAddress: addressString(SAFE_ADDRESS), chainId: '0x1' }],
-				activeRpcNetwork: testRpcNetwork,
 				userAddressBookEntriesV3: [{
 					type: 'safe',
 					name: 'Browser Test Safe',
@@ -434,6 +433,7 @@ async function main() {
 					safeVersion: '1.4.1',
 				}],
 			}
+			// Install the test RPC through the popup command below so persisted settings and live services change together.
 			await workerConnection.evaluate(`browser.storage.local.set(${ JSON.stringify(storedSettings) })`)
 		} finally {
 			workerConnection.close()
@@ -448,10 +448,11 @@ async function main() {
 			)
 			const rpcSwitchResult = await rpcSwitchConnection.evaluate<{ error?: string }>(`(async () => {
 				try {
-					await chrome.runtime.sendMessage({
+					const reply = await chrome.runtime.sendMessage({
 						method: 'popup_changeActiveRpc',
 						data: ${ JSON.stringify(testRpcNetwork) },
 					})
+					if (reply?.ok !== true) throw new Error(reply?.message ?? 'Missing RPC switch acknowledgment')
 					return {}
 				} catch (error) {
 					return { error: error instanceof Error ? error.message : String(error) }
@@ -642,7 +643,7 @@ async function main() {
 			}
 			const signerRequest = await pageConnection.evaluate<{ method: string, params?: readonly unknown[] }>(`globalThis.__fakeSafeSignerRequests.find(({ method }) => method === 'eth_signTypedData_v4')`)
 			if (typeof signerRequest.params?.[0] !== 'string' || signerRequest.params[0].toLowerCase() !== addressString(OWNER_ADDRESS).toLowerCase()) {
-				throw new Error('Interceptor did not substitute the wallet-selected Safe owner')
+				throw new Error(`Interceptor did not substitute the wallet-selected Safe owner: expected ${ addressString(OWNER_ADDRESS) }, received ${ JSON.stringify(signerRequest.params?.[0]) }`)
 			}
 			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__safeCoSigningResult?.status === 'fulfilled'`).catch(() => false), 10_000, 'Safe co-signature result')
 			const signingResult = await pageConnection.evaluate<{ status?: string, result?: string }>('globalThis.__safeCoSigningResult')

@@ -11,6 +11,7 @@ const popupHandlerRegistrySources = [
 	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/settings.ts', import.meta.url)),
 	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/websiteAccess.ts', import.meta.url)),
 	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/safe.ts', import.meta.url)),
+	Bun.file(new URL('../../app/ts/background/popupSettingsCommands.ts', import.meta.url)),
 ]
 const safeConfirmationResolverSource = await Bun.file(new URL('../../app/ts/background/safeConfirmationResolver.ts', import.meta.url)).text()
 const safeConfirmationPersistenceSource = await Bun.file(new URL('../../app/ts/background/safeConfirmationPersistence.ts', import.meta.url)).text()
@@ -90,6 +91,7 @@ test('popup handler registries agree with the protocol domain inventory', () => 
 		{ source: popupHandlerRegistrySources[2], domains: new Set(['settings', 'navigation']) },
 		{ source: popupHandlerRegistrySources[3], domains: new Set(['website-access', 'navigation']) },
 		{ source: popupHandlerRegistrySources[4], domains: new Set(['safe']) },
+		{ source: popupHandlerRegistrySources[5], domains: new Set(['home', 'settings', 'simulation']) },
 	]
 	return Promise.all(expectedRegistryDomains.map(async ({ source, domains }) => {
 		if (source === undefined) throw new Error('Popup handler registry source is missing')

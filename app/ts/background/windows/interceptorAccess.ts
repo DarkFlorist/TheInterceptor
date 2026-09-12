@@ -15,9 +15,7 @@ import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from
 import type { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import type { PendingAccessRequest } from '../../types/accessRequest.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
-import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
-import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
-import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { isAccountConnectionMethod } from '../accountRequestMethods.js'
@@ -66,7 +64,7 @@ async function waitForSignerAccountReply(future: Future<ErrorWithCodeAndOptional
 	}
 }
 
-const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => await pendingInterceptorAccessSemaphore.execute(async () => { // check if user has closed the window on their own, if so, reject signature
+const onCloseWindowOrTab = async (simulationServicesOwner: SimulationServicesOwner, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => await pendingInterceptorAccessSemaphore.execute(async () => { // check if user has closed the window on their own, if so, reject signature
 	if (openedDialog === undefined || openedDialog.popupOrTab.id !== popupOrTabs.id || openedDialog.popupOrTab.type !== popupOrTabs.type) return
 	removeWindowTabListeners(openedDialog.onClosePopup, openedDialog.onCloseTab)
 
@@ -80,9 +78,7 @@ const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceSer
 			userReply: 'noResponse' as const
 		}
 		await resolve(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
+			simulationServicesOwner,
 			websiteTabConnections,
 			reply,
 			pendingRequest.request,
@@ -93,7 +89,7 @@ const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceSer
 	}
 })
 
-export async function resolveInterceptorAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, reply: InterceptorAccessReply, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
+export async function resolveInterceptorAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, reply: InterceptorAccessReply, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
 	const resolution = await pendingInterceptorAccessSemaphore.execute(async () => {
 		const promises = await getPendingAccessRequests()
 		const pendingRequest = promises.find((req) => req.accessRequestId === reply.accessRequestId)
@@ -105,9 +101,7 @@ export async function resolveInterceptorAccess(ethereum: EthereumClientService, 
 		}
 		return {
 			...await resolve(
-				ethereum,
-				tokenPriceService,
-				resetSimulationServices,
+				simulationServicesOwner,
 				websiteTabConnections,
 				replyWithPendingRequestAddresses,
 				pendingRequest.request,
@@ -122,9 +116,7 @@ export async function resolveInterceptorAccess(ethereum: EthereumClientService, 
 	})
 	if (resolution.promptForFollowUpAccesses) {
 		await updateWebsiteApprovalAccesses(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
+			simulationServicesOwner,
 			websiteTabConnections,
 			await getSettings(),
 			true,
@@ -134,9 +126,7 @@ export async function resolveInterceptorAccess(ethereum: EthereumClientService, 
 			undefined,
 			pendingRequest.website.websiteOrigin,
 			pendingRequest.website,
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
+			simulationServicesOwner,
 			pendingRequest.socket,
 			pendingRequest.request,
 			websiteTabConnections,
@@ -177,12 +167,10 @@ async function withCurrentSignerStates(pendingAccessRequests: readonly PendingAc
 	return await Promise.all(pendingAccessRequests.map(withCurrentSignerState))
 }
 
-async function changeAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true) {
+async function changeAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true) {
 	if (confirmation.userReply === 'noResponse') return
 	await persistWebsiteAccessChange(
-		ethereum,
-		tokenPriceService,
-		resetSimulationServices,
+		simulationServicesOwner,
 		websiteTabConnections,
 		website,
 		confirmation.userReply === 'Approved',
@@ -279,9 +267,7 @@ export async function refreshSignerAccountsForTab(
 }
 
 export async function requestAccessFromUser(
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
-	resetSimulationServices: ResetSimulationServices,
+	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	website: Website,
@@ -292,9 +278,7 @@ export async function requestAccessFromUser(
 	publishRpcConnectionStatus: PublishRpcConnectionStatus,
 ): Promise<void>
 export async function requestAccessFromUser(
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
-	resetSimulationServices: ResetSimulationServices,
+	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	website: Website,
@@ -305,9 +289,7 @@ export async function requestAccessFromUser(
 	publishRpcConnectionStatus: undefined,
 ): Promise<void>
 export async function requestAccessFromUser(
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
-	resetSimulationServices: ResetSimulationServices,
+	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	website: Website,
@@ -333,7 +315,7 @@ export async function requestAccessFromUser(
 		if (request === undefined || !isAccountConnectionMethod(request.method)) return verify()
 		return withSuppressedUnscopedConnectionEventsForSocket(request.uniqueRequestIdentifier.requestSocket, verify)
 	}
-	const closeWindowOrTabCallback = (popupOrTabId: PopupOrTabId) => onCloseWindowOrTab(ethereum, tokenPriceService, resetSimulationServices, popupOrTabId, websiteTabConnections)
+	const closeWindowOrTabCallback = (popupOrTabId: PopupOrTabId) => onCloseWindowOrTab(simulationServicesOwner, popupOrTabId, websiteTabConnections)
 	const onCloseWindowCallback = async (id: number) => closeWindowOrTabCallback({ type: 'popup' as const, id })
 	const onCloseTabCallback = async (id: number) => closeWindowOrTabCallback({ type: 'tab' as const, id })
 	const pendingReplay = await pendingInterceptorAccessSemaphore.execute(async () => {
@@ -458,9 +440,7 @@ export async function requestAccessFromUser(
 		undefined,
 		pendingReplay.website.websiteOrigin,
 		pendingReplay.website,
-		ethereum,
-		tokenPriceService,
-		resetSimulationServices,
+		simulationServicesOwner,
 		pendingReplay.socket,
 		pendingReplay.request,
 		websiteTabConnections,
@@ -468,7 +448,7 @@ export async function requestAccessFromUser(
 	)
 }
 
-async function resolve(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website, publishRpcConnectionStatus: PublishRpcConnectionStatus | undefined, pendingAccessRequest: PendingAccessRequest) {
+async function resolve(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website, publishRpcConnectionStatus: PublishRpcConnectionStatus | undefined, pendingAccessRequest: PendingAccessRequest) {
 	let promptForFollowUpAccesses = false
 	if (accessReply.userReply === 'noResponse') {
 		if (request !== undefined) refuseAccess(websiteTabConnections, request)
@@ -491,15 +471,15 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 				approvedAddressSelection = await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress, 'pendingEntry')
 			}
 			if (!userRequestedAddressChange) {
-				await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, false)
+				await changeAccess(simulationServicesOwner, websiteTabConnections, accessReply, website, false)
 				return
 			}
 			if (accessReply.requestAccessToAddress === undefined) throw new Error('Changed request to page level')
-			await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, false)
+			await changeAccess(simulationServicesOwner, websiteTabConnections, accessReply, website, false)
 			const settings = await getSettings()
 			const signerAddress = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts[0]
 			const selection = approvedAddressSelection ?? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress, 'pendingEntry')
-			await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, selection, {
+			await activateAddressSelection(simulationServicesOwner, websiteTabConnections, selection, {
 				simulationMode: settings.simulationMode,
 				signerAddress,
 				promptForAccessesIfNeeded: false,

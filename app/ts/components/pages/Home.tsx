@@ -1,3 +1,4 @@
+import { getRpcNetworkChange } from '../../utils/rpcNetworkChange.js'
 import type { HomeParams, FirstCardParams, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
 import { type SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { ActiveAddressComponent, SmallAddress, StaticBigAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
@@ -26,7 +27,8 @@ import { getSelectableActiveAddresses, getWalletSelectedAccount } from '../../ut
 import { useModeActiveAddress } from '../hooks/useModeActiveAddress.js'
 import { updateRichListAddress } from '../../utils/richList.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
-import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
+import type { RpcEntry } from '../../types/rpc.js'
+import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
 import type { ComponentChildren, JSX } from 'preact'
 import { DropDownMenu, DropDownMenuButtonContent } from '../subcomponents/DropDownMenu.js'
 
@@ -251,10 +253,19 @@ function FirstCardHeader(param: FirstCardParams) {
 	const { value: setSigningState, waitFor: waitForSetSigning } = useAsyncState<void>()
 	const simulatingPending = setSimulatingState.value.state === 'pending'
 	const signingPending = setSigningState.value.state === 'pending'
+	const { value: rpcChangeState, waitFor: waitForRpcChange } = useAsyncState<void>()
+	const requestedRpc = useSignal<RpcEntry | undefined>(undefined)
+	const rpcPending = rpcChangeState.value.state === 'pending'
+	const controlsDisabled = !param.isInitialHomeDataLoaded.value || param.isSettingsChangePending.value || simulatingPending || signingPending || rpcPending
+	const changeRpc = (entry: RpcEntry) => {
+		if (controlsDisabled || !getRpcNetworkChange(param.rpcNetwork.value, entry).selectionChanged) return
+		requestedRpc.value = entry
+		void waitForRpcChange(async () => { await param.changeActiveRpc(entry) })
+	}
 
 	async function enableSimulationMode(enabled: boolean ) {
-		if (!param.isInitialHomeDataLoaded.value) return
-		await sendPopupMessageToBackgroundPage( { method: 'popup_enableSimulationMode', data: enabled } )
+		if (controlsDisabled) return
+		await param.setSimulationMode(enabled)
 	}
 	const enableSimulating = () => {
 		void waitForSetSimulating(() => enableSimulationMode(true))
@@ -276,10 +287,10 @@ function FirstCardHeader(param: FirstCardParams) {
 						class = { `button is-primary ${ param.simulationMode.value ? '' : 'is-outlined' }` }
 						style = { `margin-bottom: 0px; border-color: transparent; ${ param.simulationMode.value ? 'opacity: 1;' : '' }` }
 						state = { setSimulatingState.value.state }
-						disabled = { param.simulationMode.value || signingPending || !param.isInitialHomeDataLoaded.value }
+						disabled = { param.simulationMode.value || controlsDisabled }
 						keepTextWhilePending = { true }
 						pendingIndicatorPlacement = 'overlay'
-						pendingText = 'Switching to simulating mode...'
+						pendingText = { param.simulationMode.value ? 'Refreshing simulation...' : 'Switching to simulating mode...' }
 						text = 'Simulating'
 						onClick = { enableSimulating }
 					/>
@@ -287,19 +298,22 @@ function FirstCardHeader(param: FirstCardParams) {
 						class = { `button is-primary ${ param.simulationMode.value ? 'is-outlined' : ''}` }
 						style = { `margin-bottom: 0px; border-color: transparent; ${ param.simulationMode.value ? '' : 'opacity: 1;' }` }
 						state = { setSigningState.value.state }
-						disabled = { !param.simulationMode.value || simulatingPending || !param.isInitialHomeDataLoaded.value }
+						disabled = { !param.simulationMode.value || controlsDisabled }
 						keepTextWhilePending = { true }
 						pendingIndicatorPlacement = 'overlay'
 						text = { <SignerLogoText signerName = { signerName } text = 'Signing' reserveLogoSpace = { true } /> }
-						pendingText = 'Switching to signing mode...'
+						pendingText = { !param.simulationMode.value ? 'Updating signing mode...' : 'Switching to signing mode...' }
 						onClick = { enableSigning }
 					/>
 				</div>
 			</div>
 			<div class = 'popup-home-rpc-selector'>
-				<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { param.changeActiveRpc } disabled = { !param.isInitialHomeDataLoaded.value }/>
+				<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { changeRpc } disabled = { controlsDisabled } pendingText = { rpcPending ? (!param.simulationMode.value && requestedRpc.value?.chainId !== param.rpcNetwork.value?.chainId ? 'Waiting for wallet to switch network...' : 'Updating network...') : undefined }/>
 			</div>
 		</header>
+		{ setSimulatingState.value.state === 'rejected' ? <ErrorComponent text = { setSimulatingState.value.error.message }/> : <></> }
+		{ setSigningState.value.state === 'rejected' ? <ErrorComponent text = { setSigningState.value.error.message }/> : <></> }
+		{ rpcChangeState.value.state === 'rejected' ? <ErrorComponent text = { rpcChangeState.value.error.message }/> : <></> }
 	</>
 }
 
@@ -334,6 +348,8 @@ function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabl
 }
 
 type RichListParams = {
+	isSettingsChangePending: ReadonlySignal<boolean>
+	setRichState: (enabled: boolean, address: bigint | 'CurrentAddress') => Promise<void>
 	makeCurrentAddressRich: Signal<boolean>
 	activeAddress: Signal<AddressBookEntry | undefined>
 	richList: Signal<readonly EnrichedRichListElement[]>
@@ -341,14 +357,27 @@ type RichListParams = {
 	isInitialHomeDataLoaded: Signal<boolean>
 }
 
-function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddressCallBack, isInitialHomeDataLoaded }: RichListParams) {
-	async function enableMakeCurrentAddressRich(enabled: boolean) {
-		if (!isInitialHomeDataLoaded.value) return
-		sendPopupMessageToBackgroundPage( { method: 'popup_modifyMakeMeRich', data: { add: enabled, address: 'CurrentAddress'} } )
-		makeCurrentAddressRich.value = enabled
+function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddressCallBack, isInitialHomeDataLoaded, isSettingsChangePending, setRichState }: RichListParams) {
+	const { value: richChangeState, waitFor: waitForRichChange } = useAsyncState<void>()
+	const controlsDisabled = !isInitialHomeDataLoaded.value || isSettingsChangePending.value || richChangeState.value.state === 'pending'
+	const saveRichChange = (enabled: boolean, address: bigint | 'CurrentAddress') => {
+		void waitForRichChange(async () => {
+			try {
+				await setRichState(enabled, address)
+			} catch (error) {
+				// Read persisted settings: a failed visualization refresh does not undo a successful save.
+				await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData', data: { refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: false } })
+				throw error
+			}
+		})
 	}
-	async function modifyRichList(addressBookEntry: AddressBookEntry, makeRich: boolean) {
-		if (!isInitialHomeDataLoaded.value) return
+	function enableMakeCurrentAddressRich(enabled: boolean) {
+		if (controlsDisabled) return
+		makeCurrentAddressRich.value = enabled
+		saveRichChange(enabled, 'CurrentAddress')
+	}
+	function modifyRichList(addressBookEntry: AddressBookEntry, makeRich: boolean) {
+		if (controlsDisabled) return
 		richList.value = updateRichListAddress(
 			richList.value,
 			addressBookEntry.address,
@@ -356,7 +385,7 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 			(element) => element.addressBookEntry.address,
 			() => ({ addressBookEntry, makingRich: true, type: 'UserAdded' as const }),
 		)
-		sendPopupMessageToBackgroundPage( { method: 'popup_modifyMakeMeRich', data: { add: makeRich, address: addressBookEntry.address } } )
+		saveRichChange(makeRich, addressBookEntry.address)
 	}
 
 	const showList = useSignal<boolean>(false)
@@ -377,7 +406,7 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 		<header class = 'card-header' style = 'cursor: pointer;' onClick = { () => { showList.value = !showList.value } }>
 			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em; padding: 0 0.5rem;'>
 				<label class = 'form-control' style = 'grid-template-columns: 1em min-content; width: min-content;' onClick = { event => { event.stopPropagation() } }>
-					<input type = 'checkbox' disabled = { !isInitialHomeDataLoaded.value } checked = { makeCurrentAddressRich.value } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeCurrentAddressRich(e.target.checked) } } } onClick = { event => { event.stopPropagation() } } />
+					<input type = 'checkbox' disabled = { controlsDisabled } checked = { makeCurrentAddressRich.value } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeCurrentAddressRich(e.target.checked) } } } onClick = { event => { event.stopPropagation() } } />
 					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Make current account rich</p>
 				</label>
 			</p>
@@ -386,11 +415,13 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 				<span class = 'icon'><ChevronIcon /></span>
 			</div>
 		</header>
+		{ richChangeState.value.state === 'pending' ? <div class = 'card-content-header' role = 'status' aria-live = 'polite'><AsyncStatusIcon state = 'pending'/> Updating balances...</div> : <></> }
+		{ richChangeState.value.state === 'rejected' ? <ErrorComponent text = { richChangeState.value.error.message }/> : <></> }
 		{ !showList.value
 			? <> { !activeAddressSetAsRichViaFixedAddressList.value || activeAddress.value === undefined ? <></> : <>
 				<div class = 'card-content-header' style = 'font-size: 0.8em;'>
 					<label class = 'form-control' style = 'gap: 1em;'>
-						<input type = 'checkbox' disabled = { !isInitialHomeDataLoaded.value } checked = { true } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null && activeAddress.value !== undefined) { modifyRichList(activeAddress.value, e.target.checked) } } } />
+						<input type = 'checkbox' disabled = { controlsDisabled } checked = { true } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null && activeAddress.value !== undefined) { modifyRichList(activeAddress.value, e.target.checked) } } } />
 						<SmallAddress addressBookEntry = { activeAddress } renameAddressCallBack = { renameAddressCallBack } noCopying = { !isInitialHomeDataLoaded.value } noEditAddress = { !isInitialHomeDataLoaded.value } />
 					</label>
 				</div>
@@ -400,7 +431,7 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Addresses being made rich</p>
 					{ visibleRichList.value.map((richListElement) =>
 						<label class = 'form-control' style = 'gap: 1em;' key = { richListElement.addressBookEntry.address.toString() }>
-							<input type = 'checkbox' disabled = { !isInitialHomeDataLoaded.value } checked = { richListElement.makingRich } aria-label = { `Toggle rich address ${ richListElement.addressBookEntry.address.toString() }` } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { modifyRichList(richListElement.addressBookEntry, e.target.checked) } } } />
+							<input type = 'checkbox' disabled = { controlsDisabled } checked = { richListElement.makingRich } aria-label = { `Toggle rich address ${ richListElement.addressBookEntry.address.toString() }` } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { modifyRichList(richListElement.addressBookEntry, e.target.checked) } } } />
 							<SmallAddress addressBookEntry = { richListElement.addressBookEntry } renameAddressCallBack = { renameAddressCallBack } noCopying = { !isInitialHomeDataLoaded.value } noEditAddress = { !isInitialHomeDataLoaded.value }/>
 						</label>
 					) }
@@ -471,7 +502,7 @@ function FirstCard(param: FirstCardParams) {
 		&& param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE
 		&& param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE_WITH_SHIELD
 	)
-	const isActiveAddressLoading = !param.isFreshHomeDataLoaded.value && param.activeAddress.value === undefined
+	const isActiveAddressLoading = param.isActiveAddressChanging.value || (!param.isFreshHomeDataLoaded.value && param.activeAddress.value === undefined)
 
 	const connectToSigner = () => {
 		if (!param.isInitialHomeDataLoaded.value) return
@@ -615,12 +646,12 @@ function FirstCard(param: FirstCardParams) {
 				}
 
 				{ isActiveAddressLoading
-					? <ActiveAddressLoadingSkeleton ariaLabel = 'Loading active address'/>
+					? <ActiveAddressLoadingSkeleton ariaLabel = { param.isActiveAddressChanging.value ? 'Switching active address' : 'Loading active address' }/>
 					: <div class = 'popup-data-reveal'>
 						<ActiveAddressComponent
 							activeAddress = { param.activeAddress }
 							buttonText = { 'Change' }
-							disableButton = { !param.isInitialHomeDataLoaded.value || (!param.simulationMode.value && !hasAlternativeSigningAddress.value) }
+							disableButton = { param.isSettingsChangePending.value || param.isActiveAddressChangePending.value || !param.isInitialHomeDataLoaded.value || (!param.simulationMode.value && !hasAlternativeSigningAddress.value) }
 							noCopying = { !param.isInitialHomeDataLoaded.value }
 							noEditAddress = { !param.isInitialHomeDataLoaded.value }
 							changeActiveAddress = { param.changeActiveAddress }
@@ -697,7 +728,7 @@ function FirstCard(param: FirstCardParams) {
 				</> : !param.isFreshHomeDataLoaded.value ?
 					<SimulationControlsLoadingSkeleton/>
 				: <div class = 'popup-simulation-controls popup-data-reveal'>
-					<RichList activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
+					<RichList isSettingsChangePending = { param.isSettingsChangePending } setRichState = { param.setRichState } activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
 					<div class = 'popup-simulation-controls-gap'/>
 					<TimePicker
 						startText = 'Delay first transaction'
@@ -941,6 +972,11 @@ export function Home(param: HomeParams) {
 		: <></> }
 
 		<FirstCard
+			isActiveAddressChanging = { param.isActiveAddressChanging }
+			isActiveAddressChangePending = { param.isActiveAddressChangePending }
+			isSettingsChangePending = { param.isSettingsChangePending }
+			setSimulationMode = { param.setSimulationMode }
+			setRichState = { param.setRichState }
 			preSimulationBlockTimeManipulation = { param.preSimulationBlockTimeManipulation }
 			activeAddresses = { param.activeAddresses }
 			walletSelectedAddressBookEntry = { param.walletSelectedAddressBookEntry }

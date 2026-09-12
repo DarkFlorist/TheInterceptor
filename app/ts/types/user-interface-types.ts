@@ -33,6 +33,11 @@ export type AddAddressParam = {
 }
 
 export type HomeParams = {
+	isActiveAddressChanging: Signal<boolean>
+	isActiveAddressChangePending: ReadonlySignal<boolean>
+	isSettingsChangePending: ReadonlySignal<boolean>
+	setSimulationMode: (enabled: boolean) => Promise<void>
+	setRichState: (enabled: boolean, address: bigint | 'CurrentAddress') => Promise<void>
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>
 	activeAddresses: Signal<AddressBookEntries>
@@ -44,7 +49,7 @@ export type HomeParams = {
 	useSignersAddressAsActiveAddress: Signal<boolean>
 	simVisResults: Signal<ResolvedSimulationResults>
 	rpcNetwork: Signal<RpcNetwork | undefined>
-	setActiveRpcAndInformAboutIt: (entry: RpcEntry) => void
+	setActiveRpcAndInformAboutIt: (entry: RpcEntry) => Promise<void>
 	simulationMode: Signal<boolean>
 	tabIconDetails: Signal<TabIconDetails>
 	currentBlockNumber: Signal<bigint | undefined>
@@ -74,11 +79,16 @@ export type ChangeActiveAddressParam = {
 }
 
 export type FirstCardParams = {
+	isActiveAddressChanging: Signal<boolean>
+	isActiveAddressChangePending: ReadonlySignal<boolean>
+	isSettingsChangePending: ReadonlySignal<boolean>
+	setSimulationMode: (enabled: boolean) => Promise<void>
+	setRichState: (enabled: boolean, address: bigint | 'CurrentAddress') => Promise<void>
 	activeAddress: Signal<AddressBookEntry | undefined>
 	useSignersAddressAsActiveAddress: Signal<boolean>
 	activeAddresses: Signal<AddressBookEntries | undefined>
 	walletSelectedAddressBookEntry: Signal<AddressBookEntry | undefined>
-	changeActiveRpc: (rpcEntry: RpcEntry) => void
+	changeActiveRpc: (rpcEntry: RpcEntry) => Promise<void>
 	rpcNetwork: Signal<RpcNetwork | undefined>
 	simulationMode: Signal<boolean>
 	changeActiveAddress: () => void

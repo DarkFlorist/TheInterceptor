@@ -1,3 +1,5 @@
+import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
+import type { RpcNetwork } from '../types/rpc.js'
 import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply, WatchAssetSignerRequest } from '../types/interceptor-messages.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
@@ -5,7 +7,7 @@ import { activateAddressSelection, changeActiveAddressAndChain } from './activeS
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
-import { getPendingSignerChainChangeTokenForCallback, isPendingSignerChainChangeReply, resolveSignerChainChange } from './windows/changeChain.js'
+import { applyWalletSwitchReply } from './walletSwitch.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
 import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
@@ -14,9 +16,7 @@ import { refreshPendingSafeSignerSelectionErrors, resolvePendingTransactionOrMes
 import { resolveWatchAssetSignerReply } from './windows/watchAsset.js'
 import { modifyObject } from '../utils/typescript.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
-import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from './signingAddressSelection.js'
@@ -60,7 +60,7 @@ function hasSignerCallbackAccess(websiteTabConnections: WebsiteTabConnections, t
 	return approval === 'hasAccess' || tabHasApprovedWebsiteConnection(websiteTabConnections, tabId)
 }
 
-export async function ethAccountsReply(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
+export async function ethAccountsReply(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'eth_accounts_reply' as const, result: '0x' as const }
 	if (!('params' in request)) return returnValue
 	if (port.sender?.tab?.id === undefined) return returnValue
@@ -106,13 +106,14 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 			activeSigningAddress,
 		}))
 		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
+		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 		await refreshPendingSafeSignerSelectionErrors(ethereum, tokenPriceService, tabId)
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
 		const settings = await getSettings()
 		const transition = await getSigningAddressSelectionTransition(settings, tabStateChange.previousState, tabStateChange.newState)
 		if (transition.shouldActivate) {
 			const changeActiveAddress = async () => {
-				await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, transition.selection, {
+				await activateAddressSelection(simulationServicesOwner, websiteTabConnections, transition.selection, {
 					simulationMode: settings.simulationMode,
 					signerAddress: transition.signerAddress,
 					promptForAccessesIfNeeded: !signerAccountsReply.requestAccounts,
@@ -146,7 +147,7 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 	})
 }
 
-async function changeSignerChain(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, signerStateToken: SignerStateToken, signerChain: bigint, approval: ApprovalState) {
+async function changeSignerChain(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, signerStateToken: SignerStateToken, signerChain: bigint, approval: ApprovalState, requestedRpcNetwork?: RpcNetwork) {
 	if (approval !== 'hasAccess') return
 	const tabStateChange = await updateTabState(signerStateToken.socket.tabId, (previousState: TabState) => {
 		return previousState.signerChain === signerChain ? previousState : modifyObject(previousState, { signerChain })
@@ -164,66 +165,49 @@ async function changeSignerChain(ethereum: EthereumClientService, tokenPriceServ
 		}
 		return
 	}
-	if ((settings.useSignersAddressAsActiveAddress || !settings.simulationMode) && settings.activeRpcNetwork.chainId !== signerChain) {
-		const rpcNetwork = await getRpcNetworkForChain(signerChain)
-		const signerAddress = getWalletSelectedAccount(tabStateChange.newState)
-		return changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
-			simulationMode: settings.simulationMode,
-			rpcNetwork,
-			activeAddress: signerAddress,
-			...(!settings.simulationMode ? { signingAddressSelection: 'signer' as const } : {}),
-		})
+	if (settings.useSignersAddressAsActiveAddress || !settings.simulationMode) {
+		const rpcNetwork = requestedRpcNetwork ?? (settings.activeRpcNetwork.chainId === signerChain ? settings.activeRpcNetwork : await getRpcNetworkForChain(signerChain))
+		if (getRpcNetworkChange(settings.activeRpcNetwork, rpcNetwork).selectionChanged) {
+			const signerAddress = getWalletSelectedAccount(tabStateChange.newState)
+			await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, {
+				simulationMode: settings.simulationMode,
+				rpcNetwork,
+				activeAddress: signerAddress,
+				...(!settings.simulationMode ? { signingAddressSelection: 'signer' as const } : {}),
+			})
+			return
+		}
 	}
 	if (oldSignerChain !== signerChain) sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 }
 
-export async function signerChainChanged(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
+export async function signerChainChanged(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'signer_chainChanged' as const, result: '0x' as const }
 	if (!('params' in request)) return returnValue
 	const [signerChain, signerProviderGeneration] = EthereumChainReply.parse(request.params)
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return returnValue
+	// Signer identity and website authorization are separate checks; a confirmed token alone grants no access.
 	if (!hasSignerCallbackAccess(websiteTabConnections, socket.tabId, approval)) return returnValue
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
 		const signerStateToken = getSignerCallbackToken(websiteTabConnections, port, signerProviderGeneration)
 		if (signerStateToken === undefined) return returnValue
-		await changeSignerChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, signerStateToken, signerChain, 'hasAccess')
+		// The origin or an approved connection in this tab authorized the callback above.
+		await changeSignerChain(simulationServicesOwner, websiteTabConnections, signerStateToken, signerChain, 'hasAccess')
 		return returnValue
 	})
 }
 
-export async function walletSwitchEthereumChainReply(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
+export async function walletSwitchEthereumChainReply(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'wallet_switchEthereumChain_reply' as const, result: '0x' as const }
 	const params = WalletSwitchEthereumChainReply.parse(request).params[0]
-	const socket = getSocketFromPort(port)
-	if (socket === undefined) return returnValue
-	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
-		const currentSignerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
-		if (currentSignerStateToken?.socket.connectionName !== socket.connectionName || currentSignerStateToken.port !== port) return returnValue
-		const pendingSignerStateToken = getPendingSignerChainChangeTokenForCallback(port, params.signerProviderGeneration, params.chainId)
-		const callbackSignerStateToken = pendingSignerStateToken
-			?? (currentSignerStateToken.signerProviderGeneration === params.signerProviderGeneration ? currentSignerStateToken : undefined)
-		if (callbackSignerStateToken === undefined) return returnValue
-		const solicitedReply = isPendingSignerChainChangeReply(callbackSignerStateToken, params.chainId)
-		// A solicited wallet reply retains the tab authorization captured when its command was dispatched. Unsolicited chainChanged-style updates still require a currently approved frame.
-		if (!solicitedReply && !hasSignerCallbackAccess(websiteTabConnections, socket.tabId, approval)) return returnValue
-		if (currentSignerStateToken.signerProviderGeneration !== params.signerProviderGeneration) {
-			resolveSignerChainChange(callbackSignerStateToken, {
-				method: 'popup_signerChangeChainDialog',
-				data: [{ accept: false, chainId: params.chainId, error: signerConnectionReplacedError, signerProviderGeneration: params.signerProviderGeneration }],
-			})
-			return returnValue
-		}
-		if (params.accept) await changeSignerChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, currentSignerStateToken, params.chainId, 'hasAccess')
-		resolveSignerChainChange(callbackSignerStateToken, {
-			method: 'popup_signerChangeChainDialog',
-			data: [params],
-		})
-		return returnValue
+	await applyWalletSwitchReply(websiteTabConnections, port, params, async (token, chainId, rpc) => {
+		await changeSignerChain(simulationServicesOwner, websiteTabConnections, token, chainId, 'hasAccess', rpc)
 	})
+	return returnValue
 }
 
-export async function connectedToSigner(_ethereum: EthereumClientService, _tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined) {
+export async function connectedToSigner(_simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined) {
 	const [signerConnected, signerName, signerProviderGeneration] = ConnectedToSigner.parse(request).params
 	const isTopFrame = isTopFramePort(port)
 	const socket = getSocketFromPort(port)
@@ -292,13 +276,14 @@ export async function connectedToSigner(_ethereum: EthereumClientService, _token
 	return result
 }
 
-export async function signerReply(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, _resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {
+export async function signerReply(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const signerReply = SignerReply.parse(request)
 	const params = signerReply.params[0]
 	const doNotReply = { type: 'doNotReply' as const }
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return doNotReply
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
+		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 		if (params.forwardRequest.method === 'wallet_watchAsset') {
 			const context = WatchAssetSignerRequest.parse(params.forwardRequest.params)
 			if (context.uniqueRequestIdentifier.requestSocket.tabId !== socket.tabId || context.signerIdentity.tabId !== socket.tabId) return doNotReply

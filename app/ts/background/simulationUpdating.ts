@@ -1,3 +1,6 @@
+import type { Settings } from '../types/interceptor-messages.js'
+import type { RpcNetwork } from '../types/rpc.js'
+import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } from '../safe/safeSimulation.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
@@ -32,7 +35,7 @@ import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
 
-const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: bigint[]) => {
+const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
 	return Object.fromEntries(
 		addressesToMakeRich.map(currentAddress => {
@@ -42,19 +45,20 @@ const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: bigint[]) =
 	)
 }
 
-export const getAddressesbeingMadeRich = async () => {
-	if (!(await getSettings()).simulationMode) return []
-	const currentAddressBeingRich = await getAddressToMakeRich()
+export const getAddressesbeingMadeRich = async (settingsSnapshot?: Settings) => {
+	const settings = settingsSnapshot ?? await getSettings()
+	if (!settings.simulationMode) return []
+	const currentAddressBeingRich = await getAddressToMakeRich(settings)
 	const makeRichAddressList = await getFixedAddressRichList()
 	return [...makeRichAddressList.filter((x) => x.makingRich).map((x) => x.address), ...currentAddressBeingRich === undefined ? [] : [currentAddressBeingRich]]
 }
 
-export const getCurrentSimulationInput = async (): Promise<SimulationStateInput> => {
+export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[], settingsSnapshot?: Settings): Promise<SimulationStateInput> => {
 	const [settings, preSimulationBlockTimeManipulation] = await Promise.all([
-		getSettings(),
+		settingsSnapshot ?? getSettings(),
 		getPreSimulationBlockTimeManipulation()
 	])
-	const richListPromise = silenceChromeUnCaughtPromise(getAddressesbeingMadeRich())
+	const richListPromise = silenceChromeUnCaughtPromise(richAddresses === undefined ? getAddressesbeingMadeRich(settings) : Promise.resolve(richAddresses))
 	const stack = await getInterceptorTransactionStack()
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []
@@ -125,11 +129,34 @@ export const getCurrentSimulationInput = async (): Promise<SimulationStateInput>
 	return inputBlocks
 }
 
-export async function getUpdatedSimulationState(ethereum: EthereumClientService, simulationInput?: SimulationStateInput) {
-	// An unreadable persisted stack must abort refresh, otherwise the simulation fallback could overwrite saved popup results.
-	const currentSimulationInput = simulationInput ?? await getCurrentSimulationInput()
+export type SimulationSnapshot = {
+	readonly activeRpcNetwork: RpcNetwork
+	readonly activeStackContext: ReturnType<typeof getActiveStackContext>
+	readonly simulationStateInput: SimulationStateInput
+	readonly numberOfAddressesMadeRich: number
+}
+
+// Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
+export async function captureSimulationSnapshot(): Promise<SimulationSnapshot> {
+	const settings = await getSettings()
+	const richAddresses = await getAddressesbeingMadeRich(settings)
+	return {
+		activeRpcNetwork: settings.activeRpcNetwork,
+		activeStackContext: getActiveStackContext(settings),
+		simulationStateInput: await getCurrentSimulationInput(richAddresses, settings),
+		numberOfAddressesMadeRich: richAddresses.length,
+	}
+}
+
+export const getSimulationProviderForSnapshot = (ethereum: EthereumClientService, snapshot: SimulationSnapshot) => (
+	isSignerOnlyNetwork(snapshot.activeRpcNetwork) ? undefined : ethereum
+)
+
+export async function getUpdatedSimulationState(ethereum: EthereumClientService, snapshot: SimulationSnapshot) {
+	const provider = getSimulationProviderForSnapshot(ethereum, snapshot)
+	if (provider === undefined) return PASSTHROUGH_STATE
 	try {
-		return toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(currentSimulationInput, ethereum))
+		return toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(snapshot.simulationStateInput, provider))
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return PASSTHROUGH_STATE
 		await reportUnexpectedError(error, { code: 'simulation_state_refresh_failed' })
@@ -140,10 +167,10 @@ export async function getUpdatedSimulationState(ethereum: EthereumClientService,
 /** Builds the simulation-stack overlay used by simulation mode and Gnosis Safe signing mode. */
 export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClientService, simulationOverlayEnabled: boolean) {
 	if (!simulationOverlayEnabled) return { simulationInput: PASSTHROUGH_STATE, simulationState: PASSTHROUGH_STATE }
-	const simulationInput = await getCurrentSimulationInput()
+	const snapshot = await captureSimulationSnapshot()
 	return {
-		simulationInput: toResolvedSimulationInput(simulationInput),
-		simulationState: await getUpdatedSimulationState(ethereum, simulationInput),
+		simulationInput: toResolvedSimulationInput(snapshot.simulationStateInput),
+		simulationState: await getUpdatedSimulationState(ethereum, snapshot),
 	}
 }
 
@@ -354,7 +381,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			to: gnosisSafeMessage.to.address,
 			input: gnosisSafeMessage.parsedMessageData.input
 		} }
-		const simulationState = await getUpdatedSimulationState(ethereumClientService)
+		const simulationState = await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot())
 		if (simulationState.kind === 'passthrough') throw new Error('Failed to fetch simulation state for Gnosis Safe transaction.')
 		if (simulationState.value.success === false) throw new JsonRpcResponseError(simulationState.value.jsonRpcError)
 		const resolvedSimulationState = simulationState.value

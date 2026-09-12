@@ -1,13 +1,15 @@
+import { usePopupSettingsChanges } from '../../app/ts/components/hooks/usePopupSettingsChanges.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { useLiveSimulationHomeData } from '../../app/ts/components/hooks/useLiveSimulationHomeData.js'
+import { App } from '../../app/ts/components/App.js'
 import { SimulationStackPage } from '../../app/ts/components/pages/SimulationStackPage.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { createPassthroughCompleteVisualizedSimulation } from '../../app/ts/types/visualizer-types.js'
-import type { BlockTimeManipulation, CompleteVisualizedSimulation, PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
-import { MessageToPopup, UpdateHomePage, type Settings } from '../../app/ts/types/interceptor-messages.js'
+import { CompleteVisualizedSimulation, type BlockTimeManipulation, type PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
+import { MessageToPopup, PopupMessage, UpdateHomePage, type Settings } from '../../app/ts/types/interceptor-messages.js'
 import { serialize, type EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
 import { installDomMock } from './domMock.js'
 import { getSimulationStackTargetHash } from '../../app/ts/utils/simulationStackTargets.js'
@@ -54,7 +56,14 @@ function installBrowserMock(sendMessageReply?: (message: unknown) => unknown | P
 		writable: true,
 		value: { runtime: { id: 'test-extension' } },
 	})
-	return { listeners, sentMessages }
+	const dispatchMessage: RuntimeMessageListener = (message, sender, sendResponse) => {
+		let responsePending: boolean | undefined
+		for (const listener of listeners) {
+			if (listener(message, sender, sendResponse) === true) responsePending = true
+		}
+		return responsePending
+	}
+	return { listeners, sentMessages, dispatchMessage }
 }
 
 function installClipboardMock() {
@@ -99,6 +108,15 @@ function MainPopupSimulationStateProbe() {
 		requestFreshHomeDataOnMount: false,
 	})
 	return <div>{ simVisResults.value.kind }</div>
+}
+
+function AddressSelectionProbe() {
+	const { activeSimulationAddress, simVisResults, simulationUpdatingState } = useLiveSimulationHomeData({
+		answerMainPopupOpen: true,
+		answerSimulationDataConsumerOpen: true,
+		requestFreshHomeDataOnMount: false,
+	})
+	return <div>{ activeSimulationAddress.value?.toString() }/{ simVisResults.value.kind }/{ simulationUpdatingState.value ?? 'loading' }</div>
 }
 
 function CrossTabStackVisualizerHookProbe() {
@@ -560,13 +578,13 @@ describe('simulation visualizer open replies', () => {
 
 	test('stack visualizer hook answers the visualizer-open probe but not the main-popup probe', async () => {
 		const dom = installDomMock()
-		const { listeners } = installBrowserMock()
+		const { dispatchMessage: listener, sentMessages } = installBrowserMock()
 		try {
 			await act(() => {
 				render(h(StackVisualizerHookProbe, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected hook to register a runtime listener')
+
+			assert.equal(sentMessages.some(message => PopupMessage.safeParse(message).success && typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestSettingsChangeStatus'), false)
 
 			const visualizerReply = sendRuntimeMessage(listener, { method: 'popup_isSimulationVisualizerOpen' })
 			assert.equal(visualizerReply.returned, true)
@@ -582,13 +600,11 @@ describe('simulation visualizer open replies', () => {
 
 	test('stack visualizer hook accepts updates from a different tab id', async () => {
 		const dom = installDomMock()
-		const { listeners } = installBrowserMock()
+		const { dispatchMessage: listener } = installBrowserMock()
 		try {
 			await act(() => {
 				render(h(CrossTabStackVisualizerHookProbe, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected hook to register a runtime listener')
 
 			await act(() => {
 				listener({ role: 'all', ...createHomePageUpdate(10, 1, 'First tab') }, {}, () => undefined)
@@ -607,13 +623,11 @@ describe('simulation visualizer open replies', () => {
 
 	test('main popup hook keeps Safe simulation results without a simulation-mode address', async () => {
 		const dom = installDomMock()
-		const { listeners } = installBrowserMock()
+		const { dispatchMessage: listener } = installBrowserMock()
 		try {
 			await act(() => {
 				render(h(MainPopupSimulationStateProbe, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected hook to register a runtime listener')
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(12, 1, 'Safe stack')) }, {}, () => undefined)
@@ -627,7 +641,7 @@ describe('simulation visualizer open replies', () => {
 
 	test('stack visualizer page shows rich-only state instead of the empty-state dino', async () => {
 		const dom = installDomMock()
-		const { listeners } = installBrowserMock()
+		const { dispatchMessage: listener } = installBrowserMock()
 		const richList = [
 			createRichListElement(0x1000000000000000000000000000000000000001n, 'Treasury One'),
 			createRichListElement(0x2000000000000000000000000000000000000002n, 'Treasury Two'),
@@ -637,8 +651,6 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createSerializableRichHomePageUpdate(12, 1, 'Rich tab', 3, richList)) }, {}, () => undefined)
@@ -676,7 +688,7 @@ describe('simulation visualizer open replies', () => {
 
 	test('stack visualizer rich address sentence handles one entry', async () => {
 		const dom = installDomMock()
-		const { listeners } = installBrowserMock()
+		const { dispatchMessage: listener } = installBrowserMock()
 		const richList = [
 			createRichListElement(0x1000000000000000000000000000000000000001n, 'Treasury One'),
 		]
@@ -684,8 +696,6 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createSerializableRichHomePageUpdate(12, 1, 'Rich tab', 1, richList)) }, {}, () => undefined)
@@ -700,13 +710,11 @@ describe('simulation visualizer open replies', () => {
 
 	test('stack visualizer page shows stack operations without an active simulation address', async () => {
 		const dom = installDomMock()
-		const { listeners } = installBrowserMock()
+		const { dispatchMessage: listener } = installBrowserMock()
 		try {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createSimulationStackHomePageUpdate(13, 1, 'Stack tab')) }, {}, () => undefined)
@@ -739,14 +747,12 @@ describe('simulation visualizer open replies', () => {
 
 	test('stack visualizer uses the signing Safe as the visualized address in signing mode', async () => {
 		const dom = installDomMock()
-		const { listeners } = installBrowserMock()
+		const { dispatchMessage: listener } = installBrowserMock()
 		const update = createStackHomePageUpdate(13, 1, 'Safe signing stack', [1n], 1)
 		try {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
 				listener({
@@ -766,14 +772,12 @@ describe('simulation visualizer open replies', () => {
 
 	test('stack visualizer remains a Gnosis Safe stack when the current tab cannot resolve the Safe owner', async () => {
 		const dom = installDomMock()
-		const { listeners } = installBrowserMock()
+		const { dispatchMessage: listener } = installBrowserMock()
 		const update = createStackHomePageUpdate(13, 1, 'Safe signing stack', [1n], 0)
 		try {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
 				listener({
@@ -800,14 +804,12 @@ describe('simulation visualizer open replies', () => {
 
 	test('stack visualizer keeps the page header first when an unexpected error is visible', async () => {
 		const dom = installDomMock()
-		const { listeners } = installBrowserMock()
+		const { dispatchMessage: listener } = installBrowserMock()
 		const update = createStackHomePageUpdate(13, 1, 'Stack tab')
 		try {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
 				listener({
@@ -846,7 +848,7 @@ describe('simulation visualizer open replies', () => {
 
 	test('stack visualizer page shows rich addresses in simulated stack state', async () => {
 		const dom = installDomMock()
-		const { listeners } = installBrowserMock()
+		const { dispatchMessage: listener } = installBrowserMock()
 		const richList = [
 			createRichListElement(0x3000000000000000000000000000000000000003n, 'Treasury Three'),
 			createRichListElement(0x4000000000000000000000000000000000000004n, 'Treasury Four'),
@@ -855,8 +857,6 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(13, 1, 'Stack tab', [1n], 2, richList)) }, {}, () => undefined)
@@ -885,14 +885,12 @@ describe('simulation visualizer open replies', () => {
 
 	test('stack visualizer refreshes rich metadata after live simulation updates', async () => {
 		const dom = installDomMock()
-		const { listeners, sentMessages } = installBrowserMock()
+		const { dispatchMessage: listener, sentMessages } = installBrowserMock()
 		const serializableSettings = createSerializableSettings()
 		try {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createSimulationStackHomePageUpdate(19, 1, 'Stack tab')) }, {}, () => undefined)
 			})
@@ -910,13 +908,11 @@ describe('simulation visualizer open replies', () => {
 
 	test('stack visualizer failure banner stays readable outside blurred simulation content', async () => {
 		const dom = installDomMock()
-		const { listeners } = installBrowserMock()
+		const { dispatchMessage: listener } = installBrowserMock()
 		try {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createFailedStackHomePageUpdate(16, 1, 'Failed stack tab')) }, {}, () => undefined)
@@ -938,7 +934,7 @@ describe('simulation visualizer open replies', () => {
 		const dom = installDomMock()
 		const clipboardMock = installClipboardMock()
 		const exportPayload = '{ "name": "Interceptor Simulation Export" }'
-		const { listeners, sentMessages } = installBrowserMock((message) => {
+		const { dispatchMessage: listener, sentMessages } = installBrowserMock((message) => {
 			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestInterceptorSimulationInput') {
 				return { method: 'popup_requestInterceptorSimulationInput', ok: true, ethSimulateV1InputString: exportPayload }
 			}
@@ -948,8 +944,6 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createSimulationStackHomePageUpdate(19, 1, 'Stack tab')) }, {}, () => undefined)
@@ -973,7 +967,7 @@ describe('simulation visualizer open replies', () => {
 	test('stack visualizer hides a simulation export error after switching to Safe mode', async () => {
 		const dom = installDomMock()
 		const exportError = 'Simulation stack export failed.'
-		const { listeners } = installBrowserMock((message) => {
+		const { dispatchMessage: listener } = installBrowserMock((message) => {
 			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestInterceptorSimulationInput') {
 				return { method: 'popup_requestInterceptorSimulationInput', ok: false, message: exportError }
 			}
@@ -983,8 +977,6 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 			const simulationUpdate = createSimulationStackHomePageUpdate(26, 1, 'Simulation stack tab')
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, simulationUpdate) }, {}, () => undefined)
@@ -1014,7 +1006,7 @@ describe('simulation visualizer open replies', () => {
 		const dom = installDomMock()
 		const clipboardMock = installClipboardMock()
 		const safeExportPayload = '{ "name": "Interceptor Safe Stack" }'
-		const { listeners } = installBrowserMock((message) => {
+		const { dispatchMessage: listener } = installBrowserMock((message) => {
 			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestSafeStackExport') {
 				return { method: 'popup_requestSafeStackExport', ok: true, safeStackJson: safeExportPayload }
 			}
@@ -1024,8 +1016,6 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(24, 1, 'Stack tab')) }, {}, () => undefined)
 			})
@@ -1046,13 +1036,11 @@ describe('simulation visualizer open replies', () => {
 
 	test('stack visualizer hides simulation import and export in Safe signing mode', async () => {
 		const dom = installDomMock()
-		const { listeners } = installBrowserMock()
+		const { dispatchMessage: listener } = installBrowserMock()
 		try {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(20, 1, 'Stack tab')) }, {}, () => undefined)
@@ -1069,7 +1057,7 @@ describe('simulation visualizer open replies', () => {
 	test('stack visualizer shows the reason when copying Safe transactions is refused', async () => {
 		const dom = installDomMock()
 		const exportError = 'The simulation stack has no Safe proposals to export.'
-		const { listeners } = installBrowserMock((message) => {
+		const { dispatchMessage: listener } = installBrowserMock((message) => {
 			if (typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestSafeStackExport') {
 				return { method: 'popup_requestSafeStackExport', ok: false, message: exportError }
 			}
@@ -1079,8 +1067,6 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(21, 1, 'Stack tab')) }, {}, () => undefined)
@@ -1099,13 +1085,11 @@ describe('simulation visualizer open replies', () => {
 
 	test('stack visualizer shows Safe actions only when signing with an active Safe', async () => {
 		const dom = installDomMock()
-		const { listeners } = installBrowserMock(() => undefined)
+		const { dispatchMessage: listener } = installBrowserMock(() => undefined)
 		try {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 			const update = createStackHomePageUpdate(23, 1, 'Stack tab')
 			const activeSafe = update.data.activeAddresses[0]
 			if (activeSafe?.type !== 'safe') throw new Error('Expected a Safe fixture')
@@ -1145,13 +1129,11 @@ describe('simulation visualizer open replies', () => {
 
 	test('stack visualizer switches between mutually exclusive Safe and simulation controls', async () => {
 		const dom = installDomMock()
-		const { listeners } = installBrowserMock()
+		const { dispatchMessage: listener } = installBrowserMock()
 		try {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(22, 1, 'Stack tab')) }, {}, () => undefined)
@@ -1171,11 +1153,169 @@ describe('simulation visualizer open replies', () => {
 		}
 	})
 
+	test('popup displays shared pending work and ignores an older busy status after completion', async () => {
+		const dom = installDomMock()
+		const { dispatchMessage: listener, sentMessages } = installBrowserMock()
+		try {
+			await act(() => { render(h(App, {}), dom.document.body) })
+			await act(() => { listener({ role: 'all', ...serialize(UpdateHomePage, createSimulationStackHomePageUpdate(25, 1, 'Popup')) }, {}, () => undefined) })
+			assert.ok(sentMessages.some(message => PopupMessage.safeParse(message).success && typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestSettingsChangeStatus'))
+			const status = async (revision: number, operation: 'rpc' | undefined) => await act(() => {
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsChangeStatus', data: { revision, operation } }), {}, () => undefined)
+			})
+			await status(10, 'rpc')
+			assert.ok(dom.document.body.textContent.includes('Changing network. Check your wallet'))
+			assert.equal(String(getButtonByText(dom.document.body, 'Change').getAttribute?.('disabled')), 'true')
+			await status(11, undefined)
+			await status(10, 'rpc')
+			assert.equal(dom.document.body.textContent.includes('Changing network. Check your wallet'), false)
+			assert.equal(getButtonByText(dom.document.body, 'Change').getAttribute?.('disabled'), undefined)
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('signer selection reveals the current wallet account before permission work finishes', async () => {
+		const dom = installDomMock()
+		let finishChange: (reply: unknown) => void = () => undefined
+		const changeReply = new Promise<unknown>((resolve) => { finishChange = resolve })
+		const { dispatchMessage: listener } = installBrowserMock((message) => {
+			const parsed = PopupMessage.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_changeActiveAddress' ? changeReply : undefined
+		})
+		function Harness() {
+			const home = useLiveSimulationHomeData({ answerMainPopupOpen: true, answerSimulationDataConsumerOpen: true, requestFreshHomeDataOnMount: false })
+			const changes = usePopupSettingsChanges(home)
+			return h('div', {}, [
+				h('button', { onClick: () => changes.setActiveAddressAndInformAboutIt('signer') }, 'Select signer'),
+				h('span', {}, `${home.displayedSigningAddress.value}:${changes.isActiveAddressChanging.value}:${changes.isActiveAddressChangePending.value}`),
+			])
+		}
+		try {
+			await act(() => { render(h(Harness, {}), dom.document.body) })
+			const initial = createStackHomePageUpdate(25, 1, 'Signing popup')
+			await act(() => { listener({ role: 'all', ...serialize(UpdateHomePage, initial) }, {}, () => undefined) })
+			// Start the request without awaiting its deliberately delayed permission-work reply.
+			await act(() => { void clickElement(getButtonByText(dom.document.body, 'Select signer')) })
+			assert.ok(dom.document.body.textContent.includes(':true:true'))
+			await act(() => {
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: { ...initial.data.settings, activeSigningSafeAddress: undefined }, popupRefreshGeneration: 2 }), {}, () => undefined)
+			})
+			assert.ok(dom.document.body.textContent.includes(`${initial.data.tabState.activeSigningAddress}:false:true`))
+			// A newer authoritative selection must survive the original request's eventual reply.
+			await act(() => { listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: initial.data.settings, popupRefreshGeneration: 3 }), {}, () => undefined) })
+			await act(async () => {
+				finishChange({ type: 'ChangeActiveAddressReply', ok: true })
+				await changeReply
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.ok(dom.document.body.textContent.includes(`${initial.data.settings.activeSigningSafeAddress}:false:false`))
+		} finally {
+			finishChange(undefined)
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('popup reveals the committed wallet before the address-change reply and preserves later settings', async () => {
+		const dom = installDomMock()
+		let finishChange: (reply: unknown) => void = () => undefined
+		const changeReply = new Promise<unknown>((resolve) => { finishChange = resolve })
+		let changeRequested = false
+		const { dispatchMessage: listener } = installBrowserMock((message) => {
+			const parsed = PopupMessage.safeParse(message)
+			if (parsed.success && parsed.value.method === 'popup_changeActiveAddress') {
+				changeRequested = true
+				return changeReply
+			}
+			return undefined
+		})
+		try {
+			await act(() => { render(h(App, {}), dom.document.body) })
+			const initial = createSimulationStackHomePageUpdate(25, 1, 'Simulation popup')
+			const nextEntry = createRichAddressEntry(2n, 'Next wallet')
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, { ...initial, data: { ...initial.data, activeAddresses: [...initial.data.activeAddresses, nextEntry] } }) }, {}, () => undefined)
+			})
+			await act(async () => {
+				await clickElement(getButtonByText(dom.document.body, 'Change'))
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			await act(async () => { await import('../../app/ts/components/pages/ChangeActiveAddress.js') })
+			const nextCard = collectElements(dom.document.body, 'div').find((element) => element.getAttribute?.('class') === 'card hoverable' && element.textContent?.includes('Next wallet'))
+			if (nextCard === undefined) throw new Error('Expected the next wallet in the address picker')
+			await act(async () => { await clickElement(nextCard) })
+			assert.ok(changeRequested)
+			const addressRow = () => collectElements(dom.document.body, 'div').find((element) => hasClass(element, 'active-address-row'))
+			assert.equal(addressRow()?.getAttribute?.('aria-label'), 'Switching active address')
+			await act(() => {
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: initial.data.settings, popupRefreshGeneration: 2 }), {}, () => undefined)
+			})
+			assert.equal(addressRow()?.getAttribute?.('aria-label'), 'Switching active address')
+			await act(() => {
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: { ...initial.data.settings, activeSimulationAddress: 2n }, popupRefreshGeneration: 3 }), {}, () => undefined)
+			})
+			assert.equal(addressRow()?.textContent?.includes('Next wallet'), true)
+			assert.equal(String(getButtonByText(dom.document.body, 'Change').getAttribute?.('disabled')), 'true')
+			await act(() => {
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: initial.data.settings, popupRefreshGeneration: 4 }), {}, () => undefined)
+			})
+			await act(async () => {
+				finishChange({ type: 'ChangeActiveAddressReply', ok: true })
+				await changeReply
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.equal(addressRow()?.textContent?.includes('Simulation address'), true)
+			assert.equal(getButtonByText(dom.document.body, 'Change').getAttribute?.('disabled'), undefined)
+		} finally {
+			finishChange(undefined)
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('reveals committed address settings while withholding stale simulation and older settings', async () => {
+		const dom = installDomMock()
+		let finishRefresh: (reply: unknown) => void = () => undefined
+		const refresh = new Promise<unknown>((resolve) => { finishRefresh = resolve })
+		const { dispatchMessage: listener } = installBrowserMock((message) => (
+			typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestCompleteVisualizedSimulation'
+				? refresh : undefined
+		))
+		try {
+			await act(() => { render(h(AddressSelectionProbe, {}), dom.document.body) })
+			const initial = createSimulationStackHomePageUpdate(25, 1, 'Simulation popup')
+			await act(() => { listener({ role: 'all', ...serialize(UpdateHomePage, initial) }, {}, () => undefined) })
+			const settings = { ...initial.data.settings, activeSimulationAddress: 2n }
+			await act(() => {
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: settings, popupRefreshGeneration: 3 }), {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent, '2/passthrough/loading')
+			await act(() => {
+				listener(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: initial.data.settings, popupRefreshGeneration: 2 }), {}, () => undefined)
+				listener({ role: 'all', ...serialize(UpdateHomePage, initial) }, {}, () => undefined)
+				listener(serialize(MessageToPopup, createSimulationStateChangedMessage(initial.data.visualizedSimulatorState)), {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent, '2/passthrough/loading')
+			await act(async () => {
+				finishRefresh({ method: 'popup_requestCompleteVisualizedSimulation', visualizedSimulatorState: serialize(CompleteVisualizedSimulation, createSimulatedCompleteVisualizedSimulation(settings)) })
+				await refresh
+				await new Promise((resolve) => setTimeout(resolve, 0))
+			})
+			assert.equal(dom.document.body.textContent, '2/simulated/done')
+		} finally {
+			finishRefresh(undefined)
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	test('open stack visualizer switches modes immediately when settings change', async () => {
 		const dom = installDomMock()
 		let resolveVisualizationRefresh: ((reply: unknown) => void) | undefined
 		const visualizationRefresh = new Promise<unknown>((resolve) => { resolveVisualizationRefresh = resolve })
-		const { listeners } = installBrowserMock((message) => (
+		const { dispatchMessage: listener } = installBrowserMock((message) => (
 			typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestCompleteVisualizedSimulation'
 				? visualizationRefresh
 				: undefined
@@ -1184,8 +1324,6 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 			const safeUpdate = createStackHomePageUpdate(25, 1, 'Safe stack tab')
 
 			await act(() => {
@@ -1264,7 +1402,7 @@ describe('simulation visualizer open replies', () => {
 		const dom = installDomMock()
 		let resolveVisualizationRefresh: ((reply: unknown) => void) | undefined
 		const visualizationRefresh = new Promise<unknown>((resolve) => { resolveVisualizationRefresh = resolve })
-		const { listeners } = installBrowserMock((message) => (
+		const { dispatchMessage: listener } = installBrowserMock((message) => (
 			typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestCompleteVisualizedSimulation'
 				? visualizationRefresh
 				: undefined
@@ -1273,8 +1411,6 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 			const simulationUpdate = createSimulationStackHomePageUpdate(27, 1, 'Simulation stack tab')
 			const safeSettings = createStackHomePageUpdate(27, 2, 'Safe stack tab').data.settings
 
@@ -1320,13 +1456,11 @@ describe('simulation visualizer open replies', () => {
 
 	test('stack visualizer transaction cards collapse and reopen independently', async () => {
 		const dom = installDomMock()
-		const { listeners } = installBrowserMock()
+		const { dispatchMessage: listener } = installBrowserMock()
 		try {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(18, 1, 'Stack tab', [1n, 2n])) }, {}, () => undefined)
@@ -1378,7 +1512,7 @@ describe('simulation visualizer open replies', () => {
 	test('stack visualizer target hash no-ops when the target element cannot scroll', async () => {
 		const dom = installDomMock()
 		const flushAnimationFrames = installQueuedAnimationFrames()
-		const { listeners } = installBrowserMock()
+		const { dispatchMessage: listener } = installBrowserMock()
 		Object.defineProperty(globalThis.window, 'location', {
 			configurable: true,
 			writable: true,
@@ -1392,8 +1526,6 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(14, 1, 'Stack tab')) }, {}, () => undefined)
@@ -1413,7 +1545,7 @@ describe('simulation visualizer open replies', () => {
 	test('stack visualizer target hash no-ops when target lookup is unavailable', async () => {
 		const dom = installDomMock()
 		const flushAnimationFrames = installQueuedAnimationFrames()
-		const { listeners } = installBrowserMock()
+		const { dispatchMessage: listener } = installBrowserMock()
 		Object.defineProperty(globalThis.window, 'location', {
 			configurable: true,
 			writable: true,
@@ -1427,8 +1559,6 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(16, 1, 'Stack tab')) }, {}, () => undefined)
@@ -1448,7 +1578,7 @@ describe('simulation visualizer open replies', () => {
 	test('stack visualizer target hash scrolls to and highlights the matching row', async () => {
 		const dom = installDomMock()
 		const flushAnimationFrames = installQueuedAnimationFrames()
-		const { listeners } = installBrowserMock()
+		const { dispatchMessage: listener } = installBrowserMock()
 		const scrollCalls: ScrollIntoViewOptions[] = []
 		Object.defineProperty(globalThis.window, 'location', {
 			configurable: true,
@@ -1470,8 +1600,6 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
 				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(15, 1, 'Stack tab')) }, {}, () => undefined)
@@ -1499,7 +1627,7 @@ describe('simulation visualizer open replies', () => {
 	test('stack visualizer target hash does not replay after same-hash updates', async () => {
 		const dom = installDomMock()
 		const flushAnimationFrames = installQueuedAnimationFrames()
-		const { listeners } = installBrowserMock()
+		const { dispatchMessage: listener } = installBrowserMock()
 		const scrollCalls: ScrollIntoViewOptions[] = []
 		Object.defineProperty(globalThis.window, 'location', {
 			configurable: true,
@@ -1521,8 +1649,6 @@ describe('simulation visualizer open replies', () => {
 			await act(() => {
 				render(h(SimulationStackPage, {}), dom.document.body)
 			})
-			const listener = listeners[0]
-			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
 
 			await act(() => {
 				flushAnimationFrames()
