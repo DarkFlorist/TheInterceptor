@@ -308,8 +308,7 @@ function FirstCardHeader(param: FirstCardParams) {
 				</div>
 			</div>
 			<div class = 'popup-home-rpc-selector'>
-				<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { changeRpc } disabled = { controlsDisabled }/>
-				{ rpcPending ? <span role = 'status' aria-live = 'polite' class = 'paragraph is-size-7'><AsyncStatusIcon state = 'pending'/> { !param.simulationMode.value && requestedRpc.value?.chainId !== param.rpcNetwork.value?.chainId ? 'Waiting for wallet to switch network...' : 'Updating network...' }</span> : <></> }
+				<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { changeRpc } disabled = { controlsDisabled } pendingText = { rpcPending ? (!param.simulationMode.value && requestedRpc.value?.chainId !== param.rpcNetwork.value?.chainId ? 'Waiting for wallet to switch network...' : 'Updating network...') : undefined }/>
 			</div>
 		</header>
 		{ setSimulatingState.value.state === 'rejected' ? <ErrorComponent text = { setSimulatingState.value.error.message }/> : <></> }

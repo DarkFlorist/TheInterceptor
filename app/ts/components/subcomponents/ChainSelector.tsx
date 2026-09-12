@@ -10,6 +10,7 @@ interface RpcSelectorParams {
 	rpcEntries: Signal<RpcEntries>
 	changeRpc: (entry: RpcEntry) => void
 	disabled?: boolean
+	pendingText?: string
 }
 
 export function findRpcEntryByIdentityKey(rpcEntries: RpcEntries, key: string) {
@@ -47,7 +48,7 @@ export function RpcSelector(params: RpcSelectorParams) {
 		if (newEntry === undefined) throw new Error('Tried to select an RPC entry that is no longer available.')
 		params.changeRpc(newEntry)
 	}
-	return <DropDownMenu selected = { selected } dropDownOptions = { options } getOptionLabel = { getOptionLabel } onChangedCallBack = { onChangedCallBack } buttonClassses = 'btn btn--outline is-small' disabled = { params.disabled }/>
+	return <DropDownMenu selected = { selected } dropDownOptions = { options } getOptionLabel = { getOptionLabel } onChangedCallBack = { onChangedCallBack } buttonClassses = 'btn btn--outline is-small' disabled = { params.disabled } pendingText = { params.pendingText }/>
 }
 
 interface ChainSelectorParams {

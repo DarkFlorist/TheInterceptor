@@ -153,6 +153,7 @@ async function measure(popup: CdpConnection, name: string, method: string, click
 		const original = runtime.sendMessage;
 		const started = performance.now();
 		const sample = { name: ${ JSON.stringify(name) } };
+		const selectorBefore = document.querySelector('.popup-home-rpc-selector .dropdown-trigger > button').getBoundingClientRect();
 		const errorCountBefore = document.querySelectorAll('.error-notification').length;
 		let replyReceived = false;
 		const storageKey = { popup_changeActiveAddress: 'independentActiveSimulationAddress', popup_enableSimulationMode: 'simulationMode', popup_changeActiveRpc: 'activeRpcNetwork', popup_modifyMakeMeRich: 'makeCurrentAddressRich' }[${ JSON.stringify(method) }];
@@ -171,6 +172,10 @@ async function measure(popup: CdpConnection, name: string, method: string, click
 			try { ${ click }; } catch (error) { throw new Error(${ JSON.stringify(name) } + ': ' + String(error) + ' ' + document.body.textContent); }
 			while (performance.now() - started < 30000) {
 				await new Promise((resolve, reject) => { const timeout = setTimeout(() => reject(new Error('Popup stopped rendering frames')), 30000); requestAnimationFrame(() => { clearTimeout(timeout); resolve(); }); });
+				if (${ JSON.stringify(method) } === 'popup_changeActiveRpc' && (${ pending })) {
+					const selectorDuring = document.querySelector('.popup-home-rpc-selector .dropdown-trigger > button').getBoundingClientRect();
+					if (['x', 'y', 'width', 'height'].some(key => Math.abs(selectorBefore[key] - selectorDuring[key]) > 0.5)) throw new Error('RPC pending indicator moved or resized the selector');
+				}
 				if ((${ pending }) && sample.feedbackFrameMs === undefined) sample.feedbackFrameMs = performance.now() - started;
 				if ((${ selected }) && sample.selectionFrameMs === undefined) sample.selectionFrameMs = performance.now() - started;
 				if (sample.feedbackFrameMs === undefined && (sample.selectionFrameMs !== undefined || document.querySelectorAll('.error-notification').length > errorCountBefore)) sample.feedbackFrameMs = performance.now() - started;
@@ -224,15 +229,15 @@ async function runIteration() {
 		samples.push(await measure(popup, 'wallet', 'popup_changeActiveAddress', `Array.from(document.querySelectorAll('.modal-card-body .card.hoverable')).find(card => card.textContent.includes('Wallet B')).click()`, `!!document.querySelector('.active-address-row[aria-busy="true"]')`, `document.querySelector('.active-address-row')?.textContent.includes('Wallet B')`))
 		samples.push(await measure(popup, 'rich on', 'popup_modifyMakeMeRich', `document.querySelector('input[type="checkbox"]').click()`, `document.body.textContent.includes('Updating balances...')`, `document.querySelector('input[type="checkbox"]')?.checked === true`))
 		samples.push(await measure(popup, 'rich off', 'popup_modifyMakeMeRich', `document.querySelector('input[type="checkbox"]').click()`, `document.body.textContent.includes('Updating balances...')`, `document.querySelector('input[type="checkbox"]')?.checked === false`))
-		samples.push(await measure(popup, 'RPC endpoint', 'popup_changeActiveRpc', `${ rpcButton(networkB.name) }.click()`, `!!document.querySelector('.popup-home-rpc-selector [role="status"]')`, `document.querySelector('.popup-home-rpc-selector .dropdown-trigger button')?.title === ${ JSON.stringify(networkB.name) }`))
+		samples.push(await measure(popup, 'RPC endpoint', 'popup_changeActiveRpc', `${ rpcButton(networkB.name) }.click()`, `document.querySelector('.popup-home-rpc-selector .dropdown-trigger button')?.getAttribute('aria-busy') === 'true'`, `document.querySelector('.popup-home-rpc-selector .dropdown-trigger button')?.title === ${ JSON.stringify(networkB.name) }`))
 		samples.push(await measure(popup, 'signing', 'popup_enableSimulationMode', `${ modeButton('Signing') }.click()`, `${ modeButton('Signing') }?.getAttribute('aria-busy') === 'true'`, `${ modeButton('Signing') }?.classList.contains('is-outlined') === false`))
 		await page.evaluate('globalThis.__benchmarkRejectSwitch = true')
 		const beforeRejection = await workerConnection.evaluate(`browser.storage.local.get(['activeRpcNetwork', 'rpcEntries'])`)
-		samples.push(await measure(popup, 'wallet RPC rejection', 'popup_changeActiveRpc', `${ rpcButton(networkC.name) }.click()`, `!!document.querySelector('.popup-home-rpc-selector [role="status"]')`, 'false', false))
+		samples.push(await measure(popup, 'wallet RPC rejection', 'popup_changeActiveRpc', `${ rpcButton(networkC.name) }.click()`, `document.querySelector('.popup-home-rpc-selector .dropdown-trigger button')?.getAttribute('aria-busy') === 'true'`, 'false', false))
 		const afterRejection = await workerConnection.evaluate(`browser.storage.local.get(['activeRpcNetwork', 'rpcEntries'])`)
 		if (JSON.stringify(beforeRejection) !== JSON.stringify(afterRejection)) throw new Error('Rejected switch changed persisted RPC state')
 		await page.evaluate('globalThis.__benchmarkRejectSwitch = false')
-		samples.push(await measure(popup, 'wallet RPC acceptance', 'popup_changeActiveRpc', `${ rpcButton(networkC.name) }.click()`, `!!document.querySelector('.popup-home-rpc-selector [role="status"]')`, `document.querySelector('.popup-home-rpc-selector .dropdown-trigger button')?.title === ${ JSON.stringify(networkC.name) }`))
+		samples.push(await measure(popup, 'wallet RPC acceptance', 'popup_changeActiveRpc', `${ rpcButton(networkC.name) }.click()`, `document.querySelector('.popup-home-rpc-selector .dropdown-trigger button')?.getAttribute('aria-busy') === 'true'`, `document.querySelector('.popup-home-rpc-selector .dropdown-trigger button')?.title === ${ JSON.stringify(networkC.name) }`))
 		samples.push(await measure(popup, 'simulating', 'popup_enableSimulationMode', `${ modeButton('Simulating') }.click()`, `${ modeButton('Simulating') }?.getAttribute('aria-busy') === 'true'`, `${ modeButton('Simulating') }?.classList.contains('is-outlined') === false`))
 		const transaction = { from: BigInt(walletA), to: BigInt(walletB), value: 0n, input: new Uint8Array() }
 		// The page stays connected throughout the switches; subsequent RPCs must use the newly installed services.
