@@ -3,14 +3,15 @@ import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
-import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, importSettingsAndAddressBook } from '../settings.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, importSettingsAndAddressBook } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 
 export async function settingsOpened() {
 	const useTabsInsteadOfPopupPromise = silenceChromeUnCaughtPromise(getUseTabsInsteadOfPopup())
 	const metamaskCompatibilityModePromise = silenceChromeUnCaughtPromise(getMetamaskCompatibilityMode())
+	const safeAppsCompatibilityModePromise = silenceChromeUnCaughtPromise(getSafeAppsCompatibilityMode())
 	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
 	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
 
@@ -19,6 +20,7 @@ export async function settingsOpened() {
 		data: {
 			useTabsInsteadOfPopup: await useTabsInsteadOfPopupPromise,
 			metamaskCompatibilityMode: await metamaskCompatibilityModePromise,
+			safeAppsCompatibilityMode: await safeAppsCompatibilityModePromise,
 			rpcEntries: await rpcEntriesPromise,
 			activeRpcNetwork: (await settingsPromise).activeRpcNetwork
 		}
@@ -45,9 +47,9 @@ export async function exportSettings() {
 	})
 }
 
-export async function setNewRpcList(resetSimulationServices: ResetSimulationServices, request: SetRpcList, settings: Settings) {
+export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, request: SetRpcList, settings: Settings) {
 	await setRpcList(request.data)
 	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
 	const primary = await getPrimaryRpcForChain(settings.activeRpcNetwork.chainId)
-	if (primary !== undefined) resetSimulationServices(primary)
+	if (primary !== undefined) simulationServicesOwner.reset(primary)
 }

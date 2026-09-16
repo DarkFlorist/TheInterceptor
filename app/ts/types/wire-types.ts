@@ -532,12 +532,15 @@ export const EthereumSendableSignedTransaction = funtypes.Union(EthereumSignedTr
 export type EthereumSignedTransaction = funtypes.Static<typeof EthereumSignedTransaction>
 export const EthereumSignedTransaction = funtypes.Union(EthereumSendableSignedTransaction, EthereumSignedTransactionOptimismDeposit)
 
-const EthereumSignedTransactionWithBlockReferences = funtypes.ReadonlyObject({
-	data: EthereumInput,
-	blockHash: funtypes.Union(EthereumBytes32, funtypes.Null),
-	blockNumber: funtypes.Union(EthereumQuantity, funtypes.Null),
-	transactionIndex: funtypes.Union(EthereumQuantity, funtypes.Null),
-})
+const EthereumSignedTransactionWithBlockReferences = funtypes.Intersect(
+	funtypes.ReadonlyObject({
+		blockHash: funtypes.Union(EthereumBytes32, funtypes.Null),
+		blockNumber: funtypes.Union(EthereumQuantity, funtypes.Null),
+		transactionIndex: funtypes.Union(EthereumQuantity, funtypes.Null),
+	}),
+	// RPC nodes may omit this calldata alias; do not synthesize empty data alongside nonempty input.
+	funtypes.ReadonlyPartial({ data: EthereumData }),
+)
 
 export type EthereumSignedTransactionWithBlockData = funtypes.Static<typeof EthereumSignedTransactionWithBlockData>
 export const EthereumSignedTransactionWithBlockData = funtypes.Union(
@@ -612,7 +615,7 @@ const EthereumUnknownTransactionType = funtypes.ReadonlyObject({
 })
 
 export type EthereumBlockHeaderTransaction = funtypes.Static<typeof EthereumBlockHeaderTransaction>
-export const EthereumBlockHeaderTransaction = funtypes.Union(EthereumSignedTransaction, EthereumUnknownTransactionType)
+export const EthereumBlockHeaderTransaction = funtypes.Union(EthereumSignedTransactionWithBlockData, EthereumSignedTransactionOptimismDeposit, EthereumUnknownTransactionType)
 
 export type EthereumBlockHeader = funtypes.Static<typeof EthereumBlockHeader>
 export const EthereumBlockHeader = funtypes.Union(funtypes.Null, funtypes.Intersect(

@@ -1,3 +1,4 @@
+import { usePopupSettingsChanges } from './hooks/usePopupSettingsChanges.js'
 import { useEffect } from 'preact/hooks'
 import { Home } from './pages/Home.js'
 import Hint from './subcomponents/Hint.js'
@@ -10,7 +11,6 @@ import { sendPopupMessageToBackgroundPage } from '../background/backgroundUtils.
 import type { EthereumBytes32 } from '../types/wire-types.js'
 import { checksummedAddress } from '../utils/bigint.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
-import type { RpcEntry } from '../types/rpc.js'
 import { UnexpectedError } from './subcomponents/Error.js'
 import { addressEditEntry } from './ui-utils.js'
 import { Signal, useComputed, useSignal } from '@preact/signals'
@@ -20,8 +20,7 @@ import { useLiveSimulationHomeData } from './hooks/useLiveSimulationHomeData.js'
 import { NetworkErrors } from './subcomponents/NetworkErrors.js'
 import { ProviderErrors } from './subcomponents/ProviderErrors.js'
 import { PopupModal, type PopupPage } from './PopupModal.js'
-import { getOptimisticActiveAddressSelection, getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode } from '../utils/activeAddressSelection.js'
-import { requestActiveAddressChange } from './activeAddressChange.js'
+import { getSelectableActiveAddresses } from '../utils/activeAddressSelection.js'
 import { useModeActiveAddress } from './hooks/useModeActiveAddress.js'
 export { NetworkErrors } from './subcomponents/NetworkErrors.js'
 
@@ -71,33 +70,8 @@ export function App() {
 		},
 	})
 	const boundaryResetKey = useSignal(0)
+	const { isActiveAddressChanging, isActiveAddressChangePending, isSettingsChangePending, sharedStatusLabel, setActiveAddressAndInformAboutIt, setActiveRpcAndInformAboutIt, setSimulationMode, setRichState } = usePopupSettingsChanges({ isSettingsLoaded, activeAddresses, simulationMode, rpcNetwork, tabState })
 
-	async function setActiveAddressAndInformAboutIt(address: bigint | 'signer', persistedEntry?: AddressBookEntry) {
-		if (!isSettingsLoaded.value) return
-		const selectableAddresses = includePersistedAddressBookEntry(activeAddresses.value, persistedEntry)
-		if (!isActiveAddressSelectionAllowed(address, selectableAddresses, simulationMode.value, rpcNetwork.value?.chainId, tabState.value?.signerAccounts ?? [])) return
-		await requestActiveAddressChange(address, simulationMode.value)
-		const optimisticSelection = getOptimisticActiveAddressSelection(address, simulationMode.value, tabState.value?.signerAccounts ?? [])
-		if (optimisticSelection.mode === 'simulation') {
-			activeSimulationAddress.value = optimisticSelection.activeSimulationAddress
-			useSignersAddressAsActiveAddress.value = optimisticSelection.useSignersAddressAsActiveAddress
-			return
-		}
-		displayedSigningAddress.value = optimisticSelection.displayedSigningAddress
-		activeSigningSafeAddress.value = address === 'signer' ? undefined : optimisticSelection.displayedSigningAddress
-	}
-
-	function isSignerConnected() {
-		return isSignerConnectedForMode(simulationMode.value, activeSimulationAddress.value, tabState.value)
-	}
-
-	async function setActiveRpcAndInformAboutIt(entry: RpcEntry) {
-		if (!isSettingsLoaded.value) return
-		sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveRpc', data: entry })
-		if(!isSignerConnected()) {
-			rpcNetwork.value = entry
-		}
-	}
 	useEffect(() => {
 		markPerformanceOnce(POPUP_PERFORMANCE_MARKS.homeFirstCommit)
 	}, [])
@@ -249,7 +223,14 @@ export function App() {
 				<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>
 					<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
 					<ProviderErrors tabState = { tabState }/>
+					{ sharedStatusLabel.value !== undefined
+						? <div role = 'status' aria-live = 'polite' class = 'notification popup-settings-change-status'>{ sharedStatusLabel.value }</div> : <></> }
 					<Home
+						isActiveAddressChanging = { isActiveAddressChanging }
+						isActiveAddressChangePending = { isActiveAddressChangePending }
+						isSettingsChangePending = { isSettingsChangePending }
+						setSimulationMode = { setSimulationMode }
+						setRichState = { setRichState }
 						setActiveRpcAndInformAboutIt = { setActiveRpcAndInformAboutIt }
 						rpcNetwork = { rpcNetwork }
 						simVisResults = { simVisResults }
