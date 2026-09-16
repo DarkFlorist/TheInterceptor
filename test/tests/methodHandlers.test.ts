@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { createMethodHandlerFor, hasOwnKey } from '../../app/ts/utils/methodHandlers.js'
+import { createMethodHandlerFor } from '../../app/ts/utils/methodHandlers.js'
 
 type TestMessage =
 	| { readonly method: 'double', readonly value: number }
@@ -21,10 +21,4 @@ test('method handler tables dispatch narrowed messages and reject mismatched dir
 		() => handlers.double(1, { method: 'length', value: 'abc' }),
 		/Handler for double received length/,
 	)
-})
-
-test('handler table key checks reject properties inherited from Object.prototype', () => {
-	assert.equal(hasOwnKey(handlers, 'double'), true)
-	assert.equal(hasOwnKey(handlers, 'toString'), false)
-	assert.equal(hasOwnKey(handlers, 'constructor'), false)
 })

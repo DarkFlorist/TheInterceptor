@@ -1,5 +1,5 @@
 import type { PopupMessage } from './interceptor-messages.js'
-import { hasOwnKey } from '../utils/methodHandlers.js'
+import { hasOwnKey } from '../utils/typescript.js'
 
 export type PopupMessageDomain = 'address-book' | 'confirmation' | 'diagnostics' | 'home' | 'navigation' | 'safe' | 'settings' | 'simulation' | 'website-access'
 
