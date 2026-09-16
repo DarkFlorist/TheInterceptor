@@ -8,7 +8,8 @@ import { JsonRpcResponse, type EthereumJsonRpcRequest } from '../../app/ts/types
 import type { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { PASSTHROUGH_STATE, toResolvedExecutionSimulationState } from '../../app/ts/types/visualizer-types.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
-import { Multicall3ABI } from '../../app/ts/utils/constants.js'
+import { METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER, Multicall3ABI } from '../../app/ts/utils/constants.js'
+import { JsonRpcResponseError } from '../../app/ts/utils/errors.js'
 import { decodeFunctionDataStrict, encodeAbiValues, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { eth_getBlockByNumber_goerli_8443561_false, eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result, eth_simulateV1_dummy_call_result_2calls, eth_simulateV1_get_eth_balance_multicall } from '../RPCResponses.js'
 
@@ -165,6 +166,21 @@ const blockNumber = 8443561n
 	}] as const
 
 	describe('EthereumSubscriptionService', () => {
+		test('unsupported subscription types reject with a provider JSON-RPC error', async () => {
+			installBrowserMock()
+			const { createEthereumSubscription } = await loadModules()
+			const socket = { tabId: 1, connectionName: 1n }
+
+			for (const subscriptionType of ['logs', 'newPendingTransactions', 'syncing'] as const) {
+				await assert.rejects(
+					createEthereumSubscription({ method: 'eth_subscribe', params: [subscriptionType] }, socket),
+					(error: unknown) => error instanceof JsonRpcResponseError
+						&& error.code === METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER
+						&& error.message.includes(subscriptionType),
+				)
+			}
+		})
+
 		test('removeEthereumSubscription only removes the matching socket subscription', async () => {
 			installBrowserMock()
 			const { getEthereumSubscriptionsAndFilters, removeEthereumSubscription, updateEthereumSubscriptionsAndFilters } = await loadModules()
