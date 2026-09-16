@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { resolveSigningSafe } from '../../app/ts/utils/activeAddressSelection.js'
+import { isActiveSigningSafe, resolveSigningSafe } from '../../app/ts/utils/activeAddressSelection.js'
 
 const ownerAddress = 0x5678n
 
@@ -29,5 +29,12 @@ describe('Gnosis Safe signing-mode selection', () => {
 	test('does not require a simulation signer in signing mode', () => {
 		const safeWithoutSimulationSigner = { ...safeEntry, safeSimulationSignerAddress: undefined }
 		assert.deepEqual(resolveSigningSafe(safeEntry.address, safeEntry.chainId, [ownerAddress], [safeWithoutSimulationSigner]), safeWithoutSimulationSigner)
+	})
+
+	test('uses the shared owned-Safe predicate for signing and Safe Apps mode', () => {
+		assert.equal(isActiveSigningSafe(safeEntry, false, safeEntry.address, safeEntry.chainId, [ownerAddress], [safeEntry]), true)
+		assert.equal(isActiveSigningSafe(safeEntry, true, safeEntry.address, safeEntry.chainId, [ownerAddress], [safeEntry]), false)
+		assert.equal(isActiveSigningSafe(safeEntry, false, safeEntry.address, safeEntry.chainId, [0x9999n], [safeEntry]), false)
+		assert.equal(isActiveSigningSafe({ type: 'contact', name: 'EOA', address: ownerAddress, entrySource: 'User', useAsActiveAddress: true }, false, ownerAddress, safeEntry.chainId, [ownerAddress], [safeEntry]), false)
 	})
 })

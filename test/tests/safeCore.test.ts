@@ -30,7 +30,7 @@ describe('Safe transaction support', () => {
 		assert.equal(BigInt(getSafeTxHash(safeTx)), BigInt(getSafeTxHash(SafeTx.parse(parsedJson))))
 	})
 
-	test('allows only CALL transactions without gas reimbursement fields', () => {
+	test('rejects arbitrary delegate calls and gas reimbursement fields', () => {
 		const safeTx = createSafeTx(1n, 0x1234n, {
 			to: 0x5678n,
 			value: 0n,
@@ -41,7 +41,7 @@ describe('Safe transaction support', () => {
 		assert.throws(() => assertInterceptorSafeTransactionPolicy({
 			...safeTx,
 			message: { ...safeTx.message, operation: 1n },
-		}), (error) => isSafeContractValidationFailure(error) && /CALL operations only/u.test(error.message))
+		}), (error) => isSafeContractValidationFailure(error) && /DELEGATECALL is supported only/u.test(error.message))
 		assert.throws(() => assertInterceptorSafeTransactionPolicy({
 			...safeTx,
 			message: { ...safeTx.message, safeTxGas: 1n },

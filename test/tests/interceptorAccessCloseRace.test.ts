@@ -1,3 +1,4 @@
+import { createEthereumWithGetBlockCounter } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { Settings } from '../../app/ts/types/interceptor-messages.js'
@@ -175,18 +176,17 @@ describe('interceptor access close handling', () => {
 			uniqueRequestIdentifier: { requestId: 7, requestSocket: socket },
 			method: 'eth_requestAccounts',
 		}
-		const ethereum = {} as never
-		const tokenPriceService = {} as never
-		const resetSimulationServices = (() => undefined) as never
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 
 		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
-		await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, request, undefined, await getSettings(), await getActiveAddressEntryForChain(account, 1n), async () => undefined)
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, await getSettings(), await getActiveAddressEntryForChain(account, 1n), async () => undefined)
 
 		const postedMessages = browserMock.postedMessages as Array<{ method?: string, result?: unknown, requestId?: number }>
-		assert.deepEqual(postedMessages.map((message) => message.method), ['accountsChanged', 'eth_accounts'])
-		assert.deepEqual(postedMessages.map((message) => message.requestId), [7, 7])
-		assert.deepEqual(postedMessages[0]?.result, ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'])
-		assert.deepEqual(postedMessages[1]?.result, ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'])
+		const providerRequestMessages = postedMessages
+		assert.deepEqual(providerRequestMessages.map((message) => message.method), ['accountsChanged', 'eth_accounts'])
+		assert.deepEqual(providerRequestMessages.map((message) => message.requestId), [7, 7])
+		assert.deepEqual(providerRequestMessages[0]?.result, ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'])
+		assert.deepEqual(providerRequestMessages[1]?.result, ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'])
 	})
 
 	test('serializes dialog close cleanup with matching request creation', async () => {
@@ -215,11 +215,9 @@ describe('interceptor access close handling', () => {
 				minimized: true,
 			},
 		}
-		const ethereum = {} as never
-		const tokenPriceService = {} as never
-		const resetSimulationServices = (() => undefined) as never
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 
-		await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, undefined, undefined, settings, undefined, undefined)
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, undefined, undefined, settings, undefined, undefined)
 
 		const request: InterceptedRequest = {
 			interceptorRequest: true,
@@ -231,9 +229,7 @@ describe('interceptor access close handling', () => {
 		let concurrentRequest: Promise<void> | undefined
 		browserMock.onPendingAccessClear(() => {
 			concurrentRequest = requestAccessFromUser(
-				ethereum,
-				tokenPriceService,
-				resetSimulationServices,
+				simulationServicesOwner,
 				websiteTabConnections,
 				socket,
 				website,
@@ -284,9 +280,7 @@ describe('interceptor access close handling', () => {
 				minimized: true,
 			},
 		}
-		const ethereum = {} as never
-		const tokenPriceService = {} as never
-		const resetSimulationServices = (() => undefined) as never
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const request: InterceptedRequest = {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -294,7 +288,7 @@ describe('interceptor access close handling', () => {
 			method: 'eth_accounts',
 		}
 
-		await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, request, undefined, settings, undefined, async () => undefined)
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, settings, undefined, async () => undefined)
 
 		let closeAccessDialog: Promise<unknown> | undefined
 		browserMock.onPendingAccessRead(() => {
@@ -302,9 +296,7 @@ describe('interceptor access close handling', () => {
 		})
 
 		await resolveInterceptorAccess(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
+			simulationServicesOwner,
 			websiteTabConnections,
 			{ originalRequestAccessToAddress: undefined, requestAccessToAddress: undefined, accessRequestId: 'undefined || https://example.test', userReply: 'Approved' },
 			async () => undefined,
@@ -355,9 +347,7 @@ describe('interceptor access close handling', () => {
 				},
 			} }],
 		])
-		const ethereum = {} as never
-		const tokenPriceService = {} as never
-		const resetSimulationServices = (() => undefined) as never
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const publishRpcConnectionStatus = async () => undefined
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
 		const activeAddress = await getActiveAddressEntryForChain(account, 1n)
@@ -380,9 +370,7 @@ describe('interceptor access close handling', () => {
 		}
 
 		await requestAccessFromUser(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
+			simulationServicesOwner,
 			websiteTabConnections,
 			firstSocket,
 			firstWebsite,
@@ -397,9 +385,7 @@ describe('interceptor access close handling', () => {
 
 		await Promise.race([
 			resolveInterceptorAccess(
-				ethereum,
-				tokenPriceService,
-				resetSimulationServices,
+				simulationServicesOwner,
 				websiteTabConnections,
 				{
 					userReply: 'Approved',
@@ -415,9 +401,7 @@ describe('interceptor access close handling', () => {
 		const followUpRequest = (await getPendingAccessRequests()).find((request) => request.website.websiteOrigin === secondWebsite.websiteOrigin)
 		if (followUpRequest === undefined) throw new Error('Missing follow-up access request')
 		await resolveInterceptorAccess(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
+			simulationServicesOwner,
 			websiteTabConnections,
 			{
 				userReply: 'Rejected',
@@ -457,7 +441,7 @@ describe('interceptor access close handling', () => {
 		}
 		await setUseTabsInsteadOfPopup(true)
 		try {
-			await requestAccessFromUser({} as never, {} as never, (() => undefined) as never, websiteTabConnections, socket, website, undefined, undefined, settings, undefined, undefined)
+			await requestAccessFromUser((() => undefined) as never, websiteTabConnections, socket, website, undefined, undefined, settings, undefined, undefined)
 			const pendingRequests = await getPendingAccessRequests()
 			assert.equal(pendingRequests.length, 1)
 			assert.equal(pendingRequests[0]?.popupOrTabId.type, 'tab')

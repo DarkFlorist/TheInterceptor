@@ -13,7 +13,10 @@ type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: 
 
 function installBrowserMock(replyToMessage: (message: unknown) => unknown | Promise<unknown> = () => undefined) {
 	const sentMessages: unknown[] = []
-	let messageListener: RuntimeMessageListener | undefined
+	const messageListeners = new Set<RuntimeMessageListener>()
+	const messageListener: RuntimeMessageListener = (message, sender, sendResponse) => {
+		for (const listener of messageListeners) listener(message, sender, sendResponse)
+	}
 
 	Object.defineProperty(globalThis, 'browser', { configurable: true, value: {
 		runtime: {
@@ -25,9 +28,9 @@ function installBrowserMock(replyToMessage: (message: unknown) => unknown | Prom
 			getManifest: () => ({ manifest_version: 3 }),
 			onMessage: {
 				addListener: (listener: RuntimeMessageListener) => {
-					messageListener = listener
+					messageListeners.add(listener)
 				},
-				removeListener: () => undefined,
+				removeListener: (listener: RuntimeMessageListener) => messageListeners.delete(listener),
 			},
 			onConnect: { addListener: () => undefined, removeListener: () => undefined },
 		},
