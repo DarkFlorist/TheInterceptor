@@ -1,6 +1,31 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { createSimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import { createSimulationServicesOwner, isCurrentSimulationService } from '../../app/ts/simulation/serviceLifecycle.js'
+
+test('the service owner stays paused until an RPC is explicitly installed', () => {
+	const rpc = { name: 'Restored', chainId: 1n, httpsRpc: 'https://restored.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	let resumedCount = 0
+	const owner = createSimulationServicesOwner(undefined, async () => undefined, async (_ethereum, error) => { throw error }, {}, () => { resumedCount += 1 })
+	assert.equal(owner.isAvailable(), false)
+	assert.equal(owner.getCurrentOrUndefined(), undefined)
+	assert.throws(owner.getCurrent, /Network requests are paused/)
+
+	assert.throws(() => owner.reset(rpc), /Network requests are paused/)
+	const restored = owner.recover(rpc)
+	assert.equal(owner.isAvailable(), true)
+	assert.equal(owner.getCurrent(), restored)
+	assert.equal(resumedCount, 1)
+	assert.equal(isCurrentSimulationService(owner, restored.ethereum), true)
+	owner.reset(rpc)
+	assert.equal(resumedCount, 1)
+	owner.clear()
+	assert.equal(owner.isAvailable(), false)
+	assert.equal(isCurrentSimulationService(owner, restored.ethereum), false)
+	assert.throws(() => owner.reset(rpc), /Network requests are paused/)
+	owner.recover(rpc)
+	assert.equal(resumedCount, 2)
+	owner.clear()
+})
 
 test('the service owner publishes the exact pair returned by every reset', () => {
 	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }

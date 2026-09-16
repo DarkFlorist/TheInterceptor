@@ -3,7 +3,7 @@ import { describe, test } from 'bun:test'
 import { createStoredValueRepository } from '../../app/ts/utils/storedValue.js'
 
 describe('stored value repository', () => {
-	test('propagates read failures unless recovery is explicitly configured', async () => {
+	test('propagates read failures without writing defaults', async () => {
 		const readError = new Error('storage read failed')
 		let writeCount = 0
 		const repository = createStoredValueRepository({
@@ -17,19 +17,28 @@ describe('stored value repository', () => {
 		assert.equal(writeCount, 0)
 	})
 
-	test('returns the default only after configured recovery completes', async () => {
-		const calls: string[] = []
+	test('serializes direct writes behind an in-flight read-modify-write update', async () => {
+		let storedValue = 1
+		let releaseUpdate = () => undefined
+		let signalUpdateStarted = () => undefined
+		const updateStarted = new Promise<void>((resolve) => { signalUpdateStarted = resolve })
+		const continueUpdate = new Promise<void>((resolve) => { releaseUpdate = resolve })
 		const repository = createStoredValueRepository({
-			read: async () => { throw new Error('corrupt value') },
-			write: async (value: number) => { calls.push(`write:${ value }`) },
-			getDefault: () => 4,
-			recover: async (error, defaultValue) => {
-				assert.equal(error instanceof Error ? error.message : undefined, 'corrupt value')
-				calls.push(`recover:${ defaultValue }`)
-			},
+			read: async () => storedValue,
+			write: async (value: number) => { storedValue = value },
+			getDefault: () => 0,
 		})
 
-		assert.equal(await repository.get(), 4)
-		assert.deepEqual(calls, ['recover:4'])
+		const updatePromise = repository.update(async (previous) => {
+			signalUpdateStarted()
+			await continueUpdate
+			return previous + 1
+		})
+		await updateStarted
+		const setPromise = repository.set(10)
+		releaseUpdate()
+		await Promise.all([updatePromise, setPromise])
+
+		assert.equal(storedValue, 10)
 	})
 })

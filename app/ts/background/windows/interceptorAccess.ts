@@ -1,4 +1,4 @@
-import { METAMASK_ERROR_ALREADY_PENDING } from '../../utils/constants.js'
+import { METAMASK_ERROR_ALREADY_PENDING, METAMASK_ERROR_PROVIDER_DISCONNECTED } from '../../utils/constants.js'
 import { Future } from '../../utils/future.js'
 import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, InterceptorAccessReply, Settings, WindowMessage } from '../../types/interceptor-messages.js'
 import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphore.js'
@@ -8,7 +8,7 @@ import { handleInterceptedRequest, refuseAccess } from '../background.js'
 import { activateAddressSelection } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddressEntryForChain } from '../metadataUtils.js'
-import { getSettings } from '../settings.js'
+import { getSettings, getSettingsWithRpcNetwork } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
@@ -302,6 +302,18 @@ export async function requestAccessFromUser(
 	// check if we need to ask address access or not. If address is put to never need to have address specific permision, we don't need to ask for it
 	const askForAddressAccess = requestAccessToAddress !== undefined && requestAccessToAddress.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
+	const replyIfRpcConfigurationIsUnavailable = () => {
+		if (request === undefined || simulationServicesOwner.isAvailable?.() !== false) return false
+		replyToInterceptedRequest(websiteTabConnections, {
+			type: 'result',
+			...request,
+			error: {
+				code: METAMASK_ERROR_PROVIDER_DISCONNECTED,
+				message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
+			},
+		})
+		return true
+	}
 	const verifyAccessForCurrentRequest = (currentSettings: Settings) => {
 		const verify = () => verifyAccess(
 			websiteTabConnections,
@@ -319,6 +331,7 @@ export async function requestAccessFromUser(
 	const onCloseWindowCallback = async (id: number) => closeWindowOrTabCallback({ type: 'popup' as const, id })
 	const onCloseTabCallback = async (id: number) => closeWindowOrTabCallback({ type: 'tab' as const, id })
 	const pendingReplay = await pendingInterceptorAccessSemaphore.execute(async () => {
+		if (replyIfRpcConfigurationIsUnavailable()) return undefined
 		const verifyPendingRequests = async () => {
 			const previousRequests = await getPendingAccessRequests()
 			if (previousRequests.length !== 0) {
@@ -339,7 +352,8 @@ export async function requestAccessFromUser(
 
 		const previousPendingRequests = await verifyPendingRequests()
 		const justAddToPending = previousPendingRequests.length !== 0
-		const hasAccess = verifyAccessForCurrentRequest(await getSettings())
+		const hasAccess = verifyAccessForCurrentRequest(await getSettingsWithRpcNetwork(settings.activeRpcNetwork))
+		if (replyIfRpcConfigurationIsUnavailable()) return undefined
 		if (hasAccess === 'hasAccess') { // we already have access, just reply with the gate keeped request right away
 			if (request !== undefined) {
 				if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay an intercepted request.')
@@ -397,7 +411,7 @@ export async function requestAccessFromUser(
 
 		const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
 			// check that it doesn't have access already
-			if (verifyAccessForCurrentRequest(await getSettings()) !== 'askAccess') return previousPendingAccessRequests
+			if (verifyAccessForCurrentRequest(await getSettingsWithRpcNetwork(settings.activeRpcNetwork)) !== 'askAccess') return previousPendingAccessRequests
 
 			// check that we are not tracking it already
 			if (previousPendingAccessRequests.find((x) => x.accessRequestId === accessRequestId) === undefined) {

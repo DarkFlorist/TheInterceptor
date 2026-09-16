@@ -159,8 +159,8 @@ export const getHostWithPort = (urlString: string): string => {
 	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
 }
 
-export const silenceChromeUnCaughtPromise = async <ReturnValue>(maybeAwaitedFunction: Promise<ReturnValue>) => {
-	maybeAwaitedFunction.catch(() => undefined)
+export const silenceChromeUnCaughtPromise = <ReturnValue>(maybeAwaitedFunction: Promise<ReturnValue>) => {
+	void maybeAwaitedFunction.catch(() => undefined)
 	return maybeAwaitedFunction
 }
 
