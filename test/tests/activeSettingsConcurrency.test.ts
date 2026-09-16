@@ -28,6 +28,48 @@ function pauseAfterFirstStorageWrite(key: string) {
 }
 
 describe('active settings concurrency', () => {
+	test('does not install a requested RPC after settings validation pauses the service owner', async () => {
+		installBrowserMock()
+		const { changeActiveAddressAndChain, getSettings, setRpcConfigurationUnavailableHandler } = await loadModules()
+		const requestedNetwork = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://requested.invalid' }
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		let resetCount = 0
+		const owner = createTestSimulationServicesOwner(services, () => { resetCount += 1; return services })
+		setRpcConfigurationUnavailableHandler(owner.clear)
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+
+		await assert.rejects(
+			changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: requestedNetwork }),
+			/RPC configuration is unavailable/,
+		)
+		assert.equal(owner.isAvailable(), false)
+		assert.equal(resetCount, 0)
+	})
+
+	test('does not resume services when the owner is paused after a transition validates settings', async () => {
+		installBrowserMock()
+		const { changeActiveAddressAndChain, getSettings } = await loadModules()
+		const requestedNetwork = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://requested.invalid' }
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		let resetCount = 0
+		const owner = createTestSimulationServicesOwner(services, () => { resetCount += 1; return services })
+		const originalSet = browser.storage.local.set.bind(browser.storage.local)
+		Object.defineProperty(browser.storage.local, 'set', {
+			configurable: true,
+			value: async (items: object) => {
+				await originalSet(items)
+				if ('activeRpcNetwork' in items) owner.clear()
+			},
+		})
+
+		await assert.rejects(
+			changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: requestedNetwork }),
+			/RPC configuration is unavailable/,
+		)
+		assert.equal(owner.isAvailable(), false)
+		assert.equal(resetCount, 0)
+	})
+
 	test('publishes concurrent network transitions in persisted order', async () => {
 		installBrowserMock()
 		const { changeActiveAddressAndChain, getSettings, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()

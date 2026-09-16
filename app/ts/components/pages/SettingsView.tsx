@@ -7,9 +7,7 @@ import { ErrorComponent } from '../subcomponents/Error.js'
 import { DinoSaysNotification } from '../subcomponents/DinoSays.js'
 import { ConfigureRpcConnection } from '../subcomponents/ConfigureRpcConnection.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
-import { DEFAULT_RPCS } from '../../config/defaults.js'
 import { getChainName } from '../../utils/constants.js'
-import { getRpcList } from '../../background/storageVariables.js'
 import { useComputed, useSignal } from '@preact/signals'
 import { serialize } from '../../types/wire-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
@@ -241,9 +239,34 @@ export function SettingsView() {
 }
 
 const RpcListings = () => {
-	const rpcEntries = useRpcConnectionsList()
+	const { entries: rpcEntries, status, reload } = useRpcConnectionsState()
 	const { value: resetRpcListState, waitFor: waitForResetDefaultRpcs } = useAsyncState<void>()
-	const loadDefaultRpcs = () => void waitForResetDefaultRpcs(() => sendPopupMessageToBackgroundPage({ method: 'popup_set_rpc_list', data: DEFAULT_RPCS }))
+	const { value: retryRpcListState, waitFor: waitForRetryRpcList } = useAsyncState<void>()
+	const loadDefaultRpcs = () => void waitForResetDefaultRpcs(() => sendPopupMessageToBackgroundPage({ method: 'popup_restoreDefaultRpcConfiguration' }))
+	const retryRpcList = () => void waitForRetryRpcList(reload)
+
+	if (status.value === 'loading') return <></>
+	if (status.value === 'unavailable') {
+		return (
+			<aside class = 'report' role = 'alert' style = { { display: 'grid', minHeight: '11rem', textAlign: 'center', rowGap: '0.5rem', padding: '1rem' } }>
+				<p>Interceptor could not safely read your RPC configuration. Network requests are paused to prevent sending them to an endpoint you did not choose.</p>
+				<AsyncActionButton
+					class = 'btn btn--outline'
+					state = { retryRpcListState.value.state }
+					text = 'Retry reading RPC configuration'
+					pendingText = 'Retrying RPC configuration'
+					onClick = { retryRpcList }
+				/>
+				<AsyncActionButton
+					class = 'btn btn--outline'
+					state = { resetRpcListState.value.state }
+					text = 'Restore bundled default RPC list'
+					pendingText = 'Restoring default RPC list'
+					onClick = { loadDefaultRpcs }
+				/>
+			</aside>
+		)
+	}
 
 	if (shouldOfferBundledRpcReset(rpcEntries.value)) {
 		return (
@@ -291,7 +314,15 @@ const RpcSummary = ({ info }: { info: SignalOrValue<RpcEntry | undefined> }) => 
 }
 
 export function useRpcConnectionsList() {
+	return useRpcConnectionsState().entries
+}
+
+type RpcConnectionsStatus = 'ready' | 'unavailable' | 'loading'
+
+export function useRpcConnectionsState() {
 	const entries = useSignal<RpcEntries>([])
+	const status = useSignal<RpcConnectionsStatus>('loading')
+	const reload = async () => { await sendPopupMessageToBackgroundPage({ method: 'popup_retryRpcConfiguration' }) }
 
 	useEffect(() => {
 		let disposed = false
@@ -302,30 +333,31 @@ export function useRpcConnectionsList() {
 			if (parsedMessage.value.method === 'popup_update_rpc_list') {
 				updateVersion += 1
 				entries.value = parsedMessage.value.data
+				status.value = parsedMessage.value.data.length === 0 ? 'unavailable' : 'ready'
+			}
+			if (parsedMessage.value.method === 'popup_requestSettingsReply') {
+				updateVersion += 1
+				entries.value = parsedMessage.value.data.rpcEntries
+				status.value = parsedMessage.value.data.rpcConfigurationAvailable ? 'ready' : 'unavailable'
 			}
 			return false
 		}
 		noReplyExpectingBrowserRuntimeOnMessageListener(trackRpcListChanges)
 		const initialUpdateVersion = updateVersion
-		const initiallyLoadEntriesFromStorage = async () => {
-			try {
-				const initialEntries = await getRpcList()
-				if (shouldApplyInitialRpcEntries(disposed, initialUpdateVersion, updateVersion)) entries.value = initialEntries
-			} catch(error: unknown) {
-				await reportUnexpectedError(error, {
-					source: 'settingsView',
-					code: 'rpc_list_initial_load_failed',
-					displayMessage: 'Failed to load RPC connections.',
-					suppressExpectedHandledErrors: false,
-				})
-			}
-		}
-		void initiallyLoadEntriesFromStorage()
+		void sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }).catch(async (error: unknown) => {
+			if (shouldApplyInitialRpcEntries(disposed, initialUpdateVersion, updateVersion)) status.value = 'unavailable'
+			await reportUnexpectedError(error, {
+				source: 'settingsView',
+				code: 'rpc_list_initial_load_failed',
+				displayMessage: 'Failed to load RPC connections.',
+				suppressExpectedHandledErrors: false,
+			})
+		})
 		return () => {
 			disposed = true
 			browser.runtime.onMessage.removeListener(trackRpcListChanges)
 		}
 	}, [])
 
-	return entries
+	return { entries, status, reload }
 }

@@ -65,22 +65,49 @@ export function resetSimulationServices(
 
 export type SimulationServicesOwner = {
 	readonly getCurrent: () => SimulationServices
+	readonly getCurrentOrUndefined: () => SimulationServices | undefined
+	readonly isAvailable: () => boolean
 	readonly reset: (rpcNetwork: RpcEntry) => SimulationServices
+	readonly recover: (rpcNetwork: RpcEntry) => SimulationServices
+	readonly clear: () => void
+}
+
+export const isCurrentSimulationService = (owner: SimulationServicesOwner | undefined, ethereumClientService: EthereumClientService) => {
+	return owner?.getCurrentOrUndefined()?.ethereum === ethereumClientService
 }
 
 // One owner publishes installed services. Returned pairs are snapshots for an operation; independent message handlers must read getCurrent() when their work starts.
 export function createSimulationServicesOwner(
-	rpcNetwork: RpcEntry,
+	rpcNetwork: RpcEntry | undefined,
 	newBlockAttemptCallback: NewBlockAttemptCallback,
 	onErrorBlockCallback: OnErrorBlockCallback,
 	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
+	onBecameAvailable: () => void = () => undefined,
 ) {
-	let current = createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
+	let current = rpcNetwork === undefined ? undefined : createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
 	return {
-		getCurrent: () => current,
+		getCurrent: () => {
+			if (current === undefined) throw new Error('RPC configuration is unavailable. Network requests are paused.')
+			return current
+		},
+		getCurrentOrUndefined: () => current,
+		isAvailable: () => current !== undefined,
 		reset: (nextRpc: RpcEntry): SimulationServices => {
+			if (current === undefined) throw new Error('RPC configuration is unavailable. Network requests are paused.')
 			current = resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
 			return current
+		},
+		recover: (nextRpc: RpcEntry): SimulationServices => {
+			const wasUnavailable = current === undefined
+			current = current === undefined
+				? createSimulationServices(nextRpc, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
+				: resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
+			if (wasUnavailable) onBecameAvailable()
+			return current
+		},
+		clear: () => {
+			current?.ethereum.cleanup()
+			current = undefined
 		},
 	}
 }

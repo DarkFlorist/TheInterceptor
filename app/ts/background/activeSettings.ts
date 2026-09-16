@@ -10,14 +10,14 @@ import type { WebsiteAccessUpdate } from './accessManagement.js'
 import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { changeSimulationMode, getSettings, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
+import { changeSimulationMode, getSettings, getSettingsWithRpcNetwork, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
 import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
 
-async function clearSimulationStateFromConfig() {
-	const settings = await getSettings()
+async function clearSimulationStateFromConfig(settingsSnapshot?: Awaited<ReturnType<typeof getSettings>>) {
+	const settings = settingsSnapshot ?? await getSettings()
 	const activeStackContext = getActiveStackContext(settings)
 	await updateTransactionState((previousState) => {
 		if (settings.simulationMode) {
@@ -80,12 +80,15 @@ async function runActiveSettingsChange(
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
 		await changeActiveAddressAndChainSemaphore.execute(async () => {
+			if (!simulationServicesOwner.isAvailable()) throw new Error('RPC configuration is unavailable. Settings changes are paused until it is restored.')
 			if (transition.simulationSignerSelection !== undefined) {
 				const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
 				await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
 			}
 			if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList()
 			const previousSettings = await getSettings()
+			// Reading settings validates the persisted RPC configuration and pauses the owner if it became unreadable.
+			if (!simulationServicesOwner.isAvailable()) throw new Error('RPC configuration is unavailable. Settings changes are paused until it is restored.')
 
 			if (change.simulationMode) {
 				await changeSimulationMode({
@@ -104,7 +107,7 @@ async function runActiveSettingsChange(
 				})
 			}
 
-			const updatedSettings = await getSettings()
+			const updatedSettings = await getSettingsWithRpcNetwork(change.rpcNetwork ?? previousSettings.activeRpcNetwork)
 			const { chainChanged: rpcChainChanged, endpointChanged: rpcEndpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
 			try {
 				try {
@@ -120,7 +123,7 @@ async function runActiveSettingsChange(
 							throw error
 						}
 					}
-					if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig()
+					if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig(updatedSettings)
 				} finally {
 					// Publish committed settings even if installing their services fails.
 					await sendPopupMessageToOpenWindows({
@@ -139,7 +142,7 @@ async function runActiveSettingsChange(
 			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
 				await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
 			}
-			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
+			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettingsWithRpcNetwork(updatedSettings.activeRpcNetwork))
 		})
 	} finally {
 		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.

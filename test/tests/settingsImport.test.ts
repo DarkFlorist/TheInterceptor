@@ -3,6 +3,7 @@ import { beforeEach, describe, test } from 'bun:test'
 import type { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
+import { DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
 
 type StorageKeyInput = string | string[] | Record<string, unknown> | undefined | null
 
@@ -404,10 +405,12 @@ describe('settings import', () => {
 
 	test('ignores the legacy shared address and defaults independent simulation state without storage migration', async () => {
 		const safeAddress = 0x8888888888888888888888888888888888888888n
-		await browser.storage.local.set({
+		await browserStorageLocalSet({
 			activeSimulationAddress: safeAddress,
 			simulationMode: false,
 			useSignersAddressAsActiveAddress: false,
+			rpcEntries: DEFAULT_RPCS,
+			activeRpcNetwork: DEFAULT_RPCS[0],
 		})
 		const { defaultActiveAddresses, getSettings } = await settingsModulePromise
 		const storageBeforeRead = await browser.storage.local.get()
