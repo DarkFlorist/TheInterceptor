@@ -222,10 +222,11 @@ export const setInterceptorStartSleepingTimestamp = async(interceptorStartSleepi
 export const getInterceptorStartSleepingTimestamp = async () => (await browserStorageLocalGet('interceptorStartSleepingTimestamp'))?.interceptorStartSleepingTimestamp ?? 0
 
 export const promoteRpcAsPrimary = async (rpcNetwork: RpcNetwork) => {
-	const rpcs = await getRpcList()
-	const selectedIndex = rpcs.findIndex((rpc) => getRpcEntryIdentityKey(rpc) === getRpcEntryIdentityKey(rpcNetwork))
-	if (selectedIndex === -1) return
-	await setRpcList(rpcs.map((rpc, index) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: index === selectedIndex }) : rpc))
+	await rpcListRepository.update((rpcs) => {
+		const selectedIndex = rpcs.findIndex((rpc) => getRpcEntryIdentityKey(rpc) === getRpcEntryIdentityKey(rpcNetwork))
+		if (selectedIndex === -1) return rpcs
+		return rpcs.map((rpc, index) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: index === selectedIndex }) : rpc)
+	})
 }
 
 export const getPrimaryRpcForChain = async (chainId: bigint) => {
