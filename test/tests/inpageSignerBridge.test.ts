@@ -1395,6 +1395,7 @@ describe('inpage signer bridge', () => {
 				interceptorApproved: true,
 				type: 'result',
 				method: 'request_signer_to_wallet_switchEthereumChain',
+				walletSwitchRequestId: 'test-switch',
 				result: '0x2',
 			})
 			await waitFor(() => chainSwitchRequestCount === 1)
@@ -1406,6 +1407,7 @@ describe('inpage signer bridge', () => {
 		if (!isRecord(reply) || !isRecord(reply.error)) throw new Error('Malformed chain switch reply')
 		assert.equal(reply.accept, false)
 		assert.equal(reply.chainId, '0x2')
+		assert.equal(reply.walletSwitchRequestId, 'test-switch')
 		assert.equal(reply.error.code, 4900)
 		assert.equal(reply.error.message, 'Signer connection changed before the previous wallet replied.')
 	})
@@ -1435,6 +1437,7 @@ describe('inpage signer bridge', () => {
 				interceptorApproved: true,
 				type: 'result',
 				method: 'request_signer_to_wallet_switchEthereumChain',
+				walletSwitchRequestId: 'test-switch',
 				result: '0x2',
 			})
 			await waitFor(() => chainSwitchReplies.length === 1)
@@ -1470,6 +1473,7 @@ describe('inpage signer bridge', () => {
 				interceptorApproved: true,
 				type: 'result',
 				method: 'request_signer_to_wallet_switchEthereumChain',
+				walletSwitchRequestId: 'test-switch',
 				result: '0x2',
 			})
 			await waitFor(() => chainSwitchReplies.length === 1)
@@ -1480,6 +1484,31 @@ describe('inpage signer bridge', () => {
 		assert.equal(reply.accept, false)
 		assert.equal(reply.error.code, 4900)
 		assert.match(String(reply.error.message), /No signer wallet is available/)
+	})
+
+	test('keeps wallet switch request IDs when replies arrive out of order', async () => {
+		const replies: unknown[] = []
+		const complete: ((value: unknown) => void)[] = []
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request, respond) => {
+				if (request.method !== 'wallet_switchEthereumChain_reply') return false
+				replies.push(request.params?.[0])
+				respond({ interceptorApproved: true, type: 'result', requestId: request.requestId, method: request.method, result: '0x' })
+				return true
+			},
+			handleSignerRequest: ({ method }) => method === 'wallet_switchEthereumChain' ? new Promise(resolve => complete.push(resolve)) : undefined,
+		})
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?out-of-order-wallet-switches', async () => {
+			for (const walletSwitchRequestId of ['expired', 'current']) {
+				sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'request_signer_to_wallet_switchEthereumChain', result: '0x2', walletSwitchRequestId })
+			}
+			await waitFor(() => complete.length === 2)
+			complete[1]?.(null)
+			await waitFor(() => replies.length === 1)
+			complete[0]?.(null)
+			await waitFor(() => replies.length === 2)
+		})
+		assert.deepEqual(replies.map(reply => isRecord(reply) ? [reply.walletSwitchRequestId, reply.accept] : undefined), [['current', true], ['expired', true]])
 	})
 
 	test('forwards an approved watch-asset dialog action to the selected signer', async () => {
