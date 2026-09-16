@@ -13,7 +13,7 @@ import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } fr
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
-import { hasOwnKey } from '../utils/methodHandlers.js'
+import { hasOwnKey } from '../utils/typescript.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 

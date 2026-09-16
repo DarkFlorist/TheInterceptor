@@ -13,7 +13,7 @@ import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { ICON_ACCESS_DENIED } from './constants.js'
-import { hasOwnKey } from './methodHandlers.js'
+import { hasOwnKey } from './typescript.js'
 
 type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
 const IdsOfOpenedTabs = funtypes.Intersect(
