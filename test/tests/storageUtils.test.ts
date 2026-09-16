@@ -1,7 +1,6 @@
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
-import { withSilencedConsole } from './consoleSilence.js'
 
 const storedItems: Record<string, unknown> = {}
 const writes: Record<string, unknown>[] = []
@@ -109,7 +108,7 @@ describe('RPC storage recovery', () => {
 	test('continues to use defaults for a corrupt stored RPC value', async () => {
 		storedItems.rpcEntries = 'not-an-rpc-list'
 
-		const rpcs = await withSilencedConsole(getRpcList)
+		const rpcs = await getRpcList()
 
 		assert.equal(rpcs[0]?.name, 'Ethereum Mainnet')
 		assert.equal(rpcs[0]?.primary, true)

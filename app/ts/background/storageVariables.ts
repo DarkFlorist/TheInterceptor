@@ -2,9 +2,8 @@ import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2, browserStorageLocalRemove, browserStorageLocalSafeParseGet, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
-import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
@@ -22,13 +21,6 @@ import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
-import { ValidationError } from 'funtypes'
-
-const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
-	if (!(error instanceof ValidationError)) throw error
-	console.warn(`${ label } was corrupt:`)
-	console.warn(error)
-}
 
 const idsOfOpenedTabsRepository = createStoredValueRepository({
 	read: async () => (await browserStorageLocalGet('idsOfOpenedTabs')).idsOfOpenedTabs,
@@ -191,10 +183,9 @@ export const saveCurrentTabId = async (tabId: number) => browserStorageLocalSet(
 export const getCurrentTabId = async () => (await browserStorageLocalGet('currentTabId'))?.currentTabId ?? undefined
 
 const rpcConnectionStatusRepository = createStoredValueRepository<RpcConnectionStatus>({
-	read: async () => (await browserStorageLocalGet('rpcConnectionStatus')).rpcConnectionStatus,
+	read: async () => (await browserStorageLocalSafeParseGet('rpcConnectionStatus'))?.rpcConnectionStatus,
 	write: async (rpcConnectionStatus) => { await browserStorageLocalSet({ rpcConnectionStatus }) },
 	getDefault: () => undefined,
-	recover: reportCorruptStoredValue('Connection status'),
 })
 export const setRpcConnectionStatus = rpcConnectionStatusRepository.set
 export const getRpcConnectionStatus = rpcConnectionStatusRepository.get
@@ -211,10 +202,9 @@ export async function updateEthereumSubscriptionsAndFilters(updateFunc: (prevSta
 }
 
 const rpcListRepository = createStoredValueRepository<RpcEntries>({
-	read: async () => (await browserStorageLocalGet('rpcEntries')).rpcEntries,
+	read: async () => (await browserStorageLocalSafeParseGet('rpcEntries'))?.rpcEntries,
 	write: async (rpcEntries) => { await browserStorageLocalSet({ rpcEntries }) },
 	getDefault: () => DEFAULT_RPCS,
-	recover: reportCorruptStoredValue('Rpc entries'),
 })
 export const setRpcList = rpcListRepository.set
 export const getRpcList = rpcListRepository.get
