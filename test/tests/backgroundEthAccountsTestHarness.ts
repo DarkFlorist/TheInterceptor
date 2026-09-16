@@ -1,5 +1,5 @@
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import type { ResetSimulationServices } from '../../app/ts/simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
@@ -10,7 +10,7 @@ import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 
 type Listener = () => void
-type PortMessage = { type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
+type PortMessage = { walletSwitchRequestId?: unknown, type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
 export const noopPublishRpcConnectionStatus: PublishRpcConnectionStatus = async () => undefined
 
 export function createDeferredSignal() {
@@ -240,11 +240,26 @@ export function createEthereumWithGetBlockCounter(
 			},
 		},
 	)
+	const tokenPriceService = new TokenPriceService(ethereum, 60_000)
 	return {
 		ethereum,
-		tokenPriceService: new TokenPriceService(ethereum, 60_000),
-		resetSimulationServices: (() => undefined) satisfies ResetSimulationServices,
+		tokenPriceService,
+		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }),
 	}
 }
 
 export { addressString, createSafeTx, EthereumJsonRpcRequest, safeTxToTypedDataJson }
+
+export function getWalletSwitchRequestId(messages: readonly PortMessage[], index = -1) {
+	const id = messages.filter(message => message.method === 'request_signer_to_wallet_switchEthereumChain').at(index)?.walletSwitchRequestId
+	if (typeof id !== 'string') throw new Error('Missing wallet switch request ID')
+	return id
+}
+
+export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: SimulationServicesOwner['reset']): SimulationServicesOwner {
+	let current = initial
+	return {
+		getCurrent: () => current,
+		reset: network => { current = reset === undefined ? current : reset(network); return current },
+	}
+}

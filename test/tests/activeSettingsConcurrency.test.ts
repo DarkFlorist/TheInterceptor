@@ -2,10 +2,9 @@ import * as assert from 'node:assert'
 import { describe, expect, test } from 'bun:test'
 import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { TabConnection, WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import type { ResetSimulationServices } from '../../app/ts/simulation/serviceLifecycle.js'
 import { ICON_NOT_ACTIVE } from '../../app/ts/utils/constants.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
-import { createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
+import { createTestSimulationServicesOwner, createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
 const firstAddress: ContactEntry = { type: 'contact', name: 'First address', address: 1n, chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false }
 const secondAddress: ContactEntry = { ...firstAddress, name: 'Second address', address: 2n }
@@ -57,17 +56,17 @@ describe('active settings concurrency', () => {
 			primary: false,
 		} satisfies RpcEntry
 		const resetNetworks: RpcEntry[] = []
-		const resetSimulationServices: ResetSimulationServices = (network) => { resetNetworks.push(network) }
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
+		const simulationServicesOwner = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, network => { resetNetworks.push(network); return { ethereum, tokenPriceService } })
 
-		const firstTransition = changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, connections, {
+		const firstTransition = changeActiveAddressAndChain(simulationServicesOwner, connections, {
 			simulationMode: true,
 			rpcNetwork: firstNetwork,
 			activeAddress: firstAddress.address,
 			promptForAccessesIfNeeded: false,
 		})
 		await firstRpcWriteStarted
-		const secondTransition = changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, connections, {
+		const secondTransition = changeActiveAddressAndChain(simulationServicesOwner, connections, {
 			simulationMode: true,
 			rpcNetwork: secondNetwork,
 			activeAddress: secondAddress.address,
@@ -85,6 +84,45 @@ describe('active settings concurrency', () => {
 		assert.equal((await getSettings()).activeRpcNetwork.chainId, secondNetwork.chainId)
 	})
 
+	test('a selection queued behind an endpoint reset uses the installed services', async () => {
+		installBrowserMock()
+		const { activateAddressSelection, changeActiveAddressAndChain, getSettings } = await loadModules()
+		const original = createEthereumWithGetBlockCounter({ count: 0 })
+		const installed = createEthereumWithGetBlockCounter({ count: 0 })
+		const owner = createTestSimulationServicesOwner(original, () => installed)
+		let oldReads = 0
+		let installedReads = 0
+		original.ethereum.getCachedBlock = () => { oldReads++; return undefined }
+		installed.ethereum.getCachedBlock = () => { installedReads++; return undefined }
+		const entered = createDeferredSignal()
+		const release = createDeferredSignal()
+		const originalSend = browser.runtime.sendMessage
+		let held = false
+		browser.runtime.sendMessage = async message => {
+			if (!held && typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_settingsUpdated') {
+				held = true
+				entered.resolve()
+				await release.promise
+			}
+			return await originalSend(message)
+		}
+		const rpcNetwork = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://installed.example' }
+		const safe: SafeEntry = { type: 'safe', name: 'Queued Safe', address: 3n, chainId: rpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
+		const first = changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork })
+		try {
+			await entered.promise
+			const second = activateAddressSelection(owner, new Map(), { type: 'addressBookEntry', entry: safe }, { simulationMode: false, signerAddress: firstAddress.address, promptForAccessesIfNeeded: false })
+			release.resolve()
+			await Promise.all([first, second])
+			assert.equal(oldReads, 0)
+			assert.equal(installedReads, 2)
+		} finally {
+			release.resolve()
+			await first
+			browser.runtime.sendMessage = originalSend
+		}
+	})
+
 	test.each([true, false])('keeps concurrent simulation selections consistent when selecting signer first: %j', async (signerFirst) => {
 		installBrowserMock()
 		const { activateAddressSelection, getSettings } = await loadModules()
@@ -93,9 +131,9 @@ describe('active settings concurrency', () => {
 		const addressSelection = { type: 'addressBookEntry', entry: secondAddress } as const
 		const firstWriteStarted = pauseAfterFirstStorageWrite('useSignersAddressAsActiveAddress')
 		const options = { simulationMode: true, signerAddress: firstAddress.address, promptForAccessesIfNeeded: false }
-		const first = activateAddressSelection(ethereum, tokenPriceService, () => undefined, new Map(), signerFirst ? signerSelection : addressSelection, options)
+		const first = activateAddressSelection(createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService })), new Map(), signerFirst ? signerSelection : addressSelection, options)
 		await firstWriteStarted
-		const second = activateAddressSelection(ethereum, tokenPriceService, () => undefined, new Map(), signerFirst ? addressSelection : signerSelection, options)
+		const second = activateAddressSelection(createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService })), new Map(), signerFirst ? addressSelection : signerSelection, options)
 		await Promise.all([first, second])
 
 		const settings = await getSettings()
@@ -113,9 +151,9 @@ describe('active settings concurrency', () => {
 		const safeSelection = { type: 'addressBookEntry', entry: safe } as const
 		const firstWriteStarted = pauseAfterFirstStorageWrite('activeSigningSafeAddress')
 		const options = { simulationMode: false, signerAddress: firstAddress.address, promptForAccessesIfNeeded: false }
-		const first = activateAddressSelection(ethereum, tokenPriceService, () => undefined, new Map(), safeFirst ? safeSelection : signerSelection, options)
+		const first = activateAddressSelection(createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService })), new Map(), safeFirst ? safeSelection : signerSelection, options)
 		await firstWriteStarted
-		const second = activateAddressSelection(ethereum, tokenPriceService, () => undefined, new Map(), safeFirst ? signerSelection : safeSelection, options)
+		const second = activateAddressSelection(createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService })), new Map(), safeFirst ? signerSelection : safeSelection, options)
 		await Promise.all([first, second])
 
 		assert.equal((await getSettings()).activeSigningSafeAddress, safeFirst ? undefined : safe.address)
@@ -123,6 +161,77 @@ describe('active settings concurrency', () => {
 			? { signerAddress: firstAddress.address, selection: 'signer' }
 			: { signerAddress: firstAddress.address, selection: 'safe', safeAddress: safe.address, chainId: safe.chainId },
 		])
+	})
+
+	test.each(['signing preference', 'stack storage', 'settings broadcast'])('preserves visualization when %s fails', async (failurePoint) => {
+		const { runtimeMessages } = installBrowserMock()
+		const { activateAddressSelection, getSettings } = await loadModules()
+		const { getPopupVisualisationState, setPopupVisualisationState, getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
+		const previousVisualisation = { ...await getPopupVisualisationState(), simulationId: 42 }
+		await setPopupVisualisationState(previousVisualisation)
+		const originalSet = browser.storage.local.set.bind(browser.storage.local)
+		const originalSend = browser.runtime.sendMessage.bind(browser.runtime)
+		const failure = new Error(`Injected ${ failurePoint } failure`)
+		Object.defineProperty(browser.storage.local, 'set', {
+			configurable: true,
+			value: async (items: object) => {
+				if (failurePoint === 'signing preference' && 'signingAddressPreferences' in items) throw failure
+				if (failurePoint === 'stack storage' && 'interceptorTransactionStack' in items) throw failure
+				await originalSet(items)
+			},
+		})
+		Object.defineProperty(browser.runtime, 'sendMessage', {
+			configurable: true,
+			value: async (message: { method?: string }) => {
+				if (failurePoint === 'settings broadcast' && message.method === 'popup_settingsUpdated') throw failure
+				return await originalSend(message)
+			},
+		})
+		try {
+			const services = createEthereumWithGetBlockCounter({ count: 0 })
+			const network = (await getSettings()).activeRpcNetwork
+			const transition = activateAddressSelection(createTestSimulationServicesOwner(services), new Map(), { type: 'signer', address: firstAddress.address }, {
+				simulationMode: failurePoint === 'stack storage', signerAddress: firstAddress.address, promptForAccessesIfNeeded: false,
+				...(failurePoint === 'stack storage' ? { rpcNetwork: { ...network, chainId: network.chainId + 1n } } : {}),
+			})
+			if (failurePoint === 'settings broadcast') {
+				// Broadcast failures already belong to the unexpected-error reporter.
+				await transition
+				assert.equal((await getLatestUnexpectedError())?.data.message, failure.message)
+			} else {
+				await assert.rejects(transition, error => error === failure)
+				assert.equal(runtimeMessages.some(message => message.method === 'popup_settingsUpdated'), true)
+			}
+			assert.deepEqual(await getPopupVisualisationState(), previousVisualisation)
+			assert.equal(runtimeMessages.some(message => message.method === 'popup_simulation_state_changed'), false)
+		} finally {
+			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet })
+			Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: originalSend })
+		}
+	})
+
+	test('retains committed Safe preferences and invalidates the popup after provider reset failure', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { activateAddressSelection, getSettings, getSigningAddressPreferences, updateUserAddressBookEntries } = await loadModules()
+		const { getPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
+		const safe: SafeEntry = { type: 'safe', name: 'Owned Safe', address: 3n, chainId: (await getSettings()).activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
+		await updateUserAddressBookEntries(() => [firstAddress, safe])
+		const counter = { count: 0 }
+		const services = createEthereumWithGetBlockCounter(counter)
+		const rpcNetwork = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://failed-install.example' }
+		const failure = new Error('Injected provider reset failure')
+		await assert.rejects(activateAddressSelection(createTestSimulationServicesOwner({ ethereum: services.ethereum, tokenPriceService: services.tokenPriceService }, () => { throw failure }), new Map(), { type: 'addressBookEntry', entry: safe }, {
+			simulationMode: false, signerAddress: firstAddress.address, rpcNetwork, promptForAccessesIfNeeded: false,
+		}), error => error === failure)
+		assert.equal((await getSettings()).activeSigningSafeAddress, safe.address)
+		assert.deepEqual(await getSigningAddressPreferences(), [{ signerAddress: firstAddress.address, selection: 'safe', safeAddress: safe.address, chainId: safe.chainId }])
+		const visualisation = await getPopupVisualisationState()
+		assert.equal(visualisation.simulationUpdatingState, 'failed')
+		assert.equal(visualisation.simulationResultState, 'invalid')
+		assert.equal(visualisation.simulationState.kind, 'passthrough')
+		assert.equal(counter.count, 0, 'Failure handling must not simulate on the old provider')
+		assert.equal(runtimeMessages.some(message => message.method === 'popup_simulation_state_changed'), true)
+		assert.equal(runtimeMessages.some(message => message.method === 'popup_settingsUpdated'), true)
 	})
 
 	test('settles an address change that prompts for access alongside an approval that selects another address', async () => {
@@ -138,8 +247,8 @@ describe('active settings concurrency', () => {
 		const connections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
-		await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, connections, socket, { websiteOrigin }, undefined, originalAddress, await getSettings(), originalAddress, undefined)
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await requestAccessFromUser(simulationServicesOwner, connections, socket, { websiteOrigin }, undefined, originalAddress, await getSettings(), originalAddress, undefined)
 		const pending = (await getPendingAccessRequests())[0]
 		if (pending === undefined) throw new Error('Missing pending access request')
 
@@ -160,7 +269,7 @@ describe('active settings concurrency', () => {
 				return result
 			},
 		})
-		const approval = resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, connections, {
+		const approval = resolveInterceptorAccess(simulationServicesOwner, connections, {
 			userReply: 'Approved',
 			accessRequestId: pending.accessRequestId,
 			originalRequestAccessToAddress: originalAddress.address,
@@ -168,7 +277,7 @@ describe('active settings concurrency', () => {
 		}, noopPublishRpcConnectionStatus)
 		await approvalHasDialogLock.promise
 		const transitionStarted = pauseAfterFirstStorageWrite('independentActiveSimulationAddress')
-		const transition = changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, connections, { simulationMode: true, activeAddress: originalAddress.address })
+		const transition = changeActiveAddressAndChain(simulationServicesOwner, connections, { simulationMode: true, activeAddress: originalAddress.address })
 		await transitionStarted
 		// Let the transition reach access prompting while the approval still owns the dialog lock.
 		await new Promise((resolve) => setTimeout(resolve, 0))
@@ -205,15 +314,15 @@ describe('active settings concurrency', () => {
 			configurable: true,
 			value: async () => { throw new Error('Access popup failed to open') },
 		})
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		if (entryPoint === 'direct') {
-			await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, connections, { simulationMode: true, activeAddress: selectedAddress.address })
+			await changeActiveAddressAndChain(simulationServicesOwner, connections, { simulationMode: true, activeAddress: selectedAddress.address })
 		} else {
-			await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, connections, { type: 'addressBookEntry', entry: selectedAddress }, { simulationMode: true, signerAddress: undefined })
+			await activateAddressSelection(simulationServicesOwner, connections, { type: 'addressBookEntry', entry: selectedAddress }, { simulationMode: true, signerAddress: undefined })
 		}
 		assert.equal((await getSettings()).activeSimulationAddress, selectedAddress.address)
 		assert.equal((await getLatestUnexpectedError())?.data.message, 'Access popup failed to open')
-		await assert.rejects(updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, connections, await getSettings(), true, true), /Access popup failed to open/u)
+		await assert.rejects(updateWebsiteApprovalAccesses(simulationServicesOwner, connections, await getSettings(), true, true), /Access popup failed to open/u)
 	})
 
 	test.each([1, 2])('continues prompting after a failure when the next connection is in tab %j', async (secondTabId) => {
@@ -239,8 +348,8 @@ describe('active settings concurrency', () => {
 				return await originalCreate(...args)
 			},
 		})
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
-		await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, connections, { simulationMode: true, activeAddress: selectedAddress.address })
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await changeActiveAddressAndChain(simulationServicesOwner, connections, { simulationMode: true, activeAddress: selectedAddress.address })
 		const pending = await getPendingAccessRequests()
 		try {
 			assert.equal(promptAttempts, 2)
@@ -249,7 +358,7 @@ describe('active settings concurrency', () => {
 		} finally {
 			// Close the successful prompt so the shared dialog state cannot leak into another test.
 			for (const request of pending) {
-				await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, connections, {
+				await resolveInterceptorAccess(simulationServicesOwner, connections, {
 					userReply: 'noResponse', accessRequestId: request.accessRequestId,
 					originalRequestAccessToAddress: selectedAddress.address, requestAccessToAddress: selectedAddress.address,
 				}, noopPublishRpcConnectionStatus)
@@ -293,10 +402,10 @@ describe('active settings concurrency', () => {
 				return await originalSetIcon(...args)
 			},
 		})
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
-		const first = changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, connections, { simulationMode: true, activeAddress: firstAddress.address, promptForAccessesIfNeeded: false })
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const first = changeActiveAddressAndChain(simulationServicesOwner, connections, { simulationMode: true, activeAddress: firstAddress.address, promptForAccessesIfNeeded: false })
 		await iconStarted.promise
-		const second = changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, connections, { simulationMode: true, activeAddress: secondAddress.address, promptForAccessesIfNeeded: false })
+		const second = changeActiveAddressAndChain(simulationServicesOwner, connections, { simulationMode: true, activeAddress: secondAddress.address, promptForAccessesIfNeeded: false })
 		let timeout: ReturnType<typeof setTimeout> | undefined
 		try {
 			await Promise.race([
@@ -330,21 +439,21 @@ describe('active settings concurrency', () => {
 		const connections: WebsiteTabConnections = new Map([[1, { connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'example.test', approved: false, wantsToConnect: true },
 		} }]])
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		if (completion === 'staged') {
 			const update = await reconcileWebsiteApprovalAccesses(connections, snapshot)
 			await changeSimulationMode({ simulationMode: true, activeSimulationAddress: selectedAddress.address })
-			await finishWebsiteAccessUpdate(ethereum, tokenPriceService, resetSimulationServices, connections, update, true)
+			await finishWebsiteAccessUpdate(simulationServicesOwner, connections, update, true)
 		} else {
 			await changeSimulationMode({ simulationMode: true, activeSimulationAddress: selectedAddress.address })
-			await updateWebsiteApprovalAccesses(ethereum, tokenPriceService, resetSimulationServices, connections, snapshot, true)
+			await updateWebsiteApprovalAccesses(simulationServicesOwner, connections, snapshot, true)
 		}
 		const pending = await getPendingAccessRequests()
 		try {
 			expect(pending.map((request) => request.requestAccessToAddress?.address)).toEqual([selectedAddress.address])
 		} finally {
 			for (const request of pending) {
-				await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, connections, {
+				await resolveInterceptorAccess(simulationServicesOwner, connections, {
 					userReply: 'noResponse', accessRequestId: request.accessRequestId,
 					originalRequestAccessToAddress: selectedAddress.address, requestAccessToAddress: selectedAddress.address,
 				}, noopPublishRpcConnectionStatus)
@@ -356,8 +465,8 @@ describe('active settings concurrency', () => {
 		installBrowserMock()
 		const { activateAddressSelection } = await loadModules()
 		const before = await browser.storage.local.get()
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
-		await assert.rejects(activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, new Map(), { type: 'addressBookEntry', entry: secondAddress }, {
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await assert.rejects(activateAddressSelection(simulationServicesOwner, new Map(), { type: 'addressBookEntry', entry: secondAddress }, {
 			simulationMode: false, signerAddress: firstAddress.address,
 		}), /Signing mode can only activate the external signer or an owned Gnosis Safe/u)
 		expect(await browser.storage.local.get()).toEqual(before)
@@ -373,13 +482,13 @@ describe('active settings concurrency', () => {
 		const connections: WebsiteTabConnections = new Map([[1, { connections: {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'example.test', approved: false, wantsToConnect: true },
 		} }]])
-		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
-		const rpcNetwork = (await getSettings()).activeRpcNetwork
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const rpcNetwork = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://replacement.invalid' }
 		const failure = new Error('Service reset failed after settings persisted')
-		const failReset: ResetSimulationServices = () => { throw failure }
+		const failReset = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => { throw failure })
 		const transition = entryPoint === 'direct'
-			? changeActiveAddressAndChain(ethereum, tokenPriceService, failReset, connections, { simulationMode: true, activeAddress: selectedAddress.address, rpcNetwork })
-			: activateAddressSelection(ethereum, tokenPriceService, failReset, connections, { type: 'addressBookEntry', entry: selectedAddress }, { simulationMode: true, signerAddress: undefined, rpcNetwork })
+			? changeActiveAddressAndChain(failReset, connections, { simulationMode: true, activeAddress: selectedAddress.address, rpcNetwork })
+			: activateAddressSelection(failReset, connections, { type: 'addressBookEntry', entry: selectedAddress }, { simulationMode: true, signerAddress: undefined, rpcNetwork })
 		await assert.rejects(transition, (error: unknown) => error === failure)
 		const pending = await getPendingAccessRequests()
 		try {
@@ -388,7 +497,7 @@ describe('active settings concurrency', () => {
 			expect((await getTabState(1)).tabIconDetails).toEqual({ icon: ICON_NOT_ACTIVE, iconReason: 'example.test has PENDING access request for Second address!' })
 		} finally {
 			for (const request of pending) {
-				await resolveInterceptorAccess(ethereum, tokenPriceService, resetSimulationServices, connections, {
+				await resolveInterceptorAccess(simulationServicesOwner, connections, {
 					userReply: 'noResponse', accessRequestId: request.accessRequestId,
 					originalRequestAccessToAddress: selectedAddress.address, requestAccessToAddress: selectedAddress.address,
 				}, noopPublishRpcConnectionStatus)

@@ -268,6 +268,7 @@ const INTERNAL_BACKGROUND_METHODS = [
 const isInternalBackgroundMethod = (method: string) => INTERNAL_BACKGROUND_METHODS.some((internalMethod) => internalMethod === method)
 
 type InterceptedRequestBase = {
+	readonly walletSwitchRequestId?: string,
 	readonly interceptorApproved: true,
 	readonly requestId?: number,
 	readonly method: string,
@@ -307,6 +308,7 @@ function chainIdToNetworkVersion(chainId: string) {
 }
 
 type InterceptorApprovedMessageCandidate = {
+	readonly walletSwitchRequestId?: unknown
 	readonly interceptorApproved?: unknown
 	readonly method?: unknown
 	readonly type?: unknown
@@ -398,6 +400,7 @@ function parseInterceptorApprovedMessage(data: unknown): InterceptedRequestForwa
 		...(typeof requestId === 'number' ? { requestId } : {}),
 		...(Array.isArray(params) ? { params } : {}),
 		...(typeof subscription === 'string' ? { subscription } : {}),
+		...(typeof data.walletSwitchRequestId === 'string' ? { walletSwitchRequestId: data.walletSwitchRequestId } : {}),
 	}
 	if (type === 'forwardToSigner') return {
 		...base,
@@ -1414,13 +1417,13 @@ class InterceptorMessageListener {
 		throw new Error('wrong type')
 	}
 
-	private readonly requestChangeChainFromSigner = async (chainId: string) => {
+	private readonly requestChangeChainFromSigner = async (chainId: string, walletSwitchRequestId: string) => {
 		if (this.signerWindowEthereumRequest === undefined) {
 			await this.sendInternalMessageToBackgroundPage({
 				method: 'wallet_switchEthereumChain_reply',
 				params: [{
 					accept: false,
-					chainId,
+					chainId, walletSwitchRequestId,
 					signerProviderGeneration: this.signerProviderGeneration,
 					error: { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'No signer wallet is available to this page. Enable your wallet extension for this site, then try again.' },
 				}],
@@ -1431,10 +1434,10 @@ class InterceptorMessageListener {
 		const outcome = await this.requestFromCurrentSigner({ method: 'wallet_switchEthereumChain', params: [{ chainId }] })
 		if (outcome.type === 'success') {
 			const params = outcome.reply === null
-				? { accept: true as const, chainId, signerProviderGeneration: outcome.signerProviderGeneration }
+				? { accept: true as const, chainId, walletSwitchRequestId, signerProviderGeneration: outcome.signerProviderGeneration }
 				: {
 					accept: false as const,
-					chainId,
+					chainId, walletSwitchRequestId,
 					signerProviderGeneration: outcome.signerProviderGeneration,
 					error: { code: METAMASK_ERROR_BLANKET_ERROR, message: 'Signer returned an invalid wallet_switchEthereumChain reply.' },
 				}
@@ -1446,7 +1449,7 @@ class InterceptorMessageListener {
 			: this.normalizeSignerErrorForBackground(outcome.error)
 		await this.sendInternalMessageToBackgroundPage({
 			method: 'wallet_switchEthereumChain_reply',
-			params: [{ accept: false, chainId, error, signerProviderGeneration: outcome.signerProviderGeneration }],
+			params: [{ accept: false, chainId, walletSwitchRequestId, error, signerProviderGeneration: outcome.signerProviderGeneration }],
 		})
 	}
 
@@ -1607,7 +1610,10 @@ class InterceptorMessageListener {
 				}
 				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner()
 				case 'request_signer_to_eth_accounts': return await this.getAccountsFromSigner()
-				case 'request_signer_to_wallet_switchEthereumChain': return await this.requestChangeChainFromSigner(replyRequest.result as string)
+				case 'request_signer_to_wallet_switchEthereumChain': {
+					if (typeof replyRequest.result !== 'string' || typeof replyRequest.walletSwitchRequestId !== 'string') throw new Error('Invalid wallet switch command')
+					return await this.requestChangeChainFromSigner(replyRequest.result, replyRequest.walletSwitchRequestId)
+				}
 				case 'request_signer_to_wallet_watchAsset': return await this.requestWatchAssetFromSigner(replyRequest.result)
 				case 'request_signer_connection_status': return await this.connectToSigner(this.signerName)
 				case 'request_signer_chainId': return await this.requestChainIdFromSigner()

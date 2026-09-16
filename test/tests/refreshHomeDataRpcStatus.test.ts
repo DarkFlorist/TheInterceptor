@@ -1,3 +1,4 @@
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
@@ -769,7 +770,7 @@ describe('refreshHomeData', () => {
 		const { messages } = createPort(1)
 
 		try {
-			await changeSettings(ethereum, tokenPriceService, {} as never, { method: 'popup_ChangeSettings', data: { safeAppsCompatibilityMode: false } } as never, undefined)
+			await changeSettings(createTestSimulationServicesOwner({ ethereum, tokenPriceService }), { method: 'popup_ChangeSettings', data: { safeAppsCompatibilityMode: false } } as never, undefined)
 		} finally {
 			ethereum.cleanup()
 		}

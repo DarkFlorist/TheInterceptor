@@ -187,7 +187,7 @@ async function persistSafeTransaction(
 		if (!isSafeContractValidationFailure(error)) throw error
 		return signerError(`Gnosis Safe proposal could not be persisted: ${ getErrorMessage(error) ?? 'The local Gnosis Safe proposal stack changed.' }`)
 	}
-	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, true, false)
+	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
 	await openPopupOrTab({ url: getHtmlFile('simulationStack') })
 	return { status: 'success', result: funtypes.String.parse(EthereumBytes32.serialize(safeSigningRequest.safeTxHash)) }
 }

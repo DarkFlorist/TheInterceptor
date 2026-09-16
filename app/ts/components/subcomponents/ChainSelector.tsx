@@ -1,3 +1,4 @@
+import { getRpcEntryIdentityKey } from '../../utils/rpcNetworkChange.js'
 import { rpcEntriesToChainEntriesWithAllChainsEntry } from '../ui-utils.js'
 import type { ChainEntry, RpcEntries, RpcEntry, RpcNetwork } from '../../types/rpc.js'
 import { type ReadonlySignal, type Signal, useComputed } from '@preact/signals'
@@ -9,29 +10,45 @@ interface RpcSelectorParams {
 	rpcEntries: Signal<RpcEntries>
 	changeRpc: (entry: RpcEntry) => void
 	disabled?: boolean
+	pendingText?: string
 }
 
-export function findRpcEntryByUrl(rpcEntries: RpcEntries, rpcUrl: string) {
-	return rpcEntries.find((rpcEntry) => rpcEntry.httpsRpc === rpcUrl)
+export function findRpcEntryByIdentityKey(rpcEntries: RpcEntries, key: string) {
+	return rpcEntries.find((entry) => getRpcEntryIdentityKey(entry) === key)
 }
 
-export function getRpcEntryLabel(rpcEntries: RpcEntries, rpcUrl: string) {
-	const entry = findRpcEntryByUrl(rpcEntries, rpcUrl)
-	if (entry === undefined) return rpcUrl
-	const hasDuplicateName = rpcEntries.some((otherEntry) => otherEntry.name === entry.name && otherEntry.httpsRpc !== entry.httpsRpc)
-	return hasDuplicateName ? `${ entry.name } (${ entry.httpsRpc })` : entry.name
+function getBaseRpcEntryLabel(rpcEntries: RpcEntries, entry: RpcNetwork) {
+	const sameName = rpcEntries.filter((other) => other.name === entry.name)
+	if (sameName.some((other) => other.chainId !== entry.chainId && other.httpsRpc === entry.httpsRpc)) return `${ entry.name } (chain ${ entry.chainId }, ${ entry.httpsRpc })`
+	return sameName.some((other) => other.httpsRpc !== entry.httpsRpc) ? `${ entry.name } (${ entry.httpsRpc })` : entry.name
+}
+
+export function getRpcEntryLabel(rpcEntries: RpcEntries, entry: RpcNetwork) {
+	const baseLabel = getBaseRpcEntryLabel(rpcEntries, entry)
+	const matching = rpcEntries.filter(other => getBaseRpcEntryLabel(rpcEntries, other) === baseLabel)
+	const currencyDiffers = matching.some(other => other.currencyName !== entry.currencyName || other.currencyTicker !== entry.currencyTicker)
+	const label = currencyDiffers ? `${ baseLabel } (${ entry.currencyTicker }, ${ entry.currencyName })` : baseLabel
+	const variants = Array.from(new Map(matching
+		.filter(other => !currencyDiffers || other.currencyName === entry.currencyName && other.currencyTicker === entry.currencyTicker)
+		.map(other => [getRpcEntryIdentityKey(other), other])).keys())
+	const index = variants.indexOf(getRpcEntryIdentityKey(entry))
+	// Presentation only: ordinals can change with the list. Entry keys own selection; see docs/rpc-entry-identity.md.
+	return variants.length > 1 && index !== -1 ? `${ label } (connection ${ index + 1 })` : label
 }
 
 export function RpcSelector(params: RpcSelectorParams) {
-	const options = useComputed(() => params.rpcEntries.value.map((rpcEntry) => rpcEntry.httpsRpc))
-	const selected = useComputed(() => params.rpcNetwork.value?.httpsRpc ?? 'No RPC Selected')
-	const getOptionLabel = (rpcUrl: string) => getRpcEntryLabel(params.rpcEntries.value, rpcUrl)
-	const onChangedCallBack = (rpcUrl: string) => {
-		const newEntry = findRpcEntryByUrl(params.rpcEntries.value, rpcUrl)
-		if (newEntry === undefined) throw new Error(`Tried to change rpc that does not exist: ${ rpcUrl }`)
+	const options = useComputed(() => params.rpcEntries.value.map(getRpcEntryIdentityKey))
+	const selected = useComputed(() => params.rpcNetwork.value === undefined ? '' : getRpcEntryIdentityKey(params.rpcNetwork.value))
+	const getOptionLabel = (key: string) => {
+		const entry = findRpcEntryByIdentityKey(params.rpcEntries.value, key) ?? params.rpcNetwork.value
+		return entry === undefined ? 'No RPC Selected' : getRpcEntryLabel(params.rpcEntries.value, entry)
+	}
+	const onChangedCallBack = (key: string) => {
+		const newEntry = findRpcEntryByIdentityKey(params.rpcEntries.value, key)
+		if (newEntry === undefined) throw new Error('Tried to select an RPC entry that is no longer available.')
 		params.changeRpc(newEntry)
 	}
-	return <DropDownMenu selected = { selected } dropDownOptions = { options } getOptionLabel = { getOptionLabel } onChangedCallBack = { onChangedCallBack } buttonClassses = 'btn btn--outline is-small' disabled = { params.disabled }/>
+	return <DropDownMenu selected = { selected } dropDownOptions = { options } getOptionLabel = { getOptionLabel } onChangedCallBack = { onChangedCallBack } buttonClassses = 'btn btn--outline is-small' disabled = { params.disabled } pendingText = { params.pendingText }/>
 }
 
 interface ChainSelectorParams {
