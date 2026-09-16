@@ -231,8 +231,6 @@ describe('extension icon deduping', () => {
 
 		await updateWebsiteApprovalAccesses(
 			undefined,
-			undefined,
-			undefined,
 			websiteTabConnections,
 			await getSettings(),
 			true,
@@ -259,8 +257,6 @@ describe('extension icon deduping', () => {
 		}))
 
 		await updateWebsiteApprovalAccesses(
-			undefined,
-			undefined,
 			undefined,
 			new Map(),
 			await getSettings(),
@@ -316,8 +312,6 @@ describe('extension icon deduping', () => {
 		const importSettingsReply = await importSettings({ method: 'popup_import_settings', data: { fileContents: importedSettingsReply } })
 		assert.equal(importSettingsReply.data.success, true)
 		await updateWebsiteApprovalAccesses(
-			undefined,
-			undefined,
 			undefined,
 			new Map(),
 			await getSettings(),

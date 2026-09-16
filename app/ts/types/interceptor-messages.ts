@@ -1,3 +1,5 @@
+import { PopupSettingsChangeStatus } from './popupSettingsProtocol.js'
+import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress } from './popupSettingsRequests.js'
 import * as funtypes from 'funtypes'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, PendingWatchAssetRequest, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
@@ -9,7 +11,7 @@ import { Page } from './exportedSettingsTypes.js'
 import { Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { PendingAccessRequests, PopupPendingTransactionOrSignableMessage } from './accessRequest.js'
-import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
+import { RpcEntries, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
 import { EnrichedRichListElement, PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
@@ -17,6 +19,7 @@ import { ErrorWithCodeAndOptionalData } from './error.js'
 import { SimulateExecutionReply as SharedSimulateExecutionReply, SimulateExecutionReplyData as SharedSimulateExecutionReplyData } from './simulateExecutionReply.js'
 import { SimulateGnosisSafeTransaction as SharedSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as SharedSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
 import { EthSimulateV1Result } from './ethSimulate-types.js'
+import { SafeAppsRequestCommand } from './safeApps.js'
 
 type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
 const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
@@ -24,12 +27,14 @@ const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
 		accept: funtypes.Literal(true),
 		chainId: EthereumQuantity,
 		signerProviderGeneration: funtypes.Number,
+		walletSwitchRequestId: funtypes.String,
 	}),
 	funtypes.ReadonlyObject({
 		accept: funtypes.Literal(false),
 		chainId: EthereumQuantity,
 		error: ErrorWithCodeAndOptionalData,
 		signerProviderGeneration: funtypes.Number,
+		walletSwitchRequestId: funtypes.String,
 	})
 ))
 
@@ -79,7 +84,7 @@ export const InpageScriptCallBack = funtypes.Union(
 	ErrorReturn,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_connection_status'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_chainId'), result: funtypes.ReadonlyTuple() }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_switchEthereumChain'), result: EthereumQuantity }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_switchEthereumChain'), result: EthereumQuantity, walletSwitchRequestId: funtypes.String }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_watchAsset'), result: WatchAssetSignerRequest }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_eth_requestAccounts'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_eth_accounts'), result: funtypes.ReadonlyTuple() }),
@@ -87,6 +92,7 @@ export const InpageScriptCallBack = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('connect'), result: funtypes.ReadonlyTuple(EthereumQuantity) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('accountsChanged'), result: funtypes.ReadonlyArray(EthereumAddress) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('chainChanged'), result: EthereumQuantity }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('safe_apps_compatibility'), result: funtypes.ReadonlyObject({ enabled: funtypes.Boolean }).And(funtypes.ReadonlyPartial({ canRequestAccess: funtypes.Boolean })) }),
 )
 
 export type GetSimulationStackReply = funtypes.Static<typeof GetSimulationStackReply>
@@ -147,6 +153,7 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_simulateV1'), result: EthSimulateV1Result }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getFilterChanges'), result: EthGetLogsResponse }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getFilterLogs'), result: EthGetLogsResponse }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('safe_apps_request'), result: SafeAppsRequestCommand }),
 )
 
 type SubscriptionReturnValue = funtypes.Static<typeof SubscriptionReturnValue>
@@ -285,23 +292,9 @@ export const InterceptorAccessChangeAddress = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
-export type ChangeActiveAddress = funtypes.Static<typeof ChangeActiveAddress>
-export const ChangeActiveAddress = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_changeActiveAddress'),
-	data: funtypes.ReadonlyObject({
-		simulationMode: funtypes.Boolean,
-		activeAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer'))
-	})
-}).asReadonly()
+export { ChangeActiveAddress } from './popupSettingsRequests.js'
 
-export type ModifyMakeMeRich = funtypes.Static<typeof ModifyMakeMeRich>
-export const ModifyMakeMeRich = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_modifyMakeMeRich'),
-	data: funtypes.ReadonlyObject({
-		add: funtypes.Boolean,
-		address: funtypes.Union(funtypes.Literal('CurrentAddress'), EthereumAddress),
-	})
-}).asReadonly()
+export { ModifyMakeMeRich } from './popupSettingsRequests.js'
 
 export type AddressBookCategory = funtypes.Static<typeof AddressBookCategory>
 export const AddressBookCategory = funtypes.Union(
@@ -342,11 +335,7 @@ export const RequestAccountsFromSigner = funtypes.ReadonlyObject({
 	data: funtypes.Boolean
 }).asReadonly()
 
-export type EnableSimulationMode = funtypes.Static<typeof EnableSimulationMode>
-export const EnableSimulationMode = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_enableSimulationMode'),
-	data: funtypes.Boolean
-}).asReadonly()
+export { EnableSimulationMode } from './popupSettingsRequests.js'
 
 export type TransactionOrMessageIdentifier = funtypes.Static<typeof TransactionOrMessageIdentifier>
 export const TransactionOrMessageIdentifier = funtypes.Union(
@@ -700,6 +689,7 @@ export const ChangeSettings = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyPartial({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
+		safeAppsCompatibilityMode: funtypes.Boolean,
 	})
 })
 
@@ -730,11 +720,7 @@ const UpdateRPCList = funtypes.ReadonlyObject({
 	data: RpcEntries,
 })
 
-export type ChangeActiveChain = funtypes.Static<typeof ChangeActiveChain>
-export const ChangeActiveChain = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_changeActiveRpc'),
-	data: RpcEntry,
-}).asReadonly()
+export { ChangeActiveChain } from './popupSettingsRequests.js'
 
 export type ChainChangeConfirmation = funtypes.Static<typeof ChainChangeConfirmation>
 export const ChainChangeConfirmation = funtypes.ReadonlyObject({
@@ -828,6 +814,7 @@ const SettingsOpenedReply = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
+		safeAppsCompatibilityMode: funtypes.Boolean,
 		activeRpcNetwork: RpcNetwork,
 		rpcEntries: RpcEntries,
 	})
@@ -965,7 +952,10 @@ const PopupIsMainPopupWindowOpen = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_isMainPopupWindowOpen'),
 }).asReadonly()
 
+export { PopupSettingsChangeStatus } from './popupSettingsProtocol.js'
+
 const messageToPopupPayloadCodecs: [
+	typeof PopupSettingsChangeStatus,
 	typeof MessageToPopupSimple,
 	typeof WebsiteIconChanged,
 	typeof GetAddressBookDataReply,
@@ -992,6 +982,7 @@ const messageToPopupPayloadCodecs: [
 	typeof FetchSimulationStackRequest,
 	typeof PopupIsMainPopupWindowOpen,
 ] = [
+	PopupSettingsChangeStatus,
 	MessageToPopupSimple,
 	WebsiteIconChanged,
 	GetAddressBookDataReply,
@@ -1058,6 +1049,7 @@ const PopupMessageRuntype = funtypes.Union(
 		}),
 	}),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestHomePageBootstrap') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSettingsChangeStatus') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_clearUnexpectedError') }),
