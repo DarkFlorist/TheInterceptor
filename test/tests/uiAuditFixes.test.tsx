@@ -153,6 +153,17 @@ describe('UI audit fixes', () => {
 		assert.match(css, /\.responsive-notification-details summary\s*\{[\s\S]*?color:\s*var\(--text-color\);/)
 	})
 
+	test('keeps the secondary Safe proposal action readable on the dark footer', async () => {
+		const confirmSource = await Bun.file('app/ts/components/pages/ConfirmTransaction.tsx').text()
+		assert.match(confirmSource, /class = 'button button-overflow dialog-action-button dialog-action-button--secondary'[\s\S]*?text = 'Add unsigned'/)
+		assert.doesNotMatch(confirmSource, /is-outlined[\s\S]*?text = 'Add unsigned'/)
+
+		const css = await readInterceptorAppCss()
+		assert.match(css, /\.button\.dialog-action-button--secondary\s*\{[\s\S]*?border:\s*2px solid var\(--accent-color\);[\s\S]*?color:\s*var\(--text-color\);/)
+		assert.match(css, /\.button\.dialog-action-button--secondary:hover, \.button\.dialog-action-button--secondary:focus\s*\{[\s\S]*?background-color:\s*var\(--primary-action-color\);/)
+		assert.match(css, /\.button\.dialog-action-button--secondary\[disabled\]\s*\{[\s\S]*?color:\s*var\(--disabled-text-color\);/)
+	})
+
 	test('stacks dense content before it overflows at narrow widths', async () => {
 		const settingsSource = await Bun.file('app/ts/components/pages/SettingsView.tsx').text()
 		const confirmSource = await Bun.file('app/ts/components/pages/ConfirmTransaction.tsx').text()

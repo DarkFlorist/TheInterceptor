@@ -711,7 +711,7 @@ export function ConfirmationActionButtons({ identified, signerName, simulationMo
 				onClick = { reject }
 			/>
 			{ addToSafeStack === undefined ? <></> : <AsyncActionButton
-				class = 'button is-primary is-outlined button-overflow dialog-action-button'
+				class = 'button button-overflow dialog-action-button dialog-action-button--secondary'
 				state = { addToSafeStackButtonState }
 				disabled = { addToSafeStackDisabled || rejectButtonState === 'pending' || approveButtonState === 'pending' }
 				ariaLabel = 'Add unsigned to Safe stack'

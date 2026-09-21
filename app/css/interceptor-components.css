@@ -510,6 +510,26 @@
 	margin-bottom: 0px;
 }
 
+/* Secondary dialog action: light text and an accent border stay readable on the dark footer, unlike the dim outlined primary style. */
+.button.dialog-action-button--secondary {
+	background-color: var(--alpha-005);
+	border: 2px solid var(--accent-color);
+	color: var(--text-color);
+}
+
+.button.dialog-action-button--secondary:hover, .button.dialog-action-button--secondary:focus {
+	background-color: var(--primary-action-color);
+	border-color: var(--highlighted-accent-color);
+	color: var(--text-color);
+}
+
+.button.dialog-action-button--secondary[disabled] {
+	background-color: transparent;
+	border-color: var(--disabled-action-color);
+	box-shadow: none;
+	color: var(--disabled-text-color);
+}
+
 .confirmation-action-buttons-container {
 	container-type: inline-size;
 	width: 100%;
