@@ -13,7 +13,6 @@ import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } fr
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import type { RpcConfigurationState } from './storageVariables.js'
 import { hasOwnKey } from '../utils/typescript.js'
 
@@ -114,16 +113,6 @@ export async function getSettingsSnapshot(): Promise<{ readonly settings: Settin
 		? { activeRpcNetwork: rpcConfiguration.activeRpcNetwork, available: true }
 		: { activeRpcNetwork: rpcConfiguration.reason === 'empty' ? rpcConfiguration.activeRpcNetwork : RPC_CONFIGURATION_UNAVAILABLE_NETWORK, available: false }
 	const settings = await getSettingsFromStorageItems(storedItems, rpcSelection)
-	return { settings, rpcConfiguration }
-}
-
-export async function getSettingsForRpcServiceOperation(simulationServicesOwner: SimulationServicesOwner): Promise<Settings> {
-	return (await getSettingsSnapshotForRpcServiceOperation(simulationServicesOwner)).settings
-}
-
-export async function getSettingsSnapshotForRpcServiceOperation(simulationServicesOwner: SimulationServicesOwner) {
-	const { settings, rpcConfiguration } = await getSettingsSnapshot()
-	if (rpcConfiguration.status === 'unavailable') simulationServicesOwner.clear()
 	return { settings, rpcConfiguration }
 }
 

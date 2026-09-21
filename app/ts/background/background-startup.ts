@@ -1,6 +1,6 @@
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import 'webextension-polyfill'
-import { getSettingsForRpcServiceOperation, updateKnownWebsiteMetadata } from './settings.js'
+import { getSettingsSnapshot, updateKnownWebsiteMetadata } from './settings.js'
 import { handleInterceptedRequest } from './background.js'
 import { captureSimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { popupMessageHandler } from './popupMessageRouting.js'
@@ -38,6 +38,7 @@ import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_ME
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
+import { applyRpcConfigurationToServiceLifecycle } from './rpcConfigurationLifecycle.js'
 
 const connections = new Map<number, TabConnection>()
 const safeAppsCompatibility = createSafeAppsCompatibilityFeature(connections)
@@ -241,7 +242,9 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 			const simulateCurrentStack = async (ethereum: EthereumClientService) => await getUpdatedSimulationState(ethereum, await captureSimulationSnapshot())
 			const owner = simulationServicesOwner
 			if (owner === undefined) return
-			const settings = await getSettingsForRpcServiceOperation(owner)
+			const settingsSnapshot = await getSettingsSnapshot()
+			applyRpcConfigurationToServiceLifecycle(owner, settingsSnapshot.rpcConfiguration)
+			const { settings } = settingsSnapshot
 			if (!isCurrentSimulationService(simulationServicesOwner, ethereumClientService)) return
 			if (settings.simulationMode) {
 				const { ethereum, tokenPriceService } = getSimulationServices()
@@ -355,7 +358,8 @@ browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () =
 }))
 browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
 	const { simulationServicesOwner } = await waitForBackgroundStartup()
-	const settings = await getSettingsForRpcServiceOperation(simulationServicesOwner)
-	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settings, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
+	const settingsSnapshot = await getSettingsSnapshot()
+	applyRpcConfigurationToServiceLifecycle(simulationServicesOwner, settingsSnapshot.rpcConfiguration)
+	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settingsSnapshot.settings, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 })))
 addWindowTabListeners(onCloseWindow, onCloseTab)

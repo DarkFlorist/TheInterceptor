@@ -45,6 +45,37 @@ describe('active settings concurrency', () => {
 		assert.equal(resetCount, 0)
 	})
 
+	test('publishes a signer-only transition when services pause after validation', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { changeActiveAddressAndChain, getSettings } = await loadModules()
+		const previousSettings = await getSettings()
+		const signerOnlyNetwork = {
+			name: 'Signer only',
+			chainId: previousSettings.activeRpcNetwork.chainId,
+			httpsRpc: undefined,
+			currencyName: 'Ether?' as const,
+			currencyTicker: 'ETH?' as const,
+			primary: false as const,
+			minimized: true as const,
+		}
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const owner = createTestSimulationServicesOwner(services, () => services)
+		const originalSet = browser.storage.local.set.bind(browser.storage.local)
+		Object.defineProperty(browser.storage.local, 'set', {
+			configurable: true,
+			value: async (items: object) => {
+				await originalSet(items)
+				if ('activeRpcNetwork' in items) owner.clear()
+			},
+		})
+
+		await changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: signerOnlyNetwork })
+
+		assert.equal(owner.isAvailable(), false)
+		assert.equal((await getSettings()).activeRpcNetwork.httpsRpc, undefined)
+		assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_settingsUpdated'), true)
+	})
+
 	test('does not resume services when the owner is paused after a transition validates settings', async () => {
 		installBrowserMock()
 		const { changeActiveAddressAndChain, getSettings } = await loadModules()
@@ -63,7 +94,7 @@ describe('active settings concurrency', () => {
 
 		await assert.rejects(
 			changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: requestedNetwork }),
-			/RPC configuration is unavailable/,
+			/RPC configuration became unavailable/,
 		)
 		assert.equal(owner.isAvailable(), false)
 		assert.equal(resetCount, 0)

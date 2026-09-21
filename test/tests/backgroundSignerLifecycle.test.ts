@@ -1,8 +1,73 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getWalletSwitchRequestId, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
+import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, createTestSimulationServicesOwner, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
+	test.each(['reset', 'clear'])('keeps the admitted service snapshot when the owner is %s before execution', async (lifecycleChange) => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const account = 0x1111111111111111111111111111111111111111n
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
+
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const initialServices = createEthereumWithGetBlockCounter({ count: 0 })
+		const replacementNetwork = { ...initialServices.ethereum.getRpcEntry(), name: 'Replacement', chainId: 10n, httpsRpc: 'https://replacement.invalid' }
+		const replacementEthereum = new Proxy(initialServices.ethereum, {
+			get(target, property, receiver) {
+				if (property === 'getRpcEntry') return () => replacementNetwork
+				return Reflect.get(target, property, receiver)
+			},
+		})
+		const replacementServices = { ethereum: replacementEthereum, tokenPriceService: initialServices.tokenPriceService }
+		const simulationServicesOwner = createTestSimulationServicesOwner(
+			{ ethereum: initialServices.ethereum, tokenPriceService: initialServices.tokenPriceService },
+			() => replacementServices,
+		)
+		const settingsReadStarted = createDeferredValue<void>()
+		const releaseSettingsRead = createDeferredValue<void>()
+		const originalGet = browser.storage.local.get.bind(browser.storage.local)
+		let paused = false
+		Object.defineProperty(browser.storage.local, 'get', {
+			configurable: true,
+			value: async (keys: string | readonly string[]) => {
+				const requestedKeys = Array.isArray(keys) ? keys : [keys]
+				if (!paused && requestedKeys.includes('simulationMode') && !requestedKeys.includes('rpcEntries')) {
+					paused = true
+					settingsReadStarted.resolve(undefined)
+					await releaseSettingsRead.promise
+				}
+				return await originalGet(keys)
+			},
+		})
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
+			method: 'eth_chainId',
+		}
+
+		const requestPromise = handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		await settingsReadStarted.promise
+		initialServices.ethereum.setBlockPolling(false)
+		if (lifecycleChange === 'reset') simulationServicesOwner.reset(replacementNetwork)
+		else simulationServicesOwner.clear()
+		releaseSettingsRead.resolve(undefined)
+		await requestPromise
+
+		const reply = messages.find((message) => message.method === request.method && message.requestId === request.uniqueRequestIdentifier.requestId)
+		assert.equal(reply?.result, 1n)
+		assert.equal(reply?.error, undefined)
+		assert.equal(initialServices.ethereum.isBlockPolling(), false)
+	})
+
 	test('awaits retry-state publishing before replying to a waking RPC request', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, setRpcConnectionStatus, getRpcConnectionStatus } = await loadModules()

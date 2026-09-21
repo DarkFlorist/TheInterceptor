@@ -11,7 +11,7 @@ import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddre
 import { getSettings, getSettingsWithRpcNetwork } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
-import { replyIfRpcConfigurationIsUnavailable, replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
+import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
 import type { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import type { PendingAccessRequest } from '../../types/accessRequest.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -319,7 +319,6 @@ export async function requestAccessFromUser(
 	const onCloseWindowCallback = async (id: number) => closeWindowOrTabCallback({ type: 'popup' as const, id })
 	const onCloseTabCallback = async (id: number) => closeWindowOrTabCallback({ type: 'tab' as const, id })
 	const pendingReplay = await pendingInterceptorAccessSemaphore.execute(async () => {
-		if (replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, settings.activeRpcNetwork.httpsRpc === undefined)) return undefined
 		const verifyPendingRequests = async () => {
 			const previousRequests = await getPendingAccessRequests()
 			if (previousRequests.length !== 0) {
@@ -341,7 +340,6 @@ export async function requestAccessFromUser(
 		const previousPendingRequests = await verifyPendingRequests()
 		const justAddToPending = previousPendingRequests.length !== 0
 		const hasAccess = verifyAccessForCurrentRequest(await getSettingsWithRpcNetwork(settings.activeRpcNetwork))
-		if (replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, settings.activeRpcNetwork.httpsRpc === undefined)) return undefined
 		if (hasAccess === 'hasAccess') { // we already have access, just reply with the gate keeped request right away
 			if (request !== undefined) {
 				if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay an intercepted request.')
