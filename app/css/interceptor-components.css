@@ -517,17 +517,18 @@
 	color: var(--text-color);
 }
 
-.button.dialog-action-button--secondary:hover, .button.dialog-action-button--secondary:focus {
+.button.dialog-action-button--secondary:hover, .button.dialog-action-button--secondary:focus, .button.dialog-action-button--secondary:active {
 	background-color: var(--primary-action-color);
 	border-color: var(--highlighted-accent-color);
 	color: var(--text-color);
 }
 
+/* The framework already dims disabled buttons with opacity, so keep the label colour as-is to match the neighbouring actions. */
 .button.dialog-action-button--secondary[disabled] {
 	background-color: transparent;
 	border-color: var(--disabled-action-color);
 	box-shadow: none;
-	color: var(--disabled-text-color);
+	color: var(--text-color);
 }
 
 .confirmation-action-buttons-container {

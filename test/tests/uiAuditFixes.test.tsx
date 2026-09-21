@@ -160,8 +160,8 @@ describe('UI audit fixes', () => {
 
 		const css = await readInterceptorAppCss()
 		assert.match(css, /\.button\.dialog-action-button--secondary\s*\{[\s\S]*?border:\s*2px solid var\(--accent-color\);[\s\S]*?color:\s*var\(--text-color\);/)
-		assert.match(css, /\.button\.dialog-action-button--secondary:hover, \.button\.dialog-action-button--secondary:focus\s*\{[\s\S]*?background-color:\s*var\(--primary-action-color\);/)
-		assert.match(css, /\.button\.dialog-action-button--secondary\[disabled\]\s*\{[\s\S]*?color:\s*var\(--disabled-text-color\);/)
+		assert.match(css, /\.button\.dialog-action-button--secondary:hover, \.button\.dialog-action-button--secondary:focus, \.button\.dialog-action-button--secondary:active\s*\{[\s\S]*?background-color:\s*var\(--primary-action-color\);/)
+		assert.match(css, /\.button\.dialog-action-button--secondary\[disabled\]\s*\{[\s\S]*?border-color:\s*var\(--disabled-action-color\);[\s\S]*?color:\s*var\(--text-color\);/)
 	})
 
 	test('stacks dense content before it overflows at narrow widths', async () => {
