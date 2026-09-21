@@ -376,7 +376,7 @@ describe('ConfirmTransaction', () => {
 		assert.equal(renderedText.includes(bytes32String(proposal.safeTransaction.safeTxHash)), true)
 		assert.equal(renderedText.includes('Nonce: 3'), true)
 		assert.equal(renderedText.includes('Operation: 0'), true)
-		// The failed-simulation view has no network, so the value has no token symbol; the raw wei row is what a hardware signer shows.
+		// The failed-simulation view has no network, so the value has no token symbol; the raw wei value is what a hardware signer shows.
 		assert.equal(renderedText.includes('Value: 1.25 (native token)'), true)
 		assert.equal(renderedText.includes('Value (wei)1250000000000000000'), true)
 

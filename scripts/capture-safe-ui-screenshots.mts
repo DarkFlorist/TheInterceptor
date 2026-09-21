@@ -369,10 +369,15 @@ try {
 		signingRequestHeader.click()
 	})()`)
 	await waitForText(confirm, 'Gnosis Safe Transaction Hash')
-	await captureScenario(confirm, 'safe-confirm-transaction-signing-request', `${ findSigningRequestHeader }?.scrollIntoView({ block: 'start' })`)
+	await captureScenario(confirm, 'safe-confirm-transaction-signing-request', `(() => {
+		const signingRequestHeader = ${ findSigningRequestHeader }
+		if (!(signingRequestHeader instanceof HTMLElement)) throw new Error('Gnosis Safe signing request card was not found')
+		signingRequestHeader.scrollIntoView({ block: 'start' })
+	})()`)
 	await captureScenario(confirm, 'safe-confirm-transaction-signing-request-hashes', `(() => {
 		const scrollContainer = document.querySelector('.popup-block-scroll')
-		if (scrollContainer instanceof HTMLElement) scrollContainer.scrollTop = scrollContainer.scrollHeight
+		if (!(scrollContainer instanceof HTMLElement)) throw new Error('Confirmation scroll container was not found')
+		scrollContainer.scrollTop = scrollContainer.scrollHeight
 	})()`)
 	await confirm.close()
 
