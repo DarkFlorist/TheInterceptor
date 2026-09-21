@@ -13,6 +13,8 @@ import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } fr
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
+import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { RpcConfigurationState } from './storageVariables.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -89,10 +91,27 @@ async function getSettingsWithRpcSelection(rpcSelectionPromise: Promise<{ readon
 }
 
 export async function getSettings() : Promise<Settings> {
-	const rpcConfigurationPromise = silenceChromeUnCaughtPromise(getRpcConfigurationState().then((configuration) => configuration.status === 'ready'
-		? { activeRpcNetwork: configuration.activeRpcNetwork, available: true }
-		: { activeRpcNetwork: RPC_CONFIGURATION_UNAVAILABLE_NETWORK, available: false }))
-	return await getSettingsWithRpcSelection(rpcConfigurationPromise)
+	return (await getSettingsSnapshot()).settings
+}
+
+export async function getSettingsSnapshot(): Promise<{ readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState }> {
+	const rpcConfigurationPromise = silenceChromeUnCaughtPromise(getRpcConfigurationState())
+	const settingsPromise = getSettingsWithRpcSelection(rpcConfigurationPromise.then((configuration) => {
+		if (configuration.status === 'ready') return { activeRpcNetwork: configuration.activeRpcNetwork, available: true }
+		return { activeRpcNetwork: configuration.reason === 'empty' ? configuration.activeRpcNetwork : RPC_CONFIGURATION_UNAVAILABLE_NETWORK, available: false }
+	}))
+	const [settings, rpcConfiguration] = await Promise.all([settingsPromise, rpcConfigurationPromise])
+	return { settings, rpcConfiguration }
+}
+
+export async function getSettingsForRpcServiceOperation(simulationServicesOwner: SimulationServicesOwner): Promise<Settings> {
+	return (await getSettingsSnapshotForRpcServiceOperation(simulationServicesOwner)).settings
+}
+
+export async function getSettingsSnapshotForRpcServiceOperation(simulationServicesOwner: SimulationServicesOwner) {
+	const { settings, rpcConfiguration } = await getSettingsSnapshot()
+	if (rpcConfiguration.status === 'unavailable') simulationServicesOwner.clear()
+	return { settings, rpcConfiguration }
 }
 
 export async function getSettingsWithRpcNetwork(activeRpcNetwork: RpcNetwork): Promise<Settings> {

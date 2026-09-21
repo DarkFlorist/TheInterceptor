@@ -10,7 +10,7 @@ import type { WebsiteAccessUpdate } from './accessManagement.js'
 import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { changeSimulationMode, getSettings, getSettingsWithRpcNetwork, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
+import { changeSimulationMode, getSettings, getSettingsSnapshotForRpcServiceOperation, getSettingsWithRpcNetwork, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
 import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
@@ -70,6 +70,57 @@ type ActiveSettingsTransition = {
 }
 
 const changeActiveAddressAndChainSemaphore = new Semaphore(1)
+
+async function publishCommittedSettingsTransition(
+	simulationServicesOwner: SimulationServicesOwner,
+	websiteTabConnections: WebsiteTabConnections,
+	previousSettings: Awaited<ReturnType<typeof getSettings>>,
+	updatedSettings: Awaited<ReturnType<typeof getSettings>>,
+	onAccessReconciled: (accessUpdate: WebsiteAccessUpdate) => void,
+) {
+	const { chainChanged: rpcChainChanged, endpointChanged: rpcEndpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
+	try {
+		try {
+			if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig(updatedSettings)
+		} finally {
+			await sendPopupMessageToOpenWindows({
+				method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration: bumpPopupRefreshGeneration(),
+			})
+		}
+	} finally {
+		onAccessReconciled(await reconcileWebsiteApprovalAccesses(websiteTabConnections, updatedSettings))
+	}
+	await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
+	if (rpcChainChanged) {
+		sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: updatedSettings.activeRpcNetwork.chainId })
+		await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
+	}
+	if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
+		await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
+	}
+	await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettingsWithRpcNetwork(updatedSettings.activeRpcNetwork))
+}
+
+export async function publishRpcConfigurationRecovery(
+	simulationServicesOwner: SimulationServicesOwner,
+	websiteTabConnections: WebsiteTabConnections,
+	previousSettings: Awaited<ReturnType<typeof getSettings>>,
+	activeRpcNetwork: RpcNetwork,
+) {
+	let accessUpdate: WebsiteAccessUpdate | undefined
+	try {
+		await publishCommittedSettingsTransition(
+			simulationServicesOwner,
+			websiteTabConnections,
+			previousSettings,
+			await getSettingsWithRpcNetwork(activeRpcNetwork),
+			(update) => { accessUpdate = update },
+		)
+	} finally {
+		if (accessUpdate !== undefined) await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)
+	}
+}
+
 async function runActiveSettingsChange(
 	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
@@ -80,15 +131,16 @@ async function runActiveSettingsChange(
 	try {
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
 		await changeActiveAddressAndChainSemaphore.execute(async () => {
-			if (!simulationServicesOwner.isAvailable()) throw new Error('RPC configuration is unavailable. Settings changes are paused until it is restored.')
+			const previousSnapshot = await getSettingsSnapshotForRpcServiceOperation(simulationServicesOwner)
+			const previousSettings = previousSnapshot.settings
+			const rpcServicesOptional = previousSnapshot.rpcConfiguration.status === 'ready' && previousSettings.activeRpcNetwork.httpsRpc === undefined
+			const recoverServicesOnRpcSelection = !simulationServicesOwner.isAvailable() && rpcServicesOptional
+			if (!simulationServicesOwner.isAvailable() && !rpcServicesOptional) throw new Error('RPC configuration is unavailable. Settings changes are paused until it is restored.')
 			if (transition.simulationSignerSelection !== undefined) {
 				const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
 				await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
 			}
 			if (change.simulationMode && change.activeAddress !== undefined) await keepTrackOfPreviousAddressForRichList()
-			const previousSettings = await getSettings()
-			// Reading settings validates the persisted RPC configuration and pauses the owner if it became unreadable.
-			if (!simulationServicesOwner.isAvailable()) throw new Error('RPC configuration is unavailable. Settings changes are paused until it is restored.')
 
 			if (change.simulationMode) {
 				await changeSimulationMode({
@@ -108,41 +160,26 @@ async function runActiveSettingsChange(
 			}
 
 			const updatedSettings = await getSettingsWithRpcNetwork(change.rpcNetwork ?? previousSettings.activeRpcNetwork)
-			const { chainChanged: rpcChainChanged, endpointChanged: rpcEndpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
 			try {
-				try {
-					// The preference belongs to the committed selection, even if later provider preparation fails.
-					if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)
-					// A signer-only chain has no provider to install; simulation is disabled until a configured endpoint is selected.
-					if (rpcEndpointChanged && change.rpcNetwork?.httpsRpc !== undefined) {
-						try {
-							simulationServicesOwner.reset(change.rpcNetwork)
-						} catch (error) {
-							// Only failed provider installation invalidates simulation output here.
-							await publishFailedPopupVisualisation()
-							throw error
-						}
+				// The preference belongs to the committed selection, even if later provider preparation fails.
+				if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)
+				const { endpointChanged: rpcEndpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
+				// A signer-only chain has no provider to install; simulation is disabled until a configured endpoint is selected.
+				if (rpcEndpointChanged && change.rpcNetwork?.httpsRpc !== undefined) {
+					try {
+						if (simulationServicesOwner.isAvailable()) simulationServicesOwner.reset(change.rpcNetwork)
+						else if (recoverServicesOnRpcSelection) simulationServicesOwner.recover(change.rpcNetwork)
+						else throw new Error('RPC configuration became unavailable while changing settings.')
+					} catch (error) {
+						// Only failed provider installation invalidates simulation output here.
+						await publishFailedPopupVisualisation()
+						throw error
 					}
-					if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig(updatedSettings)
-				} finally {
-					// Publish committed settings even if installing their services fails.
-					await sendPopupMessageToOpenWindows({
-						method: 'popup_settingsUpdated', data: updatedSettings, popupRefreshGeneration: bumpPopupRefreshGeneration(),
-					})
 				}
 			} finally {
-				accessUpdate = await reconcileWebsiteApprovalAccesses(websiteTabConnections, updatedSettings)
+				// Publish committed settings and access state even if installing their services fails.
+				await publishCommittedSettingsTransition(simulationServicesOwner, websiteTabConnections, previousSettings, updatedSettings, (update) => { accessUpdate = update })
 			}
-			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
-			if (rpcChainChanged) {
-				sendMessageToApprovedWebsitePorts(websiteTabConnections, { method: 'chainChanged', result: updatedSettings.activeRpcNetwork.chainId })
-				await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
-			}
-			// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.
-			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
-				await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
-			}
-			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettingsWithRpcNetwork(updatedSettings.activeRpcNetwork))
 		})
 	} finally {
 		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.

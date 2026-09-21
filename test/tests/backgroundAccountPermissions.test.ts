@@ -839,6 +839,7 @@ describe('background eth_accounts', () => {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		simulationServicesOwner.clear()
 		const request = {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,

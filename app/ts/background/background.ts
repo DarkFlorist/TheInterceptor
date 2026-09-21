@@ -3,7 +3,7 @@ import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { getSettings, getSettingsWithRpcNetwork, updateWebsiteAccess } from './settings.js'
+import { getSettings, getSettingsSnapshotForRpcServiceOperation, getSettingsWithRpcNetwork, updateWebsiteAccess } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -15,7 +15,7 @@ import { getActiveAddress } from './backgroundUtils.js'
 import { assertNever } from '../utils/typescript.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError } from '../utils/errors.js'
 import { InterceptedRequest, type WebsiteSocket } from '../utils/requests.js'
-import { replyToInterceptedRequest } from './messageSending.js'
+import { replyIfRpcConfigurationIsUnavailable, replyToInterceptedRequest } from './messageSending.js'
 import { EthereumJsonRpcRequest, type EthGetStorageAtParams, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import { serialize } from '../types/wire-types.js'
@@ -70,8 +70,6 @@ async function handleRPCRequest(
 	safeSigningMode: boolean,
 	activeSafeSigner: bigint | undefined,
 ): Promise<RPCReply> {
-	// Select one execution pair after admission; lazy simulation preparation uses this same pair.
-	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 	let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
 	let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
 	const getSimulationInput = async () => {
@@ -141,10 +139,27 @@ async function handleRPCRequest(
 	})
 	if (safePolicyReply !== undefined) return safePolicyReply
 	const accountOnlyMethod = isAccountOnlyMethod(parsedRequest.method)
+	if (settings.activeRpcNetwork.httpsRpc === undefined && !simulationServicesOwner.isAvailable() && accountOnlyMethod) {
+		switch (parsedRequest.method) {
+			case 'eth_accounts':
+			case 'eth_requestAccounts': return await getAccounts(activeAddress)
+			case 'wallet_requestPermissions': return await requestPermissions(activeAddress, website)
+			case 'wallet_getPermissions': return await getPermissions(activeAddress, website)
+			case 'wallet_getCapabilities': {
+				if (parsedRequest.params[0] !== activeAddress || safeSigningMode || activeSafeSigner !== undefined || !forwardToSigner) {
+					return getWalletCapabilities(parsedRequest, activeAddress, settings.activeRpcNetwork.chainId, activeSafeSigner)
+				}
+				return { type: 'forwardToSigner', replyWithSignersReply: true, ...request }
+			}
+			default: throw new Error(`Unsupported account-only method: ${ parsedRequest.method }`)
+		}
+	}
 	if (settings.activeRpcNetwork.httpsRpc === undefined && forwardToSigner && !accountOnlyMethod) {
 		// we are using network that is not supported by us
 		return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
 	}
+	// Select one execution pair after admission; lazy simulation preparation uses this same pair.
+	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 	const withSimulationInput = async (handler: (simulationInput: ResolvedSimulationInput) => Promise<RPCReply>) => await handler(await getSimulationInput())
 	const withExecutionSimulationState = async (handler: (simulationState: ResolvedExecutionSimulationState) => Promise<RPCReply>) => await handler(await getExecutionSimulationState())
 	if (!accountOnlyMethod) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
@@ -395,22 +410,11 @@ function replyWithSignerAccountError(websiteTabConnections: WebsiteTabConnection
 	})
 }
 
-function replyIfRpcConfigurationIsUnavailable(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest) {
-	if (simulationServicesOwner.isAvailable?.() !== false) return undefined
-	return replyToInterceptedRequest(websiteTabConnections, {
-		type: 'result',
-		...getRequestWithDefinedParams(request),
-		error: {
-			code: METAMASK_ERROR_PROVIDER_DISCONNECTED,
-			message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
-		},
-	})
-}
-
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulationServicesOwner: SimulationServicesOwner, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<unknown> => {
-	const initialSettings = await getSettings()
-	const initialRpcUnavailableReply = replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request)
-	if (initialRpcUnavailableReply !== undefined) return initialRpcUnavailableReply
+	const initialSnapshot = await getSettingsSnapshotForRpcServiceOperation(simulationServicesOwner)
+	const initialSettings = initialSnapshot.settings
+	const initialRpcServicesOptional = initialSnapshot.rpcConfiguration.status === 'ready' && initialSettings.activeRpcNetwork.httpsRpc === undefined
+	if (replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, initialRpcServicesOptional)) return
 	if (request.method === 'wallet_revokePermissions') {
 		const parsedRequest = parseWalletRevokePermissionsRequest(websiteTabConnections, request)
 		if (parsedRequest === undefined) return
@@ -435,8 +439,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		return replyToInterceptedRequest(websiteTabConnections, message)
 	}
 	const { settings, activeAddress, requestedSignerAccountsForAddressConsent, signerAccountError } = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin, initialSettings)
-	const accountDiscoveryRpcUnavailableReply = replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request)
-	if (accountDiscoveryRpcUnavailableReply !== undefined) return accountDiscoveryRpcUnavailableReply
+	if (replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, initialRpcServicesOptional)) return
 	if (isTerminalSignerAccountConnectionError(signerAccountError)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountError)
 	if (requestedSignerAccountsForAddressConsent && activeAddress === undefined) {
 		if (getWebsiteAccessApprovalState(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...ERROR_INTERCEPTOR_DISABLED })
@@ -476,9 +479,10 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		if (signerAccounts.length === 0) return replyWithoutActiveAccount(websiteTabConnections, request)
 		const firstSignerAccount = signerAccounts[0]
 		if (firstSignerAccount === undefined) return replyWithoutActiveAccount(websiteTabConnections, request)
-		const refreshedSettings = await getSettings()
-		const refreshedRpcUnavailableReply = replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request)
-		if (refreshedRpcUnavailableReply !== undefined) return refreshedRpcUnavailableReply
+		const refreshedSnapshot = await getSettingsSnapshotForRpcServiceOperation(simulationServicesOwner)
+		const refreshedSettings = refreshedSnapshot.settings
+		const refreshedRpcServicesOptional = refreshedSnapshot.rpcConfiguration.status === 'ready' && refreshedSettings.activeRpcNetwork.httpsRpc === undefined
+		if (replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, refreshedRpcServicesOptional)) return
 		let refreshedActiveAddress = await getActiveAddressForRequest(refreshedSettings, websiteTabConnections, socket.tabId)
 		if (refreshedActiveAddress === undefined) {
 			const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
@@ -507,9 +511,10 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	switch (access) {
 		case 'askAccess': {
 			const website = await websitePromise
-			const currentSettings = await getSettings()
-			const accessDialogRpcUnavailableReply = replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request)
-			if (accessDialogRpcUnavailableReply !== undefined) return accessDialogRpcUnavailableReply
+			const currentSnapshot = await getSettingsSnapshotForRpcServiceOperation(simulationServicesOwner)
+			const currentSettings = currentSnapshot.settings
+			const currentRpcServicesOptional = currentSnapshot.rpcConfiguration.status === 'ready' && currentSettings.activeRpcNetwork.httpsRpc === undefined
+			if (replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, currentRpcServicesOptional)) return
 			return await gateKeepRequestBehindAccessDialog(simulationServicesOwner, websiteTabConnections, socket, request, website, activeAddress, currentSettings, publishRpcConnectionStatus)
 		}
 		case 'noAccess': return refuseAccess(websiteTabConnections, request)
@@ -523,11 +528,13 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 }
 
 async function handleContentScriptMessage(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest, website: Website, activeAddress: AddressBookEntry, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
+	let rpcServicesOptional = false
 	try {
 		const requestWithDefinedParams = getRequestWithDefinedParams(request)
-		const settings = await getSettings()
-		const rpcUnavailableReply = replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request)
-		if (rpcUnavailableReply !== undefined) return rpcUnavailableReply
+		const settingsSnapshot = await getSettingsSnapshotForRpcServiceOperation(simulationServicesOwner)
+		const settings = settingsSnapshot.settings
+		rpcServicesOptional = settingsSnapshot.rpcConfiguration.status === 'ready' && settings.activeRpcNetwork.httpsRpc === undefined
+		if (replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, rpcServicesOptional)) return
 		const currentChainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 		const safeSigningMode = isActiveSigningSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
@@ -554,8 +561,7 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 		replayProviderStateForAccountRequest(websiteTabConnections, request, resolved, activeAddress.address)
 		return replyToInterceptedRequest(websiteTabConnections, { ...requestWithDefinedParams, ...resolved })
 	} catch (error: unknown) {
-		const rpcUnavailableReply = replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request)
-		if (rpcUnavailableReply !== undefined) return rpcUnavailableReply
+		if (replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, rpcServicesOptional)) return
 		if (isFailedToFetchError(error)) {
 			return replyToInterceptedRequest(websiteTabConnections, { type: 'result', ...getRequestWithDefinedParams(request), ...METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN })
 		}

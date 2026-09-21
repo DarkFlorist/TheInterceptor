@@ -1,11 +1,11 @@
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import 'webextension-polyfill'
-import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
-import { getRequestWithDefinedParams, handleInterceptedRequest } from './background.js'
+import { getSettingsForRpcServiceOperation, updateKnownWebsiteMetadata } from './settings.js'
+import { handleInterceptedRequest } from './background.js'
 import { captureSimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { popupMessageHandler } from './popupMessageRouting.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
-import { getRpcConfigurationState, getRpcConnectionStatus, getRpcServiceNetwork, removeTabState, setRpcConfigurationUnavailableHandler, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
+import { getRpcConfigurationState, getRpcConnectionStatus, getRpcServiceNetwork, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
 import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumBlockHeader } from '../types/wire-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -15,7 +15,7 @@ import { getSocketFromPort, isTopFramePort, sendPopupMessageToOpenWindows, websi
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
-import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE, METAMASK_ERROR_PROVIDER_DISCONNECTED } from '../utils/constants.js'
+import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
@@ -36,7 +36,7 @@ import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalReplies
 import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
-import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
+import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
 
 const connections = new Map<number, TabConnection>()
@@ -189,16 +189,6 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 						uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
 						...(rawMessage.interceptorInternalRequest === true ? { interceptorInternalRequest: true as const } : {}),
 					}
-					if (!simulationServicesOwner.isAvailable()) {
-						return replyToInterceptedRequest(websiteTabConnections, {
-							type: 'result',
-							...getRequestWithDefinedParams(request),
-							error: {
-								code: METAMASK_ERROR_PROVIDER_DISCONNECTED,
-								message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
-							},
-						})
-					}
 					// A connected port outlives RPC switches; each request stage selects services from the owner.
 					return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 				})
@@ -249,7 +239,9 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 		await rpcConnectionStatusPublisher.publishRpcConnectionStatus('popup_new_block_arrived', rpcConnectionStatus)
 		if (isNewBlock) {
 			const simulateCurrentStack = async (ethereum: EthereumClientService) => await getUpdatedSimulationState(ethereum, await captureSimulationSnapshot())
-			const settings = await getSettings()
+			const owner = simulationServicesOwner
+			if (owner === undefined) return
+			const settings = await getSettingsForRpcServiceOperation(owner)
 			if (!isCurrentSimulationService(simulationServicesOwner, ethereumClientService)) return
 			if (settings.simulationMode) {
 				const { ethereum, tokenPriceService } = getSimulationServices()
@@ -291,7 +283,6 @@ async function startup() {
 	const rpcConfiguration = await getRpcConfigurationState()
 	const simulatorNetwork = rpcConfiguration.status === 'ready' ? getRpcServiceNetwork(rpcConfiguration) : undefined
 	simulationServicesOwner = createSimulationServicesOwner(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks, () => { void recoverPendingTerminalState() })
-	setRpcConfigurationUnavailableHandler(() => { simulationServicesOwner?.clear() })
 	if (simulationServicesOwner.isAvailable()) await recoverPendingTerminalState()
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
 		if (simulationServicesOwner?.isAvailable()) await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum, rpcConnectionStatusPublisher.publishRpcConnectionStatus))
@@ -364,7 +355,7 @@ browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () =
 }))
 browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
 	const { simulationServicesOwner } = await waitForBackgroundStartup()
-	const settings = await getSettings()
+	const settings = await getSettingsForRpcServiceOperation(simulationServicesOwner)
 	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settings, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 })))
 addWindowTabListeners(onCloseWindow, onCloseTab)

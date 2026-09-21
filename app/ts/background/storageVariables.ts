@@ -40,7 +40,8 @@ export const RPC_CONFIGURATION_UNAVAILABLE_NETWORK: RpcNetwork = {
 
 export type RpcConfigurationState =
 	| { readonly status: 'ready', readonly rpcEntries: RpcEntries, readonly activeRpcNetwork: RpcNetwork }
-	| { readonly status: 'unavailable', readonly reason: 'corrupt' | 'incomplete' | 'empty' | 'read-failed' | 'write-failed', readonly error?: unknown }
+	| { readonly status: 'unavailable', readonly reason: 'empty', readonly activeRpcNetwork: RpcNetwork }
+	| { readonly status: 'unavailable', readonly reason: 'corrupt' | 'incomplete' | 'read-failed' | 'write-failed', readonly error?: unknown }
 
 export function getRpcServiceNetwork(configuration: Extract<RpcConfigurationState, { status: 'ready' }>): RpcEntry | undefined {
 	if (configuration.activeRpcNetwork.httpsRpc !== undefined) return configuration.activeRpcNetwork
@@ -229,17 +230,8 @@ export async function updateEthereumSubscriptionsAndFilters(updateFunc: (prevSta
 }
 
 const rpcConfigurationSemaphore = new Semaphore(1)
-let rpcConfigurationUnavailableHandler: { readonly browserContext: typeof browser, readonly handle: () => void } | undefined
 
-export function setRpcConfigurationUnavailableHandler(handler: () => void) {
-	rpcConfigurationUnavailableHandler = { browserContext: browser, handle: handler }
-}
-
-function notifyRpcConfigurationUnavailable() {
-	if (rpcConfigurationUnavailableHandler?.browserContext === browser) rpcConfigurationUnavailableHandler.handle()
-}
-
-const unavailableRpcConfiguration = (reason: Exclude<RpcConfigurationState, { status: 'ready' }>['reason'], error?: unknown): RpcConfigurationState => ({
+const unavailableRpcConfiguration = (reason: Exclude<Exclude<RpcConfigurationState, { status: 'ready' }>['reason'], 'empty'>, error?: unknown): RpcConfigurationState => ({
 	status: 'unavailable',
 	reason,
 	...(error === undefined ? {} : { error }),
@@ -286,18 +278,22 @@ async function getRpcConfigurationStateWithoutLock(): Promise<RpcConfigurationSt
 	}
 
 	if (rpcEntries === undefined) {
-		if (activeRpcNetwork?.httpsRpc === undefined) return unavailableRpcConfiguration('incomplete')
-		rpcEntries = [activeRpcNetwork]
+		if (activeRpcNetwork === undefined) return unavailableRpcConfiguration('incomplete')
+		rpcEntries = activeRpcNetwork.httpsRpc === undefined ? [] : [activeRpcNetwork]
 		try {
 			await browserStorageLocalSet({ rpcEntries })
 		} catch (error: unknown) {
 			return unavailableRpcConfiguration('write-failed', error)
 		}
 	}
-	if (rpcEntries.length === 0) return unavailableRpcConfiguration('empty')
+	if (rpcEntries.length === 0) {
+		if (activeRpcNetwork !== undefined && activeRpcNetwork.httpsRpc === undefined) return { status: 'ready', rpcEntries, activeRpcNetwork }
+		if (activeRpcNetwork === undefined) return unavailableRpcConfiguration('incomplete')
+		return { status: 'unavailable', reason: 'empty', activeRpcNetwork }
+	}
 	if (activeRpcNetwork === undefined) {
 		const selectedRpc = rpcEntries.find((entry) => entry.primary) ?? rpcEntries[0]
-		if (selectedRpc === undefined) return unavailableRpcConfiguration('empty')
+		if (selectedRpc === undefined) return unavailableRpcConfiguration('incomplete')
 		activeRpcNetwork = selectedRpc
 		try {
 			await browserStorageLocalSet({ activeRpcNetwork })
@@ -309,9 +305,7 @@ async function getRpcConfigurationStateWithoutLock(): Promise<RpcConfigurationSt
 }
 
 export async function getRpcConfigurationState(): Promise<RpcConfigurationState> {
-	const state = await rpcConfigurationSemaphore.execute(getRpcConfigurationStateWithoutLock)
-	if (state.status === 'unavailable') notifyRpcConfigurationUnavailable()
-	return state
+	return await rpcConfigurationSemaphore.execute(getRpcConfigurationStateWithoutLock)
 }
 
 export async function setRpcConfiguration(rpcEntries: RpcEntries, activeRpcNetwork: RpcEntry) {
@@ -322,7 +316,7 @@ export const setRpcList = async (rpcEntries: RpcEntries) => await rpcConfigurati
 export async function getRpcList(): Promise<RpcEntries> {
 	const state = await getRpcConfigurationState()
 	if (state.status === 'ready') return state.rpcEntries
-	if (state.error !== undefined) throw state.error
+	if ('error' in state && state.error !== undefined) throw state.error
 	throw new Error(`RPC configuration is unavailable (${ state.reason }).`)
 }
 
@@ -334,8 +328,7 @@ export const promoteRpcAsPrimary = async (rpcNetwork: RpcNetwork) => {
 	await rpcConfigurationSemaphore.execute(async () => {
 		const state = await getRpcConfigurationStateWithoutLock()
 		if (state.status !== 'ready') {
-			notifyRpcConfigurationUnavailable()
-			if (state.error !== undefined) throw state.error
+			if ('error' in state && state.error !== undefined) throw state.error
 			throw new Error(`RPC configuration is unavailable (${ state.reason }).`)
 		}
 		const selectedIndex = state.rpcEntries.findIndex((rpc) => getRpcEntryIdentityKey(rpc) === getRpcEntryIdentityKey(rpcNetwork))
