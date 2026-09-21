@@ -552,8 +552,9 @@
 		margin-block: 0;
 	}
 
+	/* A full basis with shrink lets the lone secondary absorb its own side margins, and 2.125em (vs. the 2.5em button height) keeps it visibly lighter. */
 	.confirmation-action-buttons--safe > .button--secondary {
-		flex: 0 0 calc(100% - 10px);
+		flex: 1 1 100%;
 		height: 2.125em;
 		order: 1;
 	}
