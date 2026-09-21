@@ -42,7 +42,9 @@ export function collectForbiddenUnitDiagnostics(file: string, sourceText: string
 			|| ts.isTemplateTail(node)
 			|| ts.isJsxText(node)
 		if (isText && forbiddenUnitPattern.test(node.text)) report(node.getStart(sourceFile), node.getText(sourceFile))
-		if ((ts.isIdentifier(node) || ts.isPrivateIdentifier(node)) && identifierUsesForbiddenUnit(node.text)) report(node.getStart(sourceFile), node.text)
+		// Identifiers inside JSDoc (such as `@param` names) are already covered by the comment report, so skip them to avoid duplicates.
+		const isJsDocIdentifier = (node.flags & ts.NodeFlags.JSDoc) !== 0
+		if (!isJsDocIdentifier && (ts.isIdentifier(node) || ts.isPrivateIdentifier(node)) && identifierUsesForbiddenUnit(node.text)) report(node.getStart(sourceFile), node.text)
 		for (const child of node.getChildren(sourceFile)) visit(child)
 	}
 	visit(sourceFile)

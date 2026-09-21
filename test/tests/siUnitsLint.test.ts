@@ -48,6 +48,8 @@ test('SI units lint reports comments in every position exactly once', () => {
 		'\tbreak',
 		'}',
 		'function jsx() { return <p>{/* jsx wei */}</p> }',
+		'/** @param wei amount */',
+		'function documented(wei: bigint) { return wei }',
 		'',
 	].join('\n')
 	assert.deepEqual(reportedTexts(sourceText), [
@@ -59,6 +61,9 @@ test('SI units lint reports comments in every position exactly once', () => {
 		'/* in array wei */',
 		'// after case wei',
 		'/* jsx wei */',
+		'/** @param wei amount */',
+		'wei',
+		'wei',
 	])
 })
 
