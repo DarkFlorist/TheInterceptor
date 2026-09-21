@@ -50,6 +50,8 @@ test('SI units lint reports comments in every position exactly once', () => {
 		'function jsx() { return <p>{/* jsx wei */}</p> }',
 		'/** @param wei amount */',
 		'function documented(wei: bigint) { return wei }',
+		'/** @param feeWei stale name */',
+		'function renamed(feeAttoeth: bigint) { return feeAttoeth }',
 		'',
 	].join('\n')
 	assert.deepEqual(reportedTexts(sourceText), [
@@ -64,6 +66,7 @@ test('SI units lint reports comments in every position exactly once', () => {
 		'/** @param wei amount */',
 		'wei',
 		'wei',
+		'feeWei',
 	])
 })
 

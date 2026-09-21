@@ -18,17 +18,20 @@ function identifierUsesForbiddenUnit(identifier: string) {
 export function collectForbiddenUnitDiagnostics(file: string, sourceText: string) {
 	const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true, scriptKindForPath(file))
 	const diagnostics: ForbiddenUnitDiagnostic[] = []
-	const reportedCommentStarts = new Set<number>()
+	const visitedCommentStarts = new Set<number>()
+	const reportedCommentRanges: ts.CommentRange[] = []
 	const report = (start: number, text: string) => {
 		const { line, character } = sourceFile.getLineAndCharacterOfPosition(start)
 		diagnostics.push({ file, line: line + 1, column: character + 1, text: text.trim() })
 	}
 	const reportComments = (ranges: readonly ts.CommentRange[] | undefined) => {
 		for (const range of ranges ?? []) {
-			if (reportedCommentStarts.has(range.pos)) continue
-			reportedCommentStarts.add(range.pos)
+			if (visitedCommentStarts.has(range.pos)) continue
+			visitedCommentStarts.add(range.pos)
 			const comment = sourceText.slice(range.pos, range.end)
-			if (forbiddenUnitPattern.test(comment)) report(range.pos, comment)
+			if (!forbiddenUnitPattern.test(comment)) continue
+			reportedCommentRanges.push(range)
+			report(range.pos, comment)
 		}
 	}
 	// Tokens are visited as well as nodes, because a comment after `{`, `(`, or `:` is only reachable from that token's position.
@@ -42,9 +45,12 @@ export function collectForbiddenUnitDiagnostics(file: string, sourceText: string
 			|| ts.isTemplateTail(node)
 			|| ts.isJsxText(node)
 		if (isText && forbiddenUnitPattern.test(node.text)) report(node.getStart(sourceFile), node.getText(sourceFile))
-		// Identifiers inside JSDoc (such as `@param` names) are already covered by the comment report, so skip them to avoid duplicates.
-		const isJsDocIdentifier = (node.flags & ts.NodeFlags.JSDoc) !== 0
-		if (!isJsDocIdentifier && (ts.isIdentifier(node) || ts.isPrivateIdentifier(node)) && identifierUsesForbiddenUnit(node.text)) report(node.getStart(sourceFile), node.text)
+		if ((ts.isIdentifier(node) || ts.isPrivateIdentifier(node)) && identifierUsesForbiddenUnit(node.text)) {
+			// A JSDoc identifier such as `@param wei` is skipped only when its comment was already reported, so `@param feeWei` is still caught.
+			const start = node.getStart(sourceFile)
+			const isInsideReportedComment = reportedCommentRanges.some((range) => start >= range.pos && start < range.end)
+			if (!isInsideReportedComment) report(start, node.text)
+		}
 		for (const child of node.getChildren(sourceFile)) visit(child)
 	}
 	visit(sourceFile)
