@@ -1,4 +1,4 @@
-import { SafeProposalDetails } from './SafeProposalDetails.js'
+import { SafeProposalDetails, SafeProposalSigningRequestCard } from './SafeProposalDetails.js'
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type MaybeSimulatedTransaction, type ModifyAddressWindowState, type VisualizedSimulationState, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
@@ -372,12 +372,14 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 		return 'Unknown error'
 	}
 	if (popupVisualisation.statusCode === 'failed' || popupVisualisation.data.transactionToSimulate.success === false) {
+		const addressMetaData = popupVisualisation.statusCode === 'success' ? popupVisualisation.data.addressBookEntries : []
+		const safeFlow = getSafeTransactionPendingFlow(currentPendingTransaction)
 		return <>
 			<FailedTransactionPreviewDetails
 				website = { currentPendingTransaction.transactionToSimulate.website }
 				transactionIdentifier = { currentPendingTransaction.transactionIdentifier }
 				originalRequestParameters = { currentPendingTransaction.originalRequestParameters }
-				addressMetaData = { popupVisualisation.statusCode === 'success' ? popupVisualisation.data.addressBookEntries : [] }
+				addressMetaData = { addressMetaData }
 				created = { currentPendingTransaction.created }
 				errorMessage = { getErrorMesssage() }
 				isGasEstimationError = { !popupVisualisation.data.transactionToSimulate.success }
@@ -387,6 +389,12 @@ function TransactionCardContent(param: TransactionCardContentParams) {
 				currentBlockNumber = { param.currentBlockNumber }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
+			{ safeFlow?.kind !== 'proposal' ? <></> : <SafeProposalSigningRequestCard
+				safeTransaction = { safeFlow.pending.safeTransaction }
+				addressMetaData = { addressMetaData }
+				rpcNetwork = { popupVisualisation.statusCode === 'success' ? popupVisualisation.data.simulationState.rpcNetwork : undefined }
+				renameAddressCallBack = { param.renameAddressCallBack }
+			/> }
 		</>
 	}
 	return <SuccessfulTransactionCardContent { ...param } simulatedPendingTransaction = { currentPendingTransaction } successfulPopupVisualisation = { popupVisualisation } />
@@ -416,6 +424,7 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 	}
 	const simTx = getResultsForTransaction(popupVisualisation.data.visualizedSimulationState, currentPendingTransaction.transactionIdentifier)
 	if (simTx === undefined) return <p> Unable to find simulation results for the transaction</p>
+	const safeFlow = getSafeTransactionPendingFlow(currentPendingTransaction)
 	const simulationBlockNumber = getSimulationDisplayBlockNumber(popupVisualisation.data.simulationState.blockNumber, popupVisualisation.data.visualizedSimulationState.visualizedBlocks.length)
 	return <>
 		<div class = 'card' style = { `top: ${ param.numberOfUnderTransactions * -HALF_HEADER_HEIGHT }px` }>
@@ -453,6 +462,13 @@ function SuccessfulTransactionCardContent(param: SuccessfulTransactionCardConten
 				</> }
 
 				<RawTransactionDetailsCard isRawTransaction = { simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { simTx.transaction } transactionIdentifier = { simTx.transactionIdentifier } parsedInputData = { simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in simTx ? simTx.gasSpent : undefined } addressMetaData = { addressMetaData } />
+
+				{ safeFlow?.kind !== 'proposal' ? <></> : <SafeProposalSigningRequestCard
+					safeTransaction = { safeFlow.pending.safeTransaction }
+					addressMetaData = { addressMetaData.value }
+					rpcNetwork = { rpcNetwork.value }
+					renameAddressCallBack = { param.renameAddressCallBack }
+				/> }
 
 				<SenderReceiver
 					from = { simTx.transaction.from }
@@ -695,7 +711,7 @@ export function ConfirmationActionButtons({ identified, signerName, simulationMo
 				onClick = { reject }
 			/>
 			{ addToSafeStack === undefined ? <></> : <AsyncActionButton
-				class = 'button is-primary is-outlined button-overflow dialog-action-button'
+				class = 'button button--secondary button-overflow dialog-action-button'
 				state = { addToSafeStackButtonState }
 				disabled = { addToSafeStackDisabled || rejectButtonState === 'pending' || approveButtonState === 'pending' }
 				ariaLabel = 'Add unsigned to Safe stack'

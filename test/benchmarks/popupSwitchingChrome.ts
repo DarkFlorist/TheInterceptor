@@ -230,7 +230,7 @@ async function runIteration() {
 		samples.push(await measure(popup, 'rich on', 'popup_modifyMakeMeRich', `document.querySelector('input[type="checkbox"]').click()`, `document.body.textContent.includes('Updating balances...')`, `document.querySelector('input[type="checkbox"]')?.checked === true`))
 		samples.push(await measure(popup, 'rich off', 'popup_modifyMakeMeRich', `document.querySelector('input[type="checkbox"]').click()`, `document.body.textContent.includes('Updating balances...')`, `document.querySelector('input[type="checkbox"]')?.checked === false`))
 		samples.push(await measure(popup, 'RPC endpoint', 'popup_changeActiveRpc', `${ rpcButton(networkB.name) }.click()`, `document.querySelector('.popup-home-rpc-selector .dropdown-trigger button')?.getAttribute('aria-busy') === 'true'`, `document.querySelector('.popup-home-rpc-selector .dropdown-trigger button')?.title === ${ JSON.stringify(networkB.name) }`))
-		samples.push(await measure(popup, 'signing', 'popup_enableSimulationMode', `${ modeButton('Signing') }.click()`, `${ modeButton('Signing') }?.getAttribute('aria-busy') === 'true'`, `${ modeButton('Signing') }?.classList.contains('is-outlined') === false`))
+		samples.push(await measure(popup, 'signing', 'popup_enableSimulationMode', `${ modeButton('Signing') }.click()`, `${ modeButton('Signing') }?.getAttribute('aria-busy') === 'true'`, `${ modeButton('Signing') }?.classList.contains('is-primary') === true`))
 		await page.evaluate('globalThis.__benchmarkRejectSwitch = true')
 		const beforeRejection = await workerConnection.evaluate(`browser.storage.local.get(['activeRpcNetwork', 'rpcEntries'])`)
 		samples.push(await measure(popup, 'wallet RPC rejection', 'popup_changeActiveRpc', `${ rpcButton(networkC.name) }.click()`, `document.querySelector('.popup-home-rpc-selector .dropdown-trigger button')?.getAttribute('aria-busy') === 'true'`, 'false', false))
@@ -238,7 +238,7 @@ async function runIteration() {
 		if (JSON.stringify(beforeRejection) !== JSON.stringify(afterRejection)) throw new Error('Rejected switch changed persisted RPC state')
 		await page.evaluate('globalThis.__benchmarkRejectSwitch = false')
 		samples.push(await measure(popup, 'wallet RPC acceptance', 'popup_changeActiveRpc', `${ rpcButton(networkC.name) }.click()`, `document.querySelector('.popup-home-rpc-selector .dropdown-trigger button')?.getAttribute('aria-busy') === 'true'`, `document.querySelector('.popup-home-rpc-selector .dropdown-trigger button')?.title === ${ JSON.stringify(networkC.name) }`))
-		samples.push(await measure(popup, 'simulating', 'popup_enableSimulationMode', `${ modeButton('Simulating') }.click()`, `${ modeButton('Simulating') }?.getAttribute('aria-busy') === 'true'`, `${ modeButton('Simulating') }?.classList.contains('is-outlined') === false`))
+		samples.push(await measure(popup, 'simulating', 'popup_enableSimulationMode', `${ modeButton('Simulating') }.click()`, `${ modeButton('Simulating') }?.getAttribute('aria-busy') === 'true'`, `${ modeButton('Simulating') }?.classList.contains('is-primary') === true`))
 		const transaction = { from: BigInt(walletA), to: BigInt(walletB), value: 0n, input: new Uint8Array() }
 		// The page stays connected throughout the switches; subsequent RPCs must use the newly installed services.
 		const pageNetwork = await page.evaluate(`Promise.all(['eth_chainId', 'net_version'].map(method => globalThis.ethereum.request({ method })))`)

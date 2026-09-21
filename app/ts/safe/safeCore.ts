@@ -8,7 +8,8 @@ import { decodeFunctionOutput, encodeFunctionCall } from '../utils/abiRuntime.js
 import { addressString, bytes32String, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
 import { ensureHex } from '../utils/ethereumBytes.js'
 import { recoverAddress } from '../utils/ethereumPrimitives.js'
-import { getSafeTxHash } from '../utils/eip712.js'
+import { getMessageAndDomainHash, getSafeTxHash } from '../utils/eip712.js'
+import { EIP712Message } from '../types/eip721.js'
 import { getErrorMessage } from '../utils/caughtErrors.js'
 import { createSafeValidationError, hasSafeValidationErrorCode } from './safeErrors.js'
 
@@ -464,6 +465,16 @@ export function safeTxToTypedDataJson(safeTx: SafeTx) {
 			nonce: safeTx.message.nonce.toString(),
 		},
 	})
+}
+
+// The one eth_signTypedData_v4 payload for a Safe transaction: every signer-facing request and every displayed hash must come from here.
+export function getSafeTxSignerFacingTypedData(safeTx: SafeTx): EIP712Message {
+	return EIP712Message.parse(safeTxToTypedDataJson(safeTx))
+}
+
+// The domain and message hashes a hardware signer displays for the signer-facing payload. The signer address slot does not take part in hashing.
+export function getSafeTxSigningHashes(safeTx: SafeTx) {
+	return getMessageAndDomainHash({ method: 'eth_signTypedData_v4', params: [safeTx.domain.verifyingContract, getSafeTxSignerFacingTypedData(safeTx)] })
 }
 
 export function normalizeSafeSignature(signature: string): Hex {
