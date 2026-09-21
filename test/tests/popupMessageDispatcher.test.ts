@@ -101,6 +101,7 @@ const settings: Settings = {
 	openedPage: { page: 'Home' },
 	useSignersAddressAsActiveAddress: false,
 	websiteAccess: [],
+	rpcConfigurationAvailable: true,
 	activeRpcNetwork: {
 		name: 'Ethereum Mainnet',
 		chainId: 1n,

@@ -3,6 +3,139 @@ import { describe, test } from 'bun:test'
 import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, createTestSimulationServicesOwner, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
+	test('completes signer callbacks but rejects RPC requests while configuration and services are unavailable', async () => {
+		const { readStoredValue } = installBrowserMock()
+		const {
+			changeSimulationMode,
+			getTabState,
+			getPendingWatchAssetRequests,
+			handleInterceptedRequest,
+			updateTabState,
+			updatePendingWatchAssetRequests,
+			websiteSocketToString,
+		} = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const previousAccount = 0x1010101010101010101010101010101010101010n
+		const nextAccount = 0x2020202020202020202020202020202020202020n
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		let signerAccountsChangedCalls = 0
+		const websiteTabConnections = Object.assign(new Map([[socket.tabId, {
+			...confirmedSignerOwnership(socket),
+			connections: {
+				[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+			},
+		}]]), { lifecycle: { signerAccountsChanged: () => { signerAccountsChangedCalls += 1 } } })
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: previousAccount })
+		await updateTabState(socket.tabId, (previousState) => ({
+			...previousState,
+			signerAccounts: [previousAccount],
+			activeSigningAddress: previousAccount,
+		}))
+		const storedActiveRpcNetwork = readStoredValue('activeRpcNetwork')
+		const storedActiveSigningAddress = readStoredValue('activeSigningAddress')
+		await browser.storage.local.set({ rpcEntries: 'corrupt' })
+		simulationServicesOwner.clear()
+
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
+			method: 'eth_accounts_reply',
+			params: [{
+				signerProviderGeneration: 1,
+				type: 'success',
+				accounts: ['0x2020202020202020202020202020202020202020'],
+				requestAccounts: false,
+			}],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+
+		assert.deepEqual((await getTabState(socket.tabId)).signerAccounts, [nextAccount])
+		assert.equal((await getTabState(socket.tabId)).activeSigningAddress, nextAccount)
+		assert.deepEqual(readStoredValue('activeRpcNetwork'), storedActiveRpcNetwork)
+		assert.deepEqual(readStoredValue('activeSigningAddress'), storedActiveSigningAddress)
+		assert.equal(signerAccountsChangedCalls, 1)
+
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 2, requestSocket: socket },
+			method: 'signer_chainChanged',
+			params: ['0x2', 1],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		assert.equal((await getTabState(socket.tabId)).signerChain, 2n)
+		assert.deepEqual(readStoredValue('activeRpcNetwork'), storedActiveRpcNetwork)
+
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 3, requestSocket: socket },
+			method: 'eth_chainId',
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		const rpcReply = messages.find((message) => message.method === 'eth_chainId' && message.requestId === 3)
+		assert.equal(rpcReply?.error?.code, 4900)
+
+		const watchAssetIdentifier = { requestId: 4, requestSocket: socket }
+		const signerIdentity = { tabId: socket.tabId, connectionName: socket.connectionName, ownerGeneration: 1, signerProviderGeneration: 1 }
+		const requestedAsset = { type: 'ERC20' as const, options: { address: 0x3030303030303030303030303030303030303030n, chainId: 1 } }
+		const token = {
+			type: 'ERC20' as const,
+			name: 'Test Token',
+			symbol: 'TEST',
+			decimals: 18n,
+			address: requestedAsset.options.address,
+			chainId: 1n,
+			entrySource: 'User' as const,
+		}
+		await updatePendingWatchAssetRequests(() => [{
+			website,
+			popupOrTabId: { type: 'popup', id: 12 },
+			request: {
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: watchAssetIdentifier,
+				method: 'wallet_watchAsset',
+				params: [{ type: 'ERC20', options: { address: '0x3030303030303030303030303030303030303030', chainId: 1 } }],
+			},
+			requestedAsset,
+			currentToken: token,
+			token,
+			proposedImageUrl: undefined,
+			selectedImageUri: undefined,
+			imageDownloadError: undefined,
+			forwardToSigner: { signerName: 'MetaMask', connectionName: socket.connectionName, ownerGeneration: 1, signerProviderGeneration: 1 },
+			forwardingStatus: { status: 'pending' },
+		}])
+		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+			interceptorRequest: true,
+			interceptorInternalRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 5, requestSocket: socket },
+			method: 'signer_reply',
+			params: [{
+				success: true,
+				signerProviderGeneration: 1,
+				forwardRequest: {
+					type: 'forwardToSigner',
+					replyWithSignersReply: true,
+					method: 'wallet_watchAsset',
+					params: {
+						parameters: requestedAsset,
+						uniqueRequestIdentifier: { requestId: watchAssetIdentifier.requestId, requestSocket: { tabId: socket.tabId, connectionName: '0x0' } },
+						signerIdentity: { ...signerIdentity, connectionName: '0x0' },
+					},
+					requestId: watchAssetIdentifier.requestId,
+				},
+				reply: true,
+			}],
+		}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		assert.deepEqual((await getPendingWatchAssetRequests())[0]?.forwardingStatus, { status: 'completed', accepted: true })
+	})
+
 	test.each(['reset', 'clear'])('keeps the admitted service snapshot when the owner is %s before execution', async (lifecycleChange) => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess } = await loadModules()
@@ -19,14 +152,15 @@ describe('background eth_accounts', () => {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const initialServices = createEthereumWithGetBlockCounter({ count: 0 })
+		const replacementServiceState = createEthereumWithGetBlockCounter({ count: 0 }, { initialBlockPolling: false })
 		const replacementNetwork = { ...initialServices.ethereum.getRpcEntry(), name: 'Replacement', chainId: 10n, httpsRpc: 'https://replacement.invalid' }
-		const replacementEthereum = new Proxy(initialServices.ethereum, {
+		const replacementEthereum = new Proxy(replacementServiceState.ethereum, {
 			get(target, property, receiver) {
 				if (property === 'getRpcEntry') return () => replacementNetwork
 				return Reflect.get(target, property, receiver)
 			},
 		})
-		const replacementServices = { ethereum: replacementEthereum, tokenPriceService: initialServices.tokenPriceService }
+		const replacementServices = { ethereum: replacementEthereum, tokenPriceService: replacementServiceState.tokenPriceService }
 		const simulationServicesOwner = createTestSimulationServicesOwner(
 			{ ethereum: initialServices.ethereum, tokenPriceService: initialServices.tokenPriceService },
 			() => replacementServices,
@@ -66,6 +200,7 @@ describe('background eth_accounts', () => {
 		assert.equal(reply?.result, 1n)
 		assert.equal(reply?.error, undefined)
 		assert.equal(initialServices.ethereum.isBlockPolling(), false)
+		assert.equal(replacementEthereum.isBlockPolling(), lifecycleChange === 'reset')
 	})
 
 	test('awaits retry-state publishing before replying to a waking RPC request', async () => {

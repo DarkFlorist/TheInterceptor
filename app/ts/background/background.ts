@@ -23,7 +23,7 @@ import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, w
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
-import { isCurrentSimulationService, type SimulationServices, type SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServices, SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
@@ -165,7 +165,10 @@ async function handleRPCRequest(
 	const { ethereum, tokenPriceService } = simulationServices
 	const withSimulationInput = async (handler: (simulationInput: ResolvedSimulationInput) => Promise<RPCReply>) => await handler(await getSimulationInput())
 	const withExecutionSimulationState = async (handler: (simulationState: ResolvedExecutionSimulationState) => Promise<RPCReply>) => await handler(await getExecutionSimulationState())
-	if (!accountOnlyMethod && isCurrentSimulationService(simulationServicesOwner, ethereum)) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
+	if (!accountOnlyMethod) {
+		const currentEthereum = simulationServicesOwner.getCurrentOrUndefined()?.ethereum
+		if (currentEthereum !== undefined) await makeSureInterceptorIsNotSleeping(currentEthereum, publishRpcConnectionStatus)
+	}
 	type ParsedRpcRequest = typeof parsedRequest
 	type RpcRequestHandler = (context: undefined, request: ParsedRpcRequest) => Promise<RPCReply>
 	const rpcRequestHandler = createMethodHandlerFor<ParsedRpcRequest, undefined, Promise<RPCReply>>()
@@ -418,19 +421,12 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	applyRpcConfigurationToServiceLifecycle(simulationServicesOwner, initialSnapshot.rpcConfiguration)
 	const admittedSimulationServices = simulationServicesOwner.getCurrentOrUndefined()
 	const initialSettings = initialSnapshot.settings
-	if (replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, initialSnapshot.rpcConfiguration)) return
-	if (request.method === 'wallet_revokePermissions') {
-		const parsedRequest = parseWalletRevokePermissionsRequest(websiteTabConnections, request)
-		if (parsedRequest === undefined) return
-		const result = await revokeWebsitePermissions(simulationServicesOwner, websiteTabConnections, websiteOrigin)
-		return replyToInterceptedRequest(websiteTabConnections, { ...getRequestWithDefinedParams(request), ...result })
-	}
-	const initialActiveAddress = await getActiveAddressForRequest(initialSettings, websiteTabConnections, socket.tabId)
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
 	const providerHandler = getProviderHandler(request.method)
 	const identifiedMethod = providerHandler.method
 	if (identifiedMethod !== 'notProviderMethod') {
 		if (port === undefined) return
+		const initialActiveAddress = await getActiveAddressForRequest(initialSettings, websiteTabConnections, socket.tabId)
 		const providerCallbackApproval = request.method === 'eth_accounts_reply'
 			? 'hasAccess'
 			: getWebsiteAccessApprovalState(initialSettings.websiteAccess, websiteOrigin)
@@ -441,6 +437,13 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		if (providerHandlerReturn.type === 'doNotReply') return
 		const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
 		return replyToInterceptedRequest(websiteTabConnections, message)
+	}
+	if (replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, initialSnapshot.rpcConfiguration)) return
+	if (request.method === 'wallet_revokePermissions') {
+		const parsedRequest = parseWalletRevokePermissionsRequest(websiteTabConnections, request)
+		if (parsedRequest === undefined) return
+		const result = await revokeWebsitePermissions(simulationServicesOwner, websiteTabConnections, websiteOrigin)
+		return replyToInterceptedRequest(websiteTabConnections, { ...getRequestWithDefinedParams(request), ...result })
 	}
 	const { settings, activeAddress, requestedSignerAccountsForAddressConsent, signerAccountError } = await discoverAccountRequestAddressContext(websiteTabConnections, socket, request, websiteOrigin, initialSettings)
 	if (isTerminalSignerAccountConnectionError(signerAccountError)) return replyWithSignerAccountError(websiteTabConnections, request, signerAccountError)

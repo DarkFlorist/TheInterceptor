@@ -81,7 +81,7 @@ const SETTINGS_STORAGE_KEYS = [
 	'simulationMode',
 ] as const
 
-async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, unknown>>, rpcSelection: { readonly activeRpcNetwork: RpcNetwork, readonly available: boolean }): Promise<Settings> {
+async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, unknown>>, rpcSelection: { readonly activeRpcNetwork: RpcNetwork, readonly rpcConfigurationAvailable: boolean }): Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
 	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'independentActiveSimulationAddress', defaultActiveAddresses[0].address))
@@ -98,9 +98,9 @@ async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, 
 		websiteAccessPromise,
 		simulationModePromise,
 	])
-	const openedPage: Page = rpcSelection.available ? storedOpenedPage : { page: 'Settings' }
+	const openedPage: Page = rpcSelection.rpcConfigurationAvailable ? storedOpenedPage : { page: 'Settings' }
 	const { activeRpcNetwork } = rpcSelection
-	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
+	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, rpcConfigurationAvailable: rpcSelection.rpcConfigurationAvailable, simulationMode }
 }
 
 export async function getSettings() : Promise<Settings> {
@@ -110,15 +110,15 @@ export async function getSettings() : Promise<Settings> {
 export async function getSettingsSnapshot(): Promise<{ readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState }> {
 	const { storedItems, rpcConfiguration } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
 	const rpcSelection = rpcConfiguration.status === 'ready'
-		? { activeRpcNetwork: rpcConfiguration.activeRpcNetwork, available: true }
-		: { activeRpcNetwork: rpcConfiguration.reason === 'empty' ? rpcConfiguration.activeRpcNetwork : RPC_CONFIGURATION_UNAVAILABLE_NETWORK, available: false }
+		? { activeRpcNetwork: rpcConfiguration.activeRpcNetwork, rpcConfigurationAvailable: true }
+		: { activeRpcNetwork: rpcConfiguration.reason === 'empty' ? rpcConfiguration.activeRpcNetwork : RPC_CONFIGURATION_UNAVAILABLE_NETWORK, rpcConfigurationAvailable: false }
 	const settings = await getSettingsFromStorageItems(storedItems, rpcSelection)
 	return { settings, rpcConfiguration }
 }
 
 export async function getSettingsWithRpcNetwork(activeRpcNetwork: RpcNetwork): Promise<Settings> {
 	const storedItems = await silenceChromeUnCaughtPromise(browser.storage.local.get(SETTINGS_STORAGE_KEYS))
-	return await getSettingsFromStorageItems(storedItems, { activeRpcNetwork, available: true })
+	return await getSettingsFromStorageItems(storedItems, { activeRpcNetwork, rpcConfigurationAvailable: true })
 }
 
 export function getInterceptorDisabledSites(settings: Settings): string[] {

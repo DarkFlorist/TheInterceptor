@@ -218,7 +218,8 @@ describe('RPC storage recovery', () => {
 		assert.equal(saveSettled, false)
 
 		releaseRead()
-		await Promise.all([settingsPromise, savePromise])
+		const [settings] = await Promise.all([settingsPromise, savePromise])
+		assert.equal(settings.rpcConfigurationAvailable, true)
 		const finalConfiguration = await getRpcConfigurationState()
 		assert.equal(finalConfiguration.status, 'ready')
 		if (finalConfiguration.status !== 'ready') return
@@ -320,6 +321,7 @@ describe('RPC storage recovery', () => {
 		console.warn = () => undefined
 		try {
 			await settingsOpened(owner)
+			assert.equal((await getSettings()).rpcConfigurationAvailable, false)
 			assert.equal(owner.isAvailable(), false)
 		} finally {
 			console.warn = originalWarn
@@ -407,6 +409,7 @@ describe('RPC storage recovery', () => {
 				activeSimulationAddress: undefined,
 				activeSigningSafeAddress: undefined,
 				activeRpcNetwork: customPrimaryRpc,
+				rpcConfigurationAvailable: false,
 				openedPage: { page: 'Settings' },
 				useSignersAddressAsActiveAddress: false,
 				websiteAccess: [],
@@ -422,10 +425,11 @@ describe('RPC storage recovery', () => {
 
 	test('a deliberately emptied RPC list can be repopulated with a custom endpoint', async () => {
 		const owner = createSimulationServicesOwner(customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
-		const settings: Parameters<typeof setNewRpcList>[2] = {
+		const settings: Parameters<typeof setNewRpcList>[3] = {
 			activeSimulationAddress: undefined,
 			activeSigningSafeAddress: undefined,
 			activeRpcNetwork: customPrimaryRpc,
+			rpcConfigurationAvailable: true,
 			openedPage: { page: 'Settings' },
 			useSignersAddressAsActiveAddress: false,
 			websiteAccess: [],
@@ -434,6 +438,11 @@ describe('RPC storage recovery', () => {
 
 		await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [] }, settings, ignoreRecoveryPublication)
 		assert.equal(owner.isAvailable(), false)
+		const unavailableListUpdate = MessageToPopup.parse(runtimeMessages.at(-1))
+		assert.equal(unavailableListUpdate.method, 'popup_update_rpc_list')
+		if (unavailableListUpdate.method === 'popup_update_rpc_list') {
+			assert.deepEqual(unavailableListUpdate.data, { rpcEntries: [], rpcConfigurationAvailable: false })
+		}
 
 		await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [customFallbackRpc] }, settings, ignoreRecoveryPublication)
 
@@ -460,6 +469,7 @@ describe('RPC storage recovery', () => {
 			activeSimulationAddress: undefined,
 			activeSigningSafeAddress: undefined,
 			activeRpcNetwork: signerOnlyNetwork,
+			rpcConfigurationAvailable: true,
 			openedPage: { page: 'Settings' },
 			useSignersAddressAsActiveAddress: false,
 			websiteAccess: [],
@@ -470,6 +480,19 @@ describe('RPC storage recovery', () => {
 		assert.equal(owner.isAvailable(), false)
 		const emptyConfiguration = await getRpcConfigurationState()
 		assert.deepEqual(emptyConfiguration, { status: 'ready', rpcEntries: [], activeRpcNetwork: signerOnlyNetwork })
+		const emptyListUpdate = MessageToPopup.parse(runtimeMessages.at(-1))
+		assert.equal(emptyListUpdate.method, 'popup_update_rpc_list')
+		if (emptyListUpdate.method === 'popup_update_rpc_list') {
+			assert.deepEqual(emptyListUpdate.data, { rpcEntries: [], rpcConfigurationAvailable: true })
+		}
+
+		await retryRpcConfiguration(owner)
+		assert.equal(owner.isAvailable(), false)
+		const retryListUpdate = MessageToPopup.parse(runtimeMessages.at(-1))
+		assert.equal(retryListUpdate.method, 'popup_update_rpc_list')
+		if (retryListUpdate.method === 'popup_update_rpc_list') {
+			assert.deepEqual(retryListUpdate.data, { rpcEntries: [], rpcConfigurationAvailable: true })
+		}
 
 		await settingsOpened(owner)
 		const settingsReply = MessageToPopup.parse(runtimeMessages.at(-1))

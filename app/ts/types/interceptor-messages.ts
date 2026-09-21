@@ -604,6 +604,7 @@ export const Settings = funtypes.ReadonlyObject({
 	activeSimulationAddress: OptionalEthereumAddress,
 	activeSigningSafeAddress: OptionalEthereumAddress,
 	activeRpcNetwork: RpcNetwork,
+	rpcConfigurationAvailable: funtypes.Boolean,
 	openedPage: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
 	websiteAccess: WebsiteAccessArray,
@@ -717,7 +718,10 @@ export const SetRpcList = funtypes.ReadonlyObject({
 type UpdateRPCList = funtypes.Static<typeof UpdateRPCList>
 const UpdateRPCList = funtypes.ReadonlyObject({
 	method: funtypes.Union(funtypes.Literal('popup_update_rpc_list')),
-	data: RpcEntries,
+	data: funtypes.ReadonlyObject({
+		rpcEntries: RpcEntries,
+		rpcConfigurationAvailable: funtypes.Boolean,
+	}),
 })
 
 export { ChangeActiveChain } from './popupSettingsRequests.js'

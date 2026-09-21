@@ -332,8 +332,8 @@ export function useRpcConnectionsState() {
 			if (parsedMessage.success === false) return false
 			if (parsedMessage.value.method === 'popup_update_rpc_list') {
 				updateVersion += 1
-				entries.value = parsedMessage.value.data
-				status.value = parsedMessage.value.data.length === 0 ? 'unavailable' : 'ready'
+				entries.value = parsedMessage.value.data.rpcEntries
+				status.value = parsedMessage.value.data.rpcConfigurationAvailable ? 'ready' : 'unavailable'
 			}
 			if (parsedMessage.value.method === 'popup_requestSettingsReply') {
 				updateVersion += 1

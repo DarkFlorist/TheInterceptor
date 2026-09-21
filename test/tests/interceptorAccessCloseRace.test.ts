@@ -199,6 +199,7 @@ describe('interceptor access close handling', () => {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const settings: Settings = {
+			rpcConfigurationAvailable: true,
 			activeSimulationAddress: undefined,
 			activeSigningAddress: undefined,
 			openedPage: { page: 'Home' },
@@ -264,6 +265,7 @@ describe('interceptor access close handling', () => {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const settings: Settings = {
+			rpcConfigurationAvailable: true,
 			activeSimulationAddress: undefined,
 			activeSigningAddress: undefined,
 			openedPage: { page: 'Home' },
@@ -352,6 +354,7 @@ describe('interceptor access close handling', () => {
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
 		const activeAddress = await getActiveAddressEntryForChain(account, 1n)
 		const settings: Settings = {
+			rpcConfigurationAvailable: true,
 			activeSimulationAddress: account,
 			activeSigningAddress: undefined,
 			openedPage: { page: 'Home' },
@@ -423,6 +426,7 @@ describe('interceptor access close handling', () => {
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true },
 		} }]])
 		const settings: Settings = {
+			rpcConfigurationAvailable: true,
 			activeSimulationAddress: undefined,
 			activeSigningAddress: undefined,
 			openedPage: { page: 'Home' },

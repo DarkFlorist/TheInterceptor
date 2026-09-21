@@ -1,5 +1,7 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
+import { Settings } from '../../app/ts/types/interceptor-messages.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
 
 const firstRpc = {
 	name: 'First network',
@@ -77,6 +79,9 @@ test('getSettings returns one atomic browser storage snapshot', async () => {
 	assert.deepEqual(settings.openedPage, { page: 'Home' })
 	assert.equal(settings.useSignersAddressAsActiveAddress, false)
 	assert.equal(settings.simulationMode, true)
+	assert.equal(settings.rpcConfigurationAvailable, true)
 	assert.equal(settings.activeRpcNetwork.name, 'First network')
 	assert.equal(settings.activeRpcNetwork.chainId, 1n)
+	const { rpcConfigurationAvailable: _omittedAvailability, ...settingsWithoutAvailability } = serialize(Settings, settings)
+	assert.throws(() => Settings.parse(settingsWithoutAvailability), /rpcConfigurationAvailable/)
 })

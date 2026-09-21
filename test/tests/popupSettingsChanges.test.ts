@@ -180,6 +180,26 @@ describe('popup settings changes', () => {
 		assert.equal(runtimeMessages.length, count)
 	})
 
+	test('rejects RPC switches when configuration storage is corrupt', async () => {
+		installBrowserMock()
+		const { getSettings } = await loadModules()
+		const { changeActiveRpc } = await import('../../app/ts/background/walletSwitch.js')
+		const currentRpc = (await getSettings()).activeRpcNetwork
+		if (currentRpc.httpsRpc === undefined) throw new Error('Expected a configured RPC')
+		await browser.storage.local.set({ rpcEntries: 'not-an-rpc-list' })
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			const result = await changeActiveRpc(services.simulationServicesOwner, new Map(), { ...currentRpc, httpsRpc: 'https://replacement.invalid' }, { source: 'dapp', simulationMode: true, signerTabId: undefined })
+			assert.equal(result.error?.code, 4900)
+			assert.match(result.error?.message ?? '', /RPC configuration is unavailable/)
+			assert.equal((await browser.storage.local.get('activeRpcNetwork')).activeRpcNetwork.httpsRpc, currentRpc.httpsRpc)
+		} finally {
+			console.warn = originalWarn
+		}
+	})
+
 	for (const simulationMode of [true, false]) test(`saves active RPC metadata without resetting services in ${ simulationMode ? 'simulation' : 'signing' } mode`, async () => {
 		installBrowserMock()
 		const { changeSimulationMode, getSettings, saveCurrentTabId, websiteSocketToString } = await loadModules()

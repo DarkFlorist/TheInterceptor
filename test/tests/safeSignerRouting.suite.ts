@@ -72,6 +72,120 @@ test('accepts a signer reply from the current approved child-frame port', async 
 	assert.equal(childReply.result, modules.EthereumBytes32.serialize(signedTransaction.hash))
 })
 
+test('settles a direct signing reply while RPC services are unavailable', async () => {
+	const socket = { tabId: 1, connectionName: 42n }
+	const requestIdentifier = { requestId: 78, requestSocket: socket }
+	const messages: unknown[] = []
+	const port = createWebsitePort(socket, 0, messages)
+	const websiteTabConnections = new Map([[socket.tabId, {
+		signerStateOwner: {
+			connectionName: socket.connectionName,
+			confirmed: true,
+			generation: 3,
+			providerGeneration: 8,
+		},
+		connections: {
+			[modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+		},
+	}]])
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			uniqueRequestIdentifier: requestIdentifier,
+			simulationMode: false,
+			approvalStatus: { status: 'WaitingForSigner' },
+		}],
+	})
+	const owner = createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService })
+	owner.clear()
+
+	await modules.signerReply(owner, websiteTabConnections, port, {
+		method: 'signer_reply',
+		params: [{
+			success: true,
+			signerProviderGeneration: 8,
+			forwardRequest: {
+				type: 'forwardToSigner',
+				replyWithSignersReply: true,
+				method: pendingTransaction.originalRequestParameters.method,
+				params: pendingTransaction.originalRequestParameters.params,
+				requestId: requestIdentifier.requestId,
+			},
+			reply: modules.EthereumBytes32.serialize(signedTransaction.hash),
+		}],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: 79, requestSocket: socket },
+	}, 'hasAccess', activeAddress)
+
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	const dappReply = messages.find((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === requestIdentifier.requestId)
+	if (!isRecord(dappReply)) throw new Error('Missing signer reply while services were unavailable')
+	assert.equal(dappReply.result, modules.EthereumBytes32.serialize(signedTransaction.hash))
+})
+
+test('keeps an unavailable-service signer result queued when pending removal fails', async () => {
+	const socket = { tabId: 1, connectionName: 43n }
+	const requestIdentifier = { requestId: 80, requestSocket: socket }
+	const messages: unknown[] = []
+	const port = createWebsitePort(socket, 0, messages)
+	const websiteTabConnections = new Map([[socket.tabId, {
+		signerStateOwner: {
+			connectionName: socket.connectionName,
+			confirmed: true,
+			generation: 3,
+			providerGeneration: 8,
+		},
+		connections: {
+			[modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+		},
+	}]])
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			uniqueRequestIdentifier: requestIdentifier,
+			simulationMode: false,
+			approvalStatus: { status: 'WaitingForSigner' },
+		}],
+	})
+	const owner = createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService })
+	owner.clear()
+	let removalAttempts = 0
+	browserMock.setStorageSetHandler(async (items, writeStoredItems) => {
+		if ('pendingTransactionsAndMessages' in items && Array.isArray(items.pendingTransactionsAndMessages) && items.pendingTransactionsAndMessages.length === 0) {
+			removalAttempts += 1
+			throw new Error('Pending request removal failed')
+		}
+		writeStoredItems()
+	})
+
+	await assert.rejects(modules.signerReply(owner, websiteTabConnections, port, {
+		method: 'signer_reply',
+		params: [{
+			success: true,
+			signerProviderGeneration: 8,
+			forwardRequest: {
+				type: 'forwardToSigner',
+				replyWithSignersReply: true,
+				method: pendingTransaction.originalRequestParameters.method,
+				params: pendingTransaction.originalRequestParameters.params,
+				requestId: requestIdentifier.requestId,
+			},
+			reply: modules.EthereumBytes32.serialize(signedTransaction.hash),
+		}],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: 81, requestSocket: socket },
+	}, 'hasAccess', activeAddress), /Pending request removal failed/)
+
+	assert.equal(removalAttempts, 1)
+	assert.equal((await modules.getPendingTransactionsAndMessages()).length, 1)
+	assert.equal((await modules.getPendingTerminalReplies()).length, 1)
+	assert.equal(messages.some((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === requestIdentifier.requestId), false)
+})
+
 test('preserves a MetaMask keyring scan error on a retryable Safe signature', async () => {
 	const socket = uniqueRequestIdentifier.requestSocket
 	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
