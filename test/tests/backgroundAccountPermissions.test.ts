@@ -1271,7 +1271,7 @@ describe('background eth_accounts', () => {
 			configurable: true,
 			value: async (keys?: string | string[] | Record<string, unknown> | null) => {
 				const result = await originalStorageGet(keys)
-				if (delayNextSafeAppsModeRead && keys === 'simulationMode') {
+				if (delayNextSafeAppsModeRead && (keys === 'simulationMode' || (Array.isArray(keys) && keys.includes('simulationMode')))) {
 					delayNextSafeAppsModeRead = false
 					delayedReadStarted.resolve(undefined)
 					await releaseDelayedRead.promise

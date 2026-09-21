@@ -13,7 +13,7 @@ import { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { ICON_ACCESS_DENIED } from './constants.js'
-import { hasOwnKey } from './methodHandlers.js'
+import { hasOwnKey } from './typescript.js'
 
 type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
 const IdsOfOpenedTabs = funtypes.Intersect(
@@ -168,6 +168,11 @@ export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorag
 	return LocalStorageItems.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }
 export const safeParseLocalStorageItems = (items: unknown) => LocalStorageItems.safeParse(items)
+export function browserStorageLocalSafeParse(items: unknown): LocalStorageItems | undefined {
+	const parsed = safeParseLocalStorageItems(items)
+	if (parsed.success) return parsed.value
+	return undefined
+}
 export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | LocalStorageKey[], onValidationFailure?: (failure: funtypes.Failure) => void): Promise<LocalStorageItems | undefined> {
 	const parsed = safeParseLocalStorageItems(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 	if (parsed.success) return parsed.value

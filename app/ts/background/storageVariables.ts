@@ -21,7 +21,7 @@ import { SafeTransactionStacks } from '../types/safeTypes.js'
 import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
-import { hasOwnKey } from '../utils/methodHandlers.js'
+import { hasOwnKey } from '../utils/typescript.js'
 
 const reportCorruptStoredValue = (label: string) => (failure: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -231,19 +231,18 @@ export async function updateEthereumSubscriptionsAndFilters(updateFunc: (prevSta
 
 const rpcConfigurationSemaphore = new Semaphore(1)
 
+type RpcConfigurationStorageItems = Readonly<Record<string, unknown>> & {
+	readonly rpcEntries?: unknown
+	readonly activeRpcNetwork?: unknown
+}
+
 const unavailableRpcConfiguration = (reason: Exclude<Exclude<RpcConfigurationState, { status: 'ready' }>['reason'], 'empty'>, error?: unknown): RpcConfigurationState => ({
 	status: 'unavailable',
 	reason,
 	...(error === undefined ? {} : { error }),
 })
 
-async function getRpcConfigurationStateWithoutLock(): Promise<RpcConfigurationState> {
-	let storedConfiguration: { readonly rpcEntries?: unknown, readonly activeRpcNetwork?: unknown }
-	try {
-		storedConfiguration = await browser.storage.local.get(['rpcEntries', 'activeRpcNetwork'])
-	} catch (error: unknown) {
-		return unavailableRpcConfiguration('read-failed', error)
-	}
+async function resolveRpcConfigurationStateWithoutLock(storedConfiguration: RpcConfigurationStorageItems): Promise<RpcConfigurationState> {
 	const hasRpcEntries = hasOwnKey(storedConfiguration, 'rpcEntries') && storedConfiguration.rpcEntries !== undefined
 	const hasActiveRpcNetwork = hasOwnKey(storedConfiguration, 'activeRpcNetwork') && storedConfiguration.activeRpcNetwork !== undefined
 	if (!hasRpcEntries && !hasActiveRpcNetwork) {
@@ -304,8 +303,23 @@ async function getRpcConfigurationStateWithoutLock(): Promise<RpcConfigurationSt
 	return { status: 'ready', rpcEntries, activeRpcNetwork }
 }
 
+async function getRpcConfigurationStateWithoutLock(): Promise<RpcConfigurationState> {
+	try {
+		return await resolveRpcConfigurationStateWithoutLock(await browser.storage.local.get(['rpcEntries', 'activeRpcNetwork']))
+	} catch (error: unknown) {
+		return unavailableRpcConfiguration('read-failed', error)
+	}
+}
+
 export async function getRpcConfigurationState(): Promise<RpcConfigurationState> {
 	return await rpcConfigurationSemaphore.execute(getRpcConfigurationStateWithoutLock)
+}
+
+export async function getRpcConfigurationStateWithStorageSnapshot(keys: readonly string[]): Promise<{ readonly storedItems: Readonly<Record<string, unknown>>, readonly rpcConfiguration: RpcConfigurationState }> {
+	return await rpcConfigurationSemaphore.execute(async () => {
+		const storedItems = await browser.storage.local.get([...keys, 'rpcEntries', 'activeRpcNetwork'])
+		return { storedItems, rpcConfiguration: await resolveRpcConfigurationStateWithoutLock(storedItems) }
+	})
 }
 
 export async function setRpcConfiguration(rpcEntries: RpcEntries, activeRpcNetwork: RpcEntry) {

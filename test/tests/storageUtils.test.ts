@@ -8,6 +8,8 @@ const runtimeMessages: unknown[] = []
 let nextStorageReadError: Error | undefined
 let rpcConfigurationReadCount = 0
 let failRpcConfigurationReadAt: number | undefined
+let rpcConfigurationReadStarted: (() => void) | undefined
+let resumeRpcConfigurationRead: Promise<void> | undefined
 
 Object.defineProperty(globalThis, 'browser', {
 	configurable: true,
@@ -21,16 +23,19 @@ Object.defineProperty(globalThis, 'browser', {
 			local: {
 				get: async (keys: string | readonly string[]) => {
 					const requestedKeys = Array.isArray(keys) ? keys : [keys]
+					const result = Object.fromEntries(requestedKeys.filter((key) => key in storedItems).map((key) => [key, storedItems[key]]))
 					if (requestedKeys.includes('rpcEntries') && requestedKeys.includes('activeRpcNetwork')) {
 						rpcConfigurationReadCount += 1
 						if (rpcConfigurationReadCount === failRpcConfigurationReadAt) throw new Error('RPC configuration read failed')
+						rpcConfigurationReadStarted?.()
+						await resumeRpcConfigurationRead
 					}
 					if (nextStorageReadError !== undefined) {
 						const error = nextStorageReadError
 						nextStorageReadError = undefined
 						throw error
 					}
-					return Object.fromEntries(requestedKeys.filter((key) => key in storedItems).map((key) => [key, storedItems[key]]))
+					return result
 				},
 				set: async (items: Record<string, unknown>) => {
 					writes.push(items)
@@ -46,6 +51,7 @@ Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true
 const { browserStorageLocalGet, browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
 const { getRpcConfigurationState, getRpcConnectionStatus, getRpcList, promoteRpcAsPrimary, setRpcConfiguration } = await import('../../app/ts/background/storageVariables.js')
 const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
+const { getSettings } = await import('../../app/ts/background/settings.js')
 const { restoreDefaultRpcConfiguration, retryRpcConfiguration, setNewRpcList, settingsOpened } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
 const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
 const ignoreRecoveryPublication = async () => undefined
@@ -58,6 +64,8 @@ describe('local storage codecs', () => {
 		nextStorageReadError = undefined
 		rpcConfigurationReadCount = 0
 		failRpcConfigurationReadAt = undefined
+		rpcConfigurationReadStarted = undefined
+		resumeRpcConfigurationRead = undefined
 	})
 
 	test('serializes only present active-address properties, including explicit clears', async () => {
@@ -112,6 +120,8 @@ describe('RPC storage recovery', () => {
 		nextStorageReadError = undefined
 		rpcConfigurationReadCount = 0
 		failRpcConfigurationReadAt = undefined
+		rpcConfigurationReadStarted = undefined
+		resumeRpcConfigurationRead = undefined
 		await browserStorageLocalSet({ rpcEntries: [customPrimaryRpc, customFallbackRpc], activeRpcNetwork: customPrimaryRpc })
 		writes.length = 0
 	})
@@ -189,6 +199,31 @@ describe('RPC storage recovery', () => {
 		assert.deepEqual(configuration.rpcEntries, [customPrimaryRpc])
 		assert.equal(configuration.activeRpcNetwork.httpsRpc, customPrimaryRpc.httpsRpc)
 		assert.deepEqual(writes, [{ rpcEntries: storedItems.rpcEntries }])
+	})
+
+	test('serializes settings snapshot migration with a concurrent RPC configuration save', async () => {
+		delete storedItems.rpcEntries
+		writes.length = 0
+		let signalReadStarted: () => void = () => undefined
+		const readStarted = new Promise<void>((resolve) => { signalReadStarted = resolve })
+		let releaseRead: () => void = () => undefined
+		resumeRpcConfigurationRead = new Promise<void>((resolve) => { releaseRead = resolve })
+		rpcConfigurationReadStarted = signalReadStarted
+
+		const settingsPromise = getSettings()
+		await readStarted
+		let saveSettled = false
+		const savePromise = setRpcConfiguration([customFallbackRpc], customFallbackRpc).then(() => { saveSettled = true })
+		await Promise.resolve()
+		assert.equal(saveSettled, false)
+
+		releaseRead()
+		await Promise.all([settingsPromise, savePromise])
+		const finalConfiguration = await getRpcConfigurationState()
+		assert.equal(finalConfiguration.status, 'ready')
+		if (finalConfiguration.status !== 'ready') return
+		assert.deepEqual(finalConfiguration.rpcEntries, [customFallbackRpc])
+		assert.deepEqual(finalConfiguration.activeRpcNetwork, customFallbackRpc)
 	})
 
 	test('treats an intentional signer-only selection without RPC entries as available configuration', async () => {
