@@ -284,7 +284,7 @@ function FirstCardHeader(param: FirstCardParams) {
 			<div>
 				<div class = 'buttons has-addons popup-home-mode-selector'>
 					<AsyncActionButton
-						class = { `button is-primary ${ param.simulationMode.value ? '' : 'is-outlined' }` }
+						class = { `button ${ param.simulationMode.value ? 'is-primary' : 'button--secondary' }` }
 						style = { `margin-bottom: 0px; border-color: transparent; ${ param.simulationMode.value ? 'opacity: 1;' : '' }` }
 						state = { setSimulatingState.value.state }
 						disabled = { param.simulationMode.value || controlsDisabled }
@@ -295,7 +295,7 @@ function FirstCardHeader(param: FirstCardParams) {
 						onClick = { enableSimulating }
 					/>
 					<AsyncActionButton
-						class = { `button is-primary ${ param.simulationMode.value ? 'is-outlined' : ''}` }
+						class = { `button ${ param.simulationMode.value ? 'button--secondary' : 'is-primary' }` }
 						style = { `margin-bottom: 0px; border-color: transparent; ${ param.simulationMode.value ? '' : 'opacity: 1;' }` }
 						state = { setSigningState.value.state }
 						disabled = { !param.simulationMode.value || controlsDisabled }
