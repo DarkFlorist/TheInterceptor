@@ -5,7 +5,7 @@ import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
 import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
+import { getAddressBookAndSigningWalletBindings, replaceAddressBookAndSigningWalletBindings } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
@@ -246,10 +246,10 @@ export const setMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boo
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
 	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
-	const [settings, signingAddressPreferences] = await Promise.all([getSettings(), getSigningAddressPreferences()])
+	const [settings, signingAddressPreferences, addressBook] = await Promise.all([getSettings(), getSigningAddressPreferences(), getAddressBookAndSigningWalletBindings()])
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
-		version: '1.5' as const,
+		version: '1.6' as const,
 		exportedDate: exportDate,
 		settings: {
 			activeSimulationAddress: settings.activeSimulationAddress,
@@ -260,7 +260,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 			websiteAccess: settings.websiteAccess,
 			rpcNetwork: settings.activeRpcNetwork,
 			simulationMode: settings.simulationMode,
-			addressBookEntries: await getUserAddressBookEntries(),
+			...addressBook,
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
 			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
 		}
@@ -271,12 +271,15 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	// Pre-1.5 exports contain the legacy address shared by signing and simulation. Apply the same explicit default reset as startup rather than heuristically assigning ambiguous state to either independent mode.
 	const defaultActiveAddress = defaultActiveAddresses[0]?.address
 	if (defaultActiveAddress === undefined) throw new Error('Default active address was missing')
-	if (exportedSetings.version === '1.3' || exportedSetings.version === '1.4' || exportedSetings.version === '1.5') {
-		await setPage(exportedSetings.settings.openedPage)
-	}
 	// Safe selection and per-signer preferences resolve through the address book. Make imported entries available before publishing that dependent signing state.
-	if (exportedSetings.version === '1.4' || exportedSetings.version === '1.5') {
-		await updateUserAddressBookEntries(() => exportedSetings.settings.addressBookEntries)
+	if (exportedSetings.version === '1.4' || exportedSetings.version === '1.5' || exportedSetings.version === '1.6') {
+		await replaceAddressBookAndSigningWalletBindings(exportedSetings.settings.addressBookEntries, exportedSetings.version === '1.6' ? exportedSetings.settings.signingWalletBindings : [])
+	} else {
+		const convertActiveAddressToAddressBookEntry = (info: ActiveAddress): AddressBookEntry => ({ ...info, type: 'contact', useAsActiveAddress: true, entrySource: 'User' })
+		await replaceAddressBookAndSigningWalletBindings((previousEntries) => getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map(convertActiveAddressToAddressBookEntry)).concat(exportedSetings.settings.contacts ?? []), ['address']), [])
+	}
+	if (exportedSetings.version === '1.3' || exportedSetings.version === '1.4' || exportedSetings.version === '1.5' || exportedSetings.version === '1.6') {
+		await setPage(exportedSetings.settings.openedPage)
 	}
 	if (exportedSetings.version === '1.0') {
 		await replaceModeAndSigningPreferencesForImport({
@@ -290,22 +293,16 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 		await replaceModeAndSigningPreferencesForImport({
 			simulationMode: exportedSetings.settings.simulationMode,
 			rpcNetwork: exportedSetings.settings.rpcNetwork,
-			activeSimulationAddress: exportedSetings.version === '1.5' ? exportedSetings.settings.activeSimulationAddress : defaultActiveAddress,
+			activeSimulationAddress: (exportedSetings.version === '1.5' || exportedSetings.version === '1.6') ? exportedSetings.settings.activeSimulationAddress : defaultActiveAddress,
 			activeSigningAddress: undefined,
-			activeSigningSafeAddress: exportedSetings.version === '1.5' ? exportedSetings.settings.activeSigningSafeAddress : undefined,
-		}, exportedSetings.version === '1.5' ? exportedSetings.settings.signingAddressPreferences : [])
+			activeSigningSafeAddress: (exportedSetings.version === '1.5' || exportedSetings.version === '1.6') ? exportedSetings.settings.activeSigningSafeAddress : undefined,
+		}, (exportedSetings.version === '1.5' || exportedSetings.version === '1.6') ? exportedSetings.settings.signingAddressPreferences : [])
 	}
 	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
 	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
 	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup)
 	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') {
 		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
-	}
-	if (exportedSetings.version !== '1.4' && exportedSetings.version !== '1.5') {
-		await updateUserAddressBookEntries((previousEntries) => {
-			const convertActiveAddressToAddressBookEntry = (info: ActiveAddress): AddressBookEntry => ({ ...info, type: 'contact' as const, useAsActiveAddress: true, entrySource: 'User' as const })
-			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])
-		})
 	}
 }
 
