@@ -370,19 +370,7 @@ try {
 	const mainnet = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 	const safeEntry = { type: 'contact' as const, name: 'Treasury Safe', address: safeAddress, entrySource: 'User' as const, chainId: 1n }
 	const destinationEntry = { type: 'contact' as const, name: 'Uniswap Router', address: destinationAddress, entrySource: 'User' as const, chainId: 1n }
-	const unsignedTransaction = {
-		type: '1559' as const,
-		from: safeAddress,
-		nonce: 0n,
-		maxFeePerGas: 2_000_000_000n,
-		maxPriorityFeePerGas: 1_000_000_000n,
-		gas: 21_000n,
-		to: destinationAddress,
-		value: 500000000000000000n,
-		input: new Uint8Array(),
-		chainId: 1n,
-		accessList: [],
-	}
+	const unsignedTransaction = { type: '1559' as const, nonce: 0n, chainId: 1n, accessList: [], ...originalRequestParameters.params[0] }
 	const simulatedTransactionToSimulate = {
 		website: failedTransaction.website,
 		created,
@@ -452,7 +440,9 @@ try {
 		await ${ setSimulatedProposalFixture }
 	})()`)
 	await waitForText(simulatedConfirm, 'wrapped as Gnosis Safe transaction nonce 7')
-	await waitForText(simulatedConfirm, 'Sign & add')
+	// The Safe notice always mentions "Sign & add", so wait for the action buttons themselves.
+	await waitForSelector(simulatedConfirm, 'button[aria-label="Sign and add to Safe stack"]')
+	await waitForSelector(simulatedConfirm, 'button[aria-label="Add unsigned to Safe stack"]')
 	const findSigningRequestHeader = `[...document.querySelectorAll('header')].find((element) => element.textContent?.includes('Gnosis Safe signing request (EIP-712)'))`
 	await simulatedConfirm.evaluate(`(() => {
 		const signingRequestHeader = ${ findSigningRequestHeader }
