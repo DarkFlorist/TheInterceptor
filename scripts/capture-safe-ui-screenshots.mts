@@ -52,9 +52,11 @@ async function prepareForDeterministicCapture(connection: SafeUiScreenshotPage) 
 	})()`)
 }
 
-async function capture(connection: SafeUiScreenshotPage, filename: string, width: number, height: number) {
+// Capturing beyond the viewport resets inner scroll positions, so scrolling must be re-applied for every viewport right before the capture.
+async function capture(connection: SafeUiScreenshotPage, filename: string, width: number, height: number, scrollExpression: string | undefined) {
 	await connection.setViewport(width, height)
 	await prepareForDeterministicCapture(connection)
+	if (scrollExpression !== undefined) await connection.evaluate(scrollExpression)
 	await Bun.sleep(250)
 	const clippedAddress = await connection.evaluate<string>(`(() => {
 		const addresses = document.querySelectorAll('.modal.is-active .address-editor-address-input, .modal.is-active .address-editor-readonly-address')
@@ -72,11 +74,11 @@ async function capture(connection: SafeUiScreenshotPage, filename: string, width
 	await writeFile(path.join(outputDirectory, filename), Buffer.from(screenshot, 'base64'))
 }
 
-async function captureScenario(connection: SafeUiScreenshotPage, scenarioName: string) {
+async function captureScenario(connection: SafeUiScreenshotPage, scenarioName: string, scrollExpression?: string) {
 	capturedScenarioCount += 1
 	const scenarioNumber = capturedScenarioCount.toString().padStart(2, '0')
 	for (const viewport of viewports) {
-		await capture(connection, `${ scenarioNumber }-${ scenarioName}--${ viewport.name }.png`, viewport.width, viewport.height)
+		await capture(connection, `${ scenarioNumber }-${ scenarioName}--${ viewport.name }.png`, viewport.width, viewport.height, scrollExpression)
 	}
 }
 
@@ -360,6 +362,18 @@ try {
 	await waitForText(confirm, 'wrapped as Gnosis Safe transaction nonce 7')
 	await waitForText(confirm, 'Gas estimation error')
 	await captureScenario(confirm, 'safe-confirm-transaction')
+	const findSigningRequestHeader = `[...document.querySelectorAll('header')].find((element) => element.textContent?.includes('Gnosis Safe signing request (EIP-712)'))`
+	await confirm.evaluate(`(() => {
+		const signingRequestHeader = ${ findSigningRequestHeader }
+		if (!(signingRequestHeader instanceof HTMLElement)) throw new Error('Gnosis Safe signing request card was not found')
+		signingRequestHeader.click()
+	})()`)
+	await waitForText(confirm, 'Gnosis Safe Transaction Hash')
+	await captureScenario(confirm, 'safe-confirm-transaction-signing-request', `${ findSigningRequestHeader }?.scrollIntoView({ block: 'start' })`)
+	await captureScenario(confirm, 'safe-confirm-transaction-signing-request-hashes', `(() => {
+		const scrollContainer = document.querySelector('.popup-block-scroll')
+		if (scrollContainer instanceof HTMLElement) scrollContainer.scrollTop = scrollContainer.scrollHeight
+	})()`)
 	await confirm.close()
 
 	console.info('Opening simulation stack')
@@ -388,7 +402,7 @@ try {
 	await captureScenario(settings, 'settings-import-export')
 	await settings.close()
 
-	const expectedScreenshotCount = 85
+	const expectedScreenshotCount = 95
 	const screenshotCount = capturedScenarioCount * viewports.length
 	if (screenshotCount !== expectedScreenshotCount) throw new Error(`Expected ${ expectedScreenshotCount } screenshots, captured ${ screenshotCount }`)
 	console.info(`Captured ${ screenshotCount } deterministic screenshots`)

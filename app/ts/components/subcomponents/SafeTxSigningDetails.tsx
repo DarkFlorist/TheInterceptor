@@ -36,10 +36,11 @@ function getChainNameWithId(chainId: bigint) {
 	return chainName === undefined ? chainId.toString(10) : `${ chainName } (${ chainId.toString(10) })`
 }
 
-function SigningHash({ label, hash }: { label: string, hash: string }) {
+// Values that must be compared digit by digit are wrapped instead of truncated, so they stay complete in narrow popups.
+function ExactValue({ label, value }: { label: string, value: string }) {
 	return <>
 		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ label }</p>
-		<p class = 'paragraph text-legible' style = 'overflow-wrap: anywhere'>{ hash }</p>
+		<p class = 'paragraph text-legible' style = 'overflow-wrap: anywhere'>{ value }</p>
 	</>
 }
 
@@ -60,8 +61,6 @@ export function SafeTxSigningDetails({ safeTx, hashes, addressBookEntries, rpcNe
 			<CellElement text = { <SmallAddress addressBookEntry = { addressBookEntries.to } renameAddressCallBack = { renameAddressCallBack } /> }/>
 			<CellElement text = 'Value: '/>
 			<CellElement text = { rpcNetwork === undefined ? `${ bigintToDecimalString(safeTx.message.value, 18n) } (native token)` : <Ether amount = { safeTx.message.value } rpcNetwork = { rpcNetwork } fontSize = 'normal'/> }/>
-			<CellElement text = 'Value (wei): '/>
-			<CellElement text = { safeTx.message.value.toString(10) }/>
 			<CellElement text = 'Operation: '/>
 			<CellElement text = { safeTx.message.operation.toString(10) }/>
 			<CellElement text = 'Gnosis Safe Transaction Gas: '/>
@@ -88,9 +87,10 @@ export function SafeTxSigningDetails({ safeTx, hashes, addressBookEntries, rpcNe
 			<CellElement text = { safeTx.message.nonce.toString(10) }/>
 		</span>
 		<div class = 'textbox' style = 'margin-top: 10px'>
-			<SigningHash label = 'Domain Hash' hash = { hashes.domainHash }/>
-			<SigningHash label = 'Message Hash' hash = { hashes.messageHash }/>
-			<SigningHash label = 'Gnosis Safe Transaction Hash' hash = { hashes.safeTxHash }/>
+			<ExactValue label = 'Value (wei)' value = { safeTx.message.value.toString(10) }/>
+			<ExactValue label = 'Domain Hash' value = { hashes.domainHash }/>
+			<ExactValue label = 'Message Hash' value = { hashes.messageHash }/>
+			<ExactValue label = 'Gnosis Safe Transaction Hash' value = { hashes.safeTxHash }/>
 		</div>
 	</>
 }

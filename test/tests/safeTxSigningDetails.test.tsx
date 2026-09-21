@@ -49,7 +49,7 @@ describe('SafeTxSigningDetails', () => {
 			'Chain: Ethereum Mainnet (1)',
 			'To: Recipient',
 			'Value: 1.25ETH',
-			'Value (wei): 1250000000000000000',
+			'Value (wei)1250000000000000000',
 			'Operation: 0',
 			'Gnosis Safe Transaction Gas: 0',
 			'Base Gas: 0',
@@ -86,7 +86,7 @@ describe('SafeTxSigningDetails', () => {
 		const text = dom.document.body.textContent ?? ''
 		assert.equal(text.includes('Chain: 999999999999'), true, text)
 		assert.equal(text.includes('Value: 0.000000000000000007 (native token)'), true, text)
-		assert.equal(text.includes('Value (wei): 7'), true, text)
+		assert.equal(text.includes('Value (wei)7'), true, text)
 		assert.equal(text.includes('Gas Token: Gas Token'), true, text)
 		assert.equal(text.includes('Refund Receiver: Recipient'), true, text)
 

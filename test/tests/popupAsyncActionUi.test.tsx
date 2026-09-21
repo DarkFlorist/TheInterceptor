@@ -1233,7 +1233,7 @@ describe('popup async action UI', () => {
 			'Gnosis Safe: Safe',
 			'Chain: Ethereum Mainnet (1)',
 			'To: Recipient',
-			'Value (wei): 0',
+			'Value (wei)0',
 			'Operation: 0',
 			'Nonce: 1',
 			`Domain Hash${ gnosisSafeMessage.domainHash }`,
