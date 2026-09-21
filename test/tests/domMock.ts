@@ -392,3 +392,26 @@ export function installDateMock(initialNow: Date | string | number) {
 		},
 	}
 }
+
+// Preact keeps its registered handlers on the element's minified `l` record; the DOM mock does not synthesize click events.
+export type RenderedTreeNode = {
+	readonly tagName?: string
+	readonly textContent?: string
+	readonly childNodes?: readonly RenderedTreeNode[]
+	readonly l?: Record<string, (event: unknown) => unknown>
+}
+
+export function findRenderedElement(node: RenderedTreeNode, matches: (node: RenderedTreeNode) => boolean): RenderedTreeNode | undefined {
+	if (matches(node)) return node
+	for (const child of node.childNodes ?? []) {
+		const found = findRenderedElement(child, matches)
+		if (found !== undefined) return found
+	}
+	return undefined
+}
+
+export async function clickRenderedElement(element: RenderedTreeNode) {
+	const clickHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Click'))?.[1]
+	if (clickHandler === undefined) throw new Error('Expected click handler')
+	await clickHandler({ currentTarget: element })
+}

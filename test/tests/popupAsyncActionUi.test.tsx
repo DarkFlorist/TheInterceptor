@@ -9,7 +9,7 @@ import type { VisualizedPersonalSignRequestSafeTx } from '../../app/ts/types/per
 import type { SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { PendingAccessRequest } from '../../app/ts/types/accessRequest.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
-import { installDomMock } from './domMock.js'
+import { clickRenderedElement, findRenderedElement, installDomMock } from './domMock.js'
 
 let runtimeSendMessage = async (_message: unknown) => undefined
 const runtimeMessageListeners: Array<(message: unknown) => unknown> = []
@@ -81,6 +81,7 @@ async function loadModules() {
 		...await import('../../app/ts/components/pages/InterceptorAccess.js'),
 		...await import('../../app/ts/components/simulationExplaining/customExplainers/GovernanceVoteVisualizer.js'),
 		...await import('../../app/ts/components/simulationExplaining/customExplainers/GnosisSafeVisualizer.js'),
+		...await import('../../app/ts/components/pages/PersonalSign.js'),
 	}
 }
 
@@ -1204,6 +1205,44 @@ describe('popup async action UI', () => {
 		})
 
 		assert.equal(dom.document.body.textContent?.includes('Simulating Gnosis Safe execution failed because the background page did not return a reply.'), true)
+		dom.restore()
+	})
+
+	test('shows the dapp-originated Gnosis Safe EIP-712 fields and hashes under the signature card extra details', async () => {
+		const modules = await modulesPromise
+		const dom = installDomMock()
+		runtimeSendMessage = async () => undefined
+		const gnosisSafeMessage = createGnosisSafeMessageFixture(7n)
+
+		await act(() => {
+			render(h(modules.SignatureCard, {
+				visualizedPersonalSignRequest: gnosisSafeMessage,
+				renameAddressCallBack: () => undefined,
+				removeTransactionOrSignedMessage: undefined,
+				numberOfUnderTransactions: 0,
+				editEnsNamedHashCallBack: () => undefined,
+			}), dom.document.body)
+		})
+		const extraDetailsHeader = findRenderedElement(dom.document.body, (node) => node.tagName === 'HEADER' && node.textContent?.includes('Extra details') === true)
+		if (extraDetailsHeader === undefined) throw new Error('Expected the extra details card')
+		assert.equal(dom.document.body.textContent?.includes('Domain Hash'), false)
+
+		await act(async () => { await clickRenderedElement(extraDetailsHeader) })
+		const renderedText = dom.document.body.textContent ?? ''
+		for (const expected of [
+			'Gnosis Safe: Safe',
+			'Chain: Ethereum Mainnet (1)',
+			'To: Recipient',
+			'Value (wei): 0',
+			'Operation: 0',
+			'Nonce: 1',
+			`Domain Hash${ gnosisSafeMessage.domainHash }`,
+			`Message Hash${ gnosisSafeMessage.messageHash }`,
+			`Gnosis Safe Transaction Hash${ gnosisSafeMessage.safeTxHash }`,
+			'Gnosis Safe meta transaction input:',
+		]) assert.equal(renderedText.includes(expected), true, `expected "${ expected }" in "${ renderedText }"`)
+
+		await act(() => { render(null, dom.document.body) })
 		dom.restore()
 	})
 
