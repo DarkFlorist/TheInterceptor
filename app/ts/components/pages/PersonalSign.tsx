@@ -1,4 +1,3 @@
-import { useSignal } from '@preact/signals'
 import { bigintSecondsToDate } from '../../utils/bigint.js'
 import { EthereumData } from '../../types/wire-types.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
@@ -10,7 +9,6 @@ import { SmallAddress, WebsiteOriginText } from '../subcomponents/address.js'
 import { SomeTimeAgo } from '../subcomponents/SomeTimeAgo.js'
 import type { VisualizedPersonalSignRequest, VisualizedPersonalSignRequestPermit, VisualizedPersonalSignRequestPermit2, VisualizedPersonalSignRequestSafeTx } from '../../types/personal-message-definitions.js'
 import { OrderComponents, OrderComponentsExtraDetails } from '../simulationExplaining/customExplainers/OpenSeaOrder.js'
-import { Ether } from '../subcomponents/coins.js'
 import { humanReadableDateFromSeconds, CellElement } from '../ui-utils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { EnrichedEIP712, EnrichedEIP712Message, TypeEnrichedEIP712MessageRecord } from '../../types/eip721.js'
@@ -20,8 +18,10 @@ import { QuarantineReasons } from '../simulationExplaining/Transactions.js'
 import { GnosisSafeVisualizer } from '../simulationExplaining/customExplainers/GnosisSafeVisualizer.js'
 import type { EditEnsNamedHashCallBack } from '../subcomponents/ens.js'
 import { ViewSelector, ViewSelector as Viewer } from '../subcomponents/ViewSelector.js'
-import { ChevronIcon, XMarkIcon } from '../subcomponents/icons.js'
+import { XMarkIcon } from '../subcomponents/icons.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
+import { SafeTxSigningDetails } from '../subcomponents/SafeTxSigningDetails.js'
+import { CollapsibleCard } from '../subcomponents/CollapsibleCard.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import type { ReadonlySignal } from '@preact/signals'
 import type { PopupPendingTransactionOrSignableMessage as PendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
@@ -293,53 +293,19 @@ type GnosisSafeExtraDetailsParams = {
 }
 
 function GnosisSafeExtraDetails({ visualizedPersonalSignRequestSafeTx, renameAddressCallBack }: GnosisSafeExtraDetailsParams) {
-	return <>
-		<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
-			{ visualizedPersonalSignRequestSafeTx.message.domain.chainId !== undefined
-				? <>
-					<CellElement text = 'Chain: '/>
-					<CellElement text = { getChainName(BigInt(visualizedPersonalSignRequestSafeTx.message.domain.chainId)) }/>
-				</>
-				: <></>
-			}
-			<CellElement text = 'Base Gas: '/>
-			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.baseGas }/>
-			<CellElement text = 'Gas Price: '/>
-			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.gasPrice }/>
-			{ visualizedPersonalSignRequestSafeTx.message.message.gasToken !== 0n
-				? <>
-					<CellElement text = 'Gas Token: '/>
-					<CellElement text = { <SmallAddress addressBookEntry = { visualizedPersonalSignRequestSafeTx.gasToken } renameAddressCallBack = { renameAddressCallBack } /> }/>
-				</>
-				: <></>
-			}
-			<CellElement text = 'Nonce: '/>
-			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.nonce }/>
-			<CellElement text = 'Operation: '/>
-			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.operation }/>
-			{ visualizedPersonalSignRequestSafeTx.message.message.refundReceiver !== 0n ?
-				<>
-					<CellElement text = 'Refund Receiver: '/>
-					<CellElement text = { <SmallAddress addressBookEntry = { visualizedPersonalSignRequestSafeTx.refundReceiver } renameAddressCallBack = { renameAddressCallBack } /> }/>
-				</>
-				: <></>
-			}
-			<CellElement text = 'Gnosis Safe Transaction Gas: '/>
-			<CellElement text = { visualizedPersonalSignRequestSafeTx.message.message.safeTxGas }/>
-			<CellElement text = 'To: '/>
-			<CellElement text = { <SmallAddress addressBookEntry = { visualizedPersonalSignRequestSafeTx.to } renameAddressCallBack = { renameAddressCallBack } /> }/>
-			<CellElement text = 'Value: '/>
-			<CellElement text = { <Ether amount = { visualizedPersonalSignRequestSafeTx.message.message.value } rpcNetwork = { visualizedPersonalSignRequestSafeTx.rpcNetwork } fontSize = 'normal'/> }/>
-			<CellElement text = 'Domain Hash: '/>
-			<code><CellElement text = { visualizedPersonalSignRequestSafeTx.domainHash }/></code>
-			<CellElement text = 'Message Hash: '/>
-			<code><CellElement text = { visualizedPersonalSignRequestSafeTx.messageHash }/></code>
-			<CellElement text = 'Gnosis Safe Transaction Hash: '/>
-			<code><CellElement text = { visualizedPersonalSignRequestSafeTx.safeTxHash }/></code>
-		</span>
-		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Gnosis Safe meta transaction input: </p>
+	const { domainHash, messageHash, safeTxHash, verifyingContract, to, gasToken, refundReceiver } = visualizedPersonalSignRequestSafeTx
+	// Spans the whole ExtraDetails grid so the full-width hashes and the input do not get squeezed into one grid column.
+	return <div style = 'grid-column: 1 / -1'>
+		<SafeTxSigningDetails
+			safeTx = { visualizedPersonalSignRequestSafeTx.message }
+			hashes = { { domainHash, messageHash, safeTxHash } }
+			addressBookEntries = { { verifyingContract, to, gasToken, refundReceiver } }
+			rpcNetwork = { visualizedPersonalSignRequestSafeTx.rpcNetwork }
+			renameAddressCallBack = { renameAddressCallBack }
+		/>
+		<p class = 'paragraph' style = 'color: var(--subtitle-text-color); margin-top: 10px'>Gnosis Safe meta transaction input: </p>
 		<TransactionInput parsedInputData = { visualizedPersonalSignRequestSafeTx.parsedMessageData } to = { visualizedPersonalSignRequestSafeTx.to } input = { visualizedPersonalSignRequestSafeTx.parsedMessageData.input } addressMetaData = { visualizedPersonalSignRequestSafeTx.parsedMessageDataAddressBookEntries } renameAddressCallBack = { renameAddressCallBack }/>
-	</>
+	</div>
 }
 
 
@@ -367,58 +333,31 @@ function ExtraDetailsInner({ visualizedPersonalSignRequest, renameAddressCallBac
 
 
 function ExtraDetails({ visualizedPersonalSignRequest, renameAddressCallBack }: ExtraDetailsCardParams) {
-	const showSummary = useSignal<boolean>(false)
-
-	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
-			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
-				Extra details
-			</p>
-			<div class = 'card-header-icon'>
-				<span class = 'icon'><ChevronIcon /></span>
+	return <CollapsibleCard title = 'Extra details'>
+		<div class = 'card-content'>
+			<div class = 'container' style = 'margin-bottom: 10px;'>
+				<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
+					<ExtraDetailsInner visualizedPersonalSignRequest = { visualizedPersonalSignRequest } renameAddressCallBack = { renameAddressCallBack }/>
+				</span>
 			</div>
-		</header>
-		{ !showSummary.value
-			? <></>
-			: <>
-				<div class = 'card-content'>
-					<div class = 'container' style = 'margin-bottom: 10px;'>
-						<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
-							<ExtraDetailsInner visualizedPersonalSignRequest = { visualizedPersonalSignRequest } renameAddressCallBack = { renameAddressCallBack }/>
-						</span>
-					</div>
-				</div>
-			</>
-		}
-	</div>
+		</div>
+	</CollapsibleCard>
 }
 
 function RawMessage({ visualizedPersonalSignRequest }: ExtraDetailsCardParams) {
-	const showSummary = useSignal<boolean>(false)
-	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
-			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
-				Raw message
-			</p>
-			<div class = 'card-header-icon'>
-				<span class = 'icon'><ChevronIcon /></span>
-			</div>
-		</header>
-		{ !showSummary.value
-			? <></>
-			: <ViewSelector id = 'raw_message'>
-				<ViewSelector.List>
-					<ViewSelector.View title = 'View Parsed' value = 'parsed'>
-						<pre> { decodeMessage(visualizedPersonalSignRequest.stringifiedMessage) }</pre>
-					</ViewSelector.View>
-					<ViewSelector.View title = 'View Raw' value = 'raw'>
-						<pre>{ visualizedPersonalSignRequest.rawMessage }</pre>
-					</ViewSelector.View>
-				</ViewSelector.List>
-				<ViewSelector.Triggers />
-			</ViewSelector>
-		}
-	</div>
+	return <CollapsibleCard title = 'Raw message'>
+		<ViewSelector id = 'raw_message'>
+			<ViewSelector.List>
+				<ViewSelector.View title = 'View Parsed' value = 'parsed'>
+					<pre> { decodeMessage(visualizedPersonalSignRequest.stringifiedMessage) }</pre>
+				</ViewSelector.View>
+				<ViewSelector.View title = 'View Raw' value = 'raw'>
+					<pre>{ visualizedPersonalSignRequest.rawMessage }</pre>
+				</ViewSelector.View>
+			</ViewSelector.List>
+			<ViewSelector.Triggers />
+		</ViewSelector>
+	</CollapsibleCard>
 }
 
 function Signer({ signer, renameAddressCallBack }: { signer: AddressBookEntry, renameAddressCallBack: (entry: AddressBookEntry) => void, }) {

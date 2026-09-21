@@ -404,8 +404,8 @@ describe('popup icon sync', () => {
 			assert.notEqual(findElementWithClass(loadedHomeCard, 'div', 'popup-home-rpc-selector'), undefined)
 			const signingButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Signing'))
 			const simulatingButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulating'))
-			assert.equal(signingButton?.getAttribute?.('class')?.includes('is-outlined'), false)
-			assert.equal(simulatingButton?.getAttribute?.('class')?.includes('is-outlined'), true)
+			assert.equal(signingButton?.getAttribute?.('class')?.includes('button--secondary'), false)
+			assert.equal(simulatingButton?.getAttribute?.('class')?.includes('button--secondary'), true)
 		} finally {
 			dom.restore()
 		}
@@ -551,7 +551,7 @@ describe('popup icon sync', () => {
 			const editButtonsAfterHomeData = buttonsAfterHomeData.filter((button) => button.textContent?.toLowerCase().includes('edit'))
 			const copyButtonAfterHomeData = buttonsAfterHomeData.find((button) => button.textContent?.toLowerCase().includes('copy'))
 			const timePickerDeltaInputAfterHomeData = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('type') === 'number' && !hasClass(input, 'popup-loading-control'))
-			assert.equal(simulatingButtonAfterHomeData?.getAttribute?.('class')?.includes('is-outlined'), false)
+			assert.equal(simulatingButtonAfterHomeData?.getAttribute?.('class')?.includes('button--secondary'), false)
 			assert.equal(isButtonDisabled(rpcButtonAfterHomeData), false)
 			assert.equal(timePickerModeButtonAfterHomeData, undefined)
 			assert.equal(timePickerDeltaButtonAfterHomeData, undefined)

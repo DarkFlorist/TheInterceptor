@@ -589,7 +589,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	if (parentBlock === null) throw new Error('The latest block is null')
 	if (parentBlock !== undefined && parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const parentBaseFeePerGas = parentBlock?.baseFeePerGas
-	const requestedMaxPriorityFeePerGas = transactionDetails.maxPriorityFeePerGas !== undefined && transactionDetails.maxPriorityFeePerGas !== null ? transactionDetails.maxPriorityFeePerGas : 10n**8n // 0.1 nanoEth/gas
+	const requestedMaxPriorityFeePerGas = transactionDetails.maxPriorityFeePerGas !== undefined && transactionDetails.maxPriorityFeePerGas !== null ? transactionDetails.maxPriorityFeePerGas : 10n**8n // 0.1 nanoeth/gas
 	const maxPriorityFeePerGas = gasPayment === 'external-executor' ? 0n : requestedMaxPriorityFeePerGas
 	const value = transactionDetails.value !== undefined  ? transactionDetails.value : 0n
 	const getFeePerGas = async (gasLimit: bigint) => {

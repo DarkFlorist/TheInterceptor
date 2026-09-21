@@ -5,13 +5,13 @@ import type { EthereumClientService } from '../simulation/services/EthereumClien
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { SafeEntry } from '../types/addressBookTypes.js'
 import { SafeMessage, validateSafeMessageForSigning } from '../safe/safeMessage.js'
-import { EIP712Message } from '../types/eip721.js'
+import type { EIP712Message } from '../types/eip721.js'
 import type { SafeContractStateSnapshot } from '../types/safeTypes.js'
 import type { OriginalSendRequestParameters } from '../types/JsonRpc-types.js'
 import { getErrorMessage } from '../utils/caughtErrors.js'
 import { modifyObject } from '../utils/typescript.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
-import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, createSafeTransactionSigningRequest, isSafeContractValidationFailure, isSafeOwnerValidationFailure, validateSafeTransactionForSigning, safeTxToTypedDataJson, type SafeOwnerValidator } from '../safe/safeCore.js'
+import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, createSafeTransactionSigningRequest, getSafeTxSignerFacingTypedData, isSafeContractValidationFailure, isSafeOwnerValidationFailure, validateSafeTransactionForSigning, type SafeOwnerValidator } from '../safe/safeCore.js'
 import { areSafeExecutionSignerRequestsEqual, prepareSafeExecutionSignerRoute } from '../safe/safeExecutionRouting.js'
 import { getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingTransactionOrMessage } from './storageVariables.js'
 import { createSafeSignerErrorStatus, type SafeSignerErrorStatus } from './safeSignerErrors.js'
@@ -155,7 +155,7 @@ export async function getSafeMessageCoSignContext(
 	)
 	if (safeTxHash !== reviewedSnapshot.safeTxHash) throw createSafeContractValidationFailure('The Gnosis Safe transaction changed after this co-signing confirmation opened.')
 	assertSafeContractStateUnchanged(reviewedSnapshot.reviewedSafeState, safeState)
-	return { safeEntry, safeSignerAddress: safeSignerOverride ?? reviewedSnapshot.safeSignerAddress, typedData: EIP712Message.parse(safeTxToTypedDataJson(safeTx)), signingHash: safeTxHash, ownerValidator }
+	return { safeEntry, safeSignerAddress: safeSignerOverride ?? reviewedSnapshot.safeSignerAddress, typedData: getSafeTxSignerFacingTypedData(safeTx), signingHash: safeTxHash, ownerValidator }
 }
 
 async function refreshSafeMessageCoSignSignerSelection(

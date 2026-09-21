@@ -7,7 +7,7 @@ import { getPrettySignerName } from '../utils/signerMetadata.js'
 import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { modifyObject } from '../utils/typescript.js'
 import { getPendingTransactionsAndMessages, getSafeTransactionStacks, getTabState } from './storageVariables.js'
-import { assertSafeContractStateUnchanged, createSafeOwnerValidationFailure, createSafeTransactionSigningRequest, getSafeContractState, isSafeContractValidationFailure, isSafeOwnerValidationFailure, safeTxToTypedDataJson, validateSafeTransactionForSigning } from '../safe/safeCore.js'
+import { assertSafeContractStateUnchanged, createSafeOwnerValidationFailure, createSafeTransactionSigningRequest, getSafeContractState, getSafeTxSignerFacingTypedData, isSafeContractValidationFailure, isSafeOwnerValidationFailure, validateSafeTransactionForSigning } from '../safe/safeCore.js'
 import { reconcileSafeTransactionStack } from '../safe/safeStack.js'
 import type { SafeTx } from '../types/personal-message-definitions.js'
 import type { SafeSignerErrorDetails } from '../types/safeTypes.js'
@@ -305,7 +305,7 @@ function getSafeSignerFacingRequest(
 		method: 'eth_signTypedData_v4',
 		params: [
 			flow.pending.safeTransaction.safeSignerAddress,
-			EIP712Message.parse(safeTxToTypedDataJson(flow.pending.safeTransaction.safeTx)),
+			getSafeTxSignerFacingTypedData(flow.pending.safeTransaction.safeTx),
 		],
 	}
 }
