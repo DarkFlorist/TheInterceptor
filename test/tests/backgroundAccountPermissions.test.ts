@@ -897,7 +897,7 @@ describe('background eth_accounts', () => {
 			console.warn = originalWarn
 		}
 
-		assert.equal(simulationServicesOwner.isAvailable(), false)
+		assert.equal(simulationServicesOwner.isAvailable(), true)
 		const reply = messages.find((message) => message.requestId === request.uniqueRequestIdentifier.requestId)
 		assert.equal(reply?.error?.code, 4900)
 		assert.match(reply?.error?.message ?? '', /RPC configuration is unavailable/)

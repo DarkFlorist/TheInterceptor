@@ -288,11 +288,11 @@ export async function removeAddressBookEntry(simulationServicesOwner: Simulation
 }
 
 export async function addOrModifyAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
-	const { ethereum } = simulationServicesOwner.getCurrent()
 	try {
 		let entryToStore: AddressBookEntry = entry.data
 		if (entry.data.type === 'safe') {
 			try {
+				const { ethereum } = simulationServicesOwner.getCurrent()
 				if (entry.data.chainId !== ethereum.getChainId()) {
 					return {
 						type: 'AddOrModifyAddressBookEntryReply' as const,
@@ -875,7 +875,11 @@ export async function changeSettings(simulationServicesOwner: SimulationServices
 	if (parsedRequest.data.safeAppsCompatibilityMode !== undefined) {
 		await setSafeAppsCompatibilityMode(parsedRequest.data.safeAppsCompatibilityMode)
 	}
-	return await requestNewHomeData(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, false, true, requestAbortController, bumpPopupRefreshGeneration())
+	const popupRefreshGeneration = bumpPopupRefreshGeneration()
+	const settings = await getSettings()
+	const services = settings.rpcConfigurationAvailable ? simulationServicesOwner.getCurrentOrUndefined() : undefined
+	if (services === undefined) return await requestHomePageBootstrap(websiteTabConnections, popupRefreshGeneration)
+	return await requestNewHomeData(services.ethereum, websiteTabConnections, false, true, requestAbortController, popupRefreshGeneration)
 }
 
 export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, request: SimulateGovernanceContractExecution) {

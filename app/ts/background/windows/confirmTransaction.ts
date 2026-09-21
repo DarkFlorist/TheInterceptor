@@ -6,7 +6,7 @@ import { getInputFieldFromDataOrInput, getSimulatedBalance, getSimulatedErc20Bal
 import { simulatePersonalSign } from '../../simulation/services/simulationPersonalSigning.js'
 import { getSignedTransactionForSimulation } from '../../simulation/services/simulationTransactionSigning.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_NO_ACTIVE_ADDRESS, METAMASK_ERROR_BLANKET_ERROR, METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../../utils/constants.js'
-import { type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
+import { type SignerReply, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
 import { Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { type InterceptorTransactionStack, PASSTHROUGH_STATE, type WebsiteCreatedEthereumTransaction, type WebsiteCreatedEthereumTransactionOrFailed, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
@@ -46,6 +46,7 @@ import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
+import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../rpcConfigurationLifecycle.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -262,6 +263,62 @@ export const setGasLimitForTransaction = async (transactionIdentifier: bigint, g
 	})
 }
 
+type ConfirmationServices = {
+	readonly ethereum: EthereumClientService
+	readonly tokenPriceService: TokenPriceService
+}
+
+async function removeSettledPendingRequest(pending: PendingTransactionOrSignableMessage, services: ConfirmationServices | undefined) {
+	await removePendingTransactionOrMessage(pending.uniqueRequestIdentifier)
+	if (services === undefined) return
+	if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pending.uniqueRequestIdentifier.requestSocket.tabId })
+	if (!(await updateConfirmTransactionView(services.ethereum, services.tokenPriceService))) await closePopupOrTabById(pending.popupOrTabId)
+}
+
+async function settlePendingTerminalReply(websiteTabConnections: WebsiteTabConnections, pending: PendingTransactionOrSignableMessage, message: { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }, services: ConfirmationServices | undefined) {
+	const uniqueRequestIdentifier = pending.uniqueRequestIdentifier
+	if (!('error' in message)) {
+		if (pending.originalRequestParameters.method === 'eth_sendRawTransaction' || pending.originalRequestParameters.method === 'eth_sendTransaction') {
+			const terminalReply = { ...pending.originalRequestParameters, ...message, result: EthereumBytes32.parse(message.result), uniqueRequestIdentifier }
+			await queueTerminalReply(terminalReply)
+			await removeSettledPendingRequest(pending, services)
+			return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
+		}
+		const terminalReply = { ...pending.originalRequestParameters, ...message, result: funtypes.String.parse(message.result), uniqueRequestIdentifier }
+		await queueTerminalReply(terminalReply)
+		await removeSettledPendingRequest(pending, services)
+		return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
+	}
+	const terminalReply = { ...pending.originalRequestParameters, ...message, uniqueRequestIdentifier }
+	await queueTerminalReply(terminalReply)
+	await removeSettledPendingRequest(pending, services)
+	return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
+}
+
+export async function resolvePendingSignerReply(services: ConfirmationServices | undefined, websiteTabConnections: WebsiteTabConnections, uniqueRequestIdentifier: UniqueRequestIdentifier, params: SignerReply['params'][0]) {
+	if (!params.success) {
+		const approvalStatus = params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST
+			? { status: 'WaitingForUser' as const }
+			: { status: 'SignerError' as const, ...params.error }
+		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => modifyObject(pending, { approvalStatus }))
+		if (services !== undefined) await updateConfirmTransactionView(services.ethereum, services.tokenPriceService)
+		return
+	}
+	if (services !== undefined) {
+		return await resolvePendingTransactionOrMessage(services.ethereum, services.tokenPriceService, websiteTabConnections, {
+			method: 'popup_confirmDialog',
+			data: { uniqueRequestIdentifier, action: 'signerIncluded', signerReply: params.reply },
+		})
+	}
+	const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
+	if (pending === undefined) return
+	if (pending.simulationMode || getSafePendingFlow(pending) !== undefined) {
+		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, { approvalStatus: { status: 'SignerError', ...RPC_CONFIGURATION_UNAVAILABLE_ERROR } }))
+		return
+	}
+	return await settlePendingTerminalReply(websiteTabConnections, pending, { type: 'result', result: params.reply }, undefined)
+}
+
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
 	let pendingTransactionOrMessage = await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier)
 	if (pendingTransactionOrMessage === undefined) return // no need to resolve as it doesn't exist anymore
@@ -314,29 +371,10 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
 		?? pendingTransactionOrMessage.originalRequestParameters
 	const removePendingRequestAndUpdateView = async () => {
-		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
-		if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
-		if (!(await updateConfirmTransactionView(ethereum, tokenPriceService))) await closePopupOrTabById(pendingTransactionOrMessage.popupOrTabId)
+		await removeSettledPendingRequest(pendingTransactionOrMessage, { ethereum, tokenPriceService })
 	}
 	const reply = async (message: { type: 'forwardToSigner' } | { type: 'result', error: { code: number, message: string } } | { type: 'result', result: unknown }) => {
-		if (message.type === 'result' && !('error' in message)) {
-			if (pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendRawTransaction' || pendingTransactionOrMessage.originalRequestParameters.method === 'eth_sendTransaction') {
-				const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: EthereumBytes32.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
-				await queueTerminalReply(terminalReply)
-				await removePendingRequestAndUpdateView()
-				return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
-			}
-			const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, result: funtypes.String.parse(message.result), uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
-			await queueTerminalReply(terminalReply)
-			await removePendingRequestAndUpdateView()
-			return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
-		}
-		if (message.type === 'result') {
-			const terminalReply = { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier }
-			await queueTerminalReply(terminalReply)
-			await removePendingRequestAndUpdateView()
-			return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
-		}
+		if (message.type === 'result') return await settlePendingTerminalReply(websiteTabConnections, pendingTransactionOrMessage, message, { ethereum, tokenPriceService })
 		await removePendingRequestAndUpdateView()
 		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...pendingTransactionOrMessage.originalRequestParameters, ...message, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 	}

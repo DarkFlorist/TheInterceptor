@@ -28,7 +28,7 @@ function pauseAfterFirstStorageWrite(key: string) {
 }
 
 describe('active settings concurrency', () => {
-	test('does not install a requested RPC after settings validation pauses the service owner', async () => {
+	test('does not install a requested RPC or mutate services after settings validation fails', async () => {
 		installBrowserMock()
 		const { changeActiveAddressAndChain, getSettings } = await loadModules()
 		const requestedNetwork = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://requested.invalid' }
@@ -41,7 +41,7 @@ describe('active settings concurrency', () => {
 			changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: requestedNetwork }),
 			/RPC configuration is unavailable/,
 		)
-		assert.equal(owner.isAvailable(), false)
+		assert.equal(owner.isAvailable(), true)
 		assert.equal(resetCount, 0)
 	})
 

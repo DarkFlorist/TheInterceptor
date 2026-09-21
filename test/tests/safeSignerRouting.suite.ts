@@ -125,6 +125,71 @@ test('settles a direct signing reply while RPC services are unavailable', async 
 	assert.equal(dappReply.result, modules.EthereumBytes32.serialize(signedTransaction.hash))
 })
 
+test('persists a replaced-connection signer error without refreshing over corrupt RPC configuration', async () => {
+	const socket = { tabId: 1, connectionName: 44n }
+	const requestIdentifier = { requestId: 82, requestSocket: socket }
+	const messages: unknown[] = []
+	const port = createWebsitePort(socket, 0, messages)
+	const websiteTabConnections = new Map([[socket.tabId, {
+		signerStateOwner: {
+			connectionName: socket.connectionName,
+			confirmed: true,
+			generation: 3,
+			providerGeneration: 8,
+		},
+		connections: {},
+	}]])
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			uniqueRequestIdentifier: requestIdentifier,
+			simulationMode: false,
+			approvalStatus: { status: 'WaitingForSigner' },
+		}],
+	})
+	browserMock.storageState.rpcEntries = 'not-an-rpc-list'
+	let blockNumberRequests = 0
+	const originalGetBlockNumber = simulator.ethereum.getBlockNumber
+	Object.defineProperty(simulator.ethereum, 'getBlockNumber', {
+		configurable: true,
+		value: async () => { blockNumberRequests += 1; return 123n },
+	})
+	try {
+		await withSilencedConsole(async () => await modules.signerReply(
+			createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }),
+			websiteTabConnections,
+			port,
+			{
+				method: 'signer_reply',
+				params: [{
+					success: true,
+					signerProviderGeneration: 8,
+					forwardRequest: {
+						type: 'forwardToSigner',
+						replyWithSignersReply: true,
+						method: pendingTransaction.originalRequestParameters.method,
+						params: pendingTransaction.originalRequestParameters.params,
+						requestId: requestIdentifier.requestId,
+					},
+					reply: modules.EthereumBytes32.serialize(signedTransaction.hash),
+				}],
+				interceptorRequest: true,
+				interceptorInternalRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 83, requestSocket: socket },
+			},
+			'hasAccess',
+			activeAddress,
+		))
+	} finally {
+		Object.defineProperty(simulator.ethereum, 'getBlockNumber', { configurable: true, value: originalGetBlockNumber })
+	}
+
+	const [pending] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(pending?.approvalStatus.status, 'SignerError')
+	assert.equal(blockNumberRequests, 0)
+})
+
 test('keeps an unavailable-service signer result queued when pending removal fails', async () => {
 	const socket = { tabId: 1, connectionName: 43n }
 	const requestIdentifier = { requestId: 80, requestSocket: socket }

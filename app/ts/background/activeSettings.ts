@@ -15,7 +15,7 @@ import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
-import { applyRpcConfigurationToServiceLifecycle, rpcServicesAreOptional } from './rpcConfigurationLifecycle.js'
+import { rpcServicesAreOptional } from './rpcConfigurationLifecycle.js'
 
 async function clearSimulationStateFromConfig(settingsSnapshot?: Awaited<ReturnType<typeof getSettings>>) {
 	const settings = settingsSnapshot ?? await getSettings()
@@ -133,11 +133,10 @@ async function runActiveSettingsChange(
 		// Settings, approvals, resets, notifications and selection preferences form one ordered transition.
 		await changeActiveAddressAndChainSemaphore.execute(async () => {
 			const previousSnapshot = await getSettingsSnapshot()
-			applyRpcConfigurationToServiceLifecycle(simulationServicesOwner, previousSnapshot.rpcConfiguration)
 			const previousSettings = previousSnapshot.settings
 			const rpcServicesOptional = rpcServicesAreOptional(previousSnapshot.rpcConfiguration)
 			const recoverServicesOnRpcSelection = !simulationServicesOwner.isAvailable() && rpcServicesOptional
-			if (!simulationServicesOwner.isAvailable() && !rpcServicesOptional) throw new Error('RPC configuration is unavailable. Settings changes are paused until it is restored.')
+			if (previousSnapshot.rpcConfiguration.status === 'unavailable' || !simulationServicesOwner.isAvailable() && !rpcServicesOptional) throw new Error('RPC configuration is unavailable. Settings changes are paused until it is restored.')
 			if (transition.simulationSignerSelection !== undefined) {
 				const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
 				await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)

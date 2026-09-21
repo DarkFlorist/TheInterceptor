@@ -200,6 +200,68 @@ describe('popup settings changes', () => {
 		}
 	})
 
+	for (const unavailableState of ['corrupt configuration', 'missing services'] as const) test(`saves make-me-rich preference without refreshing with ${ unavailableState }`, async () => {
+		installBrowserMock()
+		const { getSettings } = await loadModules()
+		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+		const settings = await getSettings()
+		const getBlockCalls = { count: 0 }
+		const services = createEthereumWithGetBlockCounter(getBlockCalls)
+		if (unavailableState === 'corrupt configuration') await browser.storage.local.set({ rpcEntries: 'not-an-rpc-list' })
+		else services.simulationServicesOwner.clear()
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			const result = await dispatchPopupMessage({
+				...services,
+				settings,
+				websiteTabConnections: new Map(),
+				publishRpcConnectionStatus: async () => undefined,
+				simulationAbortController: new AbortController(),
+				confirmTransactionAbortController: new AbortController(),
+				resetSimulationState: async () => undefined,
+			}, { method: 'popup_modifyMakeMeRich', data: { address: 'CurrentAddress', add: true } })
+			assert.deepEqual(result, {
+				type: 'PopupSettingsChangeReply',
+				ok: false,
+				message: 'The rich setting was saved, but RPC services are unavailable. Restore them before refreshing the simulation.',
+			})
+			assert.equal(getBlockCalls.count, 0)
+			assert.equal(services.simulationServicesOwner.isAvailable(), unavailableState === 'corrupt configuration')
+		} finally {
+			console.warn = originalWarn
+		}
+	})
+
+	for (const unavailableState of ['corrupt configuration', 'missing services'] as const) test(`publishes a storage-only home update after changing settings with ${ unavailableState }`, async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { getSettings } = await loadModules()
+		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+		const settings = await getSettings()
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		if (unavailableState === 'corrupt configuration') await browser.storage.local.set({ rpcEntries: 'not-an-rpc-list' })
+		else services.simulationServicesOwner.clear()
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			await dispatchPopupMessage({
+				...services,
+				settings,
+				websiteTabConnections: new Map(),
+				publishRpcConnectionStatus: async () => undefined,
+				simulationAbortController: new AbortController(),
+				confirmTransactionAbortController: new AbortController(),
+				resetSimulationState: async () => undefined,
+			}, { method: 'popup_ChangeSettings', data: { useTabsInsteadOfPopup: true } })
+			assert.equal((await browser.storage.local.get('useTabsInsteadOfPopup')).useTabsInsteadOfPopup, true)
+			assert.equal(runtimeMessages.some((message) => message.method === 'popup_homePageBootstrap'), true)
+			assert.equal(runtimeMessages.some((message) => message.method === 'popup_UpdateHomePage'), false)
+			assert.equal(services.simulationServicesOwner.isAvailable(), unavailableState === 'corrupt configuration')
+		} finally {
+			console.warn = originalWarn
+		}
+	})
+
 	for (const simulationMode of [true, false]) test(`saves active RPC metadata without resetting services in ${ simulationMode ? 'simulation' : 'signing' } mode`, async () => {
 		installBrowserMock()
 		const { changeSimulationMode, getSettings, saveCurrentTabId, websiteSocketToString } = await loadModules()

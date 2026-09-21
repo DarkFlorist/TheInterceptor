@@ -5,17 +5,16 @@ import type { TabState, WebsiteTabConnections } from '../types/user-interface-ty
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getPendingTransactionsAndMessages, getRpcNetworkForChain, removePendingTransactionOrMessage, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
+import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
-import { doesUniqueRequestIdentifiersMatch, type ProviderMessage, type UniqueRequestIdentifier } from '../utils/requests.js'
-import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
+import type { ProviderMessage } from '../utils/requests.js'
 import { reportUnexpectedError } from '../utils/errors.js'
-import { refreshPendingSafeSignerSelectionErrors, resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
+import { refreshPendingSafeSignerSelectionErrors, resolvePendingSignerReply, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { resolveWatchAssetSignerReply } from './windows/watchAsset.js'
 import { modifyObject } from '../utils/typescript.js'
-import { RPC_CONFIGURATION_UNAVAILABLE_ERROR, sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
+import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
@@ -24,47 +23,6 @@ import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { getActiveAddressEntryForChain } from './metadataUtils.js'
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import type { ApprovalState } from './websiteAccessPolicy.js'
-import { getSafePendingFlow } from '../safe/safePendingFlow.js'
-import { EthereumBytes32 } from '../types/wire-types.js'
-import * as funtypes from 'funtypes'
-import { attemptQueuedTerminalReplyDelivery, queueTerminalReply } from './terminalReplyDelivery.js'
-
-async function settleSigningReplyWithoutServices(websiteTabConnections: WebsiteTabConnections, uniqueRequestIdentifier: UniqueRequestIdentifier, params: SignerReply['params'][0]) {
-	if (!params.success) {
-		const approvalStatus = params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST
-			? { status: 'WaitingForUser' as const }
-			: { status: 'SignerError' as const, ...params.error }
-		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => modifyObject(pending, { approvalStatus }))
-		return
-	}
-	const pending = (await getPendingTransactionsAndMessages()).find((candidate) => doesUniqueRequestIdentifiersMatch(candidate.uniqueRequestIdentifier, uniqueRequestIdentifier))
-	if (pending === undefined) return
-	if (pending.simulationMode || getSafePendingFlow(pending) !== undefined) {
-		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, { approvalStatus: { status: 'SignerError', ...RPC_CONFIGURATION_UNAVAILABLE_ERROR } }))
-		return
-	}
-	if (pending.type === 'Transaction') {
-		const terminalReply = {
-			...pending.originalRequestParameters,
-			type: 'result' as const,
-			result: EthereumBytes32.parse(params.reply),
-			uniqueRequestIdentifier,
-		}
-		await queueTerminalReply(terminalReply)
-		await removePendingTransactionOrMessage(uniqueRequestIdentifier)
-		await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
-	} else {
-		const terminalReply = {
-			...pending.originalRequestParameters,
-			type: 'result' as const,
-			result: funtypes.String.parse(params.reply),
-			uniqueRequestIdentifier,
-		}
-		await queueTerminalReply(terminalReply)
-		await removePendingTransactionOrMessage(uniqueRequestIdentifier)
-		await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
-	}
-}
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
@@ -147,10 +105,10 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			activeSigningAddress,
 		}))
 		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
-		const simulationServices = simulationServicesOwner.getCurrentOrUndefined()
+		const settings = await getSettings()
+		const simulationServices = settings.rpcConfigurationAvailable ? simulationServicesOwner.getCurrentOrUndefined() : undefined
 		if (simulationServices !== undefined) await refreshPendingSafeSignerSelectionErrors(simulationServices.ethereum, simulationServices.tokenPriceService, tabId)
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
-		const settings = await getSettings()
 		const transition = await getSigningAddressSelectionTransition(settings, tabStateChange.previousState, tabStateChange.newState)
 		// Preserve the signer callback while RPC-backed settings transitions are paused; a signer-only network has no services by design, so it can still accept the address selection.
 		const canActivateAddressSelection = settings.rpcConfigurationAvailable
@@ -353,7 +311,8 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 			|| requestSocket.tabId !== socket.tabId
 			|| requestSocket.connectionName !== socket.connectionName) {
 			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...signerConnectionReplacedError } }))
-			const simulationServices = simulationServicesOwner.getCurrentOrUndefined()
+			const rpcConfigurationAvailable = (await getSettings()).rpcConfigurationAvailable
+			const simulationServices = rpcConfigurationAvailable ? simulationServicesOwner.getCurrentOrUndefined() : undefined
 			if (simulationServices !== undefined) await updateConfirmTransactionView(simulationServices.ethereum, simulationServices.tokenPriceService)
 			return doNotReply
 		}
@@ -366,34 +325,17 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 			case 'eth_signTypedData_v4':
 			case 'eth_sendRawTransaction':
 			case 'eth_sendTransaction': {
-				const simulationServices = simulationServicesOwner.getCurrentOrUndefined()
-				if (simulationServices === undefined) {
-					await settleSigningReplyWithoutServices(websiteTabConnections, uniqueRequestIdentifier, params)
-					return doNotReply
-				}
-				const { ethereum, tokenPriceService } = simulationServices
-				if (params.success) {
+				const rpcConfigurationAvailable = (await getSettings()).rpcConfigurationAvailable
+				const simulationServices = rpcConfigurationAvailable ? simulationServicesOwner.getCurrentOrUndefined() : undefined
+				if (params.success && simulationServices !== undefined) {
 					try {
-						await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, {
-							method: 'popup_confirmDialog',
-							data: {
-								uniqueRequestIdentifier,
-								action: 'signerIncluded',
-								signerReply: params.reply,
-							}
-						})
+						await resolvePendingSignerReply(simulationServices, websiteTabConnections, uniqueRequestIdentifier, params)
 					} catch(e) {
 						await reportUnexpectedError(e)
 					}
 					return doNotReply
 				}
-				if (params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST) {
-					await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForUser' } }))
-					await updateConfirmTransactionView(ethereum, tokenPriceService)
-					return doNotReply
-				}
-				await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...params.error } }))
-				await updateConfirmTransactionView(ethereum, tokenPriceService)
+				await resolvePendingSignerReply(simulationServices, websiteTabConnections, uniqueRequestIdentifier, params)
 				return doNotReply
 			}
 		}

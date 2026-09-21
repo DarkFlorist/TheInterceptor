@@ -28,7 +28,6 @@ export async function settingsOpened(simulationServicesOwner: SimulationServices
 		settingsSnapshotPromise,
 	])
 	const { rpcConfiguration, settings } = settingsSnapshot
-	if (rpcConfiguration.status === 'unavailable') simulationServicesOwner.clear()
 	const rpcConfigurationAvailable = rpcConfiguration.status === 'ready' && settings.rpcConfigurationAvailable && (simulationServicesOwner.isAvailable() || rpcConfiguration.activeRpcNetwork.httpsRpc === undefined)
 
 	await sendPopupMessageToOpenWindows({

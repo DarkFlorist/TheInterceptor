@@ -5,16 +5,6 @@ import { websiteSocketToString } from './backgroundUtils.js'
 import { serialize } from '../types/wire-types.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 import { attemptDeliveryAfterManifestV2Reconnect, attemptSocketDeliveryAfterManifestV2Reconnect } from './manifestV2Reconnect.js'
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
-import type { InterceptedRequest } from '../utils/requests.js'
-import { METAMASK_ERROR_PROVIDER_DISCONNECTED } from '../utils/constants.js'
-import type { RpcConfigurationState } from './storageVariables.js'
-import { rpcServicesAreOptional } from './rpcConfigurationLifecycle.js'
-
-export const RPC_CONFIGURATION_UNAVAILABLE_ERROR = {
-	code: METAMASK_ERROR_PROVIDER_DISCONNECTED,
-	message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
-}
 
 function postMessageToPortIfConnected(port: browser.runtime.Port, message: InterceptorMessageToInpage) {
 	try {
@@ -46,16 +36,6 @@ export function replyToInterceptedRequest(websiteTabConnections: WebsiteTabConne
 		})
 	}
 	return false
-}
-
-export function replyIfRpcConfigurationIsUnavailable(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: InterceptedRequest | undefined, rpcConfiguration: RpcConfigurationState) {
-	if (request === undefined || simulationServicesOwner.isAvailable() || rpcServicesAreOptional(rpcConfiguration)) return false
-	replyToInterceptedRequest(websiteTabConnections, {
-		type: 'result',
-		...request,
-		error: RPC_CONFIGURATION_UNAVAILABLE_ERROR,
-	})
-	return true
 }
 
 export async function replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections: WebsiteTabConnections, message: InterceptedRequestForward) {

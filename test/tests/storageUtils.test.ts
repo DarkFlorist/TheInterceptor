@@ -314,7 +314,7 @@ describe('RPC storage recovery', () => {
 		owner.clear()
 	})
 
-	test('settings pauses running services after detecting corrupt RPC storage', async () => {
+	test('settings reports corrupt RPC storage without mutating the service lifecycle', async () => {
 		const owner = createSimulationServicesOwner(customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
 		storedItems.rpcEntries = 'not-an-rpc-list'
 		const originalWarn = console.warn
@@ -322,7 +322,7 @@ describe('RPC storage recovery', () => {
 		try {
 			await settingsOpened(owner)
 			assert.equal((await getSettings()).rpcConfigurationAvailable, false)
-			assert.equal(owner.isAvailable(), false)
+			assert.equal(owner.isAvailable(), true)
 		} finally {
 			console.warn = originalWarn
 			owner.clear()

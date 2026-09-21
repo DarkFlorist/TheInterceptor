@@ -15,7 +15,7 @@ import { getActiveAddress } from './backgroundUtils.js'
 import { assertNever, hasOwnKey } from '../utils/typescript.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError } from '../utils/errors.js'
 import { InterceptedRequest, type WebsiteSocket } from '../utils/requests.js'
-import { replyIfRpcConfigurationIsUnavailable, replyToInterceptedRequest, RPC_CONFIGURATION_UNAVAILABLE_ERROR } from './messageSending.js'
+import { replyToInterceptedRequest } from './messageSending.js'
 import { EthereumJsonRpcRequest, type EthGetStorageAtParams, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import { serialize } from '../types/wire-types.js'
@@ -36,7 +36,7 @@ import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import { getWalletCapabilities } from './walletCapabilities.js'
 import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
 import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState } from './websiteAccessPolicy.js'
-import { applyRpcConfigurationToServiceLifecycle } from './rpcConfigurationLifecycle.js'
+import { replyIfRpcConfigurationIsUnavailable, RPC_CONFIGURATION_UNAVAILABLE_ERROR } from './rpcConfigurationLifecycle.js'
 
 if (initializeWatchAssetWindowListeners()) {
 	void processWatchAssetQueue(undefined).catch(async (error: unknown) => {
@@ -418,7 +418,6 @@ function replyWithSignerAccountError(websiteTabConnections: WebsiteTabConnection
 
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulationServicesOwner: SimulationServicesOwner, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<unknown> => {
 	const initialSnapshot = await getSettingsSnapshot()
-	applyRpcConfigurationToServiceLifecycle(simulationServicesOwner, initialSnapshot.rpcConfiguration)
 	const admittedSimulationServices = simulationServicesOwner.getCurrentOrUndefined()
 	const initialSettings = initialSnapshot.settings
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)

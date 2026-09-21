@@ -38,7 +38,6 @@ import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_ME
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
-import { applyRpcConfigurationToServiceLifecycle } from './rpcConfigurationLifecycle.js'
 
 const connections = new Map<number, TabConnection>()
 const safeAppsCompatibility = createSafeAppsCompatibilityFeature(connections)
@@ -243,7 +242,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 			const owner = simulationServicesOwner
 			if (owner === undefined) return
 			const settingsSnapshot = await getSettingsSnapshot()
-			applyRpcConfigurationToServiceLifecycle(owner, settingsSnapshot.rpcConfiguration)
+			if (settingsSnapshot.rpcConfiguration.status === 'unavailable') return
 			const { settings } = settingsSnapshot
 			if (!isCurrentSimulationService(simulationServicesOwner, ethereumClientService)) return
 			if (settings.simulationMode) {
@@ -359,7 +358,6 @@ browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () =
 browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
 	const { simulationServicesOwner } = await waitForBackgroundStartup()
 	const settingsSnapshot = await getSettingsSnapshot()
-	applyRpcConfigurationToServiceLifecycle(simulationServicesOwner, settingsSnapshot.rpcConfiguration)
 	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settingsSnapshot.settings, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 })))
 addWindowTabListeners(onCloseWindow, onCloseTab)
