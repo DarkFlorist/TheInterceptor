@@ -171,7 +171,7 @@ describe('UI audit fixes', () => {
 
 	test('does not use the dim outlined primary button style anywhere in the extension UI', async () => {
 		// `.button.is-primary.is-outlined` paints --primary-action-color text on dark surfaces at about 2:1 contrast; use button--secondary instead.
-		for await (const file of new Bun.Glob('app/ts/**/*.tsx').scan('.')) {
+		for await (const file of new Bun.Glob('app/ts/**/*.{ts,tsx}').scan('.')) {
 			assert.doesNotMatch(await Bun.file(file).text(), /is-outlined/, file)
 		}
 	})
