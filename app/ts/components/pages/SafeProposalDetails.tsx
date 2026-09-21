@@ -7,7 +7,7 @@ import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { getSafeTxSigningHashes } from '../../safe/safeCore.js'
 import { decodeSafeBatch, SAFE_MULTI_SEND_CALL_ONLY } from '../../safe/safeDelegateCalls.js'
 import { matchesSafeMessageApproval } from '../../safe/safeMessageApproval.js'
-import { addressString, bytes32String, dataStringWith0xStart } from '../../utils/bigint.js'
+import { addressString, bigintToDecimalString, bytes32String, dataStringWith0xStart } from '../../utils/bigint.js'
 import { CollapsibleCard } from '../subcomponents/CollapsibleCard.js'
 import { SafeTxSigningDetails } from '../subcomponents/SafeTxSigningDetails.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
@@ -17,7 +17,7 @@ export function SafeProposalDetails({ safeTx, messageReview }: { safeTx: SafeTx,
 	if (safeTx.message.to === SAFE_MULTI_SEND_CALL_ONLY) return <div class = 'textbox'>
 		<p class = 'paragraph'>Atomic Safe batch: all calls execute in order as the Safe. If any call fails, the entire batch reverts.</p>
 		{ decodeSafeBatch(safeTx.message.data).map((call, index) => <div key = { index }>
-			<p class = 'paragraph'>{ index + 1 }. To: { addressString(call.to) }; value: { call.value.toString() } wei</p>
+			<p class = 'paragraph'>{ index + 1 }. To: { addressString(call.to) }; value: { bigintToDecimalString(call.value, 18n) } ether</p>
 			<p class = 'paragraph' style = 'overflow-wrap: anywhere'>Calldata: { dataStringWith0xStart(call.data) }</p>
 		</div>) }
 	</div>

@@ -376,9 +376,9 @@ describe('ConfirmTransaction', () => {
 		assert.equal(renderedText.includes(bytes32String(proposal.safeTransaction.safeTxHash)), true)
 		assert.equal(renderedText.includes('Nonce: 3'), true)
 		assert.equal(renderedText.includes('Operation: 0'), true)
-		// The failed-simulation view has no network, so the value has no token symbol; the raw wei value is what a hardware signer shows.
+		// The failed-simulation view has no network, so the value has no token symbol; the raw attoeth value is what a hardware signer shows.
 		assert.equal(renderedText.includes('Value: 1.25 (native token)'), true)
-		assert.equal(renderedText.includes('Value (wei)1250000000000000000'), true)
+		assert.equal(renderedText.includes('Value (attoeth)1250000000000000000'), true)
 
 		await dispatchPending({
 			...proposal,
@@ -423,7 +423,7 @@ describe('ConfirmTransaction', () => {
 		assert.equal(renderedText.includes(bytes32String(proposal.safeTransaction.safeTxHash)), true)
 		assert.equal(renderedText.includes('Chain: Ethereum Mainnet (1)'), true)
 		assert.equal(renderedText.includes('Value: 1.25ETH'), true, renderedText)
-		assert.equal(renderedText.includes('Value (wei)1250000000000000000'), true)
+		assert.equal(renderedText.includes('Value (attoeth)1250000000000000000'), true)
 		assert.equal(renderedText.includes('Gnosis Safe: Test Safe'), true, 'address-book entries from the simulation name the Safe')
 		assert.equal(renderedText.includes('To: Recipient'), true)
 

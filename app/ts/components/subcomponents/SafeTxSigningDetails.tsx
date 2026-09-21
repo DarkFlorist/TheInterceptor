@@ -87,7 +87,7 @@ export function SafeTxSigningDetails({ safeTx, hashes, addressBookEntries, rpcNe
 			<CellElement text = { safeTx.message.nonce.toString(10) }/>
 		</span>
 		<div class = 'textbox' style = 'margin-top: 10px'>
-			<ExactValue label = 'Value (wei)' value = { safeTx.message.value.toString(10) }/>
+			<ExactValue label = 'Value (attoeth)' value = { safeTx.message.value.toString(10) }/>
 			<ExactValue label = 'Domain Hash' value = { hashes.domainHash }/>
 			<ExactValue label = 'Message Hash' value = { hashes.messageHash }/>
 			<ExactValue label = 'Gnosis Safe Transaction Hash' value = { hashes.safeTxHash }/>

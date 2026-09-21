@@ -50,7 +50,8 @@
 		"lint:new-block-abort": "bun ./scripts/check-new-block-abort-guards.mts",
 		"lint:fetch-error-messages": "bun ./scripts/check-raw-fetch-error-messages.mts",
 		"lint:signals": "bun ./scripts/check-signal-comparisons.mts",
-		"lint": "bun run biome:check && bun run lint:catches && bun run lint:quotes && bun run lint:imports && bun run lint:comments && bun run lint:error-reporting && bun run lint:error-catches && bun run lint:new-block-abort && bun run lint:fetch-error-messages && bun run lint:signals"
+		"lint:units": "bun ./scripts/check-si-units.mts",
+		"lint": "bun run biome:check && bun run lint:catches && bun run lint:quotes && bun run lint:imports && bun run lint:comments && bun run lint:error-reporting && bun run lint:error-catches && bun run lint:new-block-abort && bun run lint:fetch-error-messages && bun run lint:signals && bun run lint:units"
 	},
 	"dependencies": {
 		"@darkflorist/address-metadata": "0.10.0",
