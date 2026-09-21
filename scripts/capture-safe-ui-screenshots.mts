@@ -27,7 +27,8 @@ async function waitForSelector(connection: SafeUiScreenshotPage, selector: strin
 		if (found) return
 		await Bun.sleep(50)
 	}
-	throw new Error(`Timed out waiting for ${ selector }`)
+	const bodyText = await connection.evaluate<string>('document.body.textContent ?? ""')
+	throw new Error(`Timed out waiting for ${ selector }. Page text: ${ bodyText ?? '' }`)
 }
 
 async function waitForText(connection: SafeUiScreenshotPage, expectedText: string) {
@@ -304,9 +305,9 @@ try {
 		error: { code: -32000, message: 'Screenshot fixture intentionally skips RPC simulation.' },
 	}
 	const safeTx = createSafeTx(1n, safeAddress, {
-		to: destinationAddress,
-		value: 500000000000000000n,
-		input: new Uint8Array(),
+		to: originalRequestParameters.params[0].to,
+		value: originalRequestParameters.params[0].value,
+		input: originalRequestParameters.params[0].input,
 	}, 7n)
 	const pendingSafeTransaction: PendingTransactionOrSignableMessage = {
 		type: 'Transaction',
