@@ -738,7 +738,7 @@ describe('Home popup clear empty state', () => {
 		}
 	})
 
-	test('treats a known signer account as connected even if the signerConnected flag is stale', async () => {
+	test('shows signing wallet assignment independently of a stale browser connection flag', async () => {
 		const dom = installDomMock()
 		const simVisResults = new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createEmptySimulationResults()))
 		try {
@@ -764,14 +764,14 @@ describe('Home popup clear empty state', () => {
 				})), dom.document.body)
 			})
 
-			assert.equal(dom.document.body.textContent?.includes('CONNECTED'), true)
+			assert.equal(dom.document.body.textContent?.includes('No signing wallet'), true)
 			assert.equal(dom.document.body.textContent?.includes('NOT CONNECTED'), false)
 		} finally {
 			dom.restore()
 		}
 	})
 
-	test('disables the active-address selector when signing mode has no Safe alternative', async () => {
+	test('keeps the active-address selector available without a browser wallet', async () => {
 		const dom = installDomMock()
 		let changeActiveAddressCalls = 0
 		try {
@@ -798,7 +798,7 @@ describe('Home popup clear empty state', () => {
 
 			assert.equal(dom.document.body.textContent?.includes('Connect a browser wallet to sign with the selected address.'), true)
 			const changeButton = getButtonByText(dom.document.body, 'Change')
-			assert.equal(changeButton.attributes.disabled !== undefined, true)
+			assert.equal(changeButton.attributes.disabled !== undefined, false)
 			assert.equal(changeActiveAddressCalls, 0)
 		} finally {
 			render(null, dom.document.body)
@@ -907,7 +907,7 @@ describe('Home popup clear empty state', () => {
 				element.getAttribute?.('class')?.includes('safe-signer-option') === true
 			)
 			assert.equal(signerOptions.length, 0)
-			assert.equal(popupText.includes('CONNECTED'), true)
+			assert.equal(popupText.includes('CONNECTED'), false)
 			assert.equal(popupText.includes('NOT CONNECTED'), false)
 			assert.equal(popupText.includes('You cannot sign the current Gnosis Safe with it.'), false)
 		} finally {
@@ -1359,7 +1359,7 @@ test('shows the selected Safe simulation signer and retrieves missing owner choi
 			const popupText = dom.document.body.textContent ?? ''
 			assert.equal(popupText.includes('0x6000000000000000000000000000000000000006'), true)
 			assert.equal(popupText.includes('Gnosis Safe signers'), false)
-			assert.equal(popupText.includes('CONNECTED'), true)
+			assert.equal(popupText.includes('CONNECTED'), false)
 			assert.equal(popupText.includes('NOT CONNECTED'), false)
 			assert.equal(popupText.includes('MetaMask has'), false)
 			assert.equal(popupText.includes('selected. You cannot sign the current Gnosis Safe with it.'), false)

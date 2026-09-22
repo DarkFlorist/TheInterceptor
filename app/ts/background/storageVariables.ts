@@ -329,7 +329,7 @@ export async function saveAddressSigningWallet(address: bigint, wallet: SigningW
 		if (previous?.revision !== expectedRevision) throw new Error('Signing wallet changed. Review the current wallet before saving again.')
 		const existing = entries.find((entry) => entry.address === address)
 		if (entries.some((entry) => entry.address === address && entry.type === 'safe')) throw new Error('Assign a signing wallet to the Safe owner address, not the Safe.')
-		if (existing === undefined && (wallet === undefined || newAddressName === undefined || newAddressName.trim().length === 0 || newAddressName.length > 100)) throw new Error('Name the new address before saving its signing wallet')
+		if (existing === undefined && (newAddressName === undefined || newAddressName.trim().length === 0 || newAddressName.length > 100)) throw new Error('Name the new address before saving its signing wallet')
 		const binding = savedWallet === undefined ? undefined : { wallet: savedWallet, revision: crypto.randomUUID() }
 		const nextBindings = [...bindings.filter((entry) => entry.wallet.address !== address), ...(binding === undefined ? [] : [binding])]
 		if (!SigningWalletBindings.safeSerialize(nextBindings).success) throw new Error('Too many or invalid signing wallet bindings')

@@ -1,3 +1,6 @@
+import { SafeSigningAccounts } from '../subcomponents/SafeSigningAccounts.js'
+import { ModeAddressTarget } from '../subcomponents/ModeAddressTarget.js'
+import { SigningWalletSummary } from '../subcomponents/SigningWalletSummary.js'
 import type { HomeParams, FirstCardParams, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
 import { type SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
 import { ActiveAddressComponent, SmallAddress, StaticBigAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
@@ -22,7 +25,7 @@ import { bigintSecondsToDate, checksummedAddress, stringToAddress } from '../../
 import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
-import { getSelectableActiveAddresses, getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
+import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { useModeActiveAddress } from '../hooks/useModeActiveAddress.js'
 import { updateRichListAddress } from '../../utils/richList.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
@@ -123,7 +126,7 @@ function HomeHeaderLoadingSkeleton() {
 			<div class = 'buttons has-addons popup-home-mode-selector popup-loading-mode-selector'>
 				<LoadingControl class = 'button is-primary'>Simulating</LoadingControl>
 				<LoadingControl class = 'button is-primary'>
-					<SignerLogoText signerName = 'NoSignerDetected' text = 'Signing' reserveLogoSpace = { true } />
+					Signing
 				</LoadingControl>
 			</div>
 		</div>
@@ -238,7 +241,7 @@ function isSignerAvailable(tabState: TabState | undefined) {
 function SignerExplanation(param: SignerExplanationParams) {
 	if (param.activeAddress.value !== undefined || param.tabState.value === undefined || param.tabState.value.signerAccountError !== undefined) return <></>
 	if (!isSignerAvailable(param.tabState.value)) {
-		if (param.tabState.value.signerName === 'NoSignerDetected' || param.tabState.value.signerName === 'NoSigner') return <ErrorComponent text = 'No signer installed. You need to install a signer, eg. Metamask.'/>
+		if (param.tabState.value.signerName === 'NoSignerDetected' || param.tabState.value.signerName === 'NoSigner') return <ErrorComponent text = 'Select an address and set up its signing wallet, or switch to simulation.'/>
 		return <ErrorComponent text = 'The page you are looking at has NOT CONNECTED to a wallet.'/>
 	}
 	return <ErrorComponent text = { `No account connected (or wallet is locked) in ${ param.tabState.value.signerName === 'NoSigner' ? 'signer' : getPrettySignerName(param.tabState.value.signerName) }.` }/>
@@ -246,7 +249,6 @@ function SignerExplanation(param: SignerExplanationParams) {
 
 function FirstCardHeader(param: FirstCardParams) {
 	const tabIconReason = useComputed(() => param.tabIconDetails.value.iconReason)
-	const signerName = useComputed(() => param.tabState.value?.signerName ?? 'NoSignerDetected')
 	const { value: setSimulatingState, waitFor: waitForSetSimulating } = useAsyncState<void>()
 	const { value: setSigningState, waitFor: waitForSetSigning } = useAsyncState<void>()
 	const simulatingPending = setSimulatingState.value.state === 'pending'
@@ -280,7 +282,7 @@ function FirstCardHeader(param: FirstCardParams) {
 						keepTextWhilePending = { true }
 						pendingIndicatorPlacement = 'overlay'
 						pendingText = 'Switching to simulating mode...'
-						text = 'Simulating'
+						text = { <span>Simulating<br/><ModeAddressTarget mode = 'simulation'/></span> }
 						onClick = { enableSimulating }
 					/>
 					<AsyncActionButton
@@ -290,7 +292,7 @@ function FirstCardHeader(param: FirstCardParams) {
 						disabled = { !param.simulationMode.value || simulatingPending || !param.isInitialHomeDataLoaded.value }
 						keepTextWhilePending = { true }
 						pendingIndicatorPlacement = 'overlay'
-						text = { <SignerLogoText signerName = { signerName } text = 'Signing' reserveLogoSpace = { true } /> }
+						text = { <span>Signing<br/><ModeAddressTarget mode = 'signing'/></span> }
 						pendingText = 'Switching to signing mode...'
 						onClick = { enableSigning }
 					/>
@@ -419,12 +421,6 @@ function FirstCard(param: FirstCardParams) {
 	const { value: safeSignerSelectionState, waitFor: waitForSafeSignerSelection } = useAsyncState<void>()
 	const { value: safeOwnerLookupState, waitFor: waitForSafeOwnerLookup } = useAsyncState<void>()
 	const retrievedSafeOwnerAddressBookEntries = useSignal<AddressBookEntries>([])
-	const hasAlternativeSigningAddress = useComputed(() => getSelectableActiveAddresses(
-		param.activeAddresses.value ?? [],
-		param.simulationMode.value,
-		param.rpcNetwork.value?.chainId,
-		param.tabState.value?.signerAccounts ?? [],
-	).length > 0)
 	const activeSafe = useComputed(() =>
 		param.activeAddress.value?.type === 'safe'
 			? param.activeAddress.value
@@ -599,7 +595,7 @@ function FirstCard(param: FirstCardParams) {
 		<section class = 'card popup-home-card popup-data-reveal'>
 			<FirstCardHeader { ...param }/>
 			<div class = 'card-content'>
-				{ param.useSignersAddressAsActiveAddress.value || !param.simulationMode.value ?
+				{ (param.useSignersAddressAsActiveAddress.value || !param.simulationMode.value) && param.activeAddress.value === undefined ?
 					<p class = 'popup-home-retrieval-status'>
 						{ param.tabState.value === undefined || param.tabState.value?.signerName === 'NoSigner'
 							? <span/>
@@ -620,7 +616,7 @@ function FirstCard(param: FirstCardParams) {
 						<ActiveAddressComponent
 							activeAddress = { param.activeAddress }
 							buttonText = { 'Change' }
-							disableButton = { !param.isInitialHomeDataLoaded.value || (!param.simulationMode.value && !hasAlternativeSigningAddress.value) }
+							disableButton = { !param.isInitialHomeDataLoaded.value }
 							noCopying = { !param.isInitialHomeDataLoaded.value }
 							noEditAddress = { !param.isInitialHomeDataLoaded.value }
 							changeActiveAddress = { param.changeActiveAddress }
@@ -628,6 +624,8 @@ function FirstCard(param: FirstCardParams) {
 						/>
 					</div>
 				}
+				{ param.activeAddress.value?.type === 'safe' ? <SafeSigningAccounts safe = { param.activeAddress.value }/> : undefined }
+				{ param.activeAddress.value === undefined || param.activeAddress.value.type === 'safe' ? undefined : <SigningWalletSummary address = { param.activeAddress.value.address }/> }
 				{ isActiveAddressLoading || safeSimulationSignerAddressBookEntries.value === undefined ? <></> :
 					<div class = 'safe-signer-address popup-data-reveal'>
 						<div class = 'safe-signer-home-heading'>
@@ -663,7 +661,7 @@ function FirstCard(param: FirstCardParams) {
 							: <></> }
 					</div>
 				}
-				{ isActiveAddressLoading ? <></> : !param.simulationMode.value ? <>
+				{ isActiveAddressLoading ? <></> : !param.simulationMode.value && (param.activeAddress.value === undefined || param.activeAddress.value.type === 'safe') ? <>
 					{ canRequestSignerAccounts.value ?
 						<div style = 'margin-top: 5px'>
 							<AsyncActionButton

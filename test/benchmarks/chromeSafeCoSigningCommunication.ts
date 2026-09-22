@@ -253,6 +253,11 @@ async function handleRpcRequest(request: JsonRpcRequest) {
 			const isSafeContract = typeof address === 'string' && (BigInt(address) === SAFE_ADDRESS || BigInt(address) === SAFE_SINGLETON_ADDRESS)
 			return isSafeContract ? '0x01' : '0x'
 		}
+		case 'eth_getStorageAt': {
+			const [address, slot] = request.params ?? []
+			if (typeof address !== 'string' || BigInt(address) !== SAFE_ADDRESS || slot !== '0x0') throw new Error('Unexpected Safe storage request')
+			return bytes32String(SAFE_SINGLETON_ADDRESS)
+		}
 		case 'eth_call': {
 			const [call] = request.params ?? []
 			if (!isRecord(call) || typeof call.data !== 'string') throw new Error('Malformed eth_call')
@@ -591,7 +596,8 @@ async function main() {
 					&& Array.isArray(blockStateCall.calls)
 					&& blockStateCall.calls.some((call) => isRecord(call) && call.input === STORAGE_READER_CALL))
 			})
-			if (!simulatedStorageLookup) throw new Error('Sealwort Safe inspection bypassed the simulated storage overlay')
+			// A message-only stack has no storage changes, so storage reads use the live RPC.
+			if (simulatedStorageLookup || !sealwortInspectionRpcRequests.some((rpcRequest) => rpcRequest.method === 'eth_getStorageAt')) throw new Error('Sealwort message-only inspection did not read storage directly')
 			const sealwortSignerStateConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
 			try {
 				await sealwortSignerStateConnection.evaluate(`(async () => {

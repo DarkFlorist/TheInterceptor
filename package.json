@@ -59,6 +59,7 @@
 		"funtypes": "5.1.0",
 		"micro-eth-signer": "0.19.0",
 		"preact": "10.24.2",
+		"qr": "0.7.0",
 		"webextension-polyfill": "0.10.0"
 	},
 	"devDependencies": {

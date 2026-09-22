@@ -10,6 +10,7 @@ const stored: Record<string, unknown> = {}
 const writes: Record<string, unknown>[] = []
 Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: {
 	storage: { local: {
+		remove: async (key: string) => { delete stored[key] },
 		get: async (keys: string | readonly string[]) => Object.fromEntries((typeof keys === 'string' ? [keys] : keys).filter((key) => key in stored).map((key) => [key, stored[key]])),
 		set: async (items: Record<string, unknown>) => { writes.push(items); Object.assign(stored, items) },
 	} },

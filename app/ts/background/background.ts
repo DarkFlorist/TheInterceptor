@@ -1,3 +1,5 @@
+import { parseDirectSigningTypedData } from '../signing/exactPayload.js'
+import { getSigningWalletBinding } from './storageVariables.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
@@ -73,7 +75,10 @@ async function handleRPCRequest(
 	activeSafeSigner: bigint | undefined,
 ): Promise<RPCReply> {
 	const maybeParsedRequest = EthereumJsonRpcRequest.safeParse(request)
-	const forwardToSigner = !settings.simulationMode && !request.usingInterceptorWithoutSigner
+	const binding = activeAddress === undefined ? undefined : await getSigningWalletBinding(activeSafeSigner ?? activeAddress)
+	const directWallet = binding !== undefined && binding.wallet.type !== 'browser'
+	if (!settings.simulationMode && directWallet && request.method === 'eth_signTypedData_v4' && 'params' in request && Array.isArray(request.params) && typeof request.params[1] === 'string') parseDirectSigningTypedData(request.params[1])
+	const forwardToSigner = !settings.simulationMode && !directWallet && !request.usingInterceptorWithoutSigner
 	const getForwardingMessage = (request: SendRawTransactionParams | SendTransactionParams | WalletAddEthereumChain | EthGetStorageAtParams) => {
 		if (!forwardToSigner) throw new Error('Should not forward to signer')
 		return { type: 'forwardToSigner' as const, ...request }
@@ -109,6 +114,8 @@ async function handleRPCRequest(
 		}
 	}
 	const parsedRequest = maybeParsedRequest.value
+	if (!settings.simulationMode && (parsedRequest.method.startsWith('eth_sign') || parsedRequest.method === 'personal_sign' || parsedRequest.method === 'eth_sendTransaction') && binding === undefined && !safeSigningMode && (settings.selectedSigningAddress !== undefined || request.usingInterceptorWithoutSigner)) return { type: 'result', method: request.method, error: { code: 4100, message: 'No signing wallet for this address. Set up signing wallet or switch to simulation.' } }
+	if (!settings.simulationMode && directWallet && (parsedRequest.method.startsWith('eth_sign') && parsedRequest.method !== 'eth_signTypedData_v4' || parsedRequest.method === 'eth_sendRawTransaction')) return { type: 'result', method: request.method, error: { code: 4200, message: 'This signing wallet supports EIP-1559 eth_sendTransaction, personal_sign, and eth_signTypedData_v4 only.' } }
 	const safePolicyReply = getSafeModeRpcPolicyReply({
 		rawRequest: request,
 		parsedRequest,
@@ -130,10 +137,10 @@ async function handleRPCRequest(
 	type ParsedRpcRequest = typeof parsedRequest
 	type RpcRequestHandler = (context: undefined, request: ParsedRpcRequest) => Promise<RPCReply>
 	const rpcRequestHandler = createMethodHandlerFor<ParsedRpcRequest, undefined, Promise<RPCReply>>()
-	const signMessage = async (signRequest: Extract<ParsedRpcRequest, { readonly method: 'personal_sign' | 'eth_signTypedData' | 'eth_signTypedData_v1' | 'eth_signTypedData_v2' | 'eth_signTypedData_v3' | 'eth_signTypedData_v4' }>) => await personalSign(ethereum, tokenPriceService, activeAddress, signRequest, request, website, websiteTabConnections, !forwardToSigner)
+	const signMessage = async (signRequest: Extract<ParsedRpcRequest, { readonly method: 'personal_sign' | 'eth_signTypedData' | 'eth_signTypedData_v1' | 'eth_signTypedData_v2' | 'eth_signTypedData_v3' | 'eth_signTypedData_v4' }>) => await personalSign(ethereum, tokenPriceService, activeAddress, signRequest, request, website, websiteTabConnections, settings.simulationMode)
 	const sendEthereumTransaction = async (transactionRequest: Extract<ParsedRpcRequest, { readonly method: 'eth_sendRawTransaction' | 'eth_sendTransaction' }>) => {
 		if (forwardToSigner && settings.activeRpcNetwork.httpsRpc === undefined) return getForwardingMessage(transactionRequest)
-		return await sendTransaction(ethereum, tokenPriceService, activeAddress, transactionRequest, request, website, websiteTabConnections, !forwardToSigner)
+		return await sendTransaction(ethereum, tokenPriceService, activeAddress, transactionRequest, request, website, websiteTabConnections, settings.simulationMode)
 	}
 	const rpcRequestHandlers = {
 		eth_getBlockByHash: rpcRequestHandler('eth_getBlockByHash', async (_context, rpcRequest) => await withSimulationInput((simulationInput) => getBlockByHash(ethereum, simulationInput, rpcRequest))),
@@ -495,7 +502,7 @@ async function handleContentScriptMessage(ethereum: EthereumClientService, token
 			&& activeAddress.address === settings.activeSigningSafeAddress
 			&& resolveSigningSafe(activeAddress.address, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries) !== undefined
 		const simulationOverlayEnabled = settings.simulationMode || safeSigningMode
-		const walletSelectedSafeSigner = safeSigningMode ? selectedWalletAccount : undefined
+		const walletSelectedSafeSigner = safeSigningMode ? activeAddress.type === 'safe' ? activeAddress.safeSigningSignerAddress ?? selectedWalletAccount : selectedWalletAccount : undefined
 		let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
 		let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
 		const getSimulationInput = async () => {

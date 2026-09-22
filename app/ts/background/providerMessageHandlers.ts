@@ -108,7 +108,7 @@ export async function ethAccountsReply(ethereum: EthereumClientService, tokenPri
 		const displayedSigningSafe = await getConfiguredSigningSafe(updatedSettings, signerAccounts)
 		await sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: {
 			tabId,
-			activeSigningAddress: displayedSigningSafe?.address ?? activeSigningAddress,
+			activeSigningAddress: updatedSettings.selectedSigningAddress ?? displayedSigningSafe?.address ?? activeSigningAddress,
 			activeSigningSafeAddress: displayedSigningSafe?.address,
 		} })
 		// Account-change waiters must only resume after the matching Safe-or-EOA selection is fully restored.
@@ -130,6 +130,7 @@ async function changeSignerChain(ethereum: EthereumClientService, tokenPriceServ
 		return previousState.signerChain === signerChain ? previousState : modifyObject(previousState, { signerChain })
 	})
 	if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return
+	if ((await getSettings()).selectedSigningAddress !== undefined) return
 	const oldSignerChain = tabStateChange.previousState.signerChain
 	// update active address if we are using signers address
 	const settings = await getSettings()

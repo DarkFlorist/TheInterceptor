@@ -86,7 +86,7 @@ export function getDisplayedSigningAddressSelection(displayedSigningAddress: big
 export function resolveSigningSafe(configuredSafeAddress: bigint | undefined, activeChainId: bigint | undefined, signerAccounts: readonly bigint[], activeAddresses: AddressBookEntries) {
 	if (configuredSafeAddress === undefined || activeChainId === undefined) return undefined
 	return getSelectableActiveAddresses(activeAddresses, false, activeChainId, signerAccounts)
-		.find((entry) => entry.address === configuredSafeAddress)
+		.find((entry) => entry.type === 'safe' && entry.address === configuredSafeAddress)
 }
 
 export function getOptimisticActiveAddressSelection(address: bigint | 'signer', simulationMode: boolean, signerAccounts: readonly bigint[]): OptimisticActiveAddressSelection {
@@ -119,11 +119,10 @@ export function getSelectableActiveAddresses(activeAddresses: AddressBookEntries
 	if (simulationMode) return activeAddresses.filter((entry) => entry.type !== 'safe' || entry.chainId === activeChainId)
 
 	const selectedSignerAddress = signerAccounts[0]
-	if (selectedSignerAddress === undefined) return []
-	return activeAddresses.filter((entry) =>
-		entry.type === 'safe'
+		return activeAddresses.filter((entry) =>
+		entry.type !== 'safe' || entry.type === 'safe'
 		&& entry.chainId === activeChainId
-		&& entry.safeSignerAddresses?.includes(selectedSignerAddress) === true
+		&& (entry.safeSigningSignerAddress !== undefined && entry.safeSignerAddresses?.includes(entry.safeSigningSignerAddress) === true || selectedSignerAddress !== undefined && entry.safeSignerAddresses?.includes(selectedSignerAddress) === true)
 	)
 }
 

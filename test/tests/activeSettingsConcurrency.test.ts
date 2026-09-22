@@ -5,7 +5,7 @@ import type { TabConnection, WebsiteTabConnections } from '../../app/ts/types/us
 import type { ResetSimulationServices } from '../../app/ts/simulation/serviceLifecycle.js'
 import { ICON_NOT_ACTIVE } from '../../app/ts/utils/constants.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
-import { createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
+import { addressString, createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
 const firstAddress: ContactEntry = { type: 'contact', name: 'First address', address: 1n, chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false }
 const secondAddress: ContactEntry = { ...firstAddress, name: 'Second address', address: 2n }
@@ -352,15 +352,14 @@ describe('active settings concurrency', () => {
 		}
 	})
 
-	test('rejects an invalid signing selection before changing stored settings', async () => {
+	test('persists an ordinary signing selection independently of the browser wallet', async () => {
 		installBrowserMock()
 		const { activateAddressSelection } = await loadModules()
-		const before = await browser.storage.local.get()
 		const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
-		await assert.rejects(activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, new Map(), { type: 'addressBookEntry', entry: secondAddress }, {
+		await activateAddressSelection(ethereum, tokenPriceService, resetSimulationServices, new Map(), { type: 'addressBookEntry', entry: secondAddress }, {
 			simulationMode: false, signerAddress: firstAddress.address,
-		}), /Signing mode can only activate the external signer or an owned Gnosis Safe/u)
-		expect(await browser.storage.local.get()).toEqual(before)
+		})
+		expect(await browser.storage.local.get('selectedSigningAddress')).toEqual({ selectedSigningAddress: addressString(secondAddress.address) })
 	})
 
 	test.each(['direct', 'selection'])('completes access UI after a persisted %s transition throws', async (entryPoint) => {

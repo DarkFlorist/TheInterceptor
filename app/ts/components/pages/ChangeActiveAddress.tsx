@@ -1,3 +1,5 @@
+import { SigningWalletSummary, openSigningWalletSetup } from '../subcomponents/SigningWalletSummary.js'
+import { useState } from 'preact/hooks'
 
 import type { ChangeActiveAddressParam } from '../../types/user-interface-types.js'
 import { BigAddress } from '../subcomponents/address.js'
@@ -5,6 +7,7 @@ import { XMarkIcon } from '../subcomponents/icons.js'
 import { getSignerLogo, getPrettySignerName, SignerLogoText } from '../subcomponents/signers.js'
 
 export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
+	const [error, setError] = useState<string>()
 	function changeAndStoreActiveAddress(activeAddress: bigint | 'signer') {
 		param.close()
 		param.setActiveAddressAndInformAboutIt(activeAddress)
@@ -82,6 +85,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 										noEditAddress = { true }
 										renameAddressCallBack = { param.renameAddressCallBack }
 									/>
+									{ activeAddress.type === 'safe' ? undefined : <SigningWalletSummary address = { activeAddress.address } actionLabel = 'Change signing wallet'/> }
 									{ isSignerConnected(activeAddress.address) ?
 										<div class = 'content' style = 'color: var(--text-color)'>
 											<SignerLogoText signerName = { param.signerName } text = { ` ${ getPrettySignerName(param.signerName) } connected` }/>
@@ -96,6 +100,8 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
 				<button class = 'button is-primary is-success' onClick = { param.close }> Close </button>
+				<button class = 'button is-primary' onClick = { () => { void openSigningWalletSetup().catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not open wallet setup')) } }>Add address / signing wallet</button>
+				{ error === undefined ? undefined : <p role = 'alert'>{ error }</p> }
 				<button class = 'button is-primary' onClick = { changePageToAddAddress }> Add New Address </button>
 			</footer>
 		</div>

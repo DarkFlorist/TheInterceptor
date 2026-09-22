@@ -25,6 +25,8 @@ export const stylesheetFilenames = [
 ] as const
 
 export const pageDefinitions: readonly PageDefinition[] = [
+	{ name: 'directSigning', title: 'Review and sign - The Interceptor', htmlStyle: 'background-color: var(--bg-color); overflow-y: auto;' },
+	{ name: 'signingWallet', title: 'Signing wallet - The Interceptor', htmlStyle: 'background-color: var(--bg-color); overflow-y: auto;' },
 	{
 		name: 'addressBook',
 		entryName: 'addressBookRender',

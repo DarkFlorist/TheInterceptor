@@ -84,7 +84,8 @@ export async function getSettings() : Promise<Settings> {
 		activeRpcNetworkPromise,
 		simulationModePromise,
 	])
-	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
+	const { selectedSigningAddress } = await browserStorageLocalGet('selectedSigningAddress')
+	return { selectedSigningAddress, activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
 
 export function getInterceptorDisabledSites(settings: Settings): string[] {
@@ -278,6 +279,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 		const convertActiveAddressToAddressBookEntry = (info: ActiveAddress): AddressBookEntry => ({ ...info, type: 'contact', useAsActiveAddress: true, entrySource: 'User' })
 		await replaceAddressBookAndSigningWalletBindings((previousEntries) => getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map(convertActiveAddressToAddressBookEntry)).concat(exportedSetings.settings.contacts ?? []), ['address']), [])
 	}
+	await browser.storage.local.remove('selectedSigningAddress')
 	if (exportedSetings.version === '1.3' || exportedSetings.version === '1.4' || exportedSetings.version === '1.5' || exportedSetings.version === '1.6') {
 		await setPage(exportedSetings.settings.openedPage)
 	}

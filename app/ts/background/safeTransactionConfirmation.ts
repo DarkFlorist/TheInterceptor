@@ -61,7 +61,7 @@ export async function prepareSafeTransactionConfirmation(
 	}
 
 	const basicExecutionRoute = transactionParams.method === 'eth_sendTransaction'
-		? getSafeExecutionSignerRoute(transactionParams, configuredSafeEntry, walletSignerAddress)
+		? getSafeExecutionSignerRoute(transactionParams, configuredSafeEntry, configuredSafeEntry?.safeExecutionAddress ?? walletSignerAddress)
 		: undefined
 	const isDirectSafeExecution = transactionParams.method === 'eth_sendTransaction'
 		&& isSafeExecutionRequestForActiveSafe(transactionParams, configuredSafeEntry)
@@ -73,7 +73,7 @@ export async function prepareSafeTransactionConfirmation(
 			if (basicExecutionRoute === undefined) {
 				safeExecutionReviewedState = await getSafeExecutionReviewedState(ethereum, transactionParams, configuredSafeEntry)
 			} else {
-				safeExecutionSignerRoute = await prepareSafeExecutionSignerRoute(ethereum, transactionParams, configuredSafeEntry, walletSignerAddress)
+				safeExecutionSignerRoute = await prepareSafeExecutionSignerRoute(ethereum, transactionParams, configuredSafeEntry, configuredSafeEntry?.safeExecutionAddress ?? walletSignerAddress)
 				safeExecutionReviewedState = safeExecutionSignerRoute?.safeState
 			}
 			} catch (error) {

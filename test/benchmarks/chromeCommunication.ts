@@ -165,6 +165,35 @@ async function main() {
 			await pageConnection.send('Page.navigate', { url: `${ server.baseUrl }?signer=unavailable` })
 			const unavailableSignerState = await waitForCommunicationPageError(pageConnection, 30_000)
 
+			const directAddress = accessGrantedState.accounts?.[0]
+			if (directAddress === undefined) throw new Error('Missing authorized address for direct-signing smoke check')
+			const directWorker = await connectTarget(chrome.browserDebugPort, workerTarget.id)
+			try {
+				await directWorker.evaluate(`browser.storage.local.set({ selectedSigningAddress: ${ JSON.stringify(directAddress) }, simulationMode: false, useSignersAddressAsActiveAddress: false })`)
+			} finally { directWorker.close() }
+			const directAccounts = await pageConnection.evaluate<readonly string[]>('(async () => await globalThis.ethereum.request({ method: "eth_accounts" }))()')
+			if (directAccounts.length !== 1 || directAccounts[0] !== directAddress) throw new Error('A selected address was not exposed without a browser wallet')
+			const unboundSigningCode = await pageConnection.evaluate<number>(`(async () => {
+				try { await globalThis.ethereum.request({ method: 'personal_sign', params: ['0x00', ${ JSON.stringify(directAddress) }] }); return 0 }
+				catch (error) { return error.code }
+			})()`)
+			if (unboundSigningCode !== 4100) throw new Error('An address without a saved signing wallet did not reject real signing')
+			// Exercise the built page entrypoints: missing bundles otherwise leave the generated HTML at Loading.
+			for (const [page, expectedText] of [['signingWallet', 'Save address and wallet'], ['directSigning', 'Signing request not found']]) {
+				const signingPageId = await createTargetPage(chrome.browserConnection, `chrome-extension://${ extensionId }/html3/${ page }V3.html`)
+				const signingPage = await connectTarget(chrome.browserDebugPort, signingPageId)
+				try {
+					await waitForCondition(async () => await signingPage.evaluate<boolean>(`document.body?.textContent?.includes(${ JSON.stringify(expectedText) }) === true`), 10_000, `${ page } page initialization`)
+					if (page === 'signingWallet') {
+						await signingPage.evaluate(`(() => { const select = document.querySelector('select'); select.value = 'browser'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`)
+						await waitForCondition(async () => await signingPage.evaluate<boolean>('document.body.textContent.includes("Connect browser wallet")'), 5_000, 'browser wallet onboarding controls')
+					}
+				} finally {
+					signingPage.close()
+					await closeTarget(chrome.browserConnection, signingPageId)
+				}
+			}
+
 			console.warn(`Interceptor Chrome communication smoke test passed for extension ${ extensionId }.`)
 			console.warn(JSON.stringify({
 				ok: true,

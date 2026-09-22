@@ -84,7 +84,7 @@ export function App() {
 			return
 		}
 		displayedSigningAddress.value = optimisticSelection.displayedSigningAddress
-		activeSigningSafeAddress.value = address === 'signer' ? undefined : optimisticSelection.displayedSigningAddress
+		activeSigningSafeAddress.value = activeAddresses.value.find((entry) => entry.address === address)?.type === 'safe' ? optimisticSelection.displayedSigningAddress : undefined
 	}
 
 	function isSignerConnected() {
