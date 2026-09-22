@@ -4,19 +4,23 @@ import { Semaphore } from './semaphore.js'
 import { reportUnexpectedError } from './errors.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
-function getManifestV3ExcludeMatchesForOrigin(origin: string) {
-	if (getWebsiteOrigin(origin) !== origin) return []
-	const url = new URL(origin)
-	if (url.protocol === 'file:') return [url.href]
-	return [`${ url.protocol }//${ url.host }/*`]
+function getCanonicalWebsiteOrigins(origins: readonly string[]) {
+	return [...new Set(origins)].filter((origin) => getWebsiteOrigin(origin) === origin)
 }
 
 export function getManifestV3ExcludeMatches(origins: readonly string[]) {
-	const patterns = new Set<string>()
-	for (const origin of origins) {
-		for (const pattern of getManifestV3ExcludeMatchesForOrigin(origin)) patterns.add(pattern)
-	}
-	return [...patterns]
+	return getCanonicalWebsiteOrigins(origins).map((origin) => {
+		const url = new URL(origin)
+		if (url.protocol === 'file:') return url.href
+		// An omitted match-pattern port means every port, whereas URL.origin omits only the default port.
+		const port = url.port || (url.protocol === 'https:' ? '443' : '80')
+		return `${ url.protocol }//${ url.hostname }:${ port }/*`
+	})
+}
+
+export function getManifestV2ExcludeGlobs(origins: readonly string[]) {
+	// Firefox's match patterns do not match explicit ports. Globs compare the URL text, preserving the origin's port boundary.
+	return getCanonicalWebsiteOrigins(origins).map((origin) => origin.startsWith('file:') ? origin : `${ origin }/*`)
 }
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
@@ -61,12 +65,12 @@ let registeredManifestV2Scripts: browser.contentScripts.RegisteredContentScript 
 const manifestV2Registration = new Semaphore(1)
 
 export const updateContentScriptInjectionStrategyManifestV2 = async () => await manifestV2Registration.execute(async () => {
-	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(await getSettings()))
+	const excludeGlobs = getManifestV2ExcludeGlobs(getInterceptorDisabledSites(await getSettings()))
 	try {
 		// A late onCommitted/executeScript injection lets page listeners run before the private bridge capture listener.
 		const registered = await browser.contentScripts.register({
 			matches: injectableSitesWildcard,
-			...(excludeMatches.length === 0 ? {} : { excludeMatches }),
+			...(excludeGlobs.length === 0 ? {} : { excludeGlobs }),
 			allFrames: true,
 			runAt: 'document_start',
 			js: [

@@ -51,6 +51,7 @@ function installBrowserMock(options: { registerError?: Error, updateError?: Erro
 		},
 		contentScripts: { async register(script: FirefoxScript) {
 			if (script.excludeMatches?.length === 0) throw new Error('Firefox rejects empty exclusion lists')
+			if (script.excludeGlobs?.length === 0) throw new Error('Firefox rejects empty glob lists')
 			if (options.registerError !== undefined) throw options.registerError
 			firefoxScripts.push(script)
 			return { async unregister() { firefoxUnregisterCalls += 1 } }
@@ -79,7 +80,17 @@ describe('content script injection strategy', () => {
 		assert.deepEqual(getManifestV3ExcludeMatches([
 			'', 'example.com', 'localhost:3000', 'https://secure.example', 'http://localhost:3000',
 			'https://[::1]:8545', 'https://invalid.example/path', 'https://secure.example', 'file:///tmp/a.html',
-		]), ['https://secure.example/*', 'http://localhost:3000/*', 'https://[::1]:8545/*', 'file:///tmp/a.html'])
+			'http://localhost', 'https://[::1]',
+		]), ['https://secure.example:443/*', 'http://localhost:3000/*', 'https://[::1]:8545/*', 'file:///tmp/a.html', 'http://localhost:80/*', 'https://[::1]:443/*'])
+	})
+
+	test('uses exact URL globs for Firefox default ports, custom ports, schemes and IPv6 hosts', async () => {
+		installBrowserMock()
+		const { getManifestV2ExcludeGlobs } = await loadModules()
+		assert.deepEqual(getManifestV2ExcludeGlobs([
+			'http://example.test', 'https://example.test', 'https://example.test:8443',
+			'http://[::1]', 'http://[::1]:3000', 'example.test', 'https://example.test', 'file:///tmp/a.html',
+		]), ['http://example.test/*', 'https://example.test/*', 'https://example.test:8443/*', 'http://[::1]/*', 'http://[::1]:3000/*', 'file:///tmp/a.html'])
 	})
 
 	test('registers the Firefox bridge at document start before injecting the provider', async () => {
@@ -92,7 +103,8 @@ describe('content script injection strategy', () => {
 		})
 		storageState.websiteAccess = [{ website: { websiteOrigin: 'https://disabled.example' }, interceptorDisabled: true }]
 		await updateContentScriptInjectionStrategyManifestV2()
-		assert.deepEqual(firefoxScripts[1]?.excludeMatches, ['https://disabled.example/*'])
+		assert.equal(firefoxScripts[1]?.excludeMatches, undefined)
+		assert.deepEqual(firefoxScripts[1]?.excludeGlobs, ['https://disabled.example/*'])
 		assert.equal(getFirefoxUnregisterCalls(), 1)
 	})
 

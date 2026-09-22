@@ -114,6 +114,8 @@ const createEip7702TransactionParsingRequestHandler = () => ({
 				return serialize(EthereumQuantity, 7n)
 			case 'eth_getBalance':
 				return serialize(EthereumQuantity, 10n ** 18n)
+			case 'eth_gasPrice':
+				return serialize(EthereumQuantity, 31n * 10n ** 9n)
 			default:
 				throw new Error(`Unexpected RPC method: ${ rpcRequest.method }`)
 		}
@@ -429,7 +431,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		try {
 			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
 			const ethereum = new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork)
-			for (const gasPrice of [0n, 1n, 1000n * 10n ** 9n]) {
+			for (const gasPrice of [0n, 1n, 31n * 10n ** 9n, 1000n * 10n ** 9n]) {
 				const request = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ ...(gasPrice === 0n ? {} : { from: recipientAddress }), to: accessListAddress, gas: '0x5208', gasPrice: `0x${ gasPrice.toString(16) }` }] })
 				const result = await formEthSendTransaction(ethereum, undefined, EthereumAddress.parse(recipientAddress), { websiteOrigin: 'https://test.example', icon: undefined, title: undefined }, request, new Date(), 2n, false)
 				assert.equal(result.success, true)
@@ -438,7 +440,9 @@ describe('EIP-7702 rescue transaction parsing', () => {
 				assert.equal(result.transaction.maxPriorityFeePerGas, gasPrice)
 				assert.equal(result.originalRequestParameters.params[0].gasPrice, gasPrice)
 				assert.equal(result.originalRequestParameters.params[0].from, EthereumAddress.parse(recipientAddress))
-				if (gasPrice > 10n ** 10n) assert.match(await feeOops(result.transaction, ethereum, undefined, { kind: 'passthrough' }) ?? '', /outrageous fee/)
+				const warning = await feeOops(result, ethereum, undefined)
+				if (gasPrice >= 310n * 10n ** 9n) assert.match(warning ?? '', /outrageous fee/)
+				else assert.equal(warning, undefined)
 			}
 		} finally {
 			browserMock.restore()
