@@ -121,7 +121,7 @@ export async function importSafeStack(
 				),
 			}
 		})
-		await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, true, false)
+		await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
 		return { type: 'ImportSafeStackReply' as const, ok: true as const }
 	} catch(error) {
 		return {

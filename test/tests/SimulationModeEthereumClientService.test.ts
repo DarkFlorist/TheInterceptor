@@ -6,7 +6,7 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { EthereumSignedTransactionToSignedTransaction, EthereumUnsignedTransactionToUnsignedTransaction, rlpEncode, serializeSignedTransactionToBytes, serializeUnsignedTransactionToBytes } from '../../app/ts/utils/ethereum.js'
 import { addressString, bigintToUint8Array, bytes32String, dataStringWith0xStart, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { EthereumAddress, EthereumSignatureParity, EthereumSignedTransaction, EthereumSignedTransaction1559, EthereumSignedTransactionWithBlockData, EthereumUnsignedTransaction, serialize } from '../../app/ts/types/wire-types.js'
-import { createExecutionSimulationState, createSimulationCallParams, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getDeployedContractAddress, getSimulatedBalanceFromInput, getSimulatedBlock, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCode, getSimulatedCodeFromInput, getSimulatedFeeHistory, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGas, simulateEstimateGasFromInput, simulatePersonalSign, simulatedCall, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
+import { createExecutionSimulationState, createSimulationCallParams, createSimulationState, ethSimulateV1FromInput, getBaseFeeAdjustedTransactions, getBaseFeeAdjustmentBalances, getDeployedContractAddress, getSimulatedBalanceFromInput, getSimulatedBlock, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCode, getSimulatedCodeFromInput, getSimulatedFeeHistory, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHash, getSimulatedTransactionByHashFromInput, getSimulatedTransactionCount, getSimulatedTransactionCountFromInput, getSimulatedTransactionReceipt, groupEthSimulateV1ResultByInputBlocks, mockSignTransaction, simulateEstimateGas, simulateEstimateGasFromInput, simulatePersonalSign, simulatedCall, simulatedCallFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { EthTransactionReceiptResponse, EthereumJsonRpcRequest, JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { RPCReply } from '../../app/ts/types/interceptor-messages.js'
 import type { EthSimulateV1BlockTag, EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
@@ -1945,6 +1945,91 @@ describe('SimulationModeEthereumClientService', () => {
 			assert.equal(latestBlock.hash, sameBlock.hash)
 				assert.equal(roundTripped.hash, latestBlock.hash)
 				assert.equal(roundTripped.number, latestBlock.number)
+			})
+
+			test('input-based full blocks include transaction block data and realized gas price', async () => {
+				const latestBlock = await getBlockFromInput(createSimulationStateInput(), 'latest', true)
+				if (latestBlock === null) throw new Error('latest simulated block missing')
+				const transaction = latestBlock.transactions[0]
+				if (transaction === undefined || !('blockHash' in transaction)) throw new Error('full simulated transaction data missing')
+
+				assert.equal(transaction.blockHash, latestBlock.hash)
+				assert.equal(transaction.blockNumber, latestBlock.number)
+				assert.equal(transaction.transactionIndex, 0n)
+				assert.deepEqual(transaction.data, transaction.input)
+				assert.equal(transaction.gasPrice, 1n)
+			})
+
+			test('state-based full blocks include transaction block data and realized gas price', async () => {
+				const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput())
+				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+				const latestBlock = await getSimulatedBlock(ethereum, undefined, toResolvedSimulationState(simulationState), 'latest', true)
+				if (latestBlock === null) throw new Error('latest simulated block missing')
+				const transaction = latestBlock.transactions[0]
+				if (transaction === undefined || !('blockHash' in transaction)) throw new Error('full simulated transaction data missing')
+
+				assert.equal(transaction.blockHash, latestBlock.hash)
+				assert.equal(transaction.blockNumber, latestBlock.number)
+				assert.equal(transaction.transactionIndex, 0n)
+				assert.deepEqual(transaction.data, transaction.input)
+				assert.equal(transaction.gasPrice, simulationState.simulatedBlocks[0]?.simulatedTransactions[0]?.realizedGasPrice)
+			})
+
+			test('full blocks agree with transaction lookups across blocks, indexes, and fee caps', async () => {
+				const input = createTwoBlockSimulationStateInput().map((block, blockIndex) => ({
+					...block,
+					transactions: [1n, 1_000_000_000_000n].map((maxFeePerGas, transactionIndex) => ({
+						...block.transactions[0],
+						transactionIdentifier: BigInt(blockIndex * 2 + transactionIndex),
+						signedTransaction: mockSignTransaction({
+							...exampleTransaction,
+							nonce: BigInt(blockIndex * 2 + transactionIndex),
+							input: new Uint8Array([0x12, 0x34]),
+							maxFeePerGas,
+							maxPriorityFeePerGas: 1n,
+						}),
+					})),
+				}))
+				const template = await createSimulationState(ethereum, undefined, createTwoBlockSimulationStateInput())
+				if (template.success === false) throw new Error('simulation unexpectedly failed')
+				// Exercise the state reader with two included transactions per block and a nonzero base fee.
+				const state = toResolvedSimulationState({
+					...template,
+					simulatedBlocks: template.simulatedBlocks.map((block, blockIndex) => ({
+						...block,
+						blockBaseFeePerGas: 10n,
+						simulatedTransactions: (input[blockIndex]?.transactions ?? []).map((transaction, transactionIndex) => {
+							const simulatedTransaction = block.simulatedTransactions[0]
+							if (simulatedTransaction === undefined) throw new Error('template transaction missing')
+							return { ...simulatedTransaction, preSimulationTransaction: transaction, realizedGasPrice: transactionIndex === 0 ? 1n : 11n }
+						}),
+					})),
+				})
+				for (const blockIndex of [0, 1]) {
+					const number = blockNumber + BigInt(blockIndex) + 1n
+					for (const source of ['input', 'state']) {
+						const block = source === 'input'
+							? await getBlockFromInput(input, number, true)
+							: await getSimulatedBlock(ethereum, undefined, state, number, true)
+						if (block === null) throw new Error('full block missing')
+						assert.equal(block.transactions.length, 2)
+						assert.equal(block.number, number)
+						assert.ok(block.baseFeePerGas !== undefined && block.baseFeePerGas > 0n)
+						for (const [transactionIndex, transaction] of block.transactions.entries()) {
+							if (!('blockHash' in transaction)) throw new Error('transaction block data missing')
+							const lookup = source === 'input'
+								? await getSimulatedTransactionByHashFromInput(ethereum, undefined, toResolvedSimulationInput(input), transaction.hash)
+								: await getSimulatedTransactionByHash(ethereum, undefined, state, transaction.hash)
+							assert.deepStrictEqual(transaction, lookup)
+							assert.equal(transaction.blockHash, block.hash)
+							assert.equal(transaction.blockNumber, number)
+							assert.equal(transaction.transactionIndex, BigInt(transactionIndex))
+							assert.deepStrictEqual(transaction.data, new Uint8Array([0x12, 0x34]))
+							assert.equal(transaction.gasPrice, transactionIndex === 0 ? 1n : block.baseFeePerGas + 1n)
+							assert.ok(transaction.v === 0n || transaction.v === 1n)
+						}
+					}
+				}
 			})
 
 			test('input-based simulated block hash changes when transaction contents change', async () => {

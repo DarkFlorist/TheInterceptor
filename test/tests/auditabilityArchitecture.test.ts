@@ -11,6 +11,7 @@ const popupHandlerRegistrySources = [
 	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/settings.ts', import.meta.url)),
 	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/websiteAccess.ts', import.meta.url)),
 	Bun.file(new URL('../../app/ts/background/popupMessageHandlerRegistries/safe.ts', import.meta.url)),
+	Bun.file(new URL('../../app/ts/background/popupSettingsCommands.ts', import.meta.url)),
 ]
 const safeConfirmationResolverSource = await Bun.file(new URL('../../app/ts/background/safeConfirmationResolver.ts', import.meta.url)).text()
 const safeConfirmationPersistenceSource = await Bun.file(new URL('../../app/ts/background/safeConfirmationPersistence.ts', import.meta.url)).text()
@@ -20,6 +21,11 @@ const safePendingFlowSource = await Bun.file(new URL('../../app/ts/safe/safePend
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
 const confirmTransactionPageSource = await Bun.file(new URL('../../app/ts/components/pages/ConfirmTransaction.tsx', import.meta.url)).text()
+const safeAppsCompatibilityCoordinatorSource = await Bun.file(new URL('../../app/ts/background/safeAppsCompatibilityCoordinator.ts', import.meta.url)).text()
+const accessManagementSource = await Bun.file(new URL('../../app/ts/background/accessManagement.ts', import.meta.url)).text()
+const backgroundUtilsSource = await Bun.file(new URL('../../app/ts/background/backgroundUtils.ts', import.meta.url)).text()
+const websiteActiveAddressSource = await Bun.file(new URL('../../app/ts/background/websiteActiveAddress.ts', import.meta.url)).text()
+const websiteTabConnectionsSource = await Bun.file(new URL('../../app/ts/background/websiteTabConnections.ts', import.meta.url)).text()
 const refreshPopupSimulationSource = popupMessageHandlersSource.slice(
 	popupMessageHandlersSource.indexOf('export async function refreshPopupConfirmTransactionSimulation'),
 	popupMessageHandlersSource.indexOf('export async function popupChangeActiveRpc'),
@@ -67,12 +73,25 @@ test('simulation service keeps compatibility exports backed by focused signing m
 	assert.equal(simulationFacade.simulatePersonalSign, simulationPersonalSigning.simulatePersonalSign)
 })
 
+test('Safe Apps compatibility lifecycle has a peer-level coordinator', () => {
+	assert.match(safeAppsCompatibilityCoordinatorSource, /function createSafeAppsCompatibilityCoordinator/u)
+	assert.match(websiteTabConnectionsSource, /from '\.\/websiteLifecycle\.js'/u)
+	assert.doesNotMatch(accessManagementSource, /safeAppsCompatibilityCoordinator/u)
+	assert.doesNotMatch(websiteTabConnectionsSource, /from '\.\/accessManagement\.js'/u)
+	assert.doesNotMatch(accessManagementSource, /function createSafeAppsCompatibilityCoordinator/u)
+	assert.match(backgroundUtilsSource, /export const getWebsiteSocketConnection/u)
+	assert.match(websiteActiveAddressSource, /export async function getWebsiteActiveAddress/u)
+	assert.doesNotMatch(safeAppsCompatibilityCoordinatorSource, /function getConnectionDetails|function getActiveAddressForDomain/u)
+	assert.doesNotMatch(accessManagementSource, /function getConnectionDetails|function getActiveAddressForDomain/u)
+})
+
 test('popup handler registries agree with the protocol domain inventory', () => {
 	const expectedRegistryDomains = [
 		{ source: popupHandlerRegistrySources[1], domains: new Set(['address-book', 'navigation']) },
 		{ source: popupHandlerRegistrySources[2], domains: new Set(['settings', 'navigation']) },
 		{ source: popupHandlerRegistrySources[3], domains: new Set(['website-access', 'navigation']) },
 		{ source: popupHandlerRegistrySources[4], domains: new Set(['safe']) },
+		{ source: popupHandlerRegistrySources[5], domains: new Set(['home', 'settings', 'simulation']) },
 	]
 	return Promise.all(expectedRegistryDomains.map(async ({ source, domains }) => {
 		if (source === undefined) throw new Error('Popup handler registry source is missing')
@@ -143,4 +162,13 @@ test('Safe pending flow discrimination has one owner', () => {
 	assert.equal(hasDuplicatedSafePendingFlowDiscriminant(confirmTransactionPageSource), false)
 	assert.equal(hasRawSafeFieldAfterTransactionNarrowing(refreshPopupSimulationSource), false)
 	assert.doesNotMatch(confirmTransactionPageSource, /currentPendingTransactionOrSignableMessage\.value\.(?:safeExecutionOriginalRequestParameters|safeTransaction)/u)
+})
+
+
+test('website lifecycle dependencies are explicit callbacks rather than a global event bus', async () => {
+	const lifecycleSource = await Bun.file(new URL('../../app/ts/background/websiteLifecycle.ts', import.meta.url)).text()
+	const startupSource = await Bun.file(new URL('../../app/ts/background/background-startup.ts', import.meta.url)).text()
+	assert.doesNotMatch(lifecycleSource, /new (?:WeakMap|Map|Set)|subscribeWebsiteLifecycle|publishWebsiteLifecycle/u)
+	assert.match(accessManagementSource, /notifyWebsiteLifecycle\(websiteTabConnections\.lifecycle\?\.accessReconciled\)/u)
+	assert.match(startupSource, /lifecycle: safeAppsCompatibility\.lifecycle/u)
 })
