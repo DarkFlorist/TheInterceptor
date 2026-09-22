@@ -16,9 +16,11 @@ export function AnimatedSigningQr({ payload }: { payload: Uint8Array }) {
 	return <section>
 		<img width = '400' height = '400' alt = 'AirGap Vault signing request' src = { encodeQR(encoder.part(sequence).toUpperCase(), 'data-url', { scale: 4, border: 4, ecc: 'medium' }) }/>
 		<p>Frame { sequence } · { encoder.count } source fragments</p>
-		<button class = 'button' onClick = { () => setPaused(!paused) }>{ paused ? 'Play' : 'Pause' }</button>
-		<button class = 'button' onClick = { () => setSequence((value) => value + 1) }>Next frame</button>
-		<label>Animation speed <select value = { interval } onChange = { (event) => setIntervalMs(Number(event.currentTarget.value)) }><option value = '500'>Slow</option><option value = '250'>Normal</option><option value = '125'>Fast</option></select></label>
+		<div style = 'display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0;'>
+			<button class = 'button is-primary' onClick = { () => setPaused(!paused) }>{ paused ? 'Play' : 'Pause' }</button>
+			<button class = 'button is-primary' onClick = { () => setSequence((value) => value + 1) }>Next frame</button>
+			<label>Animation speed <select value = { interval } onChange = { (event) => setIntervalMs(Number(event.currentTarget.value)) }><option value = '500'>Slow</option><option value = '250'>Normal</option><option value = '125'>Fast</option></select></label>
+		</div>
 	</section>
 }
 
@@ -81,9 +83,9 @@ export function SigningQrScanner({ onFrame }: { onFrame: (frame: string) => Prom
 		} catch (failure) { failSession(failure, 'Camera permission was denied or the camera is unavailable') }
 	}
 	return <section>
-		<video ref = { video } muted playsInline style = 'max-width: 100%; width: 400px;'/>
-		<button class = 'button' disabled = { running } onClick = { () => { void start() } }>Enable camera</button>
-		{ running ? <button class = 'button' onClick = { () => stop.current?.() }>Stop camera</button> : undefined }
+		<video ref = { video } muted playsInline style = { { display: running ? 'block' : 'none', maxWidth: '100%', width: '400px' } }/>
+		<button class = 'button is-primary' disabled = { running } onClick = { () => { void start() } }>Enable camera</button>
+		{ running ? <button class = 'button is-primary' onClick = { () => stop.current?.() }>Stop camera</button> : undefined }
 		{ error === undefined ? undefined : <p role = 'alert'>{ error }. Check camera permissions and retry.</p> }
 	</section>
 }

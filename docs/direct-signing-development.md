@@ -58,3 +58,5 @@ Browser onboarding currently selects accounts already exposed to an approved app
 - [ERC-4527](https://eips.ethereum.org/EIPS/eip-4527), [Bytewords](https://github.com/BlockchainCommons/Research/blob/master/papers/bcr-2020-012-bytewords.md), [UR](https://github.com/BlockchainCommons/Research/blob/master/papers/bcr-2020-005-ur.md), and [bc-ur reference implementation](https://github.com/BlockchainCommons/bc-ur). Adaptation/vector notices: [bc-ur.txt](../app/licenses/bc-ur.txt).
 - [AirGap Vault account/request matching](https://github.com/airgap-it/airgap-vault/blob/aa50b7f0371ed2e681f358d22b546c7c000e05b7/src/app/services/iac/iac.service.ts).
 - [QR package source and manifest](https://github.com/paulmillr/qr).
+
+See the [UI walkthrough](direct-signing-ui-walkthrough.md) for captioned screenshots of address selection, onboarding, review, offline signing, camera recovery, and broadcast confirmation using fixture data.

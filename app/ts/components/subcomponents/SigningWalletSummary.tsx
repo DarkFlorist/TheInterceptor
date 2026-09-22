@@ -24,12 +24,12 @@ export function SigningWalletSummary({ address, actionLabel = 'Change wallet' }:
 		return () => { active = false; browser.storage?.onChanged?.removeListener(changed) }
 	}, [address])
 	const binding = bindings.find((item) => item.wallet.address === address)
-	return <div>
+	return <div style = { { color: 'var(--text-color)' } }>
 		<p>{ signingWalletDescription(binding) }</p>
 		{ binding === undefined ? <small>Set up signing wallet to sign, or switch to simulation below.</small> : undefined }
 		{ binding?.wallet.type === 'ledger' ? <small>Wallet saved · connect Ledger when signing</small> : binding?.wallet.type === 'airgap' ? <small>Imported account · awaiting offline signing</small> : undefined }
-		<button class = 'button is-small' onClick = { (event) => { event.stopPropagation(); void openSigningWalletSetup(address).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not open wallet setup')) } }>{ actionLabel }</button>
-		<button class = 'button is-small' onClick = { (event) => { event.stopPropagation(); void sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: address, simulationMode: true } }).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not select simulation address')) } }>Simulate this address</button>
+		<button class = 'button is-small is-primary' onClick = { (event) => { event.stopPropagation(); void openSigningWalletSetup(address).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not open wallet setup')) } }>{ actionLabel }</button>
+		<button class = 'button is-small is-primary' onClick = { (event) => { event.stopPropagation(); void sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: address, simulationMode: true } }).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not select simulation address')) } }>Simulate this address</button>
 		{ error === undefined ? undefined : <p role = 'alert'>{ error }</p> }
 	</div>
 }

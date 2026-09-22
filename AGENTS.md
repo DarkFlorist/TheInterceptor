@@ -22,6 +22,14 @@ The Interceptor is a Bun-managed TypeScript browser extension. Main extension so
 - `bun run test:chrome-communication` launches Chrome through the repo CDP harness, waits for the MV3 content scripts to register, opens a local HTTP page, approves the real Interceptor access popup, and verifies the page reaches `access-granted`.
 - If Chrome or Chromium is installed outside the standard paths, set `CHROME_BIN=/path/to/chrome` when running `bun run test:chrome-communication` or `bun run benchmark:popup-lifecycle`.
 
+## Pull Request Screenshots
+
+- For a PR that changes UI, include screenshots of the implemented interface in the PR description.
+- For a changed UI flow, show an ordered series covering its entry point, important intermediate steps, and resulting state, rather than only the final screen. Include relevant error or recovery states when they are part of the change.
+- Give every screenshot a short explanation of what is happening, the action that reaches that step, and what the user can do next.
+- Capture screenshots from the built application. Identify fixture data, mocked device states, or other unverified behavior explicitly; do not present screenshots as proof of physical-device or live-network testing.
+- Use image links that reviewers can view from the PR. Keep screenshots free of secrets and unrelated personal information, and refresh them after UI changes that would make them misleading.
+
 ## Final Review Gate
 
 For any task that changes code, tests, configuration, tooling, or repository instructions, after the required validation passes, the main agent must spawn the project-scoped `reviewer` custom agent defined in `.codex/agents/reviewer.toml` and wait for it to complete before responding to the user. Start the reviewer from a clear task summary instead of relying on inherited conversation context.
