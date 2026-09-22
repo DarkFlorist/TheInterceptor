@@ -158,7 +158,7 @@ describe('active settings concurrency', () => {
 
 	test('publishes settings and website chain updates after RPC configuration recovery', async () => {
 		const { runtimeMessages } = installBrowserMock()
-		const { changeSimulationMode, getSettings, publishRpcConfigurationRecovery, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const { changeSimulationMode, getSettings, publishRpcConfigurationRecovery, setRpcConfiguration, updateWebsiteAccess, websiteSocketToString } = await loadModules()
 		await changeSimulationMode({ simulationMode: false })
 		const websiteOrigin = 'example.test'
 		await updateWebsiteAccess(() => [{ website: { websiteOrigin }, access: true }])
@@ -178,6 +178,7 @@ describe('active settings concurrency', () => {
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
 		const owner = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService }))
 
+		await setRpcConfiguration([recoveredNetwork], recoveredNetwork)
 		await publishRpcConfigurationRecovery(owner, connections, previousSettings, recoveredNetwork)
 
 		assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_settingsUpdated'), true)
@@ -668,7 +669,7 @@ describe('active settings concurrency', () => {
 
 	test.each(['transition', 'recovery'])('completes access UI when %s publication fails after reconciliation', async (entryPoint) => {
 		installBrowserMock()
-		const { changeActiveAddressAndChain, changeSimulationMode, getPendingAccessRequests, getSettings, publishRpcConfigurationRecovery, resolveInterceptorAccess, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const { changeActiveAddressAndChain, changeSimulationMode, getPendingAccessRequests, getSettings, publishRpcConfigurationRecovery, resolveInterceptorAccess, setRpcConfiguration, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()
 		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
 		await updateUserAddressBookEntries(() => [selectedAddress])
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: selectedAddress.address })
@@ -683,6 +684,7 @@ describe('active settings concurrency', () => {
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const failure = new Error('Account update broadcast failed')
 		const failingOwner = { ...simulationServicesOwner, getCurrent: () => { throw failure } }
+		if (entryPoint === 'recovery') await setRpcConfiguration([replacementRpc], replacementRpc)
 
 		const publication = entryPoint === 'transition'
 			? changeActiveAddressAndChain(failingOwner, connections, { simulationMode: true, rpcNetwork: replacementRpc })

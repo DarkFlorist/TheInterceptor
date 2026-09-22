@@ -5,7 +5,7 @@ import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
 import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { getRpcConfigurationStateWithStorageSnapshot, RPC_CONFIGURATION_UNAVAILABLE_NETWORK, getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
+import { getRpcConfigurationStateWithStorageSnapshot, getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
@@ -15,6 +15,7 @@ import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/webs
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
 import type { RpcConfigurationState } from './storageVariables.js'
 import { hasOwnKey } from '../utils/typescript.js'
+import { getRpcNetworkForSettings } from './rpcConfigurationLifecycle.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -107,16 +108,24 @@ export async function getSettings() : Promise<Settings> {
 
 export async function getSettingsSnapshot(): Promise<{ readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState }> {
 	const { storedItems, rpcConfiguration } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
-	const activeRpcNetwork = 'activeRpcNetwork' in rpcConfiguration && rpcConfiguration.activeRpcNetwork !== undefined
-		? rpcConfiguration.activeRpcNetwork
-		: RPC_CONFIGURATION_UNAVAILABLE_NETWORK
+	const activeRpcNetwork = getRpcNetworkForSettings(rpcConfiguration)
 	const settings = await getSettingsFromStorageItems(storedItems, activeRpcNetwork)
 	return { settings, rpcConfiguration }
 }
 
-export async function getSettingsWithRpcNetwork(activeRpcNetwork: RpcNetwork): Promise<Settings> {
-	const storedItems = await silenceChromeUnCaughtPromise(browser.storage.local.get(SETTINGS_STORAGE_KEYS))
-	return await getSettingsFromStorageItems(storedItems, activeRpcNetwork)
+const capturedRpcNetworkMarker = Symbol('capturedRpcNetwork')
+export type CapturedRpcNetwork = {
+	readonly activeRpcNetwork: RpcNetwork
+	readonly [capturedRpcNetworkMarker]: true
+}
+
+export function captureRpcNetwork(settings: Pick<Settings, 'activeRpcNetwork'>): CapturedRpcNetwork {
+	return { activeRpcNetwork: settings.activeRpcNetwork, [capturedRpcNetworkMarker]: true }
+}
+
+export async function getSettingsForCapturedRpcNetwork(capturedRpcNetwork: CapturedRpcNetwork): Promise<Settings> {
+	const { storedItems } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
+	return await getSettingsFromStorageItems(storedItems, capturedRpcNetwork.activeRpcNetwork)
 }
 
 export function getInterceptorDisabledSites(settings: Settings): string[] {

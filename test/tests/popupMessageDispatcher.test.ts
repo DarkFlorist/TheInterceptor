@@ -172,9 +172,16 @@ describe('popup message dispatcher seams', () => {
 		for (const [index, expected] of [replacement, replacement, last, last].entries()) assert.strictEqual(observed[index], expected)
 	})
 
-	test('RPC-backed popup handlers stop at the shared boundary while configuration is unavailable', async () => {
+	test.each(['unavailable', 'signer-only'] as const)('RPC-backed popup handlers stop at the shared boundary for %s configuration', async (configurationKind) => {
 		const context = createDispatcherContext(async () => { throw new Error('reset must not run') })
-		context.rpcConfiguration = { status: 'unavailable', reason: 'corrupt' }
+		if (configurationKind === 'unavailable') {
+			context.rpcConfiguration = { status: 'unavailable', reason: 'corrupt' }
+		} else {
+			const signerOnlyNetwork = { ...context.settings.activeRpcNetwork, httpsRpc: undefined, currencyName: 'Ether?' as const, currencyTicker: 'ETH?' as const, primary: false as const }
+			context.settings = { ...context.settings, activeRpcNetwork: signerOnlyNetwork }
+			context.rpcConfiguration = { status: 'ready', rpcEntries: [], activeRpcNetwork: signerOnlyNetwork }
+			context.simulationServicesOwner.clear()
+		}
 		const ownerWasAvailable = context.simulationServicesOwner.isAvailable()
 
 		assert.equal(await dispatchPopupMessage(context, { method: 'popup_refreshSimulation' }), undefined)

@@ -43,6 +43,7 @@ import { resolveWatchAsset, updateWatchAssetViewWithPendingRequest } from './win
 import { updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
+import { rpcConfigurationIsReady, rpcServicesAreAvailable } from './rpcConfigurationLifecycle.js'
 import { estimateSerializedStateBytes, formatEstimatedBytes } from '../utils/largeStateStore.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
@@ -828,7 +829,7 @@ export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTab
 			settings,
 			activeSigningAddressInThisTab: activeSigningAddress,
 			tabId,
-			rpcEntries: rpcConfiguration.status === 'ready' ? rpcConfiguration.rpcEntries : [],
+			rpcEntries: rpcConfigurationIsReady(rpcConfiguration) ? rpcConfiguration.rpcEntries : [],
 			interceptorDisabled,
 		},
 	})
@@ -877,7 +878,7 @@ export async function changeSettings(simulationServicesOwner: SimulationServices
 	}
 	const popupRefreshGeneration = bumpPopupRefreshGeneration()
 	const { rpcConfiguration } = await getSettingsSnapshot()
-	const services = rpcConfiguration.status === 'ready' ? simulationServicesOwner.getCurrentOrUndefined() : undefined
+	const services = rpcServicesAreAvailable(rpcConfiguration, simulationServicesOwner) ? simulationServicesOwner.getCurrentOrUndefined() : undefined
 	if (services === undefined) return await requestHomePageBootstrap(websiteTabConnections, popupRefreshGeneration)
 	return await requestNewHomeData(services.ethereum, websiteTabConnections, false, true, requestAbortController, popupRefreshGeneration)
 }

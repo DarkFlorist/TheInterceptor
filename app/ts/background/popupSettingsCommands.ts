@@ -8,6 +8,7 @@ import { popupMessageHandler, type PopupMessageDispatcherContext, type PopupMess
 import { getSettingsSnapshot } from './settings.js'
 import { changeActiveAddress, enableSimulationMode, modifyMakeMeRich, popupChangeActiveRpc } from './popupMessageHandlers.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
+import { rpcServicesAreAvailable } from './rpcConfigurationLifecycle.js'
 
 const settingsCoordinator = createPopupSettingsCoordinator(async (data) => await sendPopupMessageToOpenWindows({ method: 'popup_settingsChangeStatus', data }))
 
@@ -37,7 +38,7 @@ export const popupSettingsCommandHandlers = {
 	}),
 	popup_modifyMakeMeRich: settingsCommand('popup_modifyMakeMeRich', async (context, request) => {
 		if (await modifyMakeMeRich(request)) {
-			const services = context.rpcConfiguration.status === 'ready' ? context.simulationServicesOwner.getCurrentOrUndefined() : undefined
+			const services = rpcServicesAreAvailable(context.rpcConfiguration, context.simulationServicesOwner) ? context.simulationServicesOwner.getCurrentOrUndefined() : undefined
 			if (services === undefined) {
 				return { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but RPC services are unavailable. Restore them before refreshing the simulation.' }
 			}

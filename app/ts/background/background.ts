@@ -3,7 +3,7 @@ import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { getSettings, getSettingsSnapshot, getSettingsWithRpcNetwork, updateWebsiteAccess } from './settings.js'
+import { captureRpcNetwork, getSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot, updateWebsiteAccess } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -374,7 +374,7 @@ async function discoverAccountRequestAddressContext(
 	websiteOrigin: string,
 	validatedSettings: Settings,
 ) {
-	const settings = await getSettingsWithRpcNetwork(validatedSettings.activeRpcNetwork)
+	const settings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(validatedSettings))
 	const activeAddress = await getActiveAddressForRequest(settings, websiteTabConnections, socket.tabId)
 	if (activeAddress !== undefined) return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
 	if (!isAccountConnectionMethod(request.method)) return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
@@ -382,7 +382,7 @@ async function discoverAccountRequestAddressContext(
 	if (websiteAccess === 'noAccess' || websiteAccess === 'interceptorDisabled') return { settings, activeAddress, requestedSignerAccountsForAddressConsent: false, signerAccountError: undefined }
 
 	const signerAccountsResult = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, socket, true)
-	const refreshedSettings = await getSettingsWithRpcNetwork(settings.activeRpcNetwork)
+	const refreshedSettings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(settings))
 	const refreshedActiveAddress = await getActiveAddressForRequest(refreshedSettings, websiteTabConnections, socket.tabId)
 	if (refreshedActiveAddress !== undefined) return { settings: refreshedSettings, activeAddress: refreshedActiveAddress, requestedSignerAccountsForAddressConsent: true, signerAccountError: signerAccountsResult.error }
 	const firstSignerAddress = signerAccountsResult.accounts[0] === undefined ? undefined : await getWalletActiveAddressEntryForChain(signerAccountsResult.accounts[0], refreshedSettings.activeRpcNetwork.chainId)
@@ -475,7 +475,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		if (signerAccounts.length === 0) return replyWithoutActiveAccount(websiteTabConnections, request)
 		const firstSignerAccount = signerAccounts[0]
 		if (firstSignerAccount === undefined) return replyWithoutActiveAccount(websiteTabConnections, request)
-		const refreshedSettings = await getSettingsWithRpcNetwork(settings.activeRpcNetwork)
+		const refreshedSettings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(settings))
 		let refreshedActiveAddress = await getActiveAddressForRequest(refreshedSettings, websiteTabConnections, socket.tabId)
 		if (refreshedActiveAddress === undefined) {
 			const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
@@ -504,7 +504,7 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	switch (access) {
 		case 'askAccess': {
 			const website = await websitePromise
-			const currentSettings = await getSettingsWithRpcNetwork(settings.activeRpcNetwork)
+			const currentSettings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(settings))
 			return await gateKeepRequestBehindAccessDialog(simulationServicesOwner, websiteTabConnections, socket, request, website, activeAddress, currentSettings, publishRpcConnectionStatus)
 		}
 		case 'noAccess': return refuseAccess(websiteTabConnections, request)

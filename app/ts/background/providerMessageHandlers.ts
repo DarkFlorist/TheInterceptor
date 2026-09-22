@@ -23,6 +23,7 @@ import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { getActiveAddressEntryForChain } from './metadataUtils.js'
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import type { ApprovalState } from './websiteAccessPolicy.js'
+import { rpcConfigurationIsReady, rpcConfigurationIsUsable, rpcServicesAreAvailable } from './rpcConfigurationLifecycle.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
@@ -60,7 +61,8 @@ function hasSignerCallbackAccess(websiteTabConnections: WebsiteTabConnections, t
 }
 
 async function getAvailableSimulationServices(simulationServicesOwner: SimulationServicesOwner) {
-	return (await getRpcConfigurationState()).status === 'ready' ? simulationServicesOwner.getCurrentOrUndefined() : undefined
+	const rpcConfiguration = await getRpcConfigurationState()
+	return rpcServicesAreAvailable(rpcConfiguration, simulationServicesOwner) ? simulationServicesOwner.getCurrentOrUndefined() : undefined
 }
 
 export async function ethAccountsReply(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
@@ -110,13 +112,12 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 		}))
 		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
 		const { settings, rpcConfiguration } = await getSettingsSnapshot()
-		const simulationServices = rpcConfiguration.status === 'ready' ? simulationServicesOwner.getCurrentOrUndefined() : undefined
+		const simulationServices = rpcServicesAreAvailable(rpcConfiguration, simulationServicesOwner) ? simulationServicesOwner.getCurrentOrUndefined() : undefined
 		if (simulationServices !== undefined) await refreshPendingSafeSignerSelectionErrors(simulationServices.ethereum, simulationServices.tokenPriceService, tabId)
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
 		const transition = await getSigningAddressSelectionTransition(settings, tabStateChange.previousState, tabStateChange.newState)
 		// Preserve the signer callback while RPC-backed settings transitions are paused; a signer-only network has no services by design, so it can still accept the address selection.
-		const canActivateAddressSelection = rpcConfiguration.status === 'ready'
-			&& (simulationServices !== undefined || settings.activeRpcNetwork.httpsRpc === undefined)
+		const canActivateAddressSelection = rpcConfigurationIsUsable(rpcConfiguration, simulationServicesOwner)
 		const shouldActivateAddressSelection = transition.shouldActivate && canActivateAddressSelection
 		if (shouldActivateAddressSelection) {
 			const changeActiveAddress = async () => {
@@ -174,7 +175,7 @@ async function changeSignerChain(simulationServicesOwner: SimulationServicesOwne
 		}
 		return
 	}
-	if (rpcConfiguration.status === 'unavailable') return
+	if (!rpcConfigurationIsReady(rpcConfiguration)) return
 	if (settings.useSignersAddressAsActiveAddress || !settings.simulationMode) {
 		const rpcNetwork = requestedRpcNetwork ?? (settings.activeRpcNetwork.chainId === signerChain ? settings.activeRpcNetwork : await getRpcNetworkForChain(signerChain))
 		if (getRpcNetworkChange(settings.activeRpcNetwork, rpcNetwork).selectionChanged) {

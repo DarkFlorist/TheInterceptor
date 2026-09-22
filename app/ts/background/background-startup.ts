@@ -5,7 +5,7 @@ import { handleInterceptedRequest } from './background.js'
 import { captureSimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { popupMessageHandler } from './popupMessageRouting.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
-import { getRpcConfigurationState, getRpcConnectionStatus, getRpcServiceNetwork, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
+import { getRpcConfigurationState, getRpcConnectionStatus, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
 import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { EthereumBlockHeader } from '../types/wire-types.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -38,6 +38,7 @@ import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_ME
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
+import { resolveRpcServicesTarget, rpcConfigurationIsReady } from './rpcConfigurationLifecycle.js'
 
 const connections = new Map<number, TabConnection>()
 const safeAppsCompatibility = createSafeAppsCompatibilityFeature(connections)
@@ -242,7 +243,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 			const owner = simulationServicesOwner
 			if (owner === undefined) return
 			const settingsSnapshot = await getSettingsSnapshot()
-			if (settingsSnapshot.rpcConfiguration.status === 'unavailable') return
+			if (!rpcConfigurationIsReady(settingsSnapshot.rpcConfiguration)) return
 			const { settings } = settingsSnapshot
 			if (!isCurrentSimulationService(simulationServicesOwner, ethereumClientService)) return
 			if (settings.simulationMode) {
@@ -283,7 +284,7 @@ async function startup() {
 	await initializePopupRefreshGeneration()
 	bumpPopupRefreshGeneration()
 	const rpcConfiguration = await getRpcConfigurationState()
-	const simulatorNetwork = rpcConfiguration.status === 'ready' ? getRpcServiceNetwork(rpcConfiguration) : undefined
+	const simulatorNetwork = resolveRpcServicesTarget(rpcConfiguration)
 	simulationServicesOwner = createSimulationServicesOwner(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks, () => { void recoverPendingTerminalState() })
 	if (simulationServicesOwner.isAvailable()) await recoverPendingTerminalState()
 	const recursiveCheckIfInterceptorShouldSleep = async () => {

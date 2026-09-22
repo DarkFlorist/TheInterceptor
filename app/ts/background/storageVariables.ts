@@ -28,27 +28,10 @@ const reportCorruptStoredValue = (label: string) => (failure: unknown) => {
 	console.warn(failure)
 }
 
-export const RPC_CONFIGURATION_UNAVAILABLE_NETWORK: RpcNetwork = {
-	httpsRpc: undefined,
-	chainId: 1n,
-	name: 'RPC configuration unavailable',
-	currencyName: 'Ether?',
-	currencyTicker: 'ETH?',
-	primary: false,
-	minimized: true,
-}
-
 export type RpcConfigurationState =
 	| { readonly status: 'ready', readonly rpcEntries: RpcEntries, readonly activeRpcNetwork: RpcNetwork }
 	| { readonly status: 'unavailable', readonly reason: 'empty', readonly activeRpcNetwork: RpcNetwork }
 	| { readonly status: 'unavailable', readonly reason: 'corrupt' | 'incomplete' | 'read-failed' | 'write-failed', readonly activeRpcNetwork?: RpcNetwork, readonly error?: unknown }
-
-export function getRpcServiceNetwork(configuration: Extract<RpcConfigurationState, { status: 'ready' }>): RpcEntry | undefined {
-	if (configuration.activeRpcNetwork.httpsRpc !== undefined) return configuration.activeRpcNetwork
-	return configuration.rpcEntries.find((rpc) => rpc.chainId === configuration.activeRpcNetwork.chainId && rpc.primary)
-		?? configuration.rpcEntries.find((rpc) => rpc.primary)
-		?? configuration.rpcEntries[0]
-}
 
 const idsOfOpenedTabsRepository = createStoredValueRepository({
 	read: async () => (await browserStorageLocalGet('idsOfOpenedTabs')).idsOfOpenedTabs,

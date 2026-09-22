@@ -5,6 +5,7 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import type { RpcConfigurationState } from './storageVariables.js'
+import { rpcServicesAreAvailable } from './rpcConfigurationLifecycle.js'
 
 export type PopupMessageDispatcherContext = {
 	websiteTabConnections: WebsiteTabConnections
@@ -28,7 +29,7 @@ export function popupRpcMessageHandler<Method extends PopupMessage['method']>(
 	requiresRpc: (request: Extract<PopupMessage, { readonly method: Method }>) => boolean = () => true,
 ): PopupMessageHandler {
 	return popupMessageHandler(method, async (context, request) => {
-		if (requiresRpc(request) && context.rpcConfiguration.status === 'unavailable') return unavailableReply?.(request)
+		if (requiresRpc(request) && !rpcServicesAreAvailable(context.rpcConfiguration, context.simulationServicesOwner)) return unavailableReply?.(request)
 		return await handler(context, request)
 	})
 }

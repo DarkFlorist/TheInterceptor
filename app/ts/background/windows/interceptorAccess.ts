@@ -8,7 +8,7 @@ import { handleInterceptedRequest, refuseAccess } from '../background.js'
 import { activateAddressSelection } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddressEntryForChain } from '../metadataUtils.js'
-import { getSettings, getSettingsWithRpcNetwork } from '../settings.js'
+import { captureRpcNetwork, getSettings, getSettingsForCapturedRpcNetwork } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
@@ -339,7 +339,7 @@ export async function requestAccessFromUser(
 
 		const previousPendingRequests = await verifyPendingRequests()
 		const justAddToPending = previousPendingRequests.length !== 0
-		const hasAccess = verifyAccessForCurrentRequest(await getSettingsWithRpcNetwork(settings.activeRpcNetwork))
+		const hasAccess = verifyAccessForCurrentRequest(await getSettingsForCapturedRpcNetwork(captureRpcNetwork(settings)))
 		if (hasAccess === 'hasAccess') { // we already have access, just reply with the gate keeped request right away
 			if (request !== undefined) {
 				if (publishRpcConnectionStatus === undefined) throw new Error('RPC connection status publisher is required to replay an intercepted request.')
@@ -397,7 +397,7 @@ export async function requestAccessFromUser(
 
 		const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
 			// check that it doesn't have access already
-			if (verifyAccessForCurrentRequest(await getSettingsWithRpcNetwork(settings.activeRpcNetwork)) !== 'askAccess') return previousPendingAccessRequests
+			if (verifyAccessForCurrentRequest(await getSettingsForCapturedRpcNetwork(captureRpcNetwork(settings))) !== 'askAccess') return previousPendingAccessRequests
 
 			// check that we are not tracking it already
 			if (previousPendingAccessRequests.find((x) => x.accessRequestId === accessRequestId) === undefined) {

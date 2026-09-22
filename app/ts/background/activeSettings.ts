@@ -10,12 +10,12 @@ import type { WebsiteAccessUpdate } from './accessManagement.js'
 import { reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, sendActiveAccountChangeToApprovedWebsitePorts, sendMessageToApprovedWebsitePorts } from './accessManagement.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { changeSimulationMode, getSettings, getSettingsSnapshot, getSettingsWithRpcNetwork, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
+import { changeSimulationMode, getSettings, getSettingsSnapshot, setUseSignersAddressAsActiveAddress, trackPreviousActiveAddressForMakeMeRichList } from './settings.js'
 import { updateTransactionState } from './storageVariables.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
-import { rpcServicesAreOptional } from './rpcConfigurationLifecycle.js'
+import { rpcConfigurationIsUsable, rpcServicesAreOptional } from './rpcConfigurationLifecycle.js'
 
 async function clearSimulationStateFromConfig(settingsSnapshot?: Awaited<ReturnType<typeof getSettings>>) {
 	const settings = settingsSnapshot ?? await getSettings()
@@ -102,7 +102,7 @@ async function publishCommittedSettingsTransition(
 	if (simulationServicesOwner.isAvailable() && (updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
 		await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
 	}
-	await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettingsWithRpcNetwork(updatedSettings.activeRpcNetwork))
+	await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 }
 
 export async function publishRpcConfigurationRecovery(
@@ -114,11 +114,13 @@ export async function publishRpcConfigurationRecovery(
 ) {
 	let accessUpdate: WebsiteAccessUpdate | undefined
 	try {
+		const updatedSettings = await getSettings()
+		if (getRpcNetworkChange(updatedSettings.activeRpcNetwork, activeRpcNetwork).selectionChanged) throw new Error('Recovered RPC network does not match the committed configuration.')
 		await publishCommittedSettingsTransition(
 			simulationServicesOwner,
 			websiteTabConnections,
 			previousSettings,
-			await getSettingsWithRpcNetwork(activeRpcNetwork),
+			updatedSettings,
 			(update) => { accessUpdate = update },
 			forceChainChanged,
 		)
@@ -141,7 +143,7 @@ async function runActiveSettingsChange(
 			const previousSettings = previousSnapshot.settings
 			const rpcServicesOptional = rpcServicesAreOptional(previousSnapshot.rpcConfiguration)
 			const recoverServicesOnRpcSelection = !simulationServicesOwner.isAvailable() && rpcServicesOptional
-			if (previousSnapshot.rpcConfiguration.status === 'unavailable' || !simulationServicesOwner.isAvailable() && !rpcServicesOptional) throw new Error('RPC configuration is unavailable. Settings changes are paused until it is restored.')
+			if (!rpcConfigurationIsUsable(previousSnapshot.rpcConfiguration, simulationServicesOwner)) throw new Error('RPC configuration is unavailable. Settings changes are paused until it is restored.')
 			if (transition.simulationSignerSelection !== undefined) {
 				const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
 				await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
@@ -165,7 +167,7 @@ async function runActiveSettingsChange(
 				})
 			}
 
-			const updatedSettings = await getSettingsWithRpcNetwork(change.rpcNetwork ?? previousSettings.activeRpcNetwork)
+			const updatedSettings = await getSettings()
 			try {
 				// The preference belongs to the committed selection, even if later provider preparation fails.
 				if (transition.signingPreference !== undefined) await rememberSigningAddressSelection(transition.signingPreference)

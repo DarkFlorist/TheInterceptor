@@ -4,11 +4,12 @@ import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import { getRpcConfigurationState, getRpcServiceNetwork, setRpcConfiguration, setRpcList } from '../storageVariables.js'
+import { getRpcConfigurationState, setRpcConfiguration, setRpcList } from '../storageVariables.js'
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { DEFAULT_RPCS } from '../../config/defaults.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
+import { resolveRpcServicesTarget, rpcConfigurationIsReady, rpcConfigurationIsUsable } from '../rpcConfigurationLifecycle.js'
 
 type PublishRpcConfigurationRecovery = (simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, previousSettings: Settings, activeRpcNetwork: Settings['activeRpcNetwork'], forceChainChanged?: boolean) => Promise<void>
 
@@ -28,7 +29,7 @@ export async function settingsOpened(simulationServicesOwner: SimulationServices
 		settingsSnapshotPromise,
 	])
 	const { rpcConfiguration, settings } = settingsSnapshot
-	const rpcConfigurationAvailable = rpcConfiguration.status === 'ready' && (simulationServicesOwner.isAvailable() || rpcConfiguration.activeRpcNetwork.httpsRpc === undefined)
+	const rpcConfigurationAvailable = rpcConfigurationIsUsable(rpcConfiguration, simulationServicesOwner)
 
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_requestSettingsReply' as const,
@@ -37,7 +38,7 @@ export async function settingsOpened(simulationServicesOwner: SimulationServices
 			metamaskCompatibilityMode,
 			safeAppsCompatibilityMode,
 			rpcConfigurationAvailable,
-			rpcEntries: rpcConfigurationAvailable ? rpcConfiguration.rpcEntries : [],
+			rpcEntries: rpcConfigurationAvailable && rpcConfigurationIsReady(rpcConfiguration) ? rpcConfiguration.rpcEntries : [],
 			activeRpcNetwork: settings.activeRpcNetwork
 		}
 	})
@@ -112,7 +113,7 @@ export async function retryRpcConfiguration(simulationServicesOwner: SimulationS
 		await sendRpcListUpdate([], false)
 		return
 	}
-	const rpcNetwork = getRpcServiceNetwork(configuration)
+	const rpcNetwork = resolveRpcServicesTarget(configuration)
 	if (rpcNetwork === undefined) {
 		simulationServicesOwner.clear()
 		await sendRpcListUpdate(configuration.rpcEntries, true)

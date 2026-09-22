@@ -169,11 +169,13 @@ describe('background eth_accounts', () => {
 		const releaseSettingsRead = createDeferredValue<void>()
 		const originalGet = browser.storage.local.get.bind(browser.storage.local)
 		let paused = false
+		let settingsSnapshotReads = 0
 		Object.defineProperty(browser.storage.local, 'get', {
 			configurable: true,
 			value: async (keys: string | readonly string[]) => {
 				const requestedKeys = Array.isArray(keys) ? keys : [keys]
-				if (!paused && requestedKeys.includes('simulationMode') && !requestedKeys.includes('rpcEntries')) {
+				if (requestedKeys.includes('simulationMode') && requestedKeys.includes('rpcEntries')) settingsSnapshotReads += 1
+				if (!paused && settingsSnapshotReads === 2) {
 					paused = true
 					settingsReadStarted.resolve(undefined)
 					await releaseSettingsRead.promise
