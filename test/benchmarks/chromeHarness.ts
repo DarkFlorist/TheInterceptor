@@ -506,3 +506,8 @@ export async function launchChromeSession(extensionDir = EXTENSION_DIR, options:
 		},
 	}
 }
+
+export async function assertPrivateProviderBridge(connection: CdpConnection) {
+	const result = await connection.evaluate<{ capturedPorts: number, interceptedSends: number, interceptedReplies: number, replacementReplies: number }>('globalThis.__bridgeSecurity')
+	if (result === undefined || Object.values(result).some((count) => count !== 0)) throw new Error(`The page accessed the private provider bridge: ${ JSON.stringify(result) }`)
+}

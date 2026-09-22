@@ -273,12 +273,16 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 
 	globalThis.addEventListener('message', (messageEvent: MessageEvent<unknown>) => {
 		if (
-			inpagePort !== undefined
+			messageEvent.source !== window
+			|| !messageEvent.isTrusted
 			|| typeof messageEvent.data !== 'object'
 			|| messageEvent.data === null
 			|| !('type' in messageEvent.data)
 			|| messageEvent.data.type !== INTERCEPTOR_BRIDGE_PORT_MESSAGE
 		) return
+		// This document-start capture listener runs before page listeners. The transferred endpoint is a capability: never let it propagate to the page or accept a replacement.
+		messageEvent.stopImmediatePropagation()
+		if (inpagePort !== undefined) return
 		const port = messageEvent.ports[0]
 		if (port === undefined) {
 			reportInterceptorError(createForwardedDiagnosticsFromRaw(diagnosticsSource, 'connect inpage bridge', 'Missing inpage MessagePort', messageEvent.data, getForwardedDiagnosticsRequestContext(messageEvent.data)))
@@ -286,7 +290,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		}
 		inpagePort = port
 		inpagePort.onmessage = (portMessageEvent: MessageEvent<unknown>) => forwardInpageMessageToBackground(portMessageEvent.data)
-	})
+	}, { capture: true })
 
 	connect = () => {
 		if (reconnectTimer !== undefined) {

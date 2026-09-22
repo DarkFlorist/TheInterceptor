@@ -733,7 +733,7 @@ class InterceptorMessageListener {
 	private signerWindowEthereumProvider: WindowEthereum | undefined = undefined
 	private signerWindowEthereumRequest: EthereumRequest | undefined = undefined
 	private fallbackSignerWindowEthereumRequest: EthereumRequest | undefined = undefined
-	private extensionMessagePort: MessagePort | undefined = undefined
+	private postToExtension: ((message: BridgeRequest) => void) | undefined = undefined
 	private readonly subscribedSignerProviders = new WeakSet<object>()
 	private readonly rejectedSignerProviders = new WeakSet<object>()
 	private announcedMetaMaskUuid: string | undefined = undefined
@@ -864,8 +864,12 @@ class InterceptorMessageListener {
 
 	private readonly connectToContentScript = () => {
 		const channel = new MessageChannel()
-		this.extensionMessagePort = channel.port1
-		channel.port1.onmessage = (messageEvent: MessageEvent<unknown>) => { void this.onMessage(messageEvent) }
+		// Capture native operations before page scripts run, so replacing MessagePort methods or MessageEvent.data cannot reveal our private endpoint later.
+		this.postToExtension = channel.port1.postMessage.bind(channel.port1)
+		const getData = Object.getOwnPropertyDescriptor(MessageEvent.prototype, 'data')?.get
+		if (getData === undefined) throw new Error('MessageEvent.data is unavailable')
+		const readData = getData.call.bind(getData)
+		channel.port1.onmessage = (messageEvent: MessageEvent<unknown>) => { void this.onMessage({ type: 'message', data: readData(messageEvent) }) }
 		window.postMessage({ type: INTERCEPTOR_BRIDGE_PORT_MESSAGE }, '*', [channel.port2])
 	}
 
@@ -880,7 +884,7 @@ class InterceptorMessageListener {
 			requestScopedProviderEventCallbacks: [],
 		})
 		try {
-			if (this.extensionMessagePort === undefined) throw new Error('Interceptor content script bridge is not connected')
+			if (this.postToExtension === undefined) throw new Error('Interceptor content script bridge is not connected')
 			const message: BridgeRequest = {
 				type: INTERCEPTOR_BRIDGE_REQUEST_MESSAGE,
 				method: messageMethodAndParams.method,
@@ -890,7 +894,7 @@ class InterceptorMessageListener {
 				...(messageMethodAndParams.internal === true ? { internal: true as const } : {}),
 				...(replayOnDisconnect ? { replayOnDisconnect: true as const } : {}),
 			}
-			this.extensionMessagePort.postMessage(message)
+			this.postToExtension(message)
 			return await future
 		} finally {
 			this.outstandingRequests.delete(pendingRequestId)
@@ -924,7 +928,7 @@ class InterceptorMessageListener {
 
 	private readonly reportInterceptorError = (diagnostics: string) => {
 		try {
-			if (this.extensionMessagePort === undefined) return
+			if (this.postToExtension === undefined) return
 			const message: BridgeRequest = {
 				type: INTERCEPTOR_BRIDGE_REQUEST_MESSAGE,
 				method: 'InterceptorError',
@@ -933,7 +937,7 @@ class InterceptorMessageListener {
 				requestId: -1,
 				internal: true,
 			}
-			this.extensionMessagePort.postMessage(message)
+			this.postToExtension(message)
 		} catch(reportingError: unknown) {
 			console.error('Failed to report InterceptorError diagnostics')
 			console.error(reportingError)
@@ -1723,6 +1727,12 @@ class InterceptorMessageListener {
 			if (forwardRequest.requestId === undefined) throw new Error('requestId missing')
 			const pendingRequest = this.outstandingRequests.get(forwardRequest.requestId)
 			if (pendingRequest === undefined) throw new Error('Request did not exist anymore')
+			// Safe confirmations translate an application transaction/message into an owner signature. Read-only requests never authorize signing.
+			const isSafeSigningTranslation = forwardRequest.method === 'eth_signTypedData_v4' && (pendingRequest.method === 'eth_sendTransaction' || pendingRequest.method === 'personal_sign' || pendingRequest.method === 'safe_apps_request')
+			const isSafeExecution = pendingRequest.method === 'safe_apps_request' && forwardRequest.method === 'eth_sendTransaction'
+			if (forwardRequest.method !== pendingRequest.method && !isSafeSigningTranslation && !isSafeExecution) {
+				return pendingRequest.future.reject(new EthereumJsonRpcError(-32600, 'Signer instruction does not match the pending request.'))
+			}
 			if (this.signerWindowEthereumRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
 
 			const sendToSignerWithCatchError = async () => {

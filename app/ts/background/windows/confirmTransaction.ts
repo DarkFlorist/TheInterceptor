@@ -534,11 +534,19 @@ export const formSendRawTransaction = async(_ethereumClientService: EthereumClie
 export type TransactionGasPayment = 'transaction-sender' | 'external-executor'
 
 export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true, gasPayment: TransactionGasPayment = 'transaction-sender'): Promise<WebsiteCreatedEthereumTransactionOrFailed> => {
+	const transactionDetails = sendTransactionParams.params[0]
+	if (activeAddress === undefined) throw new Error('Access to active address is denied')
+	const originalRequestParameters: SendTransactionParams = !simulationMode && gasPayment === 'transaction-sender' && transactionDetails.from === undefined
+		? { ...sendTransactionParams, params: [{ ...transactionDetails, from: activeAddress }] }
+		: sendTransactionParams
+	const extraParams = { website, created, originalRequestParameters, transactionIdentifier, error: undefined }
+	// Safe proposals intentionally simulate the Safe while an owner signs. Ordinary wallet transactions must use the sender the user is reviewing.
+	if (!simulationMode && gasPayment === 'transaction-sender' && transactionDetails.from !== undefined && transactionDetails.from !== activeAddress) {
+		return { ...extraParams, success: false, error: { code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, message: 'The transaction sender does not match the active signing account.' } }
+	}
 	const simulationState = simulationMode || gasPayment === 'external-executor'
 		? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot())
 		: PASSTHROUGH_STATE
-	const transactionDetails = sendTransactionParams.params[0]
-	if (activeAddress === undefined) throw new Error('Access to active address is denied')
 	const from = simulationMode && transactionDetails.from !== undefined ? transactionDetails.from : activeAddress
 	const transactionCountPromise = silenceChromeUnCaughtPromise(getSimulatedTransactionCount(ethereumClientService, requestAbortController, simulationState, from))
 	const parentBlockPromise = gasPayment === 'transaction-sender'
@@ -551,17 +559,19 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	if (parentBlock === null) throw new Error('The latest block is null')
 	if (parentBlock !== undefined && parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const parentBaseFeePerGas = parentBlock?.baseFeePerGas
-	const requestedMaxPriorityFeePerGas = transactionDetails.maxPriorityFeePerGas !== undefined && transactionDetails.maxPriorityFeePerGas !== null ? transactionDetails.maxPriorityFeePerGas : 10n**8n // 0.1 nanoeth/gas
+	// A legacy gas price has the same effective cost when both fee caps equal that price. Preserve it through estimation, review, and stack refreshes.
+	const explicitMaxFeePerGas = transactionDetails.gasPrice ?? transactionDetails.maxFeePerGas
+	const requestedMaxPriorityFeePerGas = transactionDetails.gasPrice ?? transactionDetails.maxPriorityFeePerGas ?? 10n**8n // 0.1 nanoeth/gas
 	const maxPriorityFeePerGas = gasPayment === 'external-executor' ? 0n : requestedMaxPriorityFeePerGas
 	const value = transactionDetails.value !== undefined  ? transactionDetails.value : 0n
 	const getFeePerGas = async (gasLimit: bigint) => {
 		if (gasPayment === 'external-executor') return { maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }
 		if (parentBaseFeePerGas === undefined || balancePromise === undefined) throw new Error('Transaction fee context is unavailable')
-		return getTransactionFeesForBaseFee(parentBaseFeePerGas, maxPriorityFeePerGas, transactionDetails.maxFeePerGas, await balancePromise, value, gasLimit)
+		return getTransactionFeesForBaseFee(parentBaseFeePerGas, maxPriorityFeePerGas, explicitMaxFeePerGas, await balancePromise, value, gasLimit)
 	}
 	const getInitialMaxFeePerGas = () => {
 		if (gasPayment === 'external-executor') return 0n
-		if (hasExplicitMaxFeePerGas(transactionDetails.maxFeePerGas)) return transactionDetails.maxFeePerGas
+		if (hasExplicitMaxFeePerGas(explicitMaxFeePerGas)) return explicitMaxFeePerGas
 		if (parentBaseFeePerGas === undefined) throw new Error('Transaction fee context is unavailable')
 		return getDesiredMaxFeePerGasForBaseFee(parentBaseFeePerGas, maxPriorityFeePerGas)
 	}
@@ -577,13 +587,6 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 		accessList: transactionDetails.accessList ?? [],
 	}
 	const transactionWithoutGas = await createEip1559Or7702Transaction(transactionWithoutGasBase, transactionDetails)
-	const extraParams = {
-		website,
-		created,
-		originalRequestParameters: sendTransactionParams,
-		transactionIdentifier,
-		error: undefined,
-	}
 	if (transactionDetails.gas === undefined) {
 		try {
 			if (gasPayment === 'external-executor' && simulationState.kind === 'passthrough') {
@@ -803,7 +806,7 @@ export async function openConfirmTransactionDialogForTransaction(
 			const pendingTransaction = {
 				type: 'Transaction' as const,
 				popupOrTabId: openedDialog,
-				originalRequestParameters: effectiveTransactionParams,
+				originalRequestParameters: transactionToSimulate.originalRequestParameters,
 				uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 				simulationMode,
 				activeAddress: transactionExecutor,

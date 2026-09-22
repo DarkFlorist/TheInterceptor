@@ -14,8 +14,9 @@ import type { RpcRequestLifecycleCallbacks, SlowRpcRequest } from '../simulation
 import { createRpcConnectionStatusPublisher, slowRpcRequestKey, type DefinedRpcConnectionStatus, type RpcConnectionStatusChangeMethod } from './rpcSlowRequestTracking.js'
 import { getSocketFromPort, isTopFramePort, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { sendSubscriptionMessagesForNewBlock } from '../simulation/services/EthereumSubscriptionService.js'
-import { Semaphore } from '../utils/semaphore.js'
-import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { createWebsiteRequestDispatcher } from './websiteRequestDispatcher.js'
+import { RawInterceptedRequest, checkAndThrowRuntimeLastError, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
+import { getWebsiteOrigin, getWebsiteOriginForSender } from '../utils/websiteOrigin.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
@@ -37,7 +38,7 @@ import { prunePendingTerminalRepliesForMissingTabs, removePendingTerminalReplies
 import { createRetriableTerminalStateRecovery } from './terminalStateRecovery.js'
 import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE } from './bridgeRequestDelivery.js'
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
-import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
+import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
 
 const connections = new Map<number, TabConnection>()
@@ -130,15 +131,28 @@ if (isManifestV2) {
 	updateContentScriptInjectionStrategyManifestV2()
 }
 
-const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
-
 async function onContentScriptConnected(waitForStartup: () => Promise<{ simulationServicesOwner: SimulationServicesOwner }>, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
+	const dispatchRequest = createWebsiteRequestDispatcher()
 	const socket = getSocketFromPort(port)
 	if (port?.sender?.url === undefined || socket === undefined) {
 		printError(`Could not connect to a port: ${ port.name}`)
 		return
 	}
-	const websiteOrigin = getHostWithPort(port.sender.url)
+	const websiteOrigin = getWebsiteOriginForSender(port.sender)
+	if (websiteOrigin === undefined) {
+		// Keep the transport alive to avoid reconnect loops, but never associate opaque documents with a shared permission key.
+		tryRegisterContentScriptPortListeners(port, () => undefined, (payload) => {
+			catchAllErrorsAndCall(async () => {
+				if (typeof payload !== 'object' || payload === null || !('data' in payload)) return
+				const request = RawInterceptedRequest.safeParse(payload.data)
+				if (!request.success) return
+				port.postMessage({ type: INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_MESSAGE, requestId: request.value.requestId })
+				port.postMessage({ interceptorApproved: true, bridgeRequestSettled: true, type: 'result', method: request.value.method, requestId: request.value.requestId, error: { code: 4100, message: 'This document does not have a supported website origin.' } })
+				checkAndThrowRuntimeLastError()
+			})
+		}, checkAndThrowRuntimeLastError)
+		return
+	}
 	const identifier = websiteSocketToString(socket)
 	const websitePromise = (async () => {
 		const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
@@ -181,18 +195,19 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 				})
 				if (!shouldHandleRequest) return
 				const { simulationServicesOwner } = await getConnectionInitializationPromise()
-				await pendingRequestLimiter.execute(async () => {
-					const request = {
-						method: rawMessage.method,
-						...'params' in rawMessage ? { params: rawMessage.params } : {},
-						interceptorRequest: rawMessage.interceptorRequest,
-						usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,
-						uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
-						...(rawMessage.interceptorInternalRequest === true ? { interceptorInternalRequest: true as const } : {}),
-					}
-					// A connected port outlives RPC switches; each request stage selects services from the owner.
-					return await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
-				})
+				const request = {
+					method: rawMessage.method,
+					...'params' in rawMessage ? { params: rawMessage.params } : {},
+					interceptorRequest: rawMessage.interceptorRequest,
+					usingInterceptorWithoutSigner: rawMessage.usingInterceptorWithoutSigner,
+					uniqueRequestIdentifier: { requestId: rawMessage.requestId, requestSocket: socket },
+					...(rawMessage.interceptorInternalRequest === true ? { interceptorInternalRequest: true as const } : {}),
+				}
+				// A connected port outlives RPC switches; each request stage selects services from the owner.
+				await dispatchRequest(request,
+					async () => await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, rpcConnectionStatusPublisher.publishRpcConnectionStatus),
+					async () => replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: { code: -32005, message: 'Too many pending requests from this website. Wait for an existing request to finish.' } }),
+				)
 			})
 		},
 		checkAndThrowRuntimeLastError,
@@ -325,7 +340,8 @@ const onTabUpdated = async (tabId: number, changeInfo: browser.tabs._OnUpdatedCh
 	await waitForBackgroundStartup()
 	if (changeInfo.status !== 'complete') return
 	if (tab.url === undefined) return
-	const websiteOrigin = getHostWithPort(tab.url)
+	const websiteOrigin = getWebsiteOrigin(tab.url)
+	if (websiteOrigin === undefined) return
 	const website = { websiteOrigin, ...await retrieveWebsiteDetails(tabId, websiteOrigin) }
 	await updateKnownWebsiteMetadata(website)
 	await updateTabState(tabId, (previousState: TabState) => modifyObject(previousState, { website, tabIconDetails: DEFAULT_TAB_CONNECTION }))

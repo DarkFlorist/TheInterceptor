@@ -7,6 +7,7 @@ import type { InpageScriptCallBack, Settings } from '../types/interceptor-messag
 import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
+import { getWebsiteOrigin } from '../utils/websiteOrigin.js'
 import { getAllTabStates } from './storageVariables.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
@@ -323,16 +324,23 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 		if (decralativeNetRequestBlockIdentifier === previousDecralativeNetRequestBlockIdentifier) return
 
 		if (browser.runtime.getManifest().manifest_version === 3) {
+			const blockedDomains = [...new Set(sitesToBlock.flatMap((origin) => {
+				const normalized = getWebsiteOrigin(origin) ?? getWebsiteOrigin(`https://${ origin }`)
+				if (normalized === undefined) return []
+				const hostname = new URL(normalized).hostname
+				return hostname === '' ? [] : [hostname]
+			}))]
 			const dynamicRuleIds = (await browser.declarativeNetRequest.getDynamicRules()).map((rule) => rule.id)
 			const sessionRuleIds = (await browser.declarativeNetRequest.getSessionRules()).map((rule) => rule.id)
-			if (sitesToBlock.length !== 0) {
+			if (blockedDomains.length !== 0) {
 				await browser.declarativeNetRequest.updateDynamicRules({
 					removeRuleIds: dynamicRuleIds,
 					addRules: [{
 						id: dynamicRuleIds.length === 0 ? 1 : Math.max.apply(null, dynamicRuleIds) + 1,
 						priority: 1,
 						action : { type: 'block' as const },
-						condition: { initiatorDomains: sitesToBlock, domainType: 'thirdParty' as const }
+						// DNR accepts hostnames, not permission-origin URLs. Network blocking remains a domain-wide policy.
+						condition: { initiatorDomains: blockedDomains, domainType: 'thirdParty' as const }
 					}]
 				})
 			} else {
@@ -361,9 +369,9 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 				if (tabIdsToBlock.find((tabId) => tabId === details.tabId) !== undefined) return { cancel: true }
 				if (details.originUrl === undefined) return {}
 				if (details.type === 'main_frame') return {}
-				const websiteOrigin = getHostWithPort(details.originUrl)
+				const websiteOrigin = getWebsiteOrigin(details.originUrl)
 				const destinationHost = getHostWithPort(details.url)
-				if (destinationHost === websiteOrigin) return {}
+				if (destinationHost === getHostWithPort(details.originUrl)) return {}
 				if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return { cancel: true }
 				return {}
 			}

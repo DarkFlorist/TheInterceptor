@@ -1038,6 +1038,20 @@ describe('SimulationModeEthereumClientService', () => {
 			assert.equal(requestHandler.ethSimulateV1Calls.length, 0)
 		})
 
+		test('stack refreshes preserve an explicit legacy gas price even with insufficient funds', async () => {
+			const parentBlock = await ethereum.getBlock(undefined)
+			const gasPrice = 1000n * 10n ** 9n
+			const transaction = {
+				signedTransaction: mockSignTransaction({ ...exampleTransaction, maxFeePerGas: gasPrice, maxPriorityFeePerGas: gasPrice }),
+				website: { websiteOrigin: 'https://test.example', icon: undefined, title: undefined },
+				created: new Date(),
+				originalRequestParameters: { method: 'eth_sendTransaction', params: [{ gasPrice }] },
+				transactionIdentifier: 42n,
+			} as const
+			const adjusted = getBaseFeeAdjustedTransactions(parentBlock, [transaction], new Map([[transaction.transactionIdentifier, 0n]]))
+			assert.deepEqual(adjusted, [transaction])
+		})
+
 		test('getBaseFeeAdjustedTransactions adjusts type-7702 fee-market transactions', async () => {
 			requestHandler.balance = 50n
 			requestHandler.ethGetBalanceCalls.length = 0

@@ -714,6 +714,7 @@ const isFeeMarketPreSimulationTransaction = (transaction: PreSimulationTransacti
 const usesInterceptorFilledMaxFeePerGas = (transaction: PreSimulationTransaction): transaction is FeeMarketPreSimulationTransaction => {
 	return transaction.originalRequestParameters.method === 'eth_sendTransaction'
 		&& isFeeMarketPreSimulationTransaction(transaction)
+		&& transaction.originalRequestParameters.params[0].gasPrice === undefined
 		&& !hasExplicitMaxFeePerGas(transaction.originalRequestParameters.params[0].maxFeePerGas)
 }
 

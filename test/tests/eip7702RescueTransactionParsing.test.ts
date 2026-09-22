@@ -15,6 +15,7 @@ import { EthereumSignedTransactionToSignedTransaction, serializeSignedTransactio
 import { EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { Erc20ABI } from '../../app/ts/utils/abi.js'
+import { feeOops } from '../../app/ts/simulation/protectors/feeOops.js'
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
 
 const zeroAddress = '0x0000000000000000000000000000000000000000'
@@ -403,6 +404,45 @@ describe('EIP-7702 rescue transaction parsing', () => {
 		assert.equal(authorization.address, 0n)
 		assert.equal(authorization.nonce, 5n)
 		assert.equal(authorization.yParity, 'even')
+	})
+
+	test('rejects a signing sender mismatch before making RPC calls', async () => {
+		const browserMock = installBrowserMock()
+		try {
+			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const handler = createEip7702TransactionParsingRequestHandler()
+			let rpcCalls = 0
+			const ethereum = new EthereumClientService({ ...handler, jsonRpcRequest: async (request: EthereumJsonRpcRequest) => { rpcCalls += 1; return await handler.jsonRpcRequest(request) } }, async () => undefined, async () => undefined, rpcNetwork)
+			const request = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ from: recipientAddress, to: accessListAddress, gas: '0x5208' }] })
+			const result = await formEthSendTransaction(ethereum, undefined, 1n, { websiteOrigin: 'https://test.example', icon: undefined, title: undefined }, request, new Date(), 1n, false)
+			assert.equal(result.success, false)
+			if (result.success) throw new Error('A mismatched sender must not be simulated')
+			assert.match(result.error.message, /sender does not match/)
+			assert.equal(rpcCalls, 0)
+		} finally {
+			browserMock.restore()
+		}
+	})
+
+	test('preserves explicit gas prices in the review and excessive-fee protector', async () => {
+		const browserMock = installBrowserMock()
+		try {
+			const { formEthSendTransaction } = await import('../../app/ts/background/windows/confirmTransaction.js')
+			const ethereum = new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork)
+			for (const gasPrice of [0n, 1n, 1000n * 10n ** 9n]) {
+				const request = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ ...(gasPrice === 0n ? {} : { from: recipientAddress }), to: accessListAddress, gas: '0x5208', gasPrice: `0x${ gasPrice.toString(16) }` }] })
+				const result = await formEthSendTransaction(ethereum, undefined, EthereumAddress.parse(recipientAddress), { websiteOrigin: 'https://test.example', icon: undefined, title: undefined }, request, new Date(), 2n, false)
+				assert.equal(result.success, true)
+				if (!result.success || result.transaction.type !== '1559') throw new Error('Missing fee-market transaction')
+				assert.equal(result.transaction.maxFeePerGas, gasPrice)
+				assert.equal(result.transaction.maxPriorityFeePerGas, gasPrice)
+				assert.equal(result.originalRequestParameters.params[0].gasPrice, gasPrice)
+				assert.equal(result.originalRequestParameters.params[0].from, EthereumAddress.parse(recipientAddress))
+				if (gasPrice > 10n ** 10n) assert.match(await feeOops(result.transaction, ethereum, undefined, { kind: 'passthrough' }) ?? '', /outrageous fee/)
+			}
+		} finally {
+			browserMock.restore()
+		}
 	})
 
 	test('formEthSendTransaction recovers authorization authority from signed tuples', async () => {
