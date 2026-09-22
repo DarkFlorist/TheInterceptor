@@ -109,3 +109,33 @@ A mocked permission denial produces a visible error panel with browser/system pe
 The signed fixture clearly shows Signature verified · Not broadcast. Review the recipient, amount, and maximum fee, then explicitly choose Broadcast transaction. Cancel is secondary and the hash is expandable. This signed example uses a known public test key and was never broadcast.
 
 ![Broadcast only after verification](images/direct-signing/07-broadcast-confirmation.png)
+
+## 17. Compare the signing address on Nano X
+
+The Ledger signing page adds an expected-screen preview below the exact transaction. Use Next screen to reach **From**, then compare the full checksummed address with the physical Nano X. Navigation changes only this local preview. This screenshot uses a seeded request; the screen-content profile is separately checked against the official 1.22.3 app in Speculos.
+
+![Nano X address comparison](images/direct-signing/08-ledger-screen-address.png)
+
+## 18. Compare the maximum fee
+
+Continue through Amount and To to **Max fees**. The device-style value uses Ledger’s ticker and decimal format and is calculated from the same approved gas limit and fee ceiling shown above. Match optional nonce/hash screens under Match your device settings.
+
+![Nano X maximum fee comparison](images/direct-signing/09-ledger-screen-fees.png)
+
+## 19. Typed data with Raw messages disabled
+
+For typed data, the default preview shows domain fields followed by **Message hash**, matching Nano X’s Raw messages disabled flow. The hash is the EIP-712 message-struct hash displayed by the device. The complete JSON remains available above, and the preview includes Ledger’s Blind signing warning at the start.
+
+![Nano X typed-data hash](images/direct-signing/10-ledger-typed-hash.png)
+
+## 20. Typed data with Raw messages enabled
+
+Open Match your device settings and enable Raw messages only if it is enabled in the device’s Ethereum App settings. Step through the structures and fields; this example shows **contents / Hello Ledger**. Interceptor cannot read or change that device setting. Both modes send the complete supported EIP-712 protocol.
+
+![Nano X typed-data fields and settings](images/direct-signing/11-ledger-typed-fields.png)
+
+## 21. Compare a personal message
+
+The exact bytes remain above, while the preview shows the Nano X **Message** screen. ASCII whitespace is rendered as spaces; binary or non-ASCII messages use hexadecimal. Compare the physical display before continuing; this is not evidence of a device’s actual approval.
+
+![Nano X personal message](images/direct-signing/12-ledger-personal-message.png)

@@ -1,3 +1,4 @@
+import { prepareBrowserWalletForwarding } from '../../signing/browserWallet.js'
 import { verifyDirectResult } from '../../signing/backend.js'
 import { EIP712Message } from '../../types/eip721.js'
 import { getSavedSafeSigningAccount } from '../safeSigningAccount.js'
@@ -364,6 +365,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		confirmation.data.action === 'accept'
 		&& pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated'
 	) return false
+	let browserForwardingFields: { expectedProviderId?: string } = {}
 	if (!pendingTransactionOrMessage.simulationMode && pendingTransactionOrMessage.signingWalletBinding !== undefined) {
 		const binding = pendingTransactionOrMessage.signingWalletBinding
 		if (confirmation.data.action === 'accept') {
@@ -376,7 +378,9 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 					return true
 				}
 				const tab = await getTabState(pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId)
-				if (tab.signerName !== binding.wallet.signerName || tab.signerAccounts[0] !== binding.wallet.address) throw new Error('Select the expected account in the saved browser wallet before continuing.')
+				const forwarding = prepareBrowserWalletForwarding(binding.wallet, tab)
+				if (forwarding.error !== undefined) throw new Error(forwarding.error.message)
+				browserForwardingFields = { expectedProviderId: forwarding.expectedProviderId }
 			} catch (error) {
 				await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'SignerError', code: 4100, message: getErrorMessage(error) ?? 'Unable to start signing' } }))
 				await updateConfirmTransactionView(ethereum, tokenPriceService)
@@ -396,7 +400,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) {
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' } }))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)
-		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		const requestWasForwarded = await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', ...browserForwardingFields, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 		if (requestWasForwarded) return true
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, {
 			approvalStatus: {
@@ -433,7 +437,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			return reply({ type: 'result', result: confirmation.data.signerReply })
 		}
 		await removePendingRequestAndUpdateView()
-		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
+		return await replyToInterceptedRequestAfterManifestV2Reconnect(websiteTabConnections, { ...signerFacingRequest, type: 'forwardToSigner', ...browserForwardingFields, uniqueRequestIdentifier: confirmation.data.uniqueRequestIdentifier })
 	}
 	if (confirmation.data.action === 'signerIncluded') throw new Error('Signer included transaction that was in simulation')
 

@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getWalletSwitchRequestId, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
+import { createDeferredSignal, getWalletSwitchRequestId, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
 	test('awaits retry-state publishing before replying to a waking RPC request', async () => {
@@ -194,6 +194,53 @@ describe('background eth_accounts', () => {
 			method: 'wallet_getCapabilities',
 			params: [accountString, ['0x2105']],
 		})
+	})
+
+	test('serializes a status report with account discovery before dispatch', async () => {
+		installBrowserMock()
+		const { askForSignerAccountsFromSignerIfNotAvailable, websiteSocketToString, runSignerStateOperation, beginSignerStateConfirmation, confirmSignerState, handleInterceptedRequest } = await loadModules()
+		const socket = { tabId: 1, connectionName: 0n }
+		const websiteOrigin = 'https://example.test'
+		const { port, messages } = createPort(socket.tabId)
+		const connections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const reading = createDeferredSignal()
+		const release = createDeferredSignal()
+		const originalGet = browser.storage.local.get.bind(browser.storage.local)
+		let blocked = false
+		browser.storage.local.get = async (keys) => {
+			if (keys === 'tabState_1' && !blocked) {
+				blocked = true
+				reading.resolve()
+				await release.promise
+			}
+			return await originalGet(keys)
+		}
+		try {
+			const discovery = askForSignerAccountsFromSignerIfNotAvailable(connections, socket)
+			await reading.promise
+			const report = runSignerStateOperation(connections, socket.tabId, async () => {
+				const tab = connections.get(socket.tabId)
+				if (tab === undefined) throw new Error('Missing tab')
+				beginSignerStateConfirmation(tab)
+				confirmSignerState(tab, 2)
+			})
+			release.resolve()
+			await report
+			await waitForPortMessageCount(messages, 'request_signer_to_eth_requestAccounts', 1)
+			const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+			const account = '0x2323232323232323232323232323232323232323'
+			await handleInterceptedRequest(port, websiteOrigin, { websiteOrigin, icon: undefined, title: undefined }, simulationServicesOwner, socket, {
+				interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 90, requestSocket: socket }, method: 'eth_accounts_reply',
+				params: [{ signerProviderGeneration: 2, type: 'success', accounts: [account], requestAccounts: true }],
+			}, connections, noopPublishRpcConnectionStatus)
+			assert.deepEqual(await discovery, { accounts: [BigInt(account)], error: undefined })
+		} finally {
+			release.resolve()
+			browser.storage.local.get = originalGet
+		}
 	})
 
 	test('routes one tab-wide signer refresh while serializing passive and interactive discovery', async () => {

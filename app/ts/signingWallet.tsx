@@ -1,3 +1,4 @@
+import { browserWalletProviderId } from './signing/browserWallet.js'
 import { addressString } from './utils/bigint.js'
 import { SigningSteps } from './components/subcomponents/SigningSteps.js'
 import { render } from 'preact'
@@ -8,8 +9,7 @@ import { TabState } from './types/user-interface-types.js'
 import { sendSigningPageRequest } from './signing/pageMessages.js'
 import { selectLedgerDevice, withLedgerDevice } from './signing/ledgerHid.js'
 import { checkLedgerEthereumApp, readLedgerAccount } from './signing/ledgerEthereum.js'
-import { importAirGapAccounts } from './signing/airgapEthereum.js'
-import { createAirGapUrDecoder } from './signing/airgapUr.js'
+import { createAirGapAccountImporter } from './signing/airgapAccountImport.js'
 import { SigningQrScanner } from './components/subcomponents/SigningQr.js'
 import { signingWalletDescription } from './signing/backend.js'
 import { sendPopupMessageToBackgroundPage } from './background/backgroundUtils.js'
@@ -33,8 +33,7 @@ function SigningWalletPage() {
 	const [scan, setScan] = useState(false)
 	const controller = useRef(new AbortController())
 	useEffect(() => () => controller.current.abort(new Error('Wallet setup closed')), [])
-	const [importType, setImportType] = useState<'crypto-account' | 'crypto-hdkey'>('crypto-account')
-	const [decoder, setDecoder] = useState(() => createAirGapUrDecoder('crypto-account'))
+	const accountImporter = useRef(createAirGapAccountImporter())
 	const run = async (operation: () => Promise<void>) => {
 		setBusy(true)
 		setError(undefined)
@@ -120,18 +119,22 @@ function SigningWalletPage() {
 		setStatus('Wallet removed. The address remains saved.')
 	})
 	const importPublicAccountFrame = async (frame: string) => {
-		const result = decoder.receive(frame)
-		if (result.payload === undefined) {
+		const result = accountImporter.current(frame)
+		if (result.accounts === undefined) {
 			setStatus(`Received ${ result.received } of ${ result.total } fragments`)
 			return false
 		}
-		const imported = importAirGapAccounts(importType, result.payload)
+		const imported = result.accounts
 		setAccounts(imported.map((account) => ({ ...account, type: 'airgap', address: BigInt(account.address), label })))
 		setSelected(0)
 		setScan(false)
 		setStatus('Public accounts imported. Review the address before saving. Signing authority is checked when you sign.')
 		return true
 	}
+	const browserAccounts = tabs.flatMap((tab) => {
+		const providerId = browserWalletProviderId(tab)
+		return !tab.signerConnected || providerId === undefined ? [] : tab.signerAccounts.map((address) => ({ tab, address, providerId }))
+	})
 	const selectedAccount = accounts[selected]
 	const accountMatches = selectedAccount !== undefined && (target === null || selectedAccount.address === BigInt(target))
 	const ledgerVerified = selectedAccount?.type === 'ledger' && verifiedLedgerAddress === selectedAccount.address
@@ -151,13 +154,12 @@ function SigningWalletPage() {
 			<button class = { `button ${ accounts.length === 0 ? 'is-primary' : 'signing-secondary' }` } disabled = { busy } onClick = { discoverLedger }>Discover Ledger Live accounts</button>
 			{ accounts.length === 0 ? undefined : <button class = 'button is-primary' disabled = { busy || ledgerVerified } onClick = { ledger }>{ ledgerVerified ? 'Address verified' : 'Verify selected address on Ledger' }</button> }
 		</div><details><summary>Advanced: custom derivation path</summary><label>Derivation path<input disabled = { busy } value = { path } onInput = { (event) => { setPath(event.currentTarget.value); setVerifiedLedgerAddress(undefined); setAccounts([]) } }/></label><p class = 'signing-muted'>Ledger Live: m/44′/60′/N′/0/0. Legacy: m/44′/60′/0′/0/N.</p><button class = 'button signing-secondary' disabled = { busy } onClick = { ledger }>Connect and verify this path</button></details></section> : undefined }
-		{ kind === 'browser' ? <section class = 'signing-panel'><h2>Connect your browser wallet</h2><p>Open an approved website with your browser wallet installed, connect, then choose one of its exposed accounts here.</p><div class = 'signing-actions'><button class = 'button is-primary' disabled = { busy } onClick = { connectBrowserWallet }>Connect browser wallet</button></div>{ tabs.flatMap((tab) => tab.signerAccounts.map((address) => <button key = { `${ tab.tabId }:${ address }` } class = 'button signing-secondary' onClick = { () => { setAccounts([{ type: 'browser', address, signerName: tab.signerName, providerId: tab.signerName, label }]); setSelected(0) } }>{ tab.signerName } · { addressString(address) }</button>)) }</section> : undefined }
+		{ kind === 'browser' ? <section class = 'signing-panel'><h2>Connect your browser wallet</h2><p>Open an approved website with your browser wallet installed, connect, then choose one of its exposed accounts here.</p><div class = 'signing-actions'><button class = 'button is-primary' disabled = { busy } onClick = { connectBrowserWallet }>Connect browser wallet</button></div>{ browserAccounts.map(({ tab, address, providerId }) => <button key = { `${ tab.tabId }:${ address }` } class = 'button signing-secondary' onClick = { () => { setAccounts([{ type: 'browser', address, signerName: tab.signerName, providerId, label }]); setSelected(0) } }>{ tab.signerProvider?.rdns ?? tab.signerName } · { addressString(address) }</button>) }{ tabs.some((tab) => tab.signerProvider?.ambiguous) ? <p class = 'signing-error'>Multiple providers claim the same wallet identity. Disable the conflicting wallet extension and reload the website before linking.</p> : undefined }</section> : undefined }
 		{ kind === 'airgap' ? <section class = 'signing-panel'>
 			<h2>{ scan ? 'Scan your public account' : 'Import from AirGap Vault' }</h2><p>In Vault, export your public Ethereum account as a QR code. No private keys leave Vault.</p>
-			<details><summary>Advanced: account export format</summary><label>QR format<select disabled = { scan } onChange = { (event) => { const type = event.currentTarget.value === 'crypto-hdkey' ? 'crypto-hdkey' : 'crypto-account'; setImportType(type); setDecoder(createAirGapUrDecoder(type)) } }><option value = 'crypto-account'>crypto-account</option><option value = 'crypto-hdkey'>crypto-hdkey</option></select></label></details>
 			{ scan ? <SigningQrScanner onFrame = { importPublicAccountFrame }/> : undefined }
-			<div class = 'signing-actions'><button class = { `button ${ scan || accounts.length > 0 ? 'signing-secondary' : 'is-primary' }` } disabled = { busy } onClick = { () => { setDecoder(createAirGapUrDecoder(importType)); setScan(!scan) } }>{ scan ? 'Cancel scan' : accounts.length > 0 ? 'Scan another account' : 'Scan public account' }</button></div>
-			<p class = 'signing-muted'>Saved AirGap accounts await offline signing; they do not need a continuous connection.</p>
+			<div class = 'signing-actions'><button class = { `button ${ scan || accounts.length > 0 ? 'signing-secondary' : 'is-primary' }` } disabled = { busy } onClick = { () => { accountImporter.current = createAirGapAccountImporter(); setScan(!scan) } }>{ scan ? 'Cancel scan' : accounts.length > 0 ? 'Scan another account' : 'Scan public account' }</button></div>
+			<p class = 'signing-muted'>Vault 3.34.4’s public-account format is reference-tested. QR exports do not report the installed Vault version. Saved AirGap accounts await offline signing; they do not need a continuous connection.</p>
 		</section> : undefined }
 		{ kind === 'manual' ? <section class = 'signing-panel'><h2>Save an address without a wallet</h2><label>Ethereum address<input value = { addressText } placeholder = '0x…' onInput = { (event) => setAddressText(event.currentTarget.value) }/></label><p class = 'signing-muted'>Use it to read chain data or simulate. Add a matching signing wallet later.</p></section> : undefined }
 		{ accounts.length === 0 ? undefined : <section class = 'signing-panel'><h2>{ kind === 'ledger' ? 'Select an account' : 'Review imported account' }</h2>

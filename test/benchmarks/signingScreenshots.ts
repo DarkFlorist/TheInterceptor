@@ -206,6 +206,29 @@ try {
 	if (!broadcastActions.includes('Broadcast transaction')) throw new Error('Signed transaction lacks broadcast action')
 	await wait(broadcast.page, 'Signature recovered. Review the transaction before broadcasting.')
 	await closeTarget(chrome.browserConnection, broadcast.id)
+	const ledgerRecord = { ...record, binding: ledgerBinding, input: { ...record.input, address: ledgerAddress } }
+	await background.evaluate(`browser.storage.local.set({directSigningRequestsV1:${JSON.stringify(DirectSigningRecords.serialize([ledgerRecord]))}})`)
+	const ledgerReview = await open(`directSigningV3.html?id=${record.id}`, 'Compare with your Ledger Nano X')
+	await click(ledgerReview.page, 'Next screen')
+	await capture(ledgerReview.page, '08-ledger-screen-address')
+	for (let index = 0; index < 3; index++) await click(ledgerReview.page, 'Next screen')
+	await capture(ledgerReview.page, '09-ledger-screen-fees')
+	await closeTarget(chrome.browserConnection, ledgerReview.id)
+	const typedRecord = { ...ledgerRecord, input: { ...ledgerRecord.input, method: 'eth_signTypedData_v4' as const, data: JSON.stringify({ types: { EIP712Domain: [{ name: 'name', type: 'string' }, { name: 'chainId', type: 'uint256' }], Message: [{ name: 'contents', type: 'string' }] }, primaryType: 'Message', domain: { name: 'Interceptor', chainId: 1 }, message: { contents: 'Hello Ledger' } }) } }
+	await background.evaluate(`browser.storage.local.set({directSigningRequestsV1:${JSON.stringify(DirectSigningRecords.serialize([typedRecord]))}})`)
+	const typedReview = await open(`directSigningV3.html?id=${record.id}`, 'Compare with your Ledger Nano X')
+	for (let index = 0; index < 4; index++) await click(typedReview.page, 'Next screen')
+	await capture(typedReview.page, '10-ledger-typed-hash')
+	await typedReview.page.evaluate(`(() => { const panel = document.querySelector('.ledger-preview'); panel.querySelector('details').open = true; const checkbox = panel.querySelector('input'); checkbox.click(); })()`)
+	for (let index = 0; index < 6; index++) await click(typedReview.page, 'Next screen')
+	await capture(typedReview.page, '11-ledger-typed-fields')
+	await closeTarget(chrome.browserConnection, typedReview.id)
+	const personalRecord = { ...ledgerRecord, input: { ...ledgerRecord.input, method: 'personal_sign' as const, data: '0x48656c6c6f204c6564676572' } }
+	await background.evaluate(`browser.storage.local.set({directSigningRequestsV1:${JSON.stringify(DirectSigningRecords.serialize([personalRecord]))}})`)
+	const personalReview = await open(`directSigningV3.html?id=${record.id}`, 'Compare with your Ledger Nano X')
+	await click(personalReview.page, 'Next screen')
+	await capture(personalReview.page, '12-ledger-personal-message')
+	await closeTarget(chrome.browserConnection, personalReview.id)
 	for (const method of ['personal_sign', 'eth_signTypedData_v4'] as const) {
 		const input = {
 			...record.input,

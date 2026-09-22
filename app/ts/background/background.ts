@@ -1,3 +1,4 @@
+import { browserSigningRequestAccount, prepareBrowserWalletForwarding } from '../signing/browserWallet.js'
 import { parseDirectSigningTypedData } from '../signing/exactPayload.js'
 import { getSigningWalletBinding } from './storageVariables.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
@@ -18,7 +19,7 @@ import { assertNever, hasOwnKey } from '../utils/typescript.js'
 import { JsonRpcResponseError, reportUnexpectedError, isFailedToFetchError } from '../utils/errors.js'
 import { InterceptedRequest, type WebsiteSocket } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
-import { EthereumJsonRpcRequest, type EthGetStorageAtParams, type SendRawTransactionParams, type SendTransactionParams, SupportedEthereumJsonRpcRequestMethods, type WalletAddEthereumChain, WalletRevokePermissions } from '../types/JsonRpc-types.js'
+import { EthereumJsonRpcRequest, SupportedEthereumJsonRpcRequestMethods, WalletRevokePermissions } from '../types/JsonRpc-types.js'
 import type { Website } from '../types/websiteAccessTypes.js'
 import { serialize } from '../types/wire-types.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
@@ -98,9 +99,13 @@ async function handleRPCRequest(
 	const directWallet = binding !== undefined && binding.wallet.type !== 'browser'
 	if (!settings.simulationMode && directWallet && request.method === 'eth_signTypedData_v4' && 'params' in request && Array.isArray(request.params) && typeof request.params[1] === 'string') parseDirectSigningTypedData(request.params[1])
 	const forwardToSigner = !settings.simulationMode && !directWallet && !request.usingInterceptorWithoutSigner
-	const getForwardingMessage = (request: SendRawTransactionParams | SendTransactionParams | WalletAddEthereumChain | EthGetStorageAtParams) => {
+	const getForwardingMessage = async <T extends { readonly method: string }>(forwardedRequest: T) => {
 		if (!forwardToSigner) throw new Error('Should not forward to signer')
-		return { type: 'forwardToSigner' as const, ...request }
+		if (binding?.wallet.type !== 'browser') return { type: 'forwardToSigner' as const, ...forwardedRequest }
+		const requireSelectedAccount = forwardedRequest.method.startsWith('eth_sign') || ['personal_sign', 'eth_sendTransaction', 'eth_sendRawTransaction', 'wallet_sendCalls'].includes(forwardedRequest.method)
+		const fields = prepareBrowserWalletForwarding(binding.wallet, await getTabState(socket.tabId), { requireSelectedAccount, requestedAddress: maybeParsedRequest.success ? browserSigningRequestAccount(maybeParsedRequest.value) : undefined })
+		if (fields.error !== undefined) throw new JsonRpcResponseError({ jsonrpc: '2.0', id: request.uniqueRequestIdentifier.requestId, error: fields.error })
+		return { type: 'forwardToSigner' as const, ...forwardedRequest, expectedProviderId: fields.expectedProviderId }
 	}
 
 	if (maybeParsedRequest.success === false) {
@@ -123,7 +128,7 @@ async function handleRPCRequest(
 		console.warn(maybeParsedRequest.fullError)
 		const maybePartiallyParsedRequest = SupportedEthereumJsonRpcRequestMethods.safeParse(request)
 		// the method is some method that we are not supporting, forward it to the wallet if signer is available
-		if (maybePartiallyParsedRequest.success === false && forwardToSigner) return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
+		if (maybePartiallyParsedRequest.success === false && forwardToSigner) return { ...await getForwardingMessage(request), replyWithSignersReply: true }
 		return {
 			type: 'result' as const,
 			method: request.method,
@@ -150,7 +155,7 @@ async function handleRPCRequest(
 	const accountOnlyMethod = isAccountOnlyMethod(parsedRequest.method)
 	if (settings.activeRpcNetwork.httpsRpc === undefined && forwardToSigner && !accountOnlyMethod) {
 		// we are using network that is not supported by us
-		return { type: 'forwardToSigner' as const, replyWithSignersReply: true, ...request }
+		return { ...await getForwardingMessage(request), replyWithSignersReply: true }
 	}
 	const withSimulationInput = async (handler: (simulationInput: ResolvedSimulationInput) => Promise<RPCReply>) => await handler(await getSimulationInput())
 	const withExecutionSimulationState = async (handler: (simulationState: ResolvedExecutionSimulationState) => Promise<RPCReply>) => await handler(await getExecutionSimulationState())
@@ -192,7 +197,7 @@ async function handleRPCRequest(
 				return getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, activeSafeSigner)
 			}
 			if (!safeSigningMode && activeSafeSigner === undefined && forwardToSigner) {
-				return { type: 'forwardToSigner', replyWithSignersReply: true, ...request }
+				return { ...await getForwardingMessage(request), replyWithSignersReply: true }
 			}
 			return getWalletCapabilities(rpcRequest, activeAddress, settings.activeRpcNetwork.chainId, activeSafeSigner)
 		}),
@@ -207,7 +212,7 @@ async function handleRPCRequest(
 			return { type: 'result' as const, method: rpcRequest.method, error: { code: 10000, message: 'wallet_addEthereumChain not implemented' } }
 		}),
 		eth_getStorageAt: rpcRequestHandler('eth_getStorageAt', async (_context, rpcRequest) => {
-			if (forwardToSigner && !simulationOverlayEnabled) return { ...getForwardingMessage(rpcRequest), replyWithSignersReply: true as const }
+			if (forwardToSigner && !simulationOverlayEnabled) return { ...await getForwardingMessage(rpcRequest), replyWithSignersReply: true as const }
 			return await withSimulationInput((simulationInput) => getStorageAt(ethereum, simulationInput, rpcRequest))
 		}),
 		eth_getLogs: rpcRequestHandler('eth_getLogs', async (_context, rpcRequest) => await withExecutionSimulationState((simulationState) => getLogs(ethereum, simulationState, rpcRequest))),

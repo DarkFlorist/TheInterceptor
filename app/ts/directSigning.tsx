@@ -1,3 +1,4 @@
+import { LedgerScreenPreview } from './components/subcomponents/LedgerScreenPreview.js'
 import { SigningSteps } from './components/subcomponents/SigningSteps.js'
 import { formatUnits } from './utils/ethereumUnits.js'
 import { CHAIN_NAMES } from './utils/chainNames.js'
@@ -177,6 +178,8 @@ function DirectSigningPage() {
 				<button class = 'button signing-secondary' disabled = { busy } onClick = { applyFeeChanges }>Apply changes and review again</button>
 			</details> : undefined }
 		</section> }
+		{ record.binding.wallet.type === 'airgap' ? <details class = 'signing-panel'><summary>AirGap compatibility</summary><p>Use Vault 3.34.4 or a compatible ERC-4527 Ethereum signer. EIP-1559 transactions, personal messages, and EIP-712 v4 are reference-tested. Account QR codes cannot report the Vault version or its signing capabilities; check the installed version on your offline device. Interceptor verifies every returned signature against this exact request.</p></details> : undefined }
+		{ record.binding.wallet.type === 'ledger' ? <LedgerScreenPreview key = { record.revision } payload = { prepareDirectPayload(record.input) }/> : undefined }
 		{ record.phase === 'review' ? <p class = 'signing-notice'>Review Interceptor’s simulated explanation in the confirmation window, then check your device’s own display. Simulation does not guarantee execution or what the device displays.</p> : undefined }
 		{ signed ? <section class = 'signing-panel signing-success'><h2>{ transaction === undefined ? 'Signature verified · Returned to application' : 'Signature verified · Not broadcast' }</h2><p>{ transaction === undefined ? 'The message signature belongs to the expected account and payload.' : 'Check the recipient, amount, and maximum fee above. Broadcasting sends this signed transaction to the network.' }</p></section> : undefined }
 		{ status === '' || qr !== undefined ? undefined : <p class = 'signing-muted' role = 'status'>{ status }</p> }

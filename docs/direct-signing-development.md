@@ -1,14 +1,14 @@
 # Direct signing
 
-Interceptor includes local Ledger WebHID and AirGap ERC-4527 signing adapters, address-based wallet bindings, dedicated setup/signing pages, and a persisted signing pipeline. These paths use the existing Ethereum serializers and cryptographic dependencies. Real device interoperability is not yet verified; see the verification record below.
+Interceptor includes local Ledger WebHID and AirGap ERC-4527 signing adapters, address-based wallet bindings, dedicated setup/signing pages, and a persisted signing pipeline. These paths use the existing Ethereum serializers and cryptographic dependencies. Nano X emulator and Vault reference-library interoperability are verified below; physical devices remain unverified.
 
 ## Setup and use
 
 Open **Change** beside the active address, then **Add address / signing wallet**. The setup page offers browser wallet, Ledger, AirGap Vault, and manual address options. Adding or changing a wallet does not switch modes or authorize a website.
 
-- **Browser wallet:** open an approved website, click **Connect browser wallet** in setup, and select an exposed account after approving the connection in the wallet. Interceptor continues to use its existing browser-provider bridge and browser-wallet-owned transaction submission. A saved browser wallet is identified by its existing Interceptor signer name and account. Multiple independent providers reporting the same signer name cannot currently be distinguished persistently.
+- **Browser wallet:** open an approved website, click **Connect browser wallet** in setup, and select an exposed account after approving the connection in the wallet. Interceptor continues to use its existing browser-provider bridge and browser-wallet-owned transaction submission. New bindings retain the announced EIP-6963 reverse-DNS provider identity and account. UUIDs identify providers only within a page session. Conflicting identities are rejected, including immediately before forwarding a signing request. EIP-6963 metadata is self-reported, not authenticated. Legacy providers and existing name-only bindings retain their prior name-based behavior; relink after discovery to save the stronger identity.
 - **Ledger:** use desktop Chrome/Chromium with WebHID and Web Locks, unlock the device, and open Ethereum. Discover the first five Ledger Live accounts, or enter a concrete derivation path. Select an account and verify its address on the device before saving. Ledger Live account N uses `m/44'/60'/N'/0/0`; legacy address index N uses `m/44'/60'/0'/0/N`. Reconnection verifies the saved public key and address before signing. The adapter checks for Ethereum app 1.9.19 or newer and streams full EIP-712 definitions and values; it has no hash-only fallback.
-- **AirGap Vault:** export an Ethereum `crypto-account` or `crypto-hdkey` public-account UR and scan it with the camera. Review and name the imported accounts. Account-root exports derive change 0, index 0; concrete address exports retain their supplied path. An imported account is awaiting offline signing, not continuously connected. Public-account import does not establish possession of a private key; every returned signature is independently verified.
+- **AirGap Vault:** export an Ethereum `crypto-account` or `crypto-hdkey` public-account UR and scan it with the camera. The scanner recognizes either format automatically and locks that format for the scan. Review and name the imported accounts. Account-root exports derive change 0, index 0; concrete address exports retain their supplied path. An imported account is awaiting offline signing, not continuously connected. Public-account import does not establish possession of a private key; every returned signature is independently verified.
 - **Manual:** enter an address and name. It remains available for chain reads and simulation. Real signing requires a wallet binding.
 
 Saved accounts remain visible while disconnected. Selecting an ordinary address in Signing mode pins it independently of browser-wallet account and chain callbacks. **Change signing wallet** edits the same address without selecting it; removing a binding retains the address. **Simulate this address** changes the simulation selection without changing the remembered explicit signing selection. The Simulating and Signing buttons switch modes; each mode remembers its address selection. Legacy browser-wallet-following selections remain supported.
@@ -47,14 +47,48 @@ Automated tests cover native-shaped HID exchanges for all three operations, fram
 
 Chrome for Testing 145.0.7632.6 on Linux passed the real extension communication, browser-wallet signing, and Safe co-signing/stack-handoff smoke checks using local fixture pages, simulated browser providers, and a local RPC fixture for the Safe checks. The communication check also covers an authorized saved address without another wallet installed and missing-binding signing rejection.
 
-The HID mocks are deterministic protocol tests, not the Ledger Ethereum app emulator. Pixel round trips and official UR vectors are not an AirGap Vault application interoperability test. No physical Ledger model, firmware/Ethereum app version, AirGap Vault release/device, real camera/browser combination, or live-chain broadcast has been verified in this workspace. Test each of transaction, exact-byte personal signing, and full typed data on the target device/version before relying on it. Firefox has no native WebHID path; camera/QR support must be checked separately.
+Ledger Ethereum **1.22.3**, the latest stable release checked on 2026-09-22, ran as the official **Nano X** ELF in **Speculos 0.27.0**. All three signing methods produced signatures independently verified by Interceptor, with Raw messages both disabled and enabled. Captured device text and public-test-account signatures are in `test/fixtures/directSigning/ledger-nanox-1.22.3*.json`. This exercises the real Ethereum app over emulator APDUs; WebHID framing remains covered by native-shaped transport tests.
 
-Browser onboarding currently selects accounts already exposed to an approved application; it does not install or discover additional wallet extensions. Same-name browser providers, automatic AirGap capability/version discovery remain limitations. Browser-owned transaction broadcasting retains its existing response semantics.
+AirGap Vault **3.34.4**, the latest stable release checked on 2026-09-22, was inspected at `aa50b7f0371ed2e681f358d22b546c7c000e05b7`. Its pinned Ethereum and UR reference libraries import an account-root export, decode Interceptor requests, sign all three operations, encode replies, and pass Interceptor’s independent verification. Cases include binary personal-message bytes, typed arrays/large integers, and multipart fountain decoding in both directions after dropping systematic fragments. The harness follows Vault’s `@airgap/angular-core@0.0.62` conversion/generator paths, including its v0 adapter’s delegation to the v1 Ethereum protocol, serializer, and key derivation; it does not run the Angular UI or an installed Vault app. Checked-in vectors reproduce the cryptographic/QR checks without reference packages.
+
+No physical Nano X/firmware, physical AirGap device, real camera/browser combination, or live-chain broadcast has been verified in this workspace. Test each of transaction, exact-byte personal signing, and full typed data on the target device/version before relying on it. Firefox has no native WebHID path; camera/QR support must be checked separately.
+
+Browser onboarding currently selects accounts already exposed to an approved application; it does not install or discover additional wallet extensions. Legacy same-name browser providers remain indistinguishable. ERC-4527 account exports contain no installed-app version or capability advertisement, so automatic Vault version detection is unavailable. The UI states the tested version and supported operations instead of inferring signing capability from public import. Browser-owned transaction broadcasting retains its existing response semantics.
+
+## Nano X screen comparison
+
+The signing tab shows **Compare with your Ledger Nano X**, a local screen-by-screen preview based on Ethereum 1.22.3. It uses the device’s labels and formatting for ordinary Ethereum transfers, personal messages, and EIP-712 review. Previous/Next changes only the preview. It does not approve a request or send a device command.
+
+Match the optional **Nonce**, **Transaction / message hash**, and **Raw messages** controls to the device’s Ethereum App settings. Those settings are not exposed by the configuration APDU. With Raw messages off, typed-data review shows domain fields and a message-struct hash; with it on, the full protocol allows field review. This adapter sends full EIP-712 data in both cases. Ethereum 1.22.3 requires Blind signing for this unfiltered typed-data path; the preview shows its warning. Pressing both buttons at the device’s skip prompt skips raw fields.
+
+This is a content comparison, not a pixel-perfect emulator: fonts, wrapping, pagination, long-value truncation, plugins, and dynamically loaded network metadata can differ. Interceptor keeps full values and the exact payload visible; never treat its simulated explanation or preview as evidence of what a physical device displayed.
+
+## Reproduce the reference checks
+
+These optional tools are development-only and add no extension or repository dependencies. Use isolated directories; only the published test seed is used, and no RPC submission occurs.
+
+For Ledger, install `speculos==0.27.0` in a Python virtual environment with its documented system prerequisites. Download the Nano X ELF from the official Ethereum 1.22.3 release, source commit `d6d699bcdaf5dc4d99722f38cbbbfb466c0f3163`. The tested ELF SHA-256 is `47705998a0419df75959f46faf2c4a214846f61943fd15d3708b92caf2a3559f`. Start a fresh emulator with its default public test seed:
+
+```sh
+speculos /path/to/ethereum-nanox.elf --model nanox --display headless --api-port 5010 --apdu-port 10001
+bun test/benchmarks/ledgerNanoXReference.ts
+bun test/benchmarks/ledgerNanoXReference.ts --raw-messages
+```
+
+The harness uses only localhost port 5010, configures emulator settings, advances review screens, and records verified results. Never connect this automated approval harness to physical hardware or real accounts.
+
+For AirGap, create a separate temporary npm project and install these exact reference versions there with scripts disabled:
+
+```sh
+npm install --ignore-scripts --save-exact @airgap/ethereum@0.13.46 @airgap/coinlib-core@0.13.46 @airgap/crypto@0.13.46 @airgap/module-kit@0.13.46 @airgap/serializer@0.13.46 @keystonehq/bc-ur-registry-eth@0.19.1 @ngraveio/bc-ur@1.1.6 @ethereumjs/tx@3.4.0
+```
+
+From this repository, run `AIRGAP_REFERENCE_DIR=/path/to/isolated/project bun test/benchmarks/airgapVaultReference.ts`. These external reference libraries are not imported by extension code or the normal test suite. `bun test test/tests/directSigningReference.test.ts` verifies the committed outputs using existing project dependencies only.
 
 ## Protocol sources
 
-- [Ledger Ethereum APDUs](https://github.com/LedgerHQ/app-ethereum/blob/e5b6dbff3aca3e3c97a1079c8dccbd1dafdb32c7/doc/apdu.md) and [full EIP-712 protocol](https://github.com/LedgerHQ/app-ethereum/blob/e5b6dbff3aca3e3c97a1079c8dccbd1dafdb32c7/doc/eip712.md).
-- [Ledger reference EIP-712 command builder](https://github.com/LedgerHQ/app-ethereum/blob/e5b6dbff3aca3e3c97a1079c8dccbd1dafdb32c7/client/src/ledger_app_clients/ethereum/command_builder.py) and [HID framing](https://github.com/LedgerHQ/ledgerjs/blob/master/packages/devices/src/hid-framing.ts).
+- [Ledger Ethereum APDUs](https://github.com/LedgerHQ/app-ethereum/blob/d6d699bcdaf5dc4d99722f38cbbbfb466c0f3163/doc/apdu.md) and [full EIP-712 protocol](https://github.com/LedgerHQ/app-ethereum/blob/d6d699bcdaf5dc4d99722f38cbbbfb466c0f3163/doc/eip712.md).
+- [Ledger reference EIP-712 command builder](https://github.com/LedgerHQ/app-ethereum/blob/d6d699bcdaf5dc4d99722f38cbbbfb466c0f3163/client/src/ledger_app_clients/ethereum/command_builder.py) and [HID framing](https://github.com/LedgerHQ/ledgerjs/blob/master/packages/devices/src/hid-framing.ts).
 - [ERC-4527](https://eips.ethereum.org/EIPS/eip-4527), [Bytewords](https://github.com/BlockchainCommons/Research/blob/master/papers/bcr-2020-012-bytewords.md), [UR](https://github.com/BlockchainCommons/Research/blob/master/papers/bcr-2020-005-ur.md), and [bc-ur reference implementation](https://github.com/BlockchainCommons/bc-ur). Adaptation/vector notices: [bc-ur.txt](../app/licenses/bc-ur.txt).
 - [AirGap Vault account/request matching](https://github.com/airgap-it/airgap-vault/blob/aa50b7f0371ed2e681f358d22b546c7c000e05b7/src/app/services/iac/iac.service.ts).
 - [QR package source and manifest](https://github.com/paulmillr/qr).

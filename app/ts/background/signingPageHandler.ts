@@ -1,3 +1,4 @@
+import { matchesBrowserSigningWallet } from '../signing/browserWallet.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getSafeContractState } from '../safe/safeCore.js'
 import { getSigningWalletBinding, updateUserAddressBookEntries } from './storageVariables.js'
@@ -30,7 +31,7 @@ export async function signingPageHandler(raw: unknown, ethereum: EthereumClientS
 		if (request.method === 'signing_saveWallet') {
 			if (request.wallet?.type === 'browser') {
 				const wallet = request.wallet
-				if (!(await getAllTabStates()).some((tab) => tab.signerName === wallet.signerName && tab.signerAccounts.includes(request.address))) throw new Error('Connect the browser wallet and select this account before saving it')
+				if (!(await getAllTabStates()).some((tab) => tab.signerConnected && matchesBrowserSigningWallet(wallet, tab) && tab.signerAccounts.includes(request.address))) throw new Error('Connect the browser wallet and select this account before saving it')
 			}
 			await saveAddressSigningWallet(request.address, request.wallet, request.revision, request.name)
 			await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })

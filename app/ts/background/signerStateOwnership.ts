@@ -84,6 +84,7 @@ export function clearSignerDerivedTabState(previousState: TabState) {
 	return modifyObject(previousState, {
 		signerConnected: false,
 		signerName: 'NoSigner',
+		signerProvider: undefined,
 		signerAccounts: [],
 		signerChain: undefined,
 		signerAccountError: undefined,

@@ -14,7 +14,7 @@ const common = { address: EthereumAddress, label: WalletLabel }
 
 export type SigningWallet = funtypes.Static<typeof SigningWallet>
 export const SigningWallet = funtypes.Union(
-	funtypes.ReadonlyObject({ ...common, type: funtypes.Literal('browser'), signerName: SignerName.withConstraint((name) => name !== 'NoSigner' && name !== 'NoSignerDetected'), providerId: funtypes.String.withConstraint((id) => id.length > 0 && id.length <= 256) }),
+	funtypes.ReadonlyObject({ ...common, type: funtypes.Literal('browser'), signerName: SignerName.withConstraint((name) => name !== 'NoSigner' && name !== 'NoSignerDetected'), providerId: funtypes.String.withConstraint((id) => id.length > 0 && id.length <= 264) }),
 	funtypes.ReadonlyObject({ ...common, type: funtypes.Literal('ledger'), publicKey: PublicKey, derivationPath: DerivationPath }),
 	funtypes.ReadonlyObject({ ...common, type: funtypes.Literal('airgap'), publicKey: PublicKey, derivationPath: DerivationPath, sourceFingerprint: funtypes.Number.withConstraint((value) => Number.isInteger(value) && value > 0 && value <= 0xffffffff) }),
 ).withConstraint((wallet) => {

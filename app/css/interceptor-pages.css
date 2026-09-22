@@ -812,7 +812,7 @@ fieldset[disabled] .button.is-primary.is-danger {
 .signing-page input:focus, .signing-page select:focus { outline: 2px solid var(--accent-color); outline-offset: 2px; }
 .signing-page summary { color: var(--text-color); cursor: pointer; padding: 8px 0; list-style: disclosure-closed; }
 .signing-page details[open] > summary { list-style: disclosure-open; margin-bottom: 12px; }
-.signing-page pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-dark-color); color: var(--text-color); border-radius: 6px; }
+.signing-page pre { font-size: .9rem; line-height: 1.5; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-dark-color); color: var(--text-color); border-radius: 6px; }
 .signing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .signing-page .button, .signing-wallet-summary .button { white-space: normal; height: auto; min-height: 40px; }
 .button.signing-secondary { background: transparent; border: 1px solid var(--address-muted-bg-color); color: var(--text-color); }
@@ -861,3 +861,10 @@ fieldset[disabled] .button.is-primary.is-danger {
 .signing-account input[type=radio] { position: static; opacity: 1; width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent-color); }
 .signing-wallet-summary + * { margin-top: 12px; }
 .signing-address-selector .multiline-card > span:nth-of-type(3) data, .active-address-row .multiline-card > span:nth-of-type(3) data { color: var(--subtitle-text-color); }
+
+.ledger-screen { background: #080808; color: #fff; border: 2px solid #666; border-radius: 12px; padding: 22px 24px; width: min(100%, 360px); min-height: 132px; margin: 8px auto; display: flex; flex-direction: column; justify-content: center; gap: 12px; text-align: center; overflow-wrap: anywhere; white-space: pre-wrap; font-family: monospace; }
+.ledger-screen strong { font-size: 16px; }
+.ledger-screen span { font-size: 15px; }
+.ledger-navigation { display: flex; align-items: center; justify-content: center; gap: 16px; }
+.signing-page label.ledger-setting:not(.signing-account) { flex-direction: row; align-items: center; margin-top: 12px; }
+.signing-page .ledger-setting input { width: 18px; height: 18px; padding: 0; }
