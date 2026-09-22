@@ -31,6 +31,8 @@ Before initial broadcast, Interceptor rechecks chain, nonce, balance, and fee co
 
 Changing the saved wallet invalidates an outstanding request; cancel it and request a fresh review from the application. Selecting another address elsewhere does not reroute it. Approval and signature state survive background-worker reloads and can be resumed by reopening the signing tab from its original confirmation. Closing/rejecting the original confirmation invalidates unsubmitted work. Imported settings clear the explicit ordinary signing selection.
 
+Settings backups use version 1.7 to include wallet bindings and Safe Apps compatibility together. Existing version 1.6 backups retain their Safe Apps setting when imported and clear local wallet bindings, since that format did not store them.
+
 ## Bounds and dependencies
 
 The CBOR codec is a registry-oriented subset: definite-length integers, byte/text strings, arrays, unsigned integer-keyed maps, booleans, and tags. It rejects duplicate keys, malformed UTF-8, indefinite lengths, excessive nesting/work, and trailing data. Account import separately rejects private/master keys, inappropriate curves or key paths, wildcards, and child ranges.

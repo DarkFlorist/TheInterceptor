@@ -18,7 +18,7 @@ test('closing a newly opened confirmation waits for its pending request to be pe
 	const signRequest = { method: 'personal_sign' as const, params: ['0x01', activeAddress] as const }
 	const creation = modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, {
 		...signRequest, interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier,
-	}, signRequest, false, activeAddress, { websiteOrigin: 'https://example.com' }, new Map())
+	}, { kind: 'message', parameters: signRequest }, false, activeAddress, { websiteOrigin: 'https://example.com' }, new Map())
 	try {
 		await writeStarted
 		const closing = modules.onCloseWindowOrTab({ type: 'popup', id: 99 }, simulator.ethereum, simulator.tokenPriceService, new Map())

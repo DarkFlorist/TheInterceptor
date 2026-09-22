@@ -1,4 +1,5 @@
-import type { ResetSimulationServices } from '../../app/ts/simulation/serviceLifecycle.js'
+import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
+import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
@@ -9,7 +10,7 @@ import { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 
 type Listener = () => void
-type PortMessage = { type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
+type PortMessage = { walletSwitchRequestId?: unknown, type?: unknown, method?: unknown, result?: unknown, requestId?: unknown, error?: { code?: unknown, message?: unknown } }
 export const noopPublishRpcConnectionStatus: PublishRpcConnectionStatus = async () => undefined
 
 export function createDeferredSignal() {
@@ -25,6 +26,7 @@ export function createDeferredValue<T>() {
 }
 
 export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3 }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3 } = {}) {
+	const storageListeners = new Set<(changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void>()
 	const storageState: Record<string, unknown> = {}
 	const runtimeMessages: unknown[] = []
 	const chainChangeRemovalStarted = createDeferredSignal()
@@ -47,6 +49,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 			onConnect: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
 		},
 		storage: {
+			onChanged: { addListener: (listener: (changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void) => storageListeners.add(listener), removeListener: (listener: (changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void) => storageListeners.delete(listener) },
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
 					if (keys === undefined || keys === null) return { ...storageState }
@@ -55,7 +58,9 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 					return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 				},
 				async set(items: Record<string, unknown>) {
+					const changes = Object.fromEntries(Object.entries(items).map(([key, newValue]) => [key, { oldValue: storageState[key], newValue }]))
 					Object.assign(storageState, items)
+					for (const listener of storageListeners) listener(changes, 'local')
 				},
 				async remove(keys: string | string[]) {
 					const keysToRemove = Array.isArray(keys) ? keys : [keys]
@@ -131,14 +136,23 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 }
 
 export async function loadModules() {
+	const safeApps = await import('../../app/ts/background/safeAppsCompatibilityCoordinator.js')
 	return {
 		...await import('../../app/ts/background/accessManagement.js'),
 		...await import('../../app/ts/background/activeSettings.js'),
 		...await import('../../app/ts/background/background.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
+		...safeApps,
+		initializeSafeAppsCompatibility: async (connections: WebsiteTabConnections) => {
+			const feature = safeApps.createSafeAppsCompatibilityFeature(connections)
+			Object.assign(connections, { lifecycle: feature.lifecycle })
+			return await safeApps.initializeSafeAppsCompatibility(feature)
+		},
+		...await import('../../app/ts/background/websiteLifecycle.js'),
 		...await import('../../app/ts/background/settings.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/websiteAccessPolicy.js'),
 		...await import('../../app/ts/background/websiteTabConnections.js'),
 		...await import('../../app/ts/background/windows/changeChain.js'),
 		...await import('../../app/ts/background/windows/interceptorAccess.js'),
@@ -226,11 +240,26 @@ export function createEthereumWithGetBlockCounter(
 			},
 		},
 	)
+	const tokenPriceService = new TokenPriceService(ethereum, 60_000)
 	return {
 		ethereum,
-		tokenPriceService: new TokenPriceService(ethereum, 60_000),
-		resetSimulationServices: (() => undefined) satisfies ResetSimulationServices,
+		tokenPriceService,
+		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }),
 	}
 }
 
 export { addressString, createSafeTx, EthereumJsonRpcRequest, safeTxToTypedDataJson }
+
+export function getWalletSwitchRequestId(messages: readonly PortMessage[], index = -1) {
+	const id = messages.filter(message => message.method === 'request_signer_to_wallet_switchEthereumChain').at(index)?.walletSwitchRequestId
+	if (typeof id !== 'string') throw new Error('Missing wallet switch request ID')
+	return id
+}
+
+export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: SimulationServicesOwner['reset']): SimulationServicesOwner {
+	let current = initial
+	return {
+		getCurrent: () => current,
+		reset: network => { current = reset === undefined ? current : reset(network); return current },
+	}
+}

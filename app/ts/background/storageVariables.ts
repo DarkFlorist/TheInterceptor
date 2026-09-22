@@ -1,3 +1,4 @@
+import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
@@ -222,9 +223,11 @@ export const setInterceptorStartSleepingTimestamp = async(interceptorStartSleepi
 export const getInterceptorStartSleepingTimestamp = async () => (await browserStorageLocalGet('interceptorStartSleepingTimestamp'))?.interceptorStartSleepingTimestamp ?? 0
 
 export const promoteRpcAsPrimary = async (rpcNetwork: RpcNetwork) => {
-	if (rpcNetwork.primary) return
-	const rpcs = await getRpcList()
-	await setRpcList(rpcs.map((rpc) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: rpc.httpsRpc === rpcNetwork.httpsRpc }) : rpc))
+	await rpcListRepository.update((rpcs) => {
+		const selectedIndex = rpcs.findIndex((rpc) => getRpcEntryIdentityKey(rpc) === getRpcEntryIdentityKey(rpcNetwork))
+		if (selectedIndex === -1) return rpcs
+		return rpcs.map((rpc, index) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: index === selectedIndex }) : rpc)
+	})
 }
 
 export const getPrimaryRpcForChain = async (chainId: bigint) => {

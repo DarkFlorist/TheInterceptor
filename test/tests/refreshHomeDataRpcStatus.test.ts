@@ -1,3 +1,4 @@
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
@@ -27,6 +28,7 @@ type RuntimeMessage = {
 
 type PortMessage = {
 	method?: string
+	result?: unknown
 }
 
 function installBrowserMock() {
@@ -722,7 +724,7 @@ describe('refreshHomeData', () => {
 
 	test('changeSettings refreshes home without triggering signer account refresh', async () => {
 		const browserMock = installBrowserMock()
-		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, setRpcConnectionStatus, changeSettings, defaultActiveAddresses, defaultRpcs, EthereumClientService, TokenPriceService } = await loadModules()
+		const { browserStorageLocalSet, saveCurrentTabId, updateTabState, setRpcConnectionStatus, changeSettings, defaultActiveAddresses, defaultRpcs, websiteSocketToString, EthereumClientService, TokenPriceService } = await loadModules()
 
 		const [defaultAddress] = defaultActiveAddresses
 		if (defaultAddress === undefined) throw new Error('missing default address')
@@ -750,11 +752,12 @@ describe('refreshHomeData', () => {
 			retrying: false,
 		})
 		await saveCurrentTabId(1)
+		const signerAddress = 0x4444444444444444444444444444444444444444n
 		await updateTabState(1, (previousState) => ({
 			...previousState,
 			website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
 			signerName: 'MetaMask',
-			signerAccounts: [],
+			signerAccounts: [signerAddress],
 		}))
 
 		const ethereum = new EthereumClientService({
@@ -765,16 +768,31 @@ describe('refreshHomeData', () => {
 			},
 		}, async () => undefined, async () => undefined, rpcNetwork)
 		const tokenPriceService = new TokenPriceService(ethereum, 0)
+		const socket = { tabId: 1, connectionName: 0n }
+		const { messages, port } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, {
+			signerStateOwner: {
+				connectionName: socket.connectionName,
+				confirmed: true,
+				generation: 1,
+				providerGeneration: 1,
+			},
+			connections: {
+				[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+			},
+		}]])
 
 		try {
-			await changeSettings(ethereum, tokenPriceService, {} as never, { method: 'popup_ChangeSettings', data: {} } as never, undefined)
+			await changeSettings(createTestSimulationServicesOwner({ ethereum, tokenPriceService }), websiteTabConnections, { method: 'popup_ChangeSettings', data: { safeAppsCompatibilityMode: false } } as never, undefined)
 		} finally {
 			ethereum.cleanup()
 		}
 
 		const requestMessages = browserMock.sentMessages.filter((message) => message.method === 'request_signer_to_eth_accounts')
-		const homeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage') as { data?: { websiteAccessAddressMetadata?: readonly unknown[] } } | undefined
+		const homeUpdate = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage') as { data?: { activeSigningAddressInThisTab?: bigint, websiteAccessAddressMetadata?: readonly unknown[] } } | undefined
 		assert.equal(requestMessages.length, 0)
+		assert.equal(homeUpdate?.data?.activeSigningAddressInThisTab, signerAddress)
 		assert.equal(homeUpdate?.data?.websiteAccessAddressMetadata?.length, 1)
+		assert.equal(messages.some((message) => message.method === 'safe_apps_compatibility'), false)
 	})
 })

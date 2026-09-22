@@ -1,3 +1,4 @@
+import type { Settings } from '../../types/interceptor-messages.js'
 import { type EthereumClientService, getNextBlockTimeStampOverride } from './EthereumClientService.js'
 import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
 import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
@@ -421,8 +422,8 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 	}
 }
 
-export const getAddressToMakeRich = async () => {
-	const settings = await getSettings()
+export const getAddressToMakeRich = async (settingsSnapshot?: Settings) => {
+	const settings = settingsSnapshot ?? await getSettings()
 	if (!settings.simulationMode) return undefined
 	return await getMakeCurrentAddressRich() ? settings.activeSimulationAddress : undefined
 }

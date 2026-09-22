@@ -1,10 +1,11 @@
+import { validateSafeDelegateCode } from './safeDelegateCalls.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { getInputFieldFromDataOrInput } from '../simulation/services/SimulationModeEthereumClientService.js'
 import type { SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { SafeEntry } from '../types/addressBookTypes.js'
 import { areEqualUint8Arrays } from '../utils/typed-arrays.js'
-import { createSafeContractValidationFailure, getSafeContractState } from './safeCore.js'
-import { completeSafeExecutionWithConfiguredSigner } from './safeExecution.js'
+import { createSafeContractValidationFailure, getSafeContractSnapshot } from './safeCore.js'
+import { completeSafeExecutionWithConfiguredSigner, decodeSafeExecution } from './safeExecution.js'
 
 const SAFE_EXEC_TRANSACTION_SELECTOR = Uint8Array.from([0x6a, 0x76, 0x12, 0x02])
 
@@ -41,7 +42,10 @@ export async function getSafeExecutionReviewedState(
 	if (transaction.value !== undefined && transaction.value !== 0n) {
 		throw createSafeContractValidationFailure('A direct Gnosis Safe execution transaction must have zero outer ETH value. The value transferred by the Gnosis Safe belongs inside execTransaction.')
 	}
-	const safeState = await getSafeContractState(ethereumClientService, safeEntry.address)
+	const { state: safeState, blockNumber } = await getSafeContractSnapshot(ethereumClientService, safeEntry.address)
+	// Direct executions (including fully signed ones) use the same verified-library gate as local proposals.
+	const { safeTx } = decodeSafeExecution(ethereumClientService.getChainId(), safeEntry.address, safeState.nonce, getInputFieldFromDataOrInput(transaction))
+	await validateSafeDelegateCode(ethereumClientService, safeTx, blockNumber)
 	if (safeEntry.safeVersion !== undefined && safeEntry.safeVersion !== safeState.version) {
 		throw createSafeContractValidationFailure(`The Gnosis Safe version is now ${ safeState.version }, but the address-book entry records ${ safeEntry.safeVersion }.`)
 	}

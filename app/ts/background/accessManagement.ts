@@ -1,4 +1,4 @@
-import { getActiveAddress, getActiveAddressesForAllTabs, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
+import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
@@ -13,23 +13,18 @@ import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../ut
 import { modifyObject } from '../utils/typescript.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
 import { Semaphore } from '../utils/semaphore.js'
-import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import type { ResetSimulationServices } from '../simulation/serviceLifecycle.js'
+import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
 import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
-
-function getConnectionDetails(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) {
-	const identifier = websiteSocketToString(socket)
-	const tabConnection = websiteTabConnections.get(socket.tabId)
-	return tabConnection?.connections[identifier]
-}
+import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
+import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
+import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
-	const connection = getConnectionDetails(websiteTabConnections, socket)
+	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 	if (connection === undefined) return
 	if (approved) connection.wantsToConnect = true
 	connection.approved = approved
@@ -85,14 +80,12 @@ export async function withSuppressedUnscopedConnectionEventsForSocketAsync<T>(so
 	}
 }
 
-export type ApprovalState = 'hasAccess' | 'noAccess' | 'askAccess' | 'interceptorDisabled'
-
 type VerifyAccessOptions = {
 	readonly ignoreConnectionApproval?: boolean
 }
 
 export function verifyAccess(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, askAccessIfUnknown: boolean, websiteOrigin: string, requestAccessForAddress: AddressBookEntry | undefined, settings: Settings, options: VerifyAccessOptions = {}): ApprovalState {
-	const connection = getConnectionDetails(websiteTabConnections, socket)
+	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 	if (connection?.approved && options.ignoreConnectionApproval !== true) return 'hasAccess'
 	const access = requestAccessForAddress !== undefined ? hasAddressAccess(settings.websiteAccess, websiteOrigin, requestAccessForAddress) : hasAccess(settings.websiteAccess, websiteOrigin)
 	if (access === 'hasAccess') {
@@ -131,7 +124,7 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 			if (connection === undefined) throw new Error('missing connection')
 			if (!connection.approved) continue
 			if (!shouldSendUnscopedConnectionEvents(connection.socket)) continue
-			const activeAddress = await getActiveAddressForDomain(websiteTabConnections, connection.websiteOrigin, settings, connection.socket)
+			const activeAddress = await getWebsiteActiveAddress(websiteTabConnections, connection.websiteOrigin, settings, connection.socket)
 			sendSubscriptionReplyOrCallBack(websiteTabConnections, connection.socket, {
 				type: 'result' as const,
 				method: 'accountsChanged',
@@ -139,38 +132,6 @@ export async function sendActiveAccountChangeToApprovedWebsitePorts(websiteTabCo
 			})
 		}
 	}
-}
-
-export function hasAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : ApprovalState {
-	for (const web of websiteAccess) {
-		if (web.website.websiteOrigin === websiteOrigin) {
-			if (web.interceptorDisabled) return 'interceptorDisabled'
-			if (web.access === true) return 'hasAccess'
-			if (web.access === false) return 'noAccess'
-			return 'askAccess'
-		}
-	}
-	return 'askAccess'
-}
-
-export function hasAddressAccess(websiteAccess: WebsiteAccessArray, websiteOrigin: string, address: AddressBookEntry) : ApprovalState {
-	for (const web of websiteAccess) {
-		if (web.website.websiteOrigin === websiteOrigin) {
-			if (web.interceptorDisabled) return 'interceptorDisabled'
-			if (web.access === false) return 'noAccess'
-			if (web.access !== true) return 'askAccess'
-			if (web.addressAccess !== undefined) {
-				for (const addressAccess of web.addressAccess) {
-					if (addressAccess.address === address.address) {
-						return addressAccess.access ? 'hasAccess' : 'noAccess'
-					}
-				}
-			}
-			if (address.askForAddressAccess === false) return 'hasAccess'
-			return 'askAccess'
-		}
-	}
-	return 'askAccess'
 }
 
 function getAddressAccesses(websiteAccess: WebsiteAccessArray, websiteOrigin: string) : readonly WebsiteAddressAccess[] {
@@ -215,22 +176,15 @@ export async function setAccess(website: Website, access: boolean, address: bigi
 	})
 }
 
-// gets active address if the website has been give access for it, otherwise returns undefined this is to guard websites from seeing addresses without access
-async function getActiveAddressForDomain(websiteTabConnections: WebsiteTabConnections, websiteOrigin: string, settings: Settings, socket: WebsiteSocket) {
-	const activeAddress = await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, socket.tabId, async () => await getActiveAddress(settings, socket.tabId))
-	if (activeAddress === undefined) return undefined
-	const hasAccess = hasAddressAccess(settings.websiteAccess, websiteOrigin, activeAddress)
-	if (hasAccess === 'hasAccess') return activeAddress
-	return undefined
-}
-
 function connectToPort(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	settings: Settings,
 	connectWithActiveAddress: bigint | undefined,
 ): true {
+	const wasApproved = getWebsiteSocketConnection(websiteTabConnections, socket)?.approved === true
 	setWebsitePortApproval(websiteTabConnections, socket, true)
+	if (!wasApproved) notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.approvalChanged, socket, true)
 	if (!shouldSendUnscopedConnectionEvents(socket)) return true
 	sendProviderConnectionEventsToPort(websiteTabConnections, socket, settings, connectWithActiveAddress === undefined ? [] : [connectWithActiveAddress])
 	return true
@@ -260,6 +214,7 @@ function disconnectFromPort(
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 ): false {
+	notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.approvalChanged, socket, false)
 	setWebsitePortApproval(websiteTabConnections, socket, false)
 	// Account access can be revoked without the provider losing chain connectivity. Notify account listeners before the legacy disconnect event so dapps clear stale account state.
 	sendSubscriptionReplyOrCallBack(websiteTabConnections, socket, { type: 'result' as const, method: 'accountsChanged', result: [] })
@@ -275,12 +230,12 @@ export async function getAssociatedAddresses(settings: Settings, websiteOrigin: 
 	return getUniqueItemsByProperties(all, ['address'])
 }
 
-async function askUserForAccessOnConnectionUpdate(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressBookEntry | undefined, settings: Settings) {
-	const details = getConnectionDetails(websiteTabConnections, socket)
+async function askUserForAccessOnConnectionUpdate(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, websiteOrigin: string, activeAddress: AddressBookEntry | undefined, settings: Settings) {
+	const details = getWebsiteSocketConnection(websiteTabConnections, socket)
 	if (details === undefined) return
 
 	const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
-	await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress, undefined)
+	await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress, undefined)
 }
 
 function addIconRefreshTarget(iconRefreshTargets: Map<string, { tabId: number, websiteOrigin: string }>, tabId: number, websiteOrigin: string) {
@@ -316,7 +271,7 @@ async function updateTabConnections(
 	return iconRefreshTargets
 }
 
-async function promptForWebsiteAccesses(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, throwOnError = false) {
+async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, throwOnError = false) {
 	for (const tabConnection of websiteTabConnections.values()) {
 		for (const connection of Object.values(tabConnection.connections)) {
 			if (!connection.wantsToConnect) continue
@@ -325,7 +280,7 @@ async function promptForWebsiteAccesses(ethereum: EthereumClientService, tokenPr
 				const settings = await getSettings()
 				const { activeAddress, access } = await getConnectionAccess(websiteTabConnections, connection, settings)
 				if (access !== 'askAccess') continue
-				await askUserForAccessOnConnectionUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
+				await askUserForAccessOnConnectionUpdate(simulationServicesOwner, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
 			} catch (error) {
 				if (throwOnError) throw error
 				await reportUnexpectedError(error)
@@ -460,14 +415,13 @@ export async function reconcileWebsiteApprovalAccesses(
 		await reportUnexpectedError(error)
 	}
 
+	notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.accessReconciled)
 	return { popupRefreshGeneration, iconRefreshTargets: [...iconRefreshTargets.values()] }
 }
 
 // Call after releasing the settings lock: access dialogs can activate another address.
 export async function finishWebsiteAccessUpdate(
-	ethereum: EthereumClientService | undefined,
-	tokenPriceService: TokenPriceService | undefined,
-	resetSimulationServices: ResetSimulationServices | undefined,
+	simulationServicesOwner: SimulationServicesOwner | undefined,
 	websiteTabConnections: WebsiteTabConnections,
 	update: WebsiteAccessUpdate,
 	promptForAccessesIfNeeded: boolean,
@@ -475,8 +429,8 @@ export async function finishWebsiteAccessUpdate(
 ) {
 	const iconRefreshTargets = new Map<string, { tabId: number, websiteOrigin: string }>()
 	for (const target of update.iconRefreshTargets) addIconRefreshTarget(iconRefreshTargets, target.tabId, target.websiteOrigin)
-	if (promptForAccessesIfNeeded && ethereum !== undefined && tokenPriceService !== undefined && resetSimulationServices !== undefined) {
-		await promptForWebsiteAccesses(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, throwOnError)
+	if (promptForAccessesIfNeeded && simulationServicesOwner !== undefined) {
+		await promptForWebsiteAccesses(simulationServicesOwner, websiteTabConnections, throwOnError)
 	}
 	try {
 		for (const tabState of await getAllTabStates()) {
@@ -494,31 +448,25 @@ export async function finishWebsiteAccessUpdate(
 }
 
 export async function updateWebsiteApprovalAccesses(
-	ethereum: EthereumClientService | undefined,
-	tokenPriceService: TokenPriceService | undefined,
-	resetSimulationServices: ResetSimulationServices | undefined,
+	simulationServicesOwner: SimulationServicesOwner | undefined,
 	websiteTabConnections: WebsiteTabConnections,
 	settings: Settings,
 	promptForAccessesIfNeeded: boolean,
 	throwOnError = false,
 ): Promise<number> {
 	const update = await reconcileWebsiteApprovalAccesses(websiteTabConnections, settings, throwOnError)
-	await finishWebsiteAccessUpdate(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, update, promptForAccessesIfNeeded, throwOnError)
+	await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, promptForAccessesIfNeeded, throwOnError)
 	return update.popupRefreshGeneration
 }
 
 export async function finalizeWebsiteAccessChange(
-	ethereum: EthereumClientService | undefined,
-	tokenPriceService: TokenPriceService | undefined,
-	resetSimulationServices: ResetSimulationServices | undefined,
+	simulationServicesOwner: SimulationServicesOwner | undefined,
 	websiteTabConnections: WebsiteTabConnections,
 	settings: Settings,
 	promptForAccessesIfNeeded: boolean,
 ): Promise<Settings> {
 	await updateWebsiteApprovalAccesses(
-		ethereum,
-		tokenPriceService,
-		resetSimulationServices,
+		simulationServicesOwner,
 		websiteTabConnections,
 		settings,
 		promptForAccessesIfNeeded,
@@ -528,9 +476,7 @@ export async function finalizeWebsiteAccessChange(
 }
 
 export async function persistWebsiteAccessChange(
-	ethereum: EthereumClientService | undefined,
-	tokenPriceService: TokenPriceService | undefined,
-	resetSimulationServices: ResetSimulationServices | undefined,
+	simulationServicesOwner: SimulationServicesOwner | undefined,
 	websiteTabConnections: WebsiteTabConnections,
 	website: Website,
 	access: boolean,
@@ -539,9 +485,7 @@ export async function persistWebsiteAccessChange(
 ): Promise<Settings> {
 	await setAccess(website, access, address)
 	return await finalizeWebsiteAccessChange(
-		ethereum,
-		tokenPriceService,
-		resetSimulationServices,
+		simulationServicesOwner,
 		websiteTabConnections,
 		await getSettings(),
 		promptForAccessesIfNeeded,

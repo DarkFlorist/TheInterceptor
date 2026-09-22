@@ -123,10 +123,29 @@ export const ExportedSettings = funtypes.Union(
 	}),
 	funtypes.ReadonlyObject({
 		...exportedSettingsEnvelopeFields,
-		version: funtypes.Literal('1.6'),
+		version: funtypes.Literal('1.7'),
 		settings: funtypes.ReadonlyObject({
+			safeAppsCompatibilityMode: funtypes.Boolean,
 			signingWalletBindings: SigningWalletBindings,
 			...independentExportedSettingsFields,
+		})
+	}),
+	funtypes.ReadonlyObject({
+		...exportedSettingsEnvelopeFields,
+		version: funtypes.Literal('1.6'),
+		settings: funtypes.ReadonlyObject({
+			activeSimulationAddress: OptionalEthereumAddress,
+			activeSigningSafeAddress: OptionalEthereumAddress,
+			signingAddressPreferences: SigningAddressPreferences,
+			rpcNetwork: RpcNetwork,
+			openedPage: Page,
+			useSignersAddressAsActiveAddress: funtypes.Boolean,
+			websiteAccess: WebsiteAccessArray,
+			simulationMode: funtypes.Boolean,
+			addressBookEntries: AddressBookEntries,
+			useTabsInsteadOfPopup: funtypes.Boolean,
+			metamaskCompatibilityMode: funtypes.Boolean,
+			safeAppsCompatibilityMode: funtypes.Boolean,
 		})
 	}),
 )

@@ -19,14 +19,14 @@ test('an explicitly selected address exposes accounts without an installed brows
 	const socket = { tabId: 1, connectionName: 0n }
 	const { port, messages } = createPort(socket.tabId)
 	const connections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true } } }]])
-	const { ethereum, tokenPriceService, resetSimulationServices } = createEthereumWithGetBlockCounter({ count: 0 })
-	await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, { interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket }, method: 'eth_accounts', params: [] }, connections, noopPublishRpcConnectionStatus)
+	const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+	await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, { interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket }, method: 'eth_accounts', params: [] }, connections, noopPublishRpcConnectionStatus)
 	expect(messages.find((message) => message.requestId === 1)).toMatchObject({ type: 'result', result: ['0x1111111111111111111111111111111111111111'] })
-	await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, { interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId: 2, requestSocket: socket }, method: 'personal_sign', params: ['0x00', '0x1111111111111111111111111111111111111111'] }, connections, noopPublishRpcConnectionStatus)
+	await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, { interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId: 2, requestSocket: socket }, method: 'personal_sign', params: ['0x00', '0x1111111111111111111111111111111111111111'] }, connections, noopPublishRpcConnectionStatus)
 	expect(messages.find((message) => message.requestId === 2)).toMatchObject({ type: 'result', error: { code: 4100, message: 'No signing wallet for this address. Set up signing wallet or switch to simulation.' } })
 	expect(messages.some((message) => message.type === 'forwardToSigner')).toBe(false)
 	await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [] }])
-	await handleInterceptedRequest(port, websiteOrigin, website, ethereum, tokenPriceService, resetSimulationServices, socket, { interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId: 3, requestSocket: socket }, method: 'eth_accounts', params: [] }, connections, noopPublishRpcConnectionStatus)
+	await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, { interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId: 3, requestSocket: socket }, method: 'eth_accounts', params: [] }, connections, noopPublishRpcConnectionStatus)
 	expect(messages.find((message) => message.requestId === 3)).toMatchObject({ type: 'result', result: [] })
 })
 

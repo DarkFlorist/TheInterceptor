@@ -9,6 +9,8 @@ import { sendSubscriptionReplyOrCallBack } from '../../background/messageSending
 import type { WebsiteSocket } from '../../utils/requests.js'
 import { websiteSocketToString } from '../../background/backgroundUtils.js'
 import { createScopedKeyedSerialExecutor } from '../../utils/semaphore.js'
+import { JsonRpcResponseError } from '../../utils/errors.js'
+import { METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../../utils/constants.js'
 
 const dec2hex = (dec: number) => dec.toString(16).padStart(2, '0')
 
@@ -127,9 +129,17 @@ export async function createEthereumSubscription(params: EthSubscribeParams, sub
 			})
 			return subscriptionOrFilterId
 		}
-		case 'logs': throw `Dapp requested for 'logs' subscription but it's not implemented` //TODO: implement
-		case 'newPendingTransactions': throw `Dapp requested for 'newPendingTransactions' subscription but it's not implemented` //TODO: implement
-		case 'syncing': throw `Dapp requested for 'syncing' subscription but it's not implemented` //TODO: implement
+		case 'logs':
+		case 'newPendingTransactions':
+		case 'syncing':
+			throw new JsonRpcResponseError({
+				jsonrpc: '2.0',
+				id: 1,
+				error: {
+					code: METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER,
+					message: `Dapp requested for '${ params.params[0] }' subscription but it's not implemented`,
+				},
+			})
 	}
 }
 

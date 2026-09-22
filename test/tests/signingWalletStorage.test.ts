@@ -125,7 +125,7 @@ test('settings backups round-trip every wallet backend and refresh revisions on 
 		const previous = (await getSigningWalletBindings())[0]
 		const saved = await saveAddressSigningWallet(address, wallet, previous?.revision, 'Savings')
 		const exported = await exportSettingsAndAddressBook()
-		expect(exported.version).toBe('1.6')
+		expect(exported.version).toBe('1.7')
 		await importSettingsAndAddressBook(ExportedSettings.parse(ExportedSettings.serialize(exported)))
 		const restored = (await getSigningWalletBindings())[0]
 		expect(restored?.wallet).toEqual(wallet)
@@ -138,12 +138,26 @@ test('legacy settings imports explicitly clear local bindings and invalid new ba
 	const { exportSettingsAndAddressBook, importSettingsAndAddressBook } = await import('../../app/ts/background/settings.js')
 	await saveAddressSigningWallet(address, ledger, undefined, 'Savings')
 	const exported = await exportSettingsAndAddressBook()
-	if (exported.version !== '1.6') throw new Error('Expected current settings backup version')
+	if (exported.version !== '1.7') throw new Error('Expected current settings backup version')
 	const before = structuredClone(stored)
 	await expect(importSettingsAndAddressBook({ ...exported, settings: { ...exported.settings, addressBookEntries: [] } })).rejects.toThrow('ordinary addresses')
 	expect(stored).toEqual(before)
 	const { signingWalletBindings: _bindings, ...legacySettings } = exported.settings
 	await importSettingsAndAddressBook({ ...exported, version: '1.5', settings: legacySettings })
+	expect(await getSigningWalletBindings()).toEqual([])
+	expect(await getUserAddressBookEntries()).toHaveLength(1)
+})
+
+test('version 1.6 backups retain Safe Apps compatibility without requiring signing wallet fields', async () => {
+	const { exportSettingsAndAddressBook, importSettingsAndAddressBook, getSafeAppsCompatibilityMode } = await import('../../app/ts/background/settings.js')
+	const { ExportedSettings } = await import('../../app/ts/types/exportedSettingsTypes.js')
+	await saveAddressSigningWallet(address, ledger, undefined, 'Savings')
+	const exported = await exportSettingsAndAddressBook()
+	if (exported.version !== '1.7') throw new Error('Expected current settings backup version')
+	const { signingWalletBindings: _bindings, ...settings } = exported.settings
+	const legacy = { ...exported, version: '1.6' as const, settings: { ...settings, safeAppsCompatibilityMode: true } }
+	await importSettingsAndAddressBook(ExportedSettings.parse(ExportedSettings.serialize(legacy)))
+	expect(await getSafeAppsCompatibilityMode()).toBe(true)
 	expect(await getSigningWalletBindings()).toEqual([])
 	expect(await getUserAddressBookEntries()).toHaveLength(1)
 })

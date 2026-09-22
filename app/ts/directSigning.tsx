@@ -79,14 +79,14 @@ function DirectSigningPage() {
 		<dl><dt>Originating website</dt><dd>{ record.websiteOrigin }</dd><dt>Mode</dt><dd>Signing · real signature</dd><dt>Acting address</dt><dd>{ record.input.address }</dd><dt>Network chain ID</dt><dd>{ record.input.chainId.toString() }</dd><dt>Signing wallet</dt><dd>{ signingWalletDescription(record.binding) }</dd><dt>Status</dt><dd>{ record.phase }</dd></dl>
 		<p>Interceptor’s simulated explanation is in the confirmation window. It is not a promise about execution or the information your signing device displays. Review the device’s own display independently.</p>
 		{ transaction === undefined ? <pre style = 'white-space: pre-wrap;'>{ record.input.data }</pre> : <section>
-			<p>To: { transaction.to ?? 'Contract creation' } · Value: { String(transaction.value) } wei</p>
+			<p>To: { transaction.to ?? 'Contract creation' } · Value: { String(transaction.value) } attoeth</p>
 			<p>Nonce: { String(transaction.nonce) } · Gas limit: { String(transaction.gas) }</p>
-			<p>Maximum fee: { (BigInt(transaction.gas ?? 0) * (transaction.maxFeePerGas ?? 0n)).toString() } wei · Maximum priority fee per gas: { String(transaction.maxPriorityFeePerGas) } wei</p>
+			<p>Maximum fee: { (BigInt(transaction.gas ?? 0) * (transaction.maxFeePerGas ?? 0n)).toString() } attoeth · Maximum priority fee per gas: { String(transaction.maxPriorityFeePerGas) } attoeth</p>
 			<details><summary>Exact transaction data and access list</summary><pre style = 'white-space: pre-wrap;'>{ record.input.data }</pre></details>
 			{ record.phase === 'review' || record.phase === 'signed' ? <details><summary>Edit fees and advanced nonce</summary>
 				<label>Gas limit <input value = { gas } onInput = { (event) => setGas(event.currentTarget.value) }/></label>
-				<label>Max fee per gas (wei) <input value = { maxFee } onInput = { (event) => setMaxFee(event.currentTarget.value) }/></label>
-				<label>Max priority fee per gas (wei) <input value = { priority } onInput = { (event) => setPriority(event.currentTarget.value) }/></label>
+				<label>Max fee per gas (attoeth) <input value = { maxFee } onInput = { (event) => setMaxFee(event.currentTarget.value) }/></label>
+				<label>Max priority fee per gas (attoeth) <input value = { priority } onInput = { (event) => setPriority(event.currentTarget.value) }/></label>
 				<label>Nonce (advanced) <input value = { nonce } onInput = { (event) => setNonce(event.currentTarget.value) }/></label>
 				<p>Changing any signed field invalidates the signature and requires a new review and device approval.</p>
 				<button class = 'button' disabled = { busy } onClick = { () => run(async () => { await command({ method: 'signing_editFees', id, revision: record.revision, nonce: BigInt(nonce), gas: BigInt(gas), maxFeePerGas: BigInt(maxFee), maxPriorityFeePerGas: BigInt(priority) }); setQr(undefined); setStatus('Fields changed. Review the new exact payload before approving again.') }) }>Apply changes and review again</button>

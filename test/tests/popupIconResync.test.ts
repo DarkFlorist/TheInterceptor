@@ -13,7 +13,10 @@ type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: 
 
 function installBrowserMock(replyToMessage: (message: unknown) => unknown | Promise<unknown> = () => undefined) {
 	const sentMessages: unknown[] = []
-	let messageListener: RuntimeMessageListener | undefined
+	const messageListeners = new Set<RuntimeMessageListener>()
+	const messageListener: RuntimeMessageListener = (message, sender, sendResponse) => {
+		for (const listener of messageListeners) listener(message, sender, sendResponse)
+	}
 
 	Object.defineProperty(globalThis, 'browser', { configurable: true, value: {
 		runtime: {
@@ -25,9 +28,9 @@ function installBrowserMock(replyToMessage: (message: unknown) => unknown | Prom
 			getManifest: () => ({ manifest_version: 3 }),
 			onMessage: {
 				addListener: (listener: RuntimeMessageListener) => {
-					messageListener = listener
+					messageListeners.add(listener)
 				},
-				removeListener: () => undefined,
+				removeListener: (listener: RuntimeMessageListener) => messageListeners.delete(listener),
 			},
 			onConnect: { addListener: () => undefined, removeListener: () => undefined },
 		},
@@ -396,8 +399,8 @@ describe('popup icon sync', () => {
 			assert.notEqual(findElementWithClass(loadedHomeCard, 'div', 'popup-home-rpc-selector'), undefined)
 			const signingButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Signing'))
 			const simulatingButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulating'))
-			assert.equal(signingButton?.getAttribute?.('class')?.includes('is-outlined'), false)
-			assert.equal(simulatingButton?.getAttribute?.('class')?.includes('is-outlined'), true)
+			assert.equal(signingButton?.getAttribute?.('class')?.includes('button--secondary'), false)
+			assert.equal(simulatingButton?.getAttribute?.('class')?.includes('button--secondary'), true)
 		} finally {
 			dom.restore()
 		}
@@ -543,7 +546,7 @@ describe('popup icon sync', () => {
 			const editButtonsAfterHomeData = buttonsAfterHomeData.filter((button) => button.textContent?.toLowerCase().includes('edit'))
 			const copyButtonAfterHomeData = buttonsAfterHomeData.find((button) => button.textContent?.toLowerCase().includes('copy'))
 			const timePickerDeltaInputAfterHomeData = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('type') === 'number' && !hasClass(input, 'popup-loading-control'))
-			assert.equal(simulatingButtonAfterHomeData?.getAttribute?.('class')?.includes('is-outlined'), false)
+			assert.equal(simulatingButtonAfterHomeData?.getAttribute?.('class')?.includes('button--secondary'), false)
 			assert.equal(isButtonDisabled(rpcButtonAfterHomeData), false)
 			assert.equal(timePickerModeButtonAfterHomeData, undefined)
 			assert.equal(timePickerDeltaButtonAfterHomeData, undefined)
