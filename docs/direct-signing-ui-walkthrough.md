@@ -16,7 +16,7 @@ Captured with Chrome for Testing 145.0.7632.6 on Linux/Xvfb at device scale 1. A
 
 ## 1. Home: address, wallet, and mode
 
-Open the toolbar popup to see the active address, its saved AirGap wallet, and the separate remembered mode targets. Wallet controls sit below the account status. This is the actual 520 × 600 popup after loading completes.
+Open the toolbar popup to see the active address, its saved AirGap wallet, and the Simulating and Signing mode buttons. Wallet controls sit below the account status. This is the actual 520 × 600 popup after loading completes.
 
 ![Home: address, wallet, and mode](images/direct-signing/00-home.png)
 

@@ -1,5 +1,4 @@
 import { SafeSigningAccounts } from '../subcomponents/SafeSigningAccounts.js'
-import { ModeAddressTarget } from '../subcomponents/ModeAddressTarget.js'
 import { SigningWalletSummary } from '../subcomponents/SigningWalletSummary.js'
 import { getRpcNetworkChange } from '../../utils/rpcNetworkChange.js'
 import type { HomeParams, FirstCardParams, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
@@ -293,7 +292,7 @@ function FirstCardHeader(param: FirstCardParams) {
 						keepTextWhilePending = { true }
 						pendingIndicatorPlacement = 'overlay'
 						pendingText = { param.simulationMode.value ? 'Refreshing simulation...' : 'Switching to simulating mode...' }
-						text = { <span>Simulating<br/><ModeAddressTarget mode = 'simulation'/></span> }
+						text = 'Simulating'
 						onClick = { enableSimulating }
 					/>
 					<AsyncActionButton
@@ -303,7 +302,7 @@ function FirstCardHeader(param: FirstCardParams) {
 						disabled = { !param.simulationMode.value || controlsDisabled }
 						keepTextWhilePending = { true }
 						pendingIndicatorPlacement = 'overlay'
-						text = { <span>Signing<br/><ModeAddressTarget mode = 'signing'/></span> }
+						text = 'Signing'
 						pendingText = { !param.simulationMode.value ? 'Updating signing mode...' : 'Switching to signing mode...' }
 						onClick = { enableSigning }
 					/>
