@@ -7,12 +7,14 @@ import { CHAIN_NAMES } from '../../utils/chainNames.js'
 export function SigningRequestContext({ pending }: { pending: PopupPendingTransactionOrSignableMessage }) {
 	const chainId = pending.signingChainId ?? (pending.transactionOrMessageCreationStatus !== 'Simulated' ? undefined : pending.type === 'SignableMessage' ? pending.visualizedPersonalSignRequest.rpcNetwork.chainId : pending.popupVisualisation.statusCode === 'success' ? pending.popupVisualisation.data.simulationState.rpcNetwork.chainId : undefined)
 	const wallet = pending.signingWalletBinding
-	return <section class = 'card' style = 'color: var(--text-color); padding: 12px; margin-bottom: 12px; font-size: 13px; overflow-wrap: anywhere;'>
-		<strong style = 'color: inherit;'>{ pending.simulationMode ? 'Simulation mode · No real signature or broadcast' : 'Signing mode · Real signature' }</strong>
-		<p>Website: { pending.website.websiteOrigin }</p>
-		<p>Acting address: { addressString(pending.activeAddress) }</p>
-		{ chainId === undefined ? undefined : <p>Network: { CHAIN_NAMES.get(chainId.toString()) ?? 'Custom network' } · Chain { chainId.toString() }</p> }
-		{ wallet === undefined ? undefined : <><p>Signing wallet: { signingWalletDescription(wallet) }</p>{ wallet.wallet.address === pending.activeAddress ? undefined : <p>Signing account: { addressString(wallet.wallet.address) }</p> }</> }
-		{ pending.type !== 'Transaction' || pending.safeExecutionSignerAddress === undefined ? undefined : <p>Execution account: { addressString(pending.safeExecutionSignerAddress) }</p> }
+	return <section class = 'signing-request-context'>
+		<strong>{ pending.simulationMode ? 'Simulation mode · No real signature or broadcast' : 'Signing mode · Real signature' }</strong>
+		<dl class = 'signing-grid'>
+			<div><dt>Originating website</dt><dd>{ pending.website.websiteOrigin }</dd></div>
+			<div><dt>Acting address</dt><dd class = 'signing-address'>{ addressString(pending.activeAddress) }</dd></div>
+			{ chainId === undefined ? undefined : <div><dt>Network</dt><dd>{ CHAIN_NAMES.get(chainId.toString()) ?? 'Custom network' } · Chain { chainId.toString() }</dd></div> }
+			{ wallet === undefined ? undefined : <><div><dt>Signing wallet</dt><dd>{ signingWalletDescription(wallet) }</dd></div>{ wallet.wallet.address === pending.activeAddress ? undefined : <div><dt>Signing account</dt><dd class = 'signing-address'>{ addressString(wallet.wallet.address) }</dd></div> }</> }
+			{ pending.type !== 'Transaction' || pending.safeExecutionSignerAddress === undefined ? undefined : <div><dt>Execution account</dt><dd class = 'signing-address'>{ addressString(pending.safeExecutionSignerAddress) }</dd></div> }
+		</dl>
 	</section>
 }

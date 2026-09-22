@@ -246,7 +246,7 @@ try {
 		await background.evaluate(
 			`browser.storage.local.set({directSigningRequestsV1:${JSON.stringify(DirectSigningRecords.serialize([{ ...record, input, phase: 'signed', result: '0x' + '11'.repeat(65) }]))}})`
 		)
-		const message = await open(`directSigningV3.html?id=${record.id}`, 'Message signature recovered and returned to the originating application.')
+		const message = await open(`directSigningV3.html?id=${record.id}`, 'Signature verified · Returned to application')
 		const buttons = await message.page.evaluate(`([...document.querySelectorAll('button')].map(button => button.textContent))`)
 		if (buttons.some((text: string) => text.includes('Broadcast') || text.includes('Reconcile transaction')))
 			throw new Error('Message shows transaction submission action')
@@ -254,7 +254,7 @@ try {
 		await closeTarget(chrome.browserConnection, message.id)
 	}
 	console.info('Recovered eth_sendTransaction: transaction status and broadcast action')
-	const probe = await open(`directSigningV3.html?id=${record.id}`, 'Message signature recovered')
+	const probe = await open(`directSigningV3.html?id=${record.id}`, 'Signature verified · Returned to application')
 	await probe.page.evaluate(`(() => { const image = new Image(); image.id = 'broken-asset-probe'; image.src = 'data:image/png;base64,AA=='; document.body.append(image); })()`)
 	let rejectedIcon = false
 	try { await captureExtensionScreenshot(probe.page, join(tmpdir(), 'unexpected-signing-capture.png'), 'page') }

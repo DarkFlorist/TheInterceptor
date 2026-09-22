@@ -868,3 +868,23 @@ fieldset[disabled] .button.is-primary.is-danger {
 .ledger-navigation { display: flex; align-items: center; justify-content: center; gap: 16px; }
 .signing-page label.ledger-setting:not(.signing-account) { flex-direction: row; align-items: center; margin-top: 12px; }
 .signing-page .ledger-setting input { width: 18px; height: 18px; padding: 0; }
+
+/* Shared hierarchy for dedicated signing pages and compact confirmation windows. */
+.signing-context, .signing-support { background: transparent; }
+.signing-support { padding: 12px 16px; border: 1px solid var(--layout-line-color); border-radius: 8px; }
+.ledger-preview { gap: 10px; }
+.ledger-preview .ledger-screen { min-height: 112px; margin: 0 auto; padding: 16px; }
+.ledger-preview .signing-muted { font-size: .85rem; }
+.signing-fields { display: grid; gap: 0; }
+.signing-fields > div { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(0, 3fr); gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--layout-line-color); }
+.signing-fields > div:last-child { border-bottom: 0; }
+.signing-field-value { white-space: pre-wrap; overflow-wrap: anywhere; }
+.signing-fields pre { margin: 0; }
+.signing-request-context { color: var(--text-color); padding: 16px; margin-bottom: 12px; border: 1px solid var(--layout-line-color); border-radius: 8px; font-size: 14px; overflow-wrap: anywhere; }
+.signing-request-context strong { color: inherit; display: block; margin-bottom: 12px; }
+.signing-request-context .signing-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; margin: 0; }
+.signing-request-context dt { color: var(--subtitle-text-color); font-size: 12px; margin-bottom: 4px; }
+.signing-request-context dd { margin: 0; }
+@media (max-width: 420px) {
+	.signing-fields > div, .signing-request-context .signing-grid { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+}

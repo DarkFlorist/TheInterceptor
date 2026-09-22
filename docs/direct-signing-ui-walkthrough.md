@@ -174,13 +174,13 @@ Disconnect the scripted Ledger during typed-message signing. The page explains h
 
 ## 27. Ledger transaction completes
 
-After the review, scripted device approval and independent verification, click Broadcast transaction, then reconcile its hash. The local RPC fixture reports a successful receipt. This is a completed UI flow through the production handlers, starting from a seeded review boundary; it is not a live-chain transaction.
+After the review, scripted device approval and independent verification, click Broadcast transaction, then reconcile its hash. The local RPC fixture reports a successful receipt. The completion panel shows the hash and offers Return to application; reconciliation is no longer offered. This is a completed UI flow through the production handlers, starting from a seeded review boundary; it is not a live-chain transaction.
 
 ![Ledger transaction completes](images/direct-signing/18-ledger-confirmed.png)
 
 ## 28. Ledger typed signature returns to the website
 
-Starting from an actual website request with no browser wallet injected, approve the explanation and sign through the scripted Ledger. Interceptor verifies the signature and resolves the originating site’s promise. The completion page offers no cancellation or broadcast action for an already-returned message.
+Starting from an actual website request with no browser wallet injected, approve the explanation and sign through the scripted Ledger. Interceptor verifies the signature and resolves the originating site’s promise. The completion page offers Return to application, without device-review controls, cancellation or broadcast actions for an already-returned message.
 
 ![Ledger typed signature returns to the website](images/direct-signing/19-ledger-message-returned.png)
 
@@ -198,12 +198,12 @@ The local RPC fixture accepts the signed transaction but loses the submission re
 
 ## 31. AirGap transaction completes without a second send
 
-Reconcile the same signed hash after the uncertain response, then check the receipt. The local fixture reports confirmation. The walkthrough asserts exactly one send; no replacement transaction or duplicate signing occurs.
+Reconcile the same signed hash after the uncertain response, then check the receipt. The local fixture reports confirmation. The success panel displays the hash, with Return to application as the primary action. The walkthrough asserts exactly one send; no replacement transaction or duplicate signing occurs.
 
 ![AirGap transaction completes without a second send](images/direct-signing/22-airgap-confirmed.png)
 
 ## 32. AirGap message returns to its application
 
-The originating website requests a personal message without another wallet installed in the isolated browser. Approve, scan the outgoing request, and return a fixture signature through the QR camera. Verification resolves that website’s request. The completed message has no broadcast or cancellation action.
+The originating website requests a personal message without another wallet installed in the isolated browser. Approve, scan the outgoing request, and return a fixture signature through the QR camera. Verification resolves that website’s request. The completed message offers Return to application and has no broadcast or cancellation action.
 
 ![AirGap message returns to its application](images/direct-signing/23-airgap-message-returned.png)

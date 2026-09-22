@@ -105,11 +105,13 @@ try {
 			if (failSubmission) { await wait(page, 'Reconcile transaction by hash'); await captureExtensionScreenshot(page, `${ output }/airgap-submission-recovery.png`, 'page'); await click(page, 'Reconcile transaction by hash') }
 			await wait(page, 'Transaction submitted.')
 			assert.equal(sends, 1)
-			confirmed = true; await click(page, 'Reconcile transaction by hash'); await wait(page, 'Transaction confirmed on the configured RPC.')
+			confirmed = true; await click(page, 'Reconcile transaction by hash'); await wait(page, 'The network confirmed your transaction.')
 		} else {
 			await wait(page, 'Returned to application')
 			assert.equal(await page.evaluate(`document.body.textContent.includes('Cancel request') || document.body.textContent.includes('Broadcast transaction')`), false)
 		}
+		assert.equal(await page.evaluate(`document.body.textContent.includes('Reconcile transaction by hash')`), false, 'Completed requests must not offer reconciliation')
+		assert.equal(await page.evaluate(`document.body.textContent.includes('Return to application')`), true)
 		await captureExtensionScreenshot(page, `${ output }/${ type }-${ method }-complete.png`, 'page')
 		const state = await background.evaluate<{ pendingTransactionsAndMessages: unknown[], pendingTerminalReplies: { method: string, result: string }[] }>(`browser.storage.local.get(['pendingTransactionsAndMessages', 'pendingTerminalReplies'])`)
 		assert.equal(state.pendingTransactionsAndMessages.length, 0)

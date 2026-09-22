@@ -207,6 +207,8 @@ async function main() {
 						}
 						await waitForCondition(async () => await signing.evaluate(`document.body.textContent.includes('Returned to application')`), 15000, 'verified direct message')
 						if (process.env.SIGNING_FLOW_SCREENSHOTS !== undefined) await captureExtensionScreenshot(signing, `${ process.env.SIGNING_FLOW_SCREENSHOTS }/${ directWallet }-${ method }-application-complete.png`, 'page')
+						await clickText('Return to application')
+						await waitForCondition(async () => await signing.evaluate(`browser.tabs.query({ active: true }).then(tabs => tabs.some(tab => tab.id === ${ record.request.requestSocket.tabId }))`), 10000, 'return to originating application')
 					} finally { signing.close(); await closeTarget(chrome.browserConnection, directTarget.id) }
 				}
 				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__signingResult.status !== 'pending'`), 10000, `${ method } result`).catch(async (error) => {
