@@ -121,4 +121,3 @@ test('concurrent approvals for the same account reserve one transaction at a tim
 	expect(results.map((item) => item.status)).toEqual(['fulfilled', 'rejected'])
 	expect(broadcasts).toBe(0)
 })
-
