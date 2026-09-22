@@ -876,8 +876,8 @@ export async function changeSettings(simulationServicesOwner: SimulationServices
 		await setSafeAppsCompatibilityMode(parsedRequest.data.safeAppsCompatibilityMode)
 	}
 	const popupRefreshGeneration = bumpPopupRefreshGeneration()
-	const settings = await getSettings()
-	const services = settings.rpcConfigurationAvailable ? simulationServicesOwner.getCurrentOrUndefined() : undefined
+	const { rpcConfiguration } = await getSettingsSnapshot()
+	const services = rpcConfiguration.status === 'ready' ? simulationServicesOwner.getCurrentOrUndefined() : undefined
 	if (services === undefined) return await requestHomePageBootstrap(websiteTabConnections, popupRefreshGeneration)
 	return await requestNewHomeData(services.ethereum, websiteTabConnections, false, true, requestAbortController, popupRefreshGeneration)
 }

@@ -4,11 +4,13 @@ import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
+import type { RpcConfigurationState } from './storageVariables.js'
 
 export type PopupMessageDispatcherContext = {
 	websiteTabConnections: WebsiteTabConnections
 	simulationServicesOwner: SimulationServicesOwner
 	settings: Settings
+	rpcConfiguration: RpcConfigurationState
 	publishRpcConnectionStatus: PublishRpcConnectionStatus
 	simulationAbortController: AbortController
 	confirmTransactionAbortController: AbortController
@@ -26,7 +28,7 @@ export function popupRpcMessageHandler<Method extends PopupMessage['method']>(
 	requiresRpc: (request: Extract<PopupMessage, { readonly method: Method }>) => boolean = () => true,
 ): PopupMessageHandler {
 	return popupMessageHandler(method, async (context, request) => {
-		if (requiresRpc(request) && !context.settings.rpcConfigurationAvailable) return unavailableReply?.(request)
+		if (requiresRpc(request) && context.rpcConfiguration.status === 'unavailable') return unavailableReply?.(request)
 		return await handler(context, request)
 	})
 }

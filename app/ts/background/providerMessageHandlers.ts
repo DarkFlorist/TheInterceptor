@@ -5,8 +5,8 @@ import type { TabState, WebsiteTabConnections } from '../types/user-interface-ty
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
-import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
+import { getRpcConfigurationState, getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
+import { getMetamaskCompatibilityMode, getSettings, getSettingsSnapshot } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
@@ -59,6 +59,10 @@ function hasSignerCallbackAccess(websiteTabConnections: WebsiteTabConnections, t
 	return approval === 'hasAccess' || tabHasApprovedWebsiteConnection(websiteTabConnections, tabId)
 }
 
+async function getAvailableSimulationServices(simulationServicesOwner: SimulationServicesOwner) {
+	return (await getRpcConfigurationState()).status === 'ready' ? simulationServicesOwner.getCurrentOrUndefined() : undefined
+}
+
 export async function ethAccountsReply(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'eth_accounts_reply' as const, result: '0x' as const }
 	if (!('params' in request)) return returnValue
@@ -105,13 +109,13 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			activeSigningAddress,
 		}))
 		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
-		const settings = await getSettings()
-		const simulationServices = settings.rpcConfigurationAvailable ? simulationServicesOwner.getCurrentOrUndefined() : undefined
+		const { settings, rpcConfiguration } = await getSettingsSnapshot()
+		const simulationServices = rpcConfiguration.status === 'ready' ? simulationServicesOwner.getCurrentOrUndefined() : undefined
 		if (simulationServices !== undefined) await refreshPendingSafeSignerSelectionErrors(simulationServices.ethereum, simulationServices.tokenPriceService, tabId)
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
 		const transition = await getSigningAddressSelectionTransition(settings, tabStateChange.previousState, tabStateChange.newState)
 		// Preserve the signer callback while RPC-backed settings transitions are paused; a signer-only network has no services by design, so it can still accept the address selection.
-		const canActivateAddressSelection = settings.rpcConfigurationAvailable
+		const canActivateAddressSelection = rpcConfiguration.status === 'ready'
 			&& (simulationServices !== undefined || settings.activeRpcNetwork.httpsRpc === undefined)
 		const shouldActivateAddressSelection = transition.shouldActivate && canActivateAddressSelection
 		if (shouldActivateAddressSelection) {
@@ -160,7 +164,7 @@ async function changeSignerChain(simulationServicesOwner: SimulationServicesOwne
 	if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return
 	const oldSignerChain = tabStateChange.previousState.signerChain
 	// update active address if we are using signers address
-	const settings = await getSettings()
+	const { settings, rpcConfiguration } = await getSettingsSnapshot()
 	const selectedSafe = await getConfiguredSigningSafe(settings, tabStateChange.newState.signerAccounts)
 	if (selectedSafe !== undefined) {
 		// Safe signing is pinned to the Safe's configured Interceptor chain. A signer-wallet chain change only refreshes signer state; it must not move the dapp away from the active Safe.
@@ -170,7 +174,7 @@ async function changeSignerChain(simulationServicesOwner: SimulationServicesOwne
 		}
 		return
 	}
-	if (!settings.rpcConfigurationAvailable) return
+	if (rpcConfiguration.status === 'unavailable') return
 	if (settings.useSignersAddressAsActiveAddress || !settings.simulationMode) {
 		const rpcNetwork = requestedRpcNetwork ?? (settings.activeRpcNetwork.chainId === signerChain ? settings.activeRpcNetwork : await getRpcNetworkForChain(signerChain))
 		if (getRpcNetworkChange(settings.activeRpcNetwork, rpcNetwork).selectionChanged) {
@@ -311,8 +315,7 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 			|| requestSocket.tabId !== socket.tabId
 			|| requestSocket.connectionName !== socket.connectionName) {
 			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...signerConnectionReplacedError } }))
-			const rpcConfigurationAvailable = (await getSettings()).rpcConfigurationAvailable
-			const simulationServices = rpcConfigurationAvailable ? simulationServicesOwner.getCurrentOrUndefined() : undefined
+			const simulationServices = await getAvailableSimulationServices(simulationServicesOwner)
 			if (simulationServices !== undefined) await updateConfirmTransactionView(simulationServices.ethereum, simulationServices.tokenPriceService)
 			return doNotReply
 		}
@@ -325,8 +328,7 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 			case 'eth_signTypedData_v4':
 			case 'eth_sendRawTransaction':
 			case 'eth_sendTransaction': {
-				const rpcConfigurationAvailable = (await getSettings()).rpcConfigurationAvailable
-				const simulationServices = rpcConfigurationAvailable ? simulationServicesOwner.getCurrentOrUndefined() : undefined
+				const simulationServices = await getAvailableSimulationServices(simulationServicesOwner)
 				if (params.success && simulationServices !== undefined) {
 					try {
 						await resolvePendingSignerReply(simulationServices, websiteTabConnections, uniqueRequestIdentifier, params)

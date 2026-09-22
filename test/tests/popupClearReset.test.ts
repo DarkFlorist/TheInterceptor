@@ -743,11 +743,13 @@ describe('popup clear reset', () => {
 		})
 
 		const modules = await modulesPromise
+		const settingsSnapshot = await modules.getSettingsSnapshot()
 		const reply = await modules.popupMessageHandler(
 			new Map(),
 			createTestSimulationServicesOwner({ ethereum: fakeEthereum, tokenPriceService: fakeTokenPriceService }),
 			{ method: 'popup_requestCompleteVisualizedSimulation' },
-			await modules.getSettings(),
+			settingsSnapshot.settings,
+			settingsSnapshot.rpcConfiguration,
 			async () => undefined,
 		)
 

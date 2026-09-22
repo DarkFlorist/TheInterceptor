@@ -604,7 +604,6 @@ export const Settings = funtypes.ReadonlyObject({
 	activeSimulationAddress: OptionalEthereumAddress,
 	activeSigningSafeAddress: OptionalEthereumAddress,
 	activeRpcNetwork: RpcNetwork,
-	rpcConfigurationAvailable: funtypes.Boolean,
 	openedPage: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
 	websiteAccess: WebsiteAccessArray,

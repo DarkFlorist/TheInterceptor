@@ -78,8 +78,11 @@ async function publishCommittedSettingsTransition(
 	previousSettings: Awaited<ReturnType<typeof getSettings>>,
 	updatedSettings: Awaited<ReturnType<typeof getSettings>>,
 	onAccessReconciled: (accessUpdate: WebsiteAccessUpdate) => void,
+	forceChainChanged = false,
 ) {
-	const { chainChanged: rpcChainChanged, endpointChanged: rpcEndpointChanged } = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
+	const networkChange = getRpcNetworkChange(previousSettings.activeRpcNetwork, updatedSettings.activeRpcNetwork)
+	const rpcChainChanged = forceChainChanged || networkChange.chainChanged
+	const rpcEndpointChanged = forceChainChanged || networkChange.endpointChanged
 	try {
 		try {
 			if (updatedSettings.simulationMode && rpcChainChanged) await clearSimulationStateFromConfig(updatedSettings)
@@ -107,6 +110,7 @@ export async function publishRpcConfigurationRecovery(
 	websiteTabConnections: WebsiteTabConnections,
 	previousSettings: Awaited<ReturnType<typeof getSettings>>,
 	activeRpcNetwork: RpcNetwork,
+	forceChainChanged = false,
 ) {
 	let accessUpdate: WebsiteAccessUpdate | undefined
 	try {
@@ -116,6 +120,7 @@ export async function publishRpcConfigurationRecovery(
 			previousSettings,
 			await getSettingsWithRpcNetwork(activeRpcNetwork),
 			(update) => { accessUpdate = update },
+			forceChainChanged,
 		)
 	} finally {
 		if (accessUpdate !== undefined) await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, true)

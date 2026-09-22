@@ -219,7 +219,7 @@ describe('RPC storage recovery', () => {
 
 		releaseRead()
 		const [settings] = await Promise.all([settingsPromise, savePromise])
-		assert.equal(settings.rpcConfigurationAvailable, true)
+		assert.equal(settings.activeRpcNetwork.httpsRpc, customPrimaryRpc.httpsRpc)
 		const finalConfiguration = await getRpcConfigurationState()
 		assert.equal(finalConfiguration.status, 'ready')
 		if (finalConfiguration.status !== 'ready') return
@@ -316,12 +316,20 @@ describe('RPC storage recovery', () => {
 
 	test('settings reports corrupt RPC storage without mutating the service lifecycle', async () => {
 		const owner = createSimulationServicesOwner(customPrimaryRpc, async () => undefined, async (_ethereum, error) => { throw error })
+		const previousActiveRpc = { ...customPrimaryRpc, name: 'Polygon', chainId: 137n, httpsRpc: 'https://polygon.example' }
+		await browserStorageLocalSet({ activeRpcNetwork: previousActiveRpc })
 		storedItems.rpcEntries = 'not-an-rpc-list'
+		storedItems.openedPageV2 = { page: 'Home' }
 		const originalWarn = console.warn
 		console.warn = () => undefined
 		try {
 			await settingsOpened(owner)
-			assert.equal((await getSettings()).rpcConfigurationAvailable, false)
+			const configuration = await getRpcConfigurationState()
+			assert.equal(configuration.status, 'unavailable')
+			assert.deepEqual('activeRpcNetwork' in configuration ? configuration.activeRpcNetwork : undefined, previousActiveRpc)
+			const settings = await getSettings()
+			assert.deepEqual(settings.openedPage, { page: 'Home' })
+			assert.deepEqual(settings.activeRpcNetwork, previousActiveRpc)
 			assert.equal(owner.isAvailable(), true)
 		} finally {
 			console.warn = originalWarn
@@ -409,7 +417,6 @@ describe('RPC storage recovery', () => {
 				activeSimulationAddress: undefined,
 				activeSigningSafeAddress: undefined,
 				activeRpcNetwork: customPrimaryRpc,
-				rpcConfigurationAvailable: false,
 				openedPage: { page: 'Settings' },
 				useSignersAddressAsActiveAddress: false,
 				websiteAccess: [],
@@ -429,7 +436,6 @@ describe('RPC storage recovery', () => {
 			activeSimulationAddress: undefined,
 			activeSigningSafeAddress: undefined,
 			activeRpcNetwork: customPrimaryRpc,
-			rpcConfigurationAvailable: true,
 			openedPage: { page: 'Settings' },
 			useSignersAddressAsActiveAddress: false,
 			websiteAccess: [],
@@ -469,7 +475,6 @@ describe('RPC storage recovery', () => {
 			activeSimulationAddress: undefined,
 			activeSigningSafeAddress: undefined,
 			activeRpcNetwork: signerOnlyNetwork,
-			rpcConfigurationAvailable: true,
 			openedPage: { page: 'Settings' },
 			useSignersAddressAsActiveAddress: false,
 			websiteAccess: [],

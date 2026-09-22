@@ -185,6 +185,25 @@ describe('active settings concurrency', () => {
 		assert.deepEqual(messages.filter(({ method }) => method === 'chainChanged').map(({ result }) => result), ['0xa'])
 	})
 
+	test('forces a chain update when recovery could not parse the previous selection', async () => {
+		installBrowserMock()
+		const { getSettings, publishRpcConfigurationRecovery, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'example.test'
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin }, access: true }])
+		const settings = await getSettings()
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const owner = createTestSimulationServicesOwner(services, () => services)
+
+		await publishRpcConfigurationRecovery(owner, connections, settings, settings.activeRpcNetwork, true)
+
+		assert.deepEqual(messages.filter(({ method }) => method === 'chainChanged').map(({ result }) => result), ['0x1'])
+	})
+
 	test('signer-only settings can add, select, and edit a custom RPC without existing services', async () => {
 		installBrowserMock()
 		const { changeActiveAddressAndChain, changeSimulationMode, getSettings, publishRpcConfigurationRecovery, setNewRpcList } = await loadModules()

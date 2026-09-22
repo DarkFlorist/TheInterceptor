@@ -81,7 +81,7 @@ const SETTINGS_STORAGE_KEYS = [
 	'simulationMode',
 ] as const
 
-async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, unknown>>, rpcSelection: { readonly activeRpcNetwork: RpcNetwork, readonly rpcConfigurationAvailable: boolean }): Promise<Settings> {
+async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, unknown>>, activeRpcNetwork: RpcNetwork): Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
 	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'independentActiveSimulationAddress', defaultActiveAddresses[0].address))
@@ -90,7 +90,7 @@ async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, 
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'useSignersAddressAsActiveAddress', false))
 	const websiteAccessPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
 	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'simulationMode', defaultSimulationMode))
-	const [activeSimulationAddress, activeSigningSafeAddress, storedOpenedPage, useSignersAddressAsActiveAddress, websiteAccess, simulationMode] = await Promise.all([
+	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, simulationMode] = await Promise.all([
 		activeSimulationAddressPromise,
 		activeSigningSafeAddressPromise,
 		openedPagePromise,
@@ -98,9 +98,7 @@ async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, 
 		websiteAccessPromise,
 		simulationModePromise,
 	])
-	const openedPage: Page = rpcSelection.rpcConfigurationAvailable ? storedOpenedPage : { page: 'Settings' }
-	const { activeRpcNetwork } = rpcSelection
-	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, rpcConfigurationAvailable: rpcSelection.rpcConfigurationAvailable, simulationMode }
+	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
 
 export async function getSettings() : Promise<Settings> {
@@ -109,16 +107,16 @@ export async function getSettings() : Promise<Settings> {
 
 export async function getSettingsSnapshot(): Promise<{ readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState }> {
 	const { storedItems, rpcConfiguration } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
-	const rpcSelection = rpcConfiguration.status === 'ready'
-		? { activeRpcNetwork: rpcConfiguration.activeRpcNetwork, rpcConfigurationAvailable: true }
-		: { activeRpcNetwork: rpcConfiguration.reason === 'empty' ? rpcConfiguration.activeRpcNetwork : RPC_CONFIGURATION_UNAVAILABLE_NETWORK, rpcConfigurationAvailable: false }
-	const settings = await getSettingsFromStorageItems(storedItems, rpcSelection)
+	const activeRpcNetwork = 'activeRpcNetwork' in rpcConfiguration && rpcConfiguration.activeRpcNetwork !== undefined
+		? rpcConfiguration.activeRpcNetwork
+		: RPC_CONFIGURATION_UNAVAILABLE_NETWORK
+	const settings = await getSettingsFromStorageItems(storedItems, activeRpcNetwork)
 	return { settings, rpcConfiguration }
 }
 
 export async function getSettingsWithRpcNetwork(activeRpcNetwork: RpcNetwork): Promise<Settings> {
 	const storedItems = await silenceChromeUnCaughtPromise(browser.storage.local.get(SETTINGS_STORAGE_KEYS))
-	return await getSettingsFromStorageItems(storedItems, { activeRpcNetwork, rpcConfigurationAvailable: true })
+	return await getSettingsFromStorageItems(storedItems, activeRpcNetwork)
 }
 
 export function getInterceptorDisabledSites(settings: Settings): string[] {

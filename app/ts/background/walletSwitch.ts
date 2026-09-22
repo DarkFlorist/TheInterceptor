@@ -1,6 +1,6 @@
 import { getConfiguredSigningSafe } from './signingAddressSelection.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
-import { getSettings } from './settings.js'
+import { getSettings, getSettingsSnapshot } from './settings.js'
 import { JSON_RPC_ERROR_CODE_INTERNAL_ERROR, METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { Future } from '../utils/future.js'
 import type { SignerChainChangeConfirmation, WalletSwitchEthereumChainReply } from '../types/interceptor-messages.js'
@@ -94,8 +94,8 @@ export type RpcSwitchRequest =
 
 // One command owns routing, Safe network restrictions, local promotion and correlated wallet dispatch.
 export async function changeActiveRpc(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, rpcNetwork: RpcNetwork, request: RpcSwitchRequest, timeoutMs = WALLET_SWITCH_TIMEOUT_MS): Promise<RpcSwitchResult> {
-	const settings = await getSettings()
-	if (!settings.rpcConfigurationAvailable) return { error: RPC_CONFIGURATION_UNAVAILABLE_ERROR }
+	const { settings, rpcConfiguration } = await getSettingsSnapshot()
+	if (rpcConfiguration.status === 'unavailable') return { error: RPC_CONFIGURATION_UNAVAILABLE_ERROR }
 	const simulationMode = request.source === 'popup' ? settings.simulationMode : request.simulationMode
 	const route = getRpcChangeRoute(settings.activeRpcNetwork, rpcNetwork, simulationMode)
 	if (route !== 'wallet') {

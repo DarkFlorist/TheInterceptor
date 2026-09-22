@@ -192,7 +192,6 @@ class TestClipboardEvent extends Event {
 
 const defaultSettings: Settings = {
 	activeSimulationAddress: undefined,
-	rpcConfigurationAvailable: true,
 	activeRpcNetwork: {
 		name: 'Ethereum',
 		chainId: '0x1',

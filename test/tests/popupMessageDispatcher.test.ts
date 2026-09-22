@@ -101,7 +101,6 @@ const settings: Settings = {
 	openedPage: { page: 'Home' },
 	useSignersAddressAsActiveAddress: false,
 	websiteAccess: [],
-	rpcConfigurationAvailable: true,
 	activeRpcNetwork: {
 		name: 'Ethereum Mainnet',
 		chainId: 1n,
@@ -122,6 +121,7 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 		websiteTabConnections: new Map(),
 		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService })),
 		settings,
+		rpcConfiguration: { status: 'ready', rpcEntries: [settings.activeRpcNetwork], activeRpcNetwork: settings.activeRpcNetwork },
 		publishRpcConnectionStatus: async () => undefined,
 		simulationAbortController: new AbortController(),
 		confirmTransactionAbortController: new AbortController(),
@@ -174,7 +174,7 @@ describe('popup message dispatcher seams', () => {
 
 	test('RPC-backed popup handlers stop at the shared boundary while configuration is unavailable', async () => {
 		const context = createDispatcherContext(async () => { throw new Error('reset must not run') })
-		context.settings = { ...context.settings, rpcConfigurationAvailable: false }
+		context.rpcConfiguration = { status: 'unavailable', reason: 'corrupt' }
 		const ownerWasAvailable = context.simulationServicesOwner.isAvailable()
 
 		assert.equal(await dispatchPopupMessage(context, { method: 'popup_refreshSimulation' }), undefined)

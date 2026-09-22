@@ -358,6 +358,6 @@ browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () =
 browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
 	const { simulationServicesOwner } = await waitForBackgroundStartup()
 	const settingsSnapshot = await getSettingsSnapshot()
-	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settingsSnapshot.settings, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
+	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settingsSnapshot.settings, settingsSnapshot.rpcConfiguration, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 })))
 addWindowTabListeners(onCloseWindow, onCloseTab)

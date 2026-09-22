@@ -41,7 +41,7 @@ export const RPC_CONFIGURATION_UNAVAILABLE_NETWORK: RpcNetwork = {
 export type RpcConfigurationState =
 	| { readonly status: 'ready', readonly rpcEntries: RpcEntries, readonly activeRpcNetwork: RpcNetwork }
 	| { readonly status: 'unavailable', readonly reason: 'empty', readonly activeRpcNetwork: RpcNetwork }
-	| { readonly status: 'unavailable', readonly reason: 'corrupt' | 'incomplete' | 'read-failed' | 'write-failed', readonly error?: unknown }
+	| { readonly status: 'unavailable', readonly reason: 'corrupt' | 'incomplete' | 'read-failed' | 'write-failed', readonly activeRpcNetwork?: RpcNetwork, readonly error?: unknown }
 
 export function getRpcServiceNetwork(configuration: Extract<RpcConfigurationState, { status: 'ready' }>): RpcEntry | undefined {
 	if (configuration.activeRpcNetwork.httpsRpc !== undefined) return configuration.activeRpcNetwork
@@ -236,9 +236,10 @@ type RpcConfigurationStorageItems = Readonly<Record<string, unknown>> & {
 	readonly activeRpcNetwork?: unknown
 }
 
-const unavailableRpcConfiguration = (reason: Exclude<Exclude<RpcConfigurationState, { status: 'ready' }>['reason'], 'empty'>, error?: unknown): RpcConfigurationState => ({
+const unavailableRpcConfiguration = (reason: Exclude<Exclude<RpcConfigurationState, { status: 'ready' }>['reason'], 'empty'>, activeRpcNetwork?: RpcNetwork, error?: unknown): RpcConfigurationState => ({
 	status: 'unavailable',
 	reason,
+	...(activeRpcNetwork === undefined ? {} : { activeRpcNetwork }),
 	...(error === undefined ? {} : { error }),
 })
 
@@ -252,29 +253,34 @@ async function resolveRpcConfigurationStateWithoutLock(storedConfiguration: RpcC
 			await browserStorageLocalSet({ rpcEntries: DEFAULT_RPCS, activeRpcNetwork: initialRpc })
 			return { status: 'ready', rpcEntries: DEFAULT_RPCS, activeRpcNetwork: initialRpc }
 		} catch (error: unknown) {
-			return unavailableRpcConfiguration('write-failed', error)
+			return unavailableRpcConfiguration('write-failed', undefined, error)
 		}
 	}
 
 	let rpcEntries: RpcEntries | undefined
+	let rpcEntriesAreCorrupt = false
 	if (hasRpcEntries) {
 		const parsedRpcEntries = safeParseLocalStorageItems({ rpcEntries: storedConfiguration.rpcEntries })
 		if (!parsedRpcEntries.success || parsedRpcEntries.value.rpcEntries === undefined) {
 			reportCorruptStoredValue('Rpc entries')(parsedRpcEntries)
-			return unavailableRpcConfiguration('corrupt')
+			rpcEntriesAreCorrupt = true
+		} else {
+			rpcEntries = parsedRpcEntries.value.rpcEntries
 		}
-		rpcEntries = parsedRpcEntries.value.rpcEntries
 	}
 
 	let activeRpcNetwork: RpcNetwork | undefined
+	let activeRpcNetworkIsCorrupt = false
 	if (hasActiveRpcNetwork) {
 		const parsedActiveRpcNetwork = safeParseLocalStorageItems({ activeRpcNetwork: storedConfiguration.activeRpcNetwork })
 		if (!parsedActiveRpcNetwork.success || parsedActiveRpcNetwork.value.activeRpcNetwork === undefined) {
 			reportCorruptStoredValue('Active RPC network')(parsedActiveRpcNetwork)
-			return unavailableRpcConfiguration('corrupt')
+			activeRpcNetworkIsCorrupt = true
+		} else {
+			activeRpcNetwork = parsedActiveRpcNetwork.value.activeRpcNetwork
 		}
-		activeRpcNetwork = parsedActiveRpcNetwork.value.activeRpcNetwork
 	}
+	if (rpcEntriesAreCorrupt || activeRpcNetworkIsCorrupt) return unavailableRpcConfiguration('corrupt', activeRpcNetwork)
 
 	if (rpcEntries === undefined) {
 		if (activeRpcNetwork === undefined) return unavailableRpcConfiguration('incomplete')
@@ -282,7 +288,7 @@ async function resolveRpcConfigurationStateWithoutLock(storedConfiguration: RpcC
 		try {
 			await browserStorageLocalSet({ rpcEntries })
 		} catch (error: unknown) {
-			return unavailableRpcConfiguration('write-failed', error)
+			return unavailableRpcConfiguration('write-failed', activeRpcNetwork, error)
 		}
 	}
 	if (rpcEntries.length === 0) {
@@ -297,7 +303,7 @@ async function resolveRpcConfigurationStateWithoutLock(storedConfiguration: RpcC
 		try {
 			await browserStorageLocalSet({ activeRpcNetwork })
 		} catch (error: unknown) {
-			return unavailableRpcConfiguration('write-failed', error)
+			return unavailableRpcConfiguration('write-failed', activeRpcNetwork, error)
 		}
 	}
 	return { status: 'ready', rpcEntries, activeRpcNetwork }
@@ -307,7 +313,7 @@ async function getRpcConfigurationStateWithoutLock(): Promise<RpcConfigurationSt
 	try {
 		return await resolveRpcConfigurationStateWithoutLock(await browser.storage.local.get(['rpcEntries', 'activeRpcNetwork']))
 	} catch (error: unknown) {
-		return unavailableRpcConfiguration('read-failed', error)
+		return unavailableRpcConfiguration('read-failed', undefined, error)
 	}
 }
 

@@ -5,7 +5,7 @@ import type { PopupSettingsRequest } from '../types/popupSettingsRequests.js'
 import type { PopupMessage } from '../types/interceptor-messages.js'
 import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
-import { getSettings } from './settings.js'
+import { getSettingsSnapshot } from './settings.js'
 import { changeActiveAddress, enableSimulationMode, modifyMakeMeRich, popupChangeActiveRpc } from './popupMessageHandlers.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 
@@ -14,7 +14,10 @@ const settingsCoordinator = createPopupSettingsCoordinator(async (data) => await
 function settingsCommand<Method extends PopupSettingsRequest['method']>(method: Method, action: (context: PopupMessageDispatcherContext, request: Extract<PopupMessage, { method: Method }>) => Promise<PopupReplyOption | void>) {
 	return popupMessageHandler(method, async (context, request) => {
 		const descriptor = popupSettingsOperations[method]
-		const admission = await settingsCoordinator.run(descriptor.operation, async () => await action({ ...context, settings: await getSettings() }, request))
+		const admission = await settingsCoordinator.run(descriptor.operation, async () => {
+			const snapshot = await getSettingsSnapshot()
+			return await action({ ...context, settings: snapshot.settings, rpcConfiguration: snapshot.rpcConfiguration }, request)
+		})
 		return admission.accepted ? admission.result : {
 			type: descriptor.replyType,
 			ok: false,
@@ -34,7 +37,7 @@ export const popupSettingsCommandHandlers = {
 	}),
 	popup_modifyMakeMeRich: settingsCommand('popup_modifyMakeMeRich', async (context, request) => {
 		if (await modifyMakeMeRich(request)) {
-			const services = context.settings.rpcConfigurationAvailable ? context.simulationServicesOwner.getCurrentOrUndefined() : undefined
+			const services = context.rpcConfiguration.status === 'ready' ? context.simulationServicesOwner.getCurrentOrUndefined() : undefined
 			if (services === undefined) {
 				return { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but RPC services are unavailable. Restore them before refreshing the simulation.' }
 			}

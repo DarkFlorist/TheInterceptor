@@ -206,6 +206,16 @@ describe('backgroundUtils messaging', () => {
 		const { popupMessageHandler, PopupRequestsReplies } = await loadModules()
 
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const activeRpcNetwork = {
+			name: 'Ethereum Mainnet',
+			chainId: 1n,
+			httpsRpc: 'https://ethereum.dark.florist',
+			currencyName: 'Ether' as const,
+			currencyTicker: 'ETH' as const,
+			currencyLogoUri: '../img/ethereum.svg',
+			primary: true as const,
+			minimized: true as const,
+		}
 		const reply = await popupMessageHandler(
 			new Map(),
 			simulationServicesOwner,
@@ -215,19 +225,10 @@ describe('backgroundUtils messaging', () => {
 				openedPage: { page: 'Home' },
 				useSignersAddressAsActiveAddress: false,
 				websiteAccess: [],
-				rpcConfigurationAvailable: true,
-				activeRpcNetwork: {
-					name: 'Ethereum Mainnet',
-					chainId: 1n,
-					httpsRpc: 'https://ethereum.dark.florist',
-					currencyName: 'Ether',
-					currencyTicker: 'ETH',
-					currencyLogoUri: '../img/ethereum.svg',
-					primary: true,
-					minimized: true,
-				},
+				activeRpcNetwork,
 				simulationMode: true,
 			},
+			{ status: 'ready', rpcEntries: [activeRpcNetwork], activeRpcNetwork },
 			async () => undefined,
 		)
 
@@ -244,6 +245,16 @@ describe('backgroundUtils messaging', () => {
 		])
 		const ethereum: import('../../app/ts/simulation/services/EthereumClientService.js').EthereumClientService = Object.create(EthereumClientService.prototype)
 		const tokenPriceService: import('../../app/ts/simulation/services/priceEstimator.js').TokenPriceService = Object.create(TokenPriceService.prototype)
+		const activeRpcNetwork = {
+			name: 'Ethereum Mainnet',
+			chainId: 1n,
+			httpsRpc: 'https://ethereum.dark.florist',
+			currencyName: 'Ether' as const,
+			currencyTicker: 'ETH' as const,
+			currencyLogoUri: '../img/ethereum.svg',
+			primary: true as const,
+			minimized: true as const,
+		}
 		const reply = await withSilencedConsole(async () => await popupMessageHandler(
 			new Map(),
 			createTestSimulationServicesOwner({ ethereum, tokenPriceService }),
@@ -253,18 +264,10 @@ describe('backgroundUtils messaging', () => {
 				openedPage: { page: 'Home' },
 				useSignersAddressAsActiveAddress: false,
 				websiteAccess: [],
-				activeRpcNetwork: {
-					name: 'Ethereum Mainnet',
-					chainId: 1n,
-					httpsRpc: 'https://ethereum.dark.florist',
-					currencyName: 'Ether',
-					currencyTicker: 'ETH',
-					currencyLogoUri: '../img/ethereum.svg',
-					primary: true,
-					minimized: true,
-				},
+				activeRpcNetwork,
 				simulationMode: true,
 			},
+			{ status: 'ready', rpcEntries: [activeRpcNetwork], activeRpcNetwork },
 			async () => undefined,
 		))
 		assert.equal(reply.error.code, -32700)
