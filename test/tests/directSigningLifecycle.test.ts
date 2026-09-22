@@ -4,9 +4,9 @@ import { createBrowserMock, pendingTransaction, resetConfirmTransactionTestState
 import { DirectSigningRecord, DirectSigningRecords } from '../../app/ts/types/directSigning.js'
 import { appendPendingTransactionOrMessage, saveAddressSigningWallet, clearPendingTransactions } from '../../app/ts/background/storageVariables.js'
 import { readDirectSigningRecords, updateDirectSigning } from '../../app/ts/background/directSigning.js'
-import { bytesFromHex, bytesToHex, type Hex } from '../../app/ts/utils/ethereumBytes.js'
+import { bytesFromHex, bytesToHex, ensureHex, type Hex } from '../../app/ts/utils/ethereumBytes.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumSigning.js'
-import { serializeTransaction } from '../../app/ts/utils/ethereumTransactions.js'
+import { parseTransaction, serializeTransaction } from '../../app/ts/utils/ethereumTransactions.js'
 import { assembleSignedTransaction, prepareTransactionSigningPayload } from '../../app/ts/signing/exactPayload.js'
 
 const privateKey: Hex = '0x0000000000000000000000000000000000000000000000000000000000000001'
@@ -119,5 +119,22 @@ test('concurrent approvals for the same account reserve one transaction at a tim
 	await browser.storage.local.set({ directSigningRequestsV1: DirectSigningRecords.serialize([record, second]) })
 	const results = await Promise.allSettled([record, second].map((item) => updateDirectSigning({ method: 'signing_approve', id: item.id, revision: item.revision })))
 	expect(results.map((item) => item.status)).toEqual(['fulfilled', 'rejected'])
+	expect(broadcasts).toBe(0)
+})
+
+for (const unrelatedChain of [false, true]) test(`nonce reservation ignores ${ unrelatedChain ? 'another chain' : 'a cancelled request' }`, async () => {
+	const chainId = unrelatedChain ? 2n : record.input.chainId
+	const other: DirectSigningRecord = {
+		...record,
+		id: crypto.randomUUID(),
+		request: { ...record.request, requestId: 99 },
+		revision: crypto.randomUUID(),
+		input: { ...record.input, chainId, data: serializeTransaction({ ...parseTransaction(ensureHex(record.input.data)), chainId }) },
+		phase: unrelatedChain ? 'approved' : 'cancelled',
+	}
+	await appendPendingTransactionOrMessage({ ...pendingTransaction, uniqueRequestIdentifier: other.request, simulationMode: false, activeAddress: address, signingWalletBinding: record.binding, signingChainId: other.input.chainId })
+	await browser.storage.local.set({ directSigningRequestsV1: DirectSigningRecords.serialize([record, other]) })
+	const approved = await updateDirectSigning({ method: 'signing_approve', id: record.id, revision: record.revision })
+	expect(approved.phase).toBe('approved')
 	expect(broadcasts).toBe(0)
 })

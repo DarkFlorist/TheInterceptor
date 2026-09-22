@@ -3,6 +3,7 @@ import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 import { SigningWallet, SigningWalletBinding } from './signingWallet.js'
 import { UniqueRequestIdentifier } from '../utils/requests.js'
 
+export type DirectSigningInput = funtypes.Static<typeof DirectSigningInput>
 export const DirectSigningInput = funtypes.ReadonlyObject({
 	method: funtypes.Union(funtypes.Literal('eth_sendTransaction'), funtypes.Literal('personal_sign'), funtypes.Literal('eth_signTypedData_v4')),
 	data: funtypes.String.withConstraint((value) => value.length <= 131074),
@@ -35,3 +36,6 @@ export const SigningPageRequest = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('signing_editFees'), id: funtypes.String, revision: funtypes.String, nonce: EthereumQuantity, gas: EthereumQuantity, maxFeePerGas: EthereumQuantity, maxPriorityFeePerGas: EthereumQuantity }),
 )
 export type SigningPageRequest = funtypes.Static<typeof SigningPageRequest>
+
+/** Commands that operate on an existing, persisted signing request. */
+export type DirectSigningRequest = Extract<SigningPageRequest, { id: string }>

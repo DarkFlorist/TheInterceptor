@@ -1,3 +1,4 @@
+import type { DirectSigningInput } from '../types/directSigning.js'
 import type { SigningWalletBinding } from '../types/signingWallet.js'
 import { getPrettySignerName } from '../utils/signerMetadata.js'
 import { preparePersonalSigningPayload, prepareTransactionSigningPayload, prepareTypedDataSigningPayload, verifyPersonalSigningResponse, verifySignedTransaction, verifyTypedDataSigningResponse } from './exactPayload.js'
@@ -17,13 +18,6 @@ export function signingWalletDescription(binding: SigningWalletBinding | undefin
 	if (binding === undefined) return 'No signing wallet'
 	return `${ getSigningBackend(binding).label } · ${ binding.wallet.label }`
 }
-
-export type DirectSigningInput = Readonly<{
-	method: 'eth_sendTransaction' | 'personal_sign' | 'eth_signTypedData_v4'
-	data: string
-	address: string
-	chainId: bigint
-}>
 
 export function prepareDirectPayload(input: DirectSigningInput) {
 	switch (input.method) {
