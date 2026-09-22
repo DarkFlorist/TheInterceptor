@@ -364,7 +364,7 @@ function installBrowserMock(replyToMessage?: (message: unknown) => unknown) {
 				async sendMessage(message: unknown) {
 					// Browser messaging clones serialized records into ordinary objects.
 					sentMessages.push(structuredClone(message))
-					return replyToMessage?.(message)
+					return replyToMessage?.(message) ?? (hasMethod(message, 'signing_wallets') ? { ok: true, bindings: [] } : undefined)
 				},
 			},
 		},
@@ -927,7 +927,7 @@ describe('Home popup clear empty state', () => {
 		const dom = installDomMock()
 		const simVisResults = new Signal<ResolvedSimulationResults>(toResolvedSimulationResults(createEmptySimulationResults()))
 		try {
-			await act(() => {
+			await act(async () => {
 				render(h(Home, createHomeParams({
 					tabState: new Signal<TabState | undefined>({
 						tabId: 1,
@@ -948,8 +948,9 @@ describe('Home popup clear empty state', () => {
 					tabIconDetails: new Signal({ icon: ICON_SIMULATING, iconReason: 'Connected through MetaMask.' }),
 				})), dom.document.body)
 			})
+			await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
 
-			assert.equal(dom.document.body.textContent?.includes('No signing wallet'), true)
+			assert.equal(dom.document.body.textContent?.includes('No signing wallet'), true, dom.document.body.textContent ?? '')
 			assert.equal(dom.document.body.textContent?.includes('NOT CONNECTED'), false)
 		} finally {
 			dom.restore()

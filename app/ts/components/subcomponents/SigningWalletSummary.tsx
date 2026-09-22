@@ -10,12 +10,12 @@ export function openSigningWalletSetup(address?: bigint) {
 }
 
 export function SigningWalletSummary({ address, actionLabel = 'Change wallet' }: { address: bigint, actionLabel?: string }) {
-	const [bindings, setBindings] = useState<SigningWalletBindings>([])
+	const [bindings, setBindings] = useState<SigningWalletBindings>()
 	const [error, setError] = useState<string>()
 	useEffect(() => {
 		let active = true
 		const refresh = async () => {
-			try { const reply = await sendSigningPageRequest({ method: 'signing_wallets' }); if (active) setBindings(SigningWalletBindings.parse(reply.bindings)) }
+			try { const reply = await sendSigningPageRequest({ method: 'signing_wallets' }); if (active) { setBindings(SigningWalletBindings.parse(reply.bindings)); setError(undefined) } }
 			catch (failure) { if (active) setError(failure instanceof Error ? failure.message : 'Could not load signing wallet') }
 		}
 		const changed = (changes: Record<string, unknown>) => { if ('signingWalletBindings' in changes) void refresh() }
@@ -23,13 +23,16 @@ export function SigningWalletSummary({ address, actionLabel = 'Change wallet' }:
 		browser.storage?.onChanged?.addListener(changed)
 		return () => { active = false; browser.storage?.onChanged?.removeListener(changed) }
 	}, [address])
+	if (bindings === undefined) return <p class = 'signing-muted' aria-busy = { error === undefined } role = { error === undefined ? 'status' : 'alert' }>{ error ?? 'Loading signing wallet…' }</p>
 	const binding = bindings.find((item) => item.wallet.address === address)
-	return <div style = { { color: 'var(--text-color)' } }>
+	return <div class = 'signing-wallet-summary'>
 		<p>{ signingWalletDescription(binding) }</p>
 		{ binding === undefined ? <small>Set up signing wallet to sign, or switch to simulation below.</small> : undefined }
 		{ binding?.wallet.type === 'ledger' ? <small>Wallet saved · connect Ledger when signing</small> : binding?.wallet.type === 'airgap' ? <small>Imported account · awaiting offline signing</small> : undefined }
-		<button class = 'button is-small is-primary' onClick = { (event) => { event.stopPropagation(); void openSigningWalletSetup(address).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not open wallet setup')) } }>{ actionLabel }</button>
-		<button class = 'button is-small is-primary' onClick = { (event) => { event.stopPropagation(); void sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: address, simulationMode: true } }).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not select simulation address')) } }>Simulate this address</button>
+		<div class = 'signing-actions'>
+		<button class = 'button is-small signing-secondary' onClick = { (event) => { event.stopPropagation(); void openSigningWalletSetup(address).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not open wallet setup')) } }>{ actionLabel }</button>
+		<button class = 'button is-small signing-secondary' onClick = { (event) => { event.stopPropagation(); void sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: address, simulationMode: true } }).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not select simulation address')) } }>Simulate this address</button>
+		</div>
 		{ error === undefined ? undefined : <p role = 'alert'>{ error }</p> }
 	</div>
 }

@@ -1,3 +1,6 @@
+import { SigningSteps } from './components/subcomponents/SigningSteps.js'
+import { formatUnits } from './utils/ethereumUnits.js'
+import { CHAIN_NAMES } from './utils/chainNames.js'
 import { openSigningWalletSetup } from './components/subcomponents/SigningWalletSummary.js'
 import { render } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
@@ -79,42 +82,63 @@ function DirectSigningPage() {
 	})
 	if (record === undefined) return <main style = 'padding: 24px; color: var(--text-color);'><p>{ status }</p><p role = 'alert'>{ error }</p></main>
 	const transaction = record.input.method === 'eth_sendTransaction' ? parseTransaction(ensureHex(record.input.data)) : undefined
-	return <main style = 'max-width: 820px; margin: 24px auto; padding: 24px; overflow-wrap: anywhere; color: var(--text-color); display: flex; flex-direction: column; gap: 16px;'>
-		<h1 style = 'font-size: 1.5rem; font-weight: 600;'>Review and sign</h1>
-		<dl><dt>Originating website</dt><dd>{ record.websiteOrigin }</dd><dt>Mode</dt><dd>Signing · real signature</dd><dt>Acting address</dt><dd>{ record.input.address }</dd><dt>Network chain ID</dt><dd>{ record.input.chainId.toString() }</dd><dt>Signing wallet</dt><dd>{ signingWalletDescription(record.binding) }</dd><dt>Status</dt><dd>{ record.phase }</dd></dl>
-		<p>Interceptor’s simulated explanation is in the confirmation window. It is not a promise about execution or the information your signing device displays. Review the device’s own display independently.</p>
-		{ transaction === undefined ? <pre style = 'white-space: pre-wrap;'>{ record.input.data }</pre> : <section>
-			<p>To: { transaction.to ?? 'Contract creation' } · Value: { String(transaction.value) } attoeth</p>
-			<p>Nonce: { String(transaction.nonce) } · Gas limit: { String(transaction.gas) }</p>
-			<p>Maximum fee: { (BigInt(transaction.gas ?? 0) * (transaction.maxFeePerGas ?? 0n)).toString() } attoeth · Maximum priority fee per gas: { String(transaction.maxPriorityFeePerGas) } attoeth</p>
-			<details><summary style = 'color: var(--text-color); cursor: pointer; margin: 8px 0;'>Exact transaction data and access list</summary><pre style = 'white-space: pre-wrap;'>{ record.input.data }</pre></details>
-			{ record.phase === 'review' || record.phase === 'signed' ? <details><summary style = 'color: var(--text-color); cursor: pointer; margin: 8px 0;'>Edit fees and advanced nonce</summary>
-				<div style = 'display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px;'>
-					<label style = 'display: flex; flex-direction: column;'>Gas limit <input value = { gas } onInput = { (event) => setGas(event.currentTarget.value) }/></label>
-					<label style = 'display: flex; flex-direction: column;'>Max fee per gas (attoeth) <input value = { maxFee } onInput = { (event) => setMaxFee(event.currentTarget.value) }/></label>
-					<label style = 'display: flex; flex-direction: column;'>Max priority fee per gas (attoeth) <input value = { priority } onInput = { (event) => setPriority(event.currentTarget.value) }/></label>
-					<label style = 'display: flex; flex-direction: column;'>Nonce (advanced) <input value = { nonce } onInput = { (event) => setNonce(event.currentTarget.value) }/></label>
+	const walletName = record.binding.wallet.type === 'ledger' ? 'Ledger' : 'AirGap Vault'
+	const signed = record.phase === 'signed'
+	const step = record.phase === 'cancelled' ? -1 : record.phase === 'review' ? 0 : record.phase === 'approved' ? 1 : record.phase === 'signed' && transaction !== undefined ? 2 : 3
+	const completedTitle = record.phase === 'cancelled' ? 'Request cancelled' : record.phase === 'confirmed' ? record.executionSucceeded ? 'Transaction confirmed' : 'Transaction reverted' : record.phase === 'submitted' ? 'Transaction submitted' : record.phase === 'submitting' ? 'Checking transaction submission' : undefined
+	return <main class = 'signing-page'>
+		<header><p class = 'signing-muted'>Signing mode · real signature</p><h1>{ completedTitle ?? (signed ? transaction === undefined ? 'Message signature verified' : 'Ready to broadcast' : scanning ? 'Scan the signed response' : qr !== undefined ? 'Sign offline with AirGap Vault' : 'Review and sign') }</h1></header>
+		<SigningSteps steps = { transaction === undefined ? ['Review', 'Sign', 'Return signature'] : ['Review', 'Sign', 'Broadcast'] } current = { step }/>
+		<section class = 'signing-panel'>
+			<dl class = 'signing-grid'>
+				<div><dt>Originating website</dt><dd>{ record.websiteOrigin }</dd></div>
+				<div><dt>Network</dt><dd>{ CHAIN_NAMES.get(record.input.chainId.toString()) ?? 'Custom network' } <span class = 'signing-muted'>· Chain { record.input.chainId.toString() }</span></dd></div>
+				<div><dt>Acting address</dt><dd class = 'signing-address'>{ record.input.address }</dd></div>
+				<div><dt>Signing wallet</dt><dd>{ signingWalletDescription(record.binding) }</dd></div>
+			</dl>
+			{ record.phase === 'review' ? <div class = 'signing-actions'><button class = 'button signing-secondary is-small' onClick = { () => run(async () => { await openSigningWalletSetup(record.binding.wallet.address); setStatus('Changing this address’s signing wallet invalidates this request. Cancel and review a new application request after saving.') }) }>Change signing wallet</button></div> : undefined }
+		</section>
+		{ transaction === undefined ? <section class = 'signing-panel'><h2>Message to sign</h2><pre>{ record.input.data }</pre></section> : <section class = 'signing-panel'>
+			<dl class = 'signing-grid'>
+				<div><dt>Amount</dt><dd class = 'signing-amount'>{ formatUnits(transaction.value ?? 0n, 18) } ether</dd></div>
+				<div><dt>Maximum network fee</dt><dd class = 'signing-amount'>{ formatUnits(BigInt(transaction.gas ?? 0) * (transaction.maxFeePerGas ?? 0n), 18) } ether</dd></div>
+				<div><dt>Recipient</dt><dd class = 'signing-address'>{ transaction.to ?? 'Contract creation' }</dd></div>
+				<div><dt>Fee per gas / priority fee</dt><dd>{ formatUnits(transaction.maxFeePerGas ?? 0n, 9) } / { formatUnits(transaction.maxPriorityFeePerGas ?? 0n, 9) } nanoeth</dd></div>
+			</dl>
+			<details><summary>Exact transaction data and access list</summary><p>Nonce: { String(transaction.nonce) } · Gas limit: { String(transaction.gas) }</p><pre>{ record.input.data }</pre></details>
+			{ record.phase === 'review' || signed ? <details><summary>Edit fees and advanced nonce</summary>
+				<div class = 'signing-grid'>
+					<label>Gas limit<input inputMode = 'numeric' value = { gas } onInput = { (event) => setGas(event.currentTarget.value) }/></label>
+					<label>Max fee per gas (attoeth)<input inputMode = 'numeric' value = { maxFee } onInput = { (event) => setMaxFee(event.currentTarget.value) }/></label>
+					<label>Max priority fee per gas (attoeth)<input inputMode = 'numeric' value = { priority } onInput = { (event) => setPriority(event.currentTarget.value) }/></label>
+					<label>Nonce (advanced)<input inputMode = 'numeric' value = { nonce } onInput = { (event) => setNonce(event.currentTarget.value) }/></label>
 				</div>
-				<p>Changing any signed field invalidates the signature and requires a new review and device approval.</p>
-				<button class = 'button is-primary' disabled = { busy } onClick = { () => run(async () => { await command({ method: 'signing_editFees', id, revision: record.revision, nonce: BigInt(nonce), gas: BigInt(gas), maxFeePerGas: BigInt(maxFee), maxPriorityFeePerGas: BigInt(priority) }); setQr(undefined); setStatus('Fields changed. Review the new exact payload before approving again.') }) }>Apply changes and review again</button>
+				<p class = 'signing-muted'>Changing a signed field requires a new review and signature.</p>
+				<button class = 'button signing-secondary' disabled = { busy } onClick = { () => run(async () => { await command({ method: 'signing_editFees', id, revision: record.revision, nonce: BigInt(nonce), gas: BigInt(gas), maxFeePerGas: BigInt(maxFee), maxPriorityFeePerGas: BigInt(priority) }); setQr(undefined); setStatus('Fields changed. Review the new exact payload before approving again.') }) }>Apply changes and review again</button>
 			</details> : undefined }
 		</section> }
-		{ record.phase === 'review' ? <button class = 'button is-primary' onClick = { () => run(async () => { await openSigningWalletSetup(record.binding.wallet.address); setStatus('Changing this address’s signing wallet invalidates this request. Cancel and review a new application request after saving.') }) }>Change signing wallet</button> : undefined }
-		<p role = 'status'>{ status }</p>{ error === undefined ? undefined : <p role = 'alert'>{ error }</p> }
-		{ record.phase === 'review' || record.phase === 'approved' ? <button class = 'button is-primary' disabled = { busy } onClick = { sign }>{ record.phase === 'approved' ? 'Resume with ' : 'Approve and continue with ' }{ record.binding.wallet.type === 'ledger' ? 'Ledger' : 'AirGap Vault' }</button> : undefined }
-		{ qr === undefined || record.phase !== 'approved' ? undefined : <section><AnimatedSigningQr payload = { qr }/><button class = 'button is-primary' onClick = { () => { decoder.current = createAirGapUrDecoder('eth-signature'); setScanning(true) } }>Scan signed response</button></section> }
-		{ scanning && record.phase === 'approved' ? <SigningQrScanner onFrame = { async (frame) => {
-			const decoded = decoder.current.receive(frame)
-			if (decoded.payload === undefined) { setStatus(`Received ${ decoded.received } of ${ decoded.total } fragments`); return false }
-			setStatus('Verifying signature…')
-			const result = await verifyAirGapSigningResponse(decoded.payload, record.revision, prepareDirectPayload(record.input))
-			await command({ method: 'signing_result', id, revision: record.revision, result })
-			setScanning(false); setQr(undefined); setStatus(transaction === undefined ? 'Signature verified and returned to the originating application.' : 'Signature verified. Confirm broadcast below.')
-			return true
-		} }/> : undefined }
-		{ transaction !== undefined && ['signed', 'submitting', 'submitted', 'confirmed'].includes(record.phase) ? <button class = 'button is-primary' disabled = { busy } onClick = { () => run(async () => { const next = await command({ method: 'signing_broadcast', id, revision: record.revision }); setStatus(next.phase === 'confirmed' ? next.executionSucceeded ? 'Transaction confirmed on the configured RPC.' : 'Transaction confirmed but execution reverted.' : 'Transaction submitted. Its hash was returned to the originating application.') }) }>{ record.phase === 'signed' ? 'Broadcast transaction' : 'Reconcile transaction by hash' }</button> : undefined }
-		{ record.transactionHash === undefined ? undefined : <p>Transaction hash: { record.transactionHash }</p> }
-		{ ['review', 'approved', 'signed'].includes(record.phase) ? <button class = 'button is-primary' onClick = { () => { controller.current.abort(new Error('Signing cancelled')); void run(async () => { await command({ method: 'signing_cancel', id }); setScanning(false); setQr(undefined); setStatus('Request cancelled.') }) } }>Cancel request</button> : undefined }
+		{ record.phase === 'review' ? <p class = 'signing-notice'>Review Interceptor’s simulated explanation in the confirmation window, then check your device’s own display. Simulation does not guarantee execution or what the device displays.</p> : undefined }
+		{ signed ? <section class = 'signing-panel signing-success'><h2>{ transaction === undefined ? 'Signature verified · Returned to application' : 'Signature verified · Not broadcast' }</h2><p>{ transaction === undefined ? 'The message signature belongs to the expected account and payload.' : 'Check the recipient, amount, and maximum fee above. Broadcasting sends this signed transaction to the network.' }</p></section> : undefined }
+		{ status === '' || qr !== undefined ? undefined : <p class = 'signing-muted' role = 'status'>{ status }</p> }
+		{ error === undefined ? undefined : <p class = 'signing-error' role = 'alert'>{ error }</p> }
+		{ qr === undefined || record.phase !== 'approved' ? undefined : <section class = 'signing-panel'>
+			{ scanning ? <><h2>Return the signature to Interceptor</h2><p>In Vault, finish signing and display the response QR. Enable this computer’s camera to scan it.</p><details><summary>Show outgoing request again</summary><AnimatedSigningQr payload = { qr }/></details></> : <><h2>Scan this request with Vault</h2><p>Review the request on your offline device and sign. Then bring its response back here.</p><AnimatedSigningQr payload = { qr }/><div class = 'signing-actions'><button class = 'button is-primary' onClick = { () => { decoder.current = createAirGapUrDecoder('eth-signature'); setScanning(true); setStatus('Waiting for the response QR from Vault.') } }>Scan signed response</button></div></> }
+			{ scanning ? <><SigningQrScanner onFrame = { async (frame) => {
+				const decoded = decoder.current.receive(frame)
+				if (decoded.payload === undefined) { setStatus(`Received ${ decoded.received } of ${ decoded.total } fragments`); return false }
+				setStatus('Verifying signature…')
+				const result = await verifyAirGapSigningResponse(decoded.payload, record.revision, prepareDirectPayload(record.input))
+				await command({ method: 'signing_result', id, revision: record.revision, result })
+				setScanning(false); setQr(undefined); setStatus(transaction === undefined ? 'Signature verified and returned to the originating application.' : 'Signature verified. Confirm broadcast below.')
+				return true
+			} }/><p class = 'signing-muted' role = 'status'>{ status }</p></> : undefined }
+		</section> }
+		<div class = 'signing-actions'>
+			{ record.phase === 'review' || record.phase === 'approved' && qr === undefined ? <button class = 'button is-primary' disabled = { busy } onClick = { sign }>{ record.phase === 'approved' ? 'Resume with ' : 'Approve and continue with ' }{ walletName }</button> : undefined }
+			{ transaction !== undefined && ['signed', 'submitting', 'submitted', 'confirmed'].includes(record.phase) ? <button class = 'button is-primary' disabled = { busy } onClick = { () => run(async () => { const next = await command({ method: 'signing_broadcast', id, revision: record.revision }); setStatus(next.phase === 'confirmed' ? next.executionSucceeded ? 'Transaction confirmed on the configured RPC.' : 'Transaction confirmed but execution reverted.' : 'Transaction submitted. Its hash was returned to the originating application.') }) }>{ signed ? 'Broadcast transaction' : 'Reconcile transaction by hash' }</button> : undefined }
+			{ ['review', 'approved', 'signed'].includes(record.phase) ? <button class = 'button signing-secondary' onClick = { () => { controller.current.abort(new Error('Signing cancelled')); void run(async () => { await command({ method: 'signing_cancel', id }); setScanning(false); setQr(undefined); setStatus('Request cancelled.') }) } }>Cancel request</button> : undefined }
+		</div>
+		{ record.transactionHash === undefined ? undefined : <details><summary>Transaction hash</summary><p class = 'signing-address'>{ record.transactionHash }</p></details> }
 	</main>
 }
 render(<DirectSigningPage/>, document.body)

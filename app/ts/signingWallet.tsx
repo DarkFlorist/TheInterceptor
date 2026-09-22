@@ -1,3 +1,4 @@
+import { SigningSteps } from './components/subcomponents/SigningSteps.js'
 import { render } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import * as funtypes from 'funtypes'
@@ -15,6 +16,7 @@ import { sendPopupMessageToBackgroundPage } from './background/backgroundUtils.j
 function SigningWalletPage() {
 	const target = new URLSearchParams(location.search).get('address')
 	const [binding, setBinding] = useState<SigningWalletBinding>()
+	const [bindings, setBindings] = useState<SigningWalletBindings>([])
 	const [tabs, setTabs] = useState<readonly TabState[]>([])
 	const [kind, setKind] = useState('ledger')
 	const [label, setLabel] = useState('Account 1')
@@ -25,6 +27,7 @@ function SigningWalletPage() {
 	const [verifiedLedgerAddress, setVerifiedLedgerAddress] = useState<bigint>()
 	const [error, setError] = useState<string>()
 	const [status, setStatus] = useState('')
+	const [saved, setSaved] = useState(false)
 	const [busy, setBusy] = useState(false)
 	const [scan, setScan] = useState(false)
 	const controller = useRef(new AbortController())
@@ -38,6 +41,7 @@ function SigningWalletPage() {
 	useEffect(() => { void run(async () => {
 		const reply = await sendSigningPageRequest({ method: 'signing_wallets' })
 		const bindings = SigningWalletBindings.parse(reply.bindings)
+		setBindings(bindings)
 		setBinding(target === null ? undefined : bindings.find((item) => item.wallet.address === BigInt(target)))
 		setTabs(funtypes.ReadonlyArray(TabState).parse(reply.tabs))
 	}) }, [])
@@ -86,40 +90,61 @@ function SigningWalletPage() {
 		if (kind !== 'manual' && wallet === undefined) throw new Error('Select and review a wallet account first')
 		const address = wallet?.address ?? BigInt(addressText)
 		if (target !== null && address !== BigInt(target)) throw new Error('The wallet account does not match the address being edited')
-		await sendSigningPageRequest({ method: 'signing_saveWallet', address, wallet, revision: binding?.wallet.address === address ? binding.revision : undefined, name: label })
+		await sendSigningPageRequest({ method: 'signing_saveWallet', address, wallet, revision: bindings.find((item) => item.wallet.address === address)?.revision, name: label })
+		setSaved(true)
 		setStatus('Address and signing wallet saved. Mode and website permissions are unchanged.')
 		const reply = await sendSigningPageRequest({ method: 'signing_wallets' })
+		setBindings(SigningWalletBindings.parse(reply.bindings))
 		setBinding(SigningWalletBindings.parse(reply.bindings).find((item) => item.wallet.address === address))
 	})
-	return <main style = 'max-width: 760px; margin: 30px auto; padding: 24px; color: var(--text-color); display: flex; flex-direction: column; gap: 16px;'>
-		<h1 style = 'font-size: 1.5rem; font-weight: 600;'>{ target === null ? 'Add address' : 'Change signing wallet' }</h1>
-		{ target === null ? undefined : <p>Address: { target } · { signingWalletDescription(binding) }</p> }
-		<p>Save public account information only. Never enter a recovery phrase or private key.</p>
-		<label>Wallet <select disabled = { busy } value = { kind } onChange = { (event) => { setKind(event.currentTarget.value); setAccounts([]); setScan(false); setStatus('') } }>
-			<option value = 'browser'>Browser wallet</option><option value = 'ledger'>Ledger</option><option value = 'airgap'>AirGap Vault</option><option value = 'manual'>Manual address</option>
+	const selectedAccount = accounts[selected]
+	const accountMatches = selectedAccount !== undefined && (target === null || selectedAccount.address === BigInt(target))
+	const ledgerVerified = selectedAccount?.type === 'ledger' && verifiedLedgerAddress === selectedAccount.address
+	const readyToSave = label.trim().length > 0 && (kind === 'manual' ? /^0x[0-9a-fA-F]{40}$/.test(addressText) : accountMatches && (kind !== 'ledger' || ledgerVerified))
+	const steps = kind === 'ledger' ? ['Connect', 'Select account', 'Verify address', 'Save'] : kind === 'manual' ? ['Enter address', 'Save'] : ['Connect / import', 'Review account', 'Save']
+	const currentStep = saved ? steps.length : kind === 'ledger' ? ledgerVerified ? 3 : accounts.length > 0 ? 2 : 0 : accounts.length > 0 ? 1 : 0
+	return <main class = 'signing-page'>
+		<header><h1>{ target === null ? 'Add address' : 'Change signing wallet' }</h1><p class = 'signing-muted'>Your wallet stays with this address. Mode and website permissions stay unchanged.</p></header>
+		{ target === null ? undefined : <section class = 'signing-panel'><h2>Current address</h2><p class = 'signing-address'>{ target }</p><div><p class = 'signing-muted'>Saved signing wallet</p><p>{ signingWalletDescription(binding) }</p></div></section> }
+		<p class = 'signing-muted'>Public account information only. Never enter a recovery phrase or private key.</p>
+		<label>Signing wallet<select disabled = { busy } value = { kind } onChange = { (event) => { setKind(event.currentTarget.value); setAccounts([]); setVerifiedLedgerAddress(undefined); setScan(false); setSaved(false); setStatus('') } }>
+			<option value = 'browser'>Browser wallet</option><option value = 'ledger'>Ledger</option><option value = 'airgap'>AirGap Vault</option><option value = 'manual'>Manual address · no signing wallet</option>
 		</select></label>
-		{ kind === 'ledger' ? <section><label>Derivation path <input value = { path } onInput = { (event) => setPath(event.currentTarget.value) }/></label><p>Ledger Live account N: m/44′/60′/N′/0/0. Legacy account N: m/44′/60′/0′/0/N.</p><button class = 'button is-primary' disabled = { busy } onClick = { discoverLedger }>Discover Ledger Live accounts</button><button class = 'button is-primary' disabled = { busy } onClick = { ledger }>Connect and verify address on Ledger</button></section> : undefined }
-		{ kind === 'browser' ? <section><p>Open an approved website with your browser wallet installed, connect, then choose one of its exposed accounts here.</p><button class = 'button is-primary' disabled = { busy } onClick = { () => run(async () => { await sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true }); setStatus('Approve the account connection in your browser wallet. Exposed accounts appear here automatically.') }) }>Connect browser wallet</button>{ tabs.flatMap((tab) => tab.signerAccounts.map((address) => <button key = { `${ tab.tabId }:${ address }` } class = 'button is-primary' onClick = { () => { setAccounts([{ type: 'browser', address, signerName: tab.signerName, providerId: tab.signerName, label }]); setSelected(0) } }>{ tab.signerName } · 0x{ address.toString(16).padStart(40, '0') }</button>)) }</section> : undefined }
-		{ kind === 'airgap' ? <section>
-			<p>Export a public Ethereum account from AirGap Vault using the ERC-4527 crypto-account or crypto-hdkey format. The imported account awaits offline signing; it is not continuously connected.</p>
-			<select disabled = { scan } onChange = { (event) => { const type = event.currentTarget.value === 'crypto-hdkey' ? 'crypto-hdkey' : 'crypto-account'; setImportType(type); setDecoder(createAirGapUrDecoder(type)) } }><option value = 'crypto-account'>crypto-account</option><option value = 'crypto-hdkey'>crypto-hdkey</option></select>
-			<button class = 'button is-primary' onClick = { () => { setDecoder(createAirGapUrDecoder(importType)); setScan(!scan) } }>{ scan ? 'Cancel scan' : 'Scan public account' }</button>
+		<SigningSteps steps = { steps } current = { currentStep }/>
+		{ saved ? <section class = 'signing-panel signing-success' role = 'status'><h2>{ kind === 'manual' ? 'Address saved' : 'Address and wallet saved' }</h2><p class = 'signing-address'>{ selectedAccount === undefined ? addressText : `0x${ selectedAccount.address.toString(16).padStart(40, '0') }` }</p><p>You can close this tab and select the address in Interceptor.</p></section> : <>
+		{ kind === 'ledger' ? <section class = 'signing-panel'><h2>{ accounts.length === 0 ? 'Connect your Ledger' : 'Verify your selected account' }</h2><p>Unlock your device and open the Ethereum app. Check that the address on your device matches the account below.</p><div class = 'signing-actions'>
+			<button class = { `button ${ accounts.length === 0 ? 'is-primary' : 'signing-secondary' }` } disabled = { busy } onClick = { discoverLedger }>Discover Ledger Live accounts</button>
+			{ accounts.length === 0 ? undefined : <button class = 'button is-primary' disabled = { busy || ledgerVerified } onClick = { ledger }>{ ledgerVerified ? 'Address verified' : 'Verify selected address on Ledger' }</button> }
+		</div><details><summary>Advanced: custom derivation path</summary><label>Derivation path<input disabled = { busy } value = { path } onInput = { (event) => { setPath(event.currentTarget.value); setVerifiedLedgerAddress(undefined); setAccounts([]) } }/></label><p class = 'signing-muted'>Ledger Live: m/44′/60′/N′/0/0. Legacy: m/44′/60′/0′/0/N.</p><button class = 'button signing-secondary' disabled = { busy } onClick = { ledger }>Connect and verify this path</button></details></section> : undefined }
+		{ kind === 'browser' ? <section class = 'signing-panel'><h2>Connect your browser wallet</h2><p>Open an approved website with your browser wallet installed, connect, then choose one of its exposed accounts here.</p><div class = 'signing-actions'><button class = 'button is-primary' disabled = { busy } onClick = { () => run(async () => { await sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true }); setStatus('Approve the account connection in your browser wallet. Exposed accounts appear here automatically.') }) }>Connect browser wallet</button></div>{ tabs.flatMap((tab) => tab.signerAccounts.map((address) => <button key = { `${ tab.tabId }:${ address }` } class = 'button signing-secondary' onClick = { () => { setAccounts([{ type: 'browser', address, signerName: tab.signerName, providerId: tab.signerName, label }]); setSelected(0) } }>{ tab.signerName } · 0x{ address.toString(16).padStart(40, '0') }</button>)) }</section> : undefined }
+		{ kind === 'airgap' ? <section class = 'signing-panel'>
+			<h2>{ scan ? 'Scan your public account' : 'Import from AirGap Vault' }</h2><p>In Vault, export your public Ethereum account as a QR code. No private keys leave Vault.</p>
+			<details><summary>Advanced: account export format</summary><label>QR format<select disabled = { scan } onChange = { (event) => { const type = event.currentTarget.value === 'crypto-hdkey' ? 'crypto-hdkey' : 'crypto-account'; setImportType(type); setDecoder(createAirGapUrDecoder(type)) } }><option value = 'crypto-account'>crypto-account</option><option value = 'crypto-hdkey'>crypto-hdkey</option></select></label></details>
 			{ scan ? <SigningQrScanner onFrame = { async (frame) => {
 				const result = decoder.receive(frame)
-				if (result.payload === undefined) return false
+				if (result.payload === undefined) { setStatus(`Received ${ result.received } of ${ result.total } fragments`); return false }
 				const imported = importAirGapAccounts(importType, result.payload)
 				setAccounts(imported.map((account) => ({ ...account, type: 'airgap', address: BigInt(account.address), label })))
-				setSelected(0); setScan(false); setStatus('Review imported accounts. Importing public keys does not prove signing authority.')
+				setSelected(0); setScan(false); setStatus('Public accounts imported. Review the address before saving. Signing authority is checked when you sign.')
 				return true
 			} }/> : undefined }
+			<div class = 'signing-actions'><button class = { `button ${ scan || accounts.length > 0 ? 'signing-secondary' : 'is-primary' }` } disabled = { busy } onClick = { () => { setDecoder(createAirGapUrDecoder(importType)); setScan(!scan) } }>{ scan ? 'Cancel scan' : accounts.length > 0 ? 'Scan another account' : 'Scan public account' }</button></div>
+			<p class = 'signing-muted'>Saved AirGap accounts await offline signing; they do not need a continuous connection.</p>
 		</section> : undefined }
-		{ kind === 'manual' ? <label>Address <input value = { addressText } onInput = { (event) => setAddressText(event.currentTarget.value) }/></label> : undefined }
-		{ accounts.map((account, index) => <p key = { account.address.toString() }><label><input type = 'radio' checked = { selected === index } onChange = { () => { setSelected(index); if (account.type === 'ledger') setPath(account.derivationPath) } }/>0x{ account.address.toString(16).padStart(40, '0') } { account.type === 'browser' ? account.signerName : account.derivationPath }</label></p>) }
-		<label>Account name / wallet label <input maxLength = { 100 } value = { label } onInput = { (event) => setLabel(event.currentTarget.value) }/></label>
-		{ busy ? <button class = 'button is-primary' onClick = { () => controller.current.abort(new Error('Wallet setup cancelled')) }>Cancel device operation</button> : undefined }
-		<p role = 'status'>{ status }</p>{ error === undefined ? undefined : <p role = 'alert'>{ error }</p> }
-		<button class = 'button is-primary' disabled = { busy } onClick = { save }>Save address and wallet</button>
-		{ binding === undefined ? undefined : <button class = 'button is-primary' disabled = { busy } onClick = { () => run(async () => { await sendSigningPageRequest({ method: 'signing_saveWallet', address: binding.wallet.address, wallet: undefined, revision: binding.revision, name: undefined }); setBinding(undefined); setStatus('Wallet removed. The address remains saved.') }) }>Remove signing wallet</button> }
+		{ kind === 'manual' ? <section class = 'signing-panel'><h2>Save an address without a wallet</h2><label>Ethereum address<input value = { addressText } placeholder = '0x…' onInput = { (event) => setAddressText(event.currentTarget.value) }/></label><p class = 'signing-muted'>Use it to read chain data or simulate. Add a matching signing wallet later.</p></section> : undefined }
+		{ accounts.length === 0 ? undefined : <section class = 'signing-panel'><h2>{ kind === 'ledger' ? 'Select an account' : 'Review imported account' }</h2>
+			{ accounts.map((account, index) => <label class = 'signing-account' key = { account.address.toString() }><input type = 'radio' name = 'signing-account' disabled = { busy } checked = { selected === index } onChange = { () => { setSelected(index); if (account.type === 'ledger') { setPath(account.derivationPath); setLabel(account.label) } } }/><span><span class = 'signing-address'>0x{ account.address.toString(16).padStart(40, '0') }</span><small>{ account.type === 'browser' ? account.signerName : account.derivationPath }</small></span></label>) }
+			{ ledgerVerified ? <p class = 'signing-notice'>✓ Address verified on Ledger</p> : undefined }
+			{ accountMatches ? undefined : <p class = 'signing-error' role = 'alert'>This account does not match the address being edited. Select a matching account.</p> }
+		</section> }
+		<section class = 'signing-panel'><label>Account name / wallet label<input maxLength = { 100 } value = { label } onInput = { (event) => setLabel(event.currentTarget.value) }/></label>
+			{ readyToSave ? undefined : <p class = 'signing-muted'>{ kind === 'ledger' ? 'Select an account and verify it on your device to enable saving.' : kind === 'manual' ? 'Enter a full Ethereum address and a name to enable saving.' : 'Import or select a matching account and give it a name to enable saving.' }</p> }
+			<div class = 'signing-actions'><button class = 'button is-primary' disabled = { busy || !readyToSave } onClick = { save }>{ kind === 'manual' ? 'Save address' : 'Save address and wallet' }</button></div>
+		</section>
+		</> }
+		{ busy ? <button class = 'button signing-secondary' onClick = { () => controller.current.abort(new Error('Wallet setup cancelled')) }>Cancel device operation</button> : undefined }
+		{ status === '' ? undefined : <p class = 'signing-notice' role = 'status'>{ status }</p> }{ error === undefined ? undefined : <p class = 'signing-error' role = 'alert'>{ error }</p> }
+		{ binding === undefined || target === null ? undefined : <section class = 'signing-panel'><h2>Remove wallet binding</h2><p class = 'signing-muted'>Keep this address for reading chain data and simulation.</p><div class = 'signing-actions'><button class = 'button signing-remove' disabled = { busy } onClick = { () => run(async () => { await sendSigningPageRequest({ method: 'signing_saveWallet', address: binding.wallet.address, wallet: undefined, revision: binding.revision, name: undefined }); setBindings(bindings.filter((item) => item.wallet.address !== binding.wallet.address)); setBinding(undefined); setSaved(false); setAccounts([]); setStatus('Wallet removed. The address remains saved.') }) }>Remove signing wallet</button></div></section> }
 	</main>
 }
 render(<SigningWalletPage/>, document.body)

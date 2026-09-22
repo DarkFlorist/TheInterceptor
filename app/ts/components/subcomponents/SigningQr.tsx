@@ -13,12 +13,12 @@ export function AnimatedSigningQr({ payload }: { payload: Uint8Array }) {
 		const timer = setInterval(() => setSequence((value) => value >= 4096 ? 1 : value + 1), interval)
 		return () => clearInterval(timer)
 	}, [paused, interval])
-	return <section>
+	return <section class = 'signing-qr'>
 		<img width = '400' height = '400' alt = 'AirGap Vault signing request' src = { encodeQR(encoder.part(sequence).toUpperCase(), 'data-url', { scale: 4, border: 4, ecc: 'medium' }) }/>
-		<p>Frame { sequence } · { encoder.count } source fragments</p>
+		<p class = 'signing-muted'>Frame { sequence } · { encoder.count } { encoder.count === 1 ? 'part' : 'parts' }</p>
 		<div style = 'display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0;'>
-			<button class = 'button is-primary' onClick = { () => setPaused(!paused) }>{ paused ? 'Play' : 'Pause' }</button>
-			<button class = 'button is-primary' onClick = { () => setSequence((value) => value + 1) }>Next frame</button>
+			<button class = 'button signing-secondary' onClick = { () => setPaused(!paused) }>{ paused ? 'Play' : 'Pause' }</button>
+			<button class = 'button signing-secondary' onClick = { () => setSequence((value) => value + 1) }>Next frame</button>
 			<label>Animation speed <select value = { interval } onChange = { (event) => setIntervalMs(Number(event.currentTarget.value)) }><option value = '500'>Slow</option><option value = '250'>Normal</option><option value = '125'>Fast</option></select></label>
 		</div>
 	</section>
@@ -82,10 +82,13 @@ export function SigningQrScanner({ onFrame }: { onFrame: (frame: string) => Prom
 			await scan()
 		} catch (failure) { failSession(failure, 'Camera permission was denied or the camera is unavailable') }
 	}
-	return <section>
+	return <section class = 'signing-camera'>
+		{ running ? undefined : <div class = 'signing-camera-placeholder'>Camera preview will appear here. Hold the QR code in view to scan.</div> }
 		<video ref = { video } muted playsInline style = { { display: running ? 'block' : 'none', maxWidth: '100%', width: '400px' } }/>
+		<div class = 'signing-actions'>
 		<button class = 'button is-primary' disabled = { running } onClick = { () => { void start() } }>Enable camera</button>
-		{ running ? <button class = 'button is-primary' onClick = { () => stop.current?.() }>Stop camera</button> : undefined }
-		{ error === undefined ? undefined : <p role = 'alert'>{ error }. Check camera permissions and retry.</p> }
+		{ running ? <button class = 'button signing-secondary' onClick = { () => stop.current?.() }>Stop camera</button> : undefined }
+		</div>
+		{ error === undefined ? undefined : <div class = 'signing-error' role = 'alert'><strong>Camera scan stopped</strong><p>{ error }</p><p>Allow camera access for this extension in your browser and system settings. Close other apps using the camera, then select Enable camera to retry.</p></div> }
 	</section>
 }

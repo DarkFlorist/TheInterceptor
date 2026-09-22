@@ -27,6 +27,7 @@ The Interceptor is a Bun-managed TypeScript browser extension. Main extension so
 - For a PR that changes UI, include screenshots of the implemented interface in the PR description.
 - For a changed UI flow, show an ordered series covering its entry point, important intermediate steps, and resulting state, rather than only the final screen. Include relevant error or recovery states when they are part of the change.
 - Give every screenshot a short explanation of what is happening, the action that reaches that step, and what the user can do next.
+- Capture toolbar UI in the actual extension popup at its native size; capture scrolling content in additional frames instead of enlarging the popup. Wait for application loading, fonts, and visible image assets before capture, and record the browser, viewport, and device scale.
 - Capture screenshots from the built application. Identify fixture data, mocked device states, or other unverified behavior explicitly; do not present screenshots as proof of physical-device or live-network testing.
 - Use image links that reviewers can view from the PR. Keep screenshots free of secrets and unrelated personal information, and refresh them after UI changes that would make them misleading.
 

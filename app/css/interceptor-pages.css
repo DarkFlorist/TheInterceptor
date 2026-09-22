@@ -766,3 +766,98 @@ fieldset[disabled] .button.is-primary.is-danger {
 		margin-top: 0.5rem;
 	}
 }
+
+/* Shared layout for direct signing and public-account onboarding. */
+.signing-page {
+	max-width: 880px;
+	margin: 32px auto;
+	padding: 0 24px 32px;
+	color: var(--text-color);
+	display: flex;
+	flex-direction: column;
+	gap: 20px;
+	overflow-wrap: anywhere;
+}
+.signing-page, .signing-page * { box-sizing: border-box; }
+.signing-page h1 { font-size: 1.75rem; font-weight: 650; }
+.signing-page h2 { font-size: 1.1rem; font-weight: 600; }
+.signing-page p { margin: 0; }
+.signing-muted { color: var(--subtitle-text-color); font-size: .9rem; }
+.signing-panel {
+	padding: 20px;
+	border: 1px solid var(--layout-line-color);
+	border-radius: 12px;
+	background: var(--card-bg-color);
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+.signing-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; }
+.signing-page dl { margin: 0; }
+.signing-page dt { font-size: .8rem; color: var(--subtitle-text-color); margin-bottom: 4px; }
+.signing-page dd { margin: 0; }
+.signing-address { font-family: monospace; overflow-wrap: anywhere; font-size: .9rem; }
+.signing-amount { font-size: 1.4rem; font-weight: 600; }
+.signing-page label:not(.signing-account) { display: flex; flex-direction: column; gap: 6px; font-size: .9rem; }
+.signing-page input:not([type=radio]), .signing-page select {
+	background: var(--surface-dark-color);
+	color: var(--text-color);
+	border: 1px solid var(--address-muted-bg-color);
+	border-radius: 6px;
+	padding: 10px 12px;
+	font: inherit;
+	min-width: 0;
+	width: 100%;
+}
+.signing-page input:focus, .signing-page select:focus { outline: 2px solid var(--accent-color); outline-offset: 2px; }
+.signing-page summary { color: var(--text-color); cursor: pointer; padding: 8px 0; list-style: disclosure-closed; }
+.signing-page details[open] > summary { list-style: disclosure-open; margin-bottom: 12px; }
+.signing-page pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-dark-color); color: var(--text-color); border-radius: 6px; }
+.signing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.signing-page .button, .signing-wallet-summary .button { white-space: normal; height: auto; min-height: 40px; }
+.button.signing-secondary { background: transparent; border: 1px solid var(--address-muted-bg-color); color: var(--text-color); }
+.button.signing-secondary:hover { background: var(--surface-mid-color); }
+.button.signing-remove { background: transparent; border: 1px solid var(--danger-color); color: var(--danger-color); }
+.button.signing-remove:hover { background: var(--surface-dark-color); }
+.signing-page .button:disabled { cursor: not-allowed; opacity: .5; }
+.signing-notice { padding: 12px 16px; border-left: 3px solid var(--accent-color); background: var(--surface-mid-color); border-radius: 4px; }
+.signing-error { padding: 16px; border: 1px solid var(--danger-color); border-radius: 8px; background: var(--surface-dark-color); color: var(--text-color); display: grid; gap: 8px; }
+.signing-success { border-color: var(--positive-color); }
+.signing-steps { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 0; padding: 0; list-style: none; }
+.signing-steps li { display: flex; align-items: center; gap: 8px; color: var(--subtitle-text-color); font-size: .85rem; }
+.signing-steps li span { display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--address-muted-bg-color); border-radius: 50%; }
+.signing-steps li[aria-current=step] { color: var(--text-color); font-weight: 600; }
+.signing-steps li[aria-current=step] span { background: var(--primary-action-color); border-color: var(--accent-color); }
+.signing-steps .is-complete span { color: var(--positive-color); }
+.signing-account { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--address-muted-bg-color); border-radius: 8px; cursor: pointer; }
+.signing-account:has(input:checked) { border-color: var(--accent-color); background: var(--surface-dark-color); }
+.signing-account small { display: block; margin-top: 6px; color: var(--subtitle-text-color); }
+.signing-qr { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.signing-qr img { width: min(100%, 360px); height: auto; background: white; }
+.signing-camera { display: flex; flex-direction: column; gap: 16px; }
+.signing-camera-placeholder { display: grid; place-items: center; min-height: 140px; border: 1px dashed var(--address-muted-bg-color); border-radius: 8px; padding: 20px; text-align: center; color: var(--subtitle-text-color); background: var(--surface-dark-color); }
+.signing-camera video { max-width: 100%; width: 400px; border-radius: 8px; }
+.signing-wallet-summary { margin-top: 12px; color: var(--text-color); display: flex; flex-direction: column; gap: 8px; }
+.signing-wallet-summary small { color: var(--subtitle-text-color); }
+.signing-wallet-summary .signing-actions { margin-top: 4px; }
+.signing-address-selector .card.hoverable:hover, .signing-address-selector .card-content.hoverable:hover { background: var(--surface-mid-color); }
+.signing-address-selector .card { border: 1px solid var(--layout-line-color); box-shadow: none; }
+.signing-address-selector .card:hover { border-color: var(--accent-color); }
+.signing-address-selector .subtitle { color: var(--subtitle-text-color); }
+@media (max-width: 520px) {
+	.signing-page { margin-top: 20px; padding: 0 16px 24px; gap: 16px; }
+	.signing-panel { padding: 16px; }
+	.signing-steps { gap: 10px; }
+}
+
+.signing-page details[open] > .signing-muted { margin: 12px 0; }
+.signing-page summary::before { content: '▸'; display: inline-block; width: 1.2em; color: var(--accent-color); }
+.signing-page details[open] > summary::before { content: '▾'; }
+.signing-address-selector .card-content { padding: 12px; }
+.signing-address-selector .signing-wallet-summary { margin-top: 8px; gap: 4px; font-size: .9rem; }
+.signing-address-selector .signing-wallet-summary .button { min-height: 32px; }
+@media (max-width: 600px) { .signing-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.signing-account input[type=radio] { position: static; opacity: 1; width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent-color); }
+.signing-wallet-summary + * { margin-top: 12px; }
+.signing-address-selector .multiline-card > span:nth-of-type(3) data, .active-address-row .multiline-card > span:nth-of-type(3) data { color: var(--subtitle-text-color); }

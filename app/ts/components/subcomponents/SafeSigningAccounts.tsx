@@ -5,6 +5,11 @@ import { sendSigningPageRequest } from '../../signing/pageMessages.js'
 import { signingWalletDescription } from '../../signing/backend.js'
 
 export function SafeSigningAccounts({ safe }: { safe: SafeEntry }) {
+	// Draft accounts and in-flight feedback belong to one Safe on one chain.
+	return <SafeSigningAccountsForm key = { `${ safe.chainId }:${ safe.address }` } safe = { safe }/>
+}
+
+function SafeSigningAccountsForm({ safe }: { safe: SafeEntry }) {
 	const [bindings, setBindings] = useState<SigningWalletBindings>([])
 	const [owner, setOwner] = useState(safe.safeSigningSignerAddress?.toString() ?? '')
 	const [executor, setExecutor] = useState(safe.safeExecutionAddress?.toString() ?? '')
