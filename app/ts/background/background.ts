@@ -1,4 +1,5 @@
-import { browserSigningRequestAccount, prepareBrowserWalletForwarding } from '../signing/browserWallet.js'
+import { prepareSavedBrowserWalletForwarding } from './browserWalletForwarding.js'
+import { browserSigningRequestAccount } from '../signing/browserWallet.js'
 import { parseDirectSigningTypedData } from '../signing/exactPayload.js'
 import { getSigningWalletBinding } from './storageVariables.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
@@ -103,7 +104,7 @@ async function handleRPCRequest(
 		if (!forwardToSigner) throw new Error('Should not forward to signer')
 		if (binding?.wallet.type !== 'browser') return { type: 'forwardToSigner' as const, ...forwardedRequest }
 		const requireSelectedAccount = forwardedRequest.method.startsWith('eth_sign') || ['personal_sign', 'eth_sendTransaction', 'eth_sendRawTransaction', 'wallet_sendCalls'].includes(forwardedRequest.method)
-		const fields = prepareBrowserWalletForwarding(binding.wallet, await getTabState(socket.tabId), { requireSelectedAccount, requestedAddress: maybeParsedRequest.success ? browserSigningRequestAccount(maybeParsedRequest.value) : undefined })
+		const fields = await prepareSavedBrowserWalletForwarding(websiteTabConnections, socket, binding, { requireSelectedAccount, requestedAddress: maybeParsedRequest.success ? browserSigningRequestAccount(maybeParsedRequest.value) : undefined })
 		if (fields.error !== undefined) throw new JsonRpcResponseError({ jsonrpc: '2.0', id: request.uniqueRequestIdentifier.requestId, error: fields.error })
 		return { type: 'forwardToSigner' as const, ...forwardedRequest, expectedProviderId: fields.expectedProviderId }
 	}

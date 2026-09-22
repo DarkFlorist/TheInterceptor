@@ -174,9 +174,9 @@ try {
 	await capture(edit.page, '03-change-wallet')
 	await background.evaluate(`browser.storage.local.set({directSigningRequestsV1:${JSON.stringify(DirectSigningRecords.serialize([record]))}})`)
 	const review = await open(`directSigningV3.html?id=${record.id}`, 'Approve and continue with AirGap Vault')
-	await review.page.evaluate(`document.querySelectorAll('details')[1].open = true`)
+	await review.page.evaluate(`[...document.querySelectorAll('details')].find(details => details.querySelector('summary')?.textContent === 'Edit fees and advanced nonce').open = true`)
 	await capture(review.page, '04-review-transaction')
-	await review.page.evaluate(`document.querySelectorAll('details')[1].open = false`)
+	await review.page.evaluate(`[...document.querySelectorAll('details')].find(details => details.querySelector('summary')?.textContent === 'Edit fees and advanced nonce').open = false`)
 	await review.page.send('Emulation.setDeviceMetricsOverride', { width: 420, height: 820, deviceScaleFactor: 1, mobile: false })
 	await capture(review.page, '04b-review-narrow')
 

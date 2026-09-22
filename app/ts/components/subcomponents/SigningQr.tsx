@@ -25,17 +25,18 @@ export function AnimatedSigningQr({ payload }: { payload: Uint8Array }) {
 }
 
 /** Bound each frame to 640 × 480; release the camera on completion, cancellation, and unmount. */
-export function SigningQrScanner({ onFrame }: { onFrame: (frame: string) => Promise<boolean> }) {
+export function SigningQrScanner({ onFrame, onStart, onError }: { onFrame: (frame: string) => Promise<boolean>, onStart?: () => void, onError?: () => void }) {
 	const video = useRef<HTMLVideoElement>(null)
 	const stop = useRef<(() => void) | undefined>()
 	const [running, setRunning] = useState(false)
-	const [error, setError] = useState<string>()
+	const [error, setError] = useState<{ message: string, stage: 'camera' | 'response' }>()
 	const mounted = useRef(true)
 	useEffect(() => () => { mounted.current = false; stop.current?.() }, [])
 	const start = async () => {
 		// Reserve the session synchronously, including time spent waiting for camera permission.
 		if (stop.current !== undefined || !mounted.current) return
 		let stopped = false
+		let stage: 'camera' | 'response' = 'camera'
 		let stream: MediaStream | undefined
 		let timer: ReturnType<typeof setTimeout> | undefined
 		const stopSession = () => {
@@ -47,13 +48,14 @@ export function SigningQrScanner({ onFrame }: { onFrame: (frame: string) => Prom
 			if (mounted.current) setRunning(false)
 		}
 		const failSession = (failure: unknown, fallback: string) => {
-			if (!stopped && mounted.current) setError(failure instanceof Error ? failure.message : fallback)
+			if (!stopped && mounted.current) { setError({ message: failure instanceof Error ? failure.message : fallback, stage }); onError?.() }
 			stopSession()
 		}
 		stop.current = stopSession
 		setRunning(true)
 		setError(undefined)
 		try {
+			onStart?.()
 			if (navigator.mediaDevices?.getUserMedia === undefined) throw new Error('Camera scanning is unavailable in this browser')
 			stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'environment' }, audio: false })
 			if (stopped || !mounted.current || video.current === null) { stopSession(); return }
@@ -65,6 +67,7 @@ export function SigningQrScanner({ onFrame }: { onFrame: (frame: string) => Prom
 			canvas.height = 480
 			const context = canvas.getContext('2d', { willReadFrequently: true })
 			if (context === null) throw new Error('Camera image processing is unavailable')
+			stage = 'response'
 			const detector = new BarcodeDetector({ formats: ['qr_code'] })
 			const scan = async () => {
 				if (stopped || video.current === null) return
@@ -89,6 +92,6 @@ export function SigningQrScanner({ onFrame }: { onFrame: (frame: string) => Prom
 		<button class = 'button is-primary' disabled = { running } onClick = { () => { void start() } }>Enable camera</button>
 		{ running ? <button class = 'button signing-secondary' onClick = { () => stop.current?.() }>Stop camera</button> : undefined }
 		</div>
-		{ error === undefined ? undefined : <div class = 'signing-error' role = 'alert'><strong>Camera scan stopped</strong><p>{ error }</p><p>Allow camera access for this extension in your browser and system settings. Close other apps using the camera, then select Enable camera to retry.</p></div> }
+		{ error === undefined ? undefined : <div class = 'signing-error' role = 'alert'><strong>{ error.stage === 'camera' ? 'Camera scan stopped' : 'QR response not accepted' }</strong><p>{ error.message }</p><p>{ error.stage === 'camera' ? 'Allow camera access for this extension in your browser and system settings. Close other apps using the camera, then select Enable camera to retry.' : 'Display the QR code for this request, then select Enable camera to start a fresh scan.' }</p></div> }
 	</section>
 }

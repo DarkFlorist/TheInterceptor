@@ -1,3 +1,4 @@
+import { SigningRequestContext } from '../subcomponents/SigningRequestContext.js'
 import { signingWalletDescription } from '../../signing/backend.js'
 import { SafeProposalDetails, SafeProposalSigningRequestCard } from './SafeProposalDetails.js'
 import { useEffect } from 'preact/hooks'
@@ -1085,6 +1086,7 @@ export function ConfirmTransaction() {
 					</div>
 					<div class = 'popup-contents'>
 						<div style = 'margin: 10px'>
+							<SigningRequestContext pending = { currentPendingTransactionOrSignableMessage.value }/>
 							{ currentPendingTransactionOrSignableMessage.value.originalRequestParameters.method === 'eth_sendRawTransaction' && currentPendingTransactionOrSignableMessage.value.type === 'Transaction' && currentPendingTransactionOrSignableMessage.value.transactionIdentifier !== dismissedRawTransactionNotification.value
 								? <DinoSaysNotification
 									text = { `This transaction is signed already. No extra signing required to forward it to ${ currentPendingTransactionOrSignableMessage.value.transactionOrMessageCreationStatus !== 'Simulated' || currentPendingTransactionOrSignableMessage.value.popupVisualisation.statusCode === 'failed' ?

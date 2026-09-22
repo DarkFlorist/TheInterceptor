@@ -89,3 +89,24 @@ test('camera playback failure releases the acquired stream and allows retry', as
 		expect(acquisitions).toBe(2)
 	} finally { fixture.restore() }
 })
+
+test('each scan attempt resets protocol state before acquiring the camera', async () => {
+	const dom = installDomMock()
+	const previousNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+	const order: string[] = []
+	Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { mediaDevices: { getUserMedia: async () => { order.push('camera'); throw new Error('Camera unavailable') } } } })
+	try {
+		act(() => { render(h(SigningQrScanner, { onFrame: async () => false, onStart: () => { order.push('reset') }, onError: () => { order.push('error') } }), dom.document.body) })
+		for (let index = 0; index < 2; index++) {
+			const button = findRenderedElement(dom.document.body, (node) => node.tagName === 'BUTTON' && node.textContent === 'Enable camera')
+			if (button === undefined) throw new Error('Missing camera retry')
+			await act(async () => { await clickRenderedElement(button) })
+		}
+		expect(order).toEqual(['reset', 'camera', 'error', 'reset', 'camera', 'error'])
+	} finally {
+		act(() => { render(undefined, dom.document.body) })
+		if (previousNavigator === undefined) Reflect.deleteProperty(globalThis, 'navigator')
+		else Object.defineProperty(globalThis, 'navigator', previousNavigator)
+		dom.restore()
+	}
+})

@@ -1,12 +1,12 @@
 # Direct signing UI walkthrough
 
-These screenshots show the built Chrome extension with isolated fixture storage and public test accounts. Ledger replies, the account-import camera stream, and camera denial are mocked; approval and signed-request states are seeded. They are not physical Ledger/Vault or live-chain verification. No transaction was broadcast.
+These screenshots show the built Chrome extension in isolated profiles with fixture providers and public test accounts. Steps 1–21 seed approval/signature states and mock Ledger/account-camera inputs. Steps 22–32 click through production signing handlers with scripted devices, QR pixels and local submission fixtures, as explained in each caption. They are not physical Ledger/Vault or live-chain verification; no transaction was sent to a live chain.
 
 ## Reproduce and verify rendering
 
-Run `CHROME_BIN=/path/to/chrome bun run screenshots:signing`. This rebuilds Chrome before capture and always uses a new temporary profile, ignoring saved-profile environment settings. The command writes these PNGs and logs the browser version, viewport, device scale, loaded fonts, rendered font identity, and visible image count.
+Run `CHROME_BIN=/path/to/chrome bun run screenshots:signing`. This rebuilds Chrome before capture and always uses a new temporary profile, ignoring saved-profile environment settings. The command writes steps 1–21 and logs the browser version, viewport, device scale, loaded fonts, rendered font identity, and visible image count.
 
-The toolbar is opened with `browser.action.openPopup()` and captured at its native **520 × 600 CSS pixels**, without viewport emulation. Dedicated pages use a documented 1100 × 1000 viewport (420 × 820 for the narrow example); full-page capture extends the image without changing the layout height. Scrollable popup content uses separate screenshots.
+The toolbar is opened with `browser.action.openPopup()` and captured at its native **520 × 600 CSS pixels**, without viewport emulation. Dedicated pages use a documented 1100 × 1000 viewport (420 × 820 for the narrow example); full-page capture extends the image without changing the layout height. Scrollable popup content uses separate screenshots. Steps 22–32 use the [built-UI walkthrough commands](direct-signing-development.md#built-ui-signing-walkthrough): native confirmation windows measured 600 × 744, website-opened signing tabs 1050 × 737, and direct-flow pages 1100 × 1000, all at device scale 1 in Chrome for Testing 145.0.7632.6 on Linux.
 
 Captures wait for document/application loading, bundled Inter and Atkinson fonts, visible images, stylesheets, and two animation frames. Chrome’s rendered-font report must identify the bundled **Inter Variable** font, not a system fallback. The pointer is moved away from controls. The command also checks that missing image/font assets cause capture failure.
 
@@ -136,6 +136,74 @@ Open Match your device settings and enable Raw messages only if it is enabled in
 
 ## 21. Compare a personal message
 
-The exact bytes remain above, while the preview shows the Nano X **Message** screen. ASCII whitespace is rendered as spaces; binary or non-ASCII messages use hexadecimal. Compare the physical display before continuing; this is not evidence of a device’s actual approval.
+The readable message and expandable exact bytes remain above, while the preview shows the Nano X **Message** screen. ASCII whitespace is rendered as spaces; binary or non-ASCII messages use hexadecimal. Compare the physical display before continuing; this is not evidence of a device’s actual approval.
 
 ![Nano X personal message](images/direct-signing/12-ledger-personal-message.png)
+
+The following captures come from executable walkthroughs. Browser-wallet messages and hardware-backed messages start at a real website request; hardware transactions start at a seeded review boundary. Device inputs, camera streams and transaction submission are fixtures as described for each step.
+
+## 22. Browser-wallet transaction approval
+
+From the website, request a transaction and review the mode, origin, acting address, network and saved browser wallet above the existing explanation. Continue in MetaMask forwards to the selected fixture provider, which owns broadcasting; the test checks that the returned hash reaches the same website. This is Interceptor’s real confirmation UI, with a fixture provider, not the MetaMask interface.
+
+![Browser-wallet transaction approval](images/direct-signing/13-browser-transaction.png)
+
+## 23. Browser-wallet personal message
+
+Request a personal message from the website. The readable message and signing account appear with the persistent request context. Continue in MetaMask refreshes missing wallet accounts and forwards only after checking the saved account; the fixture signature is verified before the site receives it.
+
+![Browser-wallet personal message](images/direct-signing/14-browser-personal.png)
+
+## 24. Browser-wallet typed data
+
+The website requests EIP-712 typed data. Review the domain and contents, expand Raw message for full definitions, then continue in the saved wallet. This walkthrough follows the signature all the way back to the website and catches serialization mistakes at that boundary.
+
+![Browser-wallet typed data](images/direct-signing/15-browser-typed.png)
+
+## 25. Retry after Ledger rejection
+
+Reject the personal-message request in the scripted HID fixture. Interceptor displays the rejection without changing the approved payload. Resume with Ledger reconnects and verifies the same saved account before asking for another signature, or cancel the request.
+
+![Retry after Ledger rejection](images/direct-signing/16-ledger-rejection.png)
+
+## 26. Reconnect Ledger to the same request
+
+Disconnect the scripted Ledger during typed-message signing. The page explains how to reconnect and reopen Ethereum. Resume with Ledger preserves the pending request and verifies the expected account; it never selects a fallback wallet.
+
+![Reconnect Ledger to the same request](images/direct-signing/17-ledger-disconnection.png)
+
+## 27. Ledger transaction completes
+
+After the review, scripted device approval and independent verification, click Broadcast transaction, then reconcile its hash. The local RPC fixture reports a successful receipt. This is a completed UI flow through the production handlers, starting from a seeded review boundary; it is not a live-chain transaction.
+
+![Ledger transaction completes](images/direct-signing/18-ledger-confirmed.png)
+
+## 28. Ledger typed signature returns to the website
+
+Starting from an actual website request with no browser wallet injected, approve the explanation and sign through the scripted Ledger. Interceptor verifies the signature and resolves the originating site’s promise. The completion page offers no cancellation or broadcast action for an already-returned message.
+
+![Ledger typed signature returns to the website](images/direct-signing/19-ledger-message-returned.png)
+
+## 29. Recover from an unrelated AirGap response
+
+Scan a valid signature QR carrying another request ID. Interceptor rejects it without accepting a signature, explains the mismatch, and offers a fresh camera scan. Display the correct response and select Enable camera; decoding restarts instead of remaining stuck on the rejected response. Camera input uses actual QR pixels in a synthetic stream.
+
+![Recover from an unrelated AirGap response](images/direct-signing/20-airgap-wrong-response.png)
+
+## 30. Reconcile an uncertain submission
+
+The local RPC fixture accepts the signed transaction but loses the submission response. The page reloads the persisted submitting state, shows the uncertainty and hash, and offers Reconcile transaction by hash. It neither asks for a new signature nor offers cancellation of an in-flight transaction.
+
+![Reconcile an uncertain submission](images/direct-signing/21-airgap-submission-recovery.png)
+
+## 31. AirGap transaction completes without a second send
+
+Reconcile the same signed hash after the uncertain response, then check the receipt. The local fixture reports confirmation. The walkthrough asserts exactly one send; no replacement transaction or duplicate signing occurs.
+
+![AirGap transaction completes without a second send](images/direct-signing/22-airgap-confirmed.png)
+
+## 32. AirGap message returns to its application
+
+The originating website requests a personal message without another wallet installed in the isolated browser. Approve, scan the outgoing request, and return a fixture signature through the QR camera. Verification resolves that website’s request. The completed message has no broadcast or cancellation action.
+
+![AirGap message returns to its application](images/direct-signing/23-airgap-message-returned.png)

@@ -1,4 +1,4 @@
-import { prepareBrowserWalletForwarding } from '../../signing/browserWallet.js'
+import { prepareSavedBrowserWalletForwarding } from '../browserWalletForwarding.js'
 import { verifyDirectResult } from '../../signing/backend.js'
 import { EIP712Message } from '../../types/eip721.js'
 import { getSavedSafeSigningAccount } from '../safeSigningAccount.js'
@@ -377,8 +377,8 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 					await updateConfirmTransactionView(ethereum, tokenPriceService)
 					return true
 				}
-				const tab = await getTabState(pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId)
-				const forwarding = prepareBrowserWalletForwarding(binding.wallet, tab)
+				const forwarding = await prepareSavedBrowserWalletForwarding(websiteTabConnections, pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket, binding)
+				if (await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier) === undefined) return false
 				if (forwarding.error !== undefined) throw new Error(forwarding.error.message)
 				browserForwardingFields = { expectedProviderId: forwarding.expectedProviderId }
 			} catch (error) {
@@ -389,7 +389,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		}
 		if (confirmation.data.action === 'signerIncluded' && binding.wallet.type === 'browser' && getSafePendingFlow(pendingTransactionOrMessage) === undefined && (signerFacingRequest.method === 'personal_sign' || signerFacingRequest.method === 'eth_signTypedData_v4')) {
 			if (typeof confirmation.data.signerReply !== 'string') throw new Error('Browser wallet returned a non-string message signature')
-			await verifyDirectResult({ method: signerFacingRequest.method, data: signerFacingRequest.method === 'personal_sign' ? signerFacingRequest.params[0] : JSON.stringify(EIP712Message.serialize(signerFacingRequest.params[1])), address: `0x${ binding.wallet.address.toString(16).padStart(40, '0') }`, chainId: pendingTransactionOrMessage.signingChainId ?? ethereum.getChainId() }, confirmation.data.signerReply)
+			await verifyDirectResult({ method: signerFacingRequest.method, data: signerFacingRequest.method === 'personal_sign' ? signerFacingRequest.params[0] : funtypes.String.parse(EIP712Message.serialize(signerFacingRequest.params[1])), address: `0x${ binding.wallet.address.toString(16).padStart(40, '0') }`, chainId: pendingTransactionOrMessage.signingChainId ?? ethereum.getChainId() }, confirmation.data.signerReply)
 		}
 		if (confirmation.data.action === 'signerIncluded' && binding.wallet.type !== 'browser') {
 			const record = (await readDirectSigningRecords()).find((item) => doesUniqueRequestIdentifiersMatch(item.request, pendingTransactionOrMessage.uniqueRequestIdentifier))

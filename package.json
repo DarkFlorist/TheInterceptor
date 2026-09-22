@@ -21,6 +21,7 @@
 		"benchmark:popup-lifecycle": "bun ./test/benchmarks/popupLifecycleChrome.ts",
 		"benchmark:dispatch-event-reload": "bun ./test/benchmarks/dispatchEventReloadComparison.ts",
 		"test:chrome-communication": "bun ./test/benchmarks/chromeCommunication.ts",
+		"test:chrome-direct-signing-flow": "bun ./test/benchmarks/directSigningFlow.ts",
 		"test:chrome-signing-communication": "bun ./test/benchmarks/chromeSigningCommunication.ts",
 		"test:chrome-safe-cosigning-communication": "bun ./test/benchmarks/chromeSafeCoSigningCommunication.ts",
 		"vendor": "cd build && bun install --frozen-lockfile && bun run vendor",

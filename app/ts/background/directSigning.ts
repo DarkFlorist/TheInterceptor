@@ -113,7 +113,7 @@ export async function openDirectSigning(ethereum: EthereumClientService, prices:
 				data = request.params[0]
 			} else if (request.method === 'eth_signTypedData_v4') {
 				if (request.params[0] !== binding.wallet.address) throw new Error('Typed data requests another signing account')
-				data = JSON.stringify(EIP712Message.serialize(request.params[1]))
+				data = funtypes.String.parse(EIP712Message.serialize(request.params[1]))
 			} else throw new Error('Direct wallets support personal_sign and eth_signTypedData_v4 only')
 			const input = { method: request.method, data, address, chainId: ethereum.getChainId() }
 			prepareDirectPayload(input)

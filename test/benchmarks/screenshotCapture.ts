@@ -2,6 +2,7 @@ import type { CdpConnection } from './chromeHarness.js'
 
 /** Capture the actual toolbar viewport, or a full page without resizing its layout height. */
 export async function captureExtensionScreenshot(page: CdpConnection, path: string, surface: 'popup' | 'page') {
+	await page.send('Page.bringToFront')
 	await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 })
 	const deadline = Date.now() + 15000
 	while (await page.evaluate<boolean>(`document.readyState !== 'complete' || document.querySelector('[aria-busy="true"]') !== null`)) {
@@ -25,7 +26,7 @@ export async function captureExtensionScreenshot(page: CdpConnection, path: stri
 	await page.send('DOM.enable')
 	await page.send('CSS.enable')
 	const document = await page.send<{ root: { nodeId: number } }>('DOM.getDocument')
-	const textNode = await page.send<{ nodeId: number }>('DOM.querySelector', { nodeId: document.root.nodeId, selector: 'h1, .signing-wallet-summary p' })
+	const textNode = await page.send<{ nodeId: number }>('DOM.querySelector', { nodeId: document.root.nodeId, selector: 'h1, .signing-wallet-summary p, .dialog-action-button' })
 	if (textNode.nodeId === 0) throw new Error('Missing representative text for font verification')
 	const renderedFonts = await page.send<{ fonts: { familyName: string; isCustomFont: boolean; glyphCount: number }[] }>('CSS.getPlatformFontsForNode', {
 		nodeId: textNode.nodeId

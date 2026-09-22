@@ -1,3 +1,4 @@
+import { parseDirectSigningTypedData } from './signing/exactPayload.js'
 import { LedgerScreenPreview } from './components/subcomponents/LedgerScreenPreview.js'
 import { SigningSteps } from './components/subcomponents/SigningSteps.js'
 import { formatUnits } from './utils/ethereumUnits.js'
@@ -13,7 +14,7 @@ import { signWithLedger } from './signing/ledgerEthereum.js'
 import { encodeAirGapSigningRequest, verifyAirGapSigningResponse } from './signing/airgapEthereum.js'
 import { createAirGapUrDecoder } from './signing/airgapUr.js'
 import { AnimatedSigningQr, SigningQrScanner } from './components/subcomponents/SigningQr.js'
-import { ensureHex } from './utils/ethereumBytes.js'
+import { bytesFromHex, ensureHex } from './utils/ethereumBytes.js'
 import { parseTransaction } from './utils/ethereumTransactions.js'
 
 function DirectSigningPage() {
@@ -31,10 +32,20 @@ function DirectSigningPage() {
 	const controller = useRef(new AbortController())
 	const decoder = useRef(createAirGapUrDecoder('eth-signature'))
 	const command = async (request: DirectSigningRequest) => {
-		const reply = await sendSigningPageRequest(request)
-		const next = DirectSigningRecord.parse(reply.record)
-		setRecord(next)
-		return next
+		try {
+			const reply = await sendSigningPageRequest(request)
+			const next = DirectSigningRecord.parse(reply.record)
+			setRecord(next)
+			return next
+		} catch (failure) {
+			// A command can persist a new phase before its RPC or application reply fails.
+			if (request.method !== 'signing_get') {
+				const recovered = DirectSigningRecord.parse((await sendSigningPageRequest({ method: 'signing_get', id })).record)
+				setRecord(recovered)
+				setStatus(recovered.phase === 'submitting' ? 'Submission outcome is uncertain. Reconcile by hash before taking further action.' : `Current request status: ${ recovered.phase }.`)
+			}
+			throw failure
+		}
 	}
 	const run = async (operation: () => Promise<void>) => {
 		setBusy(true)
@@ -145,7 +156,10 @@ function DirectSigningPage() {
 	const transaction = record.input.method === 'eth_sendTransaction' ? parseTransaction(ensureHex(record.input.data)) : undefined
 	const walletName = record.binding.wallet.type === 'ledger' ? 'Ledger' : 'AirGap Vault'
 	const signed = record.phase === 'signed'
-	const step = record.phase === 'cancelled' ? -1 : record.phase === 'review' ? 0 : record.phase === 'approved' ? 1 : record.phase === 'signed' && transaction !== undefined ? 2 : 3
+	const messageBytes = record.input.method === 'personal_sign' ? bytesFromHex(ensureHex(record.input.data)) : undefined
+	const messageText = messageBytes === undefined ? undefined : new TextDecoder().decode(messageBytes)
+	const typedData = record.input.method === 'eth_signTypedData_v4' ? parseDirectSigningTypedData(record.input.data) : undefined
+	const step = record.phase === 'cancelled' ? -1 : record.phase === 'review' ? 0 : record.phase === 'approved' ? 1 : (record.phase === 'signed' || record.phase === 'submitting') && transaction !== undefined ? 2 : 3
 	const completedTitle = record.phase === 'cancelled' ? 'Request cancelled' : record.phase === 'confirmed' ? record.executionSucceeded ? 'Transaction confirmed' : 'Transaction reverted' : record.phase === 'submitted' ? 'Transaction submitted' : record.phase === 'submitting' ? 'Checking transaction submission' : undefined
 	return <main class = 'signing-page'>
 		<header><p class = 'signing-muted'>Signing mode · real signature</p><h1>{ completedTitle ?? (signed ? transaction === undefined ? 'Message signature verified' : 'Ready to broadcast' : scanning ? 'Scan the signed response' : qr !== undefined ? 'Sign offline with AirGap Vault' : 'Review and sign') }</h1></header>
@@ -157,16 +171,16 @@ function DirectSigningPage() {
 				<div><dt>Acting address</dt><dd class = 'signing-address'>{ record.input.address }</dd></div>
 				<div><dt>Signing wallet</dt><dd>{ signingWalletDescription(record.binding) }</dd></div>
 			</dl>
-			{ record.phase === 'review' ? <div class = 'signing-actions'><button class = 'button signing-secondary is-small' onClick = { changeSigningWallet }>Change signing wallet</button></div> : undefined }
+			{ record.phase === 'review' ? <div class = 'signing-actions'><button class = 'button signing-secondary is-small' disabled = { busy } onClick = { changeSigningWallet }>Change signing wallet</button></div> : undefined }
 		</section>
-		{ transaction === undefined ? <section class = 'signing-panel'><h2>Message to sign</h2><pre>{ record.input.data }</pre></section> : <section class = 'signing-panel'>
+		{ transaction === undefined ? <section class = 'signing-panel'><h2>{ record.input.method === 'personal_sign' ? 'Personal message to sign' : 'Typed data to sign (EIP-712)' }</h2>{ typedData === undefined ? <pre>{ messageText }</pre> : <><h3>Domain</h3><pre>{ JSON.stringify(typedData.domain, undefined, 2) }</pre><h3>{ typedData.primaryType }</h3><pre>{ JSON.stringify(typedData.message, undefined, 2) }</pre><details><summary>Full typed data and type definitions</summary><pre>{ JSON.stringify(JSON.parse(record.input.data), undefined, 2) }</pre></details></> }{ messageBytes === undefined ? undefined : <details><summary>Exact message bytes · { messageBytes.length } bytes</summary><p class = 'signing-muted'>Text is a UTF-8 preview. Binary bytes and invisible characters may not display as text; the exact bytes below are signed.</p><pre>{ record.input.data }</pre></details> }</section> : <section class = 'signing-panel'>
 			<dl class = 'signing-grid'>
 				<div><dt>Amount</dt><dd class = 'signing-amount'>{ formatUnits(transaction.value ?? 0n, 18) } ether</dd></div>
 				<div><dt>Maximum network fee</dt><dd class = 'signing-amount'>{ formatUnits(BigInt(transaction.gas ?? 0) * (transaction.maxFeePerGas ?? 0n), 18) } ether</dd></div>
 				<div><dt>Recipient</dt><dd class = 'signing-address'>{ transaction.to ?? 'Contract creation' }</dd></div>
 				<div><dt>Fee per gas / priority fee</dt><dd>{ formatUnits(transaction.maxFeePerGas ?? 0n, 9) } / { formatUnits(transaction.maxPriorityFeePerGas ?? 0n, 9) } nanoeth</dd></div>
 			</dl>
-			<details><summary>Exact transaction data and access list</summary><p>Nonce: { String(transaction.nonce) } · Gas limit: { String(transaction.gas) }</p><pre>{ record.input.data }</pre></details>
+			<details><summary>Exact transaction data and access list</summary><p>Nonce: { String(transaction.nonce) } · Gas limit: { String(transaction.gas) }</p><h3>Call data</h3><pre>{ transaction.data ?? '0x' }</pre><h3>Access list</h3><pre>{ JSON.stringify(transaction.accessList ?? [], undefined, 2) }</pre><details><summary>Serialized unsigned transaction</summary><pre>{ record.input.data }</pre></details></details>
 			{ record.phase === 'review' || signed ? <details><summary>Edit fees and advanced nonce</summary>
 				<div class = 'signing-grid'>
 					<label>Gas limit<input inputMode = 'numeric' value = { gas } onInput = { (event) => setGas(event.currentTarget.value) }/></label>
@@ -186,12 +200,12 @@ function DirectSigningPage() {
 		{ error === undefined ? undefined : <p class = 'signing-error' role = 'alert'>{ error }</p> }
 		{ qr === undefined || record.phase !== 'approved' ? undefined : <section class = 'signing-panel'>
 			{ scanning ? <><h2>Return the signature to Interceptor</h2><p>In Vault, finish signing and display the response QR. Enable this computer’s camera to scan it.</p><details><summary>Show outgoing request again</summary><AnimatedSigningQr payload = { qr }/></details></> : <><h2>Scan this request with Vault</h2><p>Review the request on your offline device and sign. Then bring its response back here.</p><AnimatedSigningQr payload = { qr }/><div class = 'signing-actions'><button class = 'button is-primary' onClick = { startResponseScan }>Scan signed response</button></div></> }
-			{ scanning ? <><SigningQrScanner onFrame = { receiveSignedResponse }/><p class = 'signing-muted' role = 'status'>{ status }</p></> : undefined }
+			{ scanning ? <><SigningQrScanner onFrame = { receiveSignedResponse } onError = { () => setStatus('Scan stopped.') } onStart = { () => { decoder.current = createAirGapUrDecoder('eth-signature'); setStatus('Waiting for the response QR from Vault.') } }/><p class = 'signing-muted' role = 'status'>{ status }</p></> : undefined }
 		</section> }
 		<div class = 'signing-actions'>
 			{ record.phase === 'review' || record.phase === 'approved' && qr === undefined ? <button class = 'button is-primary' disabled = { busy } onClick = { sign }>{ record.phase === 'approved' ? 'Resume with ' : 'Approve and continue with ' }{ walletName }</button> : undefined }
 			{ transaction !== undefined && ['signed', 'submitting', 'submitted', 'confirmed'].includes(record.phase) ? <button class = 'button is-primary' disabled = { busy } onClick = { broadcastTransaction }>{ signed ? 'Broadcast transaction' : 'Reconcile transaction by hash' }</button> : undefined }
-			{ ['review', 'approved', 'signed'].includes(record.phase) ? <button class = 'button signing-secondary' onClick = { cancelRequest }>Cancel request</button> : undefined }
+			{ (record.phase === 'review' || record.phase === 'approved' || signed && transaction !== undefined) ? <button class = 'button signing-secondary' onClick = { cancelRequest }>Cancel request</button> : undefined }
 		</div>
 		{ record.transactionHash === undefined ? undefined : <details><summary>Transaction hash</summary><p class = 'signing-address'>{ record.transactionHash }</p></details> }
 	</main>
