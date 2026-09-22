@@ -1,8 +1,10 @@
+import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup, type HomePageBootstrap, type UpdateHomePage, type Settings } from '../../types/interceptor-messages.js'
 import type { RpcConnectionStatus, TabIconDetails, TabState } from '../../types/user-interface-types.js'
 import { PASSTHROUGH_STATE, type BlockTimeManipulation, type CompleteVisualizedSimulation, type NamedTokenId, type ResolvedSimulationResults, type ResolvedSimulationState, type SimulationResultState, type SimulationUpdatingState, type TokenPriceEstimate, type VisualizedSimulationState, toResolvedSimulationResults } from '../../types/visualizer-types.js'
 import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
+import { getRpcNetworkChange } from '../../utils/rpcNetworkChange.js'
 import type { RpcEntries, RpcNetwork } from '../../types/rpc.js'
 import type { WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import type { EnrichedRichListElement, UnexpectedErrorOccured } from '../../types/interceptor-reply-messages.js'
@@ -239,11 +241,14 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 					unexpectedError.value = parsed
 					return undefined
 				case 'popup_settingsUpdated': {
-					if (shouldIgnoreOutdatedPopupRefreshMessage(parsed.popupRefreshGeneration)) return undefined
+					if (shouldIgnoreOutdatedPopupRefreshMessage(parsed.popupRefreshGeneration, Math.max(popupRefreshGeneration.value, pendingPopupRefreshGeneration.value))) return undefined
+					const rpcChanged = getRpcNetworkChange(rpcNetwork.value, parsed.data.activeRpcNetwork).endpointChanged
+					const simulationAddressChanged = activeSimulationAddress.value !== parsed.data.activeSimulationAddress
 					const previousActiveStackContext = getCurrentActiveStackContext()
 					const updatedActiveStackContext = getActiveStackContext(parsed.data)
 					updateHomePageSettings(parsed.data)
-					if (previousActiveStackContext === undefined || !activeStackContextsEqual(previousActiveStackContext, updatedActiveStackContext)) {
+					if (!parsed.data.simulationMode) displayedSigningAddress.value = parsed.data.activeSigningSafeAddress ?? getWalletSelectedAccount(tabState.value)
+					if (rpcChanged || simulationAddressChanged || previousActiveStackContext === undefined || !activeStackContextsEqual(previousActiveStackContext, updatedActiveStackContext)) {
 						simVisResults.value = PASSTHROUGH_STATE
 						simulationUpdatingState.value = undefined
 						simulationResultState.value = undefined
@@ -309,12 +314,7 @@ export function useLiveSimulationHomeData(options: LiveSimulationHomeDataOptions
 				const homePageBootstrapRequest = options.answerMainPopupOpen
 					? sendPopupMessageToBackgroundPage({ method: 'popup_requestHomePageBootstrap' })
 					: undefined
-				const freshHomeDataRequest = requestFreshHomeData()
-				if (homePageBootstrapRequest !== undefined) {
-					await Promise.all([homePageBootstrapRequest, freshHomeDataRequest])
-					return
-				}
-				await freshHomeDataRequest
+				await Promise.all([homePageBootstrapRequest, requestFreshHomeData()])
 				return
 			}
 			await requestCachedHomeData({ refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: false })

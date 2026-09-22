@@ -510,6 +510,27 @@
 	margin-bottom: 0px;
 }
 
+/* Secondary action: light text and a thin accent border stay readable on dark surfaces, unlike the dim outlined primary style. */
+.button.button--secondary {
+	background-color: var(--alpha-005);
+	border: 1px solid var(--accent-color);
+	color: var(--text-color);
+}
+
+.button.button--secondary:hover, .button.button--secondary:focus, .button.button--secondary:active {
+	background-color: var(--primary-action-color);
+	border-color: var(--highlighted-accent-color);
+	color: var(--text-color);
+}
+
+/* The framework already dims disabled buttons with opacity, so keep the label colour as-is to match the neighbouring actions. */
+.button.button--secondary[disabled] {
+	background-color: transparent;
+	border-color: var(--disabled-action-color);
+	box-shadow: none;
+	color: var(--text-color);
+}
+
 .confirmation-action-buttons-container {
 	container-type: inline-size;
 	width: 100%;
@@ -520,15 +541,33 @@
 	flex-direction: row;
 }
 
+/* Below 42rem the two decisions share a row and the rarely used secondary action drops to a compact row of its own. */
 @container (max-width: 42rem) {
 	.confirmation-action-buttons--safe {
+		flex-wrap: wrap;
+		row-gap: 8px;
+	}
+
+	.confirmation-action-buttons--safe > .dialog-action-button {
+		margin-block: 0;
+	}
+
+	/* A full basis with shrink lets the lone secondary absorb its own side margins, and 2.125em (vs. the 2.5em button height) keeps it visibly lighter. */
+	.confirmation-action-buttons--safe > .button--secondary {
+		flex: 1 1 100%;
+		height: 2.125em;
+		order: 1;
+	}
+}
+
+/* Below 24rem even the two decisions no longer fit side by side. */
+@container (max-width: 24rem) {
+	.confirmation-action-buttons--safe {
 		flex-direction: column;
-		gap: 8px;
 	}
 
 	.confirmation-action-buttons--safe > .dialog-action-button {
 		flex: 0 0 auto;
-		margin-block: 0;
 	}
 }
 

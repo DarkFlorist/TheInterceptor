@@ -1,5 +1,5 @@
 import type { PopupMessage } from './interceptor-messages.js'
-import { hasOwnKey } from '../utils/methodHandlers.js'
+import { hasOwnKey } from '../utils/typescript.js'
 
 export type PopupMessageDomain = 'address-book' | 'confirmation' | 'diagnostics' | 'home' | 'navigation' | 'safe' | 'settings' | 'simulation' | 'website-access'
 
@@ -33,6 +33,7 @@ export const popupMessageProtocol = {
 	popup_openAddressBook: { domain: 'navigation' },
 	popup_requestNewHomeData: { domain: 'home' },
 	popup_requestHomePageBootstrap: { domain: 'home' },
+	popup_requestSettingsChangeStatus: { domain: 'home' },
 	popup_refreshHomeData: { domain: 'home' },
 	popup_requestSettings: { domain: 'settings' },
 	popup_refreshInterceptorAccessMetadata: { domain: 'website-access' },

@@ -1,4 +1,5 @@
 import { ValidationError } from 'funtypes'
+import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
@@ -125,17 +126,11 @@ const popupRefreshGenerationRepository = createStoredValueRepository({
 export const getPopupRefreshGeneration = popupRefreshGenerationRepository.get
 export const setPopupRefreshGeneration = popupRefreshGenerationRepository.set
 
+// Large-state getters share getLargeStateValue's failure contract: defaults apply only to successful absent/invalid reads. Rejections abort updates and reach the owning request/task boundary (e.g. catchAllErrorsAndCall in background-startup.ts), which reports the error; recovery is a later retry, never an empty-state write.
 const simulationResultsSemaphore = new Semaphore(1)
 export async function getPopupVisualisationState() {
 	const emptyResults = createPassthroughCompleteVisualizedSimulation()
-	try {
-		return await getLargeStateValue('popupVisualisation', CompleteVisualizedSimulation) ?? emptyResults
-	} catch (error) {
-		console.warn('Simulation results were corrupt:')
-		console.warn(error)
-		await setLargeStateValue('popupVisualisation', CompleteVisualizedSimulation, emptyResults)
-		return emptyResults
-	}
+	return await getLargeStateValue('popupVisualisation', CompleteVisualizedSimulation) ?? emptyResults
 }
 
 export const setPopupVisualisationState = async (newResults: CompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
@@ -242,9 +237,11 @@ export const setInterceptorStartSleepingTimestamp = async(interceptorStartSleepi
 export const getInterceptorStartSleepingTimestamp = async () => (await browserStorageLocalGet('interceptorStartSleepingTimestamp'))?.interceptorStartSleepingTimestamp ?? 0
 
 export const promoteRpcAsPrimary = async (rpcNetwork: RpcNetwork) => {
-	if (rpcNetwork.primary) return
-	const rpcs = await getRpcList()
-	await setRpcList(rpcs.map((rpc) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: rpc.httpsRpc === rpcNetwork.httpsRpc }) : rpc))
+	await rpcListRepository.update((rpcs) => {
+		const selectedIndex = rpcs.findIndex((rpc) => getRpcEntryIdentityKey(rpc) === getRpcEntryIdentityKey(rpcNetwork))
+		if (selectedIndex === -1) return rpcs
+		return rpcs.map((rpc, index) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: index === selectedIndex }) : rpc)
+	})
 }
 
 export const getPrimaryRpcForChain = async (chainId: bigint) => {
