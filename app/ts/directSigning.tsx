@@ -43,7 +43,12 @@ function DirectSigningPage() {
 				const transaction = parseTransaction(ensureHex(next.input.data))
 				setNonce(String(transaction.nonce)); setGas(String(transaction.gas)); setMaxFee(String(transaction.maxFeePerGas)); setPriority(String(transaction.maxPriorityFeePerGas))
 			}
-			setStatus(next.phase === 'review' ? 'Review the exact payload before approving.' : next.phase === 'approved' ? 'Approval recovered. Resume this exact request or cancel it.' : next.phase === 'signed' ? 'Signature recovered. Review the transaction before broadcasting.' : `Recovered request status: ${ next.phase }.`)
+			if (next.phase === 'review') setStatus('Review the exact payload before approving.')
+			else if (next.phase === 'approved') setStatus('Approval recovered. Resume this exact request or cancel it.')
+			else if (next.phase === 'signed') setStatus(next.input.method === 'eth_sendTransaction'
+				? 'Signature recovered. Review the transaction before broadcasting.'
+				: 'Message signature recovered and returned to the originating application.')
+			else setStatus(`Recovered request status: ${ next.phase }.`)
 		})
 		return () => controller.current.abort(new Error('Signing page closed'))
 	}, [])
