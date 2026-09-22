@@ -178,6 +178,18 @@ describe('popup message dispatcher seams', () => {
 		])
 	})
 
+	test('does not refresh content script exclusions after removing an enabled website', async () => {
+		storageState.websiteAccess = [{ ...disabledWebsiteAccess, interceptorDisabled: false }]
+
+		await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_removeWebsiteAccess',
+			data: { websiteOrigin: 'disabled.test' },
+		})
+
+		assert.deepEqual(storageState.websiteAccess, [])
+		assert.equal(contentScriptUpdateBatches.length, 0)
+	})
+
 	test('refreshes manifest v3 content script exclusions after the access editor removes a disabled website', async () => {
 		storageState.websiteAccess = [disabledWebsiteAccess]
 
