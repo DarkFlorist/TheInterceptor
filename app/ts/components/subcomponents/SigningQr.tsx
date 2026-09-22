@@ -26,11 +26,13 @@ export function AnimatedSigningQr({ payload }: { payload: Uint8Array }) {
 
 /** Bound each frame to 640 × 480; release the camera on completion, cancellation, and unmount. */
 export function SigningQrScanner({ onFrame, onStart, onError }: { onFrame: (frame: string) => Promise<boolean>, onStart?: () => void, onError?: () => void }) {
+	const errorPanel = useRef<HTMLDivElement>(null)
 	const video = useRef<HTMLVideoElement>(null)
 	const stop = useRef<(() => void) | undefined>()
 	const [running, setRunning] = useState(false)
 	const [error, setError] = useState<{ message: string, stage: 'camera' | 'response' }>()
 	const mounted = useRef(true)
+	useEffect(() => { if (error !== undefined) errorPanel.current?.focus() }, [error])
 	useEffect(() => () => { mounted.current = false; stop.current?.() }, [])
 	const start = async () => {
 		// Reserve the session synchronously, including time spent waiting for camera permission.
@@ -92,6 +94,6 @@ export function SigningQrScanner({ onFrame, onStart, onError }: { onFrame: (fram
 		<button class = 'button is-primary' disabled = { running } onClick = { () => { void start() } }>Enable camera</button>
 		{ running ? <button class = 'button signing-secondary' onClick = { () => stop.current?.() }>Stop camera</button> : undefined }
 		</div>
-		{ error === undefined ? undefined : <div class = 'signing-error' role = 'alert'><strong>{ error.stage === 'camera' ? 'Camera scan stopped' : 'QR response not accepted' }</strong><p>{ error.message }</p><p>{ error.stage === 'camera' ? 'Allow camera access for this extension in your browser and system settings. Close other apps using the camera, then select Enable camera to retry.' : 'Display the QR code for this request, then select Enable camera to start a fresh scan.' }</p></div> }
+		{ error === undefined ? undefined : <div ref = { errorPanel } tabIndex = { -1 } class = 'signing-error' role = 'alert'><strong>{ error.stage === 'camera' ? 'Camera scan stopped' : 'QR response not accepted' }</strong><p>{ error.message }</p><p>{ error.stage === 'camera' ? 'Allow camera access for this extension in your browser and system settings. Close other apps using the camera, then select Enable camera to retry.' : 'Display the QR code for this request, then select Enable camera to start a fresh scan.' }</p></div> }
 	</section>
 }

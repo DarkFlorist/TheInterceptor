@@ -1,3 +1,4 @@
+import { waitForSigningFocus } from './signingAccessibility.js'
 import { installFlowCamera, installFlowLedger } from './directSigningFlowFixtures.js'
 /** Built-page walkthrough with public test keys, scripted HID, synthetic QR camera and local RPC. No physical-device claim. */
 import assert from 'node:assert/strict'
@@ -84,9 +85,9 @@ try {
 		if (type === 'ledger') await installFlowLedger(page, record, signature, method === 'personal_sign' ? 'reject' : method === 'eth_signTypedData_v4' ? 'disconnect' : undefined)
 		await click(page, `Approve and continue with ${ type === 'ledger' ? 'Ledger' : 'AirGap Vault' }`)
 		if (type === 'ledger' && method === 'personal_sign') {
-			await wait(page, 'rejected'); await captureExtensionScreenshot(page, `${ output }/ledger-rejection.png`, 'page'); await click(page, 'Resume with Ledger')
+			await wait(page, 'rejected'); await waitForSigningFocus(page, 'p[role=alert]'); await captureExtensionScreenshot(page, `${ output }/ledger-rejection.png`, 'page'); await click(page, 'Resume with Ledger')
 		}
-		if (type === 'ledger' && method === 'eth_signTypedData_v4') { await wait(page, 'Ledger disconnected'); await captureExtensionScreenshot(page, `${ output }/ledger-disconnection.png`, 'page'); await click(page, 'Resume with Ledger') }
+		if (type === 'ledger' && method === 'eth_signTypedData_v4') { await wait(page, 'Ledger disconnected'); await waitForSigningFocus(page, 'p[role=alert]'); await captureExtensionScreenshot(page, `${ output }/ledger-disconnection.png`, 'page'); await click(page, 'Resume with Ledger') }
 		if (type === 'airgap') {
 			if (method === 'eth_signTypedData_v4') { await page.send('Page.reload'); await wait(page, 'Resume with AirGap Vault'); await click(page, 'Resume with AirGap Vault') }
 			await wait(page, 'Scan signed response'); await click(page, 'Pause')
@@ -108,6 +109,7 @@ try {
 			confirmed = true; await click(page, 'Reconcile transaction by hash'); await wait(page, 'The network confirmed your transaction.')
 		} else {
 			await wait(page, 'Returned to application')
+			await wait(page, method === 'personal_sign' ? 'Signed personal message' : 'Signed typed data (EIP-712)')
 			assert.equal(await page.evaluate(`document.body.textContent.includes('Cancel request') || document.body.textContent.includes('Broadcast transaction')`), false)
 		}
 		assert.equal(await page.evaluate(`document.body.textContent.includes('Reconcile transaction by hash')`), false, 'Completed requests must not offer reconciliation')

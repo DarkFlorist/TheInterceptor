@@ -1,10 +1,10 @@
 # Direct signing UI walkthrough
 
-These screenshots show the built Chrome extension in isolated profiles with fixture providers and public test accounts. Steps 1–21 seed approval/signature states and mock Ledger/account-camera inputs. Steps 22–32 click through production signing handlers with scripted devices, QR pixels and local submission fixtures, as explained in each caption. They are not physical Ledger/Vault or live-chain verification; no transaction was sent to a live chain.
+These screenshots show the built Chrome extension in isolated profiles with fixture providers and public test accounts. Steps 1–21 seed approval/signature states and mock Ledger/account-camera inputs. Steps 33–37 use seeded review data for zoom and nested-field checks. Steps 22–32 click through production signing handlers with scripted devices, QR pixels and local submission fixtures, as explained in each caption. They are not physical Ledger/Vault or live-chain verification; no transaction was sent to a live chain.
 
 ## Reproduce and verify rendering
 
-Run `CHROME_BIN=/path/to/chrome bun run screenshots:signing`. This rebuilds Chrome before capture and always uses a new temporary profile, ignoring saved-profile environment settings. The command writes steps 1–21 and logs the browser version, viewport, device scale, loaded fonts, rendered font identity, and visible image count.
+Run `CHROME_BIN=/path/to/chrome bun run screenshots:signing`. This rebuilds Chrome before capture and always uses a new temporary profile, ignoring saved-profile environment settings. The command writes steps 1–21 and 33–37 and logs the browser version, viewport, device scale, loaded fonts, rendered font identity, and visible image count.
 
 The toolbar is opened with `browser.action.openPopup()` and captured at its native **520 × 600 CSS pixels**, without viewport emulation. Dedicated pages use a documented 1100 × 1000 viewport (420 × 820 for the narrow example); full-page capture extends the image without changing the layout height. Scrollable popup content uses separate screenshots. Steps 22–32 use the [built-UI walkthrough commands](direct-signing-development.md#built-ui-signing-walkthrough): native confirmation windows measured 600 × 744, website-opened signing tabs 1050 × 737, and direct-flow pages 1100 × 1000, all at device scale 1 in Chrome for Testing 145.0.7632.6 on Linux.
 
@@ -207,3 +207,35 @@ Reconcile the same signed hash after the uncertain response, then check the rece
 The originating website requests a personal message without another wallet installed in the isolated browser. Approve, scan the outgoing request, and return a fixture signature through the QR camera. Verification resolves that website’s request. The completed message offers Return to application and has no broadcast or cancellation action.
 
 ![AirGap message returns to its application](images/direct-signing/23-airgap-message-returned.png)
+
+
+## 33. Review at 200% browser zoom
+
+Set Chrome’s actual tab zoom to 200% on the transaction review page. The layout becomes one column without horizontal scrolling; full addresses and their copy controls remain available. Scroll vertically to reach approval. This seeded fixture uses a 1100 × 1000 viewport before zoom; the full-page image retains the browser’s enlarged rendering.
+
+![Review at 200% browser zoom](images/direct-signing/24-review-zoom.png)
+
+## 34. Review a nested request before expanding
+
+Open this seeded typed-data request. The array summary identifies the item count without presenting a wall of JSON. Tab to the items disclosure and press Enter to explore it; full definitions remain available below.
+
+![Collapsed nested typed data](images/direct-signing/25a-nested-collapsed.png)
+
+## 35. Expand nested typed data with the keyboard
+
+In the typed-data review, focus the items disclosure and press Enter, then Tab to its first struct and press Space. The recipient and exact large integer become labeled fields; collapse either disclosure to return to the overview. The full JSON remains available separately. This public-account fixture also checks keyboard copy, permission-failure feedback, accessible names and polite live regions through Chrome’s accessibility tree; it is not a physical-device or screen-reader listening test.
+
+![Expanded nested typed data](images/direct-signing/25-nested-typed-data.png)
+
+
+## 36. Copy the full acting address
+
+In the review page, Tab to Copy acting address and press Enter. The button shows Copied, and a polite status announces completion without moving keyboard focus. This capture uses a clipboard fixture that checks the complete value, not OS clipboard contents. Continue reviewing or copy another value.
+
+![Address copy success](images/direct-signing/26-copy-success.png)
+
+## 37. Recover when clipboard access fails
+
+A simulated clipboard denial leaves the copy button focused and displays manual-copy or retry guidance. Select the full visible text to copy it manually, or activate Copy again after resolving permissions. The error is announced through the same polite status region; it does not alter signing approval.
+
+![Address copy permission recovery](images/direct-signing/27-copy-error.png)

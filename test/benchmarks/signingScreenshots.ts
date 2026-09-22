@@ -1,3 +1,4 @@
+import { checkSigningAccessibility, checkSigningZoom, signingKey, waitForSigningFocus } from './signingAccessibility.js'
 import { installScreenshotLedger, installScreenshotAccountCamera } from './signingScreenshotFixtures.js'
 import { fileURLToPath } from 'node:url'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -179,6 +180,10 @@ try {
 	await review.page.evaluate(`[...document.querySelectorAll('details')].find(details => details.querySelector('summary')?.textContent === 'Edit fees and advanced nonce').open = false`)
 	await review.page.send('Emulation.setDeviceMetricsOverride', { width: 420, height: 820, deviceScaleFactor: 1, mobile: false })
 	await capture(review.page, '04b-review-narrow')
+	await review.page.send('Emulation.setDeviceMetricsOverride', { width: 1100, height: 1000, deviceScaleFactor: 1, mobile: false })
+	await checkSigningZoom(review.page)
+	await capture(review.page, '24-review-zoom')
+	await review.page.evaluate('(async () => { const tab = await browser.tabs.getCurrent(); await browser.tabs.setZoom(tab.id, 1) })()')
 
 	await closeTarget(chrome.browserConnection, review.id)
 	await background.evaluate(
@@ -195,6 +200,9 @@ try {
 	await request.page.evaluate(`navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('Camera permission denied', 'NotAllowedError') }`)
 	await click(request.page, 'Enable camera')
 	await wait(request.page, 'Camera permission denied')
+	await waitForSigningFocus(request.page, '.signing-camera [role=alert]')
+	await signingKey(request.page, 'Tab', true)
+	await waitForSigningFocus(request.page, '.signing-camera button')
 	await capture(request.page, '06b-camera-recovery')
 	await closeTarget(chrome.browserConnection, request.id)
 	await background.evaluate(
@@ -229,6 +237,22 @@ try {
 	await click(personalReview.page, 'Next screen')
 	await capture(personalReview.page, '12-ledger-personal-message')
 	await closeTarget(chrome.browserConnection, personalReview.id)
+	const nestedRecord = { ...typedRecord, input: { ...typedRecord.input, data: JSON.stringify({ types: { EIP712Domain: [], Item: [{ name: 'recipient', type: 'address' }, { name: 'amount', type: 'uint256' }], Batch: [{ name: 'items', type: 'Item[]' }] }, primaryType: 'Batch', domain: {}, message: { items: [{ recipient: address, amount: '900719925474099312345' }] } }) } }
+	await background.evaluate(`browser.storage.local.set({directSigningRequestsV1:${JSON.stringify(DirectSigningRecords.serialize([nestedRecord]))}})`)
+	const nested = await open(`directSigningV3.html?id=${record.id}`, 'Array · 1 item')
+	await capture(nested.page, '25a-nested-collapsed')
+	await checkSigningAccessibility(nested.page, async (stage) => await capture(nested.page, stage === 'copied' ? '26-copy-success' : '27-copy-error'))
+	await nested.page.send('Page.reload')
+	await wait(nested.page, 'Array · 1 item')
+	await nested.page.evaluate(`document.querySelector('.signing-field-group summary').focus()`)
+	await signingKey(nested.page, 'Enter')
+	await wait(nested.page, 'Struct · 2 fields')
+	await signingKey(nested.page, 'Tab')
+	await waitForSigningFocus(nested.page, '.signing-field-group .signing-field-group summary')
+	await signingKey(nested.page, ' ')
+	await wait(nested.page, '900719925474099312345')
+	await capture(nested.page, '25-nested-typed-data')
+	await closeTarget(chrome.browserConnection, nested.id)
 	for (const method of ['personal_sign', 'eth_signTypedData_v4'] as const) {
 		const input = {
 			...record.input,

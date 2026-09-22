@@ -34,9 +34,18 @@ export async function captureExtensionScreenshot(page: CdpConnection, path: stri
 	// InterVariable.woff2 is registered as CSS family Inter, with internal family Inter Variable.
 	if (!renderedFonts.fonts.some((font) => font.familyName === 'Inter Variable' && font.isCustomFont && font.glyphCount > 0))
 		throw new Error(`Screenshot text fell back from bundled Inter: ${ JSON.stringify(renderedFonts) }`)
-	const metrics = await page.send<{ cssContentSize: { width: number; height: number } }>('Page.getLayoutMetrics')
-	const clip = { x: 0, y: 0, width: diagnostics.width, height: surface === 'popup' ? diagnostics.height : metrics.cssContentSize.height, scale: 1 }
+	const metrics = await page.send<{ cssContentSize: { width: number; height: number }; cssVisualViewport: { zoom?: number } }>('Page.getLayoutMetrics')
+	// CDP clips use device-independent pixels; CSS dimensions shrink with browser zoom.
+	// https://github.com/ChromeDevTools/devtools-protocol/blob/master/json/browser_protocol.json
+	const zoom = metrics.cssVisualViewport.zoom ?? 1
+	const captureHeight = surface === 'popup' ? diagnostics.height : metrics.cssContentSize.height
+	const clip = { x: 0, y: 0, width: diagnostics.width * zoom, height: captureHeight * zoom, scale: 1 }
 	const result = await page.send<{ data: string }>('Page.captureScreenshot', { format: 'png', captureBeyondViewport: surface === 'page', clip })
-	await Bun.write(path, Buffer.from(result.data, 'base64'))
-	console.info(JSON.stringify({ screenshot: path.split('/').pop(), surface, ...diagnostics, renderedFonts: renderedFonts.fonts, captureHeight: clip.height }))
+	const png = Buffer.from(result.data, 'base64')
+	const pixelWidth = png.readUInt32BE(16)
+	const pixelHeight = png.readUInt32BE(20)
+	if (Math.abs(pixelWidth - diagnostics.width * diagnostics.dpr) > 1 || Math.abs(pixelHeight - captureHeight * diagnostics.dpr) > 1)
+		throw new Error(`Screenshot dimensions do not match the zoomed page: ${ pixelWidth }×${ pixelHeight }`)
+	await Bun.write(path, png)
+	console.info(JSON.stringify({ screenshot: path.split('/').pop(), surface, ...diagnostics, renderedFonts: renderedFonts.fonts, captureHeight, zoom, pixelWidth, pixelHeight }))
 }

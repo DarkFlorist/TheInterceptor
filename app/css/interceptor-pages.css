@@ -888,3 +888,15 @@ fieldset[disabled] .button.is-primary.is-danger {
 @media (max-width: 420px) {
 	.signing-fields > div, .signing-request-context .signing-grid { grid-template-columns: minmax(0, 1fr); gap: 6px; }
 }
+
+.signing-copy-value { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 6px 8px; min-width: 0; }
+.signing-copy-value > .signing-address { flex: 1 1 160px; min-width: 0; }
+.signing-page .signing-copy-button, .signing-request-context .signing-copy-button { flex: 0 0 auto; min-height: 28px; padding: 2px 8px; font-size: 12px; }
+.signing-copy-feedback { flex-basis: 100%; font-size: .85rem; color: var(--text-color); }
+.signing-screen-reader { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.signing-page :is(button, summary, select, input, [tabindex]):focus-visible,
+.signing-request-context button:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 3px; }
+.signing-page .signing-field-group > summary { padding: 0; }
+.signing-page .signing-field-group[open] > summary { margin-bottom: 8px; }
+.signing-field-group .signing-fields > div { grid-template-columns: minmax(0, 1fr); gap: 4px; padding-left: 12px; border-left: 1px solid var(--layout-line-color); }
+.signing-fields dd { min-width: 0; }
