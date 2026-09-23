@@ -1,3 +1,4 @@
+import { DirectSigningMethod } from './signingMethods.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 import { SigningWallet, SigningWalletBinding } from './signingWallet.js'
@@ -5,7 +6,7 @@ import { UniqueRequestIdentifier } from '../utils/requests.js'
 
 export type DirectSigningInput = funtypes.Static<typeof DirectSigningInput>
 export const DirectSigningInput = funtypes.ReadonlyObject({
-	method: funtypes.Union(funtypes.Literal('eth_sendTransaction'), funtypes.Literal('personal_sign'), funtypes.Literal('eth_signTypedData_v4')),
+	method: DirectSigningMethod,
 	data: funtypes.String.withConstraint((value) => value.length <= 131074),
 	address: funtypes.String,
 	chainId: EthereumQuantity,

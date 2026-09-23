@@ -3,12 +3,10 @@ import { addr } from 'micro-eth-signer'
 import { EthereumAddress } from './wire-types.js'
 import { SignerName } from './signerTypes.js'
 import { bytesFromHex, ensureHex } from '../utils/ethereumBytes.js'
-import { encodeLedgerDerivationPath } from '../signing/ledgerFraming.js'
+import { isEthereumAccountPath, parseDerivationPath } from '../utils/derivationPath.js'
 
 const WalletLabel = funtypes.String.withConstraint((label) => label.trim().length > 0 && label.length <= 100 && !/[\u0000-\u001f\u007f]/u.test(label))
-const DerivationPath = funtypes.String.withConstraint((path) => {
-	try { encodeLedgerDerivationPath(path); return true } catch { return false }
-})
+const DerivationPath = funtypes.String.withConstraint((path) => parseDerivationPath(path) !== undefined)
 const PublicKey = funtypes.String.withConstraint((key) => /^0x(?:04[0-9a-f]{128}|0[23][0-9a-f]{64})$/iu.test(key))
 const common = { address: EthereumAddress, label: WalletLabel }
 
@@ -22,7 +20,7 @@ export const SigningWallet = funtypes.Union(
 	try {
 		if (BigInt(addr.fromPublicKey(bytesFromHex(ensureHex(wallet.publicKey)))) !== wallet.address) return false
 		if (wallet.type === 'ledger') return wallet.publicKey.startsWith('0x04')
-		return /^m\/44'\/60'\/(0|[1-9][0-9]*)'\/0\/(0|[1-9][0-9]*)$/u.test(wallet.derivationPath) && wallet.publicKey.length === 68
+		return isEthereumAccountPath(wallet.derivationPath) && wallet.publicKey.length === 68
 	} catch { return false }
 })
 

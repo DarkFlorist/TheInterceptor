@@ -27,6 +27,7 @@ export function prepareBrowserWalletForwarding(wallet: BrowserWallet, state: Bro
 }
 
 
+/** Wire-shape extraction, not a capability list: support/admission lives in backend.ts. */
 export function browserSigningRequestAccount(request: EthereumJsonRpcRequest): bigint | undefined {
 	switch (request.method) {
 		case 'eth_sendTransaction': return request.params[0].from

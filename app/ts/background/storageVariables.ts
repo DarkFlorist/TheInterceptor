@@ -342,6 +342,20 @@ export async function saveAddressSigningWallet(address: bigint, wallet: SigningW
 	})
 }
 
+/** Bind Safe owner/execution choices atomically with the saved wallets that make them usable. */
+export async function saveSafeSigningAccounts(chainId: bigint, address: bigint, owner: bigint, executor: bigint | undefined, owners: readonly bigint[]) {
+	await userAddressBookEntriesSemaphore.execute(async () => {
+		const entries = await getUserAddressBookEntries()
+		if (!entries.some((entry) => entry.type === 'safe' && entry.address === address && entry.chainId === chainId)) throw new Error('Save this Safe in the address book before changing its signing accounts')
+		const bindings = reconcileSigningWalletBindings(entries, await readSigningWalletBindings())
+		if (!owners.includes(owner)) throw new Error('The selected signing account is not a current Safe owner')
+		if (!bindings.some((binding) => binding.wallet.address === owner)) throw new Error('Set up the owner’s signing wallet first')
+		// A gas payer need not be a Safe owner. A public binding is configuration, not proof of authority; the execution pipeline still checks the account and verifies its actual signature.
+		if (executor !== undefined && !bindings.some((binding) => binding.wallet.address === executor)) throw new Error('Set up the execution account’s signing wallet first')
+		await browserStorageLocalSet({ userAddressBookEntriesV3: entries.map((entry) => entry.type === 'safe' && entry.address === address && entry.chainId === chainId ? { ...entry, safeSigningSignerAddress: owner, safeExecutionAddress: executor, safeSignerAddresses: owners } : entry) })
+	})
+}
+
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
 	await userAddressBookEntriesSemaphore.execute(async () => {
 		const entries = await getUserAddressBookEntries()

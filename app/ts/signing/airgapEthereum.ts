@@ -5,7 +5,7 @@ import { secp256k1 } from '@noble/curves/secp256k1'
 import { addr } from 'micro-eth-signer'
 import { bytesFromHex, bytesToHex, ensureHex, getAddress, type Hex } from '../utils/ethereumBytes.js'
 import { decodeAirGapCbor, encodeAirGapCbor, type AirGapCbor } from './airgapCbor.js'
-import { encodeLedgerDerivationPath } from './ledgerFraming.js'
+import { parseDerivationPath } from '../utils/derivationPath.js'
 import { assembleSignedTransaction, preparePersonalSigningPayload, prepareTransactionSigningPayload, prepareTypedDataSigningPayload, verifyPersonalSigningResponse, verifyTypedDataSigningResponse, type PersonalSigningPayload, type TransactionSigningPayload, type TypedDataSigningPayload } from './exactPayload.js'
 
 export type AirGapPublicAccount = Readonly<{ address: Hex, publicKey: Hex, derivationPath: string, sourceFingerprint: number }>
@@ -121,13 +121,9 @@ export function encodeAirGapSigningRequest(account: AirGapPublicAccount, payload
 		data = bytesFromHex(payload.message)
 		dataType = 3n
 	}
-	const encodedPath = encodeLedgerDerivationPath(account.derivationPath)
-	const pathView = new DataView(encodedPath.buffer)
-	const components: AirGapCbor[] = []
-	for (let offset = 1; offset < encodedPath.length; offset += 4) {
-		const index = pathView.getUint32(offset)
-		components.push(BigInt(index & 0x7fffffff), index >= 0x80000000)
-	}
+	const path = parseDerivationPath(account.derivationPath)
+	if (path === undefined) throw new Error('Invalid AirGap derivation path')
+	const components: AirGapCbor[] = path.flatMap(({ index, hardened }) => [BigInt(index), hardened])
 	return encodeAirGapCbor(new Map<bigint, AirGapCbor>([
 		[1n, { tag: 37n, value: requestIdBytes(requestId) }], [2n, data], [3n, dataType], [4n, chainId],
 		[5n, { tag: 304n, value: new Map<bigint, AirGapCbor>([[1n, components], [2n, BigInt(sourceFingerprint)]]) }],

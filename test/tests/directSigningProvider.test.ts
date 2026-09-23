@@ -1,3 +1,6 @@
+import { secp256k1 } from '@noble/curves/secp256k1'
+import { bytesFromHex, bytesToHex } from '../../app/ts/utils/ethereumBytes.js'
+import { privateKeyToAccount } from '../../app/ts/utils/ethereumSigning.js'
 import { expect, test } from 'bun:test'
 import { installBrowserMock, loadModules, createPort, createEthereumWithGetBlockCounter, noopPublishRpcConnectionStatus, confirmedSignerOwnership } from './backgroundEthAccountsTestHarness.js'
 import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
@@ -77,5 +80,31 @@ for (const scenario of [
 			expect(reply).toMatchObject({ type: 'result', error: { code: 4100 } })
 			expect(messages.some((message) => message.type === 'forwardToSigner')).toBe(false)
 		}
+	})
+}
+
+const hardwareTypes: readonly ('ledger' | 'airgap')[] = ['ledger', 'airgap']
+for (const type of hardwareTypes) {
+	test(`${ type } rejects unsupported signing methods before parsing or browser forwarding`, async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode } = await loadModules()
+		const key = '0x0000000000000000000000000000000000000000000000000000000000000001'
+		const address = BigInt(privateKeyToAccount(key).address)
+		const account = { address, label: 'Saved hardware account', publicKey: bytesToHex(secp256k1.getPublicKey(bytesFromHex(key), type === 'airgap')), derivationPath: 'm/44\'/60\'/0\'/0/0' }
+		await saveAddressSigningWallet(address, type === 'ledger' ? { ...account, type } : { ...account, type, sourceFingerprint: 0x11223344 }, undefined, 'Hardware')
+		await browserStorageLocalSet({ selectedSigningAddress: address })
+		await changeSimulationMode({ simulationMode: false })
+		const websiteOrigin = 'https://hardware.example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address, access: true }] }])
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connections = new Map([[socket.tabId, { connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true } } }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		for (const [requestId, method] of ['eth_sign', 'eth_signTypedData_v3', 'eth_signFutureVariant', 'eth_sendRawTransaction', 'wallet_sendCalls'].entries()) {
+			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, { interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId, requestSocket: socket }, method, params: [] }, connections, noopPublishRpcConnectionStatus)
+			expect(messages.find((message) => message.requestId === requestId)).toMatchObject({ type: 'result', error: { code: 4200 } })
+		}
+		expect(messages.some((message) => message.type === 'forwardToSigner')).toBe(false)
 	})
 }

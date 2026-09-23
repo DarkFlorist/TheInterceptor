@@ -1,3 +1,5 @@
+import { getSigningMethodError } from '../signing/backend.js'
+import { isSigningOperation } from '../types/signingMethods.js'
 import { prepareSavedBrowserWalletForwarding } from './browserWalletForwarding.js'
 import { browserSigningRequestAccount } from '../signing/browserWallet.js'
 import { parseDirectSigningTypedData } from '../signing/exactPayload.js'
@@ -103,11 +105,14 @@ async function handleRPCRequest(
 	const getForwardingMessage = async <T extends { readonly method: string }>(forwardedRequest: T) => {
 		if (!forwardToSigner) throw new Error('Should not forward to signer')
 		if (binding?.wallet.type !== 'browser') return { type: 'forwardToSigner' as const, ...forwardedRequest }
-		const requireSelectedAccount = forwardedRequest.method.startsWith('eth_sign') || ['personal_sign', 'eth_sendTransaction', 'eth_sendRawTransaction', 'wallet_sendCalls'].includes(forwardedRequest.method)
+		const requireSelectedAccount = isSigningOperation(forwardedRequest.method)
 		const fields = await prepareSavedBrowserWalletForwarding(websiteTabConnections, socket, binding, { requireSelectedAccount, requestedAddress: maybeParsedRequest.success ? browserSigningRequestAccount(maybeParsedRequest.value) : undefined })
 		if (fields.error !== undefined) throw new JsonRpcResponseError({ jsonrpc: '2.0', id: request.uniqueRequestIdentifier.requestId, error: fields.error })
 		return { type: 'forwardToSigner' as const, ...forwardedRequest, expectedProviderId: fields.expectedProviderId }
 	}
+
+	const capabilityError = binding === undefined ? undefined : getSigningMethodError(binding.wallet.type, request.method)
+	if (!settings.simulationMode && capabilityError !== undefined) return { type: 'result', method: request.method, error: { code: 4200, message: capabilityError } }
 
 	if (maybeParsedRequest.success === false) {
 		for (const getMethodSpecificReply of RPC_PARSE_FAILURE_HANDLERS) {
@@ -140,8 +145,8 @@ async function handleRPCRequest(
 		}
 	}
 	const parsedRequest = maybeParsedRequest.value
-	if (!settings.simulationMode && (parsedRequest.method.startsWith('eth_sign') || parsedRequest.method === 'personal_sign' || parsedRequest.method === 'eth_sendTransaction') && binding === undefined && !safeSigningMode && (settings.selectedSigningAddress !== undefined || request.usingInterceptorWithoutSigner)) return { type: 'result', method: request.method, error: { code: 4100, message: 'No signing wallet for this address. Set up signing wallet or switch to simulation.' } }
-	if (!settings.simulationMode && directWallet && (parsedRequest.method.startsWith('eth_sign') && parsedRequest.method !== 'eth_signTypedData_v4' || parsedRequest.method === 'eth_sendRawTransaction')) return { type: 'result', method: request.method, error: { code: 4200, message: 'This signing wallet supports EIP-1559 eth_sendTransaction, personal_sign, and eth_signTypedData_v4 only.' } }
+	if (!settings.simulationMode && isSigningOperation(parsedRequest.method) && binding === undefined && !safeSigningMode && (settings.selectedSigningAddress !== undefined || request.usingInterceptorWithoutSigner)) return { type: 'result', method: request.method, error: { code: 4100, message: 'No signing wallet for this address. Set up signing wallet or switch to simulation.' } }
+
 	const safePolicyReply = getSafeModeRpcPolicyReply({
 		rawRequest: request,
 		confirmation,

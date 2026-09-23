@@ -12,7 +12,7 @@ import { EthereumBytes32, EthereumQuantity } from '../types/wire-types.js'
 import { EIP712Message } from '../types/eip721.js'
 import { bytesFromHex, bytesToHex, ensureHex, keccak256 } from '../utils/ethereumBytes.js'
 import { parseTransaction, serializeTransaction } from '../utils/ethereumTransactions.js'
-import { prepareDirectPayload, verifyDirectResult } from '../signing/backend.js'
+import { DIRECT_SIGNING_CAPABILITY_ERROR, getSigningMethodError, prepareDirectPayload, verifyDirectResult } from '../signing/backend.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { getSigningWalletBinding, getPendingTransactionsAndMessages, updatePendingTransactionOrMessage } from './storageVariables.js'
@@ -103,6 +103,8 @@ export async function openDirectSigning(ethereum: EthereumClientService, prices:
 		let record = existing
 		if (record === undefined) {
 			const binding = pending.signingWalletBinding
+			const capabilityError = getSigningMethodError(binding.wallet.type, request.method)
+			if (capabilityError !== undefined) throw new Error(capabilityError)
 			const rpcUrl = ethereum.getRpcEntry().httpsRpc
 			if (rpcUrl === undefined) throw new Error('Configure an RPC connection for direct signing')
 			const address = addressString(binding.wallet.address)
@@ -114,7 +116,7 @@ export async function openDirectSigning(ethereum: EthereumClientService, prices:
 			} else if (request.method === 'eth_signTypedData_v4') {
 				if (request.params[0] !== binding.wallet.address) throw new Error('Typed data requests another signing account')
 				data = funtypes.String.parse(EIP712Message.serialize(request.params[1]))
-			} else throw new Error('Direct wallets support personal_sign and eth_signTypedData_v4 only')
+			} else throw new Error(DIRECT_SIGNING_CAPABILITY_ERROR)
 			const input = { method: request.method, data, address, chainId: ethereum.getChainId() }
 			prepareDirectPayload(input)
 			record = { id: crypto.randomUUID(), request: pending.uniqueRequestIdentifier, binding, websiteOrigin: pending.website.websiteOrigin, rpcUrl, input, revision: crypto.randomUUID(), created: Date.now(), phase: 'review' }

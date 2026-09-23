@@ -1,7 +1,7 @@
 import { matchesBrowserSigningWallet } from '../signing/browserWallet.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getSafeContractState } from '../safe/safeCore.js'
-import { getSigningWalletBinding, updateUserAddressBookEntries } from './storageVariables.js'
+import { saveSafeSigningAccounts } from './storageVariables.js'
 import { SigningPageRequest, DirectSigningRecord } from '../types/directSigning.js'
 import { SigningWalletBindings } from '../types/signingWallet.js'
 import { TabState } from '../types/user-interface-types.js'
@@ -22,9 +22,8 @@ export async function signingPageHandler(raw: unknown, ethereum: EthereumClientS
 		if (request.method === 'signing_setSafeAccounts') {
 			if (request.chainId !== ethereum.getChainId()) throw new Error('Return to this Safe’s network before changing its signing accounts')
 			const state = await getSafeContractState(ethereum, request.address)
-			if (!state.owners.includes(request.owner)) throw new Error('The selected signing account is not a current Safe owner')
-			if (await getSigningWalletBinding(request.owner) === undefined) throw new Error('Set up the owner’s signing wallet first')
-			await updateUserAddressBookEntries((entries) => entries.map((entry) => entry.type === 'safe' && entry.address === request.address && entry.chainId === ethereum.getChainId() ? { ...entry, safeSigningSignerAddress: request.owner, safeExecutionAddress: request.executor, safeSignerAddresses: state.owners } : entry))
+			if (request.chainId !== ethereum.getChainId()) throw new Error('Return to this Safe’s network before changing its signing accounts')
+			await saveSafeSigningAccounts(request.chainId, request.address, request.owner, request.executor, state.owners)
 			await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 			return { ok: true }
 		}

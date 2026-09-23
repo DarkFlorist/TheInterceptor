@@ -1,3 +1,4 @@
+import { parseDerivationPath } from '../utils/derivationPath.js'
 // Wire format: LedgerHQ/ledgerjs packages/devices/src/hid-framing.ts.
 const PACKET_SIZE = 64
 const TAG = 0x05
@@ -67,16 +68,11 @@ export function createLedgerResponseDecoder(channel: number, maximumBytes = MAX_
 
 /** Absolute, concrete BIP-32 paths only; ranges and wildcards cannot identify an account. */
 export function encodeLedgerDerivationPath(path: string): Uint8Array {
-	if (path.length > 128 || !/^m(?:\/(?:0|[1-9][0-9]*)'?){1,10}$/u.test(path)) throw new Error('Invalid Ledger derivation path')
-	const components = path.slice(2).split('/')
+	const components = parseDerivationPath(path)
+	if (components === undefined) throw new Error('Invalid Ledger derivation path')
 	const encoded = new Uint8Array(1 + components.length * 4)
 	encoded[0] = components.length
 	const view = new DataView(encoded.buffer)
-	components.forEach((component, index) => {
-		const hardened = component.endsWith('\'')
-		const value = Number(hardened ? component.slice(0, -1) : component)
-		if (!Number.isSafeInteger(value) || value < 0 || value >= 0x80000000) throw new Error('Ledger derivation index is out of range')
-		view.setUint32(1 + index * 4, value + (hardened ? 0x80000000 : 0))
-	})
+	components.forEach(({ index, hardened }, position) => { view.setUint32(1 + position * 4, index + (hardened ? 0x80000000 : 0)) })
 	return encoded
 }
