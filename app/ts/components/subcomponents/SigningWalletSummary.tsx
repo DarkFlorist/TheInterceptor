@@ -9,7 +9,7 @@ export function openSigningWalletSetup(address?: bigint) {
 	return browser.tabs.create({ url: `${ browser.runtime.getURL(page) }${ address === undefined ? '' : `?address=0x${ address.toString(16).padStart(40, '0') }` }` })
 }
 
-export function SigningWalletSummary({ address, actionLabel = 'Change wallet' }: { address: bigint, actionLabel?: string }) {
+export function SigningWalletSummary({ address, showSimulationShortcut = true }: { address: bigint, showSimulationShortcut?: boolean }) {
 	const [bindings, setBindings] = useState<SigningWalletBindings>()
 	const [error, setError] = useState<string>()
 	useEffect(() => {
@@ -27,12 +27,15 @@ export function SigningWalletSummary({ address, actionLabel = 'Change wallet' }:
 	const binding = bindings.find((item) => item.wallet.address === address)
 	return <div class = 'signing-wallet-summary'>
 		<p>{ signingWalletDescription(binding) }</p>
-		{ binding === undefined ? <small>Set up signing wallet to sign, or switch to simulation below.</small> : undefined }
 		{ binding?.wallet.type === 'ledger' ? <small>Wallet saved · connect Ledger when signing</small> : binding?.wallet.type === 'airgap' ? <small>Imported account · awaiting offline signing</small> : undefined }
-		<div class = 'signing-actions'>
-		<button class = 'button is-small signing-secondary' onClick = { (event) => { event.stopPropagation(); void openSigningWalletSetup(address).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not open wallet setup')) } }>{ actionLabel }</button>
-		<button class = 'button is-small signing-secondary' onClick = { (event) => { event.stopPropagation(); void sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: address, simulationMode: true } }).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not select simulation address')) } }>Simulate this address</button>
+		<div class = 'signing-wallet-action'>
+		<button class = 'button is-small signing-secondary' onClick = { (event) => { event.stopPropagation(); void openSigningWalletSetup(address).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not open wallet setup')) } }>{ binding === undefined ? 'Set up wallet' : 'Change wallet' }</button>
+		<small>Choose how this address signs. Your selected address and mode stay the same.</small>
 		</div>
+		{ showSimulationShortcut ? <div class = 'signing-wallet-action'>
+		<button class = 'button is-small signing-secondary' onClick = { (event) => { event.stopPropagation(); void sendPopupMessageToBackgroundPage({ method: 'popup_changeActiveAddress', data: { activeAddress: address, simulationMode: true } }).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not select simulation address')) } }>Use in simulation</button>
+		<small>Select this address in Simulation mode. Your signing address stays the same.</small>
+		</div> : undefined }
 		{ error === undefined ? undefined : <p role = 'alert'>{ error }</p> }
 	</div>
 }

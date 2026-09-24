@@ -79,7 +79,7 @@ try {
 		`browser.storage.local.set(${JSON.stringify({
 			openedPageV2: { page: 'Home' },
 			selectedSigningAddress: address,
-			independentActiveSimulationAddress: manualAddress,
+			independentActiveSimulationAddress: ledgerAddress,
 			simulationMode: false,
 			useSignersAddressAsActiveAddress: false,
 			userAddressBookEntriesV3: [
@@ -129,15 +129,38 @@ try {
 	await home.page.evaluate(
 		`(() => { const button = [...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Change'); if(!button)throw new Error('Missing Change'); button.click(); })()`
 	)
-	await wait(home.page, 'Change signing wallet')
+	await wait(home.page, 'Choose address')
 	await capture(home.page, '00b-address-selector')
 	await home.page.evaluate(`document.querySelector('.modal-card-body').scrollTop = document.querySelector('.modal-card-body').scrollHeight`)
 	await capture(home.page, '00c-address-selector-manual')
+	if (await home.page.evaluate<boolean>(`[...document.querySelectorAll('.signing-address-selector button')].some(button => button.textContent === 'Use in simulation')`)) throw new Error('Address selector must not offer a mode-switch shortcut')
+	await click(home.page, 'Close')
+	await click(home.page, 'Simulating')
+	await wait(home.page, 'Main device')
+	for (let attempt = 0; attempt < 150; attempt++) {
+		if (await home.page.evaluate<boolean>(`(() => { const button = [...document.querySelectorAll('button')].find(button => button.textContent.trim() === 'Change'); if (!button || button.disabled) return false; button.click(); return true; })()`)) break
+		if (attempt === 149) throw new Error('Address controls remained disabled after switching mode')
+		await new Promise((resolve) => setTimeout(resolve, 100))
+	}
+	await wait(home.page, 'Choose address')
+	await home.page.evaluate(`(() => { const row = [...document.querySelectorAll('.signing-address-selector li')].find(row => row.textContent.includes('Research')); if (!row) throw new Error('Missing Research'); row.querySelector('.card').click(); })()`)
+
+	for (let attempt = 0; attempt < 100; attempt++) {
+		const selected = await background.evaluate<{ simulationMode?: boolean, selectedSigningAddress?: string, independentActiveSimulationAddress?: string }>(`browser.storage.local.get(['simulationMode', 'selectedSigningAddress', 'independentActiveSimulationAddress'])`)
+		if (selected.simulationMode === true && selected.independentActiveSimulationAddress === manualAddress) {
+			if (selected.selectedSigningAddress !== address) throw new Error('Address selection in Simulation mode changed signing address')
+			break
+		}
+		if (attempt === 99) throw new Error('Address selection did not preserve Simulation mode')
+		await new Promise((resolve) => setTimeout(resolve, 100))
+	}
+	await wait(home.page, 'No signing wallet')
+	await capture(home.page, '00d-simulation-selected')
 	await closeTarget(chrome.browserConnection, home.id)
-	const setup = await open('signingWalletV3.html', 'Discover Ledger Live accounts')
+	const setup = await open('signingWalletV3.html', 'Connect Ledger')
 	await capture(setup.page, '01-ledger-onboarding')
 	await installScreenshotLedger(setup.page)
-	await click(setup.page, 'Discover Ledger Live accounts')
+	await click(setup.page, 'Connect Ledger')
 	await wait(setup.page, 'Select an account, then verify')
 	await setup.page.evaluate(`document.querySelectorAll('input[type=radio]')[1].click()`)
 	await capture(setup.page, '01b-ledger-accounts')
@@ -163,7 +186,7 @@ try {
 	const preserved = await background.evaluate<boolean>(`(async () => {
 		const state = await browser.storage.local.get(['userAddressBookEntriesV3', 'selectedSigningAddress', 'independentActiveSimulationAddress', 'simulationMode']);
 		return state.userAddressBookEntriesV3.filter(entry => entry.address.toLowerCase() === ${JSON.stringify(address)}).length === 1
-			&& state.selectedSigningAddress === ${JSON.stringify(address)} && state.independentActiveSimulationAddress === ${JSON.stringify(manualAddress)} && state.simulationMode === false;
+			&& state.selectedSigningAddress === ${JSON.stringify(address)} && state.independentActiveSimulationAddress === ${JSON.stringify(manualAddress)} && state.simulationMode === true;
 	})()`)
 	if (!preserved) throw new Error('Onboarding duplicated the address or changed mode selections')
 

@@ -39,7 +39,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 				</div>
 				<div class = 'card-header-title'>
 					<p class = 'paragraph'>
-					Change Active Address
+					Choose address
 					</p>
 				</div>
 				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close }>
@@ -47,6 +47,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 				</button>
 			</header>
 			<section class = 'modal-card-body'>
+				<p class = 'signing-muted'>Select an address to use in your current mode.</p>
 				<ul>
 					{ getSignerAccount() === undefined ? <></> : <li>
 						<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress('signer') } }>
@@ -82,7 +83,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 										noEditAddress = { true }
 										renameAddressCallBack = { param.renameAddressCallBack }
 									/>
-									{ activeAddress.type === 'safe' ? undefined : <SigningWalletSummary address = { activeAddress.address } actionLabel = 'Change signing wallet'/> }
+									{ activeAddress.type === 'safe' ? undefined : <SigningWalletSummary address = { activeAddress.address } showSimulationShortcut = { false }/> }
 									{ isSignerConnected(activeAddress.address) ?
 										<div class = 'content' style = 'color: var(--text-color)'>
 											<SignerLogoText signerName = { param.signerName } text = { ` ${ getPrettySignerName(param.signerName) } connected` }/>

@@ -839,7 +839,7 @@ fieldset[disabled] .button.is-primary.is-danger {
 .signing-camera video { max-width: 100%; width: 400px; border-radius: 8px; }
 .signing-wallet-summary { margin-top: 12px; color: var(--text-color); display: flex; flex-direction: column; gap: 8px; }
 .signing-wallet-summary small { color: var(--subtitle-text-color); }
-.signing-wallet-summary .signing-actions { margin-top: 4px; }
+.signing-wallet-action { display: grid; grid-template-columns: 136px minmax(0, 1fr); align-items: center; gap: 10px; margin-top: 4px; }
 .signing-address-selector .card.hoverable:hover, .signing-address-selector .card-content.hoverable:hover { background: var(--surface-mid-color); }
 .signing-address-selector .card { border: 1px solid var(--layout-line-color); box-shadow: none; }
 .signing-address-selector .card:hover { border-color: var(--accent-color); }
@@ -853,6 +853,7 @@ fieldset[disabled] .button.is-primary.is-danger {
 .signing-page details[open] > .signing-muted { margin: 12px 0; }
 .signing-page summary::before { content: '▸'; display: inline-block; width: 1.2em; color: var(--accent-color); }
 .signing-page details[open] > summary::before { content: '▾'; }
+.signing-address-selector .modal-card-body > .signing-muted { margin: 0 12px 10px; }
 .signing-address-selector .card-content { padding: 12px; }
 .signing-address-selector .signing-wallet-summary { margin-top: 8px; gap: 4px; font-size: .9rem; }
 .signing-address-selector .signing-wallet-summary .button { min-height: 32px; }

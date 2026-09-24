@@ -22,7 +22,7 @@ Open the toolbar popup to see the active address, its saved AirGap wallet, and t
 
 ## 2. Choose a saved wallet account
 
-Click Change to open the selector. AirGap and Ledger bindings remain visible without a connected device. Choose a row to select its address, or use Change signing wallet to edit that binding. Add address is the single onboarding entry point; Safe creation remains available in the address book.
+Click Change to open the selector. AirGap and Ledger bindings remain visible without a connected device. Choose a row to select its address in the current mode. Change wallet edits how that address signs without selecting it or changing mode. The selector does not switch modes; the separate Use in simulation shortcut is available on Home. Add address is the single onboarding entry point; Safe creation remains available in the address book.
 
 ![Choose a saved wallet account](images/direct-signing/00b-address-selector.png)
 
@@ -32,9 +32,15 @@ Scroll the same popup list to Research. This address has no signing wallet and r
 
 ![Select a manual address](images/direct-signing/00c-address-selector-manual.png)
 
+## 3b. Select an address in the current mode
+
+Close the selector, choose Simulating on Home, then click Change and select the Research row. Home shows Research in Simulation mode with no signing wallet. The browser check verifies that the remembered signing address is still Cold storage. You can simulate with Research, set up its wallet, or use the Signing mode button to return to your saved signing address.
+
+![Research selected for simulation](images/direct-signing/00d-simulation-selected.png)
+
 ## 4. Connect Ledger
 
-Choose Ledger on the dedicated onboarding page. Discover Ledger Live accounts is the primary action. Custom derivation paths are under Advanced. Saving stays disabled until an account has been verified.
+Choose Ledger on the dedicated onboarding page. Connect Ledger opens the browser’s USB device picker directly; Ledger Live is not required. The default account path follows the Ledger Live format. Custom derivation paths are under Advanced. Saving stays disabled until an account has been verified.
 
 ![Connect Ledger](images/direct-signing/01-ledger-onboarding.png)
 

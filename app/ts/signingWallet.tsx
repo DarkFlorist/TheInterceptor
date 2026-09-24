@@ -74,7 +74,7 @@ function SigningWalletPage() {
 		setStatus('Address verified on Ledger. Review and name the account before saving.')
 	})
 	const discoverLedger = () => run(async () => {
-		setStatus('Unlock Ledger and open Ethereum to discover the first five Ledger Live accounts.')
+		setStatus('Connect Ledger by USB, unlock it and open Ethereum to discover the first five accounts.')
 		const device = await selectLedgerDevice()
 		controller.current = new AbortController()
 		const discovered = await withLedgerDevice(device, controller.current.signal, async (exchange) => {
@@ -150,10 +150,10 @@ function SigningWalletPage() {
 		</select></label>
 		<SigningSteps steps = { steps } current = { currentStep }/>
 		{ saved ? <section class = 'signing-panel signing-success' role = 'status'><h2>{ kind === 'manual' ? 'Address saved' : 'Address and wallet saved' }</h2><p class = 'signing-address'>{ selectedAccount === undefined ? addressText : addressString(selectedAccount.address) }</p><p>You can close this tab and select the address in Interceptor.</p></section> : <>
-		{ kind === 'ledger' ? <section class = 'signing-panel'><h2>{ accounts.length === 0 ? 'Connect your Ledger' : 'Verify your selected account' }</h2><p>Unlock your device and open the Ethereum app. Check that the address on your device matches the account below.</p><div class = 'signing-actions'>
-			<button class = { `button ${ accounts.length === 0 ? 'is-primary' : 'signing-secondary' }` } disabled = { busy } onClick = { discoverLedger }>Discover Ledger Live accounts</button>
+		{ kind === 'ledger' ? <section class = 'signing-panel'><h2>{ accounts.length === 0 ? 'Connect your Ledger' : 'Verify your selected account' }</h2><p>Connect by USB, unlock your device and open the Ethereum app. Ledger Live is not required. Check that the address on your device matches the account below.</p><div class = 'signing-actions'>
+			<button class = { `button ${ accounts.length === 0 ? 'is-primary' : 'signing-secondary' }` } disabled = { busy } onClick = { discoverLedger }>Connect Ledger</button>
 			{ accounts.length === 0 ? undefined : <button class = 'button is-primary' disabled = { busy || ledgerVerified } onClick = { ledger }>{ ledgerVerified ? 'Address verified' : 'Verify selected address on Ledger' }</button> }
-		</div><details><summary>Advanced: custom derivation path</summary><label>Derivation path<input disabled = { busy } value = { path } onInput = { (event) => { setPath(event.currentTarget.value); setVerifiedLedgerAddress(undefined); setAccounts([]) } }/></label><p class = 'signing-muted'>Ledger Live: m/44′/60′/N′/0/0. Legacy: m/44′/60′/0′/0/N.</p><button class = 'button signing-secondary' disabled = { busy } onClick = { ledger }>Connect and verify this path</button></details></section> : undefined }
+		</div><details><summary>Advanced: custom derivation path</summary><label>Derivation path<input disabled = { busy } value = { path } onInput = { (event) => { setPath(event.currentTarget.value); setVerifiedLedgerAddress(undefined); setAccounts([]) } }/></label><p class = 'signing-muted'>Default account format (Ledger Live): m/44′/60′/N′/0/0. Legacy: m/44′/60′/0′/0/N.</p><button class = 'button signing-secondary' disabled = { busy } onClick = { ledger }>Connect and verify this path</button></details></section> : undefined }
 		{ kind === 'browser' ? <section class = 'signing-panel'><h2>Connect your browser wallet</h2><p>Open an approved website with your browser wallet installed, connect, then choose one of its exposed accounts here.</p><div class = 'signing-actions'><button class = 'button is-primary' disabled = { busy } onClick = { connectBrowserWallet }>Connect browser wallet</button></div>{ browserAccounts.map(({ tab, address, providerId }) => <button key = { `${ tab.tabId }:${ address }` } class = 'button signing-secondary' onClick = { () => { setAccounts([{ type: 'browser', address, signerName: tab.signerName, providerId, label }]); setSelected(0) } }>{ tab.signerProvider?.rdns ?? tab.signerName } · { addressString(address) }</button>) }{ tabs.some((tab) => tab.signerProvider?.ambiguous) ? <p class = 'signing-error'>Multiple providers claim the same wallet identity. Disable the conflicting wallet extension and reload the website before linking.</p> : undefined }</section> : undefined }
 		{ kind === 'airgap' ? <section class = 'signing-panel'>
 			<h2>{ scan ? 'Scan your public account' : 'Import from AirGap Vault' }</h2><p>In Vault, export your public Ethereum account as a QR code. No private keys leave Vault.</p>
