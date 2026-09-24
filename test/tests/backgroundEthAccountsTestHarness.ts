@@ -1,5 +1,5 @@
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
+import type { SimulationServices, SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
@@ -257,9 +257,24 @@ export function getWalletSwitchRequestId(messages: readonly PortMessage[], index
 }
 
 export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: SimulationServicesOwner['reset']): SimulationServicesOwner {
-	let current = initial
+	let current: SimulationServices | undefined = initial
 	return {
-		getCurrent: () => current,
-		reset: network => { current = reset === undefined ? current : reset(network); return current },
+		getCurrent: () => {
+			if (current === undefined) throw new Error('RPC configuration is unavailable. Network requests are paused.')
+			return current
+		},
+		getCurrentOrUndefined: () => current,
+		isAvailable: () => current !== undefined,
+		reset: network => {
+			if (current === undefined) throw new Error('RPC configuration is unavailable. Network requests are paused.')
+			if (reset !== undefined) current = reset(network)
+			return current
+		},
+		recover: network => {
+			if (reset !== undefined) current = reset(network)
+			if (current === undefined) throw new Error('RPC configuration is unavailable. Network requests are paused.')
+			return current
+		},
+		clear: () => { current = undefined },
 	}
 }

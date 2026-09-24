@@ -28,6 +28,78 @@ function pauseAfterFirstStorageWrite(key: string) {
 }
 
 describe('active settings concurrency', () => {
+	test('does not install a requested RPC or mutate services after settings validation fails', async () => {
+		installBrowserMock()
+		const { changeActiveAddressAndChain, getSettings } = await loadModules()
+		const requestedNetwork = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://requested.invalid' }
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		let resetCount = 0
+		const owner = createTestSimulationServicesOwner(services, () => { resetCount += 1; return services })
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+
+		await assert.rejects(
+			changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: requestedNetwork }),
+			/RPC configuration is unavailable/,
+		)
+		assert.equal(owner.isAvailable(), true)
+		assert.equal(resetCount, 0)
+	})
+
+	test('publishes a signer-only transition when services pause after validation', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { changeActiveAddressAndChain, getSettings } = await loadModules()
+		const previousSettings = await getSettings()
+		const signerOnlyNetwork = {
+			name: 'Signer only',
+			chainId: previousSettings.activeRpcNetwork.chainId,
+			httpsRpc: undefined,
+			currencyName: 'Ether?' as const,
+			currencyTicker: 'ETH?' as const,
+			primary: false as const,
+			minimized: true as const,
+		}
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const owner = createTestSimulationServicesOwner(services, () => services)
+		const originalSet = browser.storage.local.set.bind(browser.storage.local)
+		Object.defineProperty(browser.storage.local, 'set', {
+			configurable: true,
+			value: async (items: object) => {
+				await originalSet(items)
+				if ('activeRpcNetwork' in items) owner.clear()
+			},
+		})
+
+		await changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: signerOnlyNetwork })
+
+		assert.equal(owner.isAvailable(), false)
+		assert.equal((await getSettings()).activeRpcNetwork.httpsRpc, undefined)
+		assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_settingsUpdated'), true)
+	})
+
+	test('does not resume services when the owner is paused after a transition validates settings', async () => {
+		installBrowserMock()
+		const { changeActiveAddressAndChain, getSettings } = await loadModules()
+		const requestedNetwork = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://requested.invalid' }
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		let resetCount = 0
+		const owner = createTestSimulationServicesOwner(services, () => { resetCount += 1; return services })
+		const originalSet = browser.storage.local.set.bind(browser.storage.local)
+		Object.defineProperty(browser.storage.local, 'set', {
+			configurable: true,
+			value: async (items: object) => {
+				await originalSet(items)
+				if ('activeRpcNetwork' in items) owner.clear()
+			},
+		})
+
+		await assert.rejects(
+			changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: requestedNetwork }),
+			/RPC configuration became unavailable/,
+		)
+		assert.equal(owner.isAvailable(), false)
+		assert.equal(resetCount, 0)
+	})
+
 	test('publishes concurrent network transitions in persisted order', async () => {
 		installBrowserMock()
 		const { changeActiveAddressAndChain, getSettings, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()
@@ -82,6 +154,96 @@ describe('active settings concurrency', () => {
 		])
 		assert.deepEqual(resetNetworks.map((network) => network.chainId), [firstNetwork.chainId, secondNetwork.chainId])
 		assert.equal((await getSettings()).activeRpcNetwork.chainId, secondNetwork.chainId)
+	})
+
+	test('publishes settings and website chain updates after RPC configuration recovery', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { changeSimulationMode, getSettings, publishRpcConfigurationRecovery, setRpcConfiguration, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		await changeSimulationMode({ simulationMode: false })
+		const websiteOrigin = 'example.test'
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin }, access: true }])
+		const previousSettings = await getSettings()
+		const recoveredNetwork = {
+			...previousSettings.activeRpcNetwork,
+			name: 'Recovered network',
+			chainId: 10n,
+			httpsRpc: 'https://recovered.invalid',
+			primary: true,
+		} satisfies RpcEntry
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
+		const owner = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService }))
+
+		await setRpcConfiguration([recoveredNetwork], recoveredNetwork)
+		await publishRpcConfigurationRecovery(owner, connections, previousSettings, recoveredNetwork)
+
+		assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_settingsUpdated'), true)
+		assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_chain_update'), true)
+		assert.deepEqual(messages.filter(({ method }) => method === 'chainChanged').map(({ result }) => result), ['0xa'])
+	})
+
+	test('forces a chain update when recovery could not parse the previous selection', async () => {
+		installBrowserMock()
+		const { getSettings, publishRpcConfigurationRecovery, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'example.test'
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin }, access: true }])
+		const settings = await getSettings()
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const connections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const owner = createTestSimulationServicesOwner(services, () => services)
+
+		await publishRpcConfigurationRecovery(owner, connections, settings, settings.activeRpcNetwork, true)
+
+		assert.deepEqual(messages.filter(({ method }) => method === 'chainChanged').map(({ result }) => result), ['0x1'])
+	})
+
+	test('signer-only settings can add, select, and edit a custom RPC without existing services', async () => {
+		installBrowserMock()
+		const { changeActiveAddressAndChain, changeSimulationMode, getSettings, publishRpcConfigurationRecovery, setNewRpcList } = await loadModules()
+		const signerOnlyNetwork = {
+			name: 'Signer only',
+			chainId: 1n,
+			httpsRpc: undefined,
+			currencyName: 'Ether?' as const,
+			currencyTicker: 'ETH?' as const,
+			primary: false as const,
+			minimized: true as const,
+		}
+		await changeSimulationMode({ simulationMode: false, rpcNetwork: signerOnlyNetwork, activeSigningAddress: firstAddress.address })
+		await browser.storage.local.set({ rpcEntries: [] })
+		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
+		const owner = createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService }))
+		owner.clear()
+		const connections: WebsiteTabConnections = new Map()
+
+		await changeActiveAddressAndChain(owner, connections, { simulationMode: false, activeAddress: firstAddress.address, signingAddressSelection: 'signer' })
+		assert.equal(owner.isAvailable(), false)
+
+		const customRpc = { ...signerOnlyNetwork, name: 'Custom RPC', httpsRpc: 'https://custom.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true } satisfies RpcEntry
+		await setNewRpcList(owner, connections, { method: 'popup_set_rpc_list', data: [customRpc] }, await getSettings(), publishRpcConfigurationRecovery)
+		assert.equal(owner.isAvailable(), false)
+		const editedBeforeSelection = { ...customRpc, name: 'Edited before selection' }
+		await setNewRpcList(owner, connections, { method: 'popup_set_rpc_list', data: [editedBeforeSelection] }, await getSettings(), publishRpcConfigurationRecovery)
+		const secondRpc = { ...customRpc, name: 'Second custom RPC', httpsRpc: 'https://second-custom.invalid', primary: false }
+		await setNewRpcList(owner, connections, { method: 'popup_set_rpc_list', data: [editedBeforeSelection, secondRpc] }, await getSettings(), publishRpcConfigurationRecovery)
+		await setNewRpcList(owner, connections, { method: 'popup_set_rpc_list', data: [] }, await getSettings(), publishRpcConfigurationRecovery)
+		await setNewRpcList(owner, connections, { method: 'popup_set_rpc_list', data: [customRpc] }, await getSettings(), publishRpcConfigurationRecovery)
+		assert.equal(owner.isAvailable(), false)
+
+		await changeActiveAddressAndChain(owner, connections, { simulationMode: false, rpcNetwork: customRpc })
+		assert.equal(owner.isAvailable(), true)
+
+		const editedRpc = { ...customRpc, name: 'Edited custom RPC' }
+		await setNewRpcList(owner, connections, { method: 'popup_set_rpc_list', data: [editedRpc] }, await getSettings(), publishRpcConfigurationRecovery)
+		assert.equal((await getSettings()).activeRpcNetwork.httpsRpc, customRpc.httpsRpc)
 	})
 
 	test('a selection queued behind an endpoint reset uses the installed services', async () => {
@@ -495,6 +657,42 @@ describe('active settings concurrency', () => {
 			assert.equal((await getSettings()).activeSimulationAddress, selectedAddress.address)
 			expect(pending.map((request) => request.requestAccessToAddress?.address)).toEqual([selectedAddress.address])
 			expect((await getTabState(1)).tabIconDetails).toEqual({ icon: ICON_NOT_ACTIVE, iconReason: 'example.test has PENDING access request for Second address!' })
+		} finally {
+			for (const request of pending) {
+				await resolveInterceptorAccess(simulationServicesOwner, connections, {
+					userReply: 'noResponse', accessRequestId: request.accessRequestId,
+					originalRequestAccessToAddress: selectedAddress.address, requestAccessToAddress: selectedAddress.address,
+				}, noopPublishRpcConnectionStatus)
+			}
+		}
+	})
+
+	test.each(['transition', 'recovery'])('completes access UI when %s publication fails after reconciliation', async (entryPoint) => {
+		installBrowserMock()
+		const { changeActiveAddressAndChain, changeSimulationMode, getPendingAccessRequests, getSettings, publishRpcConfigurationRecovery, resolveInterceptorAccess, setRpcConfiguration, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
+		await updateUserAddressBookEntries(() => [selectedAddress])
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: selectedAddress.address })
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin: 'example.test' }, access: true }])
+		const previousSettings = await getSettings()
+		const replacementRpc = { ...previousSettings.activeRpcNetwork, name: 'Recovered RPC', httpsRpc: 'https://recovered.invalid' }
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port } = createPort(socket.tabId)
+		const connections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'example.test', approved: true, wantsToConnect: true },
+		} }]])
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const failure = new Error('Account update broadcast failed')
+		const failingOwner = { ...simulationServicesOwner, getCurrent: () => { throw failure } }
+		if (entryPoint === 'recovery') await setRpcConfiguration([replacementRpc], replacementRpc)
+
+		const publication = entryPoint === 'transition'
+			? changeActiveAddressAndChain(failingOwner, connections, { simulationMode: true, rpcNetwork: replacementRpc })
+			: publishRpcConfigurationRecovery(failingOwner, connections, previousSettings, replacementRpc)
+		await assert.rejects(publication, (error: unknown) => error === failure)
+		const pending = await getPendingAccessRequests()
+		try {
+			expect(pending.map((request) => request.requestAccessToAddress?.address)).toEqual([selectedAddress.address])
 		} finally {
 			for (const request of pending) {
 				await resolveInterceptorAccess(simulationServicesOwner, connections, {

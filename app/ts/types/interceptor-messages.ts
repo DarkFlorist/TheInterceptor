@@ -717,7 +717,10 @@ export const SetRpcList = funtypes.ReadonlyObject({
 type UpdateRPCList = funtypes.Static<typeof UpdateRPCList>
 const UpdateRPCList = funtypes.ReadonlyObject({
 	method: funtypes.Union(funtypes.Literal('popup_update_rpc_list')),
-	data: RpcEntries,
+	data: funtypes.ReadonlyObject({
+		rpcEntries: RpcEntries,
+		rpcConfigurationAvailable: funtypes.Boolean,
+	}),
 })
 
 export { ChangeActiveChain } from './popupSettingsRequests.js'
@@ -815,6 +818,7 @@ const SettingsOpenedReply = funtypes.ReadonlyObject({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
 		safeAppsCompatibilityMode: funtypes.Boolean,
+		rpcConfigurationAvailable: funtypes.Boolean,
 		activeRpcNetwork: RpcNetwork,
 		rpcEntries: RpcEntries,
 	})
@@ -1055,6 +1059,8 @@ const PopupMessageRuntype = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_clearUnexpectedError') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_import_settings'), data: funtypes.ReadonlyObject({ fileContents: funtypes.String }) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_get_export_settings') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_retryRpcConfiguration') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_restoreDefaultRpcConfiguration') }),
 	SimulateGovernanceContractExecution,
 	SimulateGnosisSafeTransaction,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSettings') }),

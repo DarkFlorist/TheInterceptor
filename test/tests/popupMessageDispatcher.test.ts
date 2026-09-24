@@ -121,6 +121,7 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 		websiteTabConnections: new Map(),
 		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService })),
 		settings,
+		rpcConfiguration: { status: 'ready', rpcEntries: [settings.activeRpcNetwork], activeRpcNetwork: settings.activeRpcNetwork },
 		publishRpcConnectionStatus: async () => undefined,
 		simulationAbortController: new AbortController(),
 		confirmTransactionAbortController: new AbortController(),
@@ -169,6 +170,60 @@ describe('popup message dispatcher seams', () => {
 		await handler(context, { method: 'popup_requestSimulationMetadata' })
 		assert.equal(observed.length, 4)
 		for (const [index, expected] of [replacement, replacement, last, last].entries()) assert.strictEqual(observed[index], expected)
+	})
+
+	test.each(['unavailable', 'signer-only'] as const)('RPC-backed popup handlers stop at the shared boundary for %s configuration', async (configurationKind) => {
+		const context = createDispatcherContext(async () => { throw new Error('reset must not run') })
+		if (configurationKind === 'unavailable') {
+			context.rpcConfiguration = { status: 'unavailable', reason: 'corrupt' }
+		} else {
+			const signerOnlyNetwork = { ...context.settings.activeRpcNetwork, httpsRpc: undefined, currencyName: 'Ether?' as const, currencyTicker: 'ETH?' as const, primary: false as const }
+			context.settings = { ...context.settings, activeRpcNetwork: signerOnlyNetwork }
+			context.rpcConfiguration = { status: 'ready', rpcEntries: [], activeRpcNetwork: signerOnlyNetwork }
+			context.simulationServicesOwner.clear()
+		}
+		const ownerWasAvailable = context.simulationServicesOwner.isAvailable()
+
+		assert.equal(await dispatchPopupMessage(context, { method: 'popup_refreshSimulation' }), undefined)
+		assert.equal(await dispatchPopupMessage(context, {
+			method: 'popup_confirmDialog',
+			data: {
+				action: 'reject',
+				errorString: undefined,
+				uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 1n } },
+			},
+		}), undefined)
+		assert.equal(await dispatchPopupMessage(context, { method: 'popup_resetSimulation' }), undefined)
+		assert.deepEqual(await dispatchPopupMessage(context, {
+			method: 'popup_setSafeSimulationSigner',
+			data: { chainId: 1n, safeAddress: 2n, safeSimulationSignerAddress: 3n },
+		}), {
+			type: 'SetSafeSimulationSignerReply',
+			ok: false,
+			message: 'RPC configuration is unavailable. Restore it before changing the Safe simulation signer.',
+		})
+		assert.deepEqual(await dispatchPopupMessage(context, {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: {
+				type: 'safe',
+				name: 'Unavailable Safe',
+				address: 2n,
+				chainId: 1n,
+				entrySource: 'User',
+				useAsActiveAddress: false,
+				safeSimulationSignerAddress: 3n,
+			},
+		}), {
+			type: 'AddOrModifyAddressBookEntryReply',
+			ok: false,
+			message: 'RPC configuration is unavailable. Restore it before changing address-book entries.',
+		})
+		assert.deepEqual(await dispatchPopupMessage(context, {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: { type: 'contact', name: 'Offline contact', address: 4n, entrySource: 'User' },
+		}), { type: 'AddOrModifyAddressBookEntryReply', ok: true })
+		assert.equal(Array.isArray(storageState.userAddressBookEntriesV3), true)
+		assert.equal(context.simulationServicesOwner.isAvailable(), ownerWasAvailable)
 	})
 
 	test('returns a save failure when address-book persistence fails', async () => {

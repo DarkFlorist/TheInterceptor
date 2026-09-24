@@ -4,25 +4,42 @@ import { serialize } from '../../types/wire-types.js'
 import { isJSON } from '../../utils/json.js'
 import { silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
-import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
-import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, importSettingsAndAddressBook } from '../settings.js'
+import { getRpcConfigurationState, setRpcConfiguration, setRpcList } from '../storageVariables.js'
+import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettingsSnapshot, getUseTabsInsteadOfPopup, importSettingsAndAddressBook } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
+import { DEFAULT_RPCS } from '../../config/defaults.js'
+import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
+import { resolveRpcServicesTarget, rpcConfigurationIsReady, rpcConfigurationIsUsable } from '../rpcConfigurationLifecycle.js'
 
-export async function settingsOpened() {
+type PublishRpcConfigurationRecovery = (simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, previousSettings: Settings, activeRpcNetwork: Settings['activeRpcNetwork'], forceChainChanged?: boolean) => Promise<void>
+
+async function sendRpcListUpdate(rpcEntries: SetRpcList['data'], rpcConfigurationAvailable: boolean) {
+	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: { rpcEntries, rpcConfigurationAvailable } })
+}
+
+export async function settingsOpened(simulationServicesOwner: SimulationServicesOwner) {
 	const useTabsInsteadOfPopupPromise = silenceChromeUnCaughtPromise(getUseTabsInsteadOfPopup())
 	const metamaskCompatibilityModePromise = silenceChromeUnCaughtPromise(getMetamaskCompatibilityMode())
 	const safeAppsCompatibilityModePromise = silenceChromeUnCaughtPromise(getSafeAppsCompatibilityMode())
-	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
-	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
+	const settingsSnapshotPromise = silenceChromeUnCaughtPromise(getSettingsSnapshot())
+	const [useTabsInsteadOfPopup, metamaskCompatibilityMode, safeAppsCompatibilityMode, settingsSnapshot] = await Promise.all([
+		useTabsInsteadOfPopupPromise,
+		metamaskCompatibilityModePromise,
+		safeAppsCompatibilityModePromise,
+		settingsSnapshotPromise,
+	])
+	const { rpcConfiguration, settings } = settingsSnapshot
+	const rpcConfigurationAvailable = rpcConfigurationIsUsable(rpcConfiguration, simulationServicesOwner)
 
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_requestSettingsReply' as const,
 		data: {
-			useTabsInsteadOfPopup: await useTabsInsteadOfPopupPromise,
-			metamaskCompatibilityMode: await metamaskCompatibilityModePromise,
-			safeAppsCompatibilityMode: await safeAppsCompatibilityModePromise,
-			rpcEntries: await rpcEntriesPromise,
-			activeRpcNetwork: (await settingsPromise).activeRpcNetwork
+			useTabsInsteadOfPopup,
+			metamaskCompatibilityMode,
+			safeAppsCompatibilityMode,
+			rpcConfigurationAvailable,
+			rpcEntries: rpcConfigurationAvailable && rpcConfigurationIsReady(rpcConfiguration) ? rpcConfiguration.rpcEntries : [],
+			activeRpcNetwork: settings.activeRpcNetwork
 		}
 	})
 }
@@ -47,9 +64,61 @@ export async function exportSettings() {
 	})
 }
 
-export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, request: SetRpcList, settings: Settings) {
+export async function setNewRpcList(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, request: SetRpcList, settings: Settings, publishRecovery: PublishRpcConfigurationRecovery) {
+	const previousConfiguration = await getRpcConfigurationState()
+	if (previousConfiguration.status === 'unavailable') {
+		simulationServicesOwner.clear()
+		const activeRpcNetwork = request.data.find((rpc) => rpc.primary) ?? request.data[0]
+		if (previousConfiguration.reason !== 'empty' || activeRpcNetwork === undefined) throw new Error('RPC configuration is unavailable. Restore it before editing RPC connections.')
+		await setRpcConfiguration(request.data, activeRpcNetwork)
+		simulationServicesOwner.recover(activeRpcNetwork)
+		await sendRpcListUpdate(request.data, true)
+		await publishRecovery(simulationServicesOwner, websiteTabConnections, settings, activeRpcNetwork)
+		return
+	}
+	if (previousConfiguration.activeRpcNetwork.httpsRpc === undefined && !simulationServicesOwner.isAvailable()) {
+		await setRpcList(request.data)
+		await sendRpcListUpdate(request.data, true)
+		return
+	}
+	if (!simulationServicesOwner.isAvailable()) throw new Error('RPC configuration is unavailable. Restore it before editing RPC connections.')
+	if (request.data.length === 0) {
+		await setRpcList(request.data)
+		simulationServicesOwner.clear()
+		await sendRpcListUpdate(request.data, previousConfiguration.activeRpcNetwork.httpsRpc === undefined)
+		return
+	}
 	await setRpcList(request.data)
-	await sendPopupMessageToOpenWindows({ method: 'popup_update_rpc_list', data: request.data })
-	const primary = await getPrimaryRpcForChain(settings.activeRpcNetwork.chainId)
+	if (!simulationServicesOwner.isAvailable()) throw new Error('RPC configuration became unavailable while saving RPC connections.')
+	const primary = request.data.find((rpc) => rpc.chainId === settings.activeRpcNetwork.chainId && rpc.primary)
 	if (primary !== undefined) simulationServicesOwner.reset(primary)
+	await sendRpcListUpdate(request.data, true)
+}
+
+export async function restoreDefaultRpcConfiguration(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, settings: Settings, publishRecovery: PublishRpcConfigurationRecovery) {
+	const previousConfiguration = await getRpcConfigurationState()
+	const activeRpcNetwork = DEFAULT_RPCS[0]
+	if (activeRpcNetwork === undefined) throw new Error('Bundled RPC configuration is empty.')
+	await setRpcConfiguration(DEFAULT_RPCS, activeRpcNetwork)
+	simulationServicesOwner.recover(activeRpcNetwork)
+	await sendRpcListUpdate(DEFAULT_RPCS, true)
+	const previousActiveRpcNetwork = 'activeRpcNetwork' in previousConfiguration ? previousConfiguration.activeRpcNetwork : undefined
+	await publishRecovery(simulationServicesOwner, websiteTabConnections, settings, activeRpcNetwork, previousActiveRpcNetwork === undefined)
+}
+
+export async function retryRpcConfiguration(simulationServicesOwner: SimulationServicesOwner) {
+	const configuration = await getRpcConfigurationState()
+	if (configuration.status !== 'ready') {
+		simulationServicesOwner.clear()
+		await sendRpcListUpdate([], false)
+		return
+	}
+	const rpcNetwork = resolveRpcServicesTarget(configuration)
+	if (rpcNetwork === undefined) {
+		simulationServicesOwner.clear()
+		await sendRpcListUpdate(configuration.rpcEntries, true)
+		return
+	}
+	simulationServicesOwner.recover(rpcNetwork)
+	await sendRpcListUpdate(configuration.rpcEntries, true)
 }

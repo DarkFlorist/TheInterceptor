@@ -167,13 +167,17 @@ export async function browserStorageLocalSet2(items: LocalStorageItems2) {
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {
 	return LocalStorageItems.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }
+export const safeParseLocalStorageItems = (items: unknown) => LocalStorageItems.safeParse(items)
 export function browserStorageLocalSafeParse(items: unknown): LocalStorageItems | undefined {
-	const parsed = LocalStorageItems.safeParse(items)
+	const parsed = safeParseLocalStorageItems(items)
 	if (parsed.success) return parsed.value
 	return undefined
 }
-export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems | undefined> {
-	return browserStorageLocalSafeParse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
+export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | LocalStorageKey[], onValidationFailure?: (failure: funtypes.Failure) => void): Promise<LocalStorageItems | undefined> {
+	const parsed = safeParseLocalStorageItems(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
+	if (parsed.success) return parsed.value
+	onValidationFailure?.(parsed)
+	return undefined
 }
 
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {

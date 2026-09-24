@@ -5,7 +5,7 @@ import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
 import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
-import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
+import { getRpcConfigurationStateWithStorageSnapshot, getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
@@ -13,7 +13,9 @@ import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } fr
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
+import type { RpcConfigurationState } from './storageVariables.js'
 import { hasOwnKey } from '../utils/typescript.js'
+import { getRpcNetworkForSettings } from './rpcConfigurationLifecycle.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -71,35 +73,59 @@ async function getParsedStorageValueOrDefault<Key extends keyof StartupStorageDe
 	return await getParsedStorageValueOrDefaultFromItems(await browser.storage.local.get(key), key, defaultValue)
 }
 
-export async function getSettings() : Promise<Settings> {
+const SETTINGS_STORAGE_KEYS = [
+	'independentActiveSimulationAddress',
+	'activeSigningSafeAddress',
+	'openedPageV2',
+	'useSignersAddressAsActiveAddress',
+	'websiteAccess',
+	'simulationMode',
+] as const
+
+async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, unknown>>, activeRpcNetwork: RpcNetwork): Promise<Settings> {
 	if (defaultRpcs[0] === undefined || defaultActiveAddresses[0] === undefined) throw new Error('default rpc or default address was missing')
 	const defaultPage: Page = { page: 'Home' }
-	const storedItems = await silenceChromeUnCaughtPromise(browser.storage.local.get([
-		'independentActiveSimulationAddress',
-		'activeSigningSafeAddress',
-		'openedPageV2',
-		'useSignersAddressAsActiveAddress',
-		'websiteAccess',
-		'simulationMode',
-		'activeRpcNetwork',
-	]))
 	const activeSimulationAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'independentActiveSimulationAddress', defaultActiveAddresses[0].address))
 	const activeSigningSafeAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeSigningSafeAddress', undefined))
 	const openedPagePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'openedPageV2', defaultPage))
 	const useSignersAddressAsActiveAddressPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'useSignersAddressAsActiveAddress', false))
 	const websiteAccessPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', []).then(sanitizeWebsiteAccess))
 	const simulationModePromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'simulationMode', defaultSimulationMode))
-	const activeRpcNetworkPromise = silenceChromeUnCaughtPromise(getParsedStorageValueOrDefaultFromItems(storedItems, 'activeRpcNetwork', defaultRpcs[0]))
-	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode] = await Promise.all([
+	const [activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, simulationMode] = await Promise.all([
 		activeSimulationAddressPromise,
 		activeSigningSafeAddressPromise,
 		openedPagePromise,
 		useSignersAddressAsActiveAddressPromise,
 		websiteAccessPromise,
-		activeRpcNetworkPromise,
 		simulationModePromise,
 	])
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
+}
+
+export async function getSettings() : Promise<Settings> {
+	return (await getSettingsSnapshot()).settings
+}
+
+export async function getSettingsSnapshot(): Promise<{ readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState }> {
+	const { storedItems, rpcConfiguration } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
+	const activeRpcNetwork = getRpcNetworkForSettings(rpcConfiguration)
+	const settings = await getSettingsFromStorageItems(storedItems, activeRpcNetwork)
+	return { settings, rpcConfiguration }
+}
+
+const capturedRpcNetworkMarker = Symbol('capturedRpcNetwork')
+export type CapturedRpcNetwork = {
+	readonly activeRpcNetwork: RpcNetwork
+	readonly [capturedRpcNetworkMarker]: true
+}
+
+export function captureRpcNetwork(settings: Pick<Settings, 'activeRpcNetwork'>): CapturedRpcNetwork {
+	return { activeRpcNetwork: settings.activeRpcNetwork, [capturedRpcNetworkMarker]: true }
+}
+
+export async function getSettingsForCapturedRpcNetwork(capturedRpcNetwork: CapturedRpcNetwork): Promise<Settings> {
+	const { storedItems } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
+	return await getSettingsFromStorageItems(storedItems, capturedRpcNetwork.activeRpcNetwork)
 }
 
 export function getInterceptorDisabledSites(settings: Settings): string[] {
