@@ -1,4 +1,5 @@
-import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
+import { getSettings, updateWebsiteAccess } from '../background/settings.js'
+import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
 
@@ -9,6 +10,7 @@ const otherExtensionInjectionTargetErrorMessage = 'Cannot access a chrome-extens
 const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cannot be scripted.'
 const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
 const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
+const getInterceptorDisabledSites = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((entry) => entry.interceptorDisabled === true).map((entry) => entry.website.websiteOrigin)
 
 function getManifestV3ExcludeMatchesForOrigin(origin: string) {
 	if (origin === '') return ['file:///*']
@@ -39,7 +41,7 @@ export function getManifestV3ExcludeMatches(origins: readonly string[]) {
 }
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
-	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(await getSettings()))
+	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites((await getSettings()).websiteAccess))
 	try {
 		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
@@ -78,7 +80,7 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 
 const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {
 	if (!isInjectableSite(content.url)) return false
-	const disabledSites = getInterceptorDisabledSites(await getSettings())
+	const disabledSites = getInterceptorDisabledSites((await getSettings()).websiteAccess)
 	// The tab can navigate while settings are loading, including to another extension page where injection is prohibited.
 	const thisTab = await getTabIfExists(content.tabId)
 	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false
@@ -101,4 +103,26 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 export const updateContentScriptInjectionStrategyManifestV2 = async () => {
 	browser.webNavigation.onCommitted.removeListener(injectLogic)
 	browser.webNavigation.onCommitted.addListener(injectLogic, { url: injectableSitesWildcard.map((urlMatches) => ({ urlMatches })) })
+}
+
+export const updateContentScriptInjectionStrategy = async () => {
+	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
+	else await updateContentScriptInjectionStrategyManifestV2()
+}
+
+function haveSameDisabledSites(previousWebsiteAccess: WebsiteAccessArray, nextWebsiteAccess: WebsiteAccessArray) {
+	const previousDisabledSites = new Set(getInterceptorDisabledSites(previousWebsiteAccess))
+	const nextDisabledSites = new Set(getInterceptorDisabledSites(nextWebsiteAccess))
+	return previousDisabledSites.size === nextDisabledSites.size && [...previousDisabledSites].every((origin) => nextDisabledSites.has(origin))
+}
+
+export async function updateWebsiteAccessAndContentScriptInjectionStrategy(update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray) {
+	let disabledSitesChanged = false
+	await updateWebsiteAccess((previousWebsiteAccess) => {
+		const nextWebsiteAccess = update(previousWebsiteAccess)
+		disabledSitesChanged = !haveSameDisabledSites(previousWebsiteAccess, nextWebsiteAccess)
+		return nextWebsiteAccess
+	})
+	if (disabledSitesChanged) await updateContentScriptInjectionStrategy()
+	return disabledSitesChanged
 }

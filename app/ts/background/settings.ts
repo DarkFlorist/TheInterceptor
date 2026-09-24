@@ -102,10 +102,6 @@ export async function getSettings() : Promise<Settings> {
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
 
-export function getInterceptorDisabledSites(settings: Settings): string[] {
-	return settings.websiteAccess.filter((site) => site.interceptorDisabled === true).map((site) => site.website.websiteOrigin)
-}
-
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
 export const getPage = async() => (await browserStorageLocalGet('openedPageV2'))?.openedPageV2 ?? { page: 'Home' }
 
