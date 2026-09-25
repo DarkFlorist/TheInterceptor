@@ -130,7 +130,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 		const displayedSigningSafe = await getConfiguredSigningSafe(updatedSettings, signerAccounts)
 		await sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: {
 			tabId,
-			activeSigningAddress: displayedSigningSafe?.address ?? activeSigningAddress,
+			activeSigningAddress: updatedSettings.selectedSigningAddress ?? displayedSigningSafe?.address ?? activeSigningAddress,
 			activeSigningSafeAddress: displayedSigningSafe?.address,
 		} })
 		// Account-change waiters must only resume after the matching Safe-or-EOA selection is fully restored.
@@ -153,6 +153,7 @@ async function changeSignerChain(simulationServicesOwner: SimulationServicesOwne
 		return previousState.signerChain === signerChain ? previousState : modifyObject(previousState, { signerChain })
 	})
 	if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return
+	if ((await getSettings()).selectedSigningAddress !== undefined) return
 	const oldSignerChain = tabStateChange.previousState.signerChain
 	// update active address if we are using signers address
 	const settings = await getSettings()
@@ -208,7 +209,7 @@ export async function walletSwitchEthereumChainReply(simulationServicesOwner: Si
 }
 
 export async function connectedToSigner(_simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, activeAddress: bigint | undefined) {
-	const [signerConnected, signerName, signerProviderGeneration] = ConnectedToSigner.parse(request).params
+	const [signerConnected, signerName, signerProviderGeneration, signerProvider] = ConnectedToSigner.parse(request).params
 	const isTopFrame = isTopFramePort(port)
 	const socket = getSocketFromPort(port)
 	const requestSocket = request.uniqueRequestIdentifier.requestSocket
@@ -231,14 +232,14 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 		beginSignerStateConfirmation(tabConnection)
 		const signerMissing = isSignerMissing(signerName)
 		await updateTabState(socket.tabId, (previousState: TabState) => {
-			const signerIdentityChanged = previousState.signerName !== signerName
+			const signerIdentityChanged = previousState.signerName !== signerName || JSON.stringify(previousState.signerProvider) !== JSON.stringify(signerProvider)
 			const clearSignerState = !signerStateWasConfirmed
 				|| previousSignerProviderGeneration !== signerProviderGeneration
 				|| signerIdentityChanged
 				|| signerMissing
 				|| !signerConnected
 			const baseState = clearSignerState ? clearSignerDerivedTabState(previousState) : previousState
-			return modifyObject(baseState, { signerName, signerConnected: signerMissing ? false : signerConnected })
+			return modifyObject(baseState, { signerName, signerProvider, signerConnected: signerMissing ? false : signerConnected })
 		})
 		if (!isCurrentWebsiteConnection(tabConnection, socket, port) || tabConnection.signerStateOwner.connectionName !== socket.connectionName) {
 			return await getConnectedToSignerResult()

@@ -221,7 +221,7 @@ describe('background eth_accounts', () => {
 		), true)
 	})
 
-	test('rejects arbitrary EOAs and unverified or unowned Safes selected through popup signing-mode bypasses', async () => {
+	test('allows saved ordinary addresses while rejecting unverified or unowned Safes in signing mode', async () => {
 		const { readStoredValue } = installBrowserMock()
 		const {
 			changeActiveAddress,
@@ -284,7 +284,8 @@ describe('background eth_accounts', () => {
 		})
 
 		const settings = await getSettings()
-		assert.equal(readStoredValue('activeSigningAddress'), signerAddress)
+		assert.equal(readStoredValue('activeSigningAddress'), arbitraryEoa)
+		assert.equal(settings.selectedSigningAddress, arbitraryEoa)
 		assert.equal(settings.useSignersAddressAsActiveAddress, true)
 	})
 

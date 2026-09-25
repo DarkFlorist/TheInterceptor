@@ -1,3 +1,4 @@
+import { signingPageHandler } from './signingPageHandler.js'
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import 'webextension-polyfill'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
@@ -350,9 +351,13 @@ browser.tabs.onUpdated.addListener(onTabUpdated)
 browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () => {
 	return await onContentScriptConnected(waitForBackgroundStartup, port, websiteTabConnections)
 }))
-browser.runtime.onMessage.addListener((message: unknown) => Promise.resolve(catchAllErrorsAndCall(async () => {
+browser.runtime.onMessage.addListener((message: unknown, sender) => Promise.resolve(catchAllErrorsAndCall(async () => {
 	const { simulationServicesOwner } = await waitForBackgroundStartup()
-	const settings = await getSettings()
-	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, settings, rpcConnectionStatusPublisher.publishRpcConnectionStatus)
+	const simulationServices = simulationServicesOwner.getCurrent()
+	if (typeof message === 'object' && message !== null && 'method' in message && typeof message.method === 'string' && message.method.startsWith('signing_')) {
+		if (sender.id !== browser.runtime.id || sender.url === undefined || !sender.url.startsWith(browser.runtime.getURL(''))) return { ok: false, message: 'Signing controls are available only inside Interceptor' }
+		return await signingPageHandler(message, simulationServices.ethereum, simulationServices.tokenPriceService, websiteTabConnections)
+	}
+	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, await getSettings(), rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 })))
 addWindowTabListeners(onCloseWindow, onCloseTab)

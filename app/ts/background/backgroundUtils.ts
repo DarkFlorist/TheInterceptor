@@ -21,14 +21,14 @@ type ConfiguredActiveAddressResolution =
 	| { readonly useConfiguredAddress: true, readonly activeAddress: AddressBookEntry | undefined }
 
 async function resolveConfiguredActiveAddress(settings: Settings, signerAccounts: readonly bigint[], walletSelectedAddress: bigint | undefined, addressBookEntries: AddressBookEntries | undefined): Promise<ConfiguredActiveAddressResolution> {
-	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningSafeAddress
+	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.selectedSigningAddress ?? settings.activeSigningSafeAddress
 	if ((settings.simulationMode && settings.useSignersAddressAsActiveAddress) || configuredAddress === undefined) return { useConfiguredAddress: false }
 	if (addressBookEntries === undefined) throw new Error('Address-book entries are required to resolve a configured active address.')
 	const modeInput = settings.simulationMode
 		? { mode: 'simulation' as const, activeAddress: configuredAddress }
 		: {
 			mode: 'signing' as const,
-			selectedAddress: { type: 'safe' as const, address: configuredAddress },
+			selectedAddress: settings.selectedSigningAddress === undefined ? { type: 'safe' as const, address: configuredAddress } : { type: 'walletAccount' as const, address: configuredAddress },
 			signerAccounts,
 			walletFallbackAddress: walletSelectedAddress,
 		}
@@ -48,7 +48,7 @@ async function resolveConfiguredActiveAddress(settings: Settings, signerAccounts
 }
 
 async function getConfiguredActiveAddressBookEntries(settings: Settings) {
-	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningSafeAddress
+	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.selectedSigningAddress ?? settings.activeSigningSafeAddress
 	if ((settings.simulationMode && settings.useSignersAddressAsActiveAddress) || configuredAddress === undefined) return undefined
 	return await getUserAddressBookEntries()
 }
@@ -252,7 +252,7 @@ export function createInternalMessageListener(handler: (message: WindowMessage) 
 	}
 }
 
-type HTMLFile = 'popup' | 'addressBook' | 'changeChain' | 'watchAsset' | 'confirmTransaction' | 'interceptorAccess' | 'settingsView' | 'websiteAccess' | 'fetchSimulationStack' | 'simulationStack'
+type HTMLFile = 'directSigning' | 'signingWallet' | 'popup' | 'addressBook' | 'changeChain' | 'watchAsset' | 'confirmTransaction' | 'interceptorAccess' | 'settingsView' | 'websiteAccess' | 'fetchSimulationStack' | 'simulationStack'
 export function getHtmlFile(file: HTMLFile) {
 	const manifest = browser.runtime.getManifest()
 	if (manifest.manifest_version === 2) return `/html/${ file }.html`

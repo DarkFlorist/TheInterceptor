@@ -9,7 +9,7 @@ import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, Et
 import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
 import { Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
-import { SignerName } from './signerTypes.js'
+import { BrowserProviderIdentity, SignerName } from './signerTypes.js'
 import { PendingAccessRequests, PopupPendingTransactionOrSignableMessage } from './accessRequest.js'
 import { RpcEntries, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
@@ -174,7 +174,7 @@ const NonForwardingRPCRequestReturnValue = funtypes.Intersect(
 type ForwardToWallet = funtypes.Static<typeof ForwardToWallet>
 const ForwardToWalletRequest = funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams)
 const ForwardToWallet = funtypes.Intersect( // forward directly to wallet
-	funtypes.ReadonlyObject({ type: funtypes.Literal('forwardToSigner') }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('forwardToSigner') }).And(funtypes.ReadonlyPartial({ expectedProviderId: funtypes.String })),
 	ForwardToWalletRequest,
 )
 
@@ -183,7 +183,7 @@ const ReplyWithSignersReplyForward = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('forwardToSigner'),
 		replyWithSignersReply: funtypes.Literal(true),
-	}),
+	}).And(funtypes.ReadonlyPartial({ expectedProviderId: funtypes.String })),
 	funtypes.Union(
 		ForwardToWalletRequest,
 		funtypes.Intersect(
@@ -420,7 +420,7 @@ export const SignerChainChangeConfirmation = funtypes.ReadonlyObject({
 export type ConnectedToSigner = funtypes.Static<typeof ConnectedToSigner>
 export const ConnectedToSigner = funtypes.ReadonlyObject({
 	method: funtypes.Literal('connected_to_signer'),
-	params: funtypes.Tuple(funtypes.Boolean, SignerName, funtypes.Number),
+	params: funtypes.Union(funtypes.Tuple(funtypes.Boolean, SignerName, funtypes.Number), funtypes.Tuple(funtypes.Boolean, SignerName, funtypes.Number, BrowserProviderIdentity)),
 }).asReadonly()
 
 
@@ -600,7 +600,7 @@ const InterceptorAccessDialog = funtypes.ReadonlyObject({
 })
 
 export type Settings = funtypes.Static<typeof Settings>
-export const Settings = funtypes.ReadonlyObject({
+export const Settings = funtypes.Intersect(funtypes.ReadonlyPartial({ selectedSigningAddress: EthereumAddress }), funtypes.ReadonlyObject({
 	activeSimulationAddress: OptionalEthereumAddress,
 	activeSigningSafeAddress: OptionalEthereumAddress,
 	activeRpcNetwork: RpcNetwork,
@@ -608,7 +608,7 @@ export const Settings = funtypes.ReadonlyObject({
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
 	websiteAccess: WebsiteAccessArray,
 	simulationMode: funtypes.Boolean,
-})
+}))
 
 export type UpdateHomePage = funtypes.Static<typeof UpdateHomePage>
 export const UpdateHomePage = funtypes.ReadonlyObject({

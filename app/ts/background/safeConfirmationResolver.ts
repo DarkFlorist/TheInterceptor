@@ -1,3 +1,4 @@
+import { getSigningWalletBinding } from './storageVariables.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { EIP712Message } from '../types/eip721.js'
@@ -71,6 +72,8 @@ export async function getSafeSignerMismatchApprovalStatus(
 	reviewedSafeSigner: bigint,
 	refreshedSelection?: RefreshedSafeSignerSelection,
 ) {
+	const binding = await getSigningWalletBinding(reviewedSafeSigner)
+	if (binding !== undefined && binding.wallet.type !== 'browser') return undefined
 	const tabState = await getTabState(tabId)
 	const signerName = getPrettySignerName(tabState.signerName)
 	const selectedSigner = refreshedSelection === undefined

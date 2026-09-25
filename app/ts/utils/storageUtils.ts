@@ -6,6 +6,7 @@ import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addr
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { SignerName, SigningAddressPreferences } from '../types/signerTypes.js'
+import { SigningWalletBindings } from '../types/signingWallet.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
@@ -74,6 +75,8 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	popupVisualisation: funtypes.Union(funtypes.Undefined, CompleteVisualizedSimulation),
 	signerName: SignerName,
 	signingAddressPreferences: SigningAddressPreferences,
+	signingWalletBindings: SigningWalletBindings,
+	selectedSigningAddress: EthereumAddress,
 	currentTabId: funtypes.Union(funtypes.Undefined, funtypes.Number),
 	rpcConnectionStatus: RpcConnectionStatus,
 	ethereumSubscriptionsAndFilters: EthereumSubscriptionsAndFilters,
@@ -103,6 +106,7 @@ const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRunt
 
 type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
 const LocalStorageKey = funtypes.Union(
+	funtypes.Literal('selectedSigningAddress'),
 	funtypes.Literal('activeSigningAddress'),
 	funtypes.Literal('activeSigningSafeAddress'),
 	funtypes.Literal('independentActiveSimulationAddress'),
@@ -118,6 +122,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('popupVisualisation'),
 	funtypes.Literal('signerName'),
 	funtypes.Literal('signingAddressPreferences'),
+	funtypes.Literal('signingWalletBindings'),
 	funtypes.Literal('currentTabId'),
 	funtypes.Literal('rpcConnectionStatus'),
 	funtypes.Literal('ethereumSubscriptionsAndFilters'),

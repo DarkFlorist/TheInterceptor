@@ -201,7 +201,7 @@ describe('settings import', () => {
 		assert.deepEqual(await getPage(), { page: 'Settings' })
 	})
 
-	test('round-trips Safe settings in version 1.6 exports', async () => {
+	test('round-trips Safe settings in version 1.7 exports', async () => {
 		const signingSafeAddress = 0x4444444444444444444444444444444444444444n
 		const signerAddress = 0x4545454545454545454545454545454545454545n
 		const { changeSimulationMode, exportSettingsAndAddressBook, getSafeAppsCompatibilityMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference, setSafeAppsCompatibilityMode } = await settingsModulePromise
@@ -225,8 +225,8 @@ describe('settings import', () => {
 		await setSafeAppsCompatibilityMode(true)
 
 		const exportedSettings = await exportSettingsAndAddressBook()
-		assert.equal(exportedSettings.version, '1.6')
-		if (exportedSettings.version !== '1.6') throw new Error('Expected current settings export version')
+		assert.equal(exportedSettings.version, '1.7')
+		if (exportedSettings.version !== '1.7') throw new Error('Expected current settings export version')
 		assert.equal(exportedSettings.settings.activeSigningSafeAddress, signingSafeAddress)
 		assert.deepEqual(exportedSettings.settings.signingAddressPreferences, [{ signerAddress, selection: 'safe', safeAddress: signingSafeAddress, chainId: testRpcNetwork.chainId }])
 		assert.equal(exportedSettings.settings.safeAppsCompatibilityMode, true)

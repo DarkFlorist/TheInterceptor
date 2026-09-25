@@ -1,3 +1,5 @@
+import { SigningRequestContext } from '../subcomponents/SigningRequestContext.js'
+import { signingWalletDescription } from '../../signing/backend.js'
 import { SafeProposalDetails, SafeProposalSigningRequestCard } from './SafeProposalDetails.js'
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
@@ -688,6 +690,7 @@ type ButtonsParams = {
 }
 
 type ConfirmationActionButtonsParams = Omit<ButtonsParams, 'currentPendingTransactionOrSignableMessage'> & {
+	directWalletLabel?: string
 	identified: {
 		signingAction: string
 		simulationAction: string
@@ -698,7 +701,7 @@ type ConfirmationActionButtonsParams = Omit<ButtonsParams, 'currentPendingTransa
 	waitingForSigner: boolean
 }
 
-export function ConfirmationActionButtons({ identified, signerName, simulationMode, waitingForSigner, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToSafeStack, addToSafeStackButtonState = 'inactive', addToSafeStackDisabled = true }: ConfirmationActionButtonsParams) {
+export function ConfirmationActionButtons({ directWalletLabel, identified, signerName, simulationMode, waitingForSigner, reject, rejectButtonState, approve, approveButtonState, confirmDisabled, addToSafeStack, addToSafeStackButtonState = 'inactive', addToSafeStackDisabled = true }: ConfirmationActionButtonsParams) {
 	const addsSafeProposal = addToSafeStack !== undefined && !simulationMode
 	return <div class = 'confirmation-action-buttons-container'>
 		<div class = { `confirmation-action-buttons${ addsSafeProposal ? ' confirmation-action-buttons--safe' : '' }` }>
@@ -735,7 +738,7 @@ export function ConfirmationActionButtons({ identified, signerName, simulationMo
 					</span>
 					: simulationMode
 						? `${ identified.simulationAction }!`
-						: <SignerLogoText signerName = { signerName } text = { addsSafeProposal ? 'Sign & add' : identified.signingAction } />
+						: directWalletLabel === undefined ? <SignerLogoText signerName = { signerName } text = { addsSafeProposal ? 'Sign & add' : `Continue in ${ signerName }` } /> : `Continue with ${ directWalletLabel }`
 				}
 				pendingText = { waitingForSigner
 					? 'Waiting for signer...'
@@ -767,6 +770,7 @@ function ConfirmationButtons({ currentPendingTransactionOrSignableMessage, rejec
 	if (identified === undefined) return <RejectButton onClick = { reject } state = { rejectButtonState }/>
 
 	return <ConfirmationActionButtons
+		directWalletLabel = { currentPendingTransactionOrSignableMessage.signingWalletBinding === undefined || currentPendingTransactionOrSignableMessage.signingWalletBinding.wallet.type === 'browser' ? undefined : signingWalletDescription(currentPendingTransactionOrSignableMessage.signingWalletBinding) }
 		identified = { identified }
 		signerName = { signerName }
 		simulationMode = { currentPendingTransactionOrSignableMessage.simulationMode }
@@ -1082,6 +1086,7 @@ export function ConfirmTransaction() {
 					</div>
 					<div class = 'popup-contents'>
 						<div style = 'margin: 10px'>
+							<SigningRequestContext pending = { currentPendingTransactionOrSignableMessage.value }/>
 							{ currentPendingTransactionOrSignableMessage.value.originalRequestParameters.method === 'eth_sendRawTransaction' && currentPendingTransactionOrSignableMessage.value.type === 'Transaction' && currentPendingTransactionOrSignableMessage.value.transactionIdentifier !== dismissedRawTransactionNotification.value
 								? <DinoSaysNotification
 									text = { `This transaction is signed already. No extra signing required to forward it to ${ currentPendingTransactionOrSignableMessage.value.transactionOrMessageCreationStatus !== 'Simulated' || currentPendingTransactionOrSignableMessage.value.popupVisualisation.statusCode === 'failed' ?

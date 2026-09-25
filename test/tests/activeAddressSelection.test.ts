@@ -201,18 +201,18 @@ describe('active address selection', () => {
 		assert.equal(isSignerConnectedForMode(true, EOA_ADDRESS, { signerAccounts: [EOA_ADDRESS] }), true)
 		assert.equal(isSignerConnectedForMode(true, SAFE_ADDRESS, { signerAccounts: [EOA_ADDRESS] }), false)
 	})
-	test('does not allow selecting an EOA or Safe in signing mode without a wallet account', () => {
+	test('keeps ordinary addresses selectable without a connected wallet while protecting unowned Safes', () => {
 		assert.deepEqual(
 			getSelectableActiveAddresses(activeAddresses, false, 1n, []).map(({ address }) => address),
-			[],
+			[EOA_ADDRESS],
 		)
 		assert.equal(isActiveAddressSelectionAllowed('signer', activeAddresses, false, 1n, []), false)
 	})
 
-	test('shows only current-chain Safes owned by the wallet-selected signer account', () => {
+	test('shows ordinary addresses and current-chain Safes owned by the selected signer', () => {
 		assert.deepEqual(
 			getSelectableActiveAddresses(activeAddresses, false, 1n, [EOA_ADDRESS]).map(({ address }) => address),
-			[SAFE_ADDRESS],
+			[EOA_ADDRESS, SAFE_ADDRESS],
 		)
 	})
 
@@ -273,10 +273,10 @@ describe('active address selection', () => {
 		)
 	})
 
-	test('blocks alternate signing-mode selection paths from choosing arbitrary EOAs or unowned Safes', () => {
+	test('allows saved EOAs through shared selection paths while blocking unowned Safes', () => {
 		assert.equal(isActiveAddressSelectionAllowed('signer', activeAddresses, false, 1n, [EOA_ADDRESS]), true)
-		assert.equal(isActiveAddressSelectionAllowed(EOA_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), false)
-		assert.equal(getActiveAddressSelection(EOA_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), undefined)
+		assert.equal(isActiveAddressSelectionAllowed(EOA_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), true)
+		assert.deepEqual(getActiveAddressSelection(EOA_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), { type: 'addressBookEntry', entry: activeAddresses[0] })
 		assert.equal(isActiveAddressSelectionAllowed(SAFE_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), true)
 		assert.equal(isActiveAddressSelectionAllowed(UNOWNED_SAFE_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), false)
 		assert.throws(() => assertActiveAddressSelectionAllowed(OTHER_CHAIN_SAFE_ADDRESS, activeAddresses, false, 1n, [EOA_ADDRESS]), /configured for another chain/u)

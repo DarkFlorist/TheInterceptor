@@ -5,6 +5,7 @@ import { AddressBookEntries, ContactEntries } from './addressBookTypes.js'
 import { WebsiteAccessArray } from './websiteAccessTypes.js'
 import { EditEnsNamedHashWindowState, ModifyAddressWindowState } from './visualizer-types.js'
 import { SigningAddressPreferences } from './signerTypes.js'
+import { SigningWalletBindings } from './signingWallet.js'
 
 export type Page = funtypes.Static<typeof Page>
 export const Page = funtypes.Union(
@@ -49,6 +50,20 @@ const rpcLegacyExportedSettingsFields = {
 
 const compatibilityExportedSettingsFields = {
 	...rpcLegacyExportedSettingsFields,
+	metamaskCompatibilityMode: funtypes.Boolean,
+}
+
+const independentExportedSettingsFields = {
+	activeSimulationAddress: OptionalEthereumAddress,
+	activeSigningSafeAddress: OptionalEthereumAddress,
+	signingAddressPreferences: SigningAddressPreferences,
+	rpcNetwork: RpcNetwork,
+	openedPage: Page,
+	useSignersAddressAsActiveAddress: funtypes.Boolean,
+	websiteAccess: WebsiteAccessArray,
+	simulationMode: funtypes.Boolean,
+	addressBookEntries: AddressBookEntries,
+	useTabsInsteadOfPopup: funtypes.Boolean,
 	metamaskCompatibilityMode: funtypes.Boolean,
 }
 
@@ -103,17 +118,16 @@ export const ExportedSettings = funtypes.Union(
 		...exportedSettingsEnvelopeFields,
 		version: funtypes.Literal('1.5'),
 		settings: funtypes.ReadonlyObject({
-			activeSimulationAddress: OptionalEthereumAddress,
-			activeSigningSafeAddress: OptionalEthereumAddress,
-			signingAddressPreferences: SigningAddressPreferences,
-			rpcNetwork: RpcNetwork,
-			openedPage: Page,
-			useSignersAddressAsActiveAddress: funtypes.Boolean,
-			websiteAccess: WebsiteAccessArray,
-			simulationMode: funtypes.Boolean,
-			addressBookEntries: AddressBookEntries,
-			useTabsInsteadOfPopup: funtypes.Boolean,
-			metamaskCompatibilityMode: funtypes.Boolean,
+			...independentExportedSettingsFields,
+		})
+	}),
+	funtypes.ReadonlyObject({
+		...exportedSettingsEnvelopeFields,
+		version: funtypes.Literal('1.7'),
+		settings: funtypes.ReadonlyObject({
+			safeAppsCompatibilityMode: funtypes.Boolean,
+			signingWalletBindings: SigningWalletBindings,
+			...independentExportedSettingsFields,
 		})
 	}),
 	funtypes.ReadonlyObject({

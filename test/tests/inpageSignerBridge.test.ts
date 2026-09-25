@@ -309,6 +309,42 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 }
 
 describe('inpage signer bridge', () => {
+	test('pins forwarded signing to the announced provider and rejects later identity collisions', async () => {
+		let expectedProviderId = 'eip6963:io.metamask'
+		const identities: unknown[] = []
+		let signingCalls = 0
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'connected_to_signer') identities.push(request.params?.[3])
+				if (request.method !== 'personal_sign') return false
+				reply({ interceptorApproved: true, requestId: request.requestId, type: 'forwardToSigner', method: request.method, params: request.params, replyWithSignersReply: true, expectedProviderId })
+				return true
+			},
+			handleSignerRequest: ({ method }) => {
+				if (method !== 'personal_sign') return undefined
+				signingCalls++
+				return 'test-signature'
+			},
+		})
+		const originalProvider = fakeWindow.ethereum
+		const info = { uuid: '11111111-1111-4111-8111-111111111111', name: 'MetaMask', icon: 'data:image/png;base64,dGVzdA', rdns: 'io.metamask' }
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?persistent-provider-identity', async () => {
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info, provider: originalProvider } })
+			await waitFor(() => identities.some((identity) => isRecord(identity) && identity.rdns === 'io.metamask'))
+			const request = () => fakeWindow.ethereum.request({ method: 'personal_sign', params: ['0x12', '0x1111111111111111111111111111111111111111'] })
+			assert.equal(await request(), 'test-signature')
+			expectedProviderId = 'eip6963:com.example.other'
+			await assert.rejects(request(), (error: unknown) => isRecord(error) && error.code === 4100)
+			assert.equal(signingCalls, 1)
+			expectedProviderId = 'eip6963:io.metamask'
+			const duplicate = { request: async () => undefined, on: () => duplicate }
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...info, uuid: '22222222-2222-4222-8222-222222222222', rdns: 'IO.METAMASK' }, provider: duplicate } })
+			await waitFor(() => identities.some((identity) => isRecord(identity) && identity.ambiguous === true))
+			await assert.rejects(request(), (error: unknown) => isRecord(error) && error.code === 4100)
+			assert.equal(signingCalls, 1)
+		})
+	})
+
 	test('rejects unsafe or malformed Safe Apps messages before forwarding Ethereum requests', async () => {
 		const ethereumRequests: InpageRequest[] = []
 		let connected = false
