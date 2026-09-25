@@ -1,41 +1,26 @@
 import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
-import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
-import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
+import { getWebsiteOrigin } from './websiteOrigin.js'
+import { Semaphore } from './semaphore.js'
+import { reportUnexpectedError } from './errors.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
-const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
-const extensionGallerySitesRegexp = [/^https:\/\/chromewebstore\.google\.com(?:[\/?#]|$)/, /^https:\/\/chrome\.google\.com\/webstore(?:[\/?#]|$)/]
-const otherExtensionInjectionTargetErrorMessage = 'Cannot access a chrome-extension:// URL of different extension'
-const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cannot be scripted.'
-const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
-const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
-
-function getManifestV3ExcludeMatchesForOrigin(origin: string) {
-	if (origin === '') return ['file:///*']
-	try {
-		const hasExplicitScheme = origin.includes('://')
-		const url = new URL(hasExplicitScheme ? origin : `http://${ origin }`)
-		if (url.protocol === 'file:') return url.hostname === '' ? ['file:///*'] : []
-		if (url.protocol !== 'http:' && url.protocol !== 'https:') return []
-		if (url.username !== '' || url.password !== '' || url.pathname !== '/' || url.search !== '' || url.hash !== '') return []
-		const hostname = url.hostname
-		if (hostname === '') return []
-		const isIpAddressOrLocalhost = hostname === 'localhost' || hostname.startsWith('[') || /^\d+(?:\.\d+){3}$/.test(hostname)
-		const hostPattern = isIpAddressOrLocalhost ? url.host : `*.${ url.host }`
-		if (hasExplicitScheme) return [`${ url.protocol.slice(0, -1) }://${ hostPattern }/*`]
-		if (url.port === '') return [`*://${ hostPattern }/*`]
-		return [`http://${ hostPattern }/*`, `https://${ hostPattern }/*`]
-	} catch {
-		return []
-	}
+function getCanonicalWebsiteOrigins(origins: readonly string[]) {
+	return [...new Set(origins)].filter((origin) => getWebsiteOrigin(origin) === origin)
 }
 
 export function getManifestV3ExcludeMatches(origins: readonly string[]) {
-	const patterns = new Set<string>()
-	for (const origin of origins) {
-		for (const pattern of getManifestV3ExcludeMatchesForOrigin(origin)) patterns.add(pattern)
-	}
-	return [...patterns]
+	return getCanonicalWebsiteOrigins(origins).map((origin) => {
+		const url = new URL(origin)
+		if (url.protocol === 'file:') return url.href
+		// An omitted match-pattern port means every port, whereas URL.origin omits only the default port.
+		const port = url.port || (url.protocol === 'https:' ? '443' : '80')
+		return `${ url.protocol }//${ url.hostname }:${ port }/*`
+	})
+}
+
+export function getManifestV2ExcludeGlobs(origins: readonly string[]) {
+	// Firefox's match patterns do not match explicit ports. Globs compare the URL text, preserving the origin's port boundary.
+	return getCanonicalWebsiteOrigins(origins).map((origin) => origin.startsWith('file:') ? origin : `${ origin }/*`)
 }
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
@@ -76,29 +61,28 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 	}
 }
 
-const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {
-	if (!isInjectableSite(content.url)) return false
-	const disabledSites = getInterceptorDisabledSites(await getSettings())
-	// The tab can navigate while settings are loading, including to another extension page where injection is prohibited.
-	const thisTab = await getTabIfExists(content.tabId)
-	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false
-	const urls = [content.url, thisTab.url]
-	const hostnames = urls.map((url) => getHostWithPort(url))
-	const noMatches = disabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
-	if (!noMatches) return false
-	try {
-		await browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/dist/browser-polyfill.js', allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/listenContentScript.js', allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/document_start.js', allFrames: false, runAt: 'document_start' })
-		checkAndThrowRuntimeLastError()
-	} catch(error) {
-		if (isMissingBrowserTargetError(error) || isExpectedManifestV2InjectionTargetError(error)) return false
-		reportLocalRecoveryBestEffort(error, { code: 'manifest_v2_content_script_injection_failed', message: 'Leaving this navigation without early injection.' })
-	}
-	return false
-}
+let registeredManifestV2Scripts: browser.contentScripts.RegisteredContentScript | undefined
+const manifestV2Registration = new Semaphore(1)
 
-export const updateContentScriptInjectionStrategyManifestV2 = async () => {
-	browser.webNavigation.onCommitted.removeListener(injectLogic)
-	browser.webNavigation.onCommitted.addListener(injectLogic, { url: injectableSitesWildcard.map((urlMatches) => ({ urlMatches })) })
-}
+export const updateContentScriptInjectionStrategyManifestV2 = async () => await manifestV2Registration.execute(async () => {
+	const excludeGlobs = getManifestV2ExcludeGlobs(getInterceptorDisabledSites(await getSettings()))
+	try {
+		// A late onCommitted/executeScript injection lets page listeners run before the private bridge capture listener.
+		const registered = await browser.contentScripts.register({
+			matches: injectableSitesWildcard,
+			...(excludeGlobs.length === 0 ? {} : { excludeGlobs }),
+			allFrames: true,
+			runAt: 'document_start',
+			js: [
+				{ file: '/vendor/webextension-polyfill/dist/browser-polyfill.js' },
+				{ file: '/inpage/js/listenContentScript.js' },
+				{ file: '/inpage/js/document_start.js' },
+			],
+		})
+		const previous = registeredManifestV2Scripts
+		registeredManifestV2Scripts = registered
+		await previous?.unregister()
+	} catch (error: unknown) {
+		await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
+	}
+})

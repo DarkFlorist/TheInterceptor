@@ -63,6 +63,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 	let rejectPendingRequestAccounts: ((error: { code: number, message: string }) => void) | undefined
 	let resolvePendingRequestAccounts: ((accounts: string[]) => void) | undefined
 	let bridgePort: MessagePort | undefined
+	let postBackgroundMessage: ((data: unknown) => void) | undefined
 
 	const fakeSigner = {
 		...(signerInitialSelectedAddress === undefined ? {} : { selectedAddress: signerInitialSelectedAddress }),
@@ -129,6 +130,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 				const port = transfer?.find((item): item is MessagePort => item instanceof MessagePort)
 				if (port === undefined) throw new Error('missing bridge port')
 				bridgePort = port
+				postBackgroundMessage = port.postMessage.bind(port)
 				bridgePort.onmessage = (event: MessageEvent<unknown>) => handleInpageRequest(event.data)
 				return
 			}
@@ -137,8 +139,8 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 	}
 
 	const sendBackgroundMessage = (data: unknown) => {
-		if (bridgePort === undefined) throw new Error('bridge port is not connected')
-		bridgePort.postMessage(data)
+		if (postBackgroundMessage === undefined) throw new Error('bridge port is not connected')
+		postBackgroundMessage(data)
 	}
 
 	const handleInpageRequest = (data: unknown) => {
@@ -925,7 +927,19 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
-	test('returns bridge transport failures through the sendAsync error argument', async () => {
+	test('rejects signing instructions substituted for an outstanding read request', async () => {
+		const { fakeWindow, signerRequests } = createFakeWindow({ handleRequest(request, sendBackgroundMessage) {
+			if (request.method !== 'eth_chainId') return false
+			sendBackgroundMessage({ interceptorApproved: true, type: 'forwardToSigner', method: 'personal_sign', requestId: request.requestId, params: ['0xdeadbeef', '0x1111111111111111111111111111111111111111'], replyWithSignersReply: true })
+			return true
+		} })
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?substituted-signing-instruction', async () => {
+			await assert.rejects(fakeWindow.ethereum.request({ method: 'eth_chainId' }), /does not match the pending request/)
+			assert.equal(signerRequests.includes('personal_sign'), false)
+		})
+	})
+
+	test('keeps the private bridge usable when the page replaces MessagePort.postMessage', async () => {
 		const { fakeWindow, signerRequests } = createFakeWindow()
 
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?send-async-transport-error', async () => {
@@ -948,10 +962,8 @@ describe('inpage signer bridge', () => {
 				Object.defineProperty(MessagePort.prototype, 'postMessage', postMessageDescriptor)
 			}
 
-			assert.equal(callbackArguments[0] instanceof Error, true)
-			if (!(callbackArguments[0] instanceof Error)) throw new Error('Expected a transport Error')
-			assert.equal(callbackArguments[0].message, 'bridge transport failed')
-			assert.equal(callbackArguments[1], null)
+			assert.equal(callbackArguments[0], null)
+			assert.deepEqual(callbackArguments[1], { id: 72, jsonrpc: '2.0', result: '0x' })
 		})
 	})
 

@@ -1,7 +1,8 @@
-import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl } from './chromeHarness.js'
+import { assertPrivateProviderBridge, closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl } from './chromeHarness.js'
 import { startChromeCommunicationPageServer } from './chromeCommunicationPageServer.js'
 import type { CdpConnection } from './chromeHarness.js'
 import { authorization as eip7702Authorization, Transaction } from 'micro-eth-signer'
+import { getManifestV3ExcludeMatches } from '../../app/ts/utils/contentScriptsUpdating.js'
 
 type CommunicationPageState = {
 	phase: 'loading' | 'provider-ready' | 'requesting-access' | 'access-granted' | 'error'
@@ -104,6 +105,31 @@ async function clickButton(connection: CdpConnection, selector: string) {
 	})()`)
 }
 
+async function verifyPortScopedExclusions(worker: CdpConnection, page: CdpConnection, baseUrl: string) {
+	const previous = await worker.evaluate<{ id: string, excludeMatches: string[] }[]>('browser.scripting.getRegisteredContentScripts().then(scripts => scripts.map(({ id, excludeMatches }) => ({ id, excludeMatches: excludeMatches ?? [] })))')
+	const pageUrl = new URL(baseUrl)
+	const cases = [
+		{ origin: `http://${ pageUrl.hostname }`, shouldInject: true },
+		{ origin: pageUrl.origin, shouldInject: false },
+		{ origin: `http://${ pageUrl.hostname }:1`, shouldInject: true },
+		{ origin: `https://${ pageUrl.hostname }`, shouldInject: true },
+	]
+	try {
+		for (const [index, { origin, shouldInject }] of cases.entries()) {
+			const excludeMatches = getManifestV3ExcludeMatches([origin])
+			const updates = previous.map(({ id }) => ({ id, excludeMatches }))
+			await worker.evaluate(`browser.scripting.updateContentScripts(${ JSON.stringify(updates) })`)
+			const url = `${ baseUrl }?exclusion-case=${ index }`
+			await page.send('Page.navigate', { url })
+			await waitForCondition(async () => await page.evaluate<boolean>(`location.href === ${ JSON.stringify(url) } && document.readyState === 'complete'`), 10_000, 'exclusion test page load')
+			const injected = await page.evaluate<boolean>('typeof globalThis.ethereum === "object"')
+			if (injected !== shouldInject) throw new Error(`Disabling ${ origin } ${ injected ? 'did not exclude' : 'unexpectedly excluded' } ${ pageUrl.origin }`)
+		}
+	} finally {
+		await worker.evaluate(`browser.scripting.updateContentScripts(${ JSON.stringify(previous) })`)
+	}
+}
+
 async function main() {
 	const server = await startChromeCommunicationPageServer()
 	const chrome = await launchChromeSession()
@@ -139,6 +165,7 @@ async function main() {
 			}
 
 			await waitForCommunicationPagePhase(pageConnection, 'access-granted', 30_000)
+			await assertPrivateProviderBridge(pageConnection)
 			const accessGrantedState = await getCommunicationPageState(pageConnection)
 			if (accessGrantedState?.connectEvents !== 0) throw new Error(`Account authorization emitted ${ accessGrantedState?.connectEvents ?? 'an unknown number of' } connect events`)
 			if (accessGrantedState.accountsChangedEvents !== 1) throw new Error(`Account authorization emitted ${ accessGrantedState.accountsChangedEvents } accountsChanged events instead of one`)
@@ -194,6 +221,12 @@ async function main() {
 			}
 			await pageConnection.send('Page.navigate', { url: `${ server.baseUrl }?signer=unavailable` })
 			const unavailableSignerState = await waitForCommunicationPageError(pageConnection, 30_000)
+			const exclusionWorkerConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
+			try {
+				await verifyPortScopedExclusions(exclusionWorkerConnection, pageConnection, server.baseUrl)
+			} finally {
+				exclusionWorkerConnection.close()
+			}
 
 			console.warn(`Interceptor Chrome communication smoke test passed for extension ${ extensionId }.`)
 			console.warn(JSON.stringify({

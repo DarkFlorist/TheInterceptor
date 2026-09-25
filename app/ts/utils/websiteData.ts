@@ -1,4 +1,5 @@
 import * as funtypes from 'funtypes'
+import { getWebsiteOrigin } from './websiteOrigin.js'
 
 type WebsiteMetadataInfo  = funtypes.Static<typeof WebsiteMetadataInfo>
 const WebsiteMetadataInfo = funtypes.Intersect(
@@ -17,7 +18,9 @@ type WebsiteMetaData  = funtypes.Static<typeof WebsiteMetaData>
 const WebsiteMetaData = funtypes.ReadonlyRecord(funtypes.String, WebsiteMetadataInfo)
 
 export const getWebsiteWarningMessage = (websiteOrigin: string, simulationMode: boolean): { message: string, suggestedAlternative: string | undefined } | undefined => {
-	const data = websiteMetaData[websiteOrigin]
+	// Compatibility warnings describe the site across schemes and ports, independently of its permission key. Older saved transactions may still contain a bare hostname.
+	const origin = getWebsiteOrigin(websiteOrigin)
+	const data = websiteMetaData[origin === undefined ? websiteOrigin : new URL(origin).hostname]
 	if (data === undefined) return undefined
 	if (data.message !== undefined) return { message: data.message, suggestedAlternative: data.suggestedAlternative }
 	if (simulationMode === false) return undefined

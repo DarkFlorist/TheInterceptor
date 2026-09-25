@@ -1,6 +1,30 @@
 <!DOCTYPE html>
 <html lang="en">
 	<head>
+		<script>
+			// These page-world listeners must never obtain the extension's private MessagePort.
+			globalThis.__bridgeSecurity = { capturedPorts: 0, interceptedSends: 0, interceptedReplies: 0, replacementReplies: 0 }
+			const captureBridge = (event) => {
+				if (event.data?.type === 'interceptor_bridge_port') globalThis.__bridgeSecurity.capturedPorts += event.ports.length
+			}
+			addEventListener('message', captureBridge, true)
+			addEventListener('message', captureBridge)
+			const originalPostMessage = MessagePort.prototype.postMessage
+			MessagePort.prototype.postMessage = function (...args) {
+				if (args[0]?.type === 'interceptor_bridge_request') globalThis.__bridgeSecurity.interceptedSends += 1
+				return originalPostMessage.apply(this, args)
+			}
+			const originalData = Object.getOwnPropertyDescriptor(MessageEvent.prototype, 'data')
+			Object.defineProperty(MessageEvent.prototype, 'data', { ...originalData, get() {
+				const data = originalData.get.call(this)
+				if (this.currentTarget instanceof MessagePort && data?.interceptorApproved === true) globalThis.__bridgeSecurity.interceptedReplies += 1
+				return data
+			} })
+			const replacementBridge = new MessageChannel()
+			replacementBridge.port1.onmessage = () => { globalThis.__bridgeSecurity.replacementReplies += 1 }
+			postMessage({ type: 'interceptor_bridge_port' }, '*', [replacementBridge.port2])
+			originalPostMessage.call(replacementBridge.port1, { type: 'interceptor_bridge_request', method: 'eth_accounts', usingInterceptorWithoutSigner: true, requestId: 1000000 })
+		</script>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>The Interceptor Chrome communication smoke test</title>
