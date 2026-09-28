@@ -1,7 +1,7 @@
 import type { WebsiteCreatedEthereumTransaction } from '../../types/visualizer-types.js'
 import type { EthereumClientService } from '../services/EthereumClientService.js'
 
-export async function feeOops(request: Pick<WebsiteCreatedEthereumTransaction, 'transaction' | 'originalRequestParameters'>, ethereum: Pick<EthereumClientService, 'getGasPrice'>, requestAbortController: AbortController | undefined) {
+export async function feeOops(request: WebsiteCreatedEthereumTransaction, ethereum: Pick<EthereumClientService, 'getGasPrice'>, requestAbortController: AbortController | undefined) {
 	const { transaction, originalRequestParameters } = request
 	const usesFeeCaps = transaction.type === '1559' || transaction.type === '4844' || transaction.type === '7702'
 	// Simulation normalizes legacy gasPrice into equal fee caps. Its full price must still use the legacy market-price comparison, not the priority-fee threshold.

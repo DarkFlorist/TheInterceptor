@@ -1,9 +1,14 @@
 import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
 import { getWebsiteOrigin } from './websiteOrigin.js'
 import { Semaphore } from './semaphore.js'
-import { reportUnexpectedError } from './errors.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
+
+export async function updateContentScriptInjectionStrategy() {
+	if (browser.runtime.getManifest().manifest_version === 3) return await updateContentScriptInjectionStrategyManifestV3()
+	return await updateContentScriptInjectionStrategyManifestV2()
+}
+
 function getCanonicalWebsiteOrigins(origins: readonly string[]) {
 	return [...new Set(origins)].filter((origin) => getWebsiteOrigin(origin) === origin)
 }
@@ -25,64 +30,67 @@ export function getManifestV2ExcludeGlobs(origins: readonly string[]) {
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(await getSettings()))
-	try {
-		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
-		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
-		type FixedContentScript = RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
-		const contentScripts: FixedContentScript[] = [{
-			id: 'inpage2',
-			allFrames: true,
-			matches: injectableSitesWildcard,
-			excludeMatches,
-			js: ['/vendor/webextension-polyfill/dist/browser-polyfill.js', '/inpage/js/listenContentScript.js', '/inpage/js/listenContentScriptBootstrap.js'],
-			runAt: 'document_start',
-			matchOriginAsFallback: true
-		}, {
-			id: 'inpage',
-			allFrames: true,
-			matches: injectableSitesWildcard,
-			excludeMatches,
-			js: ['/inpage/js/inpage.js'],
-			runAt: 'document_start',
-			world: 'MAIN',
-			matchOriginAsFallback: true
-		}]
-		const registeredContentScripts = await browser.scripting.getRegisteredContentScripts()
-		const registeredContentScriptIds = new Set(registeredContentScripts.map(({ id }) => id))
-		const desiredContentScriptIds = new Set(contentScripts.map(({ id }) => id))
-		const missingContentScripts = contentScripts.filter(({ id }) => !registeredContentScriptIds.has(id))
-		const existingContentScripts = contentScripts.filter(({ id }) => registeredContentScriptIds.has(id))
-		const obsoleteContentScriptIds = registeredContentScripts.map(({ id }) => id).filter((id) => !desiredContentScriptIds.has(id))
-		if (missingContentScripts.length > 0) await browser.scripting.registerContentScripts(missingContentScripts)
-		if (existingContentScripts.length > 0) await browser.scripting.updateContentScripts(existingContentScripts)
-		if (obsoleteContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
-	} catch (error: unknown) {
-		await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
-	}
+	type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
+	// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
+	type FixedContentScript = RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
+	const contentScripts: FixedContentScript[] = [{
+		id: 'inpage2',
+		allFrames: true,
+		matches: injectableSitesWildcard,
+		excludeMatches,
+		js: ['/vendor/webextension-polyfill/dist/browser-polyfill.js', '/inpage/js/listenContentScript.js', '/inpage/js/listenContentScriptBootstrap.js'],
+		runAt: 'document_start',
+		matchOriginAsFallback: true
+	}, {
+		id: 'inpage',
+		allFrames: true,
+		matches: injectableSitesWildcard,
+		excludeMatches,
+		js: ['/inpage/js/inpage.js'],
+		runAt: 'document_start',
+		world: 'MAIN',
+		matchOriginAsFallback: true
+	}]
+	const registeredContentScripts = await browser.scripting.getRegisteredContentScripts()
+	const registeredContentScriptIds = new Set(registeredContentScripts.map(({ id }) => id))
+	const desiredContentScriptIds = new Set(contentScripts.map(({ id }) => id))
+	const missingContentScripts = contentScripts.filter(({ id }) => !registeredContentScriptIds.has(id))
+	const existingContentScripts = contentScripts.filter(({ id }) => registeredContentScriptIds.has(id))
+	const obsoleteContentScriptIds = registeredContentScripts.map(({ id }) => id).filter((id) => !desiredContentScriptIds.has(id))
+	if (missingContentScripts.length > 0) await browser.scripting.registerContentScripts(missingContentScripts)
+	if (existingContentScripts.length > 0) await browser.scripting.updateContentScripts(existingContentScripts)
+	if (obsoleteContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
 }
 
 let registeredManifestV2Scripts: browser.contentScripts.RegisteredContentScript | undefined
 const manifestV2Registration = new Semaphore(1)
+const manifestV2RegistrationsPendingRemoval = new Set<browser.contentScripts.RegisteredContentScript>()
+
+async function removeSupersededManifestV2Registrations() {
+	for (const registration of manifestV2RegistrationsPendingRemoval) {
+		await registration.unregister()
+		manifestV2RegistrationsPendingRemoval.delete(registration)
+	}
+}
 
 export const updateContentScriptInjectionStrategyManifestV2 = async () => await manifestV2Registration.execute(async () => {
+	// Keep failed removals reachable and finish cleanup before creating another registration.
+	await removeSupersededManifestV2Registrations()
 	const excludeGlobs = getManifestV2ExcludeGlobs(getInterceptorDisabledSites(await getSettings()))
-	try {
-		// A late onCommitted/executeScript injection lets page listeners run before the private bridge capture listener.
-		const registered = await browser.contentScripts.register({
-			matches: injectableSitesWildcard,
-			...(excludeGlobs.length === 0 ? {} : { excludeGlobs }),
-			allFrames: true,
-			runAt: 'document_start',
-			js: [
-				{ file: '/vendor/webextension-polyfill/dist/browser-polyfill.js' },
-				{ file: '/inpage/js/listenContentScript.js' },
-				{ file: '/inpage/js/document_start.js' },
-			],
-		})
-		const previous = registeredManifestV2Scripts
-		registeredManifestV2Scripts = registered
-		await previous?.unregister()
-	} catch (error: unknown) {
-		await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
-	}
+	// A late onCommitted/executeScript injection lets page listeners run before the private bridge capture listener.
+	const registered = await browser.contentScripts.register({
+		matches: injectableSitesWildcard,
+		...(excludeGlobs.length === 0 ? {} : { excludeGlobs }),
+		allFrames: true,
+		runAt: 'document_start',
+		js: [
+			{ file: '/vendor/webextension-polyfill/dist/browser-polyfill.js' },
+			{ file: '/inpage/js/listenContentScript.js' },
+			{ file: '/inpage/js/document_start.js' },
+		],
+	})
+	const previous = registeredManifestV2Scripts
+	registeredManifestV2Scripts = registered
+	if (previous !== undefined) manifestV2RegistrationsPendingRemoval.add(previous)
+	await removeSupersededManifestV2Registrations()
 })

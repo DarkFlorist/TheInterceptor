@@ -1,11 +1,10 @@
-import type { EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { parseTransaction } from '../../utils/calldata.js'
-import type { SimulationState } from '../../types/visualizer-types.js'
+import type { SimulationState, WebsiteCreatedEthereumTransaction } from '../../types/visualizer-types.js'
 import type { EthereumClientService } from '../services/EthereumClientService.js'
 import { getCodeOrError } from './commonTokenOops.js'
 import { identifyAddress } from '../../background/metadataUtils.js'
 
-export async function tokenToContract(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState) {
+export async function tokenToContract({ transaction }: WebsiteCreatedEthereumTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState) {
 	const transferInfo = parseTransaction(transaction)
 	if (transferInfo === undefined) return
 	if (transferInfo.name !== 'transfer' && transferInfo.name !== 'transferFrom') return

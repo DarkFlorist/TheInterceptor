@@ -73,6 +73,13 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 				},
 			},
 		},
+		scripting: {
+			getRegisteredContentScripts: async () => [],
+			registerContentScripts: async () => undefined,
+			updateContentScripts: async () => undefined,
+			unregisterContentScripts: async () => undefined,
+		},
+		contentScripts: { register: async () => ({ unregister: async () => undefined }) },
 		tabs: {
 			async query() { return [] },
 			async create() { return { id: 2, active: true } },

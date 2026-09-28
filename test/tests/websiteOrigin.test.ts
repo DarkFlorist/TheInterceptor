@@ -1,9 +1,22 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { getWebsiteOrigin, getWebsiteOriginForSender } from '../../app/ts/utils/websiteOrigin.js'
+import { getWebsiteOrigin, getWebsiteOriginForSender, getWebsiteHostname, haveSameHostForNetworkBlocking } from '../../app/ts/utils/websiteOrigin.js'
 import { hasAccess, hasAddressAccess } from '../../app/ts/background/websiteAccessPolicy.js'
 import { migrateWebsiteAccessOrigins } from '../../app/ts/background/websiteAccessMigration.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
+
+test('network host projections do not redefine permission identity', () => {
+	assert.notEqual(getWebsiteOrigin('https://example.test'), getWebsiteOrigin('http://example.test'))
+	assert.equal(haveSameHostForNetworkBlocking('https://example.test/a', 'http://example.test/b'), true)
+	assert.equal(haveSameHostForNetworkBlocking('https://example.test', 'https://example.test:8443'), false)
+	assert.equal(haveSameHostForNetworkBlocking('https://example.test', 'https://child.example.test'), false)
+	assert.equal(haveSameHostForNetworkBlocking('data:text/plain,test', 'data:text/plain,test'), false)
+	assert.equal(getWebsiteHostname('https://example.test:8443'), 'example.test')
+	assert.equal(getWebsiteHostname('https://[::1]:8443'), '[::1]')
+	assert.equal(getWebsiteHostname('example.test'), 'example.test')
+	assert.equal(getWebsiteOrigin('example.test'), undefined)
+	assert.equal(getWebsiteHostname('file:///tmp/a.html'), undefined)
+})
 
 test('permissions distinguish schemes and effective ports', () => {
 	const account: AddressBookEntry = { type: 'contact', address: 1n, name: 'Account', entrySource: 'User', chainId: 'AllChains' }

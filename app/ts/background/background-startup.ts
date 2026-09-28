@@ -128,11 +128,12 @@ const isManifestV2 = manifestVersion === 2
 const tabStateInitializationPromise = initializeTabStateStorage(manifestVersion)
 
 if (isManifestV2) {
-	updateContentScriptInjectionStrategyManifestV2()
+	void updateContentScriptInjectionStrategyManifestV2().catch(async (error: unknown) => await reportUnexpectedError(error, { code: 'content_script_registration_failed' }))
 }
 
+const dispatchWebsiteRequest = createWebsiteRequestDispatcher()
+
 async function onContentScriptConnected(waitForStartup: () => Promise<{ simulationServicesOwner: SimulationServicesOwner }>, port: browser.runtime.Port, websiteTabConnections: WebsiteTabConnections) {
-	const dispatchRequest = createWebsiteRequestDispatcher()
 	const socket = getSocketFromPort(port)
 	if (port?.sender?.url === undefined || socket === undefined) {
 		printError(`Could not connect to a port: ${ port.name}`)
@@ -204,9 +205,9 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 					...(rawMessage.interceptorInternalRequest === true ? { interceptorInternalRequest: true as const } : {}),
 				}
 				// A connected port outlives RPC switches; each request stage selects services from the owner.
-				await dispatchRequest(request,
+				await dispatchWebsiteRequest(websiteOrigin, request,
 					async () => await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, rpcConnectionStatusPublisher.publishRpcConnectionStatus),
-					async () => replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: { code: -32005, message: 'Too many pending requests from this website. Wait for an existing request to finish.' } }),
+					async () => replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: { code: -32005, message: 'Too many pending requests. Wait for an existing request to finish.' } }),
 				)
 			})
 		},

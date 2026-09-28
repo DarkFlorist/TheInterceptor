@@ -19,30 +19,53 @@ test('saturated page requests cannot block the signer reply that completes them'
 		[m.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 	} }]])
 	const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
-	const dispatch = createWebsiteRequestDispatcher()
+	const dispatch = createWebsiteRequestDispatcher({ maxPendingRequestsPerOrigin: 40 })
 	const refuse = async () => { throw new Error('Unexpected request capacity rejection') }
 	const requests = Array.from({ length: 40 }, (_, index) => {
 		const accountRequest = { ...request, uniqueRequestIdentifier: { requestId: index + 1, requestSocket: socket } }
-		return dispatch(accountRequest, async () => await m.handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, accountRequest, connections, noopPublishRpcConnectionStatus), refuse)
+		return dispatch(websiteOrigin, accountRequest, async () => await m.handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, accountRequest, connections, noopPublishRpcConnectionStatus), refuse)
 	})
 	await waitForPortMessageCount(messages, 'request_signer_to_eth_requestAccounts', 1, 1000)
 	const reply = { ...request, interceptorInternalRequest: true as const, method: 'eth_accounts_reply', uniqueRequestIdentifier: { requestId: 41, requestSocket: socket }, params: [{ type: 'success', accounts: ['0x1111111111111111111111111111111111111111'], requestAccounts: true, signerProviderGeneration: 1 }] }
-	await dispatch(reply, async () => await m.handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, reply, connections, noopPublishRpcConnectionStatus), refuse)
+	await dispatch(websiteOrigin, reply, async () => await m.handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, reply, connections, noopPublishRpcConnectionStatus), refuse)
 	await Promise.all(requests)
 	assert.equal(messages.filter((message) => message.method === 'eth_accounts' && message.requestId !== undefined).length, 40)
 })
 
-test('limits page work per connection and releases capacity on rejection', async () => {
-	const dispatch = createWebsiteRequestDispatcher(1)
-	const otherConnection = createWebsiteRequestDispatcher(1)
+test('shares origin capacity across connections while preserving room for another origin', async () => {
+	const dispatch = createWebsiteRequestDispatcher({ maxPendingRequests: 2, maxPendingRequestsPerOrigin: 1 })
+	const origin = 'https://busy.example'
 	let release: () => void = () => undefined
-	const pending = dispatch(request, async () => await new Promise<void>((resolve) => { release = resolve }), async () => { throw new Error('Unexpected refusal') })
-	assert.equal(await dispatch(request, async () => 'ran', async () => 'busy'), 'busy')
-	assert.equal(await otherConnection(request, async () => 'ran', async () => 'busy'), 'ran')
-	assert.equal(await dispatch({ ...request, method: 'eth_accounts_reply' }, async () => 'ran', async () => 'busy'), 'busy')
-	assert.equal(await dispatch({ ...request, interceptorInternalRequest: true, method: 'eth_sendTransaction' }, async () => 'ran', async () => 'busy'), 'busy')
+	const pending = dispatch(origin, request, async () => await new Promise<void>((resolve) => { release = resolve }), async () => { throw new Error('Unexpected refusal') })
+	const otherFrame = { ...request, uniqueRequestIdentifier: { requestId: 2, requestSocket: { tabId: 2, connectionName: 2n } } }
+	assert.equal(await dispatch(origin, otherFrame, async () => 'ran', async () => 'busy'), 'busy')
+	assert.equal(await dispatch('https://other.example', otherFrame, async () => 'ran', async () => 'busy'), 'ran')
+	assert.equal(await dispatch(origin, { ...request, method: 'eth_accounts_reply' }, async () => 'ran', async () => 'busy'), 'busy')
+	assert.equal(await dispatch(origin, { ...request, interceptorInternalRequest: true, method: 'eth_sendTransaction' }, async () => 'ran', async () => 'busy'), 'busy')
 	release()
 	await pending
-	await assert.rejects(dispatch(request, async () => { throw new Error('handler failed') }, async () => undefined), /handler failed/)
-	assert.equal(await dispatch(request, async () => 'ran', async () => 'busy'), 'ran')
+	await assert.rejects(dispatch(origin, request, async () => { throw new Error('handler failed') }, async () => undefined), /handler failed/)
+	assert.equal(await dispatch(origin, request, async () => 'ran', async () => 'busy'), 'ran')
+})
+
+test('bounds aggregate work across many frames and origins while allowing completion callbacks', async () => {
+	const dispatch = createWebsiteRequestDispatcher()
+	const releases: (() => void)[] = []
+	const pending: Promise<string>[] = []
+	let running = 0
+	let refused = 0
+	for (let index = 0; index < 100; index += 1) {
+		const origin = `https://site${ Math.floor(index / 30) }.example`
+		const frameRequest = { ...request, uniqueRequestIdentifier: { requestId: index, requestSocket: { tabId: index, connectionName: BigInt(index) } } }
+		pending.push(dispatch(origin, frameRequest, async () => {
+			running += 1
+			return await new Promise<string>((resolve) => { releases.push(() => resolve('completed')) })
+		}, async () => { refused += 1; return 'busy' }))
+	}
+	assert.equal(running, 40)
+	assert.equal(refused, 60)
+	assert.equal(await dispatch('https://site0.example', { ...request, method: 'eth_accounts_reply', interceptorInternalRequest: true }, async () => 'callback', async () => 'busy'), 'callback')
+	for (const release of releases) release()
+	await Promise.all(pending)
+	assert.equal(await dispatch('https://site0.example', request, async () => 'ran', async () => 'busy'), 'ran')
 })

@@ -6,8 +6,8 @@ import type { TabConnection, WebsiteTabConnections } from '../types/user-interfa
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
-import { getWebsiteOrigin } from '../utils/websiteOrigin.js'
+import type { WebsiteSocket } from '../utils/requests.js'
+import { getWebsiteOrigin, getWebsiteHostname, haveSameHostForNetworkBlocking } from '../utils/websiteOrigin.js'
 import { getAllTabStates } from './storageVariables.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties, replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
@@ -324,12 +324,7 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 		if (decralativeNetRequestBlockIdentifier === previousDecralativeNetRequestBlockIdentifier) return
 
 		if (browser.runtime.getManifest().manifest_version === 3) {
-			const blockedDomains = [...new Set(sitesToBlock.flatMap((origin) => {
-				const normalized = getWebsiteOrigin(origin) ?? getWebsiteOrigin(`https://${ origin }`)
-				if (normalized === undefined) return []
-				const hostname = new URL(normalized).hostname
-				return hostname === '' ? [] : [hostname]
-			}))]
+			const blockedDomains = [...new Set(sitesToBlock.map(getWebsiteHostname).filter((hostname) => hostname !== undefined))]
 			const dynamicRuleIds = (await browser.declarativeNetRequest.getDynamicRules()).map((rule) => rule.id)
 			const sessionRuleIds = (await browser.declarativeNetRequest.getSessionRules()).map((rule) => rule.id)
 			if (blockedDomains.length !== 0) {
@@ -370,8 +365,7 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 				if (details.originUrl === undefined) return {}
 				if (details.type === 'main_frame') return {}
 				const websiteOrigin = getWebsiteOrigin(details.originUrl)
-				const destinationHost = getHostWithPort(details.url)
-				if (destinationHost === getHostWithPort(details.originUrl)) return {}
+				if (haveSameHostForNetworkBlocking(details.originUrl, details.url)) return {}
 				if (sitesToBlock.find((blockUrl) => blockUrl === websiteOrigin) !== undefined) return { cancel: true }
 				return {}
 			}
