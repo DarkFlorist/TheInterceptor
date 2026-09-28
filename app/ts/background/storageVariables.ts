@@ -1,9 +1,8 @@
-import { ValidationError } from 'funtypes'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
@@ -40,28 +39,24 @@ export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => { await
 
 const pendingTransactionsSemaphore = new Semaphore(1)
 async function readPendingTransactionsAndMessages() {
-	return (await browserStorageLocalGet2('pendingTransactionsAndMessages'))?.pendingTransactionsAndMessages ?? []
+	const result = await browserStorageLocalGet2Result('pendingTransactionsAndMessages')
+	if (!result.success) return result
+	return { success: true as const, value: result.value.pendingTransactionsAndMessages ?? [] }
 }
 
 async function readPendingTransactionsAndMessagesWithRecovery(): Promise<readonly PendingTransactionOrSignableMessage[]> {
-	try {
-		return await readPendingTransactionsAndMessages()
-	} catch(e) {
-		if (!(e instanceof ValidationError)) throw e
-		console.warn('Pending transactions were corrupt:')
-		console.warn(e)
-		await browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
-		return []
-	}
+	const result = await readPendingTransactionsAndMessages()
+	if (result.success) return result.value
+	console.warn('Pending transactions were corrupt:')
+	console.warn(result.error)
+	await browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	return []
 }
 
 export async function getPendingTransactionsAndMessages(): Promise<readonly PendingTransactionOrSignableMessage[]> {
-	try {
-		return await readPendingTransactionsAndMessages()
-	} catch(e) {
-		if (!(e instanceof ValidationError)) throw e
-		return await pendingTransactionsSemaphore.execute(readPendingTransactionsAndMessagesWithRecovery)
-	}
+	const result = await readPendingTransactionsAndMessages()
+	if (result.success) return result.value
+	return await pendingTransactionsSemaphore.execute(readPendingTransactionsAndMessagesWithRecovery)
 }
 
 export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])
