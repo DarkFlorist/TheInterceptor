@@ -1,3 +1,4 @@
+import { migrateWebsiteAccessOrigins } from './websiteAccessMigration.js'
 import type { ActiveAddress, ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -14,7 +15,6 @@ import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
 import { hasOwnKey } from '../utils/typescript.js'
-import { updateContentScriptInjectionStrategy } from '../utils/contentScriptsUpdating.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -220,7 +220,6 @@ async function replaceModeAndSigningPreferencesForImport(changes: SimulationMode
 }
 
 const websiteAccessSemaphore = new Semaphore(1)
-let contentScriptRegistrationNeedsRefresh = false
 async function getNormalizedWebsiteAccessFromStorage() {
 	const rawWebsiteAccess = await getParsedStorageValueOrDefault('websiteAccess', [])
 	const sanitizedWebsiteAccess = sanitizeWebsiteAccess(rawWebsiteAccess)
@@ -236,17 +235,6 @@ export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessA
 		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
 		const nextWebsiteAccess = sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
 		if (nextWebsiteAccess !== sanitizedWebsiteAccess || rawWebsiteAccess !== sanitizedWebsiteAccess) await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
-		const previousDisabledSites = new Set(getInterceptorDisabledSites({ websiteAccess: sanitizedWebsiteAccess }))
-		const nextDisabledSites = new Set(getInterceptorDisabledSites({ websiteAccess: nextWebsiteAccess }))
-		// Toggles, imports, and deletions all flow here. Registered scripts snapshot exclusions, so reconcile changes before callers can reload tabs.
-		if (previousDisabledSites.size !== nextDisabledSites.size || [...nextDisabledSites].some((origin) => !previousDisabledSites.has(origin))) {
-			contentScriptRegistrationNeedsRefresh = true
-		}
-		// A failed registration must remain retryable even when the user repeats the same setting.
-		if (contentScriptRegistrationNeedsRefresh) {
-			await updateContentScriptInjectionStrategy()
-			contentScriptRegistrationNeedsRefresh = false
-		}
 	})
 }
 
@@ -327,7 +315,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 		}, exportedSetings.version === '1.5' || exportedSetings.version === '1.6' ? exportedSetings.settings.signingAddressPreferences : [])
 	}
 	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
-	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
+	await updateWebsiteAccess(() => migrateWebsiteAccessOrigins(exportedSetings.settings.websiteAccess))
 	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup)
 	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') {
 		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)

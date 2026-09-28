@@ -1,3 +1,4 @@
+import { reconcileContentScriptRegistration } from './contentScriptRegistration.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
@@ -58,7 +59,7 @@ export { getLastKnownCurrentTabId } from './currentTab.js'
 export { exportSettings, importSettings, setNewRpcList, settingsOpened } from './popupMessageHandlers/settings.js'
 export { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, disableInterceptor, reloadConnectedTabs, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from './popupMessageHandlers/websiteAccess.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
-import { disableInterceptorForPage } from './popupMessageHandlers/websiteAccess.js'
+import { reloadConnectedTabs } from './popupMessageHandlers/websiteAccess.js'
 import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
 
 type TimestampedPopupVisualisation = {
@@ -424,11 +425,13 @@ export async function changeInterceptorAccess(simulationServicesOwner: Simulatio
 		})
 	})
 
-	const interceptorDisablesChanged = accessChange.data.filter((x) => x.newEntry.interceptorDisabled !== x.oldEntry.interceptorDisabled).map((x) => x)
-	await Promise.all(interceptorDisablesChanged.map(async (disable) => {
-		if (disable.newEntry.interceptorDisabled === undefined) return
-		return await disableInterceptorForPage(websiteTabConnections, disable.newEntry.website, disable.newEntry.interceptorDisabled)
-	}))
+	const exclusionsChanged = accessChange.data.some(({ removed, oldEntry, newEntry }) => removed
+		? oldEntry.interceptorDisabled === true
+		: (newEntry.interceptorDisabled === true) !== (oldEntry.interceptorDisabled === true))
+	if (exclusionsChanged) {
+		await reconcileContentScriptRegistration()
+		await reloadConnectedTabs(websiteTabConnections)
+	}
 
 	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })

@@ -1,12 +1,11 @@
-import type { WebsiteCreatedEthereumTransaction } from '../../types/visualizer-types.js'
+import type { TransactionProtectorContext } from '../protectorTypes.js'
 import type { EthereumClientService } from '../services/EthereumClientService.js'
 
-export async function feeOops(request: WebsiteCreatedEthereumTransaction, ethereum: Pick<EthereumClientService, 'getGasPrice'>, requestAbortController: AbortController | undefined) {
-	const { transaction, originalRequestParameters } = request
+export async function feeOops(context: TransactionProtectorContext, ethereum: Pick<EthereumClientService, 'getGasPrice'>, requestAbortController: AbortController | undefined) {
+	const { transaction, feeModel } = context
 	const usesFeeCaps = transaction.type === '1559' || transaction.type === '4844' || transaction.type === '7702'
 	// Simulation normalizes legacy gasPrice into equal fee caps. Its full price must still use the legacy market-price comparison, not the priority-fee threshold.
-	const hasLegacyGasPrice = originalRequestParameters.method === 'eth_sendTransaction' && originalRequestParameters.params[0].gasPrice !== undefined
-	if (usesFeeCaps && !hasLegacyGasPrice) {
+	if (usesFeeCaps && feeModel === 'fee-market') {
 		if (transaction.maxPriorityFeePerGas < 10n ** 9n * 10n) return // 10.0 nanoeth/gas
 		return `Attempt to send a transaction with an outrageous fee (${ transaction.maxPriorityFeePerGas / (10n ** 9n) } nanoeth/gas)`
 	}

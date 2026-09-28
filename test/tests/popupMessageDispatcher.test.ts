@@ -69,6 +69,12 @@ Reflect.set(globalThis, 'browser', {
 		setBadgeText: async () => undefined,
 		setBadgeBackgroundColor: async () => undefined,
 	},
+	scripting: {
+		getRegisteredContentScripts: async () => [],
+		registerContentScripts: async () => undefined,
+		updateContentScripts: async () => undefined,
+		unregisterContentScripts: async () => undefined,
+	},
 	declarativeNetRequest: {
 		getDynamicRules: async () => [],
 		getSessionRules: async () => [],

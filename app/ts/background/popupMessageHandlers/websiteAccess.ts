@@ -1,3 +1,4 @@
+import { reconcileContentScriptRegistration } from '../contentScriptRegistration.js'
 import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequests, DisableInterceptor, RemoveWebsiteAccess, RemoveWebsiteAddressAccess, RetrieveWebsiteAccess } from '../../types/interceptor-messages.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
@@ -35,7 +36,7 @@ export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConne
 
 export const disableInterceptorForPage = async (websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) => {
 	await setInterceptorDisabledForWebsite(website, interceptorDisabled)
-	// The shared website-access update has refreshed registered exclusions before this reload.
+	await reconcileContentScriptRegistration()
 	await reloadConnectedTabs(websiteTabConnections)
 }
 
@@ -97,6 +98,7 @@ export async function allowOrPreventAddressAccessForWebsite(websiteTabConnection
 
 export async function removeWebsiteAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
 	await updateWebsiteAccess((previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
+	await reconcileContentScriptRegistration()
 	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }

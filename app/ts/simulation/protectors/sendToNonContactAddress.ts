@@ -1,6 +1,7 @@
+import type { TransactionProtectorContext } from '../protectorTypes.js'
 import type { EthereumAddress, EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { parseTransaction } from '../../utils/calldata.js'
-import type { SimulationState, WebsiteCreatedEthereumTransaction } from '../../types/visualizer-types.js'
+import type { SimulationState } from '../../types/visualizer-types.js'
 import type { EthereumClientService } from '../services/EthereumClientService.js'
 import { identifyAddress } from '../../background/metadataUtils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
@@ -66,7 +67,7 @@ export async function getSendToNonContactWarning(transaction: EthereumUnsignedTr
 	return await checkSendToAddress(transferInfo.arguments.to)
 }
 
-export async function sendToNonContact({ transaction }: WebsiteCreatedEthereumTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, _simulationState: SimulationState, eventsPromise: Promise<EnrichedEthereumEvents>) {
+export async function sendToNonContact({ transaction }: TransactionProtectorContext, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, _simulationState: SimulationState, eventsPromise: Promise<EnrichedEthereumEvents>) {
 	const events = await eventsPromise
 	return await getSendToNonContactWarning(transaction, events, async (address) => await identifyAddress(ethereum, requestAbortController, address))
 }

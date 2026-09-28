@@ -1,3 +1,4 @@
+import { getTransactionProtectorContext } from '../../app/ts/background/transactionProtectorContext.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { runProtectorsForTransaction } from '../../app/ts/simulation/protectorRunner.js'
@@ -24,7 +25,7 @@ test('the uniform protector pipeline retains request-aware fee warnings and ordi
 			originalRequestParameters: { method: 'eth_sendTransaction', params: [{ gasPrice }] },
 			transaction: { type: '1559', from: 1n, to: 2n, nonce: 0n, gas: 21_000n, value: 0n, input: new Uint8Array(), chainId: 99999n, maxFeePerGas: gasPrice, maxPriorityFeePerGas: gasPrice },
 		}
-		const result = await runProtectorsForTransaction({ kind: 'passthrough' }, request, ethereum, undefined, Promise.resolve([]))
+		const result = await runProtectorsForTransaction({ kind: 'passthrough' }, getTransactionProtectorContext(request), ethereum, undefined, Promise.resolve([]))
 		assert.equal(result.quarantine, true)
 		assert.equal(result.quarantineReasons.some((reason) => reason.includes('different chain')), true)
 		assert.equal(result.quarantineReasons.some((reason) => reason.includes('outrageous fee')), gasPrice === 310n * 10n ** 9n)

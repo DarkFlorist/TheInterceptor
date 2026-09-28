@@ -1,12 +1,11 @@
-import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
 import { getWebsiteOrigin } from './websiteOrigin.js'
 import { Semaphore } from './semaphore.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 
-export async function updateContentScriptInjectionStrategy() {
-	if (browser.runtime.getManifest().manifest_version === 3) return await updateContentScriptInjectionStrategyManifestV3()
-	return await updateContentScriptInjectionStrategyManifestV2()
+export async function updateContentScriptInjectionStrategy(disabledOrigins: readonly string[]) {
+	if (browser.runtime.getManifest().manifest_version === 3) return await updateContentScriptInjectionStrategyManifestV3(disabledOrigins)
+	return await updateContentScriptInjectionStrategyManifestV2(disabledOrigins)
 }
 
 function getCanonicalWebsiteOrigins(origins: readonly string[]) {
@@ -28,8 +27,8 @@ export function getManifestV2ExcludeGlobs(origins: readonly string[]) {
 	return getCanonicalWebsiteOrigins(origins).map((origin) => origin.startsWith('file:') ? origin : `${ origin }/*`)
 }
 
-export const updateContentScriptInjectionStrategyManifestV3 = async () => {
-	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(await getSettings()))
+export const updateContentScriptInjectionStrategyManifestV3 = async (disabledOrigins: readonly string[]) => {
+	const excludeMatches = getManifestV3ExcludeMatches(disabledOrigins)
 	type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 	// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
 	type FixedContentScript = RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
@@ -73,10 +72,10 @@ async function removeSupersededManifestV2Registrations() {
 	}
 }
 
-export const updateContentScriptInjectionStrategyManifestV2 = async () => await manifestV2Registration.execute(async () => {
+export const updateContentScriptInjectionStrategyManifestV2 = async (disabledOrigins: readonly string[]) => await manifestV2Registration.execute(async () => {
 	// Keep failed removals reachable and finish cleanup before creating another registration.
 	await removeSupersededManifestV2Registrations()
-	const excludeGlobs = getManifestV2ExcludeGlobs(getInterceptorDisabledSites(await getSettings()))
+	const excludeGlobs = getManifestV2ExcludeGlobs(disabledOrigins)
 	// A late onCommitted/executeScript injection lets page listeners run before the private bridge capture listener.
 	const registered = await browser.contentScripts.register({
 		matches: injectableSitesWildcard,

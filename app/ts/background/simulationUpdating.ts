@@ -1,3 +1,4 @@
+import { getTransactionProtectorContext } from './transactionProtectorContext.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
@@ -568,7 +569,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 					if (eventsForTransaction === undefined) throw new Error('Transaction event index overflow')
 					return eventsForTransaction
 				})
-				return await runProtectorsForTransaction(slicedSimulationState, transaction, ethereum, requestAbortController, eventsForTransactionPromise)
+				return await runProtectorsForTransaction(slicedSimulationState, getTransactionProtectorContext(transaction), ethereum, requestAbortController, eventsForTransactionPromise)
 			})
 		}
 	)

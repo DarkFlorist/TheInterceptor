@@ -19,7 +19,7 @@ import { RawInterceptedRequest, checkAndThrowRuntimeLastError, isMissingBrowserT
 import { getWebsiteOrigin, getWebsiteOriginForSender } from '../utils/websiteOrigin.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
-import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
+import { reconcileContentScriptRegistration } from './contentScriptRegistration.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -124,12 +124,7 @@ browser.tabs.onRemoved.addListener(async (tabId: number) => await catchAllErrors
 }))
 
 const manifestVersion = browser.runtime.getManifest().manifest_version
-const isManifestV2 = manifestVersion === 2
 const tabStateInitializationPromise = initializeTabStateStorage(manifestVersion)
-
-if (isManifestV2) {
-	void updateContentScriptInjectionStrategyManifestV2().catch(async (error: unknown) => await reportUnexpectedError(error, { code: 'content_script_registration_failed' }))
-}
 
 const dispatchWebsiteRequest = createWebsiteRequestDispatcher()
 
@@ -291,6 +286,7 @@ async function startup() {
 	await tabStateInitializationPromise
 	await migrateAddressBook()
 	await migrateWebsiteAccess()
+	await reconcileContentScriptRegistration().catch(async (error: unknown) => await reportUnexpectedError(error, { code: 'content_script_registration_failed' }))
 	await initializeSafeAppsCompatibility(safeAppsCompatibility).catch(async (error: unknown) => { await reportUnexpectedError(error) })
 	await initializePopupRefreshGeneration()
 	bumpPopupRefreshGeneration()

@@ -54,3 +54,25 @@ test('legacy hostname permissions require consent again without overwriting expl
 	assert.equal(hasAccess(migrated, 'https://legacy.example'), 'askAccess')
 	assert.equal(hasAccess(migrated, 'http://legacy.example'), 'askAccess')
 })
+
+
+test('canonicalizes explicit stored URLs without losing permissions or disable/block settings', () => {
+	for (const [origin, destination] of [
+		['https://EXAMPLE.test:443/path?query#fragment', 'https://example.test'],
+		['http://example.test:80', 'http://example.test'],
+		['https://example.test:8443/path', 'https://example.test:8443'],
+		['file:///tmp/test.html?query#fragment', 'file:///tmp/test.html'],
+	] as const) {
+		const entry = { website: { websiteOrigin: origin, icon: undefined, title: 'Stored' }, access: true, addressAccess: [{ address: 1n, access: false }], interceptorDisabled: true, declarativeNetRequestBlockMode: 'block-all' as const }
+		const migrated = migrateWebsiteAccessOrigins([entry])
+		assert.deepEqual(migrated, [{ ...entry, website: { ...entry.website, websiteOrigin: destination } }])
+		assert.equal(migrateWebsiteAccessOrigins(migrated), migrated)
+	}
+})
+
+test('canonical permissions take precedence over URL aliases regardless of storage ordering', () => {
+	const canonical = { website: { websiteOrigin: 'https://example.test', icon: undefined, title: undefined }, access: false }
+	const alias = { ...canonical, website: { ...canonical.website, websiteOrigin: 'https://example.test:443/path' }, access: true }
+	assert.deepEqual(migrateWebsiteAccessOrigins([alias, canonical]), [canonical])
+	assert.deepEqual(migrateWebsiteAccessOrigins([canonical, alias]), [canonical])
+})

@@ -1,8 +1,9 @@
-import type { SimulationState, WebsiteCreatedEthereumTransaction } from '../../types/visualizer-types.js'
+import type { TransactionProtectorContext } from '../protectorTypes.js'
+import type { SimulationState } from '../../types/visualizer-types.js'
 import type { EthereumClientService } from '../services/EthereumClientService.js'
 import { getCodeOrError } from './commonTokenOops.js'
 
-export async function eoaCalldata({ transaction }: WebsiteCreatedEthereumTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState) {
+export async function eoaCalldata({ transaction }: TransactionProtectorContext, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState) {
 	if (transaction.to === null) return
 	if (transaction.input.length === 0) return
 	const code = await getCodeOrError(ethereum, requestAbortController, simulationState, transaction.to)

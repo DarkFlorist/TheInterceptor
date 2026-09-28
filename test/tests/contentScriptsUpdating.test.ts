@@ -39,6 +39,8 @@ function installBrowserMock(options: { registerError?: Error, updateError?: Erro
 			reload: async (tabId: number) => { firefoxOperations.push(`reload:${ tabId }`) },
 		},
 		windows: {},
+		declarativeNetRequest: { getDynamicRules: async () => [], getSessionRules: async () => [], updateDynamicRules: async () => undefined, updateSessionRules: async () => undefined },
+		webRequest: { onBeforeRequest: { addListener: () => undefined, removeListener: () => undefined } },
 		scripting: {
 			async getRegisteredContentScripts() { return [...registeredContentScripts.values()] },
 			async registerContentScripts(scripts: readonly RegisteredScript[]) {
@@ -88,6 +90,7 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/utils/contentScriptsUpdating.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/contentScriptRegistration.js'),
 	}
 }
 
@@ -114,13 +117,13 @@ describe('content script injection strategy', () => {
 	test('registers the Firefox bridge at document start before injecting the provider', async () => {
 		const { firefoxScripts, storageState, getFirefoxUnregisterCalls } = installBrowserMock()
 		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
-		await updateContentScriptInjectionStrategyManifestV2()
+		await updateContentScriptInjectionStrategyManifestV2([])
 		assert.deepEqual(firefoxScripts[0], {
 			matches: ['file://*/*', 'http://*/*', 'https://*/*'], allFrames: true, runAt: 'document_start',
 			js: [{ file: '/vendor/webextension-polyfill/dist/browser-polyfill.js' }, { file: '/inpage/js/listenContentScript.js' }, { file: '/inpage/js/document_start.js' }],
 		})
 		storageState.websiteAccess = [{ website: { websiteOrigin: 'https://disabled.example' }, interceptorDisabled: true }]
-		await updateContentScriptInjectionStrategyManifestV2()
+		await updateContentScriptInjectionStrategyManifestV2(['https://disabled.example'])
 		assert.equal(firefoxScripts[1]?.excludeMatches, undefined)
 		assert.deepEqual(firefoxScripts[1]?.excludeGlobs, ['https://disabled.example/*'])
 		assert.equal(getFirefoxUnregisterCalls(), 1)
@@ -129,9 +132,9 @@ describe('content script injection strategy', () => {
 	test('propagates Firefox registration failures without removing existing protection', async () => {
 		const previous = installBrowserMock()
 		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
-		await updateContentScriptInjectionStrategyManifestV2()
+		await updateContentScriptInjectionStrategyManifestV2([])
 		installBrowserMock({ registerError: new Error('Firefox registration failed') })
-		await assert.rejects(updateContentScriptInjectionStrategyManifestV2(), /Firefox registration failed/)
+		await assert.rejects(updateContentScriptInjectionStrategyManifestV2([]), /Firefox registration failed/)
 		assert.equal(previous.getFirefoxUnregisterCalls(), 0)
 	})
 
@@ -141,7 +144,7 @@ describe('content script injection strategy', () => {
 		const { disableInterceptorForPage } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
 		const { saveCurrentTabId } = await import('../../app/ts/background/storageVariables.js')
 		await saveCurrentTabId(7)
-		await updateContentScriptInjectionStrategyManifestV2()
+		await updateContentScriptInjectionStrategyManifestV2([])
 		firefoxOperations.length = 0
 		const website = { websiteOrigin: 'https://toggle.example:8443', icon: undefined, title: undefined }
 		await disableInterceptorForPage(new Map(), website, true)
@@ -156,20 +159,59 @@ describe('content script injection strategy', () => {
 	})
 
 	for (const manifestVersion of [2, 3]) {
-		test(`manifest v${ manifestVersion } reconciles replaced and removed disabled-site settings without refreshing for metadata changes`, async () => {
+		test(`manifest v${ manifestVersion } import and removal workflows reconcile exclusions while metadata edits only write storage`, async () => {
 			const { firefoxScripts, getRegisteredContentScripts, getScriptingOperations } = installBrowserMock({ manifestVersion })
-			const { updateWebsiteAccess } = await import('../../app/ts/background/settings.js')
+			const { updateWebsiteAccess, getWebsiteAccess, exportSettingsAndAddressBook } = await import('../../app/ts/background/settings.js')
+			const { importSettings } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
+			const { removeWebsiteAccess } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
+			const { ExportedSettings } = await import('../../app/ts/types/exportedSettingsTypes.js')
+			const { serialize } = await import('../../app/ts/types/wire-types.js')
+			const { createEthereumWithGetBlockCounter } = await import('./backgroundEthAccountsTestHarness.js')
+			const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 			const website = { websiteOrigin: 'https://imported.example', icon: undefined, title: undefined }
-			const entry = { website, addressAccess: [], interceptorDisabled: true }
-			await updateWebsiteAccess(() => [entry])
+			const entry = { website, access: true, addressAccess: [{ address: 1n, access: true }], interceptorDisabled: true }
+			const exported = await exportSettingsAndAddressBook()
+			const legacy = { ...entry, website: { ...website, websiteOrigin: 'legacy-import.example' } }
+			const importedAlias = { ...entry, website: { ...website, websiteOrigin: 'https://IMPORTED.example:443/path' } }
+			const fileContents = JSON.stringify(serialize(ExportedSettings, { ...exported, settings: { ...exported.settings, websiteAccess: [importedAlias, legacy] } }))
+			const reply = await importSettings({ method: 'popup_import_settings', data: { fileContents } })
+			assert.equal(reply.data.success, true)
+			assert.deepEqual(await getWebsiteAccess(), [entry, { ...legacy, website: { ...legacy.website, websiteOrigin: 'https://legacy-import.example' }, access: undefined, addressAccess: undefined, interceptorDisabled: undefined }])
 			if (manifestVersion === 2) assert.deepEqual(firefoxScripts.at(-1)?.excludeGlobs, ['https://imported.example/*'])
-			else assert.ok(getRegisteredContentScripts().every((script) => script.excludeMatches?.includes('https://imported.example:443/*')))
+			else assert.deepEqual(getRegisteredContentScripts().map((script) => script.excludeMatches), [['https://imported.example:443/*'], ['https://imported.example:443/*']])
 			const registrations = manifestVersion === 2 ? firefoxScripts.length : getScriptingOperations().length
 			await updateWebsiteAccess(() => [{ ...entry, website: { ...website, title: 'New title' } }])
 			assert.equal(manifestVersion === 2 ? firefoxScripts.length : getScriptingOperations().length, registrations)
-			await updateWebsiteAccess(() => [])
+			await removeWebsiteAccess(simulationServicesOwner, new Map(), { method: 'popup_removeWebsiteAccess', data: { websiteOrigin: website.websiteOrigin } })
 			if (manifestVersion === 2) assert.equal(firefoxScripts.at(-1)?.excludeGlobs, undefined)
 			else assert.ok(getRegisteredContentScripts().every((script) => script.excludeMatches?.length === 0))
+		})
+	}
+
+	for (const manifestVersion of [2, 3]) {
+		test(`manifest v${ manifestVersion } bulk access edits refresh exclusions for removals and cleared disabled flags`, async () => {
+			const { firefoxScripts, firefoxOperations, getRegisteredContentScripts, getScriptingOperations } = installBrowserMock({ manifestVersion })
+			const { updateWebsiteAccess, getWebsiteAccess } = await import('../../app/ts/background/settings.js')
+			const { changeInterceptorAccess } = await import('../../app/ts/background/popupMessageHandlers.js')
+			const { createEthereumWithGetBlockCounter } = await import('./backgroundEthAccountsTestHarness.js')
+			const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+			const { reconcileContentScriptRegistration, saveCurrentTabId } = await loadModules()
+			await saveCurrentTabId(9)
+			for (const removed of [false, true]) {
+				const oldEntry = { website: { websiteOrigin: 'https://bulk.example', icon: undefined, title: undefined }, interceptorDisabled: true }
+				await updateWebsiteAccess(() => [oldEntry])
+				await reconcileContentScriptRegistration()
+				await changeInterceptorAccess(simulationServicesOwner, new Map(), { method: 'popup_changeInterceptorAccess', data: [{ oldEntry, newEntry: { ...oldEntry, interceptorDisabled: undefined }, removed }] })
+				if (manifestVersion === 2) assert.equal(firefoxScripts.at(-1)?.excludeGlobs, undefined)
+				else assert.ok(getRegisteredContentScripts().every((script) => script.excludeMatches?.length === 0))
+				assert.equal((await getWebsiteAccess()).length, removed ? 0 : 1)
+				assert.equal(firefoxOperations.at(-1), 'reload:9')
+			}
+			const entry = { website: { websiteOrigin: 'https://metadata.example', icon: undefined, title: undefined }, access: false }
+			await updateWebsiteAccess(() => [entry])
+			const registrations = manifestVersion === 2 ? firefoxScripts.length : getScriptingOperations().length
+			await changeInterceptorAccess(simulationServicesOwner, new Map(), { method: 'popup_changeInterceptorAccess', data: [{ oldEntry: entry, newEntry: { ...entry, access: true }, removed: false }] })
+			assert.equal(manifestVersion === 2 ? firefoxScripts.length : getScriptingOperations().length, registrations)
 		})
 	}
 
@@ -177,11 +219,16 @@ describe('content script injection strategy', () => {
 		const options: { manifestVersion: number, registerError?: Error } = { manifestVersion: 2, registerError: new Error('Temporary registration failure') }
 		const { firefoxScripts } = installBrowserMock(options)
 		const { updateWebsiteAccess } = await import('../../app/ts/background/settings.js')
+		const { reconcileContentScriptRegistration } = await loadModules()
 		const website = { websiteOrigin: 'https://retry.example', icon: undefined, title: undefined }
-		await assert.rejects(updateWebsiteAccess(() => [{ website, addressAccess: [], interceptorDisabled: true }]), /Temporary registration failure/)
+		await updateWebsiteAccess(() => [{ website, addressAccess: [], interceptorDisabled: true }])
+		await assert.rejects(reconcileContentScriptRegistration(), /Temporary registration failure/)
+		assert.equal(firefoxScripts.length, 0)
+		await updateWebsiteAccess((previous) => previous.map((entry) => ({ ...entry, website: { ...entry.website, title: 'Updated while registration unavailable' } })))
 		assert.equal(firefoxScripts.length, 0)
 		options.registerError = undefined
 		await updateWebsiteAccess((previous) => previous)
+		await reconcileContentScriptRegistration()
 		assert.deepEqual(firefoxScripts.at(-1)?.excludeGlobs, ['https://retry.example/*'])
 	})
 
@@ -190,13 +237,16 @@ describe('content script injection strategy', () => {
 		const { activeFirefoxScripts, firefoxOperations, getFirefoxUnregisterCalls } = installBrowserMock(options)
 		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
 		const { updateWebsiteAccess } = await import('../../app/ts/background/settings.js')
-		await updateContentScriptInjectionStrategyManifestV2()
+		const { reconcileContentScriptRegistration } = await loadModules()
+		await updateContentScriptInjectionStrategyManifestV2([])
 		options.unregisterFailures = 1
 		const website = { websiteOrigin: 'https://cleanup.example', icon: undefined, title: undefined }
-		await assert.rejects(updateWebsiteAccess(() => [{ website, addressAccess: [], interceptorDisabled: true }]), /Temporary unregister failure/)
+		await updateWebsiteAccess(() => [{ website, addressAccess: [], interceptorDisabled: true }])
+		await assert.rejects(reconcileContentScriptRegistration(), /Temporary unregister failure/)
 		assert.equal(activeFirefoxScripts.size, 2)
 		firefoxOperations.length = 0
 		await updateWebsiteAccess((previous) => previous)
+		await reconcileContentScriptRegistration()
 		assert.deepEqual(firefoxOperations, ['unregister', 'register', 'unregister'])
 		assert.equal(getFirefoxUnregisterCalls(), 3)
 		assert.equal(activeFirefoxScripts.size, 1)
@@ -229,14 +279,14 @@ describe('content script injection strategy', () => {
 	test('propagates manifest v3 registration failures to the caller', async () => {
 		installBrowserMock({ registerError: new Error('registration failed') })
 		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
-		await assert.rejects(updateContentScriptInjectionStrategyManifestV3(), /registration failed/)
+		await assert.rejects(updateContentScriptInjectionStrategyManifestV3([]), /registration failed/)
 	})
 
 	test('registers missing scripts, updates existing definitions, and then prunes obsolete registrations', async () => {
 		const { getRegisteredContentScripts, getScriptingOperations, getUnregisteredContentScriptIdBatches } = installBrowserMock({ registeredContentScriptIds: ['inpage', 'obsolete-inpage'] })
 		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
 
-		await updateContentScriptInjectionStrategyManifestV3()
+		await updateContentScriptInjectionStrategyManifestV3([])
 
 		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2'])
 		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
@@ -251,7 +301,7 @@ describe('content script injection strategy', () => {
 		})
 		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
 
-		await assert.rejects(updateContentScriptInjectionStrategyManifestV3(), /update failed/)
+		await assert.rejects(updateContentScriptInjectionStrategyManifestV3([]), /update failed/)
 
 		assert.deepEqual(getScriptingOperations(), ['update'])
 		assert.deepEqual(getUnregisteredContentScriptIdBatches(), [])

@@ -5,11 +5,19 @@ import { getWebsiteOrigin } from '../utils/websiteOrigin.js'
 
 export function migrateWebsiteAccessOrigins(entries: WebsiteAccessArray): WebsiteAccessArray {
 	const explicitOrigins = new Set(entries.map((entry) => getWebsiteOrigin(entry.website.websiteOrigin)).filter((origin) => origin !== undefined))
+	const canonicalOrigins = new Set(entries.filter((entry) => getWebsiteOrigin(entry.website.websiteOrigin) === entry.website.websiteOrigin).map((entry) => entry.website.websiteOrigin))
 	let changed = false
 	const migrated = entries.flatMap((entry) => {
 		const origin = entry.website.websiteOrigin
 		if (getWebsiteOrigin(origin) === origin) return [entry]
 		changed = true
+		const explicitDestination = getWebsiteOrigin(origin)
+		if (explicitDestination !== undefined) {
+			// Canonical entries take precedence over aliases; otherwise preserve all permissions for the same unambiguous origin.
+			if (canonicalOrigins.has(explicitDestination)) return []
+			canonicalOrigins.add(explicitDestination)
+			return [{ ...entry, website: { ...entry.website, websiteOrigin: explicitDestination } }]
+		}
 		const destination = getWebsiteOrigin(`https://${ origin }`)
 		if (origin === '' || origin.includes('://') || destination === undefined || explicitOrigins.has(destination)) return []
 		explicitOrigins.add(destination)

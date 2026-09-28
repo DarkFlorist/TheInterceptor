@@ -311,8 +311,13 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	if (safeResolution.pendingChanged) {
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => pendingTransactionOrMessage)
 	}
-	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest
-		?? pendingTransactionOrMessage.originalRequestParameters
+	// Re-simulation uses the untouched request; forwarding uses the sender bound to the latest successful review.
+	const reviewedRequest = pendingTransactionOrMessage.type === 'Transaction'
+		&& pendingTransactionOrMessage.transactionOrMessageCreationStatus === 'Simulated'
+		&& getSafePendingFlow(pendingTransactionOrMessage) === undefined
+		? pendingTransactionOrMessage.transactionToSimulate.originalRequestParameters
+		: pendingTransactionOrMessage.originalRequestParameters
+	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest ?? reviewedRequest
 	const removePendingRequestAndUpdateView = async () => {
 		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
 		if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
@@ -806,7 +811,8 @@ export async function openConfirmTransactionDialogForTransaction(
 			const pendingTransaction = {
 				type: 'Transaction' as const,
 				popupOrTabId: openedDialog,
-				originalRequestParameters: transactionToSimulate.originalRequestParameters,
+				// Preserve an omitted sender so changing accounts can craft a fresh review for the new account.
+				originalRequestParameters: gasPayment === 'transaction-sender' ? effectiveTransactionParams : transactionToSimulate.originalRequestParameters,
 				uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 				simulationMode,
 				activeAddress: transactionExecutor,

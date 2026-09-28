@@ -1,3 +1,4 @@
+import { getTransactionProtectorContext } from '../../app/ts/background/transactionProtectorContext.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { addr, authorization as eip7702Authorization, Transaction } from 'micro-eth-signer'
@@ -440,7 +441,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 				assert.equal(result.transaction.maxPriorityFeePerGas, gasPrice)
 				assert.equal(result.originalRequestParameters.params[0].gasPrice, gasPrice)
 				assert.equal(result.originalRequestParameters.params[0].from, EthereumAddress.parse(recipientAddress))
-				const warning = await feeOops(result, ethereum, undefined)
+				const warning = await feeOops(getTransactionProtectorContext(result), ethereum, undefined)
 				if (gasPrice >= 310n * 10n ** 9n) assert.match(warning ?? '', /outrageous fee/)
 				else assert.equal(warning, undefined)
 			}
