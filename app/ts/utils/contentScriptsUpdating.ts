@@ -1,4 +1,4 @@
-import { getInterceptorDisabledSites, getSettings } from '../background/settings.js'
+import { getInterceptorDisabledSites, getSafeAppsCompatibilityMode, getSettings } from '../background/settings.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
 
@@ -40,6 +40,7 @@ export function getManifestV3ExcludeMatches(origins: readonly string[]) {
 
 export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(await getSettings()))
+	const safeAppsCompatibilityMode = await getSafeAppsCompatibilityMode()
 	try {
 		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
@@ -57,7 +58,9 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 			allFrames: true,
 			matches: injectableSitesWildcard,
 			excludeMatches,
-			js: ['/inpage/js/inpage.js'],
+			js: safeAppsCompatibilityMode
+				? ['/inpage/js/requestFinanceSafeHost.js', '/inpage/js/inpage.js']
+				: ['/inpage/js/inpage.js'],
 			runAt: 'document_start',
 			world: 'MAIN',
 			matchOriginAsFallback: true

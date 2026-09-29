@@ -15,3 +15,8 @@ self.addEventListener('activate', (event) => {
 })
 
 updateContentScriptInjectionStrategyManifestV3()
+
+browser.storage.onChanged.addListener((changes, area) => {
+	if (area !== 'local' || !('safeAppsCompatibilityMode' in changes)) return
+	void updateContentScriptInjectionStrategyManifestV3()
+})

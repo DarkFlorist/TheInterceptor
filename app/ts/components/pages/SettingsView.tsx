@@ -217,7 +217,7 @@ export function SettingsView() {
 							onInput = { requestToMetamaskCompatibilityMode }
 						/>
 						<CheckBoxSetting
-							text = { 'Advertise as a Gnosis Safe wallet to Safe Apps (experimental).' }
+							text = { 'Advertise as a Gnosis Safe wallet to Safe Apps (experimental). Refresh Request Finance after changing this setting.' }
 							checked = { safeAppsCompatibilityMode.value }
 							onInput = { requestToSafeAppsCompatibilityMode }
 						/>

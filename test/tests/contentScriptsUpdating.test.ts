@@ -16,15 +16,17 @@ type BrowserMockOptions = {
 	readonly hasVisibleTabUrl?: boolean
 	readonly tabUrlAfterStorageRead?: string
 	readonly registeredContentScriptIds?: readonly string[]
+	readonly safeAppsCompatibilityMode?: boolean
 }
 
 type RegisteredContentScript = {
 	readonly id: string
 	readonly excludeMatches?: readonly string[]
+	readonly js?: readonly string[]
 }
 
-function installBrowserMock({ registerError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [] }: BrowserMockOptions = {}) {
-	const storageState: Record<string, unknown> = {}
+function installBrowserMock({ registerError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [], safeAppsCompatibilityMode = false }: BrowserMockOptions = {}) {
+	const storageState: Record<string, unknown> = { safeAppsCompatibilityMode }
 	const sentMessages: RuntimeMessage[] = []
 	const executedScriptFiles: string[] = []
 	const registeredContentScripts = new Map(registeredContentScriptIds.map((id) => [id, { id }]))
@@ -236,6 +238,18 @@ describe('content script injection strategy', () => {
 		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
 		assert.deepEqual(getScriptingOperations(), ['register', 'update', 'unregister'])
 		assert.deepEqual(getUnregisteredContentScriptIdBatches(), [['obsolete-inpage']])
+	})
+
+	test('registers the Request Finance Safe host before the inpage provider only when Safe Apps mode is enabled', async () => {
+		for (const enabled of [false, true]) {
+			const { getRegisteredContentScripts } = installBrowserMock({ safeAppsCompatibilityMode: enabled })
+			const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
+			await updateContentScriptInjectionStrategyManifestV3()
+			const inpage = getRegisteredContentScripts().find(({ id }) => id === 'inpage')
+			assert.deepEqual(inpage?.js, enabled
+				? ['/inpage/js/requestFinanceSafeHost.js', '/inpage/js/inpage.js']
+				: ['/inpage/js/inpage.js'])
+		}
 	})
 
 	test('keeps existing and obsolete manifest v3 content scripts registered when an update fails', async () => {
