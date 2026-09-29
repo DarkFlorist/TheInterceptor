@@ -183,17 +183,23 @@ describe('popup message dispatcher seams', () => {
 			context.simulationServicesOwner.clear()
 		}
 		const ownerWasAvailable = context.simulationServicesOwner.isAvailable()
+		const unavailableReply = {
+			error: {
+				code: 4900,
+				message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
+			},
+		}
 
-		assert.equal(await dispatchPopupMessage(context, { method: 'popup_refreshSimulation' }), undefined)
-		assert.equal(await dispatchPopupMessage(context, {
+		assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_refreshSimulation' }), unavailableReply)
+		assert.deepEqual(await dispatchPopupMessage(context, {
 			method: 'popup_confirmDialog',
 			data: {
 				action: 'reject',
 				errorString: undefined,
 				uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 1n } },
 			},
-		}), undefined)
-		assert.equal(await dispatchPopupMessage(context, { method: 'popup_resetSimulation' }), undefined)
+		}), unavailableReply)
+		assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_resetSimulation' }), unavailableReply)
 		assert.deepEqual(await dispatchPopupMessage(context, {
 			method: 'popup_setSafeSimulationSigner',
 			data: { chainId: 1n, safeAddress: 2n, safeSimulationSignerAddress: 3n },

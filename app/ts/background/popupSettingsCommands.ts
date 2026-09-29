@@ -5,7 +5,7 @@ import type { PopupSettingsRequest } from '../types/popupSettingsRequests.js'
 import type { PopupMessage } from '../types/interceptor-messages.js'
 import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
 import { popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
-import { getSettingsSnapshot } from './settings.js'
+import { getSettingsSnapshot, requireSettings } from './settings.js'
 import { changeActiveAddress, enableSimulationMode, modifyMakeMeRich, popupChangeActiveRpc } from './popupMessageHandlers.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import { rpcServicesAreAvailable } from './rpcConfigurationLifecycle.js'
@@ -17,7 +17,7 @@ function settingsCommand<Method extends PopupSettingsRequest['method']>(method: 
 		const descriptor = popupSettingsOperations[method]
 		const admission = await settingsCoordinator.run(descriptor.operation, async () => {
 			const snapshot = await getSettingsSnapshot()
-			return await action({ ...context, settings: snapshot.settings, rpcConfiguration: snapshot.rpcConfiguration }, request)
+			return await action({ ...context, settings: requireSettings(snapshot), rpcConfiguration: snapshot.rpcConfiguration }, request)
 		})
 		return admission.accepted ? admission.result : {
 			type: descriptor.replyType,

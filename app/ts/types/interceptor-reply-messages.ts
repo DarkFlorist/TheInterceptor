@@ -23,6 +23,14 @@ export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
 	})
 })
 
+export type RpcConfigurationUnavailableReply = funtypes.Static<typeof RpcConfigurationUnavailableReply>
+export const RpcConfigurationUnavailableReply = funtypes.ReadonlyObject({
+	error: funtypes.ReadonlyObject({
+		code: funtypes.Number,
+		message: funtypes.String,
+	}),
+})
+
 export type EnrichedRichListElement = funtypes.Static<typeof EnrichedRichListElement>
 export const EnrichedRichListElement = funtypes.ReadonlyObject({
 	addressBookEntry: AddressBookEntry,
@@ -389,6 +397,7 @@ export type PopupRequests = funtypes.Static<typeof PopupMessageReplyRequests>
 export type PopupRequestsReplyReturn<Request extends PopupRequests> = Request['method'] extends keyof typeof PopupRequestsReplies ? funtypes.Static<(typeof PopupRequestsReplies)[Request['method']]> : undefined
 
 export type PopupReplyOption =
+	| RpcConfigurationUnavailableReply
 	| RequestMakeMeRichDataReply
 	| RequestActiveAddressesReply
 	| RequestSimulationModeReply
@@ -413,6 +422,7 @@ export type PopupReplyOption =
 	| undefined
 
 export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union(
+	RpcConfigurationUnavailableReply,
 	RequestMakeMeRichDataReply,
 	RequestActiveAddressesReply,
 	RequestSimulationModeReply,

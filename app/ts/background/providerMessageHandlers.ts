@@ -6,7 +6,7 @@ import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-type
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getRpcConfigurationState, getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
-import { getMetamaskCompatibilityMode, getSettings, getSettingsSnapshot } from './settings.js'
+import { getMetamaskCompatibilityMode, getSettings, getSettingsSnapshot, requireSettings } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
@@ -111,7 +111,26 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			activeSigningAddress,
 		}))
 		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
-		const { settings, rpcConfiguration } = await getSettingsSnapshot()
+		const snapshot = await getSettingsSnapshot()
+		const { rpcConfiguration } = snapshot
+		if (snapshot.settings === undefined) {
+			await sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: {
+				tabId,
+				activeSigningAddress,
+				activeSigningSafeAddress: undefined,
+			} })
+			sendInternalWindowMessage({
+				method: 'window_signer_accounts_changed',
+				data: {
+					socket: signerStateToken.socket,
+					signerStateOwnerGeneration: signerStateToken.ownerGeneration,
+					signerProviderGeneration: signerStateToken.signerProviderGeneration,
+				},
+			})
+			notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.signerAccountsChanged, signerStateToken.socket)
+			return returnValue
+		}
+		const settings = requireSettings(snapshot)
 		const simulationServices = rpcServicesAreAvailable(rpcConfiguration, simulationServicesOwner) ? simulationServicesOwner.getCurrentOrUndefined() : undefined
 		if (simulationServices !== undefined) await refreshPendingSafeSignerSelectionErrors(simulationServices.ethereum, simulationServices.tokenPriceService, tabId)
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
@@ -165,7 +184,10 @@ async function changeSignerChain(simulationServicesOwner: SimulationServicesOwne
 	if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return
 	const oldSignerChain = tabStateChange.previousState.signerChain
 	// update active address if we are using signers address
-	const { settings, rpcConfiguration } = await getSettingsSnapshot()
+	const snapshot = await getSettingsSnapshot()
+	const { rpcConfiguration } = snapshot
+	if (snapshot.settings === undefined) return
+	const settings = requireSettings(snapshot)
 	const selectedSafe = await getConfiguredSigningSafe(settings, tabStateChange.newState.signerAccounts)
 	if (selectedSafe !== undefined) {
 		// Safe signing is pinned to the Safe's configured Interceptor chain. A signer-wallet chain change only refreshes signer state; it must not move the dapp away from the active Safe.

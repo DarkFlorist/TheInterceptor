@@ -9,6 +9,10 @@ import { dispatchPopupMessage } from './popupMessageDispatcher.js'
 import { getConfirmTransactionAbortController } from './confirmTransactionSimulation.js'
 import { resetSimulationStateFromConfig } from './activeSettings.js'
 import type { RpcConfigurationState } from './storageVariables.js'
+import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from './rpcConfigurationLifecycle.js'
+import { restoreDefaultRpcConfiguration, retryRpcConfiguration, settingsOpened } from './popupMessageHandlers/settings.js'
+import { publishRpcConfigurationRecovery } from './activeSettings.js'
+import { openNewTab } from './popupMessageHandlers.js'
 
 const simulationAbortController = new AbortController()
 
@@ -16,7 +20,7 @@ export async function popupMessageHandler(
 	websiteTabConnections: WebsiteTabConnections,
 	simulationServicesOwner: SimulationServicesOwner,
 	request: unknown,
-	settings: Settings,
+	settings: Settings | undefined,
 	rpcConfiguration: RpcConfigurationState,
 	publishRpcConnectionStatus: PublishRpcConnectionStatus,
 ) {
@@ -29,6 +33,15 @@ export async function popupMessageHandler(
 				message: maybeParsedRequest.fullError === undefined ? 'Unknown parsing error' : maybeParsedRequest.fullError.toString(),
 				code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST,
 			}
+		}
+	}
+	if (settings === undefined) {
+		switch (maybeParsedRequest.value.method) {
+			case 'popup_requestSettings': return await settingsOpened(simulationServicesOwner)
+			case 'popup_retryRpcConfiguration': return await retryRpcConfiguration(simulationServicesOwner)
+			case 'popup_restoreDefaultRpcConfiguration': return await restoreDefaultRpcConfiguration(simulationServicesOwner, websiteTabConnections, undefined, publishRpcConfigurationRecovery)
+			case 'popup_openSettings': return await openNewTab('settingsView')
+			default: return { error: RPC_CONFIGURATION_UNAVAILABLE_ERROR }
 		}
 	}
 	try {

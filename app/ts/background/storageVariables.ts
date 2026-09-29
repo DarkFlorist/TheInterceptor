@@ -9,7 +9,7 @@ import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from 
 import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
-import type { RpcEntries, RpcEntry, RpcNetwork } from '../types/rpc.js'
+import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { keccak256, namehash, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { isValidEnsName } from '../utils/ens.js'
@@ -306,12 +306,16 @@ export async function getRpcConfigurationState(): Promise<RpcConfigurationState>
 
 export async function getRpcConfigurationStateWithStorageSnapshot(keys: readonly string[]): Promise<{ readonly storedItems: Readonly<Record<string, unknown>>, readonly rpcConfiguration: RpcConfigurationState }> {
 	return await rpcConfigurationSemaphore.execute(async () => {
-		const storedItems = await browser.storage.local.get([...keys, 'rpcEntries', 'activeRpcNetwork'])
-		return { storedItems, rpcConfiguration: await resolveRpcConfigurationStateWithoutLock(storedItems) }
+		try {
+			const storedItems = await browser.storage.local.get([...keys, 'rpcEntries', 'activeRpcNetwork'])
+			return { storedItems, rpcConfiguration: await resolveRpcConfigurationStateWithoutLock(storedItems) }
+		} catch (error: unknown) {
+			return { storedItems: {}, rpcConfiguration: unavailableRpcConfiguration('read-failed', undefined, error) }
+		}
 	})
 }
 
-export async function setRpcConfiguration(rpcEntries: RpcEntries, activeRpcNetwork: RpcEntry) {
+export async function setRpcConfiguration(rpcEntries: RpcEntries, activeRpcNetwork: RpcNetwork) {
 	await rpcConfigurationSemaphore.execute(async () => await browserStorageLocalSet({ rpcEntries, activeRpcNetwork }))
 }
 

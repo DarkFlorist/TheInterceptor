@@ -1,6 +1,6 @@
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import 'webextension-polyfill'
-import { getSettingsSnapshot, updateKnownWebsiteMetadata } from './settings.js'
+import { getSettingsSnapshot, requireSettings, updateKnownWebsiteMetadata } from './settings.js'
 import { handleInterceptedRequest } from './background.js'
 import { captureSimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { popupMessageHandler } from './popupMessageRouting.js'
@@ -244,7 +244,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 			if (owner === undefined) return
 			const settingsSnapshot = await getSettingsSnapshot()
 			if (!rpcConfigurationIsReady(settingsSnapshot.rpcConfiguration)) return
-			const { settings } = settingsSnapshot
+			const settings = requireSettings(settingsSnapshot)
 			if (!isCurrentSimulationService(simulationServicesOwner, ethereumClientService)) return
 			if (settings.simulationMode) {
 				const { ethereum, tokenPriceService } = getSimulationServices()
@@ -340,15 +340,13 @@ const onTabUpdated = async (tabId: number, changeInfo: browser.tabs._OnUpdatedCh
 const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => {
 	const { simulationServicesOwner } = await waitForBackgroundStartup()
 	const simulationServices = simulationServicesOwner.getCurrentOrUndefined()
-	if (simulationServices === undefined) return
-	return await onCloseWindowOrTab({ type: 'popup' as const, id }, simulationServices.ethereum, simulationServices.tokenPriceService, websiteTabConnections)
+	return await onCloseWindowOrTab({ type: 'popup' as const, id }, simulationServices?.ethereum, simulationServices?.tokenPriceService, websiteTabConnections)
 })
 
 const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () => {
 	const { simulationServicesOwner } = await waitForBackgroundStartup()
 	const simulationServices = simulationServicesOwner.getCurrentOrUndefined()
-	if (simulationServices === undefined) return
-	return await onCloseWindowOrTab({ type: 'tab' as const, id }, simulationServices.ethereum, simulationServices.tokenPriceService, websiteTabConnections)
+	return await onCloseWindowOrTab({ type: 'tab' as const, id }, simulationServices?.ethereum, simulationServices?.tokenPriceService, websiteTabConnections)
 })
 
 // MV3 service worker event listeners must be registered synchronously at module load.

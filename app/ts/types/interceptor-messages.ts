@@ -819,7 +819,7 @@ const SettingsOpenedReply = funtypes.ReadonlyObject({
 		metamaskCompatibilityMode: funtypes.Boolean,
 		safeAppsCompatibilityMode: funtypes.Boolean,
 		rpcConfigurationAvailable: funtypes.Boolean,
-		activeRpcNetwork: RpcNetwork,
+		activeRpcNetwork: funtypes.Union(RpcNetwork, funtypes.Undefined),
 		rpcEntries: RpcEntries,
 	})
 }).asReadonly()

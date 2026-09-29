@@ -15,7 +15,7 @@ import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/webs
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
 import type { RpcConfigurationState } from './storageVariables.js'
 import { hasOwnKey } from '../utils/typescript.js'
-import { getRpcNetworkForSettings } from './rpcConfigurationLifecycle.js'
+import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from './rpcConfigurationLifecycle.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -103,13 +103,19 @@ async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, 
 }
 
 export async function getSettings() : Promise<Settings> {
-	return (await getSettingsSnapshot()).settings
+	const snapshot = await getSettingsSnapshot()
+	return requireSettings(snapshot)
 }
 
-export async function getSettingsSnapshot(): Promise<{ readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState }> {
+export function requireSettings(snapshot: { readonly settings: Settings | undefined }): Settings {
+	if (snapshot.settings === undefined) throw new Error(RPC_CONFIGURATION_UNAVAILABLE_ERROR.message)
+	return snapshot.settings
+}
+
+export async function getSettingsSnapshot(): Promise<{ readonly settings: Settings | undefined, readonly rpcConfiguration: RpcConfigurationState }> {
 	const { storedItems, rpcConfiguration } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
-	const activeRpcNetwork = getRpcNetworkForSettings(rpcConfiguration)
-	const settings = await getSettingsFromStorageItems(storedItems, activeRpcNetwork)
+	const activeRpcNetwork = 'activeRpcNetwork' in rpcConfiguration ? rpcConfiguration.activeRpcNetwork : undefined
+	const settings = activeRpcNetwork === undefined ? undefined : await getSettingsFromStorageItems(storedItems, activeRpcNetwork)
 	return { settings, rpcConfiguration }
 }
 
@@ -124,7 +130,11 @@ export function captureRpcNetwork(settings: Pick<Settings, 'activeRpcNetwork'>):
 }
 
 export async function getSettingsForCapturedRpcNetwork(capturedRpcNetwork: CapturedRpcNetwork): Promise<Settings> {
-	const { storedItems } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
+	const { storedItems, rpcConfiguration } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
+	if (rpcConfiguration.status === 'unavailable' && rpcConfiguration.reason === 'read-failed') {
+		if (rpcConfiguration.error !== undefined) throw rpcConfiguration.error
+		throw new Error(RPC_CONFIGURATION_UNAVAILABLE_ERROR.message)
+	}
 	return await getSettingsFromStorageItems(storedItems, capturedRpcNetwork.activeRpcNetwork)
 }
 

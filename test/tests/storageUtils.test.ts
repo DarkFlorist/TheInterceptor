@@ -51,7 +51,7 @@ Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true
 const { browserStorageLocalGet, browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
 const { getRpcConfigurationState, getRpcConnectionStatus, getRpcList, promoteRpcAsPrimary, setRpcConfiguration } = await import('../../app/ts/background/storageVariables.js')
 const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
-const { getSettings } = await import('../../app/ts/background/settings.js')
+const { captureRpcNetwork, getSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot } = await import('../../app/ts/background/settings.js')
 const { restoreDefaultRpcConfiguration, retryRpcConfiguration, setNewRpcList, settingsOpened } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
 const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
 const ignoreRecoveryPublication = async () => undefined
@@ -137,6 +137,27 @@ describe('RPC storage recovery', () => {
 		assert.deepEqual(storedItems.rpcEntries, storedRpcEntries)
 	})
 
+	test('represents settings snapshot read failures as unavailable without fabricating settings', async () => {
+		const readError = new Error('Extension storage is temporarily unavailable')
+		nextStorageReadError = readError
+
+		const snapshot = await getSettingsSnapshot()
+
+		assert.deepEqual(snapshot.rpcConfiguration, { status: 'unavailable', reason: 'read-failed', error: readError })
+		assert.equal(snapshot.settings, undefined)
+		assert.equal(writes.length, 0)
+	})
+
+	test('does not replace captured-network settings with defaults after a storage read failure', async () => {
+		const initialSnapshot = await getSettingsSnapshot()
+		if (initialSnapshot.settings === undefined) throw new Error('Expected initial settings')
+		const readError = new Error('Extension storage is temporarily unavailable')
+		nextStorageReadError = readError
+
+		await assert.rejects(getSettingsForCapturedRpcNetwork(captureRpcNetwork(initialSnapshot.settings)), (error: unknown) => error === readError)
+		assert.equal(writes.length, 0)
+	})
+
 	test('pauses instead of using defaults for corrupt RPC storage values', async () => {
 		storedItems.rpcEntries = 'not-an-rpc-list'
 		storedItems.rpcConnectionStatus = 'not-a-connection-status'
@@ -183,6 +204,20 @@ describe('RPC storage recovery', () => {
 			if (configuration.status === 'unavailable') assert.equal(configuration.reason, 'corrupt')
 			assert.equal(writes.length, 0)
 			assert.equal(storedItems.activeRpcNetwork, 'not-an-rpc-network')
+		} finally {
+			console.warn = originalWarn
+		}
+	})
+
+	test('does not fabricate a network in settings when no active RPC selection can be read', async () => {
+		storedItems.activeRpcNetwork = 'not-an-rpc-network'
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			const snapshot = await getSettingsSnapshot()
+			assert.equal(snapshot.rpcConfiguration.status, 'unavailable')
+			assert.equal(snapshot.settings, undefined)
+			await assert.rejects(getSettings(), /RPC configuration is unavailable/)
 		} finally {
 			console.warn = originalWarn
 		}
@@ -352,7 +387,7 @@ describe('RPC storage recovery', () => {
 		}
 	})
 
-	test('explicit default restoration resumes a paused owner even when readable storage uses another chain', async () => {
+	test('explicit default restoration preserves the active selection while restoring the bundled list', async () => {
 		const privateRpc: RpcEntry = { ...customPrimaryRpc, name: 'Private chain', chainId: 31337n, httpsRpc: 'https://private.example' }
 		await setRpcConfiguration([privateRpc], privateRpc)
 		writes.length = 0
@@ -369,10 +404,46 @@ describe('RPC storage recovery', () => {
 		}, ignoreRecoveryPublication)
 
 		assert.equal(owner.isAvailable(), true)
-		assert.notEqual(owner.getCurrent().ethereum.getRpcEntry().httpsRpc, privateRpc.httpsRpc)
+		assert.equal(owner.getCurrent().ethereum.getRpcEntry().httpsRpc, privateRpc.httpsRpc)
 		assert.equal(writes.length, 1)
-		assert.deepEqual(Object.keys(writes[0] ?? {}).sort(), ['activeRpcNetwork', 'rpcEntries'])
+		assert.deepEqual(Object.keys(writes[0] ?? {}), ['rpcEntries'])
+		const restoredConfiguration = await getRpcConfigurationState()
+		assert.equal(restoredConfiguration.status, 'ready')
+		if (restoredConfiguration.status === 'ready') assert.deepEqual(restoredConfiguration.activeRpcNetwork, privateRpc)
 		owner.clear()
+	})
+
+	test('default restoration preserves a signer-only selection without starting RPC services', async () => {
+		const signerOnlyNetwork = {
+			name: 'Signer only',
+			chainId: 31337n,
+			httpsRpc: undefined,
+			currencyName: 'Ether?' as const,
+			currencyTicker: 'ETH?' as const,
+			primary: false as const,
+			minimized: true as const,
+		}
+		await setRpcConfiguration([], signerOnlyNetwork)
+		writes.length = 0
+		const owner = createSimulationServicesOwner(undefined, async () => undefined, async (_ethereum, error) => { throw error })
+		let recoveryPublications = 0
+
+		await restoreDefaultRpcConfiguration(owner, new Map(), {
+			activeSimulationAddress: undefined,
+			activeSigningSafeAddress: undefined,
+			activeRpcNetwork: signerOnlyNetwork,
+			openedPage: { page: 'Settings' },
+			useSignersAddressAsActiveAddress: false,
+			websiteAccess: [],
+			simulationMode: false,
+		}, async () => { recoveryPublications += 1 })
+
+		assert.equal(owner.isAvailable(), false)
+		assert.equal(recoveryPublications, 0)
+		assert.deepEqual(Object.keys(writes[0] ?? {}), ['rpcEntries'])
+		const restoredConfiguration = await getRpcConfigurationState()
+		assert.equal(restoredConfiguration.status, 'ready')
+		if (restoredConfiguration.status === 'ready') assert.deepEqual(restoredConfiguration.activeRpcNetwork, signerOnlyNetwork)
 	})
 
 	test.each([true, false])('normal RPC list saves cannot resume an owner paused while persistence is in flight (active primary: %j)', async (hasActivePrimary) => {

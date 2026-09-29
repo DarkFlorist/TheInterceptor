@@ -416,6 +416,12 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 	const identifiedMethod = providerHandler.method
 	if (identifiedMethod !== 'notProviderMethod') {
 		if (port === undefined) return
+		if (initialSettings === undefined) {
+			const providerHandlerReturn = await providerHandler.func(simulationServicesOwner, websiteTabConnections, port, request, 'hasAccess', undefined)
+			if (providerHandlerReturn.type === 'doNotReply') return
+			const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
+			return replyToInterceptedRequest(websiteTabConnections, message)
+		}
 		const initialActiveAddress = await getActiveAddressForRequest(initialSettings, websiteTabConnections, socket.tabId)
 		const providerCallbackApproval = request.method === 'eth_accounts_reply'
 			? 'hasAccess'
@@ -427,6 +433,10 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		if (providerHandlerReturn.type === 'doNotReply') return
 		const message: InpageScriptRequest = { uniqueRequestIdentifier: request.uniqueRequestIdentifier, ...providerHandlerReturn }
 		return replyToInterceptedRequest(websiteTabConnections, message)
+	}
+	if (initialSettings === undefined) {
+		replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, initialSnapshot.rpcConfiguration)
+		return
 	}
 	if (replyIfRpcConfigurationIsUnavailable(simulationServicesOwner, websiteTabConnections, request, initialSnapshot.rpcConfiguration)) return
 	if (request.method === 'wallet_revokePermissions') {

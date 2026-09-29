@@ -6,6 +6,9 @@ import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import type { RpcConfigurationState } from './storageVariables.js'
 import { rpcServicesAreAvailable } from './rpcConfigurationLifecycle.js'
+import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from './rpcConfigurationLifecycle.js'
+
+const rpcConfigurationUnavailableReply = (): PopupReplyOption => ({ error: RPC_CONFIGURATION_UNAVAILABLE_ERROR })
 
 export type PopupMessageDispatcherContext = {
 	websiteTabConnections: WebsiteTabConnections
@@ -29,7 +32,7 @@ export function popupRpcMessageHandler<Method extends PopupMessage['method']>(
 	requiresRpc: (request: Extract<PopupMessage, { readonly method: Method }>) => boolean = () => true,
 ): PopupMessageHandler {
 	return popupMessageHandler(method, async (context, request) => {
-		if (requiresRpc(request) && !rpcServicesAreAvailable(context.rpcConfiguration, context.simulationServicesOwner)) return unavailableReply?.(request)
+		if (requiresRpc(request) && !rpcServicesAreAvailable(context.rpcConfiguration, context.simulationServicesOwner)) return unavailableReply?.(request) ?? rpcConfigurationUnavailableReply()
 		return await handler(context, request)
 	})
 }
@@ -46,7 +49,7 @@ export function popupSnapshotMessageHandler<Method extends PopupMessage['method'
 	return popupRpcMessageHandler(method, async (context, request) => {
 		const { simulationServicesOwner, resetSimulationState: _resetSimulationState, ...executionContext } = context
 		const services = simulationServicesOwner.getCurrentOrUndefined()
-		if (services === undefined) return
+		if (services === undefined) return rpcConfigurationUnavailableReply()
 		return await handler({ ...executionContext, services }, request)
 	})
 }
