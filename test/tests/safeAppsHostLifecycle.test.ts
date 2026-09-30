@@ -2,13 +2,12 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 
 import { installSafeAppsHost } from '../../app/inpage/ts/safeAppsHost.js'
-import { installRequestFinanceDiscoveryAdapter } from '../../app/inpage/ts/requestFinanceSafeDiscoveryAdapter.js'
 import { createSafeHostHarness } from '../fixtures/safeAppsHostHarness.js'
 
-test('Request Finance Safe host waits for discovery approval and relays SDK replies within its capacity', async () => {
+test('Safe Apps host respects site discovery deadlines and relays eventual SDK replies within its capacity', async () => {
 	const { fakeWindow, framePort, origin, activeTimeouts, fireTimeouts, postMessage, frameWasAppended, restoreGlobals } = createSafeHostHarness()
 	try {
-		installSafeAppsHost(installRequestFinanceDiscoveryAdapter)
+		installSafeAppsHost()
 		assert.equal(frameWasAppended(), true)
 		assert.notEqual(Reflect.get(fakeWindow, 'parent'), fakeWindow)
 		let repliedToSdk = false
@@ -53,7 +52,7 @@ test('Request Finance Safe host waits for discovery approval and relays SDK repl
 				fakeWindow.addEventListener('message', listener)
 				framePort.postMessage({ id, method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } })
 			})
-			// Match Request Finance's discovery race, with authorization still pending beyond the old deadlines.
+			// Respect the site's discovery deadline even when the SDK waits for eventual approval.
 			const discovery = Promise.race([sdkReply, new Promise<boolean>((resolve) => {
 				Reflect.get(fakeWindow, 'setTimeout')(() => resolve(false), 200)
 			})])
@@ -64,10 +63,12 @@ test('Request Finance Safe host waits for discovery approval and relays SDK repl
 			fireTimeouts(10_500)
 			fireTimeouts(5 * 60_000)
 			await new Promise<void>((resolve) => setTimeout(resolve, 0))
-			assert.equal(discoverySettled, false)
+			assert.equal(discoverySettled, true)
+			assert.equal(await discovery, false)
 			assert.deepEqual(sdkReplies, [])
 			postMessage({ id, success: approved, ...(approved ? { data: { safeAddress: '0x123' } } : { error: 'User rejected access.' }), version: '9.1.0' }, origin)
-			assert.equal(await discovery, approved)
+			assert.equal(await sdkReply, approved)
+			assert.equal(await discovery, false)
 			assert.deepEqual(sdkReplies, [approved])
 		}
 		for (let index = 0; index < 33; index++) {
@@ -97,10 +98,10 @@ test('Request Finance Safe host waits for discovery approval and relays SDK repl
 	}
 })
 
-test('Request Finance Safe host preserves unrelated timers and their callback arguments', async () => {
+test('Safe Apps host preserves every site timer, including the first 200 ms callback after discovery', async () => {
 	const { fakeWindow, framePort, fireTimeouts, restoreGlobals } = createSafeHostHarness()
 	try {
-		installSafeAppsHost(installRequestFinanceDiscoveryAdapter)
+		installSafeAppsHost()
 		const calls: unknown[][] = []
 		const handler = (...args: unknown[]) => { calls.push(args) }
 		const argument = { value: 'callback argument' }
@@ -118,6 +119,7 @@ test('Request Finance Safe host preserves unrelated timers and their callback ar
 		assert.deepEqual(calls, [
 			['different delay', argument],
 			['before discovery', argument],
+			['discovery fallback', argument],
 			['second timer', argument],
 			['after discovery microtask', argument],
 		])
@@ -126,30 +128,3 @@ test('Request Finance Safe host preserves unrelated timers and their callback ar
 		restoreGlobals()
 	}
 })
-
-for (const scenario of [
-	{ name: 'other HTTPS origins', origin: 'https://example.com', embedded: false },
-	{ name: 'HTTP Request Finance pages', origin: 'http://app.request.finance', embedded: false },
-	{ name: 'Request Finance subdomains', origin: 'https://other.app.request.finance', embedded: false },
-	{ name: 'embedded Request Finance frames', origin: 'https://app.request.finance', embedded: true },
-]) {
-	test(`Request Finance Safe host leaves ${ scenario.name } untouched`, async () => {
-		const { fakeWindow, frameWasAppended, fireTimeouts, restoreGlobals } = createSafeHostHarness(scenario)
-		const originalParent = Object.getOwnPropertyDescriptor(fakeWindow, 'parent')
-		const originalSetTimeout = Object.getOwnPropertyDescriptor(fakeWindow, 'setTimeout')
-		const originalPostMessage = Object.getOwnPropertyDescriptor(fakeWindow, 'postMessage')
-		try {
-			installRequestFinanceDiscoveryAdapter()
-			assert.equal(frameWasAppended(), false)
-			assert.deepEqual(Object.getOwnPropertyDescriptor(fakeWindow, 'parent'), originalParent)
-			assert.deepEqual(Object.getOwnPropertyDescriptor(fakeWindow, 'setTimeout'), originalSetTimeout)
-			assert.deepEqual(Object.getOwnPropertyDescriptor(fakeWindow, 'postMessage'), originalPostMessage)
-			let received: unknown[] = []
-			Reflect.get(fakeWindow, 'setTimeout')((...args: unknown[]) => { received = args }, 200, scenario.name)
-			fireTimeouts(200)
-			assert.deepEqual(received, [scenario.name])
-		} finally {
-			restoreGlobals()
-		}
-	})
-}

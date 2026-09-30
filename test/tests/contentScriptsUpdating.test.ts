@@ -262,8 +262,16 @@ describe('content script injection strategy', () => {
 		}
 	})
 
-	test('removes hosting on opt-out while retaining the normal provider', async () => {
+	test('does not host Request Finance or any other site when compatibility is enabled without explicit origins', async () => {
 		const { getRegisteredContentScripts } = installBrowserMock({ safeAppsCompatibilityMode: true })
+		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
+		await updateContentScriptInjectionStrategyManifestV3()
+		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2'])
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.excludeMatches, [])
+	})
+
+	test('removes hosting on opt-out while retaining the normal provider', async () => {
+		const { getRegisteredContentScripts } = installBrowserMock({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: ['https://app.request.finance'] })
 		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
 		await updateContentScriptInjectionStrategyManifestV3()
 		assert.equal(getRegisteredContentScripts().some(({ id }) => id === 'safe-apps-host'), true)
@@ -281,6 +289,7 @@ describe('content script injection strategy', () => {
 		let updateCount = 0
 		const { getRegisteredContentScripts } = installBrowserMock({
 			registeredContentScriptIds: ['inpage', 'inpage2'],
+			safeAppsHostOrigins: ['https://app.request.finance'],
 			beforeUpdateContentScripts: async () => {
 				updateCount += 1
 				if (updateCount !== 1) return

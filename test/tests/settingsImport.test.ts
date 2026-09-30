@@ -335,7 +335,7 @@ describe('settings import', () => {
 		await importSettingsAndAddressBook(buildVersion14Import(false, false))
 
 		assert.equal(await getSafeAppsCompatibilityMode(), false)
-		assert.deepEqual(await getSafeAppsHostOrigins(), ['https://app.request.finance'])
+		assert.deepEqual(await getSafeAppsHostOrigins(), [])
 	})
 
 	test('serializes legacy preference clearing after an in-flight preference write', async () => {

@@ -1,5 +1,5 @@
 // Adapts parent-based Safe SDK messaging to the authorized same-window bridge. Only register the bootstrap on explicitly selected HTTP(S) origins, before the app runs.
-export function installSafeAppsHost(createDiscoveryAdapter?: () => (() => void) | undefined) {
+export function installSafeAppsHost() {
 	const requestTimeoutMs = 5 * 60_000
 	const isSafeAppsRequest = (value: unknown): value is { readonly id: string, readonly method: string, readonly env: { readonly sdkVersion: string } } => {
 		if (typeof value !== 'object' || value === null || !('id' in value) || typeof value.id !== 'string' || !('method' in value) || typeof value.method !== 'string') return false
@@ -7,7 +7,7 @@ export function installSafeAppsHost(createDiscoveryAdapter?: () => (() => void) 
 		return typeof value.env.sdkVersion === 'string' && /^\d+\.\d+\.\d+(?:[-+].*)?$/.test(value.env.sdkVersion)
 	}
 
-	// Avoid installing a second host while old and new registrations overlap during an update.
+	// Leave existing parent emulation intact if this bootstrap is loaded again.
 	if (window.top !== window || window.parent !== window) return
 	const container = document.documentElement
 	if (container === null) return
@@ -23,7 +23,6 @@ export function installSafeAppsHost(createDiscoveryAdapter?: () => (() => void) 
 	const originalParentPostMessage = apparentParent.postMessage.bind(apparentParent)
 	const originalSetTimeout = window.setTimeout.bind(window)
 	const originalClearTimeout = window.clearTimeout.bind(window)
-	const onSafeInfoRequest = createDiscoveryAdapter?.()
 	Object.defineProperty(apparentParent, 'postMessage', {
 		configurable: true,
 		value: (message: unknown, targetOrigin = '/', transfer?: Transferable[]) => {
@@ -50,7 +49,6 @@ export function installSafeAppsHost(createDiscoveryAdapter?: () => (() => void) 
 				}))
 			}, requestTimeoutMs)
 			pendingRequests.set(message.id, { timeoutId })
-			if (message.method === 'getSafeInfo') onSafeInfoRequest?.()
 			actualPostMessage(message, window.location.origin)
 		},
 	})

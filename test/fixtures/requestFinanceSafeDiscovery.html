@@ -14,14 +14,17 @@
 					const listener = (event) => {
 						if (event.source !== window.parent || event.origin !== location.origin || event.data?.id !== id || typeof event.data.version !== 'string' || typeof event.data.success !== 'boolean') return
 						window.removeEventListener('message', listener)
-						if (event.data.success) resolve(event.data.data)
+						if (event.data.success) {
+							state.sdkReply = { safeInfo: event.data.data, elapsedMs: performance.now() - state.startedAt }
+							resolve(event.data.data)
+						}
 						else reject(new Error(event.data.error))
 					}
 					window.addEventListener('message', listener)
 					window.parent.postMessage({ id, method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, '*')
 				})
 				const safeInfo = await Promise.race([sdkReply, new Promise((resolve) => setTimeout(resolve, 200))])
-				if (safeInfo === undefined) throw new Error('Safe discovery completed before access approval.')
+				if (safeInfo === undefined) throw new Error('Site Safe discovery reached its 200 ms deadline.')
 				state.safeInfo = safeInfo
 				state.accounts = [safeInfo.safeAddress]
 				state.elapsedMs = performance.now() - state.startedAt

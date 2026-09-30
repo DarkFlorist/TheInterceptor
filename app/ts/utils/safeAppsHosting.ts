@@ -1,6 +1,6 @@
 import * as funtypes from 'funtypes'
 
-export const DEFAULT_SAFE_APPS_HOST_ORIGINS = ['https://app.request.finance']
+export const DEFAULT_SAFE_APPS_HOST_ORIGINS: readonly string[] = []
 
 export function parseSafeAppsHostOrigin(value: string) {
 	let url: URL

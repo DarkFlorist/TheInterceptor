@@ -14,7 +14,7 @@ export function SafeAppsHostingSettings({ enabled, origins }: { enabled: boolean
 		await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_requestSettings' })
 	}
 	return <div class = 'container'>
-		<p class = 'paragraph'>Connect as a Safe App on these websites. Select a Safe in signing mode, open the website, then authorize and reload it before using its Safe connector.</p>
+		<p class = 'paragraph'>Connect as a Safe App on these websites. Select a Safe in signing mode, open the website, then authorize and reload it before using its Safe connector. Site discovery deadlines remain unchanged and short probes may still time out after approval.</p>
 		<p class = 'paragraph'>Supports apps using parent-based Safe SDK discovery. Apps requiring a real iframe or a trusted Safe parent origin need additional support.</p>
 		{ origins.map((origin) => <div key = { origin } class = 'row' style = 'gap: 0.5rem; margin-block: 0.5rem;'>
 			<span>{ origin }</span>

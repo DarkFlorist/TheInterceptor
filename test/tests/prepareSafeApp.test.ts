@@ -1,7 +1,12 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
-import { prepareSafeAppTab, requestSafeAppConnection } from '../../app/ts/utils/prepareSafeApp.js'
+import { requestSafeAppConnection } from '../../app/ts/utils/pageScripts/requestSafeAppConnection.js'
+import { prepareSafeAppTab } from '../../app/ts/utils/prepareSafeApp.js'
 import { createSafeHostHarness } from '../fixtures/safeAppsHostHarness.js'
+
+// Reconstruct exactly the function Chrome serializes, without the module's imports or lexical bindings.
+const serializedRequest: unknown = Function(`return (${ requestSafeAppConnection.toString() })`)()
+if (typeof serializedRequest !== 'function') throw new Error('Serialized Safe connection request must be callable.')
 
 for (const approved of [true, false]) {
 	test(`connection preparation ${ approved ? 'completes approval' : 'surfaces rejection' } through the same-window bridge`, async () => {
@@ -14,7 +19,7 @@ for (const approved of [true, false]) {
 				emitMessage({ id: request.id, success: !approved }, 'https://unrelated.example')
 				emitMessage({ id: request.id, success: approved, error: 'User rejected access.' })
 			})
-			assert.deepEqual(await requestSafeAppConnection(origin), approved ? { success: true } : { success: false, error: 'User rejected access.' })
+			assert.deepEqual(await serializedRequest(origin), approved ? { success: true } : { success: false, error: 'User rejected access.' })
 		} finally { restoreGlobals() }
 	})
 }
@@ -22,10 +27,10 @@ for (const approved of [true, false]) {
 test('connection preparation times out and never requests access on a navigated page', async () => {
 	const { origin, fireTimeouts, restoreGlobals } = createSafeHostHarness()
 	try {
-		const pending = requestSafeAppConnection(origin)
+		const pending: Promise<unknown> = serializedRequest(origin)
 		fireTimeouts(5 * 60_000)
-		assert.equal((await pending).success, false)
-		assert.deepEqual(await requestSafeAppConnection('https://other.example'), { success: false, error: 'The website navigated before connecting.' })
+		assert.deepEqual(await pending, { success: false, error: 'Safe connection timed out. Check the selected Safe and approve website access.' })
+		assert.deepEqual(await serializedRequest('https://other.example'), { success: false, error: 'The website navigated before connecting.' })
 	} finally { restoreGlobals() }
 })
 
