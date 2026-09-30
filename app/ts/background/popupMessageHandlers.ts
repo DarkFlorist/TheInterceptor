@@ -1,7 +1,8 @@
+import { updateContentScriptInjectionStrategyManifestV3 } from '../utils/contentScriptsUpdating.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
-import { getSettings, setUseTabsInsteadOfPopup, setPage, updateWebsiteAccess, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
+import { getSettings, setUseTabsInsteadOfPopup, setPage, updateWebsiteAccess, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, setSafeAppsHostOrigins, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type WatchAssetConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type ForceSetGasLimitForTransaction, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
@@ -876,6 +877,8 @@ export async function changeSettings(simulationServicesOwner: SimulationServices
 	if (parsedRequest.data.safeAppsCompatibilityMode !== undefined) {
 		await setSafeAppsCompatibilityMode(parsedRequest.data.safeAppsCompatibilityMode)
 	}
+	if (parsedRequest.data.safeAppsHostOrigins !== undefined) await setSafeAppsHostOrigins(parsedRequest.data.safeAppsHostOrigins)
+	if (browser.runtime.getManifest().manifest_version === 3 && (parsedRequest.data.safeAppsHostOrigins !== undefined || parsedRequest.data.safeAppsCompatibilityMode !== undefined)) await updateContentScriptInjectionStrategyManifestV3()
 	return await requestNewHomeData(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, false, true, requestAbortController, bumpPopupRefreshGeneration())
 }
 

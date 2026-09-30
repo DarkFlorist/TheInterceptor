@@ -1,4 +1,5 @@
 import * as funtypes from 'funtypes'
+import { SafeAppsHostOrigins } from './safeAppsHosting.js'
 import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
 import { BlockTimeManipulation, CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'
@@ -81,6 +82,7 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	rpcEntries: RpcEntries,
 	metamaskCompatibilityMode: funtypes.Boolean,
 	safeAppsCompatibilityMode: funtypes.Boolean,
+	safeAppsHostOrigins: SafeAppsHostOrigins,
 	userAddressBookEntries: funtypes.ReadonlyArray(funtypes.Union(AddressBookEntry, OldActiveAddressEntry)),
 	userAddressBookEntriesV2: AddressBookEntries,
 	userAddressBookEntriesV3: AddressBookEntries,
@@ -125,6 +127,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('rpcEntries'),
 	funtypes.Literal('metamaskCompatibilityMode'),
 	funtypes.Literal('safeAppsCompatibilityMode'),
+	funtypes.Literal('safeAppsHostOrigins'),
 	funtypes.Literal('userAddressBookEntries'),
 	funtypes.Literal('userAddressBookEntriesV2'),
 	funtypes.Literal('userAddressBookEntriesV3'),

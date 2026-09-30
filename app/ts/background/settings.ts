@@ -13,6 +13,7 @@ import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } fr
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
+import { DEFAULT_SAFE_APPS_HOST_ORIGINS, SafeAppsHostOrigins } from '../utils/safeAppsHosting.js'
 import { hasOwnKey } from '../utils/typescript.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
@@ -261,6 +262,9 @@ export const setMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boo
 export const getSafeAppsCompatibilityMode = async() => (await browserStorageLocalGet('safeAppsCompatibilityMode'))?.safeAppsCompatibilityMode ?? false
 export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => await browserStorageLocalSet({ safeAppsCompatibilityMode })
 
+export const getSafeAppsHostOrigins = async () => (await browserStorageLocalGet('safeAppsHostOrigins'))?.safeAppsHostOrigins ?? DEFAULT_SAFE_APPS_HOST_ORIGINS
+export const setSafeAppsHostOrigins = async (origins: readonly string[]) => await browserStorageLocalSet({ safeAppsHostOrigins: SafeAppsHostOrigins.parse(origins) })
+
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
 	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
@@ -282,6 +286,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
 			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
 			safeAppsCompatibilityMode: await getSafeAppsCompatibilityMode(),
+			safeAppsHostOrigins: await getSafeAppsHostOrigins(),
 		}
 	}
 }
@@ -320,6 +325,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') {
 		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
 	}
+	await setSafeAppsHostOrigins(exportedSetings.version === '1.6' ? exportedSetings.settings.safeAppsHostOrigins ?? DEFAULT_SAFE_APPS_HOST_ORIGINS : DEFAULT_SAFE_APPS_HOST_ORIGINS)
 	await setSafeAppsCompatibilityMode(exportedSetings.version === '1.6' ? exportedSetings.settings.safeAppsCompatibilityMode : false)
 	if (exportedSetings.version !== '1.4' && exportedSetings.version !== '1.5' && exportedSetings.version !== '1.6') {
 		await updateUserAddressBookEntries((previousEntries) => {

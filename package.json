@@ -22,6 +22,7 @@
 		"test:chrome-communication": "bun ./test/benchmarks/chromeCommunication.ts",
 		"test:chrome-signing-communication": "bun ./test/benchmarks/chromeSigningCommunication.ts",
 		"test:chrome-safe-cosigning-communication": "bun ./test/benchmarks/chromeSafeCoSigningCommunication.ts",
+		"test:chrome-safe-apps-host": "bun ./test/benchmarks/chromeSafeCoSigningCommunication.ts --generic-safe-host",
 		"test:chrome-request-finance-discovery": "bun ./test/benchmarks/chromeSafeCoSigningCommunication.ts --request-finance-discovery",
 		"vendor": "cd build && bun install --frozen-lockfile && bun run vendor",
 		"bundle": "cd build && bun run bundle",
@@ -65,7 +66,10 @@
 		"webextension-polyfill": "0.10.0"
 	},
 	"devDependencies": {
+		"@safe-global/safe-apps-sdk": "9.1.0",
 		"@types/firefox-webext-browser": "120.0.3",
+		"@wagmi/connectors": "8.2.0",
+		"@web3-onboard/gnosis": "2.3.2",
 		"solc": "0.8.18",
 		"typescript": "5.9.3"
 	}

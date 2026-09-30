@@ -1,4 +1,5 @@
 import * as funtypes from 'funtypes'
+import { SafeAppsHostOrigins } from '../utils/safeAppsHosting.js'
 import { RpcNetwork } from './rpc.js'
 import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory, OptionalEthereumAddress } from './wire-types.js'
 import { AddressBookEntries, ContactEntries } from './addressBookTypes.js'
@@ -132,6 +133,7 @@ export const ExportedSettings = funtypes.Union(
 			useTabsInsteadOfPopup: funtypes.Boolean,
 			metamaskCompatibilityMode: funtypes.Boolean,
 			safeAppsCompatibilityMode: funtypes.Boolean,
+			safeAppsHostOrigins: funtypes.Union(SafeAppsHostOrigins, funtypes.Undefined),
 		})
 	}),
 )

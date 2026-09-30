@@ -1,3 +1,4 @@
+import { SafeAppsHostingSettings } from '../subcomponents/SafeAppsHostingSettings.js'
 
 import { sendPopupMessageToBackgroundPage, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport } from '../../background/backgroundUtils.js'
 import { MessageToPopup, type ImportSettingsReply } from '../../types/interceptor-messages.js'
@@ -147,6 +148,7 @@ export function SettingsView() {
 	const useTabsInsteadOfPopup = useSignal<boolean>(false)
 	const metamaskCompatibilityMode = useSignal<boolean>(false)
 	const safeAppsCompatibilityMode = useSignal<boolean>(false)
+	const safeAppsHostOrigins = useSignal<readonly string[]>([])
 
 	useEffect(() => {
 		const popupMessageListener = (msg: unknown): false => {
@@ -160,6 +162,7 @@ export function SettingsView() {
 			if (parsed.method !== 'popup_requestSettingsReply') return false
 			metamaskCompatibilityMode.value = parsed.data.metamaskCompatibilityMode
 			safeAppsCompatibilityMode.value = parsed.data.safeAppsCompatibilityMode
+			safeAppsHostOrigins.value = parsed.data.safeAppsHostOrigins
 			useTabsInsteadOfPopup.value = parsed.data.useTabsInsteadOfPopup
 			return false
 		}
@@ -186,6 +189,7 @@ export function SettingsView() {
 			method: 'popup_ChangeSettings',
 			data: { safeAppsCompatibilityMode: checked }
 		})
+		await sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' })
 	}
 
 	return <main style = 'padding: 10px'>
@@ -217,10 +221,11 @@ export function SettingsView() {
 							onInput = { requestToMetamaskCompatibilityMode }
 						/>
 						<CheckBoxSetting
-							text = { 'Advertise as a Gnosis Safe wallet to Safe Apps (experimental). Refresh Request Finance after changing this setting.' }
+							text = { 'Advertise as a Safe wallet to Safe Apps (experimental). Refresh connected websites after changing this setting.' }
 							checked = { safeAppsCompatibilityMode.value }
 							onInput = { requestToSafeAppsCompatibilityMode }
 						/>
+						{ browser.runtime.getManifest().manifest_version === 3 ? <SafeAppsHostingSettings enabled = { safeAppsCompatibilityMode.value } origins = { safeAppsHostOrigins.value } /> : <></> }
 					</li>
 					<li>
 						<p class = 'paragraph'>Export & Import</p>

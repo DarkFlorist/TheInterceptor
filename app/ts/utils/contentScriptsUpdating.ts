@@ -1,5 +1,6 @@
-import { getInterceptorDisabledSites, getSafeAppsCompatibilityMode, getSettings } from '../background/settings.js'
+import { getInterceptorDisabledSites, getSafeAppsCompatibilityMode, getSafeAppsHostOrigins, getSettings } from '../background/settings.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
+import { getSafeAppsHostMatchPatterns } from './safeAppsHosting.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
@@ -44,6 +45,7 @@ const applyContentScriptInjectionStrategyManifestV3 = async () => {
 	try {
 		const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(await getSettings()))
 		const safeAppsCompatibilityMode = await getSafeAppsCompatibilityMode()
+		const safeAppsHostMatches = safeAppsCompatibilityMode ? getSafeAppsHostMatchPatterns(await getSafeAppsHostOrigins()) : []
 		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
 		type FixedContentScript = RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
@@ -59,14 +61,23 @@ const applyContentScriptInjectionStrategyManifestV3 = async () => {
 			id: 'inpage',
 			allFrames: true,
 			matches: injectableSitesWildcard,
-			excludeMatches,
-			js: safeAppsCompatibilityMode
-				? ['/inpage/js/requestFinanceSafeHost.js', '/inpage/js/inpage.js']
-				: ['/inpage/js/inpage.js'],
+			excludeMatches: [...excludeMatches, ...safeAppsHostMatches],
+			js: ['/inpage/js/inpage.js'],
 			runAt: 'document_start',
 			world: 'MAIN',
 			matchOriginAsFallback: true
 		}]
+		if (safeAppsHostMatches.length > 0) contentScripts.push({
+			id: 'safe-apps-host',
+			allFrames: true,
+			matches: safeAppsHostMatches,
+			excludeMatches,
+			// Keep provider injection in embedded app frames, but the host itself only changes top-level pages.
+			js: ['/inpage/js/safeAppsHostBootstrap.js', '/inpage/js/inpage.js'],
+			runAt: 'document_start',
+			world: 'MAIN',
+			matchOriginAsFallback: true,
+		})
 		const registeredContentScripts = await browser.scripting.getRegisteredContentScripts()
 		const registeredContentScriptIds = new Set(registeredContentScripts.map(({ id }) => id))
 		const desiredContentScriptIds = new Set(contentScripts.map(({ id }) => id))

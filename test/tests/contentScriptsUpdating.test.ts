@@ -17,17 +17,21 @@ type BrowserMockOptions = {
 	readonly tabUrlAfterStorageRead?: string
 	readonly registeredContentScriptIds?: readonly string[]
 	readonly safeAppsCompatibilityMode?: boolean
+	readonly safeAppsHostOrigins?: readonly string[]
 	readonly beforeUpdateContentScripts?: () => Promise<void>
 }
 
 type RegisteredContentScript = {
 	readonly id: string
 	readonly excludeMatches?: readonly string[]
+	readonly matches?: readonly string[]
+	readonly allFrames?: boolean
+	readonly matchOriginAsFallback?: boolean
 	readonly js?: readonly string[]
 }
 
-function installBrowserMock({ registerError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [], safeAppsCompatibilityMode = false, beforeUpdateContentScripts }: BrowserMockOptions = {}) {
-	const storageState: Record<string, unknown> = { safeAppsCompatibilityMode }
+function installBrowserMock({ registerError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [], safeAppsCompatibilityMode = false, safeAppsHostOrigins, beforeUpdateContentScripts }: BrowserMockOptions = {}) {
+	const storageState: Record<string, unknown> = { safeAppsCompatibilityMode, ...(safeAppsHostOrigins === undefined ? {} : { safeAppsHostOrigins }) }
 	const sentMessages: RuntimeMessage[] = []
 	const executedScriptFiles: string[] = []
 	const registeredContentScripts = new Map(registeredContentScriptIds.map((id) => [id, { id }]))
@@ -242,16 +246,31 @@ describe('content script injection strategy', () => {
 		assert.deepEqual(getUnregisteredContentScriptIdBatches(), [['obsolete-inpage']])
 	})
 
-	test('registers the Request Finance Safe host before the inpage provider only when Safe Apps mode is enabled', async () => {
+	test('registers the shared host before the provider only on selected origins', async () => {
 		for (const enabled of [false, true]) {
-			const { getRegisteredContentScripts } = installBrowserMock({ safeAppsCompatibilityMode: enabled })
+			const { getRegisteredContentScripts } = installBrowserMock({ safeAppsCompatibilityMode: enabled, safeAppsHostOrigins: ['https://app.example.com', 'http://localhost:3000'] })
 			const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
 			await updateContentScriptInjectionStrategyManifestV3()
-			const inpage = getRegisteredContentScripts().find(({ id }) => id === 'inpage')
-			assert.deepEqual(inpage?.js, enabled
-				? ['/inpage/js/requestFinanceSafeHost.js', '/inpage/js/inpage.js']
-				: ['/inpage/js/inpage.js'])
+			const scripts = getRegisteredContentScripts()
+			const inpage = scripts.find(({ id }) => id === 'inpage')
+			const host = scripts.find(({ id }) => id === 'safe-apps-host')
+			assert.deepEqual(inpage?.js, ['/inpage/js/inpage.js'])
+			assert.deepEqual(inpage?.excludeMatches, enabled ? ['https://app.example.com:443/*', 'http://localhost:3000/*'] : [])
+			assert.deepEqual(host?.matches, enabled ? ['https://app.example.com:443/*', 'http://localhost:3000/*'] : undefined)
+			assert.deepEqual(host?.js, enabled ? ['/inpage/js/safeAppsHostBootstrap.js', '/inpage/js/inpage.js'] : undefined)
+			assert.equal(host?.matchOriginAsFallback, enabled ? true : undefined)
 		}
+	})
+
+	test('removes hosting on opt-out while retaining the normal provider', async () => {
+		const { getRegisteredContentScripts } = installBrowserMock({ safeAppsCompatibilityMode: true })
+		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
+		await updateContentScriptInjectionStrategyManifestV3()
+		assert.equal(getRegisteredContentScripts().some(({ id }) => id === 'safe-apps-host'), true)
+		await browser.storage.local.set({ safeAppsHostOrigins: [] })
+		await updateContentScriptInjectionStrategyManifestV3()
+		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2'])
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.excludeMatches, [])
 	})
 
 	test('applies the latest Safe Apps setting after an earlier content script update finishes', async () => {
@@ -276,8 +295,8 @@ describe('content script injection strategy', () => {
 		const latestUpdate = updateContentScriptInjectionStrategyManifestV3()
 		releaseFirstUpdate?.()
 		await Promise.all([earlierUpdate, latestUpdate])
-		const inpage = getRegisteredContentScripts().find(({ id }) => id === 'inpage')
-		assert.deepEqual(inpage?.js, ['/inpage/js/requestFinanceSafeHost.js', '/inpage/js/inpage.js'])
+		const host = getRegisteredContentScripts().find(({ id }) => id === 'safe-apps-host')
+		assert.deepEqual(host?.js, ['/inpage/js/safeAppsHostBootstrap.js', '/inpage/js/inpage.js'])
 		assert.equal(updateCount, 2)
 	})
 

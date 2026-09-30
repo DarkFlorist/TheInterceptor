@@ -20,7 +20,9 @@ import type { CdpConnection } from './chromeHarness.js'
 const safeAppsTypedMessage = process.argv.includes('--safe-apps-typed-message')
 const safeAppsMessage = process.argv.includes('--safe-apps-message') || safeAppsTypedMessage
 const requestFinanceDiscovery = process.argv.includes('--request-finance-discovery')
-const safeAppsOnly = process.argv.includes('--safe-apps-only') || safeAppsMessage || requestFinanceDiscovery
+const genericSafeHost = process.argv.includes('--generic-safe-host')
+const GENERIC_SAFE_HOST_URLS = ['http://safe-app.example/connector-test', 'https://another-safe-app.example:8443/connector-test']
+const safeAppsOnly = process.argv.includes('--safe-apps-only') || safeAppsMessage || requestFinanceDiscovery || genericSafeHost
 const REQUEST_FINANCE_FIXTURE_URL = 'https://app.request.finance/interceptor-discovery-regression'
 const REQUEST_FINANCE_APPROVAL_DELAY_MS = 11_000
 const ACCESS_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.is-primary:not(.is-danger)'
@@ -152,10 +154,15 @@ async function waitForText(connection: CdpConnection, text: string, timeoutMs = 
 	)
 }
 
-async function openRequestFinanceDiscoveryFixture(connection: CdpConnection) {
-	const html = await readFile(new URL('../fixtures/requestFinanceSafeDiscovery.html', import.meta.url), 'utf8')
+async function openSafeAppsHostFixture(connection: CdpConnection, url = REQUEST_FINANCE_FIXTURE_URL, navigate?: () => Promise<unknown>) {
+	let html: string
+	if (genericSafeHost) {
+		const bundle = await Bun.build({ entrypoints: [new URL('../fixtures/safeAppsConnectors.ts', import.meta.url).pathname], target: 'browser' })
+		if (!bundle.success || bundle.outputs[0] === undefined) throw new Error(`Could not bundle Safe connector fixture: ${ bundle.logs.join('\n') }`)
+		html = `<html><head><link rel="icon" href="data:,"></head><body><script>${ (await bundle.outputs[0].text()).replaceAll('</script', '<\\/script') }</script></body></html>`
+	} else html = await readFile(new URL('../fixtures/requestFinanceSafeDiscovery.html', import.meta.url), 'utf8')
 	// Keep the site's HTTPS origin for the real content-script guards, while serving only the local fixture.
-	await connection.send('Fetch.enable', { patterns: [{ urlPattern: REQUEST_FINANCE_FIXTURE_URL, resourceType: 'Document', requestStage: 'Request' }] })
+	await connection.send('Fetch.enable', { patterns: [{ urlPattern: url, resourceType: 'Document', requestStage: 'Request' }] })
 	const documentDelivered = new Promise<void>((resolve, reject) => {
 		const onRequest = (event: unknown) => {
 			if (!isRecord(event) || typeof event.requestId !== 'string') {
@@ -172,7 +179,7 @@ async function openRequestFinanceDiscoveryFixture(connection: CdpConnection) {
 		}
 		connection.on('Fetch.requestPaused', onRequest)
 	})
-	await Promise.all([connection.send('Page.navigate', { url: REQUEST_FINANCE_FIXTURE_URL }), documentDelivered])
+	await Promise.all([navigate === undefined ? connection.send('Page.navigate', { url }) : navigate(), documentDelivered])
 	await connection.send('Fetch.disable')
 }
 
@@ -442,10 +449,11 @@ async function main() {
 			const storedSettings = {
 				simulationMode: false,
 				safeAppsCompatibilityMode: safeAppsOnly,
+				...(genericSafeHost ? { safeAppsHostOrigins: GENERIC_SAFE_HOST_URLS.map((url) => new URL(url).origin) } : {}),
 				useSignersAddressAsActiveAddress: false,
 				independentActiveSimulationAddress: addressString(SAFE_ADDRESS),
 				activeSigningAddress: addressString(OWNER_ADDRESS),
-				...(safeAppsOnly ? {} : { activeSigningSafeAddress: addressString(SAFE_ADDRESS) }),
+				...(safeAppsOnly && !genericSafeHost ? {} : { activeSigningSafeAddress: addressString(SAFE_ADDRESS) }),
 				signingAddressPreferences: [{ signerAddress: addressString(OWNER_ADDRESS), selection: 'safe', safeAddress: addressString(SAFE_ADDRESS), chainId: '0x1' }],
 				userAddressBookEntriesV3: [{
 					type: 'safe',
@@ -462,10 +470,10 @@ async function main() {
 			}
 			// Install the test RPC through the popup command below so persisted settings and live services change together.
 			await workerConnection.evaluate(`browser.storage.local.set(${ JSON.stringify(storedSettings) })`)
-			if (requestFinanceDiscovery) await waitForCondition(async () => await workerConnection.evaluate<boolean>(`(async () => {
+			if (requestFinanceDiscovery || genericSafeHost) await waitForCondition(async () => await workerConnection.evaluate<boolean>(`(async () => {
 				const scripts = await browser.scripting.getRegisteredContentScripts()
 				// Chrome returns extension-relative paths without their leading slash.
-				return scripts.find(({ id }) => id === 'inpage')?.js.some((file) => file === 'inpage/js/requestFinanceSafeHost.js' || file === '/inpage/js/requestFinanceSafeHost.js') === true
+				return scripts.find(({ id }) => id === 'safe-apps-host')?.js.some((file) => file === 'inpage/js/safeAppsHostBootstrap.js' || file === '/inpage/js/safeAppsHostBootstrap.js') === true
 			})()`), 30_000, 'Request Finance Safe host registration')
 		} finally {
 			workerConnection.close()
@@ -501,7 +509,7 @@ async function main() {
 		try {
 			await pageConnection.send('Page.enable')
 			await pageConnection.send('Page.addScriptToEvaluateOnNewDocument', { source: fakeSignerPreload })
-			if (requestFinanceDiscovery) await openRequestFinanceDiscoveryFixture(pageConnection)
+			if (requestFinanceDiscovery || genericSafeHost) await openSafeAppsHostFixture(pageConnection, genericSafeHost ? GENERIC_SAFE_HOST_URLS[0] : REQUEST_FINANCE_FIXTURE_URL)
 			else await pageConnection.send('Page.navigate', { url: `http://127.0.0.1:${ server.port }/${ safeAppsOnly ? '?safe-probe=early&safe-only=true' : '' }` })
 			try {
 				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === '${ safeAppsOnly ? 'requesting-safe-only' : 'requesting-access' }'`).catch(() => false), 30_000, 'Safe access request')
@@ -537,6 +545,60 @@ async function main() {
 			const grantedAccounts = await pageConnection.evaluate<readonly string[]>('globalThis.__interceptorChromeCommunicationState.accounts')
 			if (grantedAccounts[0]?.toLowerCase() !== addressString(SAFE_ADDRESS).toLowerCase()) {
 				throw new Error(`Dapp received ${ grantedAccounts[0] ?? 'no account' } instead of the Safe address`)
+			}
+			if (genericSafeHost) {
+				if (await pageConnection.evaluate<boolean>('window.isSecureContext') !== false) throw new Error('The HTTP fixture must exercise a non-secure context.')
+				const embeddedProviderPreserved = await pageConnection.evaluate<boolean>(`(async () => {
+					const frame = document.createElement('iframe')
+					document.body.append(frame)
+					const child = frame.contentWindow
+					if (child === null) throw new Error('Missing embedded app window.')
+					let announced = false
+					child.addEventListener('eip6963:announceProvider', (event) => { if (event.detail?.info?.name === 'The Interceptor') announced = true })
+					const started = performance.now()
+					while (!announced && performance.now() - started < 10_000) {
+						child.dispatchEvent(new Event('eip6963:requestProvider'))
+						await new Promise((resolve) => setTimeout(resolve, 20))
+					}
+					const intact = child.parent === window && child.self !== child.top
+					frame.remove()
+					return announced && intact
+				})()`)
+				if (!embeddedProviderPreserved) throw new Error('Selected-origin hosting disrupted the provider or parent in a related about:blank frame.')
+				const firstUrl = GENERIC_SAFE_HOST_URLS[0]
+				const secondUrl = GENERIC_SAFE_HOST_URLS[1]
+				if (firstUrl === undefined || secondUrl === undefined) throw new Error('Missing generic host origins.')
+				const settingsTarget = await createTargetPage(chrome.browserConnection, `chrome-extension://${ extensionId }/html3/settingsViewV3.html`)
+				const settingsConnection = await connectTarget(chrome.browserDebugPort, settingsTarget)
+				try {
+					await waitForText(settingsConnection, 'Authorize and reload open tab')
+					await openSafeAppsHostFixture(pageConnection, firstUrl, async () => await clickButtonWithText(settingsConnection, 'Authorize and reload open tab'))
+					await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'safe-only-granted'`), 30_000, 'real connectors after connection preparation')
+					await waitForCondition(async () => await settingsConnection.evaluate(`document.querySelector('button[aria-busy="true"]') === null`), 10_000, 'connection preparation completion')
+					const errors = await settingsConnection.evaluate<string>('document.body.textContent')
+					if (errors.includes('did not confirm') || errors.includes('navigated') || errors.includes('timed out')) throw new Error(`Connection preparation failed: ${ errors }`)
+				} finally {
+					settingsConnection.close()
+					await closeTarget(chrome.browserConnection, settingsTarget)
+				}
+				const repeatPrompts = await pageConnection.evaluate<number>(`globalThis.__fakeSafeSignerRequests.filter(({ method }) => method === 'eth_requestAccounts').length`)
+				if (repeatPrompts !== 0) throw new Error('Connection preparation prompted the approved signer again after reload.')
+				await waitForTargetGone(chrome.browserDebugPort, (target) => target.id === accessTarget.id, 10_000, 'first Safe access popup to close')
+				await openSafeAppsHostFixture(pageConnection, secondUrl)
+				const secondAccess = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/interceptorAccessV3.html`, 30_000)
+				accessTargetId = secondAccess.id
+				const secondConnection = await connectTarget(chrome.browserDebugPort, secondAccess.id)
+				try {
+					await waitForButtonEnabled(secondConnection, ACCESS_APPROVE_BUTTON_SELECTOR, 30_000)
+					await clickButton(secondConnection, ACCESS_APPROVE_BUTTON_SELECTOR)
+				} finally { secondConnection.close() }
+				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'safe-only-granted'`), 30_000, 'real connectors on second origin')
+				for (const unselected of ['https://unselected.example/connector-test', 'http://safe-app.example:8443/connector-test', 'https://safe-app.example/connector-test']) {
+					await openSafeAppsHostFixture(pageConnection, unselected)
+					await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'error' && window.parent === window`), 10_000, 'unselected origin isolation')
+				}
+				console.warn('Generic Safe hosting passed: real SDK and Wagmi on HTTP and HTTPS origins, settings authorization/reload, independent access approval, and origin/port isolation.')
+				return
 			}
 			if (requestFinanceDiscovery) {
 				const result = await pageConnection.evaluate<{ elapsedMs: number, safeInfo: { chainId: number, owners: readonly string[], threshold: number }, origin: string }>('({ ...globalThis.__interceptorChromeCommunicationState, origin: location.origin })')

@@ -223,6 +223,8 @@ describe('settings import', () => {
 		})
 		await rememberSigningAddressPreference({ signerAddress, selection: 'safe', safeAddress: signingSafeAddress, chainId: testRpcNetwork.chainId })
 		await setSafeAppsCompatibilityMode(true)
+		const { setSafeAppsHostOrigins, getSafeAppsHostOrigins } = await settingsModulePromise
+		await setSafeAppsHostOrigins(['https://safe-app.example', 'https://another.example:8443'])
 
 		const exportedSettings = await exportSettingsAndAddressBook()
 		assert.equal(exportedSettings.version, '1.6')
@@ -236,6 +238,7 @@ describe('settings import', () => {
 		const importedSettings = await getSettings()
 		assert.equal(importedSettings.activeSigningSafeAddress, signingSafeAddress)
 		assert.equal(await getSafeAppsCompatibilityMode(), true)
+		assert.deepEqual(await getSafeAppsHostOrigins(), ['https://safe-app.example', 'https://another.example:8443'])
 		assert.deepEqual(await getSigningAddressPreferences(), exportedSettings.settings.signingAddressPreferences)
 		const previousTabState = await getTabState(1)
 		const transition = await getSigningAddressSelectionTransition(importedSettings, previousTabState, {
@@ -324,13 +327,15 @@ describe('settings import', () => {
 	})
 
 	test('keeps experimental Safe Apps compatibility disabled for legacy imports', async () => {
-		const { getSafeAppsCompatibilityMode, importSettingsAndAddressBook, setSafeAppsCompatibilityMode } = await settingsModulePromise
+		const { getSafeAppsCompatibilityMode, getSafeAppsHostOrigins, importSettingsAndAddressBook, setSafeAppsCompatibilityMode, setSafeAppsHostOrigins } = await settingsModulePromise
 		assert.equal(await getSafeAppsCompatibilityMode(), false)
 		await setSafeAppsCompatibilityMode(true)
+		await setSafeAppsHostOrigins(['https://legacy.example'])
 
 		await importSettingsAndAddressBook(buildVersion14Import(false, false))
 
 		assert.equal(await getSafeAppsCompatibilityMode(), false)
+		assert.deepEqual(await getSafeAppsHostOrigins(), ['https://app.request.finance'])
 	})
 
 	test('serializes legacy preference clearing after an in-flight preference write', async () => {
