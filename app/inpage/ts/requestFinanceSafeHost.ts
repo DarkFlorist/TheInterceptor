@@ -1,5 +1,7 @@
 // Bridge Request Finance's iframe-only Safe SDK to Interceptor's same-window Safe Apps handler.
 (() => {
+	const discoveryTimeoutMs = 10_500
+	const requestTimeoutMs = 5 * 60_000
 	const isSafeAppsRequest = (value: unknown): value is { readonly id: string, readonly method: string, readonly env: { readonly sdkVersion: string } } => {
 		if (typeof value !== 'object' || value === null || !('id' in value) || typeof value.id !== 'string' || !('method' in value) || typeof value.method !== 'string') return false
 		if (!('env' in value) || typeof value.env !== 'object' || value.env === null || !('sdkVersion' in value.env)) return false
@@ -16,10 +18,11 @@
 		container.append(frame)
 		const apparentParent = frame.contentWindow
 		if (apparentParent !== null) {
-			const pendingRequests = new Set<string>()
+			const pendingRequests = new Map<string, number>()
 			const actualPostMessage = window.postMessage.bind(window)
 			const originalParentPostMessage = apparentParent.postMessage.bind(apparentParent)
 			const originalSetTimeout = window.setTimeout.bind(window)
+			const originalClearTimeout = window.clearTimeout.bind(window)
 			let safeInfoTimeoutExpected = false
 			Object.defineProperty(window, 'setTimeout', {
 				configurable: true,
@@ -44,7 +47,15 @@
 						})
 						return
 					}
-					pendingRequests.add(message.id)
+					const timeoutId = originalSetTimeout(() => {
+						pendingRequests.delete(message.id)
+						window.dispatchEvent(new MessageEvent('message', {
+							data: { id: message.id, success: false, error: 'Safe Apps request timed out.', version: message.env.sdkVersion },
+							origin: window.location.origin,
+							source: apparentParent,
+						}))
+					}, message.method === 'getSafeInfo' ? discoveryTimeoutMs : requestTimeoutMs)
+					pendingRequests.set(message.id, timeoutId)
 					if (message.method === 'getSafeInfo') {
 						safeInfoTimeoutExpected = true
 						queueMicrotask(() => { safeInfoTimeoutExpected = false })
@@ -56,8 +67,11 @@
 			window.addEventListener('message', (event) => {
 				if (event.source !== window || event.origin !== window.location.origin) return
 				const response: unknown = event.data
-				if (typeof response !== 'object' || response === null || !('id' in response) || typeof response.id !== 'string' || !pendingRequests.has(response.id) || !('success' in response) || typeof response.success !== 'boolean') return
+				if (typeof response !== 'object' || response === null || !('id' in response) || typeof response.id !== 'string' || !('success' in response) || typeof response.success !== 'boolean') return
+				const timeoutId = pendingRequests.get(response.id)
+				if (timeoutId === undefined) return
 				pendingRequests.delete(response.id)
+				originalClearTimeout(timeoutId)
 				window.dispatchEvent(new MessageEvent('message', { data: response, origin: event.origin, source: apparentParent }))
 			})
 		}

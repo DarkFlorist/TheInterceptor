@@ -38,10 +38,12 @@ export function getManifestV3ExcludeMatches(origins: readonly string[]) {
 	return [...patterns]
 }
 
-export const updateContentScriptInjectionStrategyManifestV3 = async () => {
-	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(await getSettings()))
-	const safeAppsCompatibilityMode = await getSafeAppsCompatibilityMode()
+let previousContentScriptUpdate: Promise<void> = Promise.resolve()
+
+const applyContentScriptInjectionStrategyManifestV3 = async () => {
 	try {
+		const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(await getSettings()))
+		const safeAppsCompatibilityMode = await getSafeAppsCompatibilityMode()
 		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
 		type FixedContentScript = RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
@@ -77,6 +79,13 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 	} catch (error: unknown) {
 		await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
 	}
+}
+
+export const updateContentScriptInjectionStrategyManifestV3 = () => {
+	// Read settings inside the queue so the last requested update applies the latest state.
+	const update = previousContentScriptUpdate.then(applyContentScriptInjectionStrategyManifestV3)
+	previousContentScriptUpdate = update.then(() => undefined, () => undefined)
+	return update
 }
 
 const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {

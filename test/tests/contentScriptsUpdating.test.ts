@@ -17,6 +17,7 @@ type BrowserMockOptions = {
 	readonly tabUrlAfterStorageRead?: string
 	readonly registeredContentScriptIds?: readonly string[]
 	readonly safeAppsCompatibilityMode?: boolean
+	readonly beforeUpdateContentScripts?: () => Promise<void>
 }
 
 type RegisteredContentScript = {
@@ -25,7 +26,7 @@ type RegisteredContentScript = {
 	readonly js?: readonly string[]
 }
 
-function installBrowserMock({ registerError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [], safeAppsCompatibilityMode = false }: BrowserMockOptions = {}) {
+function installBrowserMock({ registerError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [], safeAppsCompatibilityMode = false, beforeUpdateContentScripts }: BrowserMockOptions = {}) {
 	const storageState: Record<string, unknown> = { safeAppsCompatibilityMode }
 	const sentMessages: RuntimeMessage[] = []
 	const executedScriptFiles: string[] = []
@@ -84,6 +85,7 @@ function installBrowserMock({ registerError, updateError, executeScriptError, ta
 				},
 				async updateContentScripts(scripts: readonly RegisteredContentScript[]) {
 					scriptingOperations.push('update')
+					await beforeUpdateContentScripts?.()
 					if (updateError !== undefined) throw updateError
 					for (const script of scripts) registeredContentScripts.set(script.id, script)
 				},
@@ -250,6 +252,33 @@ describe('content script injection strategy', () => {
 				? ['/inpage/js/requestFinanceSafeHost.js', '/inpage/js/inpage.js']
 				: ['/inpage/js/inpage.js'])
 		}
+	})
+
+	test('applies the latest Safe Apps setting after an earlier content script update finishes', async () => {
+		let releaseFirstUpdate: (() => void) | undefined
+		let notifyFirstUpdateStarted: (() => void) | undefined
+		const firstUpdateStarted = new Promise<void>((resolve) => { notifyFirstUpdateStarted = resolve })
+		const firstUpdateBlocked = new Promise<void>((resolve) => { releaseFirstUpdate = resolve })
+		let updateCount = 0
+		const { getRegisteredContentScripts } = installBrowserMock({
+			registeredContentScriptIds: ['inpage', 'inpage2'],
+			beforeUpdateContentScripts: async () => {
+				updateCount += 1
+				if (updateCount !== 1) return
+				notifyFirstUpdateStarted?.()
+				await firstUpdateBlocked
+			},
+		})
+		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
+		const earlierUpdate = updateContentScriptInjectionStrategyManifestV3()
+		await firstUpdateStarted
+		await browser.storage.local.set({ safeAppsCompatibilityMode: true })
+		const latestUpdate = updateContentScriptInjectionStrategyManifestV3()
+		releaseFirstUpdate?.()
+		await Promise.all([earlierUpdate, latestUpdate])
+		const inpage = getRegisteredContentScripts().find(({ id }) => id === 'inpage')
+		assert.deepEqual(inpage?.js, ['/inpage/js/requestFinanceSafeHost.js', '/inpage/js/inpage.js'])
+		assert.equal(updateCount, 2)
 	})
 
 	test('keeps existing and obsolete manifest v3 content scripts registered when an update fails', async () => {

@@ -6,7 +6,15 @@ test('Request Finance Safe host relays SDK messages through the existing same-wi
 	const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
 	const origin = 'https://app.request.finance'
 	const fakeWindow = new EventTarget()
-	const scheduledTimeouts: (number | undefined)[] = []
+	const scheduledTimeouts: { readonly handler: TimerHandler, readonly delay: number | undefined, cleared: boolean }[] = []
+	const activeTimeouts = () => scheduledTimeouts.filter(({ cleared }) => !cleared).map(({ delay }) => delay)
+	const fireTimeouts = (delay: number) => {
+		for (const timeout of scheduledTimeouts) {
+			if (timeout.cleared || timeout.delay !== delay) continue
+			timeout.cleared = true
+			if (typeof timeout.handler === 'function') timeout.handler()
+		}
+	}
 	const framePort = new MessageChannel().port1
 	const frame = {
 		style: { display: '' },
@@ -34,8 +42,12 @@ test('Request Finance Safe host relays SDK messages through the existing same-wi
 		location: { value: { origin } },
 		postMessage: { value: postMessage },
 		setTimeout: { configurable: true, value: (_handler: TimerHandler, delay?: number) => {
-			scheduledTimeouts.push(delay)
+			scheduledTimeouts.push({ handler: _handler, delay, cleared: false })
 			return scheduledTimeouts.length
+		} },
+		clearTimeout: { value: (id: number) => {
+			const timeout = scheduledTimeouts[id - 1]
+			if (timeout !== undefined) timeout.cleared = true
 		} },
 	})
 	Object.defineProperty(globalThis, 'window', { configurable: true, value: fakeWindow })
@@ -55,6 +67,7 @@ test('Request Finance Safe host relays SDK messages through the existing same-wi
 		const bulkReplies = new Set<string>()
 		let overflowRejected = false
 		let overflowSdkCallbackReceived = false
+		const timedOutRequestIds = new Set<string>()
 		fakeWindow.addEventListener('message', (event) => {
 			if (!('data' in event) || !('source' in event)) return
 			if (event.source === fakeWindow && typeof event.data === 'object' && event.data !== null && 'method' in event.data && event.data.method === 'getSafeInfo') {
@@ -68,15 +81,16 @@ test('Request Finance Safe host relays SDK messages through the existing same-wi
 				bulkReplies.add(event.data.id)
 				if ('success' in event.data && event.data.success === false) overflowRejected = true
 			}
+			if (event.source === framePort && typeof event.data === 'object' && event.data !== null && 'id' in event.data && typeof event.data.id === 'string' && event.data.id.startsWith('stalled-') && 'success' in event.data && event.data.success === false) timedOutRequestIds.add(event.data.id)
 			if (event.source === framePort && typeof event.data === 'object' && event.data !== null && 'success' in event.data && event.data.success === true) repliedToSdk = true
 		})
 		framePort.postMessage({ id: 'sdk-request', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } })
 		Reflect.get(fakeWindow, 'setTimeout')(() => undefined, 200)
-		assert.deepEqual(scheduledTimeouts, [10_000])
+		assert.deepEqual(activeTimeouts(), [10_500, 10_000])
 		await new Promise<void>((resolve) => setTimeout(resolve, 0))
 		assert.equal(repliedToSdk, true)
 		Reflect.get(fakeWindow, 'setTimeout')(() => undefined, 200)
-		assert.deepEqual(scheduledTimeouts, [10_000, 200])
+		assert.deepEqual(activeTimeouts(), [10_000, 200])
 		for (let index = 0; index < 33; index++) {
 			framePort.postMessage({ id: `bulk-${ index }`, method: 'getChainInfo', env: { sdkVersion: '9.1.0' } })
 			if (index === 32) fakeWindow.addEventListener('message', (event) => {
@@ -88,6 +102,17 @@ test('Request Finance Safe host relays SDK messages through the existing same-wi
 		assert.equal(bulkReplies.size, 33)
 		assert.equal(overflowRejected, true)
 		assert.equal(overflowSdkCallbackReceived, true)
+		for (let index = 0; index < 32; index++) framePort.postMessage({ id: `stalled-${ index }`, method: 'getChainInfo', env: { sdkVersion: '9.1.0' } })
+		await new Promise<void>((resolve) => setTimeout(resolve, 0))
+		fireTimeouts(5 * 60_000)
+		assert.equal(timedOutRequestIds.size, 32)
+		let resumedRequestForwarded = false
+		fakeWindow.addEventListener('message', (event) => {
+			if ('source' in event && event.source === fakeWindow && 'data' in event && typeof event.data === 'object' && event.data !== null && 'id' in event.data && event.data.id === 'resumed-request') resumedRequestForwarded = true
+		})
+		framePort.postMessage({ id: 'resumed-request', method: 'getChainInfo', env: { sdkVersion: '9.1.0' } })
+		await new Promise<void>((resolve) => setTimeout(resolve, 0))
+		assert.equal(resumedRequestForwarded, true)
 	} finally {
 		framePort.close()
 		if (previousWindow === undefined) Reflect.deleteProperty(globalThis, 'window')
