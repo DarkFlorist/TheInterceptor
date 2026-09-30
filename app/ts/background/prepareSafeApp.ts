@@ -1,4 +1,3 @@
-import { requestSafeAppConnection } from '../utils/pageScripts/requestSafeAppConnection.js'
 import type { PrepareSafeAppReply } from '../types/interceptor-reply-messages.js'
 import { getSafeAppsCompatibilityMode, getSafeAppsHostOrigins, getSettings } from './settings.js'
 import { hasAccess } from './websiteAccessPolicy.js'
@@ -16,10 +15,15 @@ export async function prepareSafeAppTab(value: string): Promise<PrepareSafeAppRe
 	const tabs = await browser.tabs.query({})
 	const tab = tabs.find((tab) => tab.id !== undefined && tab.url !== undefined && new URL(tab.url).origin === origin)
 	if (tab?.id === undefined) return { success: false, errorMessage: 'Open this website in a browser tab before connecting.' }
-	const injection = { target: { tabId: tab.id, frameIds: [0] }, world: 'MAIN', func: requestSafeAppConnection, args: [origin] }
-	// The Firefox polyfill types omit Chrome's MAIN world, args, and asynchronous functions.
+	// The Firefox polyfill types omit Chrome's MAIN world and documentIds target.
 	const executeScript: unknown = Reflect.get(browser.scripting, 'executeScript')
 	if (typeof executeScript !== 'function') return { success: false, errorMessage: 'This browser does not support Safe Apps connection preparation.' }
+	// Read the actual origin in the isolated world and bind preparation to that document, even if the tab navigates.
+	const documents: unknown = await executeScript.call(browser.scripting, { target: { tabId: tab.id, frameIds: [0] }, world: 'ISOLATED', files: ['/inpage/js/readDocumentOrigin.js'] })
+	const document: unknown = Array.isArray(documents) ? documents[0] : undefined
+	if (typeof document !== 'object' || document === null || !('result' in document) || document.result !== origin) return { success: false, errorMessage: 'The website navigated before connecting.' }
+	if (!('documentId' in document) || typeof document.documentId !== 'string') return { success: false, errorMessage: 'This browser does not support Safe Apps connection preparation.' }
+	const injection = { target: { tabId: tab.id, documentIds: [document.documentId] }, world: 'MAIN', files: ['/inpage/js/prepareSafeAppBootstrap.js'] }
 	const results: unknown = await executeScript.call(browser.scripting, injection)
 	const firstResult: unknown = Array.isArray(results) ? results[0] : undefined
 	const result: unknown = typeof firstResult === 'object' && firstResult !== null && 'result' in firstResult ? firstResult.result : undefined

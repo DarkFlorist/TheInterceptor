@@ -109,7 +109,7 @@ By default, the browser starts with a temporary profile. This check does not loa
 
 ## Safe Apps hosting on selected websites
 
-Run `bun run test:chrome-safe-apps-host` after `bun run setup-chrome`. The existing Safe co-signing harness serves a bundled fixture containing Safe Apps SDK 9.1.0, Wagmi's Safe connector, and Web3-Onboard's Safe connector on HTTP and HTTPS origins. It checks real extension access approvals, the Settings “Authorize and reload open tab” action, independent authorization on the second origin, and isolation of unselected origins and ports. The signer and RPC are local test doubles.
+Run `bun run test:chrome-safe-apps-host` after `bun run setup-chrome`. The existing Safe co-signing harness serves a bundled fixture containing Safe Apps SDK 9.1.0, Wagmi's Safe connector, and Web3-Onboard's Safe connector on HTTP and HTTPS origins. It checks real extension access approvals, the Settings “Authorize and reload open tab” action using bundled page scripts targeted to a verified document, independent authorization on the second origin, and isolation of unselected origins and ports. The signer and RPC are local test doubles.
 
 In Settings, enable Safe Apps compatibility and add the website URL. Hosting applies to its exact HTTP(S) origin, including scheme and port; refresh an already open page to install or remove it. No websites are hosted by default; add Request Finance explicitly if needed. Select a Safe in signing mode, open the app, and authorize and reload its tab before connecting. Website access still requires the ordinary Interceptor approval.
 

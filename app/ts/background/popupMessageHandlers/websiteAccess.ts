@@ -2,7 +2,7 @@ import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.
 import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequests, DisableInterceptor, RemoveWebsiteAccess, RemoveWebsiteAddressAccess, RetrieveWebsiteAccess } from '../../types/interceptor-messages.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
-import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../../utils/contentScriptsUpdating.js'
+import { updateContentScriptInjectionStrategyManifestV2, contentScriptRegistration } from '../contentScriptRegistration.js'
 import { getErrorMessage, reportUnexpectedError } from '../../utils/errors.js'
 import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { modifyObject } from '../../utils/typescript.js'
@@ -37,7 +37,7 @@ export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConne
 export const disableInterceptorForPage = async (websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) => {
 	await setInterceptorDisabledForWebsite(website, interceptorDisabled)
 	// Await the shared registration lifecycle before reloading; identical storage-triggered updates are coalesced.
-	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
+	if (browser.runtime.getManifest().manifest_version === 3) await contentScriptRegistration.update()
 	else await updateContentScriptInjectionStrategyManifestV2()
 	await reloadConnectedTabs(websiteTabConnections)
 }

@@ -1,7 +1,7 @@
-import { getInterceptorDisabledSites, getSafeAppsCompatibilityMode, getSafeAppsHostOrigins, getSettings } from '../background/settings.js'
-import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
-import { getSafeAppsHostMatchPatterns } from './safeAppsHosting.js'
-import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
+import { getInterceptorDisabledSites, getSafeAppsCompatibilityMode, getSafeAppsHostOrigins, getSettings } from './settings.js'
+import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from '../utils/requests.js'
+import { getSafeAppsHostMatchPatterns } from '../utils/safeAppsHosting.js'
+import { reportLocalRecoveryBestEffort, reportUnexpectedError } from '../utils/errors.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
@@ -112,12 +112,12 @@ const applyContentScriptInjectionStrategyManifestV3 = async (): Promise<ContentS
 }
 
 // A settings-driven update and a workflow waiting before reload share one application of the persisted configuration.
-export function createContentScriptRegistrationUpdater() {
+export function createContentScriptRegistrationService() {
 	let previousUpdate: Promise<void> = Promise.resolve()
 	let appliedSettingsKey: string | undefined
 	let appliedOutcome: ContentScriptRegistrationOutcome = 'applied'
-	return () => {
-		const update = previousUpdate.then(async () => {
+	const update = () => {
+		const nextUpdate = previousUpdate.then(async () => {
 			// Read inside the queue so subsequent writes cannot leave the last requested update applying stale state.
 			const settingsKey = JSON.stringify(await browser.storage.local.get(contentScriptRegistrationStorageKeys))
 			if (settingsKey === appliedSettingsKey) return appliedOutcome
@@ -126,28 +126,39 @@ export function createContentScriptRegistrationUpdater() {
 			appliedOutcome = outcome
 			return outcome
 		})
-		previousUpdate = update.then(() => undefined, () => undefined)
-		return update
+		previousUpdate = nextUpdate.then(() => undefined, () => undefined)
+		return nextUpdate
 	}
-}
-
-export const updateContentScriptInjectionStrategyManifestV3 = createContentScriptRegistrationUpdater()
-
-// Storage changes are the single MV3 settings trigger, including imports and website-access updates.
-export function startContentScriptRegistrationUpdates() {
 	const updateAndReport = async () => {
 		try {
-			await updateContentScriptInjectionStrategyManifestV3()
+			await update()
 		} catch (error: unknown) {
 			await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
 		}
 	}
-	browser.storage.onChanged.addListener((changes, area) => {
+	const onStorageChanged = (changes: Record<string, browser.storage.StorageChange>, area: string) => {
 		if (area !== 'local' || !contentScriptRegistrationStorageKeys.some((key) => key in changes)) return
 		void updateAndReport()
-	})
-	void updateAndReport()
+	}
+	let started = false
+	// Storage changes are the single MV3 settings trigger, including imports and website-access updates.
+	const start = () => {
+		if (started) return
+		started = true
+		browser.storage.onChanged.addListener(onStorageChanged)
+		void updateAndReport()
+	}
+	// Detach observation without cancelling registrations already awaited by a reload workflow.
+	const stop = () => {
+		if (!started) return
+		browser.storage.onChanged.removeListener(onStorageChanged)
+		started = false
+	}
+	return { update, start, stop }
 }
+
+// One service per background runtime; the reload workflow awaits the same queue as the storage observer.
+export const contentScriptRegistration = createContentScriptRegistrationService()
 
 const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {
 	if (!isInjectableSite(content.url)) return false
