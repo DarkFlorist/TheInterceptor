@@ -1,18 +1,17 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 
-test('Request Finance Safe host waits for discovery approval and relays SDK replies within its capacity', async () => {
+function createSafeHostHarness({ origin = 'https://app.request.finance', embedded = false } = {}) {
 	const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
 	const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
-	const origin = 'https://app.request.finance'
 	const fakeWindow = new EventTarget()
-	const scheduledTimeouts: { readonly handler: TimerHandler, readonly delay: number | undefined, cleared: boolean }[] = []
+	const scheduledTimeouts: { readonly handler: TimerHandler, readonly delay: number | undefined, readonly args: readonly unknown[], cleared: boolean }[] = []
 	const activeTimeouts = () => scheduledTimeouts.filter(({ cleared }) => !cleared).map(({ delay }) => delay)
 	const fireTimeouts = (delay: number) => {
 		for (const timeout of scheduledTimeouts) {
 			if (timeout.cleared || timeout.delay !== delay) continue
 			timeout.cleared = true
-			if (typeof timeout.handler === 'function') timeout.handler()
+			if (typeof timeout.handler === 'function') timeout.handler(...timeout.args)
 		}
 	}
 	const framePort = new MessageChannel().port1
@@ -36,13 +35,14 @@ test('Request Finance Safe host waits for discovery approval and relays SDK repl
 		assert.equal(targetOrigin, origin)
 		queueMicrotask(() => emitSelfMessage(data))
 	}
+	const parent = embedded ? new EventTarget() : fakeWindow
 	Object.defineProperties(fakeWindow, {
-		top: { value: fakeWindow },
-		parent: { value: fakeWindow, configurable: true },
+		top: { value: parent },
+		parent: { value: parent, configurable: true },
 		location: { value: { origin } },
 		postMessage: { value: postMessage },
-		setTimeout: { configurable: true, value: (_handler: TimerHandler, delay?: number) => {
-			scheduledTimeouts.push({ handler: _handler, delay, cleared: false })
+		setTimeout: { configurable: true, value: (handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+			scheduledTimeouts.push({ handler, delay, args, cleared: false })
 			return scheduledTimeouts.length
 		} },
 		clearTimeout: { value: (id: number) => {
@@ -58,9 +58,24 @@ test('Request Finance Safe host waits for discovery approval and relays SDK repl
 			return frame
 		},
 	} })
+	return {
+		fakeWindow, framePort, origin, activeTimeouts, fireTimeouts, postMessage,
+		frameWasAppended: () => appended,
+		restoreGlobals: () => {
+			framePort.close()
+			if (previousWindow === undefined) Reflect.deleteProperty(globalThis, 'window')
+			else Object.defineProperty(globalThis, 'window', previousWindow)
+			if (previousDocument === undefined) Reflect.deleteProperty(globalThis, 'document')
+			else Object.defineProperty(globalThis, 'document', previousDocument)
+		},
+	}
+}
+
+test('Request Finance Safe host waits for discovery approval and relays SDK replies within its capacity', async () => {
+	const { fakeWindow, framePort, origin, activeTimeouts, fireTimeouts, postMessage, frameWasAppended, restoreGlobals } = createSafeHostHarness()
 	try {
 		await import('../../app/inpage/ts/requestFinanceSafeHost.ts?request-finance-safe-host-test')
-		assert.equal(appended, true)
+		assert.equal(frameWasAppended(), true)
 		assert.notEqual(Reflect.get(fakeWindow, 'parent'), fakeWindow)
 		let repliedToSdk = false
 		const forwardedBulkRequests = new Set<string>()
@@ -144,10 +159,63 @@ test('Request Finance Safe host waits for discovery approval and relays SDK repl
 		await new Promise<void>((resolve) => setTimeout(resolve, 0))
 		assert.equal(resumedRequestForwarded, true)
 	} finally {
-		framePort.close()
-		if (previousWindow === undefined) Reflect.deleteProperty(globalThis, 'window')
-		else Object.defineProperty(globalThis, 'window', previousWindow)
-		if (previousDocument === undefined) Reflect.deleteProperty(globalThis, 'document')
-		else Object.defineProperty(globalThis, 'document', previousDocument)
+		restoreGlobals()
 	}
 })
+
+test('Request Finance Safe host preserves unrelated timers and their callback arguments', async () => {
+	const { fakeWindow, framePort, fireTimeouts, restoreGlobals } = createSafeHostHarness()
+	try {
+		await import('../../app/inpage/ts/requestFinanceSafeHost.ts?request-finance-unrelated-timers')
+		const calls: unknown[][] = []
+		const handler = (...args: unknown[]) => { calls.push(args) }
+		const argument = { value: 'callback argument' }
+		Reflect.get(fakeWindow, 'setTimeout')(handler, 200, 'before discovery', argument)
+		framePort.postMessage({ id: 'timer-discovery', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } })
+		Reflect.get(fakeWindow, 'setTimeout')(handler, 100, 'different delay', argument)
+		Reflect.get(fakeWindow, 'setTimeout')(handler, 200, 'discovery fallback', argument)
+		Reflect.get(fakeWindow, 'setTimeout')(handler, 200, 'second timer', argument)
+		await Promise.resolve()
+		Reflect.get(fakeWindow, 'setTimeout')(handler, 200, 'after discovery microtask', argument)
+		const cancelledId = Reflect.get(fakeWindow, 'setTimeout')(handler, 200, 'cancelled', argument)
+		Reflect.get(fakeWindow, 'clearTimeout')(cancelledId)
+		fireTimeouts(100)
+		fireTimeouts(200)
+		assert.deepEqual(calls, [
+			['different delay', argument],
+			['before discovery', argument],
+			['second timer', argument],
+			['after discovery microtask', argument],
+		])
+		assert.equal(calls.every((args) => args[1] === argument), true)
+	} finally {
+		restoreGlobals()
+	}
+})
+
+for (const scenario of [
+	{ name: 'other HTTPS origins', origin: 'https://example.com', embedded: false },
+	{ name: 'HTTP Request Finance pages', origin: 'http://app.request.finance', embedded: false },
+	{ name: 'Request Finance subdomains', origin: 'https://other.app.request.finance', embedded: false },
+	{ name: 'embedded Request Finance frames', origin: 'https://app.request.finance', embedded: true },
+]) {
+	test(`Request Finance Safe host leaves ${ scenario.name } untouched`, async () => {
+		const { fakeWindow, frameWasAppended, fireTimeouts, restoreGlobals } = createSafeHostHarness(scenario)
+		const originalParent = Object.getOwnPropertyDescriptor(fakeWindow, 'parent')
+		const originalSetTimeout = Object.getOwnPropertyDescriptor(fakeWindow, 'setTimeout')
+		const originalPostMessage = Object.getOwnPropertyDescriptor(fakeWindow, 'postMessage')
+		try {
+			await import(`../../app/inpage/ts/requestFinanceSafeHost.ts?isolated-${ scenario.name }`)
+			assert.equal(frameWasAppended(), false)
+			assert.deepEqual(Object.getOwnPropertyDescriptor(fakeWindow, 'parent'), originalParent)
+			assert.deepEqual(Object.getOwnPropertyDescriptor(fakeWindow, 'setTimeout'), originalSetTimeout)
+			assert.deepEqual(Object.getOwnPropertyDescriptor(fakeWindow, 'postMessage'), originalPostMessage)
+			let received: unknown[] = []
+			Reflect.get(fakeWindow, 'setTimeout')((...args: unknown[]) => { received = args }, 200, scenario.name)
+			fireTimeouts(200)
+			assert.deepEqual(received, [scenario.name])
+		} finally {
+			restoreGlobals()
+		}
+	})
+}

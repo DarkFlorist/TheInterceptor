@@ -22,6 +22,7 @@
 		"test:chrome-communication": "bun ./test/benchmarks/chromeCommunication.ts",
 		"test:chrome-signing-communication": "bun ./test/benchmarks/chromeSigningCommunication.ts",
 		"test:chrome-safe-cosigning-communication": "bun ./test/benchmarks/chromeSafeCoSigningCommunication.ts",
+		"test:chrome-request-finance-discovery": "bun ./test/benchmarks/chromeSafeCoSigningCommunication.ts --request-finance-discovery",
 		"vendor": "cd build && bun install --frozen-lockfile && bun run vendor",
 		"bundle": "cd build && bun run bundle",
 		"firefox": "bun -e 'await Bun.write(`app/manifest.json`, Bun.file(`app/manifestV2.json`))'",

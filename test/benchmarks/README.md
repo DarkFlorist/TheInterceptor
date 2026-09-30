@@ -92,3 +92,15 @@ The transient RPC failure scenario expects the rich setting to be saved while th
 The wallet-response deadline and a later dapp request on the same signer connection are covered by focused tests using a shortened timeout. Per-command IDs prevent expired or reordered wallet replies from completing another switch; the browser fixture holds and releases replies explicitly rather than waiting two minutes. Timing samples cover ten scenarios; popup lifecycle/conflict and RPC-recovery assertions run alongside them without speed thresholds.
 
 For comparisons, build each revision and run the same command with the same browser, delays, iteration count, and host load. Compare feedback and selected-value timings separately from total completion time. Fixture setup is excluded from sample timings.
+
+## Request Finance Safe discovery
+
+After `bun run setup-chrome`, run:
+
+```bash
+bun run test:chrome-request-finance-discovery
+```
+
+This scenario reuses the Safe co-signing harness with a test signer, a configured Safe, and a local RPC fixture. CDP serves a local HTML fixture at the Request Finance HTTPS origin so the extension injects its real Safe host shim. The page reproduces the SDK's parent-message checks and the site's 200 ms discovery race. The test keeps the real access popup open for 11 seconds, verifies discovery is still pending, approves access, and checks the returned Safe address, chain, owner, and threshold. It fails if either of the former 10-second discovery deadlines interrupts approval.
+
+By default, the browser starts with a temporary profile. This check does not load the live Request Finance app or use a real wallet. `CHROME_BIN` selects the browser binary as described above.

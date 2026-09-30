@@ -19,7 +19,10 @@ import type { CdpConnection } from './chromeHarness.js'
 
 const safeAppsTypedMessage = process.argv.includes('--safe-apps-typed-message')
 const safeAppsMessage = process.argv.includes('--safe-apps-message') || safeAppsTypedMessage
-const safeAppsOnly = process.argv.includes('--safe-apps-only') || safeAppsMessage
+const requestFinanceDiscovery = process.argv.includes('--request-finance-discovery')
+const safeAppsOnly = process.argv.includes('--safe-apps-only') || safeAppsMessage || requestFinanceDiscovery
+const REQUEST_FINANCE_FIXTURE_URL = 'https://app.request.finance/interceptor-discovery-regression'
+const REQUEST_FINANCE_APPROVAL_DELAY_MS = 11_000
 const ACCESS_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.is-primary:not(.is-danger)'
 const CONFIRM_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.dialog-action-button.is-primary:not(.is-danger)'
 const SAFE_ADDRESS = 0x1234567890123456789012345678901234567890n
@@ -147,6 +150,30 @@ async function waitForText(connection: CdpConnection, text: string, timeoutMs = 
 		timeoutMs,
 		`text ${ text }`,
 	)
+}
+
+async function openRequestFinanceDiscoveryFixture(connection: CdpConnection) {
+	const html = await readFile(new URL('../fixtures/requestFinanceSafeDiscovery.html', import.meta.url), 'utf8')
+	// Keep the site's HTTPS origin for the real content-script guards, while serving only the local fixture.
+	await connection.send('Fetch.enable', { patterns: [{ urlPattern: REQUEST_FINANCE_FIXTURE_URL, resourceType: 'Document', requestStage: 'Request' }] })
+	const documentDelivered = new Promise<void>((resolve, reject) => {
+		const onRequest = (event: unknown) => {
+			if (!isRecord(event) || typeof event.requestId !== 'string') {
+				reject(new Error('Malformed intercepted Request Finance document request.'))
+				return
+			}
+			connection.off('Fetch.requestPaused', onRequest)
+			void connection.send('Fetch.fulfillRequest', {
+				requestId: event.requestId,
+				responseCode: 200,
+				responseHeaders: [{ name: 'Content-Type', value: 'text/html; charset=utf-8' }],
+				body: Buffer.from(html).toString('base64'),
+			}).then(() => resolve(), reject)
+		}
+		connection.on('Fetch.requestPaused', onRequest)
+	})
+	await Promise.all([connection.send('Page.navigate', { url: REQUEST_FINANCE_FIXTURE_URL }), documentDelivered])
+	await connection.send('Fetch.disable')
 }
 
 async function setFileInput(connection: CdpConnection, selector: string, filePath: string) {
@@ -435,6 +462,11 @@ async function main() {
 			}
 			// Install the test RPC through the popup command below so persisted settings and live services change together.
 			await workerConnection.evaluate(`browser.storage.local.set(${ JSON.stringify(storedSettings) })`)
+			if (requestFinanceDiscovery) await waitForCondition(async () => await workerConnection.evaluate<boolean>(`(async () => {
+				const scripts = await browser.scripting.getRegisteredContentScripts()
+				// Chrome returns extension-relative paths without their leading slash.
+				return scripts.find(({ id }) => id === 'inpage')?.js.some((file) => file === 'inpage/js/requestFinanceSafeHost.js' || file === '/inpage/js/requestFinanceSafeHost.js') === true
+			})()`), 30_000, 'Request Finance Safe host registration')
 		} finally {
 			workerConnection.close()
 		}
@@ -469,7 +501,8 @@ async function main() {
 		try {
 			await pageConnection.send('Page.enable')
 			await pageConnection.send('Page.addScriptToEvaluateOnNewDocument', { source: fakeSignerPreload })
-			await pageConnection.send('Page.navigate', { url: `http://127.0.0.1:${ server.port }/${ safeAppsOnly ? '?safe-probe=early&safe-only=true' : '' }` })
+			if (requestFinanceDiscovery) await openRequestFinanceDiscoveryFixture(pageConnection)
+			else await pageConnection.send('Page.navigate', { url: `http://127.0.0.1:${ server.port }/${ safeAppsOnly ? '?safe-probe=early&safe-only=true' : '' }` })
 			try {
 				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === '${ safeAppsOnly ? 'requesting-safe-only' : 'requesting-access' }'`).catch(() => false), 30_000, 'Safe access request')
 			} catch (error) {
@@ -485,6 +518,11 @@ async function main() {
 			const accessConnection = await connectTarget(chrome.browserDebugPort, accessTarget.id)
 			try {
 				await waitForButtonEnabled(accessConnection, ACCESS_APPROVE_BUTTON_SELECTOR, 30_000)
+				if (requestFinanceDiscovery) {
+					await sleep(REQUEST_FINANCE_APPROVAL_DELAY_MS)
+					const pendingState = await pageConnection.evaluate<{ phase: string, error?: string }>('globalThis.__interceptorChromeCommunicationState')
+					if (pendingState.phase !== 'requesting-safe-only') throw new Error(`Request Finance discovery did not survive delayed approval: ${ JSON.stringify(pendingState) }`)
+				}
 				await clickButton(accessConnection, ACCESS_APPROVE_BUTTON_SELECTOR)
 			} finally {
 				accessConnection.close()
@@ -499,6 +537,15 @@ async function main() {
 			const grantedAccounts = await pageConnection.evaluate<readonly string[]>('globalThis.__interceptorChromeCommunicationState.accounts')
 			if (grantedAccounts[0]?.toLowerCase() !== addressString(SAFE_ADDRESS).toLowerCase()) {
 				throw new Error(`Dapp received ${ grantedAccounts[0] ?? 'no account' } instead of the Safe address`)
+			}
+			if (requestFinanceDiscovery) {
+				const result = await pageConnection.evaluate<{ elapsedMs: number, safeInfo: { chainId: number, owners: readonly string[], threshold: number }, origin: string }>('({ ...globalThis.__interceptorChromeCommunicationState, origin: location.origin })')
+				if (result.origin !== new URL(REQUEST_FINANCE_FIXTURE_URL).origin || result.elapsedMs < REQUEST_FINANCE_APPROVAL_DELAY_MS) throw new Error('Request Finance discovery did not exercise the delayed origin-specific bridge.')
+				if (result.safeInfo.chainId !== 1 || result.safeInfo.threshold !== 2 || result.safeInfo.owners[0]?.toLowerCase() !== addressString(OWNER_ADDRESS).toLowerCase()) throw new Error('Request Finance received unexpected configured Safe contract information.')
+				const prompts = await pageConnection.evaluate<number>(`globalThis.__fakeSafeSignerRequests.filter(({ method }) => method === 'eth_requestAccounts').length`)
+				if (prompts !== 1) throw new Error(`Expected one Safe signer connection prompt, received ${ prompts }`)
+				console.warn(`Request Finance Safe discovery passed after delayed real access approval: ${ JSON.stringify(result) }`)
+				return
 			}
 			if (safeAppsOnly && !safeAppsMessage) {
 				const accountRequests = await pageConnection.evaluate<number>(`globalThis.__fakeSafeSignerRequests.filter(request => request.method === 'eth_requestAccounts').length`)
