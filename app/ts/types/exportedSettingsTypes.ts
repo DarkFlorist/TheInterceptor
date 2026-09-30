@@ -53,6 +53,20 @@ const compatibilityExportedSettingsFields = {
 	metamaskCompatibilityMode: funtypes.Boolean,
 }
 
+const safeExportedSettingsFields = {
+	activeSimulationAddress: OptionalEthereumAddress,
+	activeSigningSafeAddress: OptionalEthereumAddress,
+	signingAddressPreferences: SigningAddressPreferences,
+	rpcNetwork: RpcNetwork,
+	openedPage: Page,
+	useSignersAddressAsActiveAddress: funtypes.Boolean,
+	websiteAccess: WebsiteAccessArray,
+	simulationMode: funtypes.Boolean,
+	addressBookEntries: AddressBookEntries,
+	useTabsInsteadOfPopup: funtypes.Boolean,
+	metamaskCompatibilityMode: funtypes.Boolean,
+}
+
 export type ExportedSettings = funtypes.Static<typeof ExportedSettings>
 export const ExportedSettings = funtypes.Union(
 	funtypes.ReadonlyObject({
@@ -103,37 +117,23 @@ export const ExportedSettings = funtypes.Union(
 	funtypes.ReadonlyObject({
 		...exportedSettingsEnvelopeFields,
 		version: funtypes.Literal('1.5'),
-		settings: funtypes.ReadonlyObject({
-			activeSimulationAddress: OptionalEthereumAddress,
-			activeSigningSafeAddress: OptionalEthereumAddress,
-			signingAddressPreferences: SigningAddressPreferences,
-			rpcNetwork: RpcNetwork,
-			openedPage: Page,
-			useSignersAddressAsActiveAddress: funtypes.Boolean,
-			websiteAccess: WebsiteAccessArray,
-			simulationMode: funtypes.Boolean,
-			addressBookEntries: AddressBookEntries,
-			useTabsInsteadOfPopup: funtypes.Boolean,
-			metamaskCompatibilityMode: funtypes.Boolean,
-		})
+		settings: funtypes.ReadonlyObject(safeExportedSettingsFields),
 	}),
 	funtypes.ReadonlyObject({
 		...exportedSettingsEnvelopeFields,
 		version: funtypes.Literal('1.6'),
 		settings: funtypes.ReadonlyObject({
-			activeSimulationAddress: OptionalEthereumAddress,
-			activeSigningSafeAddress: OptionalEthereumAddress,
-			signingAddressPreferences: SigningAddressPreferences,
-			rpcNetwork: RpcNetwork,
-			openedPage: Page,
-			useSignersAddressAsActiveAddress: funtypes.Boolean,
-			websiteAccess: WebsiteAccessArray,
-			simulationMode: funtypes.Boolean,
-			addressBookEntries: AddressBookEntries,
-			useTabsInsteadOfPopup: funtypes.Boolean,
-			metamaskCompatibilityMode: funtypes.Boolean,
+			...safeExportedSettingsFields,
 			safeAppsCompatibilityMode: funtypes.Boolean,
-			safeAppsHostOrigins: funtypes.Union(SafeAppsHostOrigins, funtypes.Undefined),
-		})
+		}),
+	}),
+	funtypes.ReadonlyObject({
+		...exportedSettingsEnvelopeFields,
+		version: funtypes.Literal('1.7'),
+		settings: funtypes.ReadonlyObject({
+			...safeExportedSettingsFields,
+			safeAppsCompatibilityMode: funtypes.Boolean,
+			safeAppsHostOrigins: SafeAppsHostOrigins,
+		}),
 	}),
 )

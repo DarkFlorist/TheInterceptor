@@ -36,6 +36,7 @@ export async function reloadConnectedTabs(websiteTabConnections: WebsiteTabConne
 
 export const disableInterceptorForPage = async (websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) => {
 	await setInterceptorDisabledForWebsite(website, interceptorDisabled)
+	// Await the shared registration lifecycle before reloading; identical storage-triggered updates are coalesced.
 	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
 	else await updateContentScriptInjectionStrategyManifestV2()
 	await reloadConnectedTabs(websiteTabConnections)

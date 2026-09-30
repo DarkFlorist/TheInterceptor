@@ -1,6 +1,9 @@
 import * as assert from 'assert'
 import * as fs from 'node:fs'
 import { describe, test } from 'bun:test'
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import type { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import type { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import { withSilencedConsole } from './consoleSilence.js'
 
 type RuntimeMessage = {
@@ -9,7 +12,9 @@ type RuntimeMessage = {
 }
 
 type BrowserMockOptions = {
+	readonly emitStorageEvents?: boolean
 	readonly registerError?: Error
+	readonly hostRegistrationError?: Error
 	readonly updateError?: Error
 	readonly executeScriptError?: Error
 	readonly tabUrl?: string
@@ -18,7 +23,7 @@ type BrowserMockOptions = {
 	readonly registeredContentScriptIds?: readonly string[]
 	readonly safeAppsCompatibilityMode?: boolean
 	readonly safeAppsHostOrigins?: readonly string[]
-	readonly beforeUpdateContentScripts?: () => Promise<void>
+	readonly beforeUpdateContentScripts?: (scripts: readonly RegisteredContentScript[]) => Promise<void>
 }
 
 type RegisteredContentScript = {
@@ -30,15 +35,17 @@ type RegisteredContentScript = {
 	readonly js?: readonly string[]
 }
 
-function installBrowserMock({ registerError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [], safeAppsCompatibilityMode = false, safeAppsHostOrigins, beforeUpdateContentScripts }: BrowserMockOptions = {}) {
+function installBrowserMock({ emitStorageEvents = false, registerError, hostRegistrationError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [], safeAppsCompatibilityMode = false, safeAppsHostOrigins, beforeUpdateContentScripts }: BrowserMockOptions = {}) {
 	const storageState: Record<string, unknown> = { safeAppsCompatibilityMode, ...(safeAppsHostOrigins === undefined ? {} : { safeAppsHostOrigins }) }
 	const sentMessages: RuntimeMessage[] = []
 	const executedScriptFiles: string[] = []
+	const reloadedTabs: number[] = []
 	const registeredContentScripts = new Map(registeredContentScriptIds.map((id) => [id, { id }]))
 	let executeScriptCalls = 0
 	const scriptingOperations: string[] = []
 	const unregisteredContentScriptIdBatches: string[][] = []
 	let currentTabUrl = tabUrl
+	let storageListener: ((changes: Record<string, browser.storage.StorageChange>, area: string) => void) | undefined
 	let committedListener: ((details: browser.webNavigation._OnCommittedDetails) => unknown) | undefined
 	const getStorageItems = (keys?: string | string[] | Record<string, unknown> | null) => {
 		if (keys === undefined || keys === null) return { ...storageState }
@@ -62,13 +69,18 @@ function installBrowserMock({ registerError, updateError, executeScriptError, ta
 				onConnect: { addListener: () => undefined, removeListener: () => undefined },
 			},
 			storage: {
+				onChanged: { addListener: (listener: typeof storageListener) => { storageListener = listener } },
 				local: {
 					async get(keys?: string | string[] | Record<string, unknown> | null) {
 						const storageItems = getStorageItems(keys)
 						currentTabUrl = tabUrlAfterStorageRead ?? currentTabUrl
 						return storageItems
 					},
-					async set(items: Record<string, unknown>) { Object.assign(storageState, items) },
+					async set(items: Record<string, unknown>) {
+						const changes = Object.fromEntries(Object.entries(items).filter(([key, value]) => JSON.stringify(storageState[key]) !== JSON.stringify(value)).map(([key, value]) => [key, { oldValue: storageState[key], newValue: value }]))
+						Object.assign(storageState, items)
+						if (emitStorageEvents) storageListener?.(changes, 'local')
+					},
 					async remove(keys: string | string[]) {
 						for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
 					},
@@ -85,16 +97,19 @@ function installBrowserMock({ registerError, updateError, executeScriptError, ta
 				async registerContentScripts(scripts: readonly RegisteredContentScript[]) {
 					scriptingOperations.push('register')
 					if (registerError !== undefined) throw registerError
+					if (hostRegistrationError !== undefined && scripts.some(({ id }) => id === 'safe-apps-host')) throw hostRegistrationError
 					for (const script of scripts) registeredContentScripts.set(script.id, script)
 				},
 				async updateContentScripts(scripts: readonly RegisteredContentScript[]) {
 					scriptingOperations.push('update')
-					await beforeUpdateContentScripts?.()
+					await beforeUpdateContentScripts?.(scripts)
 					if (updateError !== undefined) throw updateError
 					for (const script of scripts) registeredContentScripts.set(script.id, script)
 				},
 			},
+			declarativeNetRequest: { getDynamicRules: async () => [], getSessionRules: async () => [], updateDynamicRules: async () => undefined, updateSessionRules: async () => undefined },
 			tabs: {
+				async reload(id: number) { scriptingOperations.push('reload'); reloadedTabs.push(id) },
 				async query() { return [{ id: 42, url: currentTabUrl }] },
 				async get() { return hasVisibleTabUrl ? { id: 42, url: currentTabUrl } : { id: 42 } },
 				async update() { return undefined },
@@ -137,6 +152,9 @@ function installBrowserMock({ registerError, updateError, executeScriptError, ta
 
 	return {
 		sentMessages,
+		reloadedTabs,
+		recordAccessRefresh: () => { scriptingOperations.push('access-refresh') },
+		emitStorageChange(changes: Record<string, browser.storage.StorageChange>, area: string) { storageListener?.(changes, area) },
 		getRegisteredContentScripts() { return [...registeredContentScripts.values()] },
 		getScriptingOperations() { return [...scriptingOperations] },
 		getUnregisteredContentScriptIdBatches() { return unregisteredContentScriptIdBatches.map((ids) => [...ids]) },
@@ -161,8 +179,10 @@ const committedDetails: browser.webNavigation._OnCommittedDetails = {
 }
 
 async function loadModules() {
+	const registration = await import('../../app/ts/utils/contentScriptsUpdating.js')
 	return {
-		...await import('../../app/ts/utils/contentScriptsUpdating.js'),
+		...registration,
+		updateContentScriptInjectionStrategyManifestV3: registration.createContentScriptRegistrationUpdater(),
 		...await import('../../app/ts/background/storageVariables.js'),
 	}
 }
@@ -222,16 +242,95 @@ describe('content script injection strategy', () => {
 		])
 	})
 
-	test('records manifest v3 registration failures as unexpected errors', async () => {
-		const { sentMessages } = installBrowserMock({ registerError: new Error('registration failed') })
-		const { updateContentScriptInjectionStrategyManifestV3, getLatestUnexpectedError } = await loadModules()
+	test('propagates manifest v3 registration failures when base-provider recovery also fails', async () => {
+		installBrowserMock({ registerError: new Error('registration failed') })
+		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
 
-		await withSilencedConsole(async () => await updateContentScriptInjectionStrategyManifestV3())
+		await assert.rejects(updateContentScriptInjectionStrategyManifestV3(), { name: 'AggregateError', message: 'Content script registration and base-provider recovery failed.' })
+	})
 
-		const latestUnexpectedError = await getLatestUnexpectedError()
-		assert.equal(latestUnexpectedError?.data.message, 'registration failed')
-		assert.equal(latestUnexpectedError?.data.code, 'content_script_registration_failed')
+	for (const origins of [['https://*.invalid.example'], ['not-an-origin']]) test(`invalid stored hosting configuration preserves base injection: ${ origins[0] }`, async () => {
+		const { getRegisteredContentScripts } = installBrowserMock({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: origins, registeredContentScriptIds: ['safe-apps-host', 'inpage'] })
+		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
+		await withSilencedConsole(async () => assert.equal(await updateContentScriptInjectionStrategyManifestV3(), 'base-provider-recovered'))
+		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2'])
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.excludeMatches, [])
+	})
+
+	test('a rejected host registration restores base injection and a later queued update can succeed', async () => {
+		const { getRegisteredContentScripts } = installBrowserMock({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: ['https://app.example.com'], hostRegistrationError: new Error('Invalid host match pattern') })
+		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
+		await withSilencedConsole(async () => assert.equal(await updateContentScriptInjectionStrategyManifestV3(), 'base-provider-recovered'))
+		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2'])
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.excludeMatches, [])
+		await browser.storage.local.set({ safeAppsCompatibilityMode: false })
+		await updateContentScriptInjectionStrategyManifestV3()
+	})
+
+	test('recovery removes a host installed before a partially applied provider update fails', async () => {
+		const { getRegisteredContentScripts } = installBrowserMock({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: ['https://app.example.com'], registeredContentScriptIds: ['inpage'], beforeUpdateContentScripts: async (scripts) => {
+			if (scripts.some(({ excludeMatches }) => excludeMatches?.includes('https://app.example.com:443/*'))) throw new Error('Hosted provider update rejected')
+		} })
+		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
+		await withSilencedConsole(async () => assert.equal(await updateContentScriptInjectionStrategyManifestV3(), 'base-provider-recovered'))
+		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2'])
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.excludeMatches, [])
+	})
+
+	test('enable/disable awaits recovered registrations, coalesces the storage update, reloads and replies', async () => {
+		const { getRegisteredContentScripts, getScriptingOperations, reloadedTabs, sentMessages, recordAccessRefresh } = installBrowserMock({ emitStorageEvents: true, safeAppsCompatibilityMode: true, safeAppsHostOrigins: ['not-an-origin'] })
+		const registration = await import('../../app/ts/utils/contentScriptsUpdating.js')
+		const { disableInterceptor } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
+		const { getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
+		const { EthereumClientService: EthereumClient } = await import('../../app/ts/simulation/services/EthereumClientService.js')
+		const { TokenPriceService: TokenPriceClient } = await import('../../app/ts/simulation/services/priceEstimator.js')
+		const ethereum: EthereumClientService = Object.create(EthereumClient.prototype)
+		const tokenPriceService: TokenPriceService = Object.create(TokenPriceClient.prototype)
+		const services = createTestSimulationServicesOwner({ ethereum, tokenPriceService })
+		const connections = Object.assign(new Map(), { lifecycle: { accessReconciled: recordAccessRefresh } })
+		const website = { websiteOrigin: 'disable-recovery.example', title: undefined, icon: undefined }
+		await browser.storage.local.set({ currentTabId: 42 })
+		await withSilencedConsole(async () => {
+			registration.startContentScriptRegistrationUpdates()
+			await registration.updateContentScriptInjectionStrategyManifestV3()
+			for (const interceptorDisabled of [true, false]) {
+				const initialOperations = getScriptingOperations().length
+				await disableInterceptor(services, connections, { method: 'popup_setDisableInterceptor', data: { website, interceptorDisabled } })
+				const operations = getScriptingOperations().slice(initialOperations)
+				assert.deepEqual(operations, ['update', 'reload', 'access-refresh'])
+				assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.excludeMatches, interceptorDisabled ? ['*://*.disable-recovery.example/*'] : [])
+				assert.equal(sentMessages.at(-1)?.method, 'popup_setDisableInterceptorReply')
+				assert.equal((await getLatestUnexpectedError())?.data.code, 'content_script_registration_failed')
+			}
+		})
+		assert.deepEqual(reloadedTabs, [42, 42])
+	})
+
+	test('enable/disable propagates unrecovered registration errors before reload or a success reply', async () => {
+		const { reloadedTabs, sentMessages } = installBrowserMock({ registerError: new Error('Scripting unavailable') })
+		const { disableInterceptorForPage } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
+		await assert.rejects(disableInterceptorForPage(new Map(), { websiteOrigin: 'unrecoverable.example', title: undefined, icon: undefined }, true), /base-provider recovery failed/)
+		assert.deepEqual(reloadedTabs, [])
+		assert.equal(sentMessages.some(({ method }) => method === 'popup_setDisableInterceptorReply'), false)
+	})
+
+	test('storage is the single settings trigger and reports rejected registration updates', async () => {
+		const { emitStorageChange, getScriptingOperations, sentMessages } = installBrowserMock({ hostRegistrationError: new Error('Host registration rejected'), safeAppsHostOrigins: ['https://app.example.com'] })
+		const { startContentScriptRegistrationUpdates } = await import('../../app/ts/utils/contentScriptsUpdating.js')
+		startContentScriptRegistrationUpdates()
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		const initialOperations = getScriptingOperations().length
+		emitStorageChange({ safeAppsCompatibilityMode: { newValue: true } }, 'sync')
+		emitStorageChange({ unrelatedSetting: { newValue: true } }, 'local')
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(getScriptingOperations().length, initialOperations)
+		await browser.storage.local.set({ safeAppsCompatibilityMode: true })
+		await withSilencedConsole(async () => {
+			emitStorageChange({ safeAppsCompatibilityMode: { newValue: true } }, 'local')
+			await new Promise((resolve) => setTimeout(resolve, 0))
+		})
 		assert.equal(sentMessages.at(-1)?.method, 'popup_UnexpectedErrorOccured')
+		assert.equal(sentMessages.at(-1)?.data?.code, 'content_script_registration_failed')
 	})
 
 	test('registers missing scripts, updates existing definitions, and then prunes obsolete registrations', async () => {
@@ -316,9 +415,9 @@ describe('content script injection strategy', () => {
 		})
 		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
 
-		await withSilencedConsole(async () => await updateContentScriptInjectionStrategyManifestV3())
+		await assert.rejects(updateContentScriptInjectionStrategyManifestV3(), /base-provider recovery failed/)
 
-		assert.deepEqual(getScriptingOperations(), ['update'])
+		assert.deepEqual(getScriptingOperations(), ['update', 'update'])
 		assert.deepEqual(getUnregisteredContentScriptIdBatches(), [])
 		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2', 'obsolete-inpage'])
 	})

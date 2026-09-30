@@ -39,34 +39,52 @@ export function getManifestV3ExcludeMatches(origins: readonly string[]) {
 	return [...patterns]
 }
 
-let previousContentScriptUpdate: Promise<void> = Promise.resolve()
+const contentScriptRegistrationStorageKeys = ['safeAppsCompatibilityMode', 'safeAppsHostOrigins', 'websiteAccess']
+type ContentScriptRegistrationOutcome = 'applied' | 'base-provider-recovered'
 
-const applyContentScriptInjectionStrategyManifestV3 = async () => {
+type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
+// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
+type FixedContentScript = RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
+
+function getBaseContentScripts(excludeMatches: string[], hostMatches: string[] = []): FixedContentScript[] {
+	return [{
+		id: 'inpage2',
+		allFrames: true,
+		matches: injectableSitesWildcard,
+		excludeMatches,
+		js: ['/vendor/webextension-polyfill/dist/browser-polyfill.js', '/inpage/js/listenContentScript.js', '/inpage/js/listenContentScriptBootstrap.js'],
+		runAt: 'document_start',
+		matchOriginAsFallback: true,
+	}, {
+		id: 'inpage',
+		allFrames: true,
+		matches: injectableSitesWildcard,
+		excludeMatches: [...excludeMatches, ...hostMatches],
+		js: ['/inpage/js/inpage.js'],
+		runAt: 'document_start',
+		world: 'MAIN',
+		matchOriginAsFallback: true,
+	}]
+}
+
+async function reconcileContentScripts(contentScripts: FixedContentScript[]) {
+	const registeredContentScripts = await browser.scripting.getRegisteredContentScripts()
+	const registeredContentScriptIds = new Set(registeredContentScripts.map(({ id }) => id))
+	const desiredContentScriptIds = new Set(contentScripts.map(({ id }) => id))
+	const missingContentScripts = contentScripts.filter(({ id }) => !registeredContentScriptIds.has(id))
+	const existingContentScripts = contentScripts.filter(({ id }) => registeredContentScriptIds.has(id))
+	const obsoleteContentScriptIds = registeredContentScripts.map(({ id }) => id).filter((id) => !desiredContentScriptIds.has(id))
+	if (missingContentScripts.length > 0) await browser.scripting.registerContentScripts(missingContentScripts)
+	if (existingContentScripts.length > 0) await browser.scripting.updateContentScripts(existingContentScripts)
+	if (obsoleteContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
+}
+
+const applyContentScriptInjectionStrategyManifestV3 = async (): Promise<ContentScriptRegistrationOutcome> => {
+	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(await getSettings()))
+	const baseContentScripts = getBaseContentScripts(excludeMatches)
 	try {
-		const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(await getSettings()))
-		const safeAppsCompatibilityMode = await getSafeAppsCompatibilityMode()
-		const safeAppsHostMatches = safeAppsCompatibilityMode ? getSafeAppsHostMatchPatterns(await getSafeAppsHostOrigins()) : []
-		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
-		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
-		type FixedContentScript = RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
-		const contentScripts: FixedContentScript[] = [{
-			id: 'inpage2',
-			allFrames: true,
-			matches: injectableSitesWildcard,
-			excludeMatches,
-			js: ['/vendor/webextension-polyfill/dist/browser-polyfill.js', '/inpage/js/listenContentScript.js', '/inpage/js/listenContentScriptBootstrap.js'],
-			runAt: 'document_start',
-			matchOriginAsFallback: true
-		}, {
-			id: 'inpage',
-			allFrames: true,
-			matches: injectableSitesWildcard,
-			excludeMatches: [...excludeMatches, ...safeAppsHostMatches],
-			js: ['/inpage/js/inpage.js'],
-			runAt: 'document_start',
-			world: 'MAIN',
-			matchOriginAsFallback: true
-		}]
+		const safeAppsHostMatches = await getSafeAppsCompatibilityMode() ? getSafeAppsHostMatchPatterns(await getSafeAppsHostOrigins()) : []
+		const contentScripts = getBaseContentScripts(excludeMatches, safeAppsHostMatches)
 		if (safeAppsHostMatches.length > 0) contentScripts.push({
 			id: 'safe-apps-host',
 			allFrames: true,
@@ -78,25 +96,57 @@ const applyContentScriptInjectionStrategyManifestV3 = async () => {
 			world: 'MAIN',
 			matchOriginAsFallback: true,
 		})
-		const registeredContentScripts = await browser.scripting.getRegisteredContentScripts()
-		const registeredContentScriptIds = new Set(registeredContentScripts.map(({ id }) => id))
-		const desiredContentScriptIds = new Set(contentScripts.map(({ id }) => id))
-		const missingContentScripts = contentScripts.filter(({ id }) => !registeredContentScriptIds.has(id))
-		const existingContentScripts = contentScripts.filter(({ id }) => registeredContentScriptIds.has(id))
-		const obsoleteContentScriptIds = registeredContentScripts.map(({ id }) => id).filter((id) => !desiredContentScriptIds.has(id))
-		if (missingContentScripts.length > 0) await browser.scripting.registerContentScripts(missingContentScripts)
-		if (existingContentScripts.length > 0) await browser.scripting.updateContentScripts(existingContentScripts)
-		if (obsoleteContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
+		await reconcileContentScripts(contentScripts)
+		return 'applied'
 	} catch (error: unknown) {
+		// Restore ordinary injection and remove stale hosts/exclusions even after a partially applied update.
+		try {
+			await reconcileContentScripts(baseContentScripts)
+		} catch (recoveryError: unknown) {
+			throw new AggregateError([error, recoveryError], 'Content script registration and base-provider recovery failed.')
+		}
+		// Hosting failed, but base injection is ready. Report durably without aborting enable/disable and its required tab reload.
 		await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
+		return 'base-provider-recovered'
 	}
 }
 
-export const updateContentScriptInjectionStrategyManifestV3 = () => {
-	// Read settings inside the queue so the last requested update applies the latest state.
-	const update = previousContentScriptUpdate.then(applyContentScriptInjectionStrategyManifestV3)
-	previousContentScriptUpdate = update.then(() => undefined, () => undefined)
-	return update
+// A settings-driven update and a workflow waiting before reload share one application of the persisted configuration.
+export function createContentScriptRegistrationUpdater() {
+	let previousUpdate: Promise<void> = Promise.resolve()
+	let appliedSettingsKey: string | undefined
+	let appliedOutcome: ContentScriptRegistrationOutcome = 'applied'
+	return () => {
+		const update = previousUpdate.then(async () => {
+			// Read inside the queue so subsequent writes cannot leave the last requested update applying stale state.
+			const settingsKey = JSON.stringify(await browser.storage.local.get(contentScriptRegistrationStorageKeys))
+			if (settingsKey === appliedSettingsKey) return appliedOutcome
+			const outcome = await applyContentScriptInjectionStrategyManifestV3()
+			appliedSettingsKey = settingsKey
+			appliedOutcome = outcome
+			return outcome
+		})
+		previousUpdate = update.then(() => undefined, () => undefined)
+		return update
+	}
+}
+
+export const updateContentScriptInjectionStrategyManifestV3 = createContentScriptRegistrationUpdater()
+
+// Storage changes are the single MV3 settings trigger, including imports and website-access updates.
+export function startContentScriptRegistrationUpdates() {
+	const updateAndReport = async () => {
+		try {
+			await updateContentScriptInjectionStrategyManifestV3()
+		} catch (error: unknown) {
+			await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
+		}
+	}
+	browser.storage.onChanged.addListener((changes, area) => {
+		if (area !== 'local' || !contentScriptRegistrationStorageKeys.some((key) => key in changes)) return
+		void updateAndReport()
+	})
+	void updateAndReport()
 }
 
 const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {

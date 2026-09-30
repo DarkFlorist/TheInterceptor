@@ -1,4 +1,3 @@
-import { updateContentScriptInjectionStrategyManifestV3 } from '../utils/contentScriptsUpdating.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
@@ -878,7 +877,6 @@ export async function changeSettings(simulationServicesOwner: SimulationServices
 		await setSafeAppsCompatibilityMode(parsedRequest.data.safeAppsCompatibilityMode)
 	}
 	if (parsedRequest.data.safeAppsHostOrigins !== undefined) await setSafeAppsHostOrigins(parsedRequest.data.safeAppsHostOrigins)
-	if (browser.runtime.getManifest().manifest_version === 3 && (parsedRequest.data.safeAppsHostOrigins !== undefined || parsedRequest.data.safeAppsCompatibilityMode !== undefined)) await updateContentScriptInjectionStrategyManifestV3()
 	return await requestNewHomeData(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, false, true, requestAbortController, bumpPopupRefreshGeneration())
 }
 

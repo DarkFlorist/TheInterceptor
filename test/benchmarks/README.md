@@ -93,6 +93,8 @@ The wallet-response deadline and a later dapp request on the same signer connect
 
 For comparisons, build each revision and run the same command with the same browser, delays, iteration count, and host load. Compare feedback and selected-value timings separately from total completion time. Fixture setup is excluded from sample timings.
 
+The communication check also registers an IPv6 Safe Apps host through real Chrome, corrupts the persisted hosting selection, verifies that base provider injection is restored and the registration error is recorded, then completes the ordinary approval flow.
+
 ## Request Finance Safe discovery
 
 After `bun run setup-chrome`, run:

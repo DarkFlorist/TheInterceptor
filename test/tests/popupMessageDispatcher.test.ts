@@ -319,6 +319,16 @@ describe('popup message dispatcher seams', () => {
 		})
 	})
 
+	test('routes Safe App preparation to background policy and returns an actionable rejection', async () => {
+		assert.deepEqual(await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_prepareSafeApp',
+			data: { origin: 'https://safe-app.example' },
+		}), {
+			method: 'popup_prepareSafeApp',
+			data: { success: false, errorMessage: 'Enable Safe Apps compatibility and add this website first.' },
+		})
+	})
+
 	test('routes Safe contract state through its dedicated protocol', async () => {
 		const context = createDispatcherContext(async () => undefined)
 		assert.deepEqual(await dispatchPopupMessage(context, {

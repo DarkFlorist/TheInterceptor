@@ -1,7 +1,7 @@
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from './utils/popupPerformance.js'
 import './background/background-startup.js'
 import { keepTabStateCleanupAlive } from './background/tabStateLifecycle.js'
-import { updateContentScriptInjectionStrategyManifestV3 } from './utils/contentScriptsUpdating.js'
+import { startContentScriptRegistrationUpdates } from './utils/contentScriptsUpdating.js'
 
 markPerformance(POPUP_PERFORMANCE_MARKS.backgroundLoaded)
 
@@ -14,9 +14,4 @@ self.addEventListener('activate', (event) => {
 	keepTabStateCleanupAlive(event)
 })
 
-updateContentScriptInjectionStrategyManifestV3()
-
-browser.storage.onChanged.addListener((changes, area) => {
-	if (area !== 'local' || (!('safeAppsCompatibilityMode' in changes) && !('safeAppsHostOrigins' in changes) && !('websiteAccess' in changes))) return
-	void updateContentScriptInjectionStrategyManifestV3()
-})
+startContentScriptRegistrationUpdates()

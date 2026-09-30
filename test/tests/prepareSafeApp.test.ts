@@ -1,7 +1,9 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { requestSafeAppConnection } from '../../app/ts/utils/pageScripts/requestSafeAppConnection.js'
-import { prepareSafeAppTab } from '../../app/ts/utils/prepareSafeApp.js'
+import { prepareSafeAppTab } from '../../app/ts/background/prepareSafeApp.js'
+import { requestPopupPrepareSafeApp } from '../../app/ts/background/backgroundUtils.js'
+import { PopupMessageReplyRequests, PopupReplyOption } from '../../app/ts/types/interceptor-reply-messages.js'
 import { createSafeHostHarness } from '../fixtures/safeAppsHostHarness.js'
 
 // Reconstruct exactly the function Chrome serializes, without the module's imports or lexical bindings.
@@ -61,27 +63,51 @@ test('preparation enforces opt-in, targets one top-level origin, and reloads onl
 		} },
 	} })
 	try {
-		await prepareSafeAppTab('https://safe-app.example')
+		assert.deepEqual(await prepareSafeAppTab('https://safe-app.example'), { success: true })
 		assert.equal(reloads, 1)
 		optedIn = false
-		await assert.rejects(prepareSafeAppTab('https://safe-app.example'), /add this website/)
+		assert.match(JSON.stringify(await prepareSafeAppTab('https://safe-app.example')), /add this website/)
 		optedIn = true
 		simulationMode = true
-		await assert.rejects(prepareSafeAppTab('https://safe-app.example'), /signing mode/)
+		assert.match(JSON.stringify(await prepareSafeAppTab('https://safe-app.example')), /signing mode/)
 		simulationMode = false
 		interceptorDisabled = true
-		await assert.rejects(prepareSafeAppTab('https://safe-app.example'), /Enable Interceptor/)
+		assert.match(JSON.stringify(await prepareSafeAppTab('https://safe-app.example')), /Enable Interceptor/)
 		interceptorDisabled = false
 		access = false
-		await assert.rejects(prepareSafeAppTab('https://safe-app.example'), /Website Access/)
+		assert.match(JSON.stringify(await prepareSafeAppTab('https://safe-app.example')), /Website Access/)
 		access = undefined
 		approved = false
-		await assert.rejects(prepareSafeAppTab('https://safe-app.example'), /Rejected/)
+		assert.match(JSON.stringify(await prepareSafeAppTab('https://safe-app.example')), /Rejected/)
 		approved = true
 		navigationOrigin = 'https://other.example'
-		await assert.rejects(prepareSafeAppTab('https://safe-app.example'), /navigated/)
+		assert.match(JSON.stringify(await prepareSafeAppTab('https://safe-app.example')), /navigated/)
 		assert.equal(requests, 3)
 		assert.equal(reloads, 1)
+	} finally {
+		if (previousBrowser === undefined) Reflect.deleteProperty(globalThis, 'browser')
+		else Object.defineProperty(globalThis, 'browser', previousBrowser)
+	}
+})
+
+test('popup preparation uses typed request/reply messages and surfaces background failures', async () => {
+	const previousBrowser = Object.getOwnPropertyDescriptor(globalThis, 'browser')
+	let response: unknown = { method: 'popup_prepareSafeApp', data: { success: true } }
+	let calls = 0
+	Object.defineProperty(globalThis, 'browser', { configurable: true, value: {
+		runtime: { sendMessage: async (message: unknown) => {
+			assert.deepEqual(PopupMessageReplyRequests.parse(message), { method: 'popup_prepareSafeApp', data: { origin: 'https://safe-app.example' } })
+			calls++
+			return response
+		} },
+	} })
+	try {
+		await requestPopupPrepareSafeApp('https://safe-app.example')
+		response = PopupReplyOption.serialize({ method: 'popup_prepareSafeApp', data: { success: false, errorMessage: 'Select a Safe first.' } })
+		await assert.rejects(requestPopupPrepareSafeApp('https://safe-app.example'), /Select a Safe first/)
+		response = undefined
+		await assert.rejects(requestPopupPrepareSafeApp('https://safe-app.example'), /did not return a reply/)
+		assert.equal(calls, 3)
 	} finally {
 		if (previousBrowser === undefined) Reflect.deleteProperty(globalThis, 'browser')
 		else Object.defineProperty(globalThis, 'browser', previousBrowser)

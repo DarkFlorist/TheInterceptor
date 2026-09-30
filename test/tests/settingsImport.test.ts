@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
-import type { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
+import { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
 
@@ -201,7 +201,22 @@ describe('settings import', () => {
 		assert.deepEqual(await getPage(), { page: 'Settings' })
 	})
 
-	test('round-trips Safe settings in version 1.6 exports', async () => {
+	test('imports an original version 1.6 JSON export without hosting origins', async () => {
+		const { exportSettingsAndAddressBook, getSafeAppsCompatibilityMode, getSafeAppsHostOrigins, importSettingsAndAddressBook, setSafeAppsCompatibilityMode, setSafeAppsHostOrigins } = await settingsModulePromise
+		await setSafeAppsCompatibilityMode(true)
+		const exported = await exportSettingsAndAddressBook()
+		if (exported.version !== '1.7') throw new Error('Expected current settings export version')
+		const { safeAppsHostOrigins: _hostingOrigins, ...legacySettings } = exported.settings
+		const legacy = { ...exported, version: '1.6', settings: legacySettings }
+		const originalJson = JSON.stringify(legacy, (_key, value: unknown) => typeof value === 'bigint' ? `0x${ value.toString(16) }` : value)
+		await setSafeAppsHostOrigins(['https://old-selection.example'])
+		await importSettingsAndAddressBook(ExportedSettings.parse(JSON.parse(originalJson)))
+		assert.equal(await getSafeAppsCompatibilityMode(), true)
+		assert.deepEqual(await getSafeAppsHostOrigins(), [])
+		assert.equal(ExportedSettings.safeParse({ ...legacy, version: '1.7' }).success, false)
+	})
+
+	test('round-trips Safe settings in version 1.7 exports', async () => {
 		const signingSafeAddress = 0x4444444444444444444444444444444444444444n
 		const signerAddress = 0x4545454545454545454545454545454545454545n
 		const { changeSimulationMode, exportSettingsAndAddressBook, getSafeAppsCompatibilityMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference, setSafeAppsCompatibilityMode } = await settingsModulePromise
@@ -227,14 +242,14 @@ describe('settings import', () => {
 		await setSafeAppsHostOrigins(['https://safe-app.example', 'https://another.example:8443'])
 
 		const exportedSettings = await exportSettingsAndAddressBook()
-		assert.equal(exportedSettings.version, '1.6')
-		if (exportedSettings.version !== '1.6') throw new Error('Expected current settings export version')
+		assert.equal(exportedSettings.version, '1.7')
+		if (exportedSettings.version !== '1.7') throw new Error('Expected current settings export version')
 		assert.equal(exportedSettings.settings.activeSigningSafeAddress, signingSafeAddress)
 		assert.deepEqual(exportedSettings.settings.signingAddressPreferences, [{ signerAddress, selection: 'safe', safeAddress: signingSafeAddress, chainId: testRpcNetwork.chainId }])
 		assert.equal(exportedSettings.settings.safeAppsCompatibilityMode, true)
 
 		browserMock.reset()
-		await importSettingsAndAddressBook(exportedSettings)
+		await importSettingsAndAddressBook(ExportedSettings.parse(JSON.parse(JSON.stringify(ExportedSettings.serialize(exportedSettings)))))
 		const importedSettings = await getSettings()
 		assert.equal(importedSettings.activeSigningSafeAddress, signingSafeAddress)
 		assert.equal(await getSafeAppsCompatibilityMode(), true)

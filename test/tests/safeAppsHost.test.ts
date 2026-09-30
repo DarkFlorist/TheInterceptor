@@ -48,6 +48,7 @@ test('shared host leaves existing embedded Safe apps untouched', () => {
 
 test('hosting accepts canonical exact HTTP(S) origins and rejects malformed or overly broad configuration', () => {
 	assert.equal(parseSafeAppsHostOrigin('https://EXAMPLE.com/path?query#hash'), 'https://example.com')
+	// Real Chrome IPv6 registration is also covered by test:chrome-communication.
 	assert.deepEqual(getSafeAppsHostMatchPatterns(['https://example.com', 'http://localhost:1234', 'https://[::1]:8443']), ['https://example.com:443/*', 'http://localhost:1234/*', 'https://[::1]:8443/*'])
 	for (const origin of ['https://*.example.com', 'https://*', 'https://%2a.example.com', 'https://%2A', '*://*.example.com', 'file:///tmp/app', 'https://user:password@example.com', 'https://example.com/path', 'https://example.com/', 'https://EXAMPLE.com']) assert.equal(SafeAppsHostOrigins.safeParse([origin]).success, false)
 	for (const wildcard of ['https://*.example.com', 'https://*', 'https://%2a.example.com', 'https://%2A']) {

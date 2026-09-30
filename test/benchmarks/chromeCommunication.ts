@@ -117,7 +117,25 @@ async function main() {
 		try {
 			await waitForPerformanceMarks(workerConnection, ['interceptor:background:loaded'], 30_000)
 			await waitForRegisteredContentScripts(workerConnection, ['inpage', 'inpage2'], 30_000)
-			await workerConnection.evaluate('browser.storage.local.set({ safeAppsCompatibilityMode: true })')
+			// Exercise the real Chrome pattern parser and the single storage-driven registration path.
+			await workerConnection.evaluate(`browser.storage.local.set({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: ['https://[::1]:8443'] })`)
+			await waitForCondition(async () => await workerConnection.evaluate<boolean>(`(async () => {
+				const scripts = await browser.scripting.getRegisteredContentScripts()
+				return scripts.find(({ id }) => id === 'safe-apps-host')?.matches.includes('https://[::1]:8443/*') === true
+			})()`), 30_000, 'IPv6 Safe Apps host registration')
+			// Simulate malformed persisted data that bypassed the Settings validator.
+			await workerConnection.evaluate(`browser.storage.local.set({ safeAppsHostOrigins: ['https://*.invalid.example'] })`)
+			await waitForCondition(async () => await workerConnection.evaluate<boolean>(`(async () => {
+				const scripts = await browser.scripting.getRegisteredContentScripts()
+				const state = await browser.storage.local.get('latestUnexpectedError')
+				return scripts.some(({ id }) => id === 'inpage2')
+					&& scripts.some(({ id }) => id === 'inpage')
+					&& (scripts.find(({ id }) => id === 'inpage')?.excludeMatches?.length ?? 0) === 0
+					&& !scripts.some(({ id }) => id === 'safe-apps-host')
+					&& state.latestUnexpectedError?.data?.code === 'content_script_registration_failed'
+			})()`), 30_000, 'base-provider recovery and visible registration error')
+			await workerConnection.evaluate('browser.storage.local.set({ safeAppsHostOrigins: [] })')
+			await workerConnection.evaluate(`browser.storage.local.remove('latestUnexpectedError')`)
 		} finally {
 			workerConnection.close()
 		}

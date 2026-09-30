@@ -14,9 +14,11 @@ export function parseSafeAppsHostOrigin(value: string) {
 	return url.origin
 }
 
-export const SafeAppsHostOrigins = funtypes.ReadonlyArray(funtypes.String.withConstraint((value) => {
+export const SafeAppsHostOrigin = funtypes.String.withConstraint((value) => {
 	try { return parseSafeAppsHostOrigin(value) === value } catch { return false }
-})).withConstraint((origins) => origins.length <= 32 && new Set(origins).size === origins.length)
+})
+
+export const SafeAppsHostOrigins = funtypes.ReadonlyArray(SafeAppsHostOrigin).withConstraint((origins) => origins.length <= 32 && new Set(origins).size === origins.length)
 
 export function getSafeAppsHostMatchPatterns(origins: readonly string[]) {
 	return SafeAppsHostOrigins.parse(origins).map((origin) => {

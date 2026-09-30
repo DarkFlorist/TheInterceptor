@@ -1,7 +1,6 @@
 import { useSignal } from '@preact/signals'
-import { sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport } from '../../background/backgroundUtils.js'
+import { requestPopupPrepareSafeApp, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport } from '../../background/backgroundUtils.js'
 import { parseSafeAppsHostOrigin } from '../../utils/safeAppsHosting.js'
-import { prepareSafeAppTab } from '../../utils/prepareSafeApp.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from './AsyncAction.js'
 import { ErrorComponent } from './Error.js'
@@ -18,7 +17,7 @@ export function SafeAppsHostingSettings({ enabled, origins }: { enabled: boolean
 		<p class = 'paragraph'>Supports apps using parent-based Safe SDK discovery. Apps requiring a real iframe or a trusted Safe parent origin need additional support.</p>
 		{ origins.map((origin) => <div key = { origin } class = 'row' style = 'gap: 0.5rem; margin-block: 0.5rem;'>
 			<span>{ origin }</span>
-			<AsyncActionButton state = { action.value.state } disabled = { !enabled } text = 'Authorize and reload open tab' pendingText = 'Connecting…' onClick = { () => waitFor(async () => await prepareSafeAppTab(origin)) } class = 'button is-primary' />
+			<AsyncActionButton state = { action.value.state } disabled = { !enabled } text = 'Authorize and reload open tab' pendingText = 'Connecting…' onClick = { () => waitFor(async () => await requestPopupPrepareSafeApp(origin)) } class = 'button is-primary' />
 			<button type = 'button' class = 'button' disabled = { action.value.state === 'pending' } onClick = { () => waitFor(async () => await saveOrigins(origins.filter((existing) => existing !== origin))) }>Remove</button>
 		</div>) }
 		<label>Website URL <input type = 'url' value = { website.value } placeholder = 'https://app.example.com' onInput = { (event) => { website.value = event.currentTarget.value } } /></label>
