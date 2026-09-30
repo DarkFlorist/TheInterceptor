@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 
-test('Request Finance Safe host relays SDK messages through the existing same-window bridge', async () => {
+test('Request Finance Safe host waits for discovery approval and relays SDK replies within its capacity', async () => {
 	const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
 	const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
 	const origin = 'https://app.request.finance'
@@ -70,7 +70,7 @@ test('Request Finance Safe host relays SDK messages through the existing same-wi
 		const timedOutRequestIds = new Set<string>()
 		fakeWindow.addEventListener('message', (event) => {
 			if (!('data' in event) || !('source' in event)) return
-			if (event.source === fakeWindow && typeof event.data === 'object' && event.data !== null && 'method' in event.data && event.data.method === 'getSafeInfo') {
+			if (event.source === fakeWindow && typeof event.data === 'object' && event.data !== null && 'method' in event.data && event.data.method === 'getSafeInfo' && 'id' in event.data && event.data.id === 'sdk-request') {
 				postMessage({ id: 'sdk-request', success: true, data: { safeAddress: '0x123' }, version: '9.1.0' }, origin)
 			}
 			if (event.source === fakeWindow && typeof event.data === 'object' && event.data !== null && 'method' in event.data && event.data.method === 'getChainInfo' && 'id' in event.data && typeof event.data.id === 'string' && event.data.id.startsWith('bulk-')) {
@@ -86,11 +86,41 @@ test('Request Finance Safe host relays SDK messages through the existing same-wi
 		})
 		framePort.postMessage({ id: 'sdk-request', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } })
 		Reflect.get(fakeWindow, 'setTimeout')(() => undefined, 200)
-		assert.deepEqual(activeTimeouts(), [10_500, 10_000])
+		assert.deepEqual(activeTimeouts(), [200])
 		await new Promise<void>((resolve) => setTimeout(resolve, 0))
 		assert.equal(repliedToSdk, true)
 		Reflect.get(fakeWindow, 'setTimeout')(() => undefined, 200)
-		assert.deepEqual(activeTimeouts(), [10_000, 200])
+		assert.deepEqual(activeTimeouts(), [200, 200])
+		for (const approved of [true, false]) {
+			const id = `delayed-discovery-${ approved }`
+			const sdkReplies: boolean[] = []
+			const sdkReply = new Promise<boolean>((resolve) => {
+				const listener = (event: Event) => {
+					if (!('source' in event) || event.source !== framePort || !('data' in event) || typeof event.data !== 'object' || event.data === null || !('id' in event.data) || event.data.id !== id || !('success' in event.data) || typeof event.data.success !== 'boolean') return
+					fakeWindow.removeEventListener('message', listener)
+					sdkReplies.push(event.data.success)
+					resolve(event.data.success)
+				}
+				fakeWindow.addEventListener('message', listener)
+				framePort.postMessage({ id, method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } })
+			})
+			// Match Request Finance's discovery race, with authorization still pending beyond the old deadlines.
+			const discovery = Promise.race([sdkReply, new Promise<boolean>((resolve) => {
+				Reflect.get(fakeWindow, 'setTimeout')(() => resolve(false), 200)
+			})])
+			let discoverySettled = false
+			void discovery.then(() => { discoverySettled = true })
+			fireTimeouts(200)
+			fireTimeouts(10_000)
+			fireTimeouts(10_500)
+			fireTimeouts(5 * 60_000)
+			await new Promise<void>((resolve) => setTimeout(resolve, 0))
+			assert.equal(discoverySettled, false)
+			assert.deepEqual(sdkReplies, [])
+			postMessage({ id, success: approved, ...(approved ? { data: { safeAddress: '0x123' } } : { error: 'User rejected access.' }), version: '9.1.0' }, origin)
+			assert.equal(await discovery, approved)
+			assert.deepEqual(sdkReplies, [approved])
+		}
 		for (let index = 0; index < 33; index++) {
 			framePort.postMessage({ id: `bulk-${ index }`, method: 'getChainInfo', env: { sdkVersion: '9.1.0' } })
 			if (index === 32) fakeWindow.addEventListener('message', (event) => {

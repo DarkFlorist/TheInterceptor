@@ -1,6 +1,5 @@
 // Bridge Request Finance's iframe-only Safe SDK to Interceptor's same-window Safe Apps handler.
 (() => {
-	const discoveryTimeoutMs = 10_500
 	const requestTimeoutMs = 5 * 60_000
 	const isSafeAppsRequest = (value: unknown): value is { readonly id: string, readonly method: string, readonly env: { readonly sdkVersion: string } } => {
 		if (typeof value !== 'object' || value === null || !('id' in value) || typeof value.id !== 'string' || !('method' in value) || typeof value.method !== 'string') return false
@@ -18,7 +17,7 @@
 		container.append(frame)
 		const apparentParent = frame.contentWindow
 		if (apparentParent !== null) {
-			const pendingRequests = new Map<string, number>()
+			const pendingRequests = new Map<string, { readonly timeoutId: number | undefined }>()
 			const actualPostMessage = window.postMessage.bind(window)
 			const originalParentPostMessage = apparentParent.postMessage.bind(apparentParent)
 			const originalSetTimeout = window.setTimeout.bind(window)
@@ -30,7 +29,8 @@
 					// Request Finance races Safe discovery against a 200 ms timer immediately after posting getSafeInfo.
 					const safeInfoTimeout = safeInfoTimeoutExpected && timeout === 200
 					if (safeInfoTimeout) safeInfoTimeoutExpected = false
-					return originalSetTimeout(handler, safeInfoTimeout ? 10_000 : timeout, ...args)
+					// The SDK reply settles this race after approval or rejection; a timer must not interrupt user consent.
+					return originalSetTimeout(safeInfoTimeout ? () => undefined : handler, timeout, ...args)
 				},
 			})
 			Object.defineProperty(apparentParent, 'postMessage', {
@@ -47,15 +47,16 @@
 						})
 						return
 					}
-					const timeoutId = originalSetTimeout(() => {
+					// Discovery follows the bridge's approval lifecycle and can remain pending until a Safe becomes eligible.
+					const timeoutId = message.method === 'getSafeInfo' ? undefined : originalSetTimeout(() => {
 						pendingRequests.delete(message.id)
 						window.dispatchEvent(new MessageEvent('message', {
 							data: { id: message.id, success: false, error: 'Safe Apps request timed out.', version: message.env.sdkVersion },
 							origin: window.location.origin,
 							source: apparentParent,
 						}))
-					}, message.method === 'getSafeInfo' ? discoveryTimeoutMs : requestTimeoutMs)
-					pendingRequests.set(message.id, timeoutId)
+					}, requestTimeoutMs)
+					pendingRequests.set(message.id, { timeoutId })
 					if (message.method === 'getSafeInfo') {
 						safeInfoTimeoutExpected = true
 						queueMicrotask(() => { safeInfoTimeoutExpected = false })
@@ -68,10 +69,10 @@
 				if (event.source !== window || event.origin !== window.location.origin) return
 				const response: unknown = event.data
 				if (typeof response !== 'object' || response === null || !('id' in response) || typeof response.id !== 'string' || !('success' in response) || typeof response.success !== 'boolean') return
-				const timeoutId = pendingRequests.get(response.id)
-				if (timeoutId === undefined) return
+				const pendingRequest = pendingRequests.get(response.id)
+				if (pendingRequest === undefined) return
 				pendingRequests.delete(response.id)
-				originalClearTimeout(timeoutId)
+				if (pendingRequest.timeoutId !== undefined) originalClearTimeout(pendingRequest.timeoutId)
 				window.dispatchEvent(new MessageEvent('message', { data: response, origin: event.origin, source: apparentParent }))
 			})
 		}
