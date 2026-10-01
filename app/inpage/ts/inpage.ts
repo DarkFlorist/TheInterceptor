@@ -1,5 +1,4 @@
-const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
-const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
+import { SAFE_APPS_RESPONSE_VERSION, SAFE_APPS_PENDING_REQUEST_LIMIT, SAFE_APPS_REQUEST_TIMEOUT_MS, isSafeAppsCancellation, parseSafeAppsRequest, type ParsedSafeAppsRequest, type SafeAppsRequest } from './safeAppsProtocol.js'
 
 type SafeAppsWindow = {
 	readonly location: { readonly origin: string }
@@ -8,27 +7,14 @@ type SafeAppsWindow = {
 	postMessage(message: unknown, targetOrigin: string): void
 }
 
-type SafeAppsRequest = {
-	readonly id: string
-	readonly method: string
-	readonly params?: unknown
-}
-
-type ParsedSafeAppsRequest =
-	| { readonly id: string, readonly request: SafeAppsRequest }
-	| { readonly id: string, readonly error: string }
 
 type SafeAppsMessageEvent = { readonly data: unknown, readonly origin: string, readonly source: unknown }
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null
 
-type SafeAppsRequestCandidate = { readonly id?: unknown, readonly method?: unknown, readonly env?: unknown, readonly params?: unknown }
-type SafeAppsEnvironmentCandidate = { readonly sdkVersion?: unknown }
 type SafeAppsCompatibilityCandidate = { readonly enabled?: unknown, readonly canRequestAccess?: unknown }
 type SafeAppsCommandCandidate = { readonly kind?: unknown, readonly value?: unknown, readonly method?: unknown, readonly params?: unknown, readonly mapResult?: unknown, readonly message?: unknown, readonly isTypedData?: unknown, readonly safeAddress?: unknown, readonly chainId?: unknown, readonly safeRequestContext?: unknown }
 
-const isSafeAppsRequestCandidate = (value: unknown): value is SafeAppsRequestCandidate => isRecord(value)
-const isSafeAppsEnvironmentCandidate = (value: unknown): value is SafeAppsEnvironmentCandidate => isRecord(value)
 const isSafeAppsCompatibilityCandidate = (value: unknown): value is SafeAppsCompatibilityCandidate => isRecord(value)
 const isSafeAppsCommandCandidate = (value: unknown): value is SafeAppsCommandCandidate => isRecord(value)
 
@@ -37,16 +23,6 @@ function parseSafeAppsMessageEvent(event: Event): SafeAppsMessageEvent | undefin
 	return { data: event.data, origin: event.origin, source: event.source }
 }
 
-function parseSafeAppsRequest(data: unknown): ParsedSafeAppsRequest | undefined {
-	if (!isSafeAppsRequestCandidate(data) || typeof data.id !== 'string') return undefined
-	// The SDK envelope distinguishes Safe Apps requests from unrelated page postMessage protocols.
-	if (!isSafeAppsEnvironmentCandidate(data.env)) return undefined
-	if (typeof data.env.sdkVersion !== 'string' || !/^[1-9][0-9]*\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/.test(data.env.sdkVersion)) {
-		return { id: data.id, error: 'Safe Apps env.sdkVersion must be a supported semantic version.' }
-	}
-	if (typeof data.method !== 'string') return { id: data.id, error: 'Safe Apps method must be a string.' }
-	return { id: data.id, request: { id: data.id, method: data.method, ...(data.params === undefined ? {} : { params: data.params }) } }
-}
 
 function parseSafeAppsCompatibility(value: unknown) {
 	if (!isSafeAppsCompatibilityCandidate(value) || typeof value.enabled !== 'boolean') return undefined
@@ -101,7 +77,7 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 	let canRequestAccess = false
 	let accessRequested = false
 	let accessFailure: string | undefined
-	const pendingRequests: { readonly parsedRequest: ParsedSafeAppsRequest, readonly origin: string }[] = []
+	const pendingRequests: { readonly parsedRequest: ParsedSafeAppsRequest, readonly origin: string, readonly expiresAt: number }[] = []
 	const answerRequest = (parsedRequest: ParsedSafeAppsRequest, origin: string) => {
 		if ('error' in parsedRequest) {
 			windowObject.postMessage({ id: parsedRequest.id, success: false, error: parsedRequest.error, version: SAFE_APPS_RESPONSE_VERSION }, origin)
@@ -115,7 +91,7 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 			if (isSafeAppsDiscoveryRequest(parsedRequest)) {
 				if (enabled) answerRequest(parsedRequest, origin)
 				else if (pendingRequests.length < SAFE_APPS_PENDING_REQUEST_LIMIT) {
-					pendingRequests.push({ parsedRequest, origin })
+					pendingRequests.push({ parsedRequest, origin, expiresAt: Date.now() + SAFE_APPS_REQUEST_TIMEOUT_MS })
 					requestAccessForDiscovery()
 				}
 			}
@@ -151,10 +127,26 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 			rejectPendingDiscovery(accessFailure)
 		})
 	}
+	// The host can expire an unanswered SDK probe; retain no stale provider slots when a later probe or eligibility update arrives.
+	const expirePendingRequests = () => {
+		const now = Date.now()
+		for (let index = pendingRequests.length - 1; index >= 0; index--) {
+			const pending = pendingRequests[index]
+			if (pending === undefined || pending.expiresAt > now) continue
+			pendingRequests.splice(index, 1)
+			windowObject.postMessage({ id: pending.parsedRequest.id, success: false, error: 'Safe Apps request timed out.', version: SAFE_APPS_RESPONSE_VERSION }, pending.origin)
+		}
+	}
 	const onMessage = (event: Event) => {
 		const messageEvent = parseSafeAppsMessageEvent(event)
 		if (messageEvent === undefined) return
 		if (messageEvent.source !== windowObject || messageEvent.origin !== windowObject.location.origin) return
+		if (isSafeAppsCancellation(messageEvent.data)) {
+			const id = messageEvent.data.id
+			for (let index = pendingRequests.length - 1; index >= 0; index--) if (pendingRequests[index]?.parsedRequest.id === id) pendingRequests.splice(index, 1)
+			return
+		}
+		expirePendingRequests()
 		const parsedRequest = parseSafeAppsRequest(messageEvent.data)
 		if (parsedRequest === undefined) return
 		if (!enabled && isSafeAppsDiscoveryRequest(parsedRequest)) {
@@ -163,7 +155,7 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 				windowObject.postMessage({ id: parsedRequest.id, success: false, error: 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.', version: SAFE_APPS_RESPONSE_VERSION }, messageEvent.origin)
 				return
 			}
-			pendingRequests.push({ parsedRequest, origin: messageEvent.origin })
+			pendingRequests.push({ parsedRequest, origin: messageEvent.origin, expiresAt: Date.now() + SAFE_APPS_REQUEST_TIMEOUT_MS })
 			requestAccessForDiscovery()
 			return
 		}
@@ -172,6 +164,7 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 	windowObject.addEventListener('message', onMessage)
 	return {
 		setEnabled(nextEnabled: boolean, nextCanRequestAccess = false) {
+			expirePendingRequests()
 			canRequestAccess = nextCanRequestAccess
 			if (enabled !== nextEnabled) enablementGeneration += 1
 			enabled = nextEnabled

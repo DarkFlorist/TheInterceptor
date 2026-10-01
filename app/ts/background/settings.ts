@@ -13,7 +13,7 @@ import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } fr
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
-import { DEFAULT_SAFE_APPS_HOST_ORIGINS, SafeAppsHostOrigins } from '../utils/safeAppsHosting.js'
+import { DEFAULT_SAFE_APPS_HOST_ORIGINS, SafeAppsHostOrigins } from '../types/safeAppsHosting.js'
 import { hasOwnKey } from '../utils/typescript.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES

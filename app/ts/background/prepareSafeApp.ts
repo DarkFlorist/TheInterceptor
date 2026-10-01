@@ -1,9 +1,10 @@
+import { isMissingBrowserTargetError } from '../utils/requests.js'
 import type { PrepareSafeAppReply } from '../types/interceptor-reply-messages.js'
 import { getSafeAppsCompatibilityMode, getSafeAppsHostOrigins, getSettings } from './settings.js'
 import { hasAccess } from './websiteAccessPolicy.js'
-import { parseSafeAppsHostOrigin } from '../utils/safeAppsHosting.js'
+import { parseSafeAppsHostOrigin } from '../types/safeAppsHosting.js'
 
-export async function prepareSafeAppTab(value: string): Promise<PrepareSafeAppReply['data']> {
+async function prepareSafeAppTabOperation(value: string, operation: PreparationOperation): Promise<PrepareSafeAppReply['data']> {
 	const origin = parseSafeAppsHostOrigin(value)
 	if (browser.runtime.getManifest().manifest_version !== 3) return { success: false, errorMessage: 'Safe Apps hosting requires Chrome.' }
 	if (!await getSafeAppsCompatibilityMode() || !(await getSafeAppsHostOrigins()).includes(origin)) return { success: false, errorMessage: 'Enable Safe Apps compatibility and add this website first.' }
@@ -18,13 +19,17 @@ export async function prepareSafeAppTab(value: string): Promise<PrepareSafeAppRe
 	// The Firefox polyfill types omit Chrome's MAIN world and documentIds target.
 	const executeScript: unknown = Reflect.get(browser.scripting, 'executeScript')
 	if (typeof executeScript !== 'function') return { success: false, errorMessage: 'This browser does not support Safe Apps connection preparation.' }
+	operation.tabId = tab.id
 	// Read the actual origin in the isolated world and bind preparation to that document, even if the tab navigates.
 	const documents: unknown = await executeScript.call(browser.scripting, { target: { tabId: tab.id, frameIds: [0] }, world: 'ISOLATED', files: ['/inpage/js/readDocumentOrigin.js'] })
 	const document: unknown = Array.isArray(documents) ? documents[0] : undefined
 	if (typeof document !== 'object' || document === null || !('result' in document) || document.result !== origin) return { success: false, errorMessage: 'The website navigated before connecting.' }
 	if (!('documentId' in document) || typeof document.documentId !== 'string') return { success: false, errorMessage: 'This browser does not support Safe Apps connection preparation.' }
+	if (operation.abort.signal.aborted) return cancelledReply(operation)
+	operation.documentId = document.documentId
 	const injection = { target: { tabId: tab.id, documentIds: [document.documentId] }, world: 'MAIN', files: ['/inpage/js/prepareSafeAppBootstrap.js'] }
-	const results: unknown = await executeScript.call(browser.scripting, injection)
+	const results: unknown = await Promise.race([executeScript.call(browser.scripting, injection), operation.cancelled])
+	if (operation.abort.signal.aborted) return cancelledReply(operation)
 	const firstResult: unknown = Array.isArray(results) ? results[0] : undefined
 	const result: unknown = typeof firstResult === 'object' && firstResult !== null && 'result' in firstResult ? firstResult.result : undefined
 	if (typeof result !== 'object' || result === null || !('success' in result) || result.success !== true) {
@@ -32,6 +37,61 @@ export async function prepareSafeAppTab(value: string): Promise<PrepareSafeAppRe
 	}
 	const connectedTab = await browser.tabs.get(tab.id)
 	if (connectedTab.url === undefined || new URL(connectedTab.url).origin !== origin) return { success: false, errorMessage: 'The website navigated during connection.' }
+	if (operation.abort.signal.aborted) return cancelledReply(operation)
 	await browser.tabs.reload(tab.id)
 	return { success: true }
+}
+
+type PreparationOperation = {
+	readonly abort: AbortController
+	readonly cancelled: Promise<undefined>
+	tabId?: number
+	documentId?: string
+	cleanup?: Promise<void>
+}
+const preparations = new Map<string, PreparationOperation>()
+const cancelledReply = (operation: PreparationOperation): PrepareSafeAppReply['data'] => ({ success: false, errorMessage: typeof operation.abort.signal.reason === 'string' ? operation.abort.signal.reason : 'Safe connection was cancelled.' })
+const isMissingPreparationDocument = (error: unknown) => isMissingBrowserTargetError(error) || error instanceof Error && (error.message.startsWith('No document with id') || error.message === 'The tab was closed.' || error.message === 'The frame was removed.' || /^Frame with ID \d+ was removed\./.test(error.message))
+
+export async function prepareSafeAppTab(value: string): Promise<PrepareSafeAppReply['data']> {
+	const origin = parseSafeAppsHostOrigin(value)
+	if (preparations.has(origin)) return { success: false, errorMessage: 'A connection preparation is already running for this website. Cancel it before retrying.' }
+	const abort = new AbortController()
+	const operation: PreparationOperation = { abort, cancelled: new Promise((resolve) => abort.signal.addEventListener('abort', () => resolve(undefined), { once: true })) }
+	preparations.set(origin, operation)
+	const onRemoved = (tabId: number) => {
+		if (operation.tabId === tabId) abort.abort('The website tab was closed. Reopen it before connecting.')
+	}
+	browser.tabs.onRemoved.addListener(onRemoved)
+	try {
+		return await prepareSafeAppTabOperation(origin, operation)
+	} catch (error: unknown) {
+		if (abort.signal.aborted) return cancelledReply(operation)
+		if (isMissingPreparationDocument(error)) return { success: false, errorMessage: 'The website tab closed or navigated. Reopen it before connecting.' }
+		throw error
+	} finally {
+		browser.tabs.onRemoved.removeListener(onRemoved)
+		try { await operation.cleanup } finally { preparations.delete(origin) }
+	}
+}
+
+export async function cancelSafeAppPreparation(value: string) {
+	const origin = parseSafeAppsHostOrigin(value)
+	const operation = preparations.get(origin)
+	if (operation === undefined) return
+	// Keep the operation reserved until page cleanup finishes; a late cancellation must not cancel a subsequent retry.
+	operation.cleanup ??= clearPreparationScript(operation)
+	operation.abort.abort('Safe connection was cancelled.')
+	await operation.cleanup
+}
+
+async function clearPreparationScript(operation: PreparationOperation) {
+	if (operation.tabId === undefined || operation.documentId === undefined) return
+	const executeScript: unknown = Reflect.get(browser.scripting, 'executeScript')
+	if (typeof executeScript !== 'function') return
+	try {
+		await executeScript.call(browser.scripting, { target: { tabId: operation.tabId, documentIds: [operation.documentId] }, world: 'MAIN', files: ['/inpage/js/cancelSafeAppPreparationBootstrap.js'] })
+	} catch (error: unknown) {
+		if (!isMissingPreparationDocument(error)) throw error
+	}
 }

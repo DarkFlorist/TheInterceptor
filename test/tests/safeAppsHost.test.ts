@@ -5,7 +5,8 @@ import { safe } from '@wagmi/connectors/safe'
 import gnosis from '@web3-onboard/gnosis'
 import { installSafeAppsHost } from '../../app/inpage/ts/safeAppsHost.js'
 import { createSafeHostHarness } from '../fixtures/safeAppsHostHarness.js'
-import { SafeAppsHostOrigins, getSafeAppsHostMatchPatterns, parseSafeAppsHostOrigin } from '../../app/ts/utils/safeAppsHosting.js'
+import { getSafeAppsHostMatchPatterns } from '../../app/ts/utils/safeAppsHosting.js'
+import { SafeAppsHostOrigins, parseSafeAppsHostOrigin } from '../../app/ts/types/safeAppsHosting.js'
 
 const safeInfo = { safeAddress: '0x1234567890123456789012345678901234567890', chainId: 1, owners: [], threshold: 1, isReadOnly: false }
 
@@ -73,7 +74,7 @@ test('shared SDK transport waits for authorization, ignores unrelated responses,
 		let settled = false
 		const result = sdk.safe.getInfo()
 		void result.then(() => { settled = true }, () => { settled = true })
-		await Promise.resolve()
+		await new Promise((resolve) => setTimeout(resolve, 0))
 		assert.notEqual(requestId, undefined)
 		const response = { id: requestId, success: true, data: safeInfo, version: '9.1.0' }
 		emitMessage(response, 'https://unrelated.example')
@@ -82,5 +83,26 @@ test('shared SDK transport waits for authorization, ignores unrelated responses,
 		assert.equal(settled, false)
 		emitMessage({ id: requestId, success: false, error: 'User rejected access.', version: '9.1.0' })
 		await assert.rejects(result, /User rejected access/)
+	} finally { restoreGlobals() }
+})
+
+test('native parent messaging rejects embedded callers before re-posting under the hosted origin', async () => {
+	const { fakeWindow, origin, emitParentMessage, restoreGlobals } = createSafeHostHarness()
+	try {
+		installSafeAppsHost()
+		const forwarded: string[] = []
+		fakeWindow.addEventListener('message', (event) => {
+			if ('source' in event && event.source === fakeWindow && 'data' in event && typeof event.data === 'object' && event.data !== null && 'method' in event.data && 'id' in event.data && typeof event.data.id === 'string') forwarded.push(event.data.id)
+		})
+		for (const method of ['getSafeInfo', 'getChainInfo', 'rpcCall', 'sendTransactions', 'signMessage']) {
+			const request = { id: method, method, env: { sdkVersion: '9.1.0' } }
+			emitParentMessage(request, 'https://unapproved.example', new EventTarget())
+			emitParentMessage(request, origin, new EventTarget())
+		}
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.deepEqual(forwarded, [])
+		emitParentMessage({ id: 'top-discovery', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } })
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.deepEqual(forwarded, ['top-discovery'])
 	} finally { restoreGlobals() }
 })

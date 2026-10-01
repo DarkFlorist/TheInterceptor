@@ -1,7 +1,7 @@
 import { PopupSettingsChangeStatus } from './popupSettingsProtocol.js'
 import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress } from './popupSettingsRequests.js'
 import * as funtypes from 'funtypes'
-import { SafeAppsHostOrigins } from '../utils/safeAppsHosting.js'
+import { SafeAppsHostOrigins } from './safeAppsHosting.js'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, PendingWatchAssetRequest, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
 import { ModifyAddressWindowState, CompleteVisualizedSimulation, BlockTimeManipulation, BlockTimeManipulationWithNoDelay, InterceptorSimulationExport } from './visualizer-types.js'

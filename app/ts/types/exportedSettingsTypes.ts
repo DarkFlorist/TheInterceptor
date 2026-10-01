@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { SafeAppsHostOrigins } from '../utils/safeAppsHosting.js'
+import { SafeAppsHostOrigins } from './safeAppsHosting.js'
 import { RpcNetwork } from './rpc.js'
 import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory, OptionalEthereumAddress } from './wire-types.js'
 import { AddressBookEntries, ContactEntries } from './addressBookTypes.js'

@@ -203,6 +203,52 @@ async function authorizeAndReloadSafeAppsFixture(browserConnection: CdpConnectio
 	}
 }
 
+async function cancelPendingSafeAppPreparation(browserConnection: CdpConnection, browserDebugPort: number, extensionId: string, origin: string) {
+	const target = await createTargetPage(browserConnection, `chrome-extension://${ extensionId }/html3/settingsViewV3.html`)
+	const settings = await connectTarget(browserDebugPort, target)
+	try {
+		await waitForText(settings, 'Authorize and reload open tab')
+		await settings.evaluate(`(() => {
+			const row = [...document.querySelectorAll('.row')].find((row) => row.querySelector('span')?.textContent === ${ JSON.stringify(origin) })
+			const button = [...(row?.querySelectorAll('button') ?? [])].find((button) => button.textContent === 'Authorize and reload open tab')
+			if (button === undefined || button.disabled) throw new Error('Missing preparation button for selected origin.')
+			button.click()
+		})()`)
+		await waitForText(settings, 'Cancel connection')
+		await clickButtonWithText(settings, 'Cancel connection')
+		await waitForText(settings, 'Safe connection was cancelled.')
+		await waitForCondition(async () => await settings.evaluate(`document.querySelector('button[aria-busy="true"]') === null`), 10_000, 'cancelled preparation releases Settings controls')
+	} finally {
+		settings.close()
+		await closeTarget(browserConnection, target)
+	}
+}
+
+async function verifyEmbeddedSafeAppsIsolation(page: CdpConnection) {
+	const isolated = await page.evaluate<boolean>(`(async () => {
+		const prefix = 'unapproved-frame-probe-'
+		const attacker = document.createElement('iframe')
+		attacker.setAttribute('sandbox', 'allow-scripts')
+		let forwarded = false
+		const completed = new Promise((resolve, reject) => {
+			const timeout = setTimeout(() => reject(new Error('Embedded origin probe did not finish.')), 5_000)
+			const listener = (event) => {
+				if (event.source === window && event.data?.id?.startsWith(prefix)) forwarded = true
+				if (event.source === attacker.contentWindow && event.data === prefix + 'done') { clearTimeout(timeout); resolve(listener) }
+			}
+			window.addEventListener('message', listener)
+		})
+		attacker.srcdoc = '<script>for (const method of ["getSafeInfo", "getChainInfo", "rpcCall", "sendTransactions", "signMessage"]) { const request = { id: "unapproved-frame-probe-" + method, method, env: { sdkVersion: "9.1.0" } }; top.frames[0].postMessage(request, "*"); top.parent.postMessage(request, "*"); } top.postMessage("unapproved-frame-probe-done", "*");<\/script>'
+		document.body.append(attacker)
+		const listener = await completed
+		await new Promise((resolve) => setTimeout(resolve, 100))
+		window.removeEventListener('message', listener)
+		attacker.remove()
+		return !forwarded
+	})()`)
+	if (!isolated) throw new Error('An unapproved cross-origin frame impersonated the hosted top-frame Safe connection.')
+}
+
 async function setFileInput(connection: CdpConnection, selector: string, filePath: string) {
 	const document = await connection.send<{ root: { nodeId: number } }>('DOM.getDocument')
 	const input = await connection.send<{ nodeId: number }>('DOM.querySelector', {
@@ -574,6 +620,7 @@ async function main() {
 				throw new Error(`Dapp received ${ grantedAccounts[0] ?? 'no account' } instead of the Safe address`)
 			}
 			if (genericSafeHost) {
+				await verifyEmbeddedSafeAppsIsolation(pageConnection)
 				if (await pageConnection.evaluate<boolean>('window.isSecureContext') !== false) throw new Error('The HTTP fixture must exercise a non-secure context.')
 				const embeddedProviderPreserved = await pageConnection.evaluate<boolean>(`(async () => {
 					const frame = document.createElement('iframe')
@@ -602,6 +649,7 @@ async function main() {
 				await openSafeAppsHostFixture(pageConnection, secondUrl)
 				const secondAccess = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/interceptorAccessV3.html`, 30_000)
 				accessTargetId = secondAccess.id
+				await cancelPendingSafeAppPreparation(chrome.browserConnection, chrome.browserDebugPort, extensionId, new URL(secondUrl).origin)
 				const secondConnection = await connectTarget(chrome.browserDebugPort, secondAccess.id)
 				try {
 					await waitForButtonEnabled(secondConnection, ACCESS_APPROVE_BUTTON_SELECTOR, 30_000)
@@ -612,7 +660,7 @@ async function main() {
 					await openSafeAppsHostFixture(pageConnection, unselected)
 					await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'error' && window.parent === window`), 10_000, 'unselected origin isolation')
 				}
-				console.warn('Generic Safe hosting passed: real SDK and Wagmi on HTTP and HTTPS origins, settings authorization/reload, independent access approval, and origin/port isolation.')
+				console.warn('Generic Safe hosting passed: real SDK and Wagmi on HTTP and HTTPS origins, settings authorization/reload, independent access approval, native cross-origin frame isolation, preparation cancellation, and origin/port isolation.')
 				return
 			}
 			if (requestFinanceDiscovery) {

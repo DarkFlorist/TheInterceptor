@@ -58,10 +58,10 @@ test('Safe Apps host respects site discovery deadlines and relays eventual SDK r
 			})])
 			let discoverySettled = false
 			void discovery.then(() => { discoverySettled = true })
+			await new Promise((resolve) => setTimeout(resolve, 0))
 			fireTimeouts(200)
 			fireTimeouts(10_000)
 			fireTimeouts(10_500)
-			fireTimeouts(5 * 60_000)
 			await new Promise<void>((resolve) => setTimeout(resolve, 0))
 			assert.equal(discoverySettled, true)
 			assert.equal(await discovery, false)
@@ -127,4 +127,28 @@ test('Safe Apps host preserves every site timer, including the first 200 ms call
 	} finally {
 		restoreGlobals()
 	}
+})
+
+test('abandoned discovery probes leave capacity for operations and all remaining probes expire', async () => {
+	const { fakeWindow, framePort, fireTimeouts, restoreGlobals } = createSafeHostHarness()
+	try {
+		installSafeAppsHost()
+		const forwarded = new Set<string>()
+		const rejected = new Set<string>()
+		fakeWindow.addEventListener('message', (event) => {
+			if (!('data' in event) || !('source' in event) || typeof event.data !== 'object' || event.data === null || !('id' in event.data) || typeof event.data.id !== 'string') return
+			if (event.source === fakeWindow && 'method' in event.data) forwarded.add(event.data.id)
+			if (event.source === framePort && 'success' in event.data && event.data.success === false) rejected.add(event.data.id)
+		})
+		for (let index = 0; index < 80; index++) framePort.postMessage({ id: `abandoned-${ index }`, method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } })
+		framePort.postMessage({ id: 'operation-after-retries', method: 'getChainInfo', env: { sdkVersion: '9.1.0' } })
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(forwarded.size, 81)
+		assert.equal(rejected.size, 49)
+		fireTimeouts(5 * 60_000)
+		assert.equal(rejected.size, 81)
+		framePort.postMessage({ id: 'after-expiry', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } })
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(forwarded.has('after-expiry'), true)
+	} finally { restoreGlobals() }
 })

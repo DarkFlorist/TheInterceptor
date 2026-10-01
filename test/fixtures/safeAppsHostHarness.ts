@@ -4,6 +4,7 @@ export function createSafeHostHarness({ origin = 'https://app.request.finance', 
 	const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
 	const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document')
 	const fakeWindow = new EventTarget()
+	let disposed = false
 	const scheduledTimeouts: { readonly handler: TimerHandler, readonly delay: number | undefined, readonly args: readonly unknown[], cleared: boolean }[] = []
 	const activeTimeouts = () => scheduledTimeouts.filter(({ cleared }) => !cleared).map(({ delay }) => delay)
 	const fireTimeouts = (delay: number) => {
@@ -14,6 +15,16 @@ export function createSafeHostHarness({ origin = 'https://app.request.finance', 
 		}
 	}
 	const framePort = new MessageChannel().port1
+	// Model native Window.postMessage: preserve the sending window and dispatch on the receiving frame.
+	const emitParentMessage = (data: unknown, messageOrigin = origin, source: EventTarget = fakeWindow) => {
+		const event = new Event('message')
+		Object.defineProperties(event, { data: { value: data }, origin: { value: messageOrigin }, source: { value: source } })
+		framePort.dispatchEvent(event)
+	}
+	Object.defineProperty(framePort, 'postMessage', { value: (data: unknown, targetOrigin = '/') => {
+		if (targetOrigin !== '*' && targetOrigin !== '/' && targetOrigin !== origin) return
+		queueMicrotask(() => { if (!disposed) emitParentMessage(data) })
+	} })
 	const frame = {
 		style: { display: '' },
 		setAttribute: (_name: string, _value: string) => undefined,
@@ -32,7 +43,7 @@ export function createSafeHostHarness({ origin = 'https://app.request.finance', 
 	}
 	const postMessage = (data: unknown, targetOrigin: string) => {
 		assert.equal(targetOrigin, origin)
-		queueMicrotask(() => emitMessage(data))
+		queueMicrotask(() => { if (!disposed) emitMessage(data) })
 	}
 	const parent = embedded ? new EventTarget() : fakeWindow
 	Object.defineProperties(fakeWindow, {
@@ -60,9 +71,10 @@ export function createSafeHostHarness({ origin = 'https://app.request.finance', 
 		},
 	} })
 	return {
-		fakeWindow, framePort, origin, emitMessage, activeTimeouts, fireTimeouts, postMessage,
+		fakeWindow, framePort, origin, emitMessage, emitParentMessage, activeTimeouts, fireTimeouts, postMessage,
 		frameWasAppended: () => appended,
 		restoreGlobals: () => {
+			disposed = true
 			framePort.close()
 			if (previousWindow === undefined) Reflect.deleteProperty(globalThis, 'window')
 			else Object.defineProperty(globalThis, 'window', previousWindow)

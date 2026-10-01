@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { SafeAppsHostOrigins } from './safeAppsHosting.js'
+import { SafeAppsHostOrigins } from '../types/safeAppsHosting.js'
 import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
 import { BlockTimeManipulation, CompleteVisualizedSimulation, EthereumSubscriptionsAndFilters, InterceptorTransactionStack } from '../types/visualizer-types.js'

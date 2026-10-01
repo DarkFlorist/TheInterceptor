@@ -2,9 +2,10 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { runInNewContext } from 'node:vm'
 import { requestSafeAppConnection } from '../../app/inpage/ts/requestSafeAppConnection.js'
-import { prepareSafeAppTab } from '../../app/ts/background/prepareSafeApp.js'
-import { requestPopupPrepareSafeApp } from '../../app/ts/background/backgroundUtils.js'
+import { prepareSafeAppTab, cancelSafeAppPreparation } from '../../app/ts/background/prepareSafeApp.js'
+import { requestPopupPrepareSafeApp, requestPopupCancelPrepareSafeApp } from '../../app/ts/background/backgroundUtils.js'
 import { PopupMessageReplyRequests, PopupReplyOption } from '../../app/ts/types/interceptor-reply-messages.js'
+import { SAFE_APPS_PREPARATION_TIMEOUT_MS, SAFE_APPS_PREPARATION_CANCEL_EVENT } from '../../app/inpage/ts/safeAppsProtocol.js'
 import { createSafeHostHarness } from '../fixtures/safeAppsHostHarness.js'
 
 for (const approved of [true, false]) {
@@ -27,7 +28,7 @@ test('connection preparation times out and never requests access on a navigated 
 	const { origin, fireTimeouts, restoreGlobals } = createSafeHostHarness()
 	try {
 		const pending: Promise<unknown> = requestSafeAppConnection(origin)
-		fireTimeouts(5 * 60_000)
+		fireTimeouts(SAFE_APPS_PREPARATION_TIMEOUT_MS)
 		assert.deepEqual(await pending, { success: false, error: 'Safe connection timed out. Check the selected Safe and approve website access.' })
 		assert.deepEqual(await requestSafeAppConnection('https://other.example'), { success: false, error: 'The website navigated before connecting.' })
 	} finally { restoreGlobals() }
@@ -50,6 +51,7 @@ test('preparation enforces opt-in, targets one top-level origin, and reloads onl
 		runtime: { getManifest: () => ({ manifest_version: 3 }) },
 		storage: { local: { get: async () => ({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: optedIn ? ['https://safe-app.example'] : [], simulationMode, websiteAccess: [{ website: { websiteOrigin: 'safe-app.example', title: undefined, icon: undefined }, addressAccess: [], access, interceptorDisabled }], activeSigningSafeAddress: '0x1234567890123456789012345678901234567890' }) } },
 		tabs: {
+			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
 			query: async () => [{ id: 1, url: 'chrome-extension://test/settings.html' }, { id: 2, url: 'https://safe-app.example:8443/' }, { id: 3, url: 'https://safe-app.example/app' }],
 			get: async () => ({ url: navigationOrigin }),
 			reload: async (id: number) => { assert.equal(id, 3); reloads++ },
@@ -151,5 +153,80 @@ test('compiled preparation entrypoint returns the bridge reply without backgroun
 			const pending: unknown = runInNewContext(source, { window: fakeWindow, crypto })
 			assert.deepEqual(await pending, approved ? { success: true } : { success: false, error: 'Rejected.' })
 		} finally { restoreGlobals() }
+	}
+})
+
+test('page preparation cancellation settles immediately and clears the probe timer', async () => {
+	const { fakeWindow, origin, activeTimeouts, restoreGlobals } = createSafeHostHarness()
+	try {
+		const pending = requestSafeAppConnection(origin)
+		assert.deepEqual(activeTimeouts(), [SAFE_APPS_PREPARATION_TIMEOUT_MS])
+		fakeWindow.dispatchEvent(new Event(SAFE_APPS_PREPARATION_CANCEL_EVENT))
+		assert.deepEqual(await pending, { success: false, error: 'Safe connection was cancelled.' })
+		assert.deepEqual(activeTimeouts(), [])
+	} finally { restoreGlobals() }
+})
+
+for (const action of ['cancel', 'close', 'get-error', 'reload-error', 'unexpected-error']) {
+	test(`background preparation returns typed failures for ${ action } and releases its operation/listener`, async () => {
+		const previousBrowser = Object.getOwnPropertyDescriptor(globalThis, 'browser')
+		const listeners = new Set<(tabId: number) => void>()
+		let started = false
+		let reloads = 0
+		let cleanupStarted = false
+		let completeCleanup: (() => void) | undefined
+		const cleanup = new Promise<void>((resolve) => { completeCleanup = resolve })
+		Object.defineProperty(globalThis, 'browser', { configurable: true, value: {
+			runtime: { getManifest: () => ({ manifest_version: 3 }) },
+			storage: { local: { get: async () => ({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: ['https://safe-app.example'], simulationMode: false, activeSigningSafeAddress: '0x1234567890123456789012345678901234567890', websiteAccess: [] }) } },
+			tabs: {
+				onRemoved: { addListener: (listener: (tabId: number) => void) => listeners.add(listener), removeListener: (listener: (tabId: number) => void) => listeners.delete(listener) },
+				query: async () => [{ id: 1, url: 'https://safe-app.example' }],
+				get: async () => { if (action === 'get-error') throw new Error('No tab with id: 1.'); return { url: 'https://safe-app.example' } },
+				reload: async () => { if (action === 'reload-error') throw new Error('No tab with id: 1.'); reloads++ },
+			},
+			scripting: { executeScript: async (injection: { world: string, files: string[] }) => {
+				if (injection.world === 'ISOLATED') return [{ result: 'https://safe-app.example', documentId: 'doc-1' }]
+				if (injection.files[0] === '/inpage/js/cancelSafeAppPreparationBootstrap.js') { cleanupStarted = true; await cleanup; return [] }
+				started = true
+				if (action === 'unexpected-error') throw new Error('Unexpected browser failure')
+				if (action === 'get-error' || action === 'reload-error') return [{ result: { success: true } }]
+				return await new Promise<unknown>(() => undefined)
+			} },
+		} })
+		try {
+			const pending = prepareSafeAppTab('https://safe-app.example')
+			if (action === 'unexpected-error') await assert.rejects(pending, /Unexpected browser failure/)
+			else if (action === 'get-error' || action === 'reload-error') assert.match(JSON.stringify(await pending), /tab closed or navigated/)
+			else {
+				while (!started) await new Promise((resolve) => setTimeout(resolve, 0))
+				assert.match(JSON.stringify(await prepareSafeAppTab('https://safe-app.example')), /already running/)
+				if (action === 'cancel') {
+					const cancellation = cancelSafeAppPreparation('https://safe-app.example')
+					while (!cleanupStarted) await new Promise((resolve) => setTimeout(resolve, 0))
+					assert.match(JSON.stringify(await prepareSafeAppTab('https://safe-app.example')), /already running/)
+					completeCleanup?.()
+					await cancellation
+				} else for (const listener of listeners) listener(1)
+				assert.match(JSON.stringify(await pending), action === 'cancel' ? /cancelled/ : /tab was closed/)
+			}
+			assert.equal(listeners.size, 0)
+			assert.equal(reloads, 0)
+		} finally {
+			if (previousBrowser === undefined) Reflect.deleteProperty(globalThis, 'browser')
+			else Object.defineProperty(globalThis, 'browser', previousBrowser)
+		}
+	})
+}
+
+test('popup preparation cancellation uses the typed Safe protocol', async () => {
+	const previousBrowser = Object.getOwnPropertyDescriptor(globalThis, 'browser')
+	Object.defineProperty(globalThis, 'browser', { configurable: true, value: { runtime: { sendMessage: async (request: unknown) => {
+		assert.deepEqual(PopupMessageReplyRequests.parse(request), { method: 'popup_cancelPrepareSafeApp', data: { origin: 'https://safe-app.example' } })
+		return PopupReplyOption.serialize({ method: 'popup_cancelPrepareSafeApp', data: { success: true } })
+	} } } })
+	try { await requestPopupCancelPrepareSafeApp('https://safe-app.example') } finally {
+		if (previousBrowser === undefined) Reflect.deleteProperty(globalThis, 'browser')
+		else Object.defineProperty(globalThis, 'browser', previousBrowser)
 	}
 })

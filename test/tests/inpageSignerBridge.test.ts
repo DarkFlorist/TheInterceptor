@@ -4184,3 +4184,43 @@ test('Safe SDK settings belong to the page and survive background connection rei
 		assert.equal(proposalCount, 2)
 	})
 })
+
+test('expired and cancelled provider discovery probes release slots before eligibility returns', async () => {
+	const realNow = Date.now
+	let elapsed = 0
+	let enable: (() => void) | undefined
+	const forwarded: string[] = []
+	const { fakeWindow } = createFakeWindow({ handleRequest: (request, sendBackgroundMessage) => {
+		if (request.method === 'connected_to_signer') {
+			enable = () => {
+				sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
+				sendSafeAppsCompatibility(sendBackgroundMessage, true)
+			}
+			return true
+		}
+		if (request.method !== 'safe_apps_request') return false
+		forwarded.push(getSafeAppsMethod(request) ?? '')
+		replyToSafeAppsRequest(request, sendBackgroundMessage, { kind: 'result', value: { chainId: 1 } })
+		return true
+	} })
+	Date.now = () => realNow() + elapsed
+	try {
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?safe-expired-discovery', async () => {
+			const replies: Record<string, unknown>[] = []
+			fakeWindow.addEventListener('message', (event) => { if (isRecord(event.data) && typeof event.data.success === 'boolean') replies.push(event.data) })
+			for (let index = 0; index < 40; index++) fakeWindow.postMessage({ id: `expiry-${ index }`, method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			elapsed = 5 * 60_000 + 1
+			fakeWindow.postMessage({ id: 'after-expiry', method: 'getChainInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+			for (let index = 0; index < 80; index++) {
+				const id = `cancel-${ index }`
+				fakeWindow.postMessage({ id, method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+				fakeWindow.postMessage({ type: 'interceptor_safe_apps_cancel', id }, fakeWindow.location.origin)
+			}
+			enable?.()
+			await waitFor(() => replies.some((reply) => reply.id === 'after-expiry' && reply.success === true))
+			assert.equal(replies.filter((reply) => reply.error === 'Safe Apps request timed out.').length, 32)
+			assert.deepEqual(forwarded, ['getChainInfo'])
+		})
+	} finally { Date.now = realNow }
+})

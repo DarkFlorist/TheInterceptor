@@ -329,6 +329,10 @@ describe('popup message dispatcher seams', () => {
 		})
 	})
 
+	test('routes idempotent Safe App preparation cancellation through the typed Safe protocol', async () => {
+		assert.deepEqual(await dispatchPopupMessage(createDispatcherContext(async () => undefined), { method: 'popup_cancelPrepareSafeApp', data: { origin: 'https://safe-app.example' } }), { method: 'popup_cancelPrepareSafeApp', data: { success: true } })
+	})
+
 	test('routes Safe contract state through its dedicated protocol', async () => {
 		const context = createDispatcherContext(async () => undefined)
 		assert.deepEqual(await dispatchPopupMessage(context, {
