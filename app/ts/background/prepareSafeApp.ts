@@ -28,6 +28,8 @@ async function prepareSafeAppTabOperation(value: string, operation: PreparationO
 	if (operation.abort.signal.aborted) return cancelledReply(operation)
 	operation.documentId = document.documentId
 	const injection = { target: { tabId: tab.id, documentIds: [document.documentId] }, world: 'MAIN', files: ['/inpage/js/prepareSafeAppBootstrap.js'] }
+	// scripting.executeScript automatically awaits the file's final promise; awaitPromise is not a ScriptInjection option.
+	// https://developer.chrome.com/docs/extensions/reference/api/scripting#promises
 	const results: unknown = await Promise.race([executeScript.call(browser.scripting, injection), operation.cancelled])
 	if (operation.abort.signal.aborted) return cancelledReply(operation)
 	const firstResult: unknown = Array.isArray(results) ? results[0] : undefined

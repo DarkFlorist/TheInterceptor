@@ -623,7 +623,7 @@ describe('inpage signer bridge', () => {
 			replyToConnection?.()
 			await waitFor(() => replies.length === 32)
 			assert.equal(replies.filter((reply) => reply.error === 'Discovery fixture response.').length, 32)
-			assert.equal(replies.filter((reply) => reply.error === 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.').length, 0)
+			assert.equal(replies.filter((reply) => reply.error === 'Too many pending Safe Apps requests.').length, 0)
 			await new Promise((resolve) => setTimeout(resolve, 0))
 			assert.equal(replies.length, 32)
 		})
@@ -655,7 +655,7 @@ describe('inpage signer bridge', () => {
 			await waitFor(() => replies.length === 40)
 			assert.equal(new Set(replies.map((reply) => reply.id)).size, 40)
 			assert.equal(replies.filter((reply) => reply.error === 'Connection rejected.').length, 32)
-			assert.equal(replies.filter((reply) => reply.error === 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.').length, 8)
+			assert.equal(replies.filter((reply) => reply.error === 'Too many pending Safe Apps requests.').length, 8)
 		})
 	})
 

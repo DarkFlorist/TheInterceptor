@@ -1,4 +1,5 @@
-import { SAFE_APPS_RESPONSE_VERSION, SAFE_APPS_PENDING_REQUEST_LIMIT, SAFE_APPS_REQUEST_TIMEOUT_MS, isSafeAppsCancellation, parseSafeAppsRequest, type ParsedSafeAppsRequest, type SafeAppsRequest } from './safeAppsProtocol.js'
+import { SAFE_APPS_RESPONSE_VERSION, createSafeAppsErrorResponse, isSafeAppsCancellation, parseSafeAppsRequest, type ParsedSafeAppsRequest, type SafeAppsRequest } from './safeAppsProtocol.js'
+import { createSafeAppsRequestQueue } from './safeAppsRequestQueue.js'
 
 type SafeAppsWindow = {
 	readonly location: { readonly origin: string }
@@ -77,7 +78,16 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 	let canRequestAccess = false
 	let accessRequested = false
 	let accessFailure: string | undefined
-	const pendingRequests: { readonly parsedRequest: ParsedSafeAppsRequest, readonly origin: string, readonly expiresAt: number }[] = []
+	const pendingRequests = createSafeAppsRequestQueue<{ readonly id: string, readonly method: string, readonly parsedRequest: ParsedSafeAppsRequest, readonly origin: string }>({
+		onRejected: (pending, error, reason) => {
+			// Startup discovery stays silent until the background determines access eligibility.
+			if (reason === 'capacity' && !canRequestAccess) return
+			windowObject.postMessage(createSafeAppsErrorResponse(pending, error), pending.origin)
+		},
+	})
+	const queueDiscovery = (parsedRequest: ParsedSafeAppsRequest, origin: string) => {
+		if ('request' in parsedRequest && pendingRequests.add({ id: parsedRequest.id, method: parsedRequest.request.method, parsedRequest, origin })) requestAccessForDiscovery()
+	}
 	const answerRequest = (parsedRequest: ParsedSafeAppsRequest, origin: string) => {
 		if ('error' in parsedRequest) {
 			windowObject.postMessage({ id: parsedRequest.id, success: false, error: parsedRequest.error, version: SAFE_APPS_RESPONSE_VERSION }, origin)
@@ -90,10 +100,7 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 			// Startup queries must survive a temporary loss of eligibility, but their old account data must never be published.
 			if (isSafeAppsDiscoveryRequest(parsedRequest)) {
 				if (enabled) answerRequest(parsedRequest, origin)
-				else if (pendingRequests.length < SAFE_APPS_PENDING_REQUEST_LIMIT) {
-					pendingRequests.push({ parsedRequest, origin, expiresAt: Date.now() + SAFE_APPS_REQUEST_TIMEOUT_MS })
-					requestAccessForDiscovery()
-				}
+				else queueDiscovery(parsedRequest, origin)
 			}
 			return false
 		}
@@ -109,12 +116,12 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 		)
 	}
 	const rejectPendingDiscovery = (message: string) => {
-		for (const { parsedRequest, origin } of pendingRequests.splice(0)) {
+		for (const { parsedRequest, origin } of pendingRequests.drain()) {
 			windowObject.postMessage({ id: parsedRequest.id, success: false, error: message, version: SAFE_APPS_RESPONSE_VERSION }, origin)
 		}
 	}
 	const requestAccessForDiscovery = () => {
-		if (enabled || !canRequestAccess || !pendingRequests.some(({ parsedRequest }) => isSafeAppsDiscoveryRequest(parsedRequest))) return
+		if (enabled || !canRequestAccess || !pendingRequests.values().some(({ parsedRequest }) => isSafeAppsDiscoveryRequest(parsedRequest))) return
 		if (accessFailure !== undefined) {
 			rejectPendingDiscovery(accessFailure)
 			return
@@ -127,36 +134,19 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 			rejectPendingDiscovery(accessFailure)
 		})
 	}
-	// The host can expire an unanswered SDK probe; retain no stale provider slots when a later probe or eligibility update arrives.
-	const expirePendingRequests = () => {
-		const now = Date.now()
-		for (let index = pendingRequests.length - 1; index >= 0; index--) {
-			const pending = pendingRequests[index]
-			if (pending === undefined || pending.expiresAt > now) continue
-			pendingRequests.splice(index, 1)
-			windowObject.postMessage({ id: pending.parsedRequest.id, success: false, error: 'Safe Apps request timed out.', version: SAFE_APPS_RESPONSE_VERSION }, pending.origin)
-		}
-	}
 	const onMessage = (event: Event) => {
 		const messageEvent = parseSafeAppsMessageEvent(event)
 		if (messageEvent === undefined) return
 		if (messageEvent.source !== windowObject || messageEvent.origin !== windowObject.location.origin) return
 		if (isSafeAppsCancellation(messageEvent.data)) {
-			const id = messageEvent.data.id
-			for (let index = pendingRequests.length - 1; index >= 0; index--) if (pendingRequests[index]?.parsedRequest.id === id) pendingRequests.splice(index, 1)
+			pendingRequests.take(messageEvent.data.id)
 			return
 		}
-		expirePendingRequests()
+		pendingRequests.expire()
 		const parsedRequest = parseSafeAppsRequest(messageEvent.data)
 		if (parsedRequest === undefined) return
 		if (!enabled && isSafeAppsDiscoveryRequest(parsedRequest)) {
-			if (pendingRequests.length >= SAFE_APPS_PENDING_REQUEST_LIMIT) {
-				if (enabled === false && !canRequestAccess) return
-				windowObject.postMessage({ id: parsedRequest.id, success: false, error: 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.', version: SAFE_APPS_RESPONSE_VERSION }, messageEvent.origin)
-				return
-			}
-			pendingRequests.push({ parsedRequest, origin: messageEvent.origin, expiresAt: Date.now() + SAFE_APPS_REQUEST_TIMEOUT_MS })
-			requestAccessForDiscovery()
+			queueDiscovery(parsedRequest, messageEvent.origin)
 			return
 		}
 		if (enabled) answerRequest(parsedRequest, messageEvent.origin)
@@ -164,21 +154,19 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 	windowObject.addEventListener('message', onMessage)
 	return {
 		setEnabled(nextEnabled: boolean, nextCanRequestAccess = false) {
-			expirePendingRequests()
+			pendingRequests.expire()
 			canRequestAccess = nextCanRequestAccess
 			if (enabled !== nextEnabled) enablementGeneration += 1
 			enabled = nextEnabled
-			const queuedRequests = pendingRequests.splice(0)
 			if (nextEnabled) {
-				for (const { parsedRequest, origin } of queuedRequests) answerRequest(parsedRequest, origin)
+				for (const { parsedRequest, origin } of pendingRequests.drain()) answerRequest(parsedRequest, origin)
 			} else {
-				// Never defer signing or transaction requests across a disabled state.
-				pendingRequests.push(...queuedRequests.filter(({ parsedRequest }) => isSafeAppsDiscoveryRequest(parsedRequest)))
+				// Only discovery enters the queue; signing and transaction requests are never replayed.
 				requestAccessForDiscovery()
 			}
 		},
 		dispose() {
-			pendingRequests.splice(0)
+			pendingRequests.drain()
 			windowObject.removeEventListener('message', onMessage)
 		},
 	}

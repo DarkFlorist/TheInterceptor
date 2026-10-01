@@ -188,6 +188,15 @@ async function authorizeAndReloadSafeAppsFixture(browserConnection: CdpConnectio
 	const settingsConnection = await connectTarget(browserDebugPort, settingsTarget)
 	try {
 		await waitForText(settingsConnection, 'Authorize and reload open tab')
+		// Exercise Chrome's real files injection API: it must serialize the settled preparation promise without an awaitPromise option.
+		const preparation = await settingsConnection.evaluate<{ success?: boolean }>(`(async () => {
+			const tab = (await chrome.tabs.query({})).find(({ url }) => url !== undefined && new URL(url).origin === ${ JSON.stringify(new URL(url).origin) })
+			if (tab?.id === undefined) throw new Error('Missing Safe fixture tab.')
+			const [document] = await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [0] }, world: 'ISOLATED', files: ['/inpage/js/readDocumentOrigin.js'] })
+			const [reply] = await chrome.scripting.executeScript({ target: { tabId: tab.id, documentIds: [document.documentId] }, world: 'MAIN', files: ['/inpage/js/prepareSafeAppBootstrap.js'] })
+			return reply.result
+		})()`)
+		if (preparation?.success !== true) throw new Error(`Chrome did not await the preparation file's promise: ${ JSON.stringify(preparation) }`)
 		await openSafeAppsHostFixture(pageConnection, url, async () => await clickButtonWithText(settingsConnection, 'Authorize and reload open tab'))
 		await waitForCondition(async () => await pageConnection.evaluate(requestFinanceDiscovery ? 'globalThis.__interceptorChromeCommunicationState?.sdkReply !== undefined' : `globalThis.__interceptorChromeCommunicationState?.phase === 'safe-only-granted'`), 30_000, 'Safe SDK response after authorization and reload')
 		await waitForCondition(async () => await settingsConnection.evaluate(`document.querySelector('button[aria-busy="true"]') === null`), 10_000, 'connection preparation completion')
