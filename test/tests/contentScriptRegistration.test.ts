@@ -23,6 +23,7 @@ type BrowserMockOptions = {
 	readonly registeredContentScriptIds?: readonly string[]
 	readonly safeAppsCompatibilityMode?: boolean
 	readonly safeAppsHostOrigins?: readonly string[]
+	readonly beforeRegisterContentScripts?: (scripts: readonly RegisteredContentScript[]) => Promise<void>
 	readonly beforeUpdateContentScripts?: (scripts: readonly RegisteredContentScript[]) => Promise<void>
 }
 
@@ -35,7 +36,7 @@ type RegisteredContentScript = {
 	readonly js?: readonly string[]
 }
 
-function installBrowserMock({ emitStorageEvents = false, registerError, hostRegistrationError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [], safeAppsCompatibilityMode = false, safeAppsHostOrigins, beforeUpdateContentScripts }: BrowserMockOptions = {}) {
+function installBrowserMock({ emitStorageEvents = false, registerError, hostRegistrationError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [], safeAppsCompatibilityMode = false, safeAppsHostOrigins, beforeRegisterContentScripts, beforeUpdateContentScripts }: BrowserMockOptions = {}) {
 	const storageState: Record<string, unknown> = { safeAppsCompatibilityMode, ...(safeAppsHostOrigins === undefined ? {} : { safeAppsHostOrigins }) }
 	const sentMessages: RuntimeMessage[] = []
 	const executedScriptFiles: string[] = []
@@ -96,6 +97,7 @@ function installBrowserMock({ emitStorageEvents = false, registerError, hostRegi
 				async getRegisteredContentScripts() { return [...registeredContentScripts.values()] },
 				async registerContentScripts(scripts: readonly RegisteredContentScript[]) {
 					scriptingOperations.push('register')
+					await beforeRegisterContentScripts?.(scripts)
 					if (registerError !== undefined) throw registerError
 					if (hostRegistrationError !== undefined && scripts.some(({ id }) => id === 'safe-apps-host')) throw hostRegistrationError
 					for (const script of scripts) registeredContentScripts.set(script.id, script)
@@ -612,5 +614,25 @@ describe('content script injection strategy', () => {
 		assert.equal(diagnostics[0]?.cause, 'executeScript failed')
 		assert.equal(diagnostics[0]?.code, 'manifest_v2_content_script_injection_failed')
 		assert.equal(diagnostics[0]?.category, 'local_recovery')
+	})
+})
+
+
+test('explicit hosting retries coalesce the observed recovery and can retry again without changing settings', async () => {
+	const origin = 'https://coalesced-retry.example'
+	let hostAttempts = 0
+	installBrowserMock({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: [origin], beforeRegisterContentScripts: async (scripts) => {
+		if (!scripts.some(({ id }) => id === 'safe-apps-host')) return
+		hostAttempts++
+		if (hostAttempts <= 2) throw new Error('Transient hosting failure')
+	} })
+	const { createContentScriptRegistrationService } = await loadModules()
+	const service = createContentScriptRegistrationService()
+	await withSilencedConsole(async () => {
+		assert.equal(await service.update(), 'base-provider-recovered')
+		assert.deepEqual(await Promise.all([service.ensureSafeAppsHostRegistered(origin), service.ensureSafeAppsHostRegistered(origin)]), [false, false])
+		assert.equal(hostAttempts, 2)
+		assert.equal(await service.ensureSafeAppsHostRegistered(origin), true)
+		assert.equal(hostAttempts, 3)
 	})
 })

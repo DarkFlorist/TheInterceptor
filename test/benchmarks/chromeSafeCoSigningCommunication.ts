@@ -545,6 +545,7 @@ async function main() {
 			}
 			// Install the test RPC through the popup command below so persisted settings and live services change together.
 			await workerConnection.evaluate(`browser.storage.local.set(${ JSON.stringify(storedSettings) })`)
+			// Initial SDK discovery needs document-start hosting; Settings preparation separately awaits registration before each reload.
 			if (requestFinanceDiscovery || genericSafeHost) await waitForCondition(async () => await workerConnection.evaluate<boolean>(`(async () => {
 				const scripts = await browser.scripting.getRegisteredContentScripts()
 				// Chrome returns extension-relative paths without their leading slash.

@@ -1,5 +1,6 @@
 import { getInterceptorDisabledSites, getSafeAppsCompatibilityMode, getSafeAppsHostOrigins, getSettings } from './settings.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from '../utils/requests.js'
+import { getChromeMatchPatterns } from '../utils/chromeMatchPatterns.js'
 import { getSafeAppsHostMatchPatterns } from '../utils/safeAppsHosting.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from '../utils/errors.js'
 
@@ -11,30 +12,10 @@ const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cann
 const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
 const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
 
-function getManifestV3ExcludeMatchesForOrigin(origin: string) {
-	if (origin === '') return ['file:///*']
-	try {
-		const hasExplicitScheme = origin.includes('://')
-		const url = new URL(hasExplicitScheme ? origin : `http://${ origin }`)
-		if (url.protocol === 'file:') return url.hostname === '' ? ['file:///*'] : []
-		if (url.protocol !== 'http:' && url.protocol !== 'https:') return []
-		if (url.username !== '' || url.password !== '' || url.pathname !== '/' || url.search !== '' || url.hash !== '') return []
-		const hostname = url.hostname
-		if (hostname === '') return []
-		const isIpAddressOrLocalhost = hostname === 'localhost' || hostname.startsWith('[') || /^\d+(?:\.\d+){3}$/.test(hostname)
-		const hostPattern = isIpAddressOrLocalhost ? url.host : `*.${ url.host }`
-		if (hasExplicitScheme) return [`${ url.protocol.slice(0, -1) }://${ hostPattern }/*`]
-		if (url.port === '') return [`*://${ hostPattern }/*`]
-		return [`http://${ hostPattern }/*`, `https://${ hostPattern }/*`]
-	} catch {
-		return []
-	}
-}
-
 export function getManifestV3ExcludeMatches(origins: readonly string[]) {
 	const patterns = new Set<string>()
 	for (const origin of origins) {
-		for (const pattern of getManifestV3ExcludeMatchesForOrigin(origin)) patterns.add(pattern)
+		for (const pattern of getChromeMatchPatterns(origin, 'site-with-subdomains')) patterns.add(pattern)
 	}
 	return [...patterns]
 }
@@ -116,12 +97,16 @@ export function createContentScriptRegistrationService() {
 	let previousUpdate: Promise<void> = Promise.resolve()
 	let appliedSettingsKey: string | undefined
 	let appliedOutcome: ContentScriptRegistrationOutcome = 'applied'
-	const update = () => {
+	let appliedAttempt = 0
+	const queueUpdate = (retryRecoveredAttempt?: number) => {
 		const nextUpdate = previousUpdate.then(async () => {
 			// Read inside the queue so subsequent writes cannot leave the last requested update applying stale state.
 			const settingsKey = JSON.stringify(await browser.storage.local.get(contentScriptRegistrationStorageKeys))
-			if (settingsKey === appliedSettingsKey) return appliedOutcome
+			// An explicit retry can reapply the failure it observed, but must not repeat a newer queued attempt.
+			const retryObservedFailure = appliedOutcome === 'base-provider-recovered' && retryRecoveredAttempt === appliedAttempt
+			if (settingsKey === appliedSettingsKey && !retryObservedFailure) return appliedOutcome
 			const outcome = await applyContentScriptInjectionStrategyManifestV3()
+			appliedAttempt += 1
 			appliedSettingsKey = settingsKey
 			appliedOutcome = outcome
 			return outcome
@@ -129,6 +114,7 @@ export function createContentScriptRegistrationService() {
 		previousUpdate = nextUpdate.then(() => undefined, () => undefined)
 		return nextUpdate
 	}
+	const update = () => queueUpdate()
 	const updateAndReport = async () => {
 		try {
 			await update()
@@ -154,7 +140,14 @@ export function createContentScriptRegistrationService() {
 		browser.storage.onChanged.removeListener(onStorageChanged)
 		started = false
 	}
-	return { update, start, stop }
+	const ensureSafeAppsHostRegistered = async (origin: string) => {
+		const retryRecoveredAttempt = appliedOutcome === 'base-provider-recovered' ? appliedAttempt : undefined
+		if (await queueUpdate(retryRecoveredAttempt) !== 'applied') return false
+		const matches = getSafeAppsHostMatchPatterns([origin])
+		const scripts = await browser.scripting.getRegisteredContentScripts()
+		return scripts.some((script) => script.id === 'safe-apps-host' && matches.every((pattern) => script.matches?.includes(pattern) === true))
+	}
+	return { update, start, stop, ensureSafeAppsHostRegistered }
 }
 
 // One service per background runtime; the reload workflow awaits the same queue as the storage observer.

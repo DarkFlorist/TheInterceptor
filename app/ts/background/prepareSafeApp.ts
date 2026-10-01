@@ -1,3 +1,4 @@
+import { contentScriptRegistration } from './contentScriptRegistration.js'
 import { isMissingBrowserTargetError } from '../utils/requests.js'
 import type { PrepareSafeAppReply } from '../types/interceptor-reply-messages.js'
 import { getSafeAppsCompatibilityMode, getSafeAppsHostOrigins, getSettings } from './settings.js'
@@ -37,6 +38,14 @@ async function prepareSafeAppTabOperation(value: string, operation: PreparationO
 	if (typeof result !== 'object' || result === null || !('success' in result) || result.success !== true) {
 		return { success: false, errorMessage: typeof result === 'object' && result !== null && 'error' in result && typeof result.error === 'string' ? result.error : 'The website did not confirm a Safe connection.' }
 	}
+	// Persisted hosting settings can be ahead of the storage observer's registration queue.
+	const hostRegistered = await Promise.race([contentScriptRegistration.ensureSafeAppsHostRegistered(origin), operation.cancelled])
+	if (operation.abort.signal.aborted) return cancelledReply(operation)
+	if (!hostRegistered) return { success: false, errorMessage: 'Safe Apps hosting could not be registered for this website. Check the hosting settings and retry.' }
+	const latestSettings = await getSettings()
+	const latestAccess = hasAccess(latestSettings.websiteAccess, new URL(origin).host)
+	if (latestAccess === 'interceptorDisabled') return { success: false, errorMessage: 'Enable Interceptor on this website before connecting.' }
+	if (latestAccess !== 'hasAccess') return { success: false, errorMessage: 'Allow this website in Website Access before connecting.' }
 	const connectedTab = await browser.tabs.get(tab.id)
 	if (connectedTab.url === undefined || new URL(connectedTab.url).origin !== origin) return { success: false, errorMessage: 'The website navigated during connection.' }
 	if (operation.abort.signal.aborted) return cancelledReply(operation)

@@ -28,7 +28,7 @@
 		"bundle": "cd build && bun run bundle",
 		"firefox": "bun -e 'await Bun.write(`app/manifest.json`, Bun.file(`app/manifestV2.json`))'",
 		"chrome": "bun -e 'await Bun.write(`app/manifest.json`, Bun.file(`app/manifestV3.json`))'",
-		"inpage": "bun run clean-inpage-output && bun ./node_modules/typescript/lib/tsc.js --project tsconfig-inpage.json && bun ./scripts/inline-inpage-document-start.mts",
+		"inpage": "bun run clean-inpage-output && bun ./node_modules/typescript/lib/tsc.js --project tsconfig-inpage.json",
 		"compile-app": "bun run compile-contracts && bun run clean-js-output && bun --bun tsc --project tsconfig.json",
 		"clean-js-output": "bun ./build/cleanOutput.mts app/js",
 		"clean-inpage-output": "bun ./build/cleanOutput.mts app/inpage/js",

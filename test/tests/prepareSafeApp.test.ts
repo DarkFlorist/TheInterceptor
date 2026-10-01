@@ -6,7 +6,23 @@ import { prepareSafeAppTab, cancelSafeAppPreparation } from '../../app/ts/backgr
 import { requestPopupPrepareSafeApp, requestPopupCancelPrepareSafeApp } from '../../app/ts/background/backgroundUtils.js'
 import { PopupMessageReplyRequests, PopupReplyOption } from '../../app/ts/types/interceptor-reply-messages.js'
 import { SAFE_APPS_PREPARATION_TIMEOUT_MS, SAFE_APPS_PREPARATION_CANCEL_EVENT } from '../../app/inpage/ts/safeAppsProtocol.js'
+import { contentScriptRegistration } from '../../app/ts/background/contentScriptRegistration.js'
+import { withSilencedConsole } from './consoleSilence.js'
 import { createSafeHostHarness } from '../fixtures/safeAppsHostHarness.js'
+
+function createRegistrationMock(origin: string, beforeRegister?: () => Promise<void>, initiallyRegistered = true) {
+	const scripts = new Map<string, { readonly id: string, readonly matches: readonly string[] }>()
+	if (initiallyRegistered) scripts.set('safe-apps-host', { id: 'safe-apps-host', matches: [`${ origin }:443/*`] })
+	return {
+		getRegisteredContentScripts: async () => [...scripts.values()],
+		registerContentScripts: async (next: readonly { readonly id: string, readonly matches: readonly string[] }[]) => {
+			await beforeRegister?.()
+			for (const script of next) scripts.set(script.id, script)
+		},
+		updateContentScripts: async (next: readonly { readonly id: string, readonly matches: readonly string[] }[]) => { for (const script of next) scripts.set(script.id, script) },
+		unregisterContentScripts: async ({ ids }: { readonly ids: readonly string[] }) => { for (const id of ids) scripts.delete(id) },
+	}
+}
 
 for (const approved of [true, false]) {
 	test(`connection preparation ${ approved ? 'completes approval' : 'surfaces rejection' } through the same-window bridge`, async () => {
@@ -56,7 +72,7 @@ test('preparation enforces opt-in, targets one top-level origin, and reloads onl
 			get: async () => ({ url: navigationOrigin }),
 			reload: async (id: number) => { assert.equal(id, 3); reloads++ },
 		},
-		scripting: { executeScript: async (injection: { target: { tabId: number, documentIds?: string[], frameIds?: number[] }, world: string, files: string[] }) => {
+		scripting: { ...createRegistrationMock('https://safe-app.example'), executeScript: async (injection: { target: { tabId: number, documentIds?: string[], frameIds?: number[] }, world: string, files: string[] }) => {
 			if (injection.world === 'ISOLATED') {
 				assert.deepEqual(injection.target, { tabId: 3, frameIds: [0] })
 				assert.deepEqual(injection.files, ['/inpage/js/readDocumentOrigin.js'])
@@ -66,6 +82,8 @@ test('preparation enforces opt-in, targets one top-level origin, and reloads onl
 			assert.equal(injection.world, 'MAIN')
 			assert.deepEqual(injection.files, ['/inpage/js/prepareSafeAppBootstrap.js'])
 			requests++
+			// A successful real probe finishes ordinary website approval before returning.
+			if (approved) access = true
 			if (navigateDuringRequest) navigationOrigin = 'https://other.example'
 			return [{ result: { success: approved, error: 'Rejected.' } }]
 		} },
@@ -178,14 +196,14 @@ for (const action of ['cancel', 'close', 'get-error', 'reload-error', 'unexpecte
 		const cleanup = new Promise<void>((resolve) => { completeCleanup = resolve })
 		Object.defineProperty(globalThis, 'browser', { configurable: true, value: {
 			runtime: { getManifest: () => ({ manifest_version: 3 }) },
-			storage: { local: { get: async () => ({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: ['https://safe-app.example'], simulationMode: false, activeSigningSafeAddress: '0x1234567890123456789012345678901234567890', websiteAccess: [] }) } },
+			storage: { local: { get: async () => ({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: ['https://safe-app.example'], simulationMode: false, activeSigningSafeAddress: '0x1234567890123456789012345678901234567890', websiteAccess: [{ website: { websiteOrigin: 'safe-app.example' }, addressAccess: [], access: true }] }) } },
 			tabs: {
 				onRemoved: { addListener: (listener: (tabId: number) => void) => listeners.add(listener), removeListener: (listener: (tabId: number) => void) => listeners.delete(listener) },
 				query: async () => [{ id: 1, url: 'https://safe-app.example' }],
 				get: async () => { if (action === 'get-error') throw new Error('No tab with id: 1.'); return { url: 'https://safe-app.example' } },
 				reload: async () => { if (action === 'reload-error') throw new Error('No tab with id: 1.'); reloads++ },
 			},
-			scripting: { executeScript: async (injection: { world: string, files: string[] }) => {
+			scripting: { ...createRegistrationMock('https://safe-app.example'), executeScript: async (injection: { world: string, files: string[] }) => {
 				if (injection.world === 'ISOLATED') return [{ result: 'https://safe-app.example', documentId: 'doc-1' }]
 				if (injection.files[0] === '/inpage/js/cancelSafeAppPreparationBootstrap.js') { cleanupStarted = true; await cleanup; return [] }
 				started = true
@@ -226,6 +244,145 @@ test('popup preparation cancellation uses the typed Safe protocol', async () => 
 		return PopupReplyOption.serialize({ method: 'popup_cancelPrepareSafeApp', data: { success: true } })
 	} } } })
 	try { await requestPopupCancelPrepareSafeApp('https://safe-app.example') } finally {
+		if (previousBrowser === undefined) Reflect.deleteProperty(globalThis, 'browser')
+		else Object.defineProperty(globalThis, 'browser', previousBrowser)
+	}
+})
+
+for (const outcome of ['registered', 'recovered', 'removed', 'cancelled', 'access-revoked', 'access-removed', 'disabled', 'unexpected-error']) {
+	test(`preparation waits for queued registration and reloads only a registered host (${ outcome })`, async () => {
+		const previousBrowser = Object.getOwnPropertyDescriptor(globalThis, 'browser')
+		const origin = `https://registration-${ outcome }.example`
+		let releaseRegistration: (() => void) | undefined
+		const registrationBarrier = new Promise<void>((resolve) => { releaseRegistration = resolve })
+		let registering = false
+		let reloads = 0
+		let prepared = false
+		let optedIn = true
+		let blockAccess = false
+		let accessRemoved = false
+		const registration = createRegistrationMock(origin, async () => {
+			registering = true
+			await registrationBarrier
+			if (outcome === 'unexpected-error') throw new Error('Unexpected registration failure')
+		}, false)
+		Object.defineProperty(globalThis, 'browser', { configurable: true, value: {
+			runtime: { getManifest: () => ({ manifest_version: 3 }), sendMessage: async () => undefined },
+			storage: { local: {
+				get: async () => ({
+					safeAppsCompatibilityMode: true,
+					safeAppsHostOrigins: optedIn ? [origin] : [],
+					simulationMode: false,
+					activeSigningSafeAddress: '0x1234567890123456789012345678901234567890',
+					websiteAccess: accessRemoved ? [] : [{ website: { websiteOrigin: new URL(origin).host }, addressAccess: [], access: !blockAccess || outcome !== 'access-revoked', interceptorDisabled: blockAccess && outcome === 'disabled' }],
+				}),
+				set: async () => undefined,
+			} },
+			tabs: {
+				onRemoved: { addListener: () => undefined, removeListener: () => undefined },
+				query: async () => [{ id: 1, url: origin }],
+				get: async () => ({ url: origin }),
+				reload: async () => { reloads++ },
+			},
+			scripting: {
+				...registration,
+				registerContentScripts: async (scripts: readonly { readonly id: string, readonly matches: readonly string[] }[]) => {
+					if (outcome === 'recovered' && scripts.some(({ id }) => id === 'safe-apps-host')) {
+						registering = true
+						await registrationBarrier
+						throw new Error('Host registration failed')
+					}
+					await registration.registerContentScripts(scripts)
+				},
+				executeScript: async ({ world }: { readonly world: string }) => {
+					if (world === 'ISOLATED') return [{ result: origin, documentId: 'doc-race' }]
+					prepared = true
+					return [{ result: { success: true } }]
+				},
+			},
+		} })
+		try {
+			await withSilencedConsole(async () => {
+				const queuedUpdate = contentScriptRegistration.update()
+				// Attach rejection handling before releasing the intentionally failing registration.
+				const updateResult = queuedUpdate.then(() => undefined, (error: unknown) => error)
+				while (!registering) await new Promise((resolve) => setTimeout(resolve, 0))
+				const preparation = prepareSafeAppTab(origin)
+				const preparationResult = preparation.then((reply) => reply, (error: unknown) => error)
+				while (!prepared) await new Promise((resolve) => setTimeout(resolve, 0))
+				await new Promise((resolve) => setTimeout(resolve, 0))
+				assert.equal(reloads, 0)
+				if (outcome === 'removed') optedIn = false
+				if (outcome === 'access-revoked' || outcome === 'disabled') blockAccess = true
+				if (outcome === 'access-removed') accessRemoved = true
+				if (outcome === 'cancelled') {
+					await cancelSafeAppPreparation(origin)
+					assert.match(JSON.stringify(await preparationResult), /cancelled/)
+				}
+				releaseRegistration?.()
+				const reply = await preparationResult
+				await updateResult
+				if (outcome === 'registered') {
+					assert.deepEqual(reply, { success: true })
+					assert.equal(reloads, 1)
+				} else {
+					if (outcome === 'unexpected-error') assert.ok(reply instanceof AggregateError)
+					else if (outcome === 'access-revoked' || outcome === 'access-removed') assert.match(JSON.stringify(reply), /Website Access/)
+					else if (outcome === 'disabled') assert.match(JSON.stringify(reply), /Enable Interceptor/)
+					else assert.match(JSON.stringify(reply), outcome === 'cancelled' ? /cancelled/ : /could not be registered/)
+					assert.equal(reloads, 0)
+				}
+			})
+		} finally {
+			releaseRegistration?.()
+			if (previousBrowser === undefined) Reflect.deleteProperty(globalThis, 'browser')
+			else Object.defineProperty(globalThis, 'browser', previousBrowser)
+		}
+	})
+}
+
+test('preparation retries recovered host registration without changing persisted settings', async () => {
+	const previousBrowser = Object.getOwnPropertyDescriptor(globalThis, 'browser')
+	const origin = 'https://registration-retry.example'
+	let hostFails = true
+	let hostAttempts = 0
+	let reloads = 0
+	const registration = createRegistrationMock(origin, undefined, false)
+	Object.defineProperty(globalThis, 'browser', { configurable: true, value: {
+		runtime: { getManifest: () => ({ manifest_version: 3 }), sendMessage: async () => undefined },
+		storage: { local: {
+			get: async () => ({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: [origin], simulationMode: false, activeSigningSafeAddress: '0x1234567890123456789012345678901234567890', websiteAccess: [{ website: { websiteOrigin: new URL(origin).host }, addressAccess: [], access: true }] }),
+			set: async () => undefined,
+		} },
+		tabs: {
+			onRemoved: { addListener: () => undefined, removeListener: () => undefined },
+			query: async () => [{ id: 1, url: origin }],
+			get: async () => ({ url: origin }),
+			reload: async () => { reloads++ },
+		},
+		scripting: {
+			...registration,
+			registerContentScripts: async (scripts: readonly { readonly id: string, readonly matches: readonly string[] }[]) => {
+				if (scripts.some(({ id }) => id === 'safe-apps-host')) {
+					hostAttempts++
+					if (hostFails) throw new Error('Transient host registration failure')
+				}
+				await registration.registerContentScripts(scripts)
+			},
+			executeScript: async ({ world }: { readonly world: string }) => world === 'ISOLATED' ? [{ result: origin, documentId: 'doc-retry' }] : [{ result: { success: true } }],
+		},
+	} })
+	try {
+		await withSilencedConsole(async () => {
+			assert.match(JSON.stringify(await prepareSafeAppTab(origin)), /could not be registered/)
+			assert.equal(hostAttempts, 1)
+			assert.equal(reloads, 0)
+			hostFails = false
+			assert.deepEqual(await prepareSafeAppTab(origin), { success: true })
+			assert.equal(hostAttempts, 2)
+			assert.equal(reloads, 1)
+		})
+	} finally {
 		if (previousBrowser === undefined) Reflect.deleteProperty(globalThis, 'browser')
 		else Object.defineProperty(globalThis, 'browser', previousBrowser)
 	}
