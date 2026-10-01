@@ -108,3 +108,13 @@ for (const type of hardwareTypes) {
 		expect(messages.some((message) => message.type === 'forwardToSigner')).toBe(false)
 	})
 }
+
+test('saved signing selection does not pin simulation to a disconnected browser account', async () => {
+	installBrowserMock()
+	const { getTabState } = await loadModules()
+	await browserStorageLocalSet({ selectedSigningAddress: 1n, simulationMode: true, useSignersAddressAsActiveAddress: true })
+	const previous = await getTabState(1)
+	const transition = await getSigningAddressSelectionTransition(await getSettings(), previous, { ...previous, signerAccounts: [2n], activeSigningAddress: 2n })
+	expect(transition.shouldActivate).toBe(true)
+	expect(transition.signerAddress).toBe(2n)
+})

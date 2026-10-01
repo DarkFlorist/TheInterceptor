@@ -1075,7 +1075,9 @@ class InterceptorMessageListener {
 			if (existing === undefined && this.providerIdentities.size >= 64) this.providerIdentityLimitExceeded = true
 			else {
 				const identity = existing ?? { rdns, uuid, ambiguous: false }
-				if (identity.rdns !== rdns || identity.uuid !== uuid) identity.ambiguous = true
+				// UUIDs describe announcements, not a persistent wallet identity.
+				if (identity.rdns !== rdns) identity.ambiguous = true
+				identity.uuid = uuid
 				for (const [otherProvider, other] of this.providerIdentities) {
 					if (otherProvider !== provider && (other.rdns === rdns || other.uuid === uuid)) {
 						other.ambiguous = true

@@ -576,3 +576,22 @@ describe('popup settings changes', () => {
 		})
 	}
 })
+
+test('pinned signing selections retain the supported-network fallback when switching modes', async () => {
+	installBrowserMock()
+	const { changeSimulationMode, getSettings } = await loadModules()
+	const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+	const { enableSimulationMode } = await import('../../app/ts/background/popupMessageHandlers.js')
+	const supportedNetwork = (await getSettings()).activeRpcNetwork
+	const unsupportedNetwork = { name: 'Unsupported', chainId: 999999n, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true } satisfies import('../../app/ts/types/rpc.js').RpcNetwork
+	const services = createTestSimulationServicesOwner(createEthereumWithGetBlockCounter({ count: 0 }))
+	for (const simulationMode of [true, false]) {
+		await changeSimulationMode({ simulationMode: !simulationMode, rpcNetwork: unsupportedNetwork })
+		await browserStorageLocalSet({ selectedSigningAddress: 1n, useSignersAddressAsActiveAddress: false })
+		await enableSimulationMode(services, new Map(), { method: 'popup_enableSimulationMode', data: simulationMode })
+		const settings = await getSettings()
+		assert.equal(settings.simulationMode, simulationMode)
+		assert.equal(settings.activeRpcNetwork.chainId, supportedNetwork.chainId)
+		assert.equal(settings.selectedSigningAddress, 1n)
+	}
+})

@@ -1,4 +1,4 @@
-import { getSavedSafeSigningAccount } from './safeSigningAccount.js'
+import { hasPinnedSigningAddress } from './safeSigningAccount.js'
 import type { TabConnection, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import type { WebsiteSocket } from '../utils/requests.js'
@@ -184,8 +184,7 @@ export async function getActiveAddressForCurrentSignerState<T>(
 	tabId: number,
 	getAddress: () => Promise<T | undefined>,
 ): Promise<T | undefined> {
-	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress || !settings.simulationMode && settings.selectedSigningAddress !== undefined) return await getAddress()
-	if (!settings.simulationMode && settings.activeSigningSafeAddress !== undefined && await getSavedSafeSigningAccount(settings.activeSigningSafeAddress) !== undefined) return await getAddress()
+	if (settings.simulationMode && !settings.useSignersAddressAsActiveAddress || !settings.simulationMode && await hasPinnedSigningAddress(settings)) return await getAddress()
 	const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, tabId)
 	if (signerStateToken === undefined) return undefined
 	const activeAddress = await getAddress()

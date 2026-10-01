@@ -8,7 +8,7 @@ import { reportUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
 import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
-import { getWalletSelectedAccount, resolveActiveAddressForMode } from '../utils/activeAddressSelection.js'
+import { getActiveSigningAddress, getWalletSelectedAccount, resolveActiveAddressForMode } from '../utils/activeAddressSelection.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 
 function isIgnorableExtensionMessagingError(error: Error) {
@@ -21,7 +21,7 @@ type ConfiguredActiveAddressResolution =
 	| { readonly useConfiguredAddress: true, readonly activeAddress: AddressBookEntry | undefined }
 
 async function resolveConfiguredActiveAddress(settings: Settings, signerAccounts: readonly bigint[], walletSelectedAddress: bigint | undefined, addressBookEntries: AddressBookEntries | undefined): Promise<ConfiguredActiveAddressResolution> {
-	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.selectedSigningAddress ?? settings.activeSigningSafeAddress
+	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : getActiveSigningAddress(settings)
 	if ((settings.simulationMode && settings.useSignersAddressAsActiveAddress) || configuredAddress === undefined) return { useConfiguredAddress: false }
 	if (addressBookEntries === undefined) throw new Error('Address-book entries are required to resolve a configured active address.')
 	const modeInput = settings.simulationMode
@@ -48,7 +48,7 @@ async function resolveConfiguredActiveAddress(settings: Settings, signerAccounts
 }
 
 async function getConfiguredActiveAddressBookEntries(settings: Settings) {
-	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.selectedSigningAddress ?? settings.activeSigningSafeAddress
+	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : getActiveSigningAddress(settings)
 	if ((settings.simulationMode && settings.useSignersAddressAsActiveAddress) || configuredAddress === undefined) return undefined
 	return await getUserAddressBookEntries()
 }

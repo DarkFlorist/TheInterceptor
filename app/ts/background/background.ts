@@ -1,9 +1,4 @@
-import { getSigningMethodError } from '../signing/backend.js'
-import { isSigningOperation } from '../types/signingMethods.js'
-import { prepareSavedBrowserWalletForwarding } from './browserWalletForwarding.js'
-import { browserSigningRequestAccount } from '../signing/browserWallet.js'
-import { parseDirectSigningTypedData } from '../signing/exactPayload.js'
-import { getSigningWalletBinding } from './storageVariables.js'
+import { resolveSigningRequest } from './signingRequestResolver.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
@@ -98,21 +93,8 @@ async function handleRPCRequest(
 	const maybeParsedRequest = confirmation === undefined
 		? EthereumJsonRpcRequest.safeParse(request)
 		: { success: true as const, value: confirmation.parameters }
-	const binding = activeAddress === undefined ? undefined : await getSigningWalletBinding(activeSafeSigner ?? activeAddress)
-	const directWallet = binding !== undefined && binding.wallet.type !== 'browser'
-	if (!settings.simulationMode && directWallet && request.method === 'eth_signTypedData_v4' && 'params' in request && Array.isArray(request.params) && typeof request.params[1] === 'string') parseDirectSigningTypedData(request.params[1])
-	const forwardToSigner = !settings.simulationMode && !directWallet && !request.usingInterceptorWithoutSigner
-	const getForwardingMessage = async <T extends { readonly method: string }>(forwardedRequest: T) => {
-		if (!forwardToSigner) throw new Error('Should not forward to signer')
-		if (binding?.wallet.type !== 'browser') return { type: 'forwardToSigner' as const, ...forwardedRequest }
-		const requireSelectedAccount = isSigningOperation(forwardedRequest.method)
-		const fields = await prepareSavedBrowserWalletForwarding(websiteTabConnections, socket, binding, { requireSelectedAccount, requestedAddress: maybeParsedRequest.success ? browserSigningRequestAccount(maybeParsedRequest.value) : undefined })
-		if (fields.error !== undefined) throw new JsonRpcResponseError({ jsonrpc: '2.0', id: request.uniqueRequestIdentifier.requestId, error: fields.error })
-		return { type: 'forwardToSigner' as const, ...forwardedRequest, expectedProviderId: fields.expectedProviderId }
-	}
-
-	const capabilityError = binding === undefined ? undefined : getSigningMethodError(binding.wallet.type, request.method)
-	if (!settings.simulationMode && capabilityError !== undefined) return { type: 'result', method: request.method, error: { code: 4200, message: capabilityError } }
+	const { forwardToSigner, getForwardingMessage, admissionError } = await resolveSigningRequest(websiteTabConnections, socket, request, maybeParsedRequest.success ? maybeParsedRequest.value : undefined, settings, activeAddress, activeSafeSigner, safeSigningMode)
+	if (admissionError !== undefined) return { type: 'result', method: request.method, error: admissionError }
 
 	if (maybeParsedRequest.success === false) {
 		for (const getMethodSpecificReply of RPC_PARSE_FAILURE_HANDLERS) {
@@ -145,7 +127,6 @@ async function handleRPCRequest(
 		}
 	}
 	const parsedRequest = maybeParsedRequest.value
-	if (!settings.simulationMode && isSigningOperation(parsedRequest.method) && binding === undefined && !safeSigningMode && (settings.selectedSigningAddress !== undefined || request.usingInterceptorWithoutSigner)) return { type: 'result', method: request.method, error: { code: 4100, message: 'No signing wallet for this address. Set up signing wallet or switch to simulation.' } }
 
 	const safePolicyReply = getSafeModeRpcPolicyReply({
 		rawRequest: request,

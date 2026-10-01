@@ -1,4 +1,4 @@
-import { getSavedSafeSigningAccount } from './safeSigningAccount.js'
+import { hasPinnedSigningAddress } from './safeSigningAccount.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
@@ -686,12 +686,9 @@ export async function enableSimulationMode(
 ) {
 	const settings = await getSettings()
 	if (settings.simulationMode === params.data) return
-	if (settings.selectedSigningAddress !== undefined || settings.activeSigningSafeAddress !== undefined && await getSavedSafeSigningAccount(settings.activeSigningSafeAddress) !== undefined) {
-		await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, { simulationMode: params.data })
-		return
-	}
+	const useBrowserSigner = params.data ? settings.useSignersAddressAsActiveAddress : !await hasPinnedSigningAddress(settings)
 	// if we are on unsupported chain, force change to a supported one
-	if (settings.useSignersAddressAsActiveAddress || params.data === false) {
+	if (useBrowserSigner) {
 		const tabId = await getLastKnownCurrentTabId()
 		if (tabId !== undefined) await refreshSignerAccountsForTab(websiteTabConnections, tabId, false, signerAccountRefreshOptions)
 		if (tabId !== undefined) sendCallbackToConfirmedSignerOwner(websiteTabConnections, tabId, { method: 'request_signer_chainId', result: [] })

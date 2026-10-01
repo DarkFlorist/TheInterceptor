@@ -1,3 +1,4 @@
+import type { Settings } from '../types/interceptor-messages.js'
 import { doAddressBookChainIdsMatch, type AddressBookEntries, type AddressBookEntry } from '../types/addressBookTypes.js'
 import type { TabState } from '../types/user-interface-types.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from './addressBook.js'
@@ -156,4 +157,8 @@ export function assertActiveAddressSelectionAllowed(address: bigint | 'signer', 
 	throw new Error(simulationMode
 		? 'The selected address is not available for simulation.'
 		: 'The selected address is not available for the current signing wallet.')
+}
+
+export function getActiveSigningAddress(settings: Pick<Settings, 'selectedSigningAddress' | 'activeSigningSafeAddress'>) {
+	return settings.selectedSigningAddress ?? settings.activeSigningSafeAddress
 }

@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { assertActiveAddressSelectionAllowed, getActiveAddressSelection, getDisplayedSigningAddressSelection, getOptimisticActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode, resolveActiveAddressForMode, type SigningAddressSelection } from '../../app/ts/utils/activeAddressSelection.js'
+import { getActiveSigningAddress, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getDisplayedSigningAddressSelection, getOptimisticActiveAddressSelection, getSelectableActiveAddresses, getWalletSelectedAccount, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed, isSignerConnectedForMode, resolveActiveAddressForMode, type SigningAddressSelection } from '../../app/ts/utils/activeAddressSelection.js'
 import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
 import { requestActiveAddressChange } from '../../app/ts/components/activeAddressChange.js'
 import { getActiveAddressEntry } from '../../app/ts/components/subcomponents/address.js'
@@ -336,4 +336,11 @@ describe('active address selection', () => {
 		assert.doesNotMatch(providerMessageHandlersSource, /shouldActivateWalletAccountSelection/u)
 		assert.doesNotMatch(backgroundUtilsSource, /signingAddressPreferences/u)
 	})
+})
+
+
+test('configured signing address prefers an explicit wallet selection over a saved Safe', () => {
+	assert.equal(getActiveSigningAddress({ selectedSigningAddress: EOA_ADDRESS, activeSigningSafeAddress: SAFE_ADDRESS }), EOA_ADDRESS)
+	assert.equal(getActiveSigningAddress({ selectedSigningAddress: undefined, activeSigningSafeAddress: SAFE_ADDRESS }), SAFE_ADDRESS)
+	assert.equal(getActiveSigningAddress({ selectedSigningAddress: undefined, activeSigningSafeAddress: undefined }), undefined)
 })

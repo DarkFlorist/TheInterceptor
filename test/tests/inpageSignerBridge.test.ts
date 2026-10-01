@@ -337,11 +337,13 @@ describe('inpage signer bridge', () => {
 			await assert.rejects(request(), (error: unknown) => isRecord(error) && error.code === 4100)
 			assert.equal(signingCalls, 1)
 			expectedProviderId = 'eip6963:io.metamask'
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...info, uuid: '33333333-3333-4333-8333-333333333333' }, provider: originalProvider } })
+			assert.equal(await request(), 'test-signature')
 			const duplicate = { request: async () => undefined, on: () => duplicate }
 			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...info, uuid: '22222222-2222-4222-8222-222222222222', rdns: 'IO.METAMASK' }, provider: duplicate } })
 			await waitFor(() => identities.some((identity) => isRecord(identity) && identity.ambiguous === true))
 			await assert.rejects(request(), (error: unknown) => isRecord(error) && error.code === 4100)
-			assert.equal(signingCalls, 1)
+			assert.equal(signingCalls, 2)
 		})
 	})
 
