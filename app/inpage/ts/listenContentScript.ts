@@ -272,6 +272,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 	}
 
 	globalThis.addEventListener('message', (messageEvent: MessageEvent<unknown>) => {
+		// Native postMessage delivery is trusted; dispatchEvent(new MessageEvent(...)) is not. This rejects synthetic handshakes, not page senders: endpoint secrecy also relies on document-start ordering and accepting only the first port.
 		if (
 			messageEvent.source !== window
 			|| !messageEvent.isTrusted

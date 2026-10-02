@@ -1,6 +1,8 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { replyToInterceptedRequest, replyToInterceptedRequestAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBack, sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBackToPort } from '../../app/ts/background/messageSending.js'
+import { replyToInterceptedRequest, replyToInterceptedRequestOnPort, replyToInterceptedRequestAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBack, sendSubscriptionReplyOrCallBackAfterManifestV2Reconnect, sendSubscriptionReplyOrCallBackToPort } from '../../app/ts/background/messageSending.js'
+import { receiveBridgeRequest } from '../../app/ts/background/bridgeRequestDelivery.js'
+import { METAMASK_ERROR_NOT_AUTHORIZED } from '../../app/ts/utils/constants.js'
 import { websiteSocketToString } from '../../app/ts/background/backgroundUtils.js'
 
 function installBrowserMock() {
@@ -276,4 +278,27 @@ describe('background messageSending port lifecycle', () => {
 			console.warn = originalWarn
 		}
 	})
+})
+
+test('unsupported-origin ports use shared request validation, replay tracking and terminal replies without registration', () => {
+	installBrowserMock()
+	const socket = { tabId: 1, connectionName: 0n }
+	const watermarks = new Map<string, number>()
+	const messages: unknown[] = []
+	const port = createPort((message) => { messages.push(message) })
+	const payload = { data: { interceptorRequest: true, method: 'eth_requestAccounts', usingInterceptorWithoutSigner: true, requestId: 7 } }
+	const request = receiveBridgeRequest(watermarks, socket, port, payload)
+	assert.ok(request !== undefined)
+	const reply = { type: 'result' as const, method: request.method, uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: { code: METAMASK_ERROR_NOT_AUTHORIZED, message: 'Unsupported origin' } }
+	assert.equal(replyToInterceptedRequestOnPort(port, reply), true)
+	assert.equal(receiveBridgeRequest(watermarks, socket, port, payload), undefined)
+	assert.deepEqual(messages, [
+		{ type: 'interceptor_bridge_acknowledgement', requestId: 7 },
+		{ type: 'result', method: request.method, error: reply.error, interceptorApproved: true, bridgeRequestSettled: true, requestId: 7 },
+		{ type: 'interceptor_bridge_acknowledgement', requestId: 7 },
+	])
+	assert.throws(() => receiveBridgeRequest(watermarks, socket, port, { data: { ...payload.data, requestId: 'invalid' } }))
+	assert.equal(messages.length, 3)
+	assert.equal(replyToInterceptedRequestOnPort(createPort(() => { throw new Error('Attempting to use a disconnected port object') }), reply), false)
+	assert.throws(() => replyToInterceptedRequestOnPort(createPort(() => { throw new Error('Unexpected transport failure') }), reply), /Unexpected transport failure/)
 })

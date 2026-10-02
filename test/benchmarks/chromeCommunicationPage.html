@@ -2,6 +2,14 @@
 <html lang="en">
 	<head>
 		<script>
+			// Verify actual browser delivery semantics independently of the private handshake, which page listeners cannot observe.
+			globalThis.__postMessageSemantics = {}
+			addEventListener('message', (event) => {
+				if (event.data === 'native-trust-probe') globalThis.__postMessageSemantics.native = { trusted: event.isTrusted, sameWindow: event.source === window }
+				if (event.data === 'synthetic-trust-probe') globalThis.__postMessageSemantics.synthetic = { trusted: event.isTrusted, sameWindow: event.source === window }
+			})
+			dispatchEvent(new MessageEvent('message', { data: 'synthetic-trust-probe', source: window }))
+			postMessage('native-trust-probe', '*')
 			// These page-world listeners must never obtain the extension's private MessagePort.
 			globalThis.__bridgeSecurity = { capturedPorts: 0, interceptedSends: 0, interceptedReplies: 0, replacementReplies: 0 }
 			const captureBridge = (event) => {

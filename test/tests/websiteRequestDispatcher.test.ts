@@ -19,7 +19,7 @@ test('saturated page requests cannot block the signer reply that completes them'
 		[m.websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 	} }]])
 	const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
-	const dispatch = createWebsiteRequestDispatcher({ maxPendingRequestsPerOrigin: 40 })
+	const dispatch = createWebsiteRequestDispatcher(m.isInternalProviderCallback, { maxPendingRequestsPerOrigin: 40 })
 	const refuse = async () => { throw new Error('Unexpected request capacity rejection') }
 	const requests = Array.from({ length: 40 }, (_, index) => {
 		const accountRequest = { ...request, uniqueRequestIdentifier: { requestId: index + 1, requestSocket: socket } }
@@ -33,7 +33,9 @@ test('saturated page requests cannot block the signer reply that completes them'
 })
 
 test('shares origin capacity across connections while preserving room for another origin', async () => {
-	const dispatch = createWebsiteRequestDispatcher({ maxPendingRequests: 2, maxPendingRequestsPerOrigin: 1 })
+	installBrowserMock()
+	const m = await loadModules()
+	const dispatch = createWebsiteRequestDispatcher(m.isInternalProviderCallback, { maxPendingRequests: 2, maxPendingRequestsPerOrigin: 1 })
 	const origin = 'https://busy.example'
 	let release: () => void = () => undefined
 	const pending = dispatch(origin, request, async () => await new Promise<void>((resolve) => { release = resolve }), async () => { throw new Error('Unexpected refusal') })
@@ -49,7 +51,9 @@ test('shares origin capacity across connections while preserving room for anothe
 })
 
 test('bounds aggregate work across many frames and origins while allowing completion callbacks', async () => {
-	const dispatch = createWebsiteRequestDispatcher()
+	installBrowserMock()
+	const m = await loadModules()
+	const dispatch = createWebsiteRequestDispatcher(m.isInternalProviderCallback)
 	const releases: (() => void)[] = []
 	const pending: Promise<string>[] = []
 	let running = 0
@@ -64,7 +68,12 @@ test('bounds aggregate work across many frames and origins while allowing comple
 	}
 	assert.equal(running, 40)
 	assert.equal(refused, 60)
-	assert.equal(await dispatch('https://site0.example', { ...request, method: 'eth_accounts_reply', interceptorInternalRequest: true }, async () => 'callback', async () => 'busy'), 'callback')
+	for (const method of ['eth_accounts_reply', 'signer_reply', 'signer_chainChanged', 'connected_to_signer', 'wallet_switchEthereumChain_reply']) {
+		assert.equal(await dispatch('https://site0.example', { ...request, method, interceptorInternalRequest: true }, async () => 'callback', async () => 'busy'), 'callback')
+		assert.equal(await dispatch('https://site0.example', { ...request, method }, async () => 'callback', async () => 'busy'), 'busy')
+	}
+	// This is an outgoing notification in the reply schema, not a registered incoming callback.
+	assert.equal(await dispatch('https://site0.example', { ...request, method: 'signer_connection_status_changed', interceptorInternalRequest: true }, async () => 'callback', async () => 'busy'), 'busy')
 	for (const release of releases) release()
 	await Promise.all(pending)
 	assert.equal(await dispatch('https://site0.example', request, async () => 'ran', async () => 'busy'), 'ran')

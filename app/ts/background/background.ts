@@ -45,17 +45,7 @@ if (initializeWatchAssetWindowListeners()) {
 
 const RPC_PARSE_FAILURE_HANDLERS = [getWatchAssetRpcParseFailureReply, getWalletGetCapabilitiesParseFailureReply]
 const JSON_RPC_METHOD_NOT_FOUND = -32601
-const INTERNAL_PROVIDER_METHODS = [
-	'connected_to_signer',
-	'eth_accounts_reply',
-	'InterceptorError',
-	'safe_apps_request',
-	'signer_chainChanged',
-	'signer_reply',
-	'wallet_switchEthereumChain_reply',
-] as const
-
-const isInternalProviderMethod = (method: string) => INTERNAL_PROVIDER_METHODS.some((internalMethod) => internalMethod === method)
+const isInternalProviderMethod = (method: string) => isProviderMethod(method) || method === 'InterceptorError' || method === 'safe_apps_request'
 
 async function handleRPCRequest(
 	simulationServicesOwner: SimulationServicesOwner,
@@ -229,6 +219,11 @@ const providerHandlers = {
 
 function isProviderMethod(method: string): method is keyof typeof providerHandlers {
 	return hasOwnKey(providerHandlers, method)
+}
+
+// Only registered incoming signer callbacks can release pending work. Reply schemas also contain outgoing notifications and are not a request-method registry.
+export function isInternalProviderCallback(request: InterceptedRequest) {
+	return request.interceptorInternalRequest === true && isProviderMethod(request.method)
 }
 
 function getProviderHandler(method: string) {
