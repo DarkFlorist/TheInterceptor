@@ -2,7 +2,7 @@ import { assertPrivateProviderBridge, closeTarget, connectTarget, createTargetPa
 import { startChromeCommunicationPageServer } from './chromeCommunicationPageServer.js'
 import type { CdpConnection } from './chromeHarness.js'
 import { authorization as eip7702Authorization, Transaction } from 'micro-eth-signer'
-import { getManifestV3ExcludeMatches } from '../../app/ts/utils/contentScriptsUpdating.js'
+import { getManifestV3ExcludeMatches } from '../../app/ts/utils/contentScriptExclusions.js'
 
 type CommunicationPageState = {
 	phase: 'loading' | 'provider-ready' | 'requesting-access' | 'access-granted' | 'error'
@@ -166,6 +166,8 @@ async function main() {
 
 			await waitForCommunicationPagePhase(pageConnection, 'access-granted', 30_000)
 			await assertPrivateProviderBridge(pageConnection)
+			const readBurst = await pageConnection.evaluate<unknown[]>(`Promise.all(Array.from({ length: 64 }, () => ethereum.request({ method: 'eth_chainId' })))`)
+			if (readBurst.length !== 64 || readBurst.some((chainId) => chainId !== '0x1')) throw new Error('Concurrent page-load reads did not all succeed')
 			const accessGrantedState = await getCommunicationPageState(pageConnection)
 			if (accessGrantedState?.connectEvents !== 0) throw new Error(`Account authorization emitted ${ accessGrantedState?.connectEvents ?? 'an unknown number of' } connect events`)
 			if (accessGrantedState.accountsChangedEvents !== 1) throw new Error(`Account authorization emitted ${ accessGrantedState.accountsChangedEvents } accountsChanged events instead of one`)

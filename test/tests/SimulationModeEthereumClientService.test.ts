@@ -1,3 +1,5 @@
+import { getTransactionProtectorContext } from '../../app/ts/background/transactionProtectorContext.js'
+import { feeOops } from '../../app/ts/simulation/protectors/feeOops.js'
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
 import { authorization as eip7702Authorization } from 'micro-eth-signer'
@@ -1050,6 +1052,11 @@ describe('SimulationModeEthereumClientService', () => {
 			} as const
 			const adjusted = getBaseFeeAdjustedTransactions(parentBlock, [transaction], new Map([[transaction.transactionIdentifier, 0n]]))
 			assert.deepEqual(adjusted, [transaction])
+			const refreshed = adjusted[0]
+			assert.ok(refreshed !== undefined)
+			const context = getTransactionProtectorContext({ transaction: refreshed.signedTransaction, originalRequestParameters: refreshed.originalRequestParameters })
+			assert.equal(context.feeModel, 'legacy')
+			assert.match(await feeOops(context, { getGasPrice: async () => gasPrice / 10n }, undefined) ?? '', /outrageous fee/)
 		})
 
 		test('getBaseFeeAdjustedTransactions adjusts type-7702 fee-market transactions', async () => {

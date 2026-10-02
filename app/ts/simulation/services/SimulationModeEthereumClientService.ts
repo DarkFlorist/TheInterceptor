@@ -21,7 +21,7 @@ import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
 import { getSimulationInputHash } from '../../utils/simulationFingerprint.js'
 import { decodeFunctionOutput, decodeFunctionOutputSafely, encodeFunctionCall } from '../../utils/abiRuntime.js'
 import { Erc20ABI, Erc1155ABI } from '../../utils/abi.js'
-import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
+import { getRequestedTransactionFees, getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 import { createEip1559Or7702Transaction, projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 import { getCodeByteCode } from '../../utils/ethereumByteCodes.js'
 import { createStorageReaderAccountOverride, decodeStorageReaderResult, encodeStorageReaderCall, PRECOMPILE_RESERVED_ADDRESS_MAX } from '../storageReader.js'
@@ -714,8 +714,7 @@ const isFeeMarketPreSimulationTransaction = (transaction: PreSimulationTransacti
 const usesInterceptorFilledMaxFeePerGas = (transaction: PreSimulationTransaction): transaction is FeeMarketPreSimulationTransaction => {
 	return transaction.originalRequestParameters.method === 'eth_sendTransaction'
 		&& isFeeMarketPreSimulationTransaction(transaction)
-		&& transaction.originalRequestParameters.params[0].gasPrice === undefined
-		&& !hasExplicitMaxFeePerGas(transaction.originalRequestParameters.params[0].maxFeePerGas)
+		&& getRequestedTransactionFees(transaction.originalRequestParameters.params[0]).adjustForBaseFee
 }
 
 const getBaseFeeAdjustedTransaction = (
@@ -787,15 +786,15 @@ export const getBaseFeeAdjustmentBalances = async (
 	const conservativeBalances = new Map<bigint, bigint>()
 	for (const transaction of currentBlock.transactions) {
 		if (!usesInterceptorFilledMaxFeePerGas(transaction)) {
-			if (transaction.originalRequestParameters.method === 'eth_sendTransaction'
-				&& isFeeMarketPreSimulationTransaction(transaction)
-				&& hasExplicitMaxFeePerGas(transaction.originalRequestParameters.params[0].maxFeePerGas)
-			) {
+			const explicitMaxFeePerGas = transaction.originalRequestParameters.method === 'eth_sendTransaction'
+				? getRequestedTransactionFees(transaction.originalRequestParameters.params[0]).maxFeePerGas
+				: undefined
+			if (isFeeMarketPreSimulationTransaction(transaction) && hasExplicitMaxFeePerGas(explicitMaxFeePerGas)) {
 				const conservativeBalance = conservativeBalances.get(transaction.signedTransaction.from)
 				if (conservativeBalance !== undefined) {
 					conservativeBalances.set(
 						transaction.signedTransaction.from,
-						subtractMaxGasCost(conservativeBalance, transaction.signedTransaction.value, transaction.signedTransaction.gas, transaction.originalRequestParameters.params[0].maxFeePerGas),
+						subtractMaxGasCost(conservativeBalance, transaction.signedTransaction.value, transaction.signedTransaction.gas, explicitMaxFeePerGas),
 					)
 				}
 			} else {

@@ -35,7 +35,7 @@ test('saturated page requests cannot block the signer reply that completes them'
 test('shares origin capacity across connections while preserving room for another origin', async () => {
 	installBrowserMock()
 	const m = await loadModules()
-	const dispatch = createWebsiteRequestDispatcher(m.isInternalProviderCallback, { maxPendingRequests: 2, maxPendingRequestsPerOrigin: 1 })
+	const dispatch = createWebsiteRequestDispatcher(m.isInternalProviderCallback, { maxPendingRequests: 2, maxPendingRequestsPerOrigin: 1, maxQueuedRequests: 0 })
 	const origin = 'https://busy.example'
 	let release: () => void = () => undefined
 	const pending = dispatch(origin, request, async () => await new Promise<void>((resolve) => { release = resolve }), async () => { throw new Error('Unexpected refusal') })
@@ -53,7 +53,7 @@ test('shares origin capacity across connections while preserving room for anothe
 test('bounds aggregate work across many frames and origins while allowing completion callbacks', async () => {
 	installBrowserMock()
 	const m = await loadModules()
-	const dispatch = createWebsiteRequestDispatcher(m.isInternalProviderCallback)
+	const dispatch = createWebsiteRequestDispatcher(m.isInternalProviderCallback, { maxQueuedRequests: 0 })
 	const releases: (() => void)[] = []
 	const pending: Promise<string>[] = []
 	let running = 0
@@ -77,4 +77,45 @@ test('bounds aggregate work across many frames and origins while allowing comple
 	for (const release of releases) release()
 	await Promise.all(pending)
 	assert.equal(await dispatch('https://site0.example', request, async () => 'ran', async () => 'busy'), 'ran')
+})
+
+test('queues a page-load burst, releases capacity after failure, and does not block another origin behind a busy one', async () => {
+	installBrowserMock()
+	const m = await loadModules()
+	const dispatch = createWebsiteRequestDispatcher(m.isInternalProviderCallback, { maxPendingRequests: 2, maxPendingRequestsPerOrigin: 1 })
+	const started: number[] = []
+	let release = () => undefined
+	const first = dispatch('https://busy.example', request, async () => await new Promise<void>((resolve) => { release = resolve }), async () => { throw new Error('Unexpected refusal') })
+	const burst = Array.from({ length: 64 }, (_, index) => dispatch('https://busy.example', request, async () => {
+		started.push(index)
+		if (index === 0) throw new Error('One read failed')
+		return index
+	}, async () => { throw new Error('Unexpected refusal') }))
+	const results = Promise.allSettled(burst)
+	assert.deepEqual(started, [])
+	assert.equal(await dispatch('https://other.example', request, async () => 'other origin ran', async () => 'refused'), 'other origin ran')
+	release()
+	await first
+	const settled = await results
+	assert.equal(settled[0]?.status, 'rejected')
+	assert.equal(settled.slice(1).every((result) => result.status === 'fulfilled'), true)
+	assert.deepEqual(started, Array.from({ length: 64 }, (_, index) => index))
+})
+
+test('bounds queued backlog across origins and still admits signer callbacks when every limit is full', async () => {
+	installBrowserMock()
+	const m = await loadModules()
+	const dispatch = createWebsiteRequestDispatcher(m.isInternalProviderCallback, { maxPendingRequests: 1, maxPendingRequestsPerOrigin: 1, maxQueuedRequests: 2, maxQueuedRequestsPerOrigin: 1 })
+	let release = () => undefined
+	const origin = 'https://busy.example'
+	const first = dispatch(origin, request, async () => await new Promise<void>((resolve) => { release = resolve }), async () => undefined)
+	const queued = dispatch(origin, request, async () => 'queued', async () => 'refused')
+	assert.equal(await dispatch(origin, request, async () => 'ran', async () => 'refused'), 'refused')
+	const otherQueued = dispatch('https://other.example', request, async () => 'other queued', async () => 'refused')
+	assert.equal(await dispatch('https://third.example', request, async () => 'ran', async () => 'refused'), 'refused')
+	assert.equal(await dispatch(origin, { ...request, method: 'signer_reply', interceptorInternalRequest: true }, async () => 'callback', async () => 'refused'), 'callback')
+	release()
+	await first
+	assert.equal(await queued, 'queued')
+	assert.equal(await otherQueued, 'other queued')
 })

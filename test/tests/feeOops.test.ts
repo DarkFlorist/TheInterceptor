@@ -1,5 +1,7 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
+import { getRequestedTransactionFees } from '../../app/ts/utils/transactionFees.js'
+import { getTransactionProtectorContext } from '../../app/ts/background/transactionProtectorContext.js'
 import { feeOops } from '../../app/ts/simulation/protectors/feeOops.js'
 import type { TransactionProtectorContext } from '../../app/ts/simulation/protectorTypes.js'
 
@@ -50,4 +52,21 @@ test('an external executor paying the fees does not inherit the original legacy 
 	const request: FeeRequest = { ...original, transaction: { ...transactionFields, type: '1559', maxFeePerGas: 0n, maxPriorityFeePerGas: 0n } }
 	const noEstimate = { getGasPrice: async (): Promise<bigint> => { throw new Error('A zero-cost proposal does not need a fee estimate') } }
 	assert.equal(await feeOops(request, noEstimate, undefined), undefined)
+})
+
+test('the shared requested-fee policy preserves zero and explicit prices and supplies protector semantics', async () => {
+	for (const gasPrice of [0n, marketPrice, marketPrice * 10n]) {
+		const details = { gasPrice, maxFeePerGas: 1n, maxPriorityFeePerGas: 2n }
+		const policy = getRequestedTransactionFees(details)
+		assert.equal(policy.adjustForBaseFee, false)
+		assert.equal(policy.maxFeePerGas, gasPrice)
+		assert.equal(policy.maxPriorityFeePerGas, gasPrice)
+		assert.ok(policy.maxFeePerGas !== undefined)
+		const context = getTransactionProtectorContext({ transaction: { ...transactionFields, type: '1559', maxFeePerGas: policy.maxFeePerGas, maxPriorityFeePerGas: policy.maxPriorityFeePerGas }, originalRequestParameters: { method: 'eth_sendTransaction', params: [details] } })
+		assert.equal(context.feeModel, policy.feeModel)
+		assert.equal((await feeOops(context, ethereum, undefined)) !== undefined, gasPrice >= marketPrice * 10n)
+	}
+	assert.equal(getRequestedTransactionFees({}).adjustForBaseFee, true)
+	assert.equal(getRequestedTransactionFees({ maxFeePerGas: 0n }).adjustForBaseFee, false)
+	assert.equal(getRequestedTransactionFees({ maxFeePerGas: marketPrice }).feeModel, 'fee-market')
 })

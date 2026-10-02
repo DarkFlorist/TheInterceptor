@@ -1,10 +1,11 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { createDeferredSignal } from './backgroundEthAccountsTestHarness.js'
 
 type RegisteredScript = { readonly id: string, readonly excludeMatches?: readonly string[] }
 type FirefoxScript = Parameters<typeof browser.contentScripts.register>[0]
 
-function installBrowserMock(options: { registerError?: Error, updateError?: Error, unregisterFailures?: number, registeredContentScriptIds?: readonly string[], manifestVersion?: number } = {}) {
+function installBrowserMock(options: { beforeRegister?: () => Promise<void>, registerError?: Error, updateError?: Error, unregisterFailures?: number, registeredContentScriptIds?: readonly string[], manifestVersion?: number } = {}) {
 	const storageState: Record<string, unknown> = {}
 	const sentMessages: { method?: string }[] = []
 	const registeredContentScripts = new Map<string, RegisteredScript>((options.registeredContentScriptIds ?? []).map((id) => [id, { id }]))
@@ -44,6 +45,7 @@ function installBrowserMock(options: { registerError?: Error, updateError?: Erro
 		scripting: {
 			async getRegisteredContentScripts() { return [...registeredContentScripts.values()] },
 			async registerContentScripts(scripts: readonly RegisteredScript[]) {
+				await options.beforeRegister?.()
 				scriptingOperations.push('register')
 				if (options.registerError !== undefined) throw options.registerError
 				for (const script of scripts) registeredContentScripts.set(script.id, script)
@@ -60,6 +62,7 @@ function installBrowserMock(options: { registerError?: Error, updateError?: Erro
 			},
 		},
 		contentScripts: { async register(script: FirefoxScript) {
+			await options.beforeRegister?.()
 			if (script.excludeMatches?.length === 0) throw new Error('Firefox rejects empty exclusion lists')
 			if (script.excludeGlobs?.length === 0) throw new Error('Firefox rejects empty glob lists')
 			if (options.registerError !== undefined) throw options.registerError
@@ -88,7 +91,7 @@ function installBrowserMock(options: { registerError?: Error, updateError?: Erro
 
 async function loadModules() {
 	return {
-		...await import('../../app/ts/utils/contentScriptsUpdating.js'),
+		...await import('../../app/ts/utils/contentScriptExclusions.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 		...await import('../../app/ts/background/contentScriptRegistration.js'),
 	}
@@ -115,36 +118,36 @@ describe('content script injection strategy', () => {
 	})
 
 	test('registers the Firefox bridge at document start before injecting the provider', async () => {
-		const { firefoxScripts, storageState, getFirefoxUnregisterCalls } = installBrowserMock()
-		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
-		await updateContentScriptInjectionStrategyManifestV2([])
+		const { firefoxScripts, storageState, getFirefoxUnregisterCalls } = installBrowserMock({ manifestVersion: 2 })
+		const { reconcileContentScriptRegistration } = await loadModules()
+		await reconcileContentScriptRegistration()
 		assert.deepEqual(firefoxScripts[0], {
 			matches: ['file://*/*', 'http://*/*', 'https://*/*'], allFrames: true, runAt: 'document_start',
 			js: [{ file: '/vendor/webextension-polyfill/dist/browser-polyfill.js' }, { file: '/inpage/js/listenContentScript.js' }, { file: '/inpage/js/document_start.js' }],
 		})
 		storageState.websiteAccess = [{ website: { websiteOrigin: 'https://disabled.example' }, interceptorDisabled: true }]
-		await updateContentScriptInjectionStrategyManifestV2(['https://disabled.example'])
+		await reconcileContentScriptRegistration()
 		assert.equal(firefoxScripts[1]?.excludeMatches, undefined)
 		assert.deepEqual(firefoxScripts[1]?.excludeGlobs, ['https://disabled.example/*'])
 		assert.equal(getFirefoxUnregisterCalls(), 1)
 	})
 
 	test('propagates Firefox registration failures without removing existing protection', async () => {
-		const previous = installBrowserMock()
-		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
-		await updateContentScriptInjectionStrategyManifestV2([])
-		installBrowserMock({ registerError: new Error('Firefox registration failed') })
-		await assert.rejects(updateContentScriptInjectionStrategyManifestV2([]), /Firefox registration failed/)
+		const previous = installBrowserMock({ manifestVersion: 2 })
+		const { reconcileContentScriptRegistration } = await loadModules()
+		await reconcileContentScriptRegistration()
+		installBrowserMock({ manifestVersion: 2, registerError: new Error('Firefox registration failed') })
+		await assert.rejects(reconcileContentScriptRegistration(), /Firefox registration failed/)
 		assert.equal(previous.getFirefoxUnregisterCalls(), 0)
 	})
 
 	test('Firefox website toggle refreshes exclusions before reloading on disable and re-enable', async () => {
 		const { storageState, firefoxScripts, firefoxOperations } = installBrowserMock({ manifestVersion: 2 })
-		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+		const { reconcileContentScriptRegistration } = await loadModules()
 		const { disableInterceptorForPage } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
 		const { saveCurrentTabId } = await import('../../app/ts/background/storageVariables.js')
 		await saveCurrentTabId(7)
-		await updateContentScriptInjectionStrategyManifestV2([])
+		await reconcileContentScriptRegistration()
 		firefoxOperations.length = 0
 		const website = { websiteOrigin: 'https://toggle.example:8443', icon: undefined, title: undefined }
 		await disableInterceptorForPage(new Map(), website, true)
@@ -235,10 +238,9 @@ describe('content script injection strategy', () => {
 	test('retries failed Firefox removal and leaves only the desired registration active', async () => {
 		const options = { manifestVersion: 2, unregisterFailures: 0 }
 		const { activeFirefoxScripts, firefoxOperations, getFirefoxUnregisterCalls } = installBrowserMock(options)
-		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
-		const { updateWebsiteAccess } = await import('../../app/ts/background/settings.js')
 		const { reconcileContentScriptRegistration } = await loadModules()
-		await updateContentScriptInjectionStrategyManifestV2([])
+		const { updateWebsiteAccess } = await import('../../app/ts/background/settings.js')
+		await reconcileContentScriptRegistration()
 		options.unregisterFailures = 1
 		const website = { websiteOrigin: 'https://cleanup.example', icon: undefined, title: undefined }
 		await updateWebsiteAccess(() => [{ website, addressAccess: [], interceptorDisabled: true }])
@@ -278,15 +280,15 @@ describe('content script injection strategy', () => {
 
 	test('propagates manifest v3 registration failures to the caller', async () => {
 		installBrowserMock({ registerError: new Error('registration failed') })
-		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
-		await assert.rejects(updateContentScriptInjectionStrategyManifestV3([]), /registration failed/)
+		const { reconcileContentScriptRegistration } = await loadModules()
+		await assert.rejects(reconcileContentScriptRegistration(), /registration failed/)
 	})
 
 	test('registers missing scripts, updates existing definitions, and then prunes obsolete registrations', async () => {
 		const { getRegisteredContentScripts, getScriptingOperations, getUnregisteredContentScriptIdBatches } = installBrowserMock({ registeredContentScriptIds: ['inpage', 'obsolete-inpage'] })
-		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
+		const { reconcileContentScriptRegistration } = await loadModules()
 
-		await updateContentScriptInjectionStrategyManifestV3([])
+		await reconcileContentScriptRegistration()
 
 		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2'])
 		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
@@ -299,9 +301,9 @@ describe('content script injection strategy', () => {
 			registeredContentScriptIds: ['inpage', 'inpage2', 'obsolete-inpage'],
 			updateError: new Error('update failed'),
 		})
-		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
+		const { reconcileContentScriptRegistration } = await loadModules()
 
-		await assert.rejects(updateContentScriptInjectionStrategyManifestV3([]), /update failed/)
+		await assert.rejects(reconcileContentScriptRegistration(), /update failed/)
 
 		assert.deepEqual(getScriptingOperations(), ['update'])
 		assert.deepEqual(getUnregisteredContentScriptIdBatches(), [])
@@ -309,3 +311,32 @@ describe('content script injection strategy', () => {
 	})
 
 })
+
+for (const manifestVersion of [2, 3]) {
+	test(`MV${ manifestVersion } reconciliation serializes browser work and reads the latest persisted exclusions after waiting`, async () => {
+		const started = createDeferredSignal()
+		const release = createDeferredSignal()
+		let registrationCalls = 0
+		const mock = installBrowserMock({ manifestVersion, beforeRegister: async () => {
+			registrationCalls += 1
+			if (registrationCalls !== 1) return
+			started.resolve()
+			await release.promise
+		} })
+		const { reconcileContentScriptRegistration } = await loadModules()
+		const first = reconcileContentScriptRegistration()
+		await started.promise
+		const second = reconcileContentScriptRegistration()
+		mock.storageState.websiteAccess = [{ website: { websiteOrigin: 'https://latest.example', icon: undefined, title: undefined }, addressAccess: [], interceptorDisabled: true }]
+		await Promise.resolve()
+		assert.equal(registrationCalls, 1)
+		release.resolve()
+		await Promise.all([first, second])
+		if (manifestVersion === 2) {
+			assert.equal(mock.activeFirefoxScripts.size, 1)
+			assert.deepEqual(mock.firefoxScripts.at(-1)?.excludeGlobs, ['https://latest.example/*'])
+		} else {
+			assert.equal(mock.getRegisteredContentScripts().every((script) => script.excludeMatches?.[0] === 'https://latest.example:443/*'), true)
+		}
+	})
+}

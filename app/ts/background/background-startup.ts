@@ -177,7 +177,7 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 				// A connected port outlives RPC switches; each request stage selects services from the owner.
 				await dispatchWebsiteRequest(websiteOrigin, request,
 					async () => await handleInterceptedRequest(port, websiteOrigin, websitePromise, simulationServicesOwner, socket, request, websiteTabConnections, rpcConnectionStatusPublisher.publishRpcConnectionStatus),
-					async () => replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: { code: -32005, message: 'Too many pending requests. Wait for an existing request to finish.' } }),
+					async () => replyToInterceptedRequest(websiteTabConnections, { type: 'result', method: request.method, uniqueRequestIdentifier: request.uniqueRequestIdentifier, error: { code: -32005, message: 'The request backlog is full. Wait for existing requests to finish.' } }),
 				)
 			})
 		},

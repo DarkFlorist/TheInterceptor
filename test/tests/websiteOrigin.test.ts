@@ -76,3 +76,46 @@ test('canonical permissions take precedence over URL aliases regardless of stora
 	assert.deepEqual(migrateWebsiteAccessOrigins([alias, canonical]), [canonical])
 	assert.deepEqual(migrateWebsiteAccessOrigins([canonical, alias]), [canonical])
 })
+
+test('merges URL aliases without losing distinct grants or protection settings', () => {
+	const first = { website: { websiteOrigin: 'https://example.test:443/path', icon: undefined, title: 'Example' }, access: true, addressAccess: [{ address: 1n, access: true }], interceptorDisabled: true }
+	const second = { website: { websiteOrigin: 'https://example.test/?ref=1', icon: undefined, title: 'Example' }, addressAccess: [{ address: 2n, access: true }], declarativeNetRequestBlockMode: 'block-all' as const }
+	for (const entries of [[first, second], [second, first]]) {
+		const migrated = migrateWebsiteAccessOrigins(entries)
+		assert.equal(migrated.length, 1)
+		assert.equal(migrated[0]?.website.websiteOrigin, 'https://example.test')
+		assert.equal(migrated[0]?.access, true)
+		assert.deepEqual(new Map(migrated[0]?.addressAccess?.map((entry) => [entry.address, entry.access])), new Map([[1n, true], [2n, true]]))
+		assert.equal(migrated[0]?.interceptorDisabled, true)
+		assert.equal(migrated[0]?.declarativeNetRequestBlockMode, 'block-all')
+		assert.equal(migrateWebsiteAccessOrigins(migrated), migrated)
+	}
+})
+
+test('alias conflicts preserve denials, enabled interception, and network blocking regardless of order', () => {
+	const grant = { website: { websiteOrigin: 'https://example.test/grant', icon: undefined, title: undefined }, access: true, addressAccess: [{ address: 1n, access: true }], interceptorDisabled: true, declarativeNetRequestBlockMode: 'disabled' as const }
+	const denial = { ...grant, website: { ...grant.website, websiteOrigin: 'https://example.test/deny' }, access: false, addressAccess: [{ address: 1n, access: false }], interceptorDisabled: false, declarativeNetRequestBlockMode: 'block-all' as const }
+	for (const entries of [[grant, denial], [denial, grant]]) {
+		assert.deepEqual(migrateWebsiteAccessOrigins(entries), [{ ...denial, website: { ...denial.website, websiteOrigin: 'https://example.test' } }])
+	}
+})
+
+test('canonical duplicates also merge safely when mixed with migrated aliases', () => {
+	const first = { website: { websiteOrigin: 'https://example.test', icon: undefined, title: undefined }, addressAccess: [{ address: 1n, access: true }] }
+	const second = { ...first, addressAccess: [{ address: 2n, access: true }] }
+	const unrelatedAlias = { ...first, website: { ...first.website, websiteOrigin: 'https://other.test/path' } }
+	for (const entries of [[first, second], [first, second, unrelatedAlias]]) {
+		const migrated = migrateWebsiteAccessOrigins(entries)
+		assert.deepEqual(migrated[0]?.addressAccess, [{ address: 1n, access: true }, { address: 2n, access: true }])
+		assert.equal(migrateWebsiteAccessOrigins(migrated), migrated)
+	}
+})
+
+test('merging imported aliases cannot turn a duplicate account denial into a grant', () => {
+	const first = { website: { websiteOrigin: 'https://example.test/path', icon: undefined, title: undefined }, addressAccess: [{ address: 1n, access: false }, { address: 1n, access: true }] }
+	const second = { ...first, website: { ...first.website, websiteOrigin: 'https://example.test/?ref=1' }, addressAccess: [{ address: 2n, access: true }] }
+	for (const entries of [[first, second], [second, first]]) {
+		const migrated = migrateWebsiteAccessOrigins(entries)
+		assert.equal(migrated[0]?.addressAccess?.find((entry) => entry.address === 1n)?.access, false)
+	}
+})

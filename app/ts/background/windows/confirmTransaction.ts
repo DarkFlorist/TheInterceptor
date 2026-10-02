@@ -34,7 +34,7 @@ import { updatePopupVisualisationIfNeeded } from '../popupVisualisationUpdater.j
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../../utils/popupPerformance.js'
 import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
 import { closePopupOrTabById, getPopupOrTabById, openPopupOrTab, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
-import { getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
+import { getRequestedTransactionFees, getDesiredMaxFeePerGasForBaseFee, getTransactionFeesForBaseFee, hasExplicitMaxFeePerGas } from '../../utils/transactionFees.js'
 import { parseSendRawTransaction } from '../../utils/sendRawTransactionParsing.js'
 import { createEip1559Or7702Transaction } from '../../utils/eip7702Authorization.js'
 import { identifyAddress } from '../metadataUtils.js'
@@ -564,9 +564,7 @@ export const formEthSendTransaction = async(ethereumClientService: EthereumClien
 	if (parentBlock === null) throw new Error('The latest block is null')
 	if (parentBlock !== undefined && parentBlock.baseFeePerGas === undefined) throw new Error(CANNOT_SIMULATE_OFF_LEGACY_BLOCK)
 	const parentBaseFeePerGas = parentBlock?.baseFeePerGas
-	// A legacy gas price has the same effective cost when both fee caps equal that price. Preserve it through estimation, review, and stack refreshes.
-	const explicitMaxFeePerGas = transactionDetails.gasPrice ?? transactionDetails.maxFeePerGas
-	const requestedMaxPriorityFeePerGas = transactionDetails.gasPrice ?? transactionDetails.maxPriorityFeePerGas ?? 10n**8n // 0.1 nanoeth/gas
+	const { maxFeePerGas: explicitMaxFeePerGas, maxPriorityFeePerGas: requestedMaxPriorityFeePerGas } = getRequestedTransactionFees(transactionDetails)
 	const maxPriorityFeePerGas = gasPayment === 'external-executor' ? 0n : requestedMaxPriorityFeePerGas
 	const value = transactionDetails.value !== undefined  ? transactionDetails.value : 0n
 	const getFeePerGas = async (gasLimit: bigint) => {
