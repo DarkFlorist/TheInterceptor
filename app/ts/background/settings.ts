@@ -1,4 +1,7 @@
-import { CURRENT_EXPORTED_SETTINGS_VERSION, type ActiveAddress, type ExportedSettings, type Page } from '../types/exportedSettingsTypes.js'
+import { ContentScriptHostingSettings, contentScriptRegistrationSettingsKeys, type ContentScriptConfiguration } from '../types/contentScriptSettings.js'
+import { getChromeSiteMatchPatterns } from '../utils/chromeMatchPatterns.js'
+import { getSafeAppsHostMatchPatterns } from '../utils/safeAppsHosting.js'
+import { createSettingsExport, normalizeImportedSettings, type ExportedSettings, type Page } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
@@ -7,7 +10,6 @@ import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
 import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
-import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
@@ -15,6 +17,8 @@ import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/webs
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
 import { DEFAULT_SAFE_APPS_HOST_ORIGINS, SafeAppsHostOrigins } from '../types/safeAppsHosting.js'
 import { hasOwnKey } from '../utils/typescript.js'
+
+export { contentScriptRegistrationSettingsKeys }
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -103,8 +107,30 @@ export async function getSettings() : Promise<Settings> {
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
 
-export function getInterceptorDisabledSites(settings: Settings): string[] {
+export function getInterceptorDisabledSites(settings: Pick<Settings, 'websiteAccess'>): string[] {
 	return settings.websiteAccess.filter((site) => site.interceptorDisabled === true).map((site) => site.website.websiteOrigin)
+}
+
+// Read once for both the cache identity and desired registrations; validate hosting separately so its corruption cannot disable the ordinary provider.
+export async function getContentScriptConfiguration(): Promise<ContentScriptConfiguration> {
+	const storedItems = await browser.storage.local.get(contentScriptRegistrationSettingsKeys)
+	const websiteAccess = sanitizeWebsiteAccess(await getParsedStorageValueOrDefaultFromItems(storedItems, 'websiteAccess', []))
+	return {
+		cacheKey: JSON.stringify(storedItems),
+		excludeMatches: getChromeSiteMatchPatterns(getInterceptorDisabledSites({ websiteAccess })),
+		hosting: getHostingConfiguration(storedItems),
+	}
+}
+
+function getHostingConfiguration(storedItems: unknown): ContentScriptConfiguration['hosting'] {
+	const compatibility = ContentScriptHostingSettings.pick('safeAppsCompatibilityMode').safeParse(storedItems)
+	if (!compatibility.success) return { error: new Error(compatibility.message) }
+	// Unselected hosting data is inert while compatibility is disabled, just as in the ordinary settings getters.
+	if (compatibility.value.safeAppsCompatibilityMode !== true) return { matches: [], origins: DEFAULT_SAFE_APPS_HOST_ORIGINS }
+	const hosting = ContentScriptHostingSettings.safeParse(storedItems)
+	if (!hosting.success) return { error: new Error(hosting.message) }
+	const origins = hosting.value.safeAppsHostOrigins ?? DEFAULT_SAFE_APPS_HOST_ORIGINS
+	return { matches: getSafeAppsHostMatchPatterns(origins), origins }
 }
 
 export const setPage = async (openedPageV2: Page) => await browserStorageLocalSet({ openedPageV2 })
@@ -265,66 +291,57 @@ export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boo
 export const getSafeAppsHostOrigins = async () => (await browserStorageLocalGet('safeAppsHostOrigins'))?.safeAppsHostOrigins ?? DEFAULT_SAFE_APPS_HOST_ORIGINS
 export const setSafeAppsHostOrigins = async (origins: readonly string[]) => await browserStorageLocalSet({ safeAppsHostOrigins: SafeAppsHostOrigins.parse(origins) })
 
-// Keep registration invalidation beside the settings that decide whether a site is hosted.
-export const contentScriptRegistrationSettingsKeys = ['safeAppsCompatibilityMode', 'safeAppsHostOrigins', 'websiteAccess'] as const
 export async function getEnabledSafeAppsHostOrigins() {
-	return await getSafeAppsCompatibilityMode() ? await getSafeAppsHostOrigins() : DEFAULT_SAFE_APPS_HOST_ORIGINS
+	const hosting = getHostingConfiguration(await browser.storage.local.get(Object.keys(ContentScriptHostingSettings.fields)))
+	if ('error' in hosting) throw hosting.error
+	return hosting.origins
 }
 
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
 	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
 	const [settings, signingAddressPreferences] = await Promise.all([getSettings(), getSigningAddressPreferences()])
-	return {
-		name: 'InterceptorSettingsAndAddressBook' as const,
-		version: CURRENT_EXPORTED_SETTINGS_VERSION,
-		exportedDate: exportDate,
-		settings: {
-			activeSimulationAddress: settings.activeSimulationAddress,
-			activeSigningSafeAddress: settings.activeSigningSafeAddress,
-			signingAddressPreferences,
-			openedPage: settings.openedPage,
-			useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
-			websiteAccess: settings.websiteAccess,
-			rpcNetwork: settings.activeRpcNetwork,
-			simulationMode: settings.simulationMode,
-			addressBookEntries: await getUserAddressBookEntries(),
-			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
-			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
-			safeAppsCompatibilityMode: await getSafeAppsCompatibilityMode(),
-			safeAppsHostOrigins: await getSafeAppsHostOrigins(),
-		}
-	}
+	return createSettingsExport({
+		activeSimulationAddress: settings.activeSimulationAddress,
+		activeSigningSafeAddress: settings.activeSigningSafeAddress,
+		signingAddressPreferences,
+		openedPage: settings.openedPage,
+		useSignersAddressAsActiveAddress: settings.useSignersAddressAsActiveAddress,
+		websiteAccess: settings.websiteAccess,
+		rpcNetwork: settings.activeRpcNetwork,
+		simulationMode: settings.simulationMode,
+		addressBookEntries: await getUserAddressBookEntries(),
+		useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
+		metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
+		safeAppsCompatibilityMode: await getSafeAppsCompatibilityMode(),
+		safeAppsHostOrigins: await getSafeAppsHostOrigins(),
+	}, exportDate)
 }
 
 export async function importSettingsAndAddressBook(exportedSettings: ExportedSettings) {
-	// Pre-1.5 exports contain the legacy address shared by signing and simulation. Apply the same explicit default reset as startup rather than heuristically assigning ambiguous state to either independent mode.
 	const defaultActiveAddress = defaultActiveAddresses[0]?.address
-	if (defaultActiveAddress === undefined) throw new Error('Default active address was missing')
-	const importedSettings = exportedSettings.settings
-	if ('openedPage' in importedSettings) await setPage(importedSettings.openedPage)
-	// Safe selection and per-signer preferences resolve through the address book. Make imported entries available before publishing that dependent signing state.
-	if ('addressBookEntries' in importedSettings) await updateUserAddressBookEntries(() => importedSettings.addressBookEntries)
-	const hasIndependentSigningAddress = 'activeSigningSafeAddress' in importedSettings
+	const defaultRpcNetwork = defaultRpcs[0]
+	if (defaultActiveAddress === undefined || defaultRpcNetwork === undefined) throw new Error('Default active address or RPC was missing')
+	const settings = normalizeImportedSettings(exportedSettings, { activeSimulationAddress: defaultActiveAddress, rpcNetwork: defaultRpcNetwork })
+	if (settings.openedPage !== undefined) await setPage(settings.openedPage)
+	// Safe selection and per-signer preferences resolve through the address book; publish imported entries first.
+	const addressBookEntries = settings.addressBookEntries
+	if (addressBookEntries !== undefined) await updateUserAddressBookEntries(() => addressBookEntries)
 	await replaceModeAndSigningPreferencesForImport({
-		simulationMode: importedSettings.simulationMode,
-		rpcNetwork: 'rpcNetwork' in importedSettings ? importedSettings.rpcNetwork : defaultRpcs[0],
-		activeSimulationAddress: hasIndependentSigningAddress ? importedSettings.activeSimulationAddress : defaultActiveAddress,
+		simulationMode: settings.simulationMode,
+		rpcNetwork: settings.rpcNetwork,
+		activeSimulationAddress: settings.activeSimulationAddress,
 		activeSigningAddress: undefined,
-		activeSigningSafeAddress: hasIndependentSigningAddress ? importedSettings.activeSigningSafeAddress : undefined,
-	}, hasIndependentSigningAddress ? importedSettings.signingAddressPreferences : [])
-	await setUseSignersAddressAsActiveAddress(importedSettings.useSignersAddressAsActiveAddress)
-	await updateWebsiteAccess(() => importedSettings.websiteAccess)
-	await setUseTabsInsteadOfPopup(importedSettings.useTabsInsteadOfPopup)
-	if ('metamaskCompatibilityMode' in importedSettings) await setMetamaskCompatibilityMode(importedSettings.metamaskCompatibilityMode)
-	await setSafeAppsHostOrigins('safeAppsHostOrigins' in importedSettings ? importedSettings.safeAppsHostOrigins : DEFAULT_SAFE_APPS_HOST_ORIGINS)
-	await setSafeAppsCompatibilityMode('safeAppsCompatibilityMode' in importedSettings ? importedSettings.safeAppsCompatibilityMode : false)
-	if (!('addressBookEntries' in importedSettings)) {
-		await updateUserAddressBookEntries((previousEntries) => {
-			const convertActiveAddressToAddressBookEntry = (info: ActiveAddress): AddressBookEntry => ({ ...info, type: 'contact' as const, useAsActiveAddress: true, entrySource: 'User' as const })
-			return getUniqueItemsByProperties(previousEntries.concat(importedSettings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(importedSettings.contacts ?? []), ['address'])
-		})
-	}
+		activeSigningSafeAddress: settings.activeSigningSafeAddress,
+	}, settings.signingAddressPreferences)
+	await setUseSignersAddressAsActiveAddress(settings.useSignersAddressAsActiveAddress)
+	await updateWebsiteAccess(() => settings.websiteAccess)
+	await setUseTabsInsteadOfPopup(settings.useTabsInsteadOfPopup)
+	if (settings.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(settings.metamaskCompatibilityMode)
+	await setSafeAppsHostOrigins(settings.safeAppsHostOrigins)
+	await setSafeAppsCompatibilityMode(settings.safeAppsCompatibilityMode)
+	const legacyEntries = settings.legacyAddressBookEntries
+	if (legacyEntries !== undefined) await updateUserAddressBookEntries((previousEntries) => getUniqueItemsByProperties(previousEntries.concat(legacyEntries), ['address']))
 }
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })

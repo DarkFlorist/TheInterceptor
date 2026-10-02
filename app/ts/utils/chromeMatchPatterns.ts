@@ -16,3 +16,8 @@ export function getChromeMatchPatterns(value: string, intent: 'exact-origin' | '
 	const schemes = hasExplicitScheme ? [url.protocol] : url.port === '' ? ['*:'] : ['http:', 'https:']
 	return schemes.map((scheme) => `${ scheme }//${ host }/*`)
 }
+
+
+export function getChromeSiteMatchPatterns(origins: readonly string[]) {
+	return [...new Set(origins.flatMap((origin) => getChromeMatchPatterns(origin, 'site-with-subdomains')))]
+}

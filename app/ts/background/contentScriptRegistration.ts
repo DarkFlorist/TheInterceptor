@@ -1,6 +1,6 @@
-import { contentScriptRegistrationSettingsKeys, getEnabledSafeAppsHostOrigins, getInterceptorDisabledSites, getSettings } from './settings.js'
+import { contentScriptRegistrationSettingsKeys, getContentScriptConfiguration, getInterceptorDisabledSites, getSettings } from './settings.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from '../utils/requests.js'
-import { getChromeMatchPatterns } from '../utils/chromeMatchPatterns.js'
+import type { ContentScriptConfiguration } from '../types/contentScriptSettings.js'
 import { getSafeAppsHostMatchPatterns } from '../utils/safeAppsHosting.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from '../utils/errors.js'
 
@@ -11,14 +11,6 @@ const otherExtensionInjectionTargetErrorMessage = 'Cannot access a chrome-extens
 const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cannot be scripted.'
 const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
 const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
-
-export function getManifestV3ExcludeMatches(origins: readonly string[]) {
-	const patterns = new Set<string>()
-	for (const origin of origins) {
-		for (const pattern of getChromeMatchPatterns(origin, 'site-with-subdomains')) patterns.add(pattern)
-	}
-	return [...patterns]
-}
 
 type ContentScriptRegistrationOutcome = 'applied' | 'base-provider-recovered'
 
@@ -59,11 +51,12 @@ async function reconcileContentScripts(contentScripts: FixedContentScript[]) {
 	if (obsoleteContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
 }
 
-const applyContentScriptInjectionStrategyManifestV3 = async (): Promise<ContentScriptRegistrationOutcome> => {
-	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(await getSettings()))
+const applyContentScriptInjectionStrategyManifestV3 = async (configuration: ContentScriptConfiguration): Promise<ContentScriptRegistrationOutcome> => {
+	const { excludeMatches } = configuration
 	const baseContentScripts = getBaseContentScripts(excludeMatches)
 	try {
-		const safeAppsHostMatches = getSafeAppsHostMatchPatterns(await getEnabledSafeAppsHostOrigins())
+		if ('error' in configuration.hosting) throw configuration.hosting.error
+		const safeAppsHostMatches = configuration.hosting.matches
 		const contentScripts = getBaseContentScripts(excludeMatches, safeAppsHostMatches)
 		if (safeAppsHostMatches.length > 0) contentScripts.push({
 			id: 'safe-apps-host',
@@ -100,11 +93,12 @@ export function createContentScriptRegistrationService() {
 	const queueUpdate = (retryRecoveredAttempt?: number) => {
 		const nextUpdate = previousUpdate.then(async () => {
 			// Read inside the queue so subsequent writes cannot leave the last requested update applying stale state.
-			const settingsKey = JSON.stringify(await browser.storage.local.get([...contentScriptRegistrationSettingsKeys]))
+			const configuration = await getContentScriptConfiguration()
+			const settingsKey = configuration.cacheKey
 			// An explicit retry can reapply the failure it observed, but must not repeat a newer queued attempt.
 			const retryObservedFailure = appliedOutcome === 'base-provider-recovered' && retryRecoveredAttempt === appliedAttempt
 			if (settingsKey === appliedSettingsKey && !retryObservedFailure) return appliedOutcome
-			const outcome = await applyContentScriptInjectionStrategyManifestV3()
+			const outcome = await applyContentScriptInjectionStrategyManifestV3(configuration)
 			appliedAttempt += 1
 			appliedSettingsKey = settingsKey
 			appliedOutcome = outcome
@@ -113,7 +107,8 @@ export function createContentScriptRegistrationService() {
 		previousUpdate = nextUpdate.then(() => undefined, () => undefined)
 		return nextUpdate
 	}
-	const update = () => queueUpdate()
+	// Ordinary reloads only need readiness; hosting-specific success and retry decisions remain inside the service.
+	const update = async () => { await queueUpdate() }
 	const updateAndReport = async () => {
 		try {
 			await update()

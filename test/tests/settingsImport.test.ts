@@ -492,3 +492,53 @@ describe('settings import', () => {
 		assert.equal(websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
 	})
 })
+
+
+test('all historical schemas normalize through their own fields and round-trip without borrowing newer capabilities', async () => {
+	const { defaultActiveAddresses, defaultRpcs, exportSettingsAndAddressBook, getPage, getSettings, getSafeAppsCompatibilityMode, getSafeAppsHostOrigins, getMetamaskCompatibilityMode, importSettingsAndAddressBook, setPage, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, setSafeAppsHostOrigins } = await settingsModulePromise
+	browserMock.reset()
+	const exported = await exportSettingsAndAddressBook()
+	const serialized: unknown = ExportedSettings.serialize(exported)
+	if (typeof serialized !== 'object' || serialized === null || !('settings' in serialized) || typeof serialized.settings !== 'object' || serialized.settings === null) throw new Error('Missing serialized settings')
+	const source = {
+		...serialized.settings,
+		activeChain: '0x1',
+		addressInfos: [],
+		contacts: [],
+		activeSimulationAddress: '0x1111111111111111111111111111111111111111',
+		activeSigningSafeAddress: '0x2222222222222222222222222222222222222222',
+		rpcNetwork: { ...testRpcNetwork, chainId: '0x1' },
+		openedPage: { page: 'Settings' },
+		metamaskCompatibilityMode: false,
+		safeAppsCompatibilityMode: true,
+		safeAppsHostOrigins: ['https://selected.example'],
+	}
+	for (const { version, modern, page, compatibility, hosting } of [
+		{ version: '1.0', modern: false, page: false, compatibility: false, hosting: false },
+		{ version: '1.1', modern: false, page: false, compatibility: false, hosting: false },
+		{ version: '1.2', modern: false, page: false, compatibility: false, hosting: false },
+		{ version: '1.3', modern: false, page: true, compatibility: false, hosting: false },
+		{ version: '1.4', modern: false, page: true, compatibility: false, hosting: false },
+		{ version: '1.5', modern: true, page: true, compatibility: false, hosting: false },
+		{ version: '1.6', modern: true, page: true, compatibility: true, hosting: false },
+		{ version: '1.7', modern: true, page: true, compatibility: true, hosting: true },
+	]) {
+		browserMock.reset()
+		await setPage({ page: 'Home' })
+		await setMetamaskCompatibilityMode(true)
+		await setSafeAppsCompatibilityMode(true)
+		await setSafeAppsHostOrigins(['https://previous.example'])
+		// Historical codecs discard fields belonging to newer versions before capability-based normalization.
+		const parsed = ExportedSettings.parse({ name: exported.name, version, exportedDate: exported.exportedDate, settings: source })
+		assert.deepEqual(ExportedSettings.parse(ExportedSettings.serialize(parsed)), parsed)
+		await importSettingsAndAddressBook(parsed)
+		const settings = await getSettings()
+		assert.equal(settings.activeSimulationAddress, modern ? 0x1111111111111111111111111111111111111111n : defaultActiveAddresses[0]?.address)
+		assert.equal(settings.activeSigningSafeAddress, modern ? 0x2222222222222222222222222222222222222222n : undefined)
+		assert.deepEqual(settings.activeRpcNetwork, version === '1.0' ? defaultRpcs[0] : testRpcNetwork)
+		assert.deepEqual(await getPage(), { page: page ? 'Settings' : 'Home' })
+		assert.equal(await getMetamaskCompatibilityMode(), version === '1.0' || version === '1.1')
+		assert.equal(await getSafeAppsCompatibilityMode(), compatibility)
+		assert.deepEqual(await getSafeAppsHostOrigins(), hosting ? ['https://selected.example'] : [])
+	}
+})

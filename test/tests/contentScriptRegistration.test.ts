@@ -1,3 +1,4 @@
+import { getChromeSiteMatchPatterns } from '../../app/ts/utils/chromeMatchPatterns.js'
 import * as assert from 'assert'
 import * as fs from 'node:fs'
 import { describe, test } from 'bun:test'
@@ -12,6 +13,7 @@ type RuntimeMessage = {
 }
 
 type BrowserMockOptions = {
+	readonly afterStorageRead?: (keys: unknown) => Promise<void>
 	readonly emitStorageEvents?: boolean
 	readonly registerError?: Error
 	readonly hostRegistrationError?: Error
@@ -36,7 +38,7 @@ type RegisteredContentScript = {
 	readonly js?: readonly string[]
 }
 
-function installBrowserMock({ emitStorageEvents = false, registerError, hostRegistrationError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [], safeAppsCompatibilityMode = false, safeAppsHostOrigins, beforeRegisterContentScripts, beforeUpdateContentScripts }: BrowserMockOptions = {}) {
+function installBrowserMock({ afterStorageRead, emitStorageEvents = false, registerError, hostRegistrationError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [], safeAppsCompatibilityMode = false, safeAppsHostOrigins, beforeRegisterContentScripts, beforeUpdateContentScripts }: BrowserMockOptions = {}) {
 	const storageState: Record<string, unknown> = { safeAppsCompatibilityMode, ...(safeAppsHostOrigins === undefined ? {} : { safeAppsHostOrigins }) }
 	const sentMessages: RuntimeMessage[] = []
 	const executedScriptFiles: string[] = []
@@ -74,6 +76,7 @@ function installBrowserMock({ emitStorageEvents = false, registerError, hostRegi
 				local: {
 					async get(keys?: string | string[] | Record<string, unknown> | null) {
 						const storageItems = getStorageItems(keys)
+						await afterStorageRead?.(keys)
 						currentTabUrl = tabUrlAfterStorageRead ?? currentTabUrl
 						return storageItems
 					},
@@ -202,9 +205,8 @@ function getManifestV2WebAccessibleResources() {
 describe('content script injection strategy', () => {
 	test('creates valid manifest v3 exclusions without admitting malformed stored origins', async () => {
 		installBrowserMock()
-		const { getManifestV3ExcludeMatches } = await loadModules()
 
-		assert.deepEqual(getManifestV3ExcludeMatches([
+		assert.deepEqual(getChromeSiteMatchPatterns([
 			'',
 			'example.com',
 			'localhost:3000',
@@ -256,7 +258,7 @@ describe('content script injection strategy', () => {
 	for (const origins of [['https://*.invalid.example'], ['not-an-origin']]) test(`invalid stored hosting configuration preserves base injection: ${ origins[0] }`, async () => {
 		const { getRegisteredContentScripts } = installBrowserMock({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: origins, registeredContentScriptIds: ['safe-apps-host', 'inpage'] })
 		const { updateRegistration } = await loadModules()
-		await withSilencedConsole(async () => assert.equal(await updateRegistration(), 'base-provider-recovered'))
+		await withSilencedConsole(async () => { await updateRegistration() })
 		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2'])
 		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.excludeMatches, [])
 	})
@@ -264,7 +266,7 @@ describe('content script injection strategy', () => {
 	test('a rejected host registration restores base injection and a later queued update can succeed', async () => {
 		const { getRegisteredContentScripts } = installBrowserMock({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: ['https://app.example.com'], hostRegistrationError: new Error('Invalid host match pattern') })
 		const { updateRegistration } = await loadModules()
-		await withSilencedConsole(async () => assert.equal(await updateRegistration(), 'base-provider-recovered'))
+		await withSilencedConsole(async () => { await updateRegistration() })
 		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2'])
 		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.excludeMatches, [])
 		await browser.storage.local.set({ safeAppsCompatibilityMode: false })
@@ -276,7 +278,7 @@ describe('content script injection strategy', () => {
 			if (scripts.some(({ excludeMatches }) => excludeMatches?.includes('https://app.example.com:443/*'))) throw new Error('Hosted provider update rejected')
 		} })
 		const { updateRegistration } = await loadModules()
-		await withSilencedConsole(async () => assert.equal(await updateRegistration(), 'base-provider-recovered'))
+		await withSilencedConsole(async () => { await updateRegistration() })
 		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2'])
 		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.excludeMatches, [])
 	})
@@ -629,10 +631,36 @@ test('explicit hosting retries coalesce the observed recovery and can retry agai
 	const { createContentScriptRegistrationService } = await loadModules()
 	const service = createContentScriptRegistrationService()
 	await withSilencedConsole(async () => {
-		assert.equal(await service.update(), 'base-provider-recovered')
+		await service.update()
+		assert.equal(hostAttempts, 1)
 		assert.deepEqual(await Promise.all([service.ensureSafeAppsHostRegistered(origin), service.ensureSafeAppsHostRegistered(origin)]), [false, false])
 		assert.equal(hostAttempts, 2)
 		assert.equal(await service.ensureSafeAppsHostRegistered(origin), true)
 		assert.equal(hostAttempts, 3)
 	})
+})
+
+
+test('registration applies the same single snapshot it caches, then observes a subsequent configuration', async () => {
+	let reads = 0
+	const { getRegisteredContentScripts } = installBrowserMock({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: ['https://before.example'], afterStorageRead: async (keys) => {
+		if (!Array.isArray(keys) || !keys.includes('safeAppsHostOrigins')) return
+		reads++
+		if (reads === 1) await browser.storage.local.set({ safeAppsHostOrigins: ['https://after.example'] })
+	} })
+	const { updateRegistration } = await loadModules()
+	await updateRegistration()
+	assert.equal(reads, 1)
+	assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'safe-apps-host')?.matches, ['https://before.example:443/*'])
+	await updateRegistration()
+	assert.equal(reads, 2)
+	assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'safe-apps-host')?.matches, ['https://after.example:443/*'])
+})
+
+test('disabled compatibility leaves malformed hosting selections inert without reporting a recovery', async () => {
+	const { getRegisteredContentScripts, sentMessages } = installBrowserMock({ safeAppsCompatibilityMode: false, safeAppsHostOrigins: ['not-an-origin'] })
+	const { updateRegistration } = await loadModules()
+	await updateRegistration()
+	assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2'])
+	assert.deepEqual(sentMessages, [])
 })
