@@ -15,7 +15,7 @@ for (const failed of [false, true]) test(`wallet summary distinguishes loading f
 		expect(dom.document.body.textContent).toContain('Loading signing wallet')
 		expect(dom.document.body.textContent).not.toContain('No signing wallet')
 		expect(findRenderedElement(dom.document.body, (node) => String(node.attributes?.['aria-busy']) === 'true')).toBeDefined()
-		await act(async () => { reply(failed ? { ok: false, message: 'Wallet lookup failed' } : { ok: true, bindings: [] }); await pending; await new Promise((resolve) => setTimeout(resolve, 0)) })
+		await act(async () => { reply(failed ? { ok: false, message: 'Wallet lookup failed' } : { ok: true, bindings: [], tabs: [] }); await pending; await new Promise((resolve) => setTimeout(resolve, 0)) })
 		expect(dom.document.body.textContent).toContain(failed ? 'Wallet lookup failed' : 'No signing wallet')
 		expect(dom.document.body.textContent).not.toContain('Loading signing wallet')
 		if (failed) expect(dom.document.body.textContent).not.toContain('No signing wallet')

@@ -9,7 +9,7 @@ import { CHAIN_NAMES } from './utils/chainNames.js'
 import { openSigningWalletSetup } from './components/subcomponents/SigningWalletSummary.js'
 import { render } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { DirectSigningRecord, type DirectSigningRequest } from './types/directSigning.js'
+import type { DirectSigningRecord, DirectSigningRequest } from './types/directSigning.js'
 import { sendSigningPageRequest } from './signing/pageMessages.js'
 import { prepareDirectPayload, signingWalletDescription } from './signing/backend.js'
 import { selectLedgerDevice, withLedgerDevice } from './signing/ledgerHid.js'
@@ -39,13 +39,13 @@ function DirectSigningPage() {
 	const command = async (request: DirectSigningRequest) => {
 		try {
 			const reply = await sendSigningPageRequest(request)
-			const next = DirectSigningRecord.parse(reply.record)
+			const next = reply.record
 			setRecord(next)
 			return next
 		} catch (failure) {
 			// A command can persist a new phase before its RPC or application reply fails.
 			if (request.method !== 'signing_get') {
-				const recovered = DirectSigningRecord.parse((await sendSigningPageRequest({ method: 'signing_get', id })).record)
+				const recovered = (await sendSigningPageRequest({ method: 'signing_get', id })).record
 				setRecord(recovered)
 				setStatus(recovered.phase === 'submitting' ? 'Submission outcome is uncertain. Reconcile by hash before taking further action.' : `Current request status: ${ recovered.phase }.`)
 			}
@@ -91,7 +91,7 @@ function DirectSigningPage() {
 			setStatus('Unlock Ledger and open Ethereum. Check the account and approve on your device.')
 			controller.current = new AbortController()
 			await withLedgerDevice(device, controller.current.signal, async (exchange) => {
-				const current = DirectSigningRecord.parse((await sendSigningPageRequest({ method: 'signing_get', id })).record)
+				const current = (await sendSigningPageRequest({ method: 'signing_get', id })).record
 				if (current.phase !== 'approved' || current.revision !== approved.revision) throw new Error('Another signing window completed or cancelled this approval')
 				const result = await signWithLedger(exchange, { address: ensureHex(approved.input.address), publicKey: ensureHex(wallet.publicKey), derivationPath: wallet.derivationPath }, payload)
 				setStatus('Verifying signature against the approved account and exact payload…')

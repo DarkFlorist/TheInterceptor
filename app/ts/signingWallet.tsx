@@ -3,9 +3,8 @@ import { addressString } from './utils/bigint.js'
 import { SigningSteps } from './components/subcomponents/SigningSteps.js'
 import { render } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import * as funtypes from 'funtypes'
-import { type SigningWallet, SigningWalletBindings, type SigningWalletBinding } from './types/signingWallet.js'
-import { TabState } from './types/user-interface-types.js'
+import type { SigningWallet, SigningWalletBindings, SigningWalletBinding } from './types/signingWallet.js'
+import type { TabState } from './types/user-interface-types.js'
 import { sendSigningPageRequest } from './signing/pageMessages.js'
 import { selectLedgerDevice, withLedgerDevice } from './signing/ledgerHid.js'
 import { checkLedgerEthereumApp, readLedgerAccount } from './signing/ledgerEthereum.js'
@@ -47,15 +46,15 @@ function SigningWalletPage() {
 	}
 	useEffect(() => { void run(async () => {
 		const reply = await sendSigningPageRequest({ method: 'signing_wallets' })
-		const bindings = SigningWalletBindings.parse(reply.bindings)
+		const bindings = reply.bindings
 		setBindings(bindings)
 		setBinding(target === null ? undefined : bindings.find((item) => item.wallet.address === BigInt(target)))
-		setTabs(funtypes.ReadonlyArray(TabState).parse(reply.tabs))
+		setTabs(reply.tabs)
 	}) }, [])
 	useEffect(() => {
 		const refreshAccounts = (_changes: unknown, area: string) => {
 			if (area !== 'local') return
-			void sendSigningPageRequest({ method: 'signing_wallets' }).then((reply) => setTabs(funtypes.ReadonlyArray(TabState).parse(reply.tabs))).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not refresh browser accounts'))
+			void sendSigningPageRequest({ method: 'signing_wallets' }).then((reply) => setTabs(reply.tabs)).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not refresh browser accounts'))
 		}
 		browser.storage.onChanged.addListener(refreshAccounts)
 		return () => browser.storage.onChanged.removeListener(refreshAccounts)
@@ -101,7 +100,7 @@ function SigningWalletPage() {
 		setSaved(true)
 		setStatus('Address and signing wallet saved. Mode and website permissions are unchanged.')
 		const reply = await sendSigningPageRequest({ method: 'signing_wallets' })
-		const savedBindings = SigningWalletBindings.parse(reply.bindings)
+		const savedBindings = reply.bindings
 		setBindings(savedBindings)
 		setBinding(savedBindings.find((item) => item.wallet.address === address))
 	})

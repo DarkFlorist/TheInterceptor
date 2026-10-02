@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks'
 import type { SafeEntry } from '../../types/addressBookTypes.js'
-import { SigningWalletBindings } from '../../types/signingWallet.js'
+import type { SigningWalletBindings } from '../../types/signingWallet.js'
 import { sendSigningPageRequest } from '../../signing/pageMessages.js'
 import { signingWalletDescription } from '../../signing/backend.js'
 
@@ -16,7 +16,7 @@ function SafeSigningAccountsForm({ safe }: { safe: SafeEntry }) {
 	const [error, setError] = useState<string>()
 	const [busy, setBusy] = useState(false)
 	useEffect(() => {
-		void sendSigningPageRequest({ method: 'signing_wallets' }).then((reply) => setBindings(SigningWalletBindings.parse(reply.bindings))).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not load saved signing accounts'))
+		void sendSigningPageRequest({ method: 'signing_wallets' }).then((reply) => setBindings(reply.bindings)).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : 'Could not load saved signing accounts'))
 	}, [safe.address])
 	return <section><h3>Safe signing accounts</h3><p>Safe: 0x{ safe.address.toString(16).padStart(40, '0') }</p>
 		<label>Signing owner <select value = { owner } onChange = { (event) => setOwner(event.currentTarget.value) }><option value = ''>Select owner</option>{ bindings.map((binding) => <option key = { binding.revision } value = { binding.wallet.address.toString() }>{ signingWalletDescription(binding) } · 0x{ binding.wallet.address.toString(16).padStart(40, '0') }</option>) }</select></label>

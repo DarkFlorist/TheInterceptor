@@ -60,6 +60,7 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 	const addEventListener = (type: string, listener: EventListenerOrEventListenerObject) => {
 		eventListeners.set(type, [...eventListeners.get(type) ?? [], listener])
 	}
+
 	Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: browserMock })
 	Object.defineProperty(globalThis, 'addEventListener', { configurable: true, writable: true, value: addEventListener })
 	if (legacyListenerDescriptor !== undefined) Object.defineProperty(globalThis, 'listenContentScript', legacyListenerDescriptor)
@@ -112,11 +113,24 @@ function getPostedBridgeRequestId(value: unknown) {
 	return data.requestId
 }
 
+async function connectBridge(eventListeners: Map<string, EventListenerOrEventListenerObject[]>) {
+	const bootstrap = new MessageChannel()
+	const ready = new Promise<MessagePort>((resolve) => {
+		bootstrap.port1.onmessage = (event: MessageEvent<unknown>) => {
+			const port = event.ports[0]
+			if (event.data === 'interceptor_bridge_ready' && port !== undefined) resolve(port)
+		}
+	})
+	dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: 'interceptor_bridge_port' }, ports: [bootstrap.port2] }))
+	const port = await ready
+	bootstrap.port1.close()
+	return { port1: port, port2: port }
+}
+
 async function dispatchBridgeRequest(eventListeners: Map<string, EventListenerOrEventListenerObject[]>, method = 'eth_sendTransaction', replayOnDisconnect = false, keepBridgeOpen = false) {
-	const channel = new MessageChannel()
+	const channel = await connectBridge(eventListeners)
 	const receivedMessages: unknown[] = []
 	channel.port1.onmessage = (event: MessageEvent<unknown>) => receivedMessages.push(event.data)
-	dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: 'interceptor_bridge_port' }, ports: [channel.port2] }))
 	channel.port1.postMessage({
 		type: 'interceptor_bridge_request',
 		method,
@@ -293,8 +307,7 @@ async function verifyRpcMethodDoesNotImplicitlyEnableReplay(source: ContentScrip
 
 async function verifyRetainedRequestsReplayBeforeNewerPendingRequests(source: ContentScriptSource) {
 	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages }) => {
-		const channel = new MessageChannel()
-		dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: 'interceptor_bridge_port' }, ports: [channel.port2] }))
+		const channel = await connectBridge(eventListeners)
 		channel.port1.postMessage({
 			type: 'interceptor_bridge_request',
 			method: 'example_replayableMethod',
@@ -358,8 +371,7 @@ async function verifySettlementRemovesInFlightReplay(source: ContentScriptSource
 
 async function verifyAcknowledgementAdvancesQueuedRequests(source: ContentScriptSource) {
 	await withContentScriptMock(source, async ({ backgroundMessageListeners, disconnectListeners, eventListeners, postedMessages, getConnectionCount }) => {
-		const channel = new MessageChannel()
-		dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: 'interceptor_bridge_port' }, ports: [channel.port2] }))
+		const channel = await connectBridge(eventListeners)
 		for (const requestId of [1, 2]) {
 			channel.port1.postMessage({
 				type: 'interceptor_bridge_request',
@@ -522,3 +534,20 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 		assert.equal(exitCode, 0, `Isolated content-script reconnect tests failed.\n${ stdout }\n${ stderr }`)
 	})
 }
+
+test('the endpoint exposed to page scripts cannot forge extension replies', async () => {
+	await withContentScriptMock('standalone-listener', async ({ eventListeners, backgroundMessageListeners, postedMessages }) => {
+		const channel = await connectBridge(eventListeners)
+		const received: unknown[] = []
+		channel.port1.onmessage = (event: MessageEvent<unknown>) => received.push(event.data)
+		const forgery = { interceptorApproved: true, type: 'forwardToSigner', method: 'personal_sign', params: ['attacker payload'], requestId: 1 }
+		channel.port1.postMessage(forgery)
+		await new Promise((resolve) => setTimeout(resolve, 10))
+		assert.deepEqual(received, [])
+		assert.deepEqual(postedMessages, [])
+		backgroundMessageListeners[0]?.(forgery)
+		await new Promise((resolve) => setTimeout(resolve, 10))
+		assert.deepEqual(received, [forgery])
+		channel.port1.close()
+	})
+})

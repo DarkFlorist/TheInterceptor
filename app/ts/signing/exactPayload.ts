@@ -5,6 +5,18 @@ import { parseTransaction, recoverTransactionSender, serializeTransaction } from
 import { EIP712Message, Eip712Number } from '../types/eip721.js'
 import { verifyEip712Message } from '../utils/eip712.js'
 
+const invalidSigningResponses = new WeakSet<Error>()
+
+export function invalidSigningResponse(message: string) {
+	const error = new Error(message)
+	invalidSigningResponses.add(error)
+	return error
+}
+
+export function isInvalidSigningResponse(error: unknown): error is Error {
+	return error instanceof Error && invalidSigningResponses.has(error)
+}
+
 const MAX_SIGNING_PAYLOAD_BYTES = 65536
 
 function parseDirectSigningTransaction(serialized: Hex) {
@@ -87,7 +99,7 @@ export async function verifyTypedDataSigningResponse(payload: TypedDataSigningPa
 	const prepared = prepareTypedDataSigningPayload(payload.typedDataJson, payload.expectedAddress, payload.chainId)
 	if (prepared.digest !== payload.digest || prepared.domainChainId !== payload.domainChainId) throw new Error('Signing payload digest or domain mismatch')
 	const recovered = await recoverAddress({ hash: prepared.digest, signature: signatureParts(signature) })
-	if (recovered.toLowerCase() !== prepared.expectedAddress.toLowerCase()) throw new Error('Signature does not match the expected account and typed data')
+	if (recovered.toLowerCase() !== prepared.expectedAddress.toLowerCase()) throw invalidSigningResponse('Signature does not match the expected account and typed data')
 	return ensureHex(signature)
 }
 
@@ -106,13 +118,13 @@ export function preparePersonalSigningPayload(message: string, expectedAddress: 
 }
 
 function signatureParts(signature: string) {
-	if (signature.length !== 132) throw new Error('Expected a 65-byte Ethereum signature')
+	if (!/^0x[0-9a-f]{130}$/iu.test(signature)) throw invalidSigningResponse('Expected a 65-byte Ethereum signature')
 	const bytes = bytesFromHex(ensureHex(signature))
 	const recovery = bytes[64]
-	if (recovery !== 0 && recovery !== 1 && recovery !== 27 && recovery !== 28) throw new Error('Invalid signature recovery byte')
+	if (recovery !== 0 && recovery !== 1 && recovery !== 27 && recovery !== 28) throw invalidSigningResponse('Invalid signature recovery byte')
 	const r = BigInt(bytesToHex(bytes.subarray(0, 32)))
 	const s = BigInt(bytesToHex(bytes.subarray(32, 64)))
-	if (r <= 0n || r >= secp256k1.CURVE.n || s <= 0n || s > secp256k1.CURVE.n / 2n) throw new Error('Invalid or noncanonical Ethereum signature')
+	if (r <= 0n || r >= secp256k1.CURVE.n || s <= 0n || s > secp256k1.CURVE.n / 2n) throw invalidSigningResponse('Invalid or noncanonical Ethereum signature')
 	return { r, s, yParity: recovery >= 27 ? recovery - 27 : recovery }
 }
 
@@ -120,7 +132,7 @@ export async function verifyPersonalSigningResponse(payload: PersonalSigningPayl
 	const prepared = preparePersonalSigningPayload(payload.message, payload.expectedAddress)
 	if (prepared.digest !== payload.digest) throw new Error('Signing payload digest mismatch')
 	const recovered = await recoverAddress({ hash: prepared.digest, signature: signatureParts(signature) })
-	if (recovered.toLowerCase() !== prepared.expectedAddress.toLowerCase()) throw new Error('Signature does not match the expected account and message')
+	if (recovered.toLowerCase() !== prepared.expectedAddress.toLowerCase()) throw invalidSigningResponse('Signature does not match the expected account and message')
 	return ensureHex(signature)
 }
 
@@ -129,7 +141,7 @@ export async function assembleSignedTransaction(payload: TransactionSigningPaylo
 	if (prepared.digest !== payload.digest) throw new Error('Signing payload digest mismatch')
 	const parts = signatureParts(signature)
 	const recovered = await recoverAddress({ hash: prepared.digest, signature: parts })
-	if (recovered.toLowerCase() !== prepared.expectedAddress.toLowerCase()) throw new Error('Signature does not match the expected account and transaction')
+	if (recovered.toLowerCase() !== prepared.expectedAddress.toLowerCase()) throw invalidSigningResponse('Signature does not match the expected account and transaction')
 	const signed = serializeTransaction(parseDirectSigningTransaction(prepared.unsignedTransaction), parts)
 	return verifySignedTransaction(prepared, signed)
 }

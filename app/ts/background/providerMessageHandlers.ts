@@ -1,3 +1,4 @@
+import { hasPinnedSigningAddress } from './safeSigningAccount.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import { ConnectedToSigner, SignerReply, WalletSwitchEthereumChainReply, WatchAssetSignerRequest } from '../types/interceptor-messages.js'
@@ -153,12 +154,11 @@ async function changeSignerChain(simulationServicesOwner: SimulationServicesOwne
 		return previousState.signerChain === signerChain ? previousState : modifyObject(previousState, { signerChain })
 	})
 	if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return
-	if ((await getSettings()).selectedSigningAddress !== undefined) return
 	const oldSignerChain = tabStateChange.previousState.signerChain
 	// update active address if we are using signers address
 	const settings = await getSettings()
 	const selectedSafe = await getConfiguredSigningSafe(settings, tabStateChange.newState.signerAccounts)
-	if (selectedSafe !== undefined) {
+	if (!settings.simulationMode && await hasPinnedSigningAddress(settings) || selectedSafe !== undefined) {
 		// Safe signing is pinned to the Safe's configured Interceptor chain. A signer-wallet chain change only refreshes signer state; it must not move the dapp away from the active Safe.
 		if (oldSignerChain !== signerChain) {
 			await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })

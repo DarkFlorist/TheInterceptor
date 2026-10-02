@@ -1,6 +1,7 @@
 import * as assert from 'node:assert'
 import { test } from 'bun:test'
 
+const signingRequestResolverSource = await Bun.file(new URL('../../app/ts/background/signingRequestResolver.ts', import.meta.url)).text()
 const backgroundSource = await Bun.file(new URL('../../app/ts/background/background.ts', import.meta.url)).text()
 const confirmTransactionSource = await Bun.file(new URL('../../app/ts/background/windows/confirmTransaction.ts', import.meta.url)).text()
 const popupMessageHandlersSource = await Bun.file(new URL('../../app/ts/background/popupMessageHandlers.ts', import.meta.url)).text()
@@ -13,8 +14,9 @@ const safeSourceFiles: string[] = []
 for await (const file of new Bun.Glob('*.ts').scan({ cwd: safeSourceDirectory, absolute: true })) safeSourceFiles.push(file)
 const safeSources = await Promise.all(safeSourceFiles.map(async (file) => await Bun.file(file).text()))
 
-test('the general RPC dispatcher delegates Gnosis Safe policy as one decision', () => {
-	assert.match(backgroundSource, /import \{ getSafeModeRpcPolicyReply \} from '\.\.\/safe\/safeRequestPolicy\.js'/u)
+test('RPC admission delegates Gnosis Safe policy as one decision', () => {
+	assert.match(backgroundSource, /resolveSigningRequest\(/u)
+	assert.match(signingRequestResolverSource, /import \{ getSafeModeRpcPolicyReply \} from '\.\.\/safe\/safeRequestPolicy\.js'/u)
 	assert.doesNotMatch(backgroundSource, /SAFE_MESSAGE_SIGNING_METHODS|isSafeTransactionCoSignRequest|safeModeUnsupportedMethod/u)
 	assert.doesNotMatch(backgroundSource, /Gnosis Safe message signing is not supported|Gnosis Safe transaction proposals require/u)
 })

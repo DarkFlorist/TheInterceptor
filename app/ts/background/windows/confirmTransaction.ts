@@ -1,3 +1,4 @@
+import { invalidSigningResponse, isInvalidSigningResponse } from '../../signing/exactPayload.js'
 import { prepareSavedBrowserWalletForwarding } from '../browserWalletForwarding.js'
 import { verifyDirectResult } from '../../signing/backend.js'
 import { EIP712Message } from '../../types/eip721.js'
@@ -388,8 +389,15 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 			}
 		}
 		if (confirmation.data.action === 'signerIncluded' && binding.wallet.type === 'browser' && getSafePendingFlow(pendingTransactionOrMessage) === undefined && (signerFacingRequest.method === 'personal_sign' || signerFacingRequest.method === 'eth_signTypedData_v4')) {
-			if (typeof confirmation.data.signerReply !== 'string') throw new Error('Browser wallet returned a non-string message signature')
-			await verifyDirectResult({ method: signerFacingRequest.method, data: signerFacingRequest.method === 'personal_sign' ? signerFacingRequest.params[0] : funtypes.String.parse(EIP712Message.serialize(signerFacingRequest.params[1])), address: `0x${ binding.wallet.address.toString(16).padStart(40, '0') }`, chainId: pendingTransactionOrMessage.signingChainId ?? ethereum.getChainId() }, confirmation.data.signerReply)
+			try {
+				if (typeof confirmation.data.signerReply !== 'string') throw invalidSigningResponse('Browser wallet returned a non-string message signature')
+				await verifyDirectResult({ method: signerFacingRequest.method, data: signerFacingRequest.method === 'personal_sign' ? signerFacingRequest.params[0] : funtypes.String.parse(EIP712Message.serialize(signerFacingRequest.params[1])), address: `0x${ binding.wallet.address.toString(16).padStart(40, '0') }`, chainId: pendingTransactionOrMessage.signingChainId ?? ethereum.getChainId() }, confirmation.data.signerReply)
+			} catch (error) {
+				await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'SignerError', code: 4100, message: getErrorMessage(error) ?? 'Unable to verify wallet signature' } }))
+				await updateConfirmTransactionView(ethereum, tokenPriceService)
+				if (!isInvalidSigningResponse(error)) throw error
+				return false
+			}
 		}
 		if (confirmation.data.action === 'signerIncluded' && binding.wallet.type !== 'browser') {
 			const record = (await readDirectSigningRecords()).find((item) => doesUniqueRequestIdentifiersMatch(item.request, pendingTransactionOrMessage.uniqueRequestIdentifier))

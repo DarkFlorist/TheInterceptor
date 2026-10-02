@@ -118,3 +118,28 @@ test('saved signing selection does not pin simulation to a disconnected browser 
 	expect(transition.shouldActivate).toBe(true)
 	expect(transition.signerAddress).toBe(2n)
 })
+
+test('corrupt selected signing address repairs storage and leaves background settings readable', async () => {
+	installBrowserMock()
+	await browser.storage.local.set({ selectedSigningAddress: 'invalid-address' })
+	expect((await getSettings()).selectedSigningAddress).toBeUndefined()
+	expect((await getSettings()).selectedSigningAddress).toBeUndefined()
+})
+
+for (const signerName of ['MetaMask', 'Rabby'] as const) test(`Safe policy rejects before browser forwarding admission (${ signerName })`, async () => {
+	installBrowserMock()
+	const { updateTabState, websiteSocketToString } = await loadModules()
+	const { resolveSigningRequest } = await import('../../app/ts/background/signingRequestResolver.js')
+	const { EthereumJsonRpcRequest } = await import('../../app/ts/types/JsonRpc-types.js')
+	await saveAddressSigningWallet(1n, { type: 'browser', address: 1n, label: 'Safe owner', signerName: 'MetaMask', providerId: 'legacy:MetaMask' }, undefined, 'Owner')
+	const settings = { ...await getSettings(), simulationMode: false, activeSigningSafeAddress: 2n, activeRpcNetwork: { name: 'Unsupported', chainId: 1n, httpsRpc: undefined, currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true } } satisfies import('../../app/ts/types/interceptor-messages.js').Settings
+	const socket = { tabId: 1, connectionName: 0n }
+	await updateTabState(1, (tab) => ({ ...tab, signerConnected: true, signerName, signerAccounts: [] }))
+	const { port, messages } = createPort(1)
+	const connections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://safe.example', approved: true, wantsToConnect: true } } }]])
+	const request = { method: 'eth_sendTransaction', params: [{ from: '0x0000000000000000000000000000000000000002', to: '0x0000000000000000000000000000000000000001' }], interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket } }
+	const admission = await resolveSigningRequest(connections, socket, request, EthereumJsonRpcRequest.parse(request), settings, 2n, 1n, true, false, undefined)
+	expect(admission.admissionError).toBeUndefined()
+	expect(admission.safePolicyReply).toMatchObject({ type: 'result', error: { message: 'Gnosis Safe transaction proposals require an Interceptor RPC connection for live Gnosis Safe validation.' } })
+	expect(messages).toEqual([])
+})

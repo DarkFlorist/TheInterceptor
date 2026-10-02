@@ -745,3 +745,29 @@ test('startup pruning removes terminal replies for missing tabs and preserves li
 })
 
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
+
+for (const signerReply of ['0x1234', 42, new Error('Unexpected verifier failure')]) test(`invalid browser message signature becomes an actionable signer error (${ typeof signerReply })`, async () => {
+	const { saveAddressSigningWallet } = await import('../../app/ts/background/storageVariables.js')
+	await saveAddressSigningWallet(activeAddress, { type: 'browser', address: activeAddress, label: 'Browser account', signerName: 'MetaMask', providerId: 'legacy:MetaMask' }, undefined, 'Browser account')
+	const parameters = { method: 'personal_sign' as const, params: ['0x01', activeAddress] as const }
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.openConfirmTransactionDialogForMessage(simulator.ethereum, simulator.tokenPriceService, {
+		...parameters, interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier,
+	}, { kind: 'message', parameters }, false, activeAddress, { websiteOrigin: 'https://example.com' }, new Map())
+	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'WaitingForSigner' } }))
+	const verify = async () => await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, new Map(), {
+		method: 'popup_confirmDialog', data: { action: 'signerIncluded', uniqueRequestIdentifier, signerReply: signerReply instanceof Error ? '0x1234' : signerReply },
+	})
+	if (signerReply instanceof Error) {
+		const { spyOn } = await import('bun:test')
+		const backend = await import('../../app/ts/signing/backend.js')
+		const verifier = spyOn(backend, 'verifyDirectResult').mockRejectedValue(signerReply)
+		try { await assert.rejects(verify(), (error: unknown) => error === signerReply) }
+		finally { verifier.mockRestore() }
+	} else assert.equal(await verify(), false)
+	const pending = (await modules.getPendingTransactionsAndMessages())[0]
+	assert.equal(pending?.approvalStatus.status, 'SignerError')
+	if (pending?.approvalStatus.status !== 'SignerError') throw new Error('Missing signature verification error')
+	assert.equal(pending.approvalStatus.code, 4100)
+	assert.ok(pending.approvalStatus.message.length > 0)
+})

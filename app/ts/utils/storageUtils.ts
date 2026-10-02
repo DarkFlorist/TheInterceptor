@@ -76,7 +76,7 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	signerName: SignerName,
 	signingAddressPreferences: SigningAddressPreferences,
 	signingWalletBindings: SigningWalletBindings,
-	selectedSigningAddress: EthereumAddress,
+	selectedSigningAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 	currentTabId: funtypes.Union(funtypes.Undefined, funtypes.Number),
 	rpcConnectionStatus: RpcConnectionStatus,
 	ethereumSubscriptionsAndFilters: EthereumSubscriptionsAndFilters,

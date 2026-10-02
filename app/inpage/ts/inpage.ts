@@ -865,11 +865,28 @@ class InterceptorMessageListener {
 		}
 	}
 
+	private readonly pendingBridgeDiagnostics: string[] = []
+
+	private readonly bridgeReady = new InterceptorFuture<void>()
+
 	private readonly connectToContentScript = () => {
-		const channel = new MessageChannel()
-		this.extensionMessagePort = channel.port1
-		channel.port1.onmessage = (messageEvent: MessageEvent<unknown>) => { void this.onMessage(messageEvent) }
-		window.postMessage({ type: INTERCEPTOR_BRIDGE_PORT_MESSAGE }, '*', [channel.port2])
+		const bootstrap = new MessageChannel()
+		bootstrap.port1.addEventListener('message', (event: MessageEvent<unknown>) => {
+			if (!event.isTrusted || this.extensionMessagePort !== undefined || event.data !== 'interceptor_bridge_ready') return
+			const port = event.ports[0]
+			if (port === undefined) return
+			this.extensionMessagePort = port
+			port.addEventListener('message', (messageEvent: MessageEvent<unknown>) => {
+				if (messageEvent.isTrusted) void this.onMessage(messageEvent)
+			})
+			port.start()
+			bootstrap.port1.close()
+			this.bridgeReady.resolve(undefined)
+			for (const diagnostics of this.pendingBridgeDiagnostics.splice(0)) this.reportInterceptorError(diagnostics)
+		})
+		bootstrap.port1.start()
+		// Only bootstrap crosses window; the isolated listener returns a fresh channel through this private endpoint before page listeners can use the exposed end.
+		window.postMessage({ type: INTERCEPTOR_BRIDGE_PORT_MESSAGE }, '*', [bootstrap.port2])
 	}
 
 	private readonly sendMessageToBackgroundPage = async (messageMethodAndParams: MessageMethodAndParams) => {
@@ -883,6 +900,7 @@ class InterceptorMessageListener {
 			requestScopedProviderEventCallbacks: [],
 		})
 		try {
+			await this.bridgeReady
 			if (this.extensionMessagePort === undefined) throw new Error('Interceptor content script bridge is not connected')
 			const message: BridgeRequest = {
 				type: INTERCEPTOR_BRIDGE_REQUEST_MESSAGE,
@@ -927,7 +945,10 @@ class InterceptorMessageListener {
 
 	private readonly reportInterceptorError = (diagnostics: string) => {
 		try {
-			if (this.extensionMessagePort === undefined) return
+			if (this.extensionMessagePort === undefined) {
+				if (this.pendingBridgeDiagnostics.length < 32) this.pendingBridgeDiagnostics.push(diagnostics)
+				return
+			}
 			const message: BridgeRequest = {
 				type: INTERCEPTOR_BRIDGE_REQUEST_MESSAGE,
 				method: 'InterceptorError',

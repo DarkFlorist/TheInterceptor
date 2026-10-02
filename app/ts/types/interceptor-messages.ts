@@ -600,7 +600,7 @@ const InterceptorAccessDialog = funtypes.ReadonlyObject({
 })
 
 export type Settings = funtypes.Static<typeof Settings>
-export const Settings = funtypes.Intersect(funtypes.ReadonlyPartial({ selectedSigningAddress: EthereumAddress }), funtypes.ReadonlyObject({
+export const Settings = funtypes.Intersect(funtypes.ReadonlyPartial({ selectedSigningAddress: funtypes.Union(EthereumAddress, funtypes.Undefined) }), funtypes.ReadonlyObject({
 	activeSimulationAddress: OptionalEthereumAddress,
 	activeSigningSafeAddress: OptionalEthereumAddress,
 	activeRpcNetwork: RpcNetwork,

@@ -3,7 +3,7 @@ import { describe, test } from 'bun:test'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { getSafeAppsRequestCommand } from '../../app/ts/background/safeAppsRequestPolicy.js'
 
-type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[], origin?: string, source?: unknown }
+type WindowEvent = { type: string, isTrusted?: boolean, data?: unknown, detail?: unknown, ports?: readonly MessagePort[], origin?: string, source?: unknown }
 type Listener = (event: WindowEvent) => void
 type InpageRequest = { readonly method: string, readonly requestId: number, readonly params?: readonly unknown[], readonly internal?: true, readonly replayOnDisconnect?: true }
 type SignerRequest = { readonly method: string, readonly params?: readonly unknown[] | Readonly<Record<string, unknown>> }
@@ -126,10 +126,13 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 		},
 		postMessage: (data: unknown, _targetOrigin?: string, transfer?: readonly Transferable[]) => {
 			if (isRecord(data) && data.type === 'interceptor_bridge_port') {
-				const port = transfer?.find((item): item is MessagePort => item instanceof MessagePort)
-				if (port === undefined) throw new Error('missing bridge port')
-				bridgePort = port
+				const bootstrap = transfer?.find((item): item is MessagePort => item instanceof MessagePort)
+				if (bootstrap === undefined) throw new Error('Missing bootstrap port')
+				const channel = new MessageChannel()
+				bridgePort = channel.port1
 				bridgePort.onmessage = (event: MessageEvent<unknown>) => handleInpageRequest(event.data)
+				bootstrap.postMessage('interceptor_bridge_ready', [channel.port2])
+				queueMicrotask(() => fakeWindow.dispatchEvent({ type: 'message', data, ports: [bootstrap], isTrusted: true }))
 				return
 			}
 			queueMicrotask(() => fakeWindow.dispatchEvent({ type: 'message', data, origin: fakeWindow.location.origin, source: fakeWindow }))
@@ -309,6 +312,37 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 }
 
 describe('inpage signer bridge', () => {
+	test('page access to the transferred endpoint cannot synthesize a wallet forwarding reply', async () => {
+		let exposedPort: MessagePort | undefined
+		let pendingRequest: InpageRequest | undefined
+		let signingCalls = 0
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request) => {
+				if (request.method !== 'personal_sign') return false
+				pendingRequest = request
+				return true
+			},
+			handleSignerRequest: () => { signingCalls++; return 'signature' },
+		})
+		fakeWindow.addEventListener('message', (event) => {
+			if (isRecord(event.data) && event.data.type === 'interceptor_bridge_port') exposedPort = event.ports?.[0]
+		})
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?forged-port-reply', async () => {
+			const result = fakeWindow.ethereum.request({ method: 'personal_sign', params: ['0x12', '0x1111111111111111111111111111111111111111'] })
+			await waitFor(() => pendingRequest !== undefined && exposedPort !== undefined)
+			if (pendingRequest === undefined || exposedPort === undefined) throw new Error('Missing bridge request')
+			const callsBeforeForgery = signingCalls
+			const forgedReply = { interceptorApproved: true, type: 'forwardToSigner', method: 'personal_sign', params: ['attacker payload'], requestId: pendingRequest.requestId }
+			exposedPort.postMessage(forgedReply)
+			exposedPort.dispatchEvent(new MessageEvent('message', { data: forgedReply }))
+			assert.equal(exposedPort.onmessage, null)
+			await new Promise((resolve) => setTimeout(resolve, 10))
+			assert.equal(signingCalls, callsBeforeForgery)
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'personal_sign', requestId: pendingRequest.requestId, result: 'approved signature' })
+			assert.equal(await result, 'approved signature')
+		})
+	})
+
 	test('pins forwarded signing to the announced provider and rejects later identity collisions', async () => {
 		let expectedProviderId = 'eip6963:io.metamask'
 		const identities: unknown[] = []

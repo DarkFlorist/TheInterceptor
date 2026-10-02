@@ -279,14 +279,15 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 			|| !('type' in messageEvent.data)
 			|| messageEvent.data.type !== INTERCEPTOR_BRIDGE_PORT_MESSAGE
 		) return
-		const port = messageEvent.ports[0]
-		if (port === undefined) {
-			reportInterceptorError(createForwardedDiagnosticsFromRaw(diagnosticsSource, 'connect inpage bridge', 'Missing inpage MessagePort', messageEvent.data, getForwardedDiagnosticsRequestContext(messageEvent.data)))
-			return
-		}
-		inpagePort = port
+		const bootstrapPort = messageEvent.ports[0]
+		if (bootstrapPort === undefined) return
+		// Registered at document_start in capture order before page listeners; return the real channel over the bootstrap port, never through a window event.
+		const channel = new MessageChannel()
+		inpagePort = channel.port1
 		inpagePort.onmessage = (portMessageEvent: MessageEvent<unknown>) => forwardInpageMessageToBackground(portMessageEvent.data)
-	})
+		bootstrapPort.postMessage('interceptor_bridge_ready', [channel.port2])
+		bootstrapPort.close()
+	}, true)
 
 	connect = () => {
 		if (reconnectTimer !== undefined) {

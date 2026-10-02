@@ -159,6 +159,7 @@ export function assertActiveAddressSelectionAllowed(address: bigint | 'signer', 
 		: 'The selected address is not available for the current signing wallet.')
 }
 
+/** Configured candidate only; Safe ownership and chain eligibility are resolved before activation. */
 export function getActiveSigningAddress(settings: Pick<Settings, 'selectedSigningAddress' | 'activeSigningSafeAddress'>) {
 	return settings.selectedSigningAddress ?? settings.activeSigningSafeAddress
 }

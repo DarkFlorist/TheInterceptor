@@ -15,7 +15,7 @@ for (const changeChain of [false, true]) test(`Safe drafts reset when ${ changeC
 	Object.defineProperty(globalThis, 'browser', { configurable: true, value: { runtime: { sendMessage: async (message: unknown) => {
 		const request = SigningPageRequest.parse(message)
 		requests.push(request)
-		return request.method === 'signing_wallets' ? { ok: true, bindings } : { ok: true }
+		return request.method === 'signing_wallets' ? { ok: true, bindings, tabs: [] } : { ok: true }
 	} } } })
 	const first: SafeEntry = { type: 'safe', name: 'Safe A', address: 10n, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSigningSignerAddress: 1n, safeExecutionAddress: 2n, safeSignerAddresses: [1n] }
 	const second: SafeEntry = { ...first, name: 'Safe B', address: changeChain ? first.address : 11n, chainId: changeChain ? 2n : first.chainId, safeExecutionAddress: 3n }

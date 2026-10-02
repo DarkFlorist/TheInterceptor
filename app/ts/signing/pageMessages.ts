@@ -1,10 +1,13 @@
-import { SigningPageRequest } from '../types/directSigning.js'
-import * as funtypes from 'funtypes'
+import type { SigningPageRequest } from '../types/directSigning.js'
+import { sendPopupMessageWithReply } from '../background/backgroundUtils.js'
 
-const SigningPageReply = funtypes.ReadonlyObject({ ok: funtypes.Boolean }).And(funtypes.ReadonlyPartial({ message: funtypes.String, record: funtypes.Unknown, bindings: funtypes.Unknown, tabs: funtypes.Unknown }))
+function isSuccessfulReply<Reply extends { ok: boolean }>(reply: Reply): reply is Extract<Reply, { ok: true }> {
+	return reply.ok
+}
 
-export async function sendSigningPageRequest(request: SigningPageRequest) {
-	const reply = SigningPageReply.parse(await browser.runtime.sendMessage(SigningPageRequest.serialize(request)))
-	if (!reply.ok) throw new Error(reply.message ?? 'Interceptor did not answer the signing request')
+export async function sendSigningPageRequest<Request extends SigningPageRequest>(request: Request) {
+	const reply = await sendPopupMessageWithReply(request)
+	if (reply === undefined) throw new Error('Interceptor did not answer the signing request')
+	if (!isSuccessfulReply(reply)) throw new Error('message' in reply ? String(reply.message) : 'Signing request failed')
 	return reply
 }

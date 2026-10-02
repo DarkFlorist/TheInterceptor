@@ -1,6 +1,6 @@
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import { useEffect, useState } from 'preact/hooks'
-import { SigningWalletBindings } from '../../types/signingWallet.js'
+import type { SigningWalletBindings } from '../../types/signingWallet.js'
 import { signingWalletDescription } from '../../signing/backend.js'
 import { sendSigningPageRequest } from '../../signing/pageMessages.js'
 
@@ -15,7 +15,7 @@ export function SigningWalletSummary({ address, showSimulationShortcut = true }:
 	useEffect(() => {
 		let active = true
 		const refresh = async () => {
-			try { const reply = await sendSigningPageRequest({ method: 'signing_wallets' }); if (active) { setBindings(SigningWalletBindings.parse(reply.bindings)); setError(undefined) } }
+			try { const reply = await sendSigningPageRequest({ method: 'signing_wallets' }); if (active) { setBindings(reply.bindings); setError(undefined) } }
 			catch (failure) { if (active) setError(failure instanceof Error ? failure.message : 'Could not load signing wallet') }
 		}
 		const changed = (changes: Record<string, unknown>) => { if ('signingWalletBindings' in changes) void refresh() }

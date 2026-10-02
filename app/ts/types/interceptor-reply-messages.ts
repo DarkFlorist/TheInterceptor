@@ -1,3 +1,5 @@
+import { SigningPageRequest } from './directSigning.js'
+import { SigningPageReply, signingPageReplyCodecs } from './signingPageReply.js'
 import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress } from './popupSettingsRequests.js'
 import type { popupSettingsOperations } from './popupSettingsProtocol.js'
 import * as funtypes from 'funtypes'
@@ -287,7 +289,7 @@ type PopupSettingsRepliesMap = {
 	[Method in keyof typeof popupSettingsOperations]: PopupSettingsReplyCodecs[typeof popupSettingsOperations[Method]['replyType']]
 }
 
-type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
+type PopupRequestsRepliesMap = PopupSettingsRepliesMap & typeof signingPageReplyCodecs & {
 	popup_requestMakeMeRichData: typeof RequestMakeMeRichDataReply
 	popup_requestActiveAddresses: typeof RequestActiveAddressesReply
 	popup_requestSimulationMode: typeof RequestSimulationModeReply
@@ -311,6 +313,7 @@ type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
 }
 
 export const PopupRequestsReplies: PopupRequestsRepliesMap = {
+	...signingPageReplyCodecs,
 	popup_requestMakeMeRichData: RequestMakeMeRichDataReply,
 	popup_requestActiveAddresses: RequestActiveAddressesReply,
 	popup_requestSimulationMode: RequestSimulationModeReply,
@@ -348,6 +351,7 @@ export const RequestAbiAndNameFromBlockExplorer = funtypes.ReadonlyObject({
 }).asReadonly()
 
 export const PopupMessageReplyRequests = funtypes.Union(
+	SigningPageRequest,
 	RequestAbiAndNameFromBlockExplorer,
 	RequestIdentifyAddress,
 	RequestSafeContractState,
@@ -389,6 +393,7 @@ export type PopupRequests = funtypes.Static<typeof PopupMessageReplyRequests>
 export type PopupRequestsReplyReturn<Request extends PopupRequests> = Request['method'] extends keyof typeof PopupRequestsReplies ? funtypes.Static<(typeof PopupRequestsReplies)[Request['method']]> : undefined
 
 export type PopupReplyOption =
+	| SigningPageReply
 	| RequestMakeMeRichDataReply
 	| RequestActiveAddressesReply
 	| RequestSimulationModeReply
@@ -413,6 +418,7 @@ export type PopupReplyOption =
 	| undefined
 
 export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union(
+	SigningPageReply,
 	RequestMakeMeRichDataReply,
 	RequestActiveAddressesReply,
 	RequestSimulationModeReply,

@@ -1,13 +1,12 @@
 import { beforeEach, expect, test } from 'bun:test'
 import { createBrowserMock, resetConfirmTransactionTestState, createSafeAddressBookEntry, ethereum, simulator, fakeSafeContract, activeAddress } from './confirmTransactionTestHarness.js'
-import { SigningPageRequest } from '../../app/ts/types/directSigning.js'
 import { getUserAddressBookEntries, saveAddressSigningWallet, updateUserAddressBookEntries, getSigningWalletBinding } from '../../app/ts/background/storageVariables.js'
 import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
 
 const { signingPageHandler } = await import('../../app/ts/background/signingPageHandler.js')
 
 const saveWallet = async (address: bigint) => await saveAddressSigningWallet(address, { type: 'browser', address, label: 'Test account', signerName: 'MetaMask', providerId: 'eip6963:io.metamask' }, undefined, 'Test account')
-const select = async (executor: bigint | undefined, owner = 1n, chainId = ethereum.getChainId()) => await signingPageHandler(SigningPageRequest.serialize({ method: 'signing_setSafeAccounts', chainId, address: activeAddress, owner, executor }), ethereum, simulator.tokenPriceService, new Map())
+const select = async (executor: bigint | undefined, owner = 1n, chainId = ethereum.getChainId()) => await signingPageHandler({ method: 'signing_setSafeAccounts', chainId, address: activeAddress, owner, executor }, ethereum, simulator.tokenPriceService, new Map())
 
 beforeEach(async () => {
 	createBrowserMock()
