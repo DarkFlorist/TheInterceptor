@@ -4224,3 +4224,54 @@ test('expired and cancelled provider discovery probes release slots before eligi
 		})
 	} finally { Date.now = realNow }
 })
+
+for (const settleWhileDisabled of [true, false]) {
+	test(`cancelled in-flight discovery cannot restart access or publish when settling ${ settleWhileDisabled ? 'before' : 'after' } re-enablement`, async () => {
+		let publishCompatibility: ((enabled: boolean) => void) | undefined
+		let settleOldRequest: (() => void) | undefined
+		let forwarded = 0
+		let accessRequests = 0
+		const { fakeWindow } = createFakeWindow({ handleRequest: (request, reply) => {
+			if (request.method === 'connected_to_signer') {
+				publishCompatibility = (enabled) => reply({ interceptorApproved: true, type: 'result', method: 'safe_apps_compatibility', result: { enabled, canRequestAccess: true } })
+				reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
+				publishCompatibility(true)
+				return true
+			}
+			if (request.method === 'eth_accounts' || request.method === 'eth_requestAccounts') {
+				if (request.method === 'eth_requestAccounts') accessRequests++
+				reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: [] })
+				return true
+			}
+			if (request.method !== 'safe_apps_request') return false
+			forwarded++
+			if (forwarded === 1) settleOldRequest = () => replyToSafeAppsRequest(request, reply, { kind: 'result', value: { safeAddress: 'cancelled-safe' } })
+			else replyToSafeAppsRequest(request, reply, { kind: 'result', value: { safeAddress: 'current-safe' } })
+			return true
+		} })
+		await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?safe-cancel-active-discovery-${ settleWhileDisabled }`, async () => {
+			const replies: unknown[] = []
+			fakeWindow.addEventListener('message', ({ data }) => { if (isRecord(data) && typeof data.success === 'boolean') replies.push(data) })
+			await waitFor(() => publishCompatibility !== undefined)
+			const request = { id: 'cancel-active', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }
+			fakeWindow.postMessage(request, fakeWindow.location.origin)
+			await waitFor(() => settleOldRequest !== undefined)
+			fakeWindow.postMessage({ type: 'interceptor_safe_apps_cancel', id: request.id }, fakeWindow.location.origin)
+			publishCompatibility?.(false)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			if (!settleWhileDisabled) publishCompatibility?.(true)
+			settleOldRequest?.()
+			await new Promise((resolve) => setTimeout(resolve, 10))
+			if (settleWhileDisabled) publishCompatibility?.(true)
+			await new Promise((resolve) => setTimeout(resolve, 10))
+			assert.deepEqual(replies, [])
+			assert.equal(forwarded, 1)
+			assert.equal(accessRequests, 0)
+			// Cancellation owns one request, not a permanent ID tombstone.
+			fakeWindow.postMessage(request, fakeWindow.location.origin)
+			await waitFor(() => replies.length === 1)
+			assert.deepEqual(replies, [{ id: request.id, success: true, data: { safeAddress: 'current-safe' }, version: '9.1.0' }])
+			assert.equal(forwarded, 2)
+		})
+	})
+}

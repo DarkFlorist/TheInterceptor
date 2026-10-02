@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
+import SafeAppsSDK from '@safe-global/safe-apps-sdk'
 
 import { installSafeAppsHost } from '../../app/inpage/ts/safeAppsHost.js'
 import { createSafeHostHarness } from '../fixtures/safeAppsHostHarness.js'
@@ -150,5 +151,88 @@ test('abandoned discovery probes leave capacity for operations and all remaining
 		framePort.postMessage({ id: 'after-expiry', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } })
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		assert.equal(forwarded.has('after-expiry'), true)
+	} finally { restoreGlobals() }
+})
+
+test('host disposal rejects pending SDK requests, cancels provider discovery and permits reinstallation', async () => {
+	const { fakeWindow, framePort, emitMessage, emitParentMessage, activeTimeouts, frameWasAppended, restoreGlobals } = createSafeHostHarness()
+	const originalParent = Object.getOwnPropertyDescriptor(fakeWindow, 'parent')
+	try {
+		const host = installSafeAppsHost()
+		assert.ok(host)
+		assert.equal(installSafeAppsHost(), undefined)
+		const cancellations: string[] = []
+		const sdkReplies: unknown[] = []
+		const forwarded: string[] = []
+		fakeWindow.addEventListener('message', (event) => {
+			if (!('data' in event) || !('source' in event) || typeof event.data !== 'object' || event.data === null || !('id' in event.data) || typeof event.data.id !== 'string') return
+			if (event.source === framePort) sdkReplies.push(event.data)
+			if (event.source === fakeWindow && 'method' in event.data) forwarded.push(event.data.id)
+			if (event.source === fakeWindow && 'type' in event.data && event.data.type === 'interceptor_safe_apps_cancel') cancellations.push(event.data.id)
+		})
+		emitParentMessage({ id: 'pending', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } })
+		await Promise.resolve()
+		assert.equal(activeTimeouts().length, 1)
+		host.dispose()
+		host.dispose()
+		assert.deepEqual(Object.getOwnPropertyDescriptor(fakeWindow, 'parent'), originalParent)
+		assert.equal(frameWasAppended(), false)
+		assert.deepEqual(activeTimeouts(), [])
+		await Promise.resolve()
+		assert.deepEqual(cancellations, ['pending'])
+		assert.deepEqual(sdkReplies, [{ id: 'pending', success: false, error: 'Safe Apps hosting was disconnected.', version: '9.1.0' }])
+		emitMessage({ id: 'pending', success: true })
+		emitParentMessage({ id: 'after-disposal', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } })
+		await Promise.resolve()
+		assert.deepEqual(forwarded, ['pending'])
+		assert.equal(sdkReplies.length, 1)
+		const replacement = installSafeAppsHost()
+		assert.ok(replacement)
+		emitParentMessage({ id: 'reinstalled', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } })
+		await Promise.resolve()
+		emitMessage({ id: 'reinstalled', success: true })
+		assert.deepEqual(forwarded, ['pending', 'reinstalled'])
+		assert.equal(sdkReplies.length, 2)
+		replacement.dispose()
+	} finally { restoreGlobals() }
+})
+
+test('host disposal preserves a subsequent page-owned parent replacement', () => {
+	const { fakeWindow, frameWasAppended, restoreGlobals } = createSafeHostHarness()
+	try {
+		const host = installSafeAppsHost()
+		assert.ok(host)
+		const pageParent = new EventTarget()
+		Object.defineProperty(fakeWindow, 'parent', { configurable: true, value: pageParent })
+		host.dispose()
+		assert.equal(Reflect.get(fakeWindow, 'parent'), pageParent)
+		assert.equal(frameWasAppended(), false)
+	} finally { restoreGlobals() }
+})
+
+test('host installation removes its frame when parent replacement fails', () => {
+	const { fakeWindow, frameWasAppended, activeTimeouts, restoreGlobals } = createSafeHostHarness()
+	try {
+		Object.defineProperty(fakeWindow, 'parent', { configurable: false, value: fakeWindow })
+		assert.throws(() => installSafeAppsHost(), TypeError)
+		assert.equal(frameWasAppended(), false)
+		assert.deepEqual(activeTimeouts(), [])
+	} finally { restoreGlobals() }
+})
+
+
+test('host disposal rejects a real SDK request while its emulated parent is still installed', async () => {
+	const { fakeWindow, activeTimeouts, restoreGlobals } = createSafeHostHarness()
+	try {
+		const host = installSafeAppsHost()
+		assert.ok(host)
+		const sdk = new SafeAppsSDK()
+		const rejected = assert.rejects(sdk.safe.getInfo(), /Safe Apps hosting was disconnected/)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(activeTimeouts().length, 1)
+		host.dispose()
+		await rejected
+		assert.equal(Reflect.get(fakeWindow, 'parent'), fakeWindow)
+		assert.deepEqual(activeTimeouts(), [])
 	} finally { restoreGlobals() }
 })

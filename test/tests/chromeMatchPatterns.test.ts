@@ -5,6 +5,7 @@ import { getChromeMatchPatterns } from '../../app/ts/utils/chromeMatchPatterns.j
 const cases: readonly { readonly value: string, readonly exact: readonly string[], readonly site: readonly string[] }[] = [
 	{ value: 'https://example.com', exact: ['https://example.com:443/*'], site: ['https://*.example.com/*'] },
 	{ value: 'http://example.com:8443', exact: ['http://example.com:8443/*'], site: ['http://*.example.com:8443/*'] },
+	{ value: 'http://example.com:80', exact: ['http://example.com:80/*'], site: ['http://*.example.com/*'] },
 	{ value: 'https://example.com:443', exact: ['https://example.com:443/*'], site: ['https://*.example.com/*'] },
 	{ value: 'example.com', exact: [], site: ['*://*.example.com/*'] },
 	{ value: 'localhost:3000', exact: [], site: ['http://localhost:3000/*', 'https://localhost:3000/*'] },

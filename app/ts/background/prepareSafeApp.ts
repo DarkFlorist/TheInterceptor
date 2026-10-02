@@ -1,3 +1,4 @@
+import { getChromeFileInjector } from './chromeScriptInjection.js'
 import { contentScriptRegistration } from './contentScriptRegistration.js'
 import { isMissingBrowserTargetError } from '../utils/requests.js'
 import type { PrepareSafeAppReply } from '../types/interceptor-reply-messages.js'
@@ -17,24 +18,19 @@ async function prepareSafeAppTabOperation(value: string, operation: PreparationO
 	const tabs = await browser.tabs.query({})
 	const tab = tabs.find((tab) => tab.id !== undefined && tab.url !== undefined && new URL(tab.url).origin === origin)
 	if (tab?.id === undefined) return { success: false, errorMessage: 'Open this website in a browser tab before connecting.' }
-	// The Firefox polyfill types omit Chrome's MAIN world and documentIds target.
-	const executeScript: unknown = Reflect.get(browser.scripting, 'executeScript')
-	if (typeof executeScript !== 'function') return { success: false, errorMessage: 'This browser does not support Safe Apps connection preparation.' }
+	const injectFiles = getChromeFileInjector()
+	if (injectFiles === undefined) return { success: false, errorMessage: 'This browser does not support Safe Apps connection preparation.' }
 	operation.tabId = tab.id
 	// Read the actual origin in the isolated world and bind preparation to that document, even if the tab navigates.
-	const documents: unknown = await executeScript.call(browser.scripting, { target: { tabId: tab.id, frameIds: [0] }, world: 'ISOLATED', files: ['/inpage/js/readDocumentOrigin.js'] })
-	const document: unknown = Array.isArray(documents) ? documents[0] : undefined
-	if (typeof document !== 'object' || document === null || !('result' in document) || document.result !== origin) return { success: false, errorMessage: 'The website navigated before connecting.' }
-	if (!('documentId' in document) || typeof document.documentId !== 'string') return { success: false, errorMessage: 'This browser does not support Safe Apps connection preparation.' }
+	const documents = await injectFiles({ target: { tabId: tab.id, frameIds: [0] }, world: 'ISOLATED', files: ['/inpage/js/readDocumentOrigin.js'] })
+	const document = documents[0]
+	if (document === undefined || document.result !== origin) return { success: false, errorMessage: 'The website navigated before connecting.' }
+	if (document.documentId === undefined) return { success: false, errorMessage: 'This browser does not support Safe Apps connection preparation.' }
 	if (operation.abort.signal.aborted) return cancelledReply(operation)
 	operation.documentId = document.documentId
-	const injection = { target: { tabId: tab.id, documentIds: [document.documentId] }, world: 'MAIN', files: ['/inpage/js/prepareSafeAppBootstrap.js'] }
-	// scripting.executeScript automatically awaits the file's final promise; awaitPromise is not a ScriptInjection option.
-	// https://developer.chrome.com/docs/extensions/reference/api/scripting#promises
-	const results: unknown = await Promise.race([executeScript.call(browser.scripting, injection), operation.cancelled])
+	const results = await Promise.race([injectFiles({ target: { tabId: tab.id, documentIds: [document.documentId] }, world: 'MAIN', files: ['/inpage/js/prepareSafeAppBootstrap.js'] }), operation.cancelled])
 	if (operation.abort.signal.aborted) return cancelledReply(operation)
-	const firstResult: unknown = Array.isArray(results) ? results[0] : undefined
-	const result: unknown = typeof firstResult === 'object' && firstResult !== null && 'result' in firstResult ? firstResult.result : undefined
+	const result = results?.[0]?.result
 	if (typeof result !== 'object' || result === null || !('success' in result) || result.success !== true) {
 		return { success: false, errorMessage: typeof result === 'object' && result !== null && 'error' in result && typeof result.error === 'string' ? result.error : 'The website did not confirm a Safe connection.' }
 	}
@@ -98,10 +94,10 @@ export async function cancelSafeAppPreparation(value: string) {
 
 async function clearPreparationScript(operation: PreparationOperation) {
 	if (operation.tabId === undefined || operation.documentId === undefined) return
-	const executeScript: unknown = Reflect.get(browser.scripting, 'executeScript')
-	if (typeof executeScript !== 'function') return
+	const injectFiles = getChromeFileInjector()
+	if (injectFiles === undefined) return
 	try {
-		await executeScript.call(browser.scripting, { target: { tabId: operation.tabId, documentIds: [operation.documentId] }, world: 'MAIN', files: ['/inpage/js/cancelSafeAppPreparationBootstrap.js'] })
+		await injectFiles({ target: { tabId: operation.tabId, documentIds: [operation.documentId] }, world: 'MAIN', files: ['/inpage/js/cancelSafeAppPreparationBootstrap.js'] })
 	} catch (error: unknown) {
 		if (!isMissingPreparationDocument(error)) throw error
 	}

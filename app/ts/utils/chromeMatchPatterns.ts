@@ -10,7 +10,7 @@ export function getChromeMatchPatterns(value: string, intent: 'exact-origin' | '
 	if (url.username !== '' || url.password !== '' || url.pathname !== '/' || url.search !== '' || url.hash !== '' || url.hostname === '' || url.hostname.includes('*')) return []
 	const isIpAddressOrLocalhost = url.hostname === 'localhost' || url.hostname.startsWith('[') || /^\d+(?:\.\d+){3}$/.test(url.hostname)
 	const hostname = intent === 'site-with-subdomains' && !isIpAddressOrLocalhost ? `*.${ url.hostname }` : url.hostname
-	// Chrome treats an omitted port as a wildcard, so an exact origin must specify even its default port.
+	// URL.port already removes explicit scheme-default ports (WHATWG URL port state). Chrome treats an omitted port as a wildcard, so an exact origin must specify even its default port.
 	const port = intent === 'exact-origin' ? url.port || (url.protocol === 'https:' ? '443' : '80') : url.port
 	const host = port === '' ? hostname : `${ hostname }:${ port }`
 	const schemes = hasExplicitScheme ? [url.protocol] : url.port === '' ? ['*:'] : ['http:', 'https:']

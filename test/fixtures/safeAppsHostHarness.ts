@@ -25,13 +25,14 @@ export function createSafeHostHarness({ origin = 'https://app.request.finance', 
 		if (targetOrigin !== '*' && targetOrigin !== '/' && targetOrigin !== origin) return
 		queueMicrotask(() => { if (!disposed) emitParentMessage(data) })
 	} })
+	let appended = false
 	const frame = {
 		style: { display: '' },
+		remove: () => { appended = false },
 		setAttribute: (_name: string, _value: string) => undefined,
 		tabIndex: 0,
 		contentWindow: framePort,
 	}
-	let appended = false
 	const emitMessage = (data: unknown, messageOrigin = origin, source: EventTarget = fakeWindow) => {
 		const event = new Event('message')
 		Object.defineProperties(event, {
