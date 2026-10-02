@@ -2,14 +2,14 @@ import { getChromeFileInjector } from './chromeScriptInjection.js'
 import { contentScriptRegistration } from './contentScriptRegistration.js'
 import { isMissingBrowserTargetError } from '../utils/requests.js'
 import type { PrepareSafeAppReply } from '../types/interceptor-reply-messages.js'
-import { getSafeAppsCompatibilityMode, getSafeAppsHostOrigins, getSettings } from './settings.js'
+import { getEnabledSafeAppsHostOrigins, getSettings } from './settings.js'
 import { hasAccess } from './websiteAccessPolicy.js'
 import { parseSafeAppsHostOrigin } from '../types/safeAppsHosting.js'
 
 async function prepareSafeAppTabOperation(value: string, operation: PreparationOperation): Promise<PrepareSafeAppReply['data']> {
 	const origin = parseSafeAppsHostOrigin(value)
 	if (browser.runtime.getManifest().manifest_version !== 3) return { success: false, errorMessage: 'Safe Apps hosting requires Chrome.' }
-	if (!await getSafeAppsCompatibilityMode() || !(await getSafeAppsHostOrigins()).includes(origin)) return { success: false, errorMessage: 'Enable Safe Apps compatibility and add this website first.' }
+	if (!(await getEnabledSafeAppsHostOrigins()).includes(origin)) return { success: false, errorMessage: 'Enable Safe Apps compatibility and add this website first.' }
 	const settings = await getSettings()
 	if (settings.simulationMode || settings.activeSigningSafeAddress === undefined) return { success: false, errorMessage: 'Select a Safe in signing mode before connecting this app.' }
 	const access = hasAccess(settings.websiteAccess, new URL(origin).host)

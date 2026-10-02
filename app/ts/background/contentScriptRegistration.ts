@@ -1,4 +1,4 @@
-import { getInterceptorDisabledSites, getSafeAppsCompatibilityMode, getSafeAppsHostOrigins, getSettings } from './settings.js'
+import { contentScriptRegistrationSettingsKeys, getEnabledSafeAppsHostOrigins, getInterceptorDisabledSites, getSettings } from './settings.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from '../utils/requests.js'
 import { getChromeMatchPatterns } from '../utils/chromeMatchPatterns.js'
 import { getSafeAppsHostMatchPatterns } from '../utils/safeAppsHosting.js'
@@ -20,7 +20,6 @@ export function getManifestV3ExcludeMatches(origins: readonly string[]) {
 	return [...patterns]
 }
 
-const contentScriptRegistrationStorageKeys = ['safeAppsCompatibilityMode', 'safeAppsHostOrigins', 'websiteAccess']
 type ContentScriptRegistrationOutcome = 'applied' | 'base-provider-recovered'
 
 type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
@@ -64,7 +63,7 @@ const applyContentScriptInjectionStrategyManifestV3 = async (): Promise<ContentS
 	const excludeMatches = getManifestV3ExcludeMatches(getInterceptorDisabledSites(await getSettings()))
 	const baseContentScripts = getBaseContentScripts(excludeMatches)
 	try {
-		const safeAppsHostMatches = await getSafeAppsCompatibilityMode() ? getSafeAppsHostMatchPatterns(await getSafeAppsHostOrigins()) : []
+		const safeAppsHostMatches = getSafeAppsHostMatchPatterns(await getEnabledSafeAppsHostOrigins())
 		const contentScripts = getBaseContentScripts(excludeMatches, safeAppsHostMatches)
 		if (safeAppsHostMatches.length > 0) contentScripts.push({
 			id: 'safe-apps-host',
@@ -101,7 +100,7 @@ export function createContentScriptRegistrationService() {
 	const queueUpdate = (retryRecoveredAttempt?: number) => {
 		const nextUpdate = previousUpdate.then(async () => {
 			// Read inside the queue so subsequent writes cannot leave the last requested update applying stale state.
-			const settingsKey = JSON.stringify(await browser.storage.local.get(contentScriptRegistrationStorageKeys))
+			const settingsKey = JSON.stringify(await browser.storage.local.get([...contentScriptRegistrationSettingsKeys]))
 			// An explicit retry can reapply the failure it observed, but must not repeat a newer queued attempt.
 			const retryObservedFailure = appliedOutcome === 'base-provider-recovered' && retryRecoveredAttempt === appliedAttempt
 			if (settingsKey === appliedSettingsKey && !retryObservedFailure) return appliedOutcome
@@ -123,7 +122,7 @@ export function createContentScriptRegistrationService() {
 		}
 	}
 	const onStorageChanged = (changes: Record<string, browser.storage.StorageChange>, area: string) => {
-		if (area !== 'local' || !contentScriptRegistrationStorageKeys.some((key) => key in changes)) return
+		if (area !== 'local' || !contentScriptRegistrationSettingsKeys.some((key) => key in changes)) return
 		void updateAndReport()
 	}
 	let started = false

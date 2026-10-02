@@ -67,6 +67,8 @@ const safeExportedSettingsFields = {
 	metamaskCompatibilityMode: funtypes.Boolean,
 }
 
+export const CURRENT_EXPORTED_SETTINGS_VERSION = '1.7'
+
 export type ExportedSettings = funtypes.Static<typeof ExportedSettings>
 export const ExportedSettings = funtypes.Union(
 	funtypes.ReadonlyObject({
@@ -129,7 +131,7 @@ export const ExportedSettings = funtypes.Union(
 	}),
 	funtypes.ReadonlyObject({
 		...exportedSettingsEnvelopeFields,
-		version: funtypes.Literal('1.7'),
+		version: funtypes.Literal(CURRENT_EXPORTED_SETTINGS_VERSION),
 		settings: funtypes.ReadonlyObject({
 			...safeExportedSettingsFields,
 			safeAppsCompatibilityMode: funtypes.Boolean,
