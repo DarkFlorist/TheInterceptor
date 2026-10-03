@@ -32,6 +32,7 @@ async function prepareSafeAppTabOperation(value: string, operation: PreparationO
 	operation.documentId = document.documentId
 	const pageScript = injectFiles({ target: { tabId: tab.id, documentIds: [document.documentId] }, world: 'MAIN', files: [INPAGE_SCRIPTS.prepareSafeApp] })
 	operation.pageScript = pageScript
+	// Promise.race observes both inputs, including a pageScript rejection after the tab-close cancellation wins.
 	const results = await Promise.race([pageScript, operation.cancelled])
 	if (operation.abort.signal.aborted) return cancelledReply(operation)
 	const result = results?.[0]?.result

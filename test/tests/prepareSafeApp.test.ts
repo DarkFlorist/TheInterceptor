@@ -287,8 +287,12 @@ for (const action of ['cancel', 'close', 'get-error', 'reload-error', 'unexpecte
 		let markerCleared = false
 		let completeCleanup: (() => void) | undefined
 		let completePreparation: (() => void) | undefined
+		let failPreparation: (() => void) | undefined
 		const cleanup = new Promise<void>((resolve) => { completeCleanup = resolve })
-		const pageScript = new Promise<unknown>((resolve) => { completePreparation = () => resolve([{ result: { success: false, error: 'Safe connection was cancelled.' } }]) })
+		const pageScript = new Promise<unknown>((resolve, reject) => {
+			completePreparation = () => resolve([{ result: { success: false, error: 'Safe connection was cancelled.' } }])
+			failPreparation = () => reject(new Error('The tab was closed.'))
+		})
 		Object.defineProperty(globalThis, 'browser', { configurable: true, value: {
 			runtime: { getManifest: () => ({ manifest_version: 3 }) },
 			storage: { local: { get: async () => ({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: ['https://safe-app.example'], simulationMode: false, activeSigningSafeAddress: '0x1234567890123456789012345678901234567890', websiteAccess: [{ website: { websiteOrigin: 'safe-app.example' }, addressAccess: [], access: true }] }) } },
@@ -323,6 +327,11 @@ for (const action of ['cancel', 'close', 'get-error', 'reload-error', 'unexpecte
 					await cancellation
 				} else for (const listener of listeners) listener(1)
 				assert.match(JSON.stringify(await pending), action === 'cancel' ? /cancelled/ : /tab was closed/)
+				if (action === 'close') {
+					// The rejected executeScript settles after cancellation won the race.
+					failPreparation?.()
+					await new Promise((resolve) => setTimeout(resolve, 0))
+				}
 			}
 			assert.equal(listeners.size, 0)
 			assert.equal(reloads, 0)
