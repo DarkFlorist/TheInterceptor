@@ -1,8 +1,9 @@
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
+import { getErrorMessage } from '../utils/caughtErrors.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
@@ -28,14 +29,15 @@ const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(error)
 }
 
-const idsOfOpenedTabsRepository = createStoredValueRepository({
-	read: async () => (await browserStorageLocalGet('idsOfOpenedTabs')).idsOfOpenedTabs,
-	write: async (idsOfOpenedTabs) => { await browserStorageLocalSet({ idsOfOpenedTabs }) },
-	getDefault: () => ({ settingsView: undefined, addressBook: undefined, websiteAccess: undefined, simulationStack: undefined }),
-})
+export async function getManagementTabId(): Promise<number | undefined> {
+	const tabIds = (await browserStorageLocalGet('idsOfOpenedTabs')).idsOfOpenedTabs
+	// Older versions tracked this same tab under settingsView.
+	return tabIds?.managementTabId ?? tabIds?.settingsView
+}
 
-export const getIdsOfOpenedTabs = idsOfOpenedTabsRepository.get
-export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => { await idsOfOpenedTabsRepository.update((previous) => ({ ...previous, ...ids })) }
+export async function setManagementTabId(tabId: number): Promise<void> {
+	await browserStorageLocalSet({ idsOfOpenedTabs: { managementTabId: tabId } })
+}
 
 const pendingTransactionsSemaphore = new Semaphore(1)
 async function readPendingTransactionsAndMessages() {
@@ -339,7 +341,26 @@ export async function getLatestUnexpectedError(): Promise<UnexpectedErrorOccured
 }
 
 const MAX_INTERCEPTOR_ERROR_DIAGNOSTICS = 50
+const MAX_INTERCEPTOR_ERROR_DIAGNOSTICS_BYTES = 512_000
 const interceptorErrorDiagnosticsSemaphore = new Semaphore(1)
+
+function isDiagnosticStorageQuotaError(error: unknown) {
+	return getErrorMessage(error)?.toLowerCase().includes('quota') ?? false
+}
+
+function diagnosticStorageBytes(diagnostics: readonly InterceptorErrorDiagnostic[]) {
+	return new TextEncoder().encode(JSON.stringify(diagnostics)).length
+}
+
+function diagnosticStorageFailureRecord(diagnostic: InterceptorErrorDiagnostic): InterceptorErrorDiagnostic {
+	return {
+		...diagnostic,
+		message: 'Full diagnostic could not be stored. See the extension console for the raw error.',
+		cause: undefined,
+		rawError: 'The raw error exceeded the diagnostic storage budget or available storage quota.',
+		details: undefined,
+	}
+}
 
 export async function getInterceptorErrorDiagnostics(): Promise<readonly InterceptorErrorDiagnostic[]> {
 	try {
@@ -355,14 +376,33 @@ export async function getInterceptorErrorDiagnostics(): Promise<readonly Interce
 export async function appendInterceptorErrorDiagnostic(diagnostic: InterceptorErrorDiagnostic) {
 	await interceptorErrorDiagnosticsSemaphore.execute(async () => {
 		const diagnostics = await getInterceptorErrorDiagnostics()
-		await browserStorageLocalSet({
-			interceptorErrorDiagnostics: [...diagnostics, diagnostic].slice(-MAX_INTERCEPTOR_ERROR_DIAGNOSTICS),
-		})
+		const retained = [...diagnostics, diagnostic].slice(-MAX_INTERCEPTOR_ERROR_DIAGNOSTICS)
+		while (retained.length > 1 && diagnosticStorageBytes(retained) > MAX_INTERCEPTOR_ERROR_DIAGNOSTICS_BYTES) retained.shift()
+		if (diagnosticStorageBytes(retained) > MAX_INTERCEPTOR_ERROR_DIAGNOSTICS_BYTES) {
+			await browserStorageLocalSet({ interceptorErrorDiagnostics: [diagnosticStorageFailureRecord(diagnostic)] })
+			return
+		}
+		while (true) {
+			try {
+				await browserStorageLocalSet({ interceptorErrorDiagnostics: retained })
+				return
+			} catch (error) {
+				if (!isDiagnosticStorageQuotaError(error)) throw error
+				if (retained.length > 1) {
+					retained.shift()
+					continue
+				}
+				await browserStorageLocalSet({ interceptorErrorDiagnostics: [diagnosticStorageFailureRecord(diagnostic)] })
+				return
+			}
+		}
 	})
 }
 
 export async function clearInterceptorErrorDiagnostics() {
-	await browserStorageLocalRemove('interceptorErrorDiagnostics')
+	await interceptorErrorDiagnosticsSemaphore.execute(async () => {
+		await browserStorageLocalRemove('interceptorErrorDiagnostics')
+	})
 }
 
 export const getEnsNodeHashes = async () => (await browserStorageLocalGet('ensNameHashes'))?.ensNameHashes ?? []

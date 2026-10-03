@@ -12,7 +12,7 @@ import { CompleteVisualizedSimulation, type BlockTimeManipulation, type PreSimul
 import { MessageToPopup, PopupMessage, UpdateHomePage, type Settings } from '../../app/ts/types/interceptor-messages.js'
 import { serialize, type EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
 import { installDomMock } from './domMock.js'
-import { getSimulationStackTargetHash } from '../../app/ts/utils/simulationStackTargets.js'
+import { getSimulationStackTargetHash } from '../../app/ts/utils/managementPages.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-reply-messages.js'
 
@@ -538,11 +538,12 @@ function createFailedStackHomePageUpdate(tabId: number, popupRefreshGeneration: 
 }
 
 describe('simulation visualizer open replies', () => {
-	test('stack visualizer entrypoint wraps the page in Hint for toolbar feedback', async () => {
-		const source = await Bun.file('app/ts/simulationStack.ts').text()
+	test('stack visualizer view wraps the page in Hint for toolbar feedback', async () => {
+		const entrypointSource = await Bun.file('app/ts/simulationStack.ts').text()
+		const viewSource = await Bun.file('app/ts/components/pages/SimulationStackPage.tsx').text()
 
-		assert.match(source, /import Hint from '\.\/components\/subcomponents\/Hint\.js'/)
-		assert.match(source, /preact\.createElement\(Hint,\s*\{\s*children:\s*preact\.createElement\(SimulationStackPage,\s*\{\}\)\s*\}\)/)
+		assert.match(entrypointSource, /preact\.createElement\(SimulationStackView,\s*\{\}\)/)
+		assert.match(viewSource, /return <Hint><SimulationStackPage \/><\/Hint>/)
 	})
 
 	test('stack visualizer entrypoint clears the shell loading placeholder before rendering', async () => {
@@ -1619,6 +1620,70 @@ describe('simulation visualizer open replies', () => {
 			assert.ok(targetRow)
 			assert.equal(targetRow.getAttribute?.('class')?.includes('simulation-stack-row--highlighted'), true)
 			assert.equal(String(targetHeader.getAttribute?.('aria-expanded')), 'true')
+		} finally {
+			dom.restore()
+		}
+	})
+
+	test('stack visualizer defers a hidden-panel hash target until the management panel can become visible', async () => {
+		const dom = installDomMock()
+		const flushAnimationFrames = installQueuedAnimationFrames()
+		const { listeners } = installBrowserMock()
+		const hashChangeListeners = new Set<EventListenerOrEventListenerObject>()
+		const scrollCalls: ScrollIntoViewOptions[] = []
+		let panelVisible = false
+		globalThis.window.addEventListener = (type, listener) => {
+			if (type === 'hashchange') hashChangeListeners.add(listener)
+		}
+		globalThis.window.removeEventListener = (type, listener) => {
+			if (type === 'hashchange') hashChangeListeners.delete(listener)
+		}
+		Object.defineProperty(globalThis.window, 'location', {
+			configurable: true,
+			writable: true,
+			value: { hash: '#simulation-stack' },
+		})
+		Object.defineProperty(dom.document, 'getElementById', {
+			configurable: true,
+			value: (id: string) => {
+				const element = findElementById(dom.document.body, id)
+				if (element === undefined) return null
+				element.scrollIntoView = (options?: ScrollIntoViewOptions) => {
+					if (panelVisible && options !== undefined) scrollCalls.push(options)
+				}
+				return element
+			},
+		})
+		try {
+			await act(() => {
+				render(h(SimulationStackPage, {}), dom.document.body)
+			})
+			const listener = listeners[0]
+			if (listener === undefined) throw new Error('Expected page to register a runtime listener')
+
+			await act(() => {
+				listener({ role: 'all', ...serialize(UpdateHomePage, createStackHomePageUpdate(18, 1, 'Stack tab')) }, {}, () => undefined)
+				flushAnimationFrames()
+			})
+			globalThis.window.location.hash = getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'hidden-panel')
+			await act(() => {
+				const event = new Event('hashchange')
+				for (const hashChangeListener of hashChangeListeners) {
+					if (typeof hashChangeListener === 'function') hashChangeListener(event)
+					else hashChangeListener.handleEvent(event)
+				}
+			})
+			assert.equal(scrollCalls.length, 0)
+
+			panelVisible = true
+			await act(() => {
+				flushAnimationFrames()
+				flushAnimationFrames()
+			})
+			assert.deepStrictEqual(scrollCalls, [{ behavior: 'smooth', block: 'center' }])
+			const targetRow = findElementById(dom.document.body, 'simulation-stack-transaction-0x1')
+			assert.ok(targetRow)
+			assert.equal(targetRow.getAttribute?.('class')?.includes('simulation-stack-row--highlighted'), true)
 		} finally {
 			dom.restore()
 		}
