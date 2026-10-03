@@ -40,6 +40,7 @@ export const popupMessageProtocol = {
 	popup_interceptorAccessChangeAddress: { domain: 'website-access' },
 	popup_interceptorAccessRefresh: { domain: 'website-access' },
 	popup_ChangeSettings: { domain: 'settings', legacyWireName: true },
+	popup_openManagement: { domain: 'navigation' },
 	popup_openSettings: { domain: 'navigation' },
 	popup_import_settings: { domain: 'settings', legacyWireName: true },
 	popup_get_export_settings: { domain: 'settings', legacyWireName: true },

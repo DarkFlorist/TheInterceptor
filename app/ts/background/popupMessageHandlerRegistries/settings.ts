@@ -8,6 +8,9 @@ import { getManagementHashForOpenRequest } from '../../utils/managementPages.js'
 export const settingsPopupMessageHandlers = {
 	popup_requestSettings: popupMessageHandler('popup_requestSettings', async () => await settingsOpened()),
 	popup_ChangeSettings: popupMessageHandler('popup_ChangeSettings', async (context, request) => await changeSettings(context.simulationServicesOwner, context.websiteTabConnections, request, context.simulationAbortController)),
+	popup_openManagement: popupMessageHandler('popup_openManagement', async () => {
+		return await openManagementTab(getManagementHashForOpenRequest('popup_openManagement'))
+	}),
 	popup_openSettings: popupMessageHandler('popup_openSettings', async () => {
 		return await openManagementTab(getManagementHashForOpenRequest('popup_openSettings'))
 	}),

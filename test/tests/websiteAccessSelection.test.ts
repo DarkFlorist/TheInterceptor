@@ -337,7 +337,7 @@ describe('WebsiteAccessView selection', () => {
 		dom.restore()
 	})
 
-	test('clears the selected website even when the URL hash is already empty', async () => {
+	test('returns to the Websites tab when the selected website is cleared', async () => {
 		const { clearSelectedWebsite } = await modulesPromise
 		const selectedDomain = new Signal<string | undefined>('app.sablier.com')
 		const location = { hash: '' }
@@ -345,6 +345,6 @@ describe('WebsiteAccessView selection', () => {
 		clearSelectedWebsite({ location }, selectedDomain)
 
 		assert.equal(selectedDomain.value, undefined)
-		assert.equal(location.hash, '')
+		assert.equal(location.hash, '#websites')
 	})
 })

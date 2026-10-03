@@ -7,7 +7,16 @@ import { SettingsView } from './SettingsView.js'
 import { SimulationStackPage } from './SimulationStackPage.js'
 import { DiagnosticsView } from './DiagnosticsView.js'
 import Hint from '../subcomponents/Hint.js'
-import { createMountedManagementPages, getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash, mountManagementPage, type ManagementPage } from '../../utils/managementPages.js'
+import { createMountedManagementPages, getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash, managementPages, mountManagementPage, type ManagementPage } from '../../utils/managementPages.js'
+
+const managementSectionDetails: Readonly<Record<ManagementPage, { label: string, icon: string, description: string }>> = {
+	home: { label: 'Home', icon: '../img/management-home.svg', description: '' },
+	websites: { label: 'Websites', icon: '../img/internet.svg', description: 'Review website access and permissions.' },
+	'address-book': { label: 'Address Book', icon: '../img/address-book.svg', description: 'Manage saved addresses and contacts.' },
+	'simulation-stack': { label: 'Simulation Stack', icon: '../img/simulation-stack.svg', description: 'Inspect pending and simulated activity.' },
+	diagnostics: { label: 'Diagnostics', icon: '../img/diagnostics.svg', description: 'Browse recorded errors and technical details.' },
+	settings: { label: 'Settings', icon: '../img/settings.svg', description: 'Configure networks and extension preferences.' },
+}
 
 type ManagementTabParams = {
 	page: ManagementPage
@@ -26,12 +35,34 @@ function ManagementTab({ page, selectedPage, label, icon, selectPage }: Manageme
 		aria-selected = { selected }
 		aria-controls = { `management-panel-${ page }` }
 		id = { `management-tab-${ page }` }
-		tabIndex = { selected || (selectedPage === undefined && page === 'websites') ? 0 : -1 }
+		tabIndex = { selected || (selectedPage === undefined && page === 'home') ? 0 : -1 }
 		onClick = { () => selectPage(page) }
 	>
 		<img src = { icon } width = '24' height = '24' alt = '' />
 		<span>{ label }</span>
 	</button>
+}
+
+function ManagementHome({ selectPage }: { selectPage: (page: ManagementPage) => void }) {
+	return <main class = 'management-home'>
+		<header class = 'management-home-intro'>
+			<h2>Manage The Interceptor</h2>
+			<p>Choose a section to manage your extension.</p>
+		</header>
+		<div class = 'management-home-grid'>
+			{ managementPages.filter((page) => page !== 'home').map((page) => {
+				const section = managementSectionDetails[page]
+				return <button key = { page } type = 'button' class = 'management-home-card' onClick = { () => selectPage(page) }>
+					<img src = { section.icon } width = '28' height = '28' alt = '' />
+					<span class = 'management-home-card-copy'>
+						<strong>{ section.label }</strong>
+						<span>{ section.description }</span>
+					</span>
+					<span class = 'management-home-card-arrow' aria-hidden = 'true'>→</span>
+				</button>
+			}) }
+		</div>
+	</main>
 }
 
 export function ManagementView() {
@@ -89,17 +120,23 @@ export function ManagementView() {
 				<h1>The Interceptor</h1>
 			</div>
 			<nav class = 'management-tabs' role = 'tablist' aria-label = 'Interceptor management' onKeyDown = { handleTabKeyDown }>
-				<ManagementTab page = 'websites' selectedPage = { selectedPage.value } label = 'Websites' icon = '../img/internet.svg' selectPage = { selectPage } />
-				<ManagementTab page = 'address-book' selectedPage = { selectedPage.value } label = 'Address Book' icon = '../img/address-book.svg' selectPage = { selectPage } />
-				<ManagementTab page = 'simulation-stack' selectedPage = { selectedPage.value } label = 'Simulation Stack' icon = '../img/simulation-stack.svg' selectPage = { selectPage } />
-				<ManagementTab page = 'diagnostics' selectedPage = { selectedPage.value } label = 'Diagnostics' icon = '../img/diagnostics.svg' selectPage = { selectPage } />
-				<ManagementTab page = 'settings' selectedPage = { selectedPage.value } label = 'Settings' icon = '../img/settings.svg' selectPage = { selectPage } />
+				{ managementPages.map((page) => <ManagementTab key = { page } page = { page } selectedPage = { selectedPage.value } label = { managementSectionDetails[page].label } icon = { managementSectionDetails[page].icon } selectPage = { selectPage } />) }
 			</nav>
 		</header>
 		{ selectedPage.value === undefined && <main class = 'management-panel management-unavailable'>
 			<h2>Management page unavailable</h2>
 			<p>Choose a tab above to continue.</p>
 		</main> }
+		<section
+			id = 'management-panel-home'
+			class = 'management-panel'
+			role = 'tabpanel'
+			aria-labelledby = 'management-tab-home'
+			tabIndex = { selectedPage.value === 'home' ? 0 : -1 }
+			hidden = { selectedPage.value !== 'home' }
+		>
+			{ mountedPages.value.home ? <ManagementHome selectPage = { selectPage } /> : <></> }
+		</section>
 		<section
 			id = 'management-panel-websites'
 			class = 'management-panel'

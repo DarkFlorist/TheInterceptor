@@ -110,13 +110,13 @@ const emptyOpenedTabs = (): OpenedTabIds => ({
 })
 
 describe('open management tab', () => {
-	test('reuses the tracked settings tab for all three popup management controls', async () => {
+	test('reuses the tracked management tab for its entry point and legacy popup controls', async () => {
 		const { createdTabs, updatedTabs } = installBrowserMock(
 			[{ id: 42, url: 'chrome-extension://test-extension/html3/settingsViewV3.html#websites' }],
 			{ ...emptyOpenedTabs(), settingsView: 42 },
 		)
 		const openManagementTab = await loadOpenManagementTab()
-		const requests: readonly ManagementOpenRequest[] = ['popup_openWebsiteAccess', 'popup_openAddressBook', 'popup_openSettings']
+		const requests: readonly ManagementOpenRequest[] = ['popup_openManagement', 'popup_openWebsiteAccess', 'popup_openAddressBook', 'popup_openSettings']
 
 		for (const request of requests) {
 			await openManagementTab(getManagementHashForOpenRequest(request))
@@ -125,6 +125,7 @@ describe('open management tab', () => {
 
 		assert.deepEqual(createdTabs, [])
 		assert.deepEqual(updatedTabs, [
+			{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#home' } },
 			{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#websites' } },
 			{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#address-book' } },
 			{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#settings' } },

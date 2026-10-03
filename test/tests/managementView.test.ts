@@ -9,6 +9,7 @@ const managementViewSource = await Bun.file(new URL('../../app/ts/components/pag
 
 describe('management view routing', () => {
 	test('maps each management tab to a stable hash', () => {
+		assert.equal(getManagementPageHash('home'), '#home')
 		assert.equal(getManagementPageHash('websites'), '#websites')
 		assert.equal(getManagementPageHash('address-book'), '#address-book')
 		assert.equal(getManagementPageHash('simulation-stack'), '#simulation-stack')
@@ -25,13 +26,15 @@ describe('management view routing', () => {
 		assert.equal(getManagementPageFromHash(targetHash), 'simulation-stack')
 	})
 
-	test('maps all three popup controls into the shared management navigation', () => {
+	test('maps popup controls into the shared management navigation', () => {
+		assert.equal(getManagementHashForOpenRequest('popup_openManagement'), '#home')
 		assert.equal(getManagementHashForOpenRequest('popup_openWebsiteAccess'), '#websites')
 		assert.equal(getManagementHashForOpenRequest('popup_openAddressBook'), '#address-book')
 		assert.equal(getManagementHashForOpenRequest('popup_openSettings'), '#settings')
 	})
 
 	test('selects management tabs from their hashes', () => {
+		assert.equal(getManagementPageFromHash('#home'), 'home')
 		assert.equal(getManagementPageFromHash('#websites'), 'websites')
 		assert.equal(getManagementPageFromHash('#address-book'), 'address-book')
 		assert.equal(getManagementPageFromHash('#simulation-stack'), 'simulation-stack')
@@ -49,38 +52,40 @@ describe('management view routing', () => {
 		assert.equal(getManagementPageFromHash('#unknown'), undefined)
 		assert.equal(getManagementPageFromHash('#origin:'), undefined)
 		assert.equal(getManagementPageFromHash('#simulation-stack-target=invalid'), undefined)
-		assert.equal(getManagementPageFromHash(''), 'websites')
-		assert.equal(getManagementPageFromHash('#'), 'websites')
+		assert.equal(getManagementPageFromHash(''), 'home')
+		assert.equal(getManagementPageFromHash('#'), 'home')
 	})
 
 	test('supports standard tablist keyboard navigation with wrapping', () => {
+		assert.equal(getManagementPageFromNavigationKey('home', 'ArrowRight'), 'websites')
 		assert.equal(getManagementPageFromNavigationKey('websites', 'ArrowRight'), 'address-book')
 		assert.equal(getManagementPageFromNavigationKey('address-book', 'ArrowRight'), 'simulation-stack')
 		assert.equal(getManagementPageFromNavigationKey('simulation-stack', 'ArrowRight'), 'diagnostics')
 		assert.equal(getManagementPageFromNavigationKey('diagnostics', 'ArrowRight'), 'settings')
-		assert.equal(getManagementPageFromNavigationKey('settings', 'ArrowRight'), 'websites')
-		assert.equal(getManagementPageFromNavigationKey('websites', 'ArrowLeft'), 'settings')
-		assert.equal(getManagementPageFromNavigationKey('settings', 'Home'), 'websites')
+		assert.equal(getManagementPageFromNavigationKey('settings', 'ArrowRight'), 'home')
+		assert.equal(getManagementPageFromNavigationKey('home', 'ArrowLeft'), 'settings')
+		assert.equal(getManagementPageFromNavigationKey('settings', 'Home'), 'home')
 		assert.equal(getManagementPageFromNavigationKey('websites', 'End'), 'settings')
 		assert.equal(getManagementPageFromNavigationKey('websites', 'Enter'), undefined)
-		assert.equal(getManagementPageFromNavigationKey(undefined, 'ArrowRight'), 'websites')
+		assert.equal(getManagementPageFromNavigationKey(undefined, 'ArrowRight'), 'home')
 		assert.equal(getManagementPageFromNavigationKey(undefined, 'ArrowLeft'), 'settings')
 	})
 
 	test('mounts only the initial data view and retains views after their first selection', () => {
-		const initialPages = createMountedManagementPages('websites')
-		assert.deepEqual(initialPages, { websites: true, 'address-book': false, 'simulation-stack': false, diagnostics: false, settings: false })
+		const initialPages = createMountedManagementPages('home')
+		assert.deepEqual(initialPages, { home: true, websites: false, 'address-book': false, 'simulation-stack': false, diagnostics: false, settings: false })
 
-		const withAddressBook = mountManagementPage(initialPages, 'address-book')
-		assert.deepEqual(withAddressBook, { websites: true, 'address-book': true, 'simulation-stack': false, diagnostics: false, settings: false })
+		const withWebsites = mountManagementPage(initialPages, 'websites')
+		const withAddressBook = mountManagementPage(withWebsites, 'address-book')
+		assert.deepEqual(withAddressBook, { home: true, websites: true, 'address-book': true, 'simulation-stack': false, diagnostics: false, settings: false })
 
 		const withSimulationStack = mountManagementPage(withAddressBook, 'simulation-stack')
 		const withDiagnostics = mountManagementPage(withSimulationStack, 'diagnostics')
 
 		const withSettings = mountManagementPage(withDiagnostics, 'settings')
-		assert.deepEqual(withSettings, { websites: true, 'address-book': true, 'simulation-stack': true, diagnostics: true, settings: true })
+		assert.deepEqual(withSettings, { home: true, websites: true, 'address-book': true, 'simulation-stack': true, diagnostics: true, settings: true })
 		assert.equal(mountManagementPage(withSettings, 'websites'), withSettings)
-		assert.deepEqual(createMountedManagementPages(undefined), { websites: false, 'address-book': false, 'simulation-stack': false, diagnostics: false, settings: false })
+		assert.deepEqual(createMountedManagementPages(undefined), { home: false, websites: false, 'address-book': false, 'simulation-stack': false, diagnostics: false, settings: false })
 	})
 
 	test('keeps simulation copy feedback available in the embedded stack', () => {

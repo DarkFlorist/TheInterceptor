@@ -858,6 +858,75 @@ fieldset[disabled] .button.is-primary.is-danger {
 	min-height: 100%;
 }
 
+.management-home {
+	width: 100%;
+	max-width: 64rem;
+	margin-inline: auto;
+	padding: clamp(1.5rem, 4vw, 3rem) 1rem;
+}
+
+.management-home-intro {
+	margin-bottom: 1.5rem;
+}
+
+.management-home-intro h2 {
+	color: var(--text-color);
+	font-size: clamp(1.5rem, 3vw, 2rem);
+	font-weight: 600;
+}
+
+.management-home-intro p {
+	margin-top: 0.25rem;
+	color: var(--disabled-text-color);
+}
+
+.management-home-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+	gap: 0.75rem;
+}
+
+.management-home-card {
+	display: flex;
+	align-items: flex-start;
+	gap: 1rem;
+	min-height: 7rem;
+	padding: 1.25rem;
+	border: 1px solid var(--layout-line-color);
+	border-radius: 0.375rem;
+	background: var(--white-alpha-08);
+	color: var(--text-color);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+.management-home-card:hover {
+	border-color: var(--accent-color);
+}
+
+.management-home-card:focus-visible {
+	outline: 2px solid var(--accent-color);
+	outline-offset: 2px;
+}
+
+.management-home-card-copy {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+
+.management-home-card-copy span {
+	color: var(--disabled-text-color);
+	font-size: 0.875rem;
+	line-height: 1.35;
+}
+
+.management-home-card-arrow {
+	color: var(--disabled-text-color);
+}
+
 .management-unavailable {
 	width: 100%;
 	max-width: 64rem;

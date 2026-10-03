@@ -23,6 +23,7 @@ import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { getWebsiteOriginFromHash, getWebsiteOriginHash, WEBSITE_ORIGIN_RADIO_NAME } from '../../utils/websiteAccessHash.js'
+import { getManagementPageHash } from '../../utils/managementPages.js'
 
 type WebsiteAccessContext = {
 	searchQuery: Signal<string>
@@ -101,7 +102,7 @@ export function useWebsiteAccess() {
 
 export function clearSelectedWebsite(windowObject: Pick<Window, 'location'>, selectedDomain: Signal<string | undefined>) {
 	selectedDomain.value = undefined
-	windowObject.location.hash = ''
+	windowObject.location.hash = getManagementPageHash('websites')
 }
 
 export const WebsiteAccessView = () => {
