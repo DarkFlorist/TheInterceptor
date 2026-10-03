@@ -62,7 +62,7 @@ const refreshRevision = createPopupSimulationRefresher<RevisionedPopupSimulation
 })
 
 export async function queuePopupSimulationRefresh(services: PopupSimulationRefresh) {
-	const snapshot = await captureSimulationSnapshot()
+	const snapshot = await captureSimulationSnapshot('what-if')
 	const provider = getSimulationProviderForSnapshot(services.ethereum, snapshot)
 	const block = provider?.getCachedBlock()
 	// Without a cached head we cannot prove that two requests cover the same block; keep the follow-up refresh.

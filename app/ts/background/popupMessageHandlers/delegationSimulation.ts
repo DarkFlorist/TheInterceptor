@@ -16,7 +16,7 @@ export async function requestDelegationSimulation(settings: Settings, ethereum: 
 		return { method: 'popup_requestDelegationSimulation' as const, data: { address, chainId, status: { type: 'unknown' as const } } }
 	}
 	try {
-		const delegate = await getCachedDelegationHint(ethereum, address, undefined, { refresh: true })
+		const delegate = await getCachedDelegationHint(ethereum, address)
 		return { method: 'popup_requestDelegationSimulation' as const, data: { address, chainId, status: delegate === undefined ? { type: 'none' as const } : { type: 'delegated' as const, delegate } } }
 	} catch (error) {
 		if (!isExpectedInfrastructureError(error)) await reportLocalRecovery(error, { code: 'active_delegation_lookup_failed' })
@@ -30,22 +30,7 @@ export async function setDelegationSimulation(settings: Settings, services: Simu
 	if (enabled && !affectsActiveSimulation) {
 		return { method: 'popup_setDelegationSimulation' as const, data: { ok: false as const, message: 'The active simulation account or network changed. Please try again.' } }
 	}
-	if (enabled) {
-		const providerNetwork = services.ethereum.getRpcEntry()
-		if (network.httpsRpc === undefined || providerNetwork.chainId !== chainId || providerNetwork.httpsRpc !== network.httpsRpc) {
-			return { method: 'popup_setDelegationSimulation' as const, data: { ok: false as const, message: 'The active simulation network changed. Please try again.' } }
-		}
-		let delegate: bigint | undefined
-		try {
-			delegate = await getCachedDelegationHint(services.ethereum, address, undefined, { refresh: true })
-		} catch (error) {
-			if (!isExpectedInfrastructureError(error)) await reportLocalRecovery(error, { code: 'delegate_clearing_confirmation_failed' })
-			return { method: 'popup_setDelegationSimulation' as const, data: { ok: false as const, message: 'Could not confirm the current delegate. Please try again.' } }
-		}
-		if (delegate === undefined) {
-			return { method: 'popup_setDelegationSimulation' as const, data: { ok: false as const, message: 'This account no longer has an EIP-7702 delegate.' } }
-		}
-	}
+	// The popup hint gates the option; saving the choice needs no RPC lookup.
 	const changed = await setDelegateClearingEnabled(address, chainId, enabled)
 	if (changed) {
 		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: await getSettings(), popupRefreshGeneration: bumpPopupRefreshGeneration() })

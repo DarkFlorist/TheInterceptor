@@ -32,7 +32,7 @@ import { calculateRealizedEffectiveGasPrice, getBlockTimeManipulationSeconds, ge
 import { getSignedTransactionForSimulation, mockSignTransaction } from './simulationTransactionSigning.js'
 import { getMessageHashForPersonalSign, simulatePersonalSign } from './simulationPersonalSigning.js'
 import { type BalanceQuery, getTokenBalanceQueriesForTransaction } from './simulationTokenBalanceQueries.js'
-import { getEffectiveStateOverrides } from '../../utils/delegateClearingState.js'
+import { getEffectiveStateOverrides } from '../../utils/simulationStateOverrides.js'
 
 export { getSignedTransactionForSimulation, mockSignTransaction }
 export { getMessageHashForPersonalSign, simulatePersonalSign }
@@ -951,7 +951,7 @@ const getIdleSimulationCodeOverride = (simulationStateInput: SimulationStateInpu
 
 export const getSimulatedCode = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, address: bigint, blockTag: EthereumBlockTag = 'latest') => {
 	if (simulationState.kind === 'simulated' && simulationState.value.success) {
-		const codeOverride = getIdleSimulationCodeOverride(simulationState.value.simulationStateInput, simulationState.value.simulationOverrides, address, blockTag, simulationState.value.blockNumber)
+		const codeOverride = getIdleSimulationCodeOverride(simulationState.value.simulationStateInput, simulationState.value.simulationOverrides ?? {}, address, blockTag, simulationState.value.blockNumber)
 		if (codeOverride !== undefined) return { statusCode: 'success', getCodeReturn: codeOverride } as const
 	}
 	if (simulationState.kind === 'passthrough' || await canQueryNodeDirectly(simulationState.value, blockTag)) {
@@ -1146,14 +1146,15 @@ const withEthSimulateV1VisibleParentHash = (
 }
 
 const withInitialSimulationOverrides = (request: EthSimulateV1Params, simulationOverrides: StateOverrides, precedingSimulatedBlockCount: number): EthSimulateV1Params => {
-	if (precedingSimulatedBlockCount !== 0 || Object.keys(simulationOverrides).length === 0) return request
 	const [firstBlock, ...remainingBlocks] = request.params[0].blockStateCalls
 	if (firstBlock === undefined) return request
+	const stateOverrides = getEffectiveStateOverrides(firstBlock.stateOverrides ?? {}, simulationOverrides, precedingSimulatedBlockCount)
+	if (stateOverrides === firstBlock.stateOverrides || (firstBlock.stateOverrides === undefined && Object.keys(stateOverrides).length === 0)) return request
 	const payload = {
 		...request.params[0],
 		blockStateCalls: [{
 			...firstBlock,
-			stateOverrides: getEffectiveStateOverrides(firstBlock.stateOverrides ?? {}, simulationOverrides, 0),
+			stateOverrides,
 		}, ...remainingBlocks],
 	}
 	return {
@@ -1195,6 +1196,8 @@ export const ethSimulateV1FromInput = async (
 
 	const simulationPrefixBlockCount = getEthSimulateV1SimulationPrefixBlockCount(context, parentBlockTag)
 	if (simulationPrefixBlockCount === undefined) return await sendWithoutSimulationPrefix()
+	// An idle initial override belongs on the DApp's first block; there is no Interceptor block to prefix.
+	if (simulationPrefixBlockCount === 0) return await sendWithoutSimulationPrefix()
 	if (request.params[0].validation === true) throwEthSimulateV1ValidationWithSimulationStackError()
 
 	const simulationPrefixBlockStateCalls = context.prepared.request.params[0].blockStateCalls.slice(0, simulationPrefixBlockCount)
@@ -1214,7 +1217,6 @@ export const ethSimulateV1FromInput = async (
 	const result = await ethereumClientService.ethSimulateV1Request(prefixedRequest, requestAbortController)
 	if (result.length < simulationPrefixBlockStateCalls.length) throw new Error('eth_simulateV1 returned fewer blocks than the prepared simulation prefix')
 	const visibleResult = result.slice(simulationPrefixBlockStateCalls.length)
-	if (simulationPrefixBlockCount === 0) return visibleResult
 	return withEthSimulateV1VisibleParentHash(visibleResult, getEthSimulateV1VisibleParentHash(context, simulationPrefixBlockCount))
 }
 
@@ -1732,7 +1734,7 @@ export const simulatedCall = async (ethereumClientService: EthereumClientService
 
 	//todo, we can optimize this by leaving nonce out
 	try {
-		const callResult = await simulateBlockCallOnTopOfSimulationInput(ethereumClientService, requestAbortController, simulationState.kind === 'passthrough' ? undefined : simulationState.value.simulationStateInput, transaction, { extraOverrides, simulationOverrides: simulationState.kind === 'passthrough' ? {} : simulationState.value.simulationOverrides })
+		const callResult = await simulateBlockCallOnTopOfSimulationInput(ethereumClientService, requestAbortController, simulationState.kind === 'passthrough' ? undefined : simulationState.value.simulationStateInput, transaction, { extraOverrides, simulationOverrides: simulationState.kind === 'passthrough' ? {} : simulationState.value.simulationOverrides ?? {} })
 		if (callResult === undefined) throw new Error('failed to get last call in eth simulate')
 		if (callResult?.status === 'failure') return { error: callResult.error }
 		return { result: callResult.returnData }

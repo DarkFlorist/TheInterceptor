@@ -37,10 +37,9 @@ function createDelegationCache(lookup: (address: bigint, controller: AbortContro
 		return pending
 	}
 
-	const get = async (address: bigint, abortController?: AbortController, refresh = false) => {
+	const get = async (address: bigint, abortController?: AbortController) => {
 		if (abortController?.signal.aborted) throw abortController.signal.reason ?? NEW_BLOCK_ABORT
 		const key = addressString(address)
-		let skipCached = refresh
 		const signal = abortController?.signal
 		let rejectAborted: (reason: unknown) => void = () => undefined
 		const aborted = new Promise<never>((_resolve, reject) => { rejectAborted = reject })
@@ -50,11 +49,8 @@ function createDelegationCache(lookup: (address: bigint, controller: AbortContro
 			if (signal?.aborted) onAbort()
 			for (;;) {
 				if (signal?.aborted) throw signal.reason ?? NEW_BLOCK_ABORT
-				if (!skipCached) {
-					const cached = resolved.get(key)
-					if (cached !== undefined && Date.now() - cached.checkedAt < DELEGATION_CACHE_AGE_MS) return cached.delegate
-				}
-				skipCached = false
+				const cached = resolved.get(key)
+				if (cached !== undefined && Date.now() - cached.checkedAt < DELEGATION_CACHE_AGE_MS) return cached.delegate
 				const pending = pendingByAddress.get(key) ?? startLookup(address, key)
 				try {
 					return await Promise.race([pending.promise, aborted])
@@ -82,7 +78,7 @@ function getHintCache(ethereum: EthereumClientService) {
 	return created
 }
 
-export const getCachedDelegationHint = (ethereum: EthereumClientService, address: bigint, abortController?: AbortController, options?: { refresh?: boolean }) =>
-	getHintCache(ethereum).get(address, abortController, options?.refresh)
+export const getCachedDelegationHint = (ethereum: EthereumClientService, address: bigint, abortController?: AbortController) =>
+	getHintCache(ethereum).get(address, abortController)
 
 export const clearDelegationHintCache = (ethereum: EthereumClientService) => hintCaches.get(ethereum)?.clear()

@@ -3,7 +3,7 @@ import { test } from 'bun:test'
 import { browserMock, createDisconnectedPort, createRecordingPort, isRecord, modules, pendingTransaction, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
 import { browserStorageLocalGet2 } from '../../app/ts/utils/storageUtils.js'
 
-test('restores legacy pending simulation overrides without dropping another request', async () => {
+test('reads legacy pending visualizations without dropping another request', async () => {
 	browserMock.reset()
 	const anotherPendingTransaction = {
 		...pendingTransaction,
@@ -27,7 +27,7 @@ test('restores legacy pending simulation overrides without dropping another requ
 	const first = restored[0]
 	assert.equal(first?.type, 'Transaction')
 	if (first?.type !== 'Transaction' || first.transactionOrMessageCreationStatus !== 'Simulated' || first.popupVisualisation.statusCode !== 'success') throw new Error('missing restored visualization')
-	assert.deepEqual(first.popupVisualisation.data.simulationState.simulationOverrides, {})
+	assert.equal(first.popupVisualisation.data.simulationState.simulationOverrides, undefined)
 	assert.equal((await browserStorageLocalGet2('pendingTransactionsAndMessages')).pendingTransactionsAndMessages?.length, 2)
 })
 

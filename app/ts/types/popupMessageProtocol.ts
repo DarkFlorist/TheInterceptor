@@ -77,7 +77,7 @@ export const popupMessageProtocol = {
 	popup_requestSimulationMetadata: { domain: 'simulation' },
 	popup_requestIdentifyAddress: { domain: 'address-book' },
 	popup_requestSafeContractState: { domain: 'safe' },
-	popup_requestDelegationSimulation: { domain: 'settings' },
+	popup_requestDelegationSimulation: { domain: 'simulation' },
 	popup_setDelegationSimulation: { domain: 'settings' },
 	popup_isMainPopupWindowOpen: { domain: 'navigation' },
 	popup_isSimulationVisualizerOpen: { domain: 'navigation' },

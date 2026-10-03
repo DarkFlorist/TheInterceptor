@@ -77,7 +77,7 @@ async function handleRPCRequest(
 	const getSimulationInput = async () => {
 		if (!simulationOverlayEnabled) return PASSTHROUGH_STATE
 		if (simulationInputPromise === undefined) simulationInputPromise = (async () => {
-			return await prepareSimulationInputForRpc(await getCurrentSimulationInputWithOverrides(settings), ethereum)
+			return await prepareSimulationInputForRpc(await getCurrentSimulationInputWithOverrides(settings, 'what-if'), ethereum)
 		})()
 		return await simulationInputPromise
 	}

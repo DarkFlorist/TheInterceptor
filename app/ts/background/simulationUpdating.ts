@@ -34,7 +34,8 @@ import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
-import { getEffectiveStateOverrides, hasDelegateClearingPreference, isCodeClearedBySimulationOverrides, withDelegateCleared } from '../utils/delegateClearingState.js'
+import { hasDelegateClearingPreference, isCodeClearedBySimulationOverrides, withDelegateCleared } from '../utils/delegateClearingState.js'
+import { getEffectiveStateOverrides } from '../utils/simulationStateOverrides.js'
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -130,7 +131,7 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 	return inputBlocks
 }
 
-export function getCurrentSimulationOverrides(settings: Settings, purpose: 'what-if' | 'signing' = 'what-if'): StateOverrides {
+export function getCurrentSimulationOverrides(settings: Settings, purpose: 'what-if' | 'signing'): StateOverrides {
 	// Delegate clearing is a hypothetical overlay. Signing projections must use the code on chain.
 	if (purpose === 'signing') return {}
 	const address = settings.simulationMode && hasDelegateClearingPreference(settings.delegateClearingPreferences, settings.activeSimulationAddress, settings.activeRpcNetwork.chainId)
@@ -138,7 +139,7 @@ export function getCurrentSimulationOverrides(settings: Settings, purpose: 'what
 	return withDelegateCleared({}, address)
 }
 
-export async function getCurrentSimulationInputWithOverrides(settings: Settings, purpose: 'what-if' | 'signing' = 'what-if', richAddresses?: readonly bigint[]): Promise<SimulationInput> {
+export async function getCurrentSimulationInputWithOverrides(settings: Settings, purpose: 'what-if' | 'signing', richAddresses?: readonly bigint[]): Promise<SimulationInput> {
 	return createSimulatedInput(await getCurrentSimulationInput(richAddresses, settings), getCurrentSimulationOverrides(settings, purpose))
 }
 
@@ -150,7 +151,7 @@ export type SimulationSnapshot = {
 }
 
 // Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
-export async function captureSimulationSnapshot(purpose: 'what-if' | 'signing' = 'what-if'): Promise<SimulationSnapshot> {
+export async function captureSimulationSnapshot(purpose: 'what-if' | 'signing'): Promise<SimulationSnapshot> {
 	const settings = await getSettings()
 	const richAddresses = await getAddressesbeingMadeRich(settings)
 	return {
@@ -180,7 +181,7 @@ export async function getUpdatedSimulationState(ethereum: EthereumClientService,
 /** Builds the simulation-stack overlay used by simulation mode and Gnosis Safe signing mode. */
 export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClientService, simulationOverlayEnabled: boolean) {
 	if (!simulationOverlayEnabled) return { simulationInput: PASSTHROUGH_STATE, simulationState: PASSTHROUGH_STATE }
-	const snapshot = await captureSimulationSnapshot()
+	const snapshot = await captureSimulationSnapshot('what-if')
 	return {
 		simulationInput: snapshot.simulationInput,
 		simulationState: await getUpdatedSimulationState(ethereum, snapshot),
@@ -309,7 +310,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const addr = await identifyAddress(ethereum, undefined, pendingTransaction.transactionToSimulate.transaction.to)
 		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, errorType: 'MissingAbi' as const, errorMessage: 'ABi for the governance contract is missing', errorAddressBookEntry: addr }
 		const settingsSnapshot = await getSettings()
-		const simulationOverrides = getCurrentSimulationOverrides(settingsSnapshot)
+		const simulationOverrides = getCurrentSimulationOverrides(settingsSnapshot, 'what-if')
 		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, proposalId, simulationOverrides)
 		if (contractExecutionResult === undefined) return returnError('Failed to simulate governance execution')
 		const parentBlock = await ethereum.getBlock(undefined)
@@ -404,7 +405,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			to: gnosisSafeMessage.to.address,
 			input: gnosisSafeMessage.parsedMessageData.input
 		} }
-		const simulationState = await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot())
+		const simulationState = await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot('what-if'))
 		if (simulationState.kind === 'passthrough') throw new Error('Failed to fetch simulation state for Gnosis Safe transaction.')
 		if (simulationState.value.success === false) throw new JsonRpcResponseError(simulationState.value.jsonRpcError)
 		const resolvedSimulationState = simulationState.value
@@ -419,7 +420,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 		const gasLimit = gnosisSafeMessage.message.message.baseGas !== 0n ? {
 			gas: gnosisSafeMessage.message.message.baseGas
 		} : await (async () => {
-			const estimateGas = await simulateEstimateGasFromInput(ethereumClientService, undefined, createSimulatedInput(simulationInput, resolvedSimulationState.simulationOverrides), transactionWithoutGas, undefined, temporaryAccountOverrides)
+			const estimateGas = await simulateEstimateGasFromInput(ethereumClientService, undefined, createSimulatedInput(simulationInput, resolvedSimulationState.simulationOverrides ?? {}), transactionWithoutGas, undefined, temporaryAccountOverrides)
 			if ('error' in estimateGas) throw new Error(estimateGas.error.message)
 			return { gas: estimateGas.gas }
 		})()
@@ -431,7 +432,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] },
 			transactionIdentifier: gnosisSafeMessage.messageIdentifier,
 		}
-		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransactionToInputAndSimulate(ethereumClientService, undefined, createSimulatedInput(simulationInput, resolvedSimulationState.simulationOverrides), [metaTransaction], undefined, temporaryAccountOverrides)
+		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransactionToInputAndSimulate(ethereumClientService, undefined, createSimulatedInput(simulationInput, resolvedSimulationState.simulationOverrides ?? {}), [metaTransaction], undefined, temporaryAccountOverrides)
 		return { success: true as const, result: await visualizeSimulatorState(simulationStateAfterGnosisSafeMetaTransaction, ethereumClientService, tokenPriceService, undefined) }
 	} catch(error) {
 		console.warn(error)
@@ -516,7 +517,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 	}
 	const weth = await getWeth()
 	const settings = await getSettings()
-	const delegationAddressBySender = await getDelegationAddressesForSimulation(simulationState.simulationStateInput, simulationState.simulationOverrides, ethereum, requestAbortController)
+	const delegationAddressBySender = await getDelegationAddressesForSimulation(simulationState.simulationStateInput, simulationState.simulationOverrides ?? {}, ethereum, requestAbortController)
 
 	const parsedInputDataForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(
 		simulationState.simulationStateInput, async (block) => {

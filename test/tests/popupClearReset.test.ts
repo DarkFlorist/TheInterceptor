@@ -399,7 +399,7 @@ describe('popup clear reset', () => {
 		const signerOnly: RpcNetwork = { chainId: 99999n, httpsRpc: undefined, name: 'Signer only', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
 		await browserStorageLocalSet({ activeRpcNetwork: signerOnly, independentActiveSimulationAddress: activeAddress, popupVisualisation: stalePopupVisualisation, interceptorTransactionStack: { operations: [] } })
 		const { captureSimulationSnapshot, getUpdatedSimulationState } = await import('../../app/ts/background/simulationUpdating.js')
-		const snapshot = captured ? await captureSimulationSnapshot() : undefined
+		const snapshot = captured ? await captureSimulationSnapshot('what-if') : undefined
 		if (captured) await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork })
 		const originalBlock = fakeEthereum.getBlock
 		const originalNumber = fakeEthereum.getBlockNumber
@@ -435,7 +435,7 @@ describe('popup clear reset', () => {
 			return result
 		}
 		try {
-			const snapshot = await captureSimulationSnapshot()
+			const snapshot = await captureSimulationSnapshot('what-if')
 			assert.equal(changed, true)
 			assert.deepEqual(snapshot.activeStackContext, { simulationMode: true })
 			assert.equal(snapshot.numberOfAddressesMadeRich, 1)
@@ -519,7 +519,7 @@ describe('popup clear reset', () => {
 		await browserStorageLocalSet({ independentActiveSimulationAddress: activeAddress, makeCurrentAddressRich: false, interceptorTransactionStack: { operations: [] } })
 		const modules = await modulesPromise
 		const { captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
-		const snapshot = await captureSimulationSnapshot()
+		const snapshot = await captureSimulationSnapshot('what-if')
 		await browserStorageLocalSet({ makeCurrentAddressRich: true })
 		assert.notDeepEqual(await modules.getCurrentSimulationInput(), snapshot.simulationInput.value)
 		const result = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, { snapshot })

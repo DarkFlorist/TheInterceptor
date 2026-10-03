@@ -1830,10 +1830,26 @@ describe('SimulationModeEthereumClientService', () => {
 				for (const parentTag of ['latest' as const, blockNumber, blockNumber - 1n]) {
 					const result = await ethSimulateV1FromInput(ethereum, undefined, createSimulatedInput([], overrides), createDappEthSimulateV1Request(parentTag))
 					const sentRequest = requestHandler.ethSimulateV1Requests.at(-1)
-					assert.equal(sentRequest?.params[1], parentTag === 'latest' ? blockNumber : parentTag)
+					assert.equal(sentRequest?.params[1], parentTag)
 					assert.equal(sentRequest?.params[0].blockStateCalls.length, 1)
 					assert.equal(sentRequest?.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(exampleTransaction.from)]?.code?.length, 0)
 					assert.equal(result[0]?.parentHash, BigInt(rawResultBlock.parentHash))
+				}
+			})
+
+			test('input-based eth_simulateV1 preserves validation with idle clearing on latest and pending', async () => {
+				const address = addressString(exampleTransaction.from)
+				const overrides = { [address]: { code: new Uint8Array() } }
+				for (const parentTag of ['latest' as const, 'pending' as const]) {
+					requestHandler.ethSimulateV1Requests.length = 0
+					const result = await ethSimulateV1FromInput(ethereum, undefined, createSimulatedInput([], overrides), createDappEthSimulateV1Request(parentTag, true))
+					const sent = requestHandler.ethSimulateV1Requests[0]
+					assert.equal(requestHandler.ethSimulateV1Requests.length, 1)
+					assert.equal(sent?.params[1], parentTag)
+					assert.equal(sent?.params[0].validation, true)
+					assert.equal(sent?.params[0].blockStateCalls.length, 1)
+					assert.equal(sent?.params[0].blockStateCalls[0]?.stateOverrides?.[address]?.code?.length, 0)
+					assert.equal(result.length, 1)
 				}
 			})
 
