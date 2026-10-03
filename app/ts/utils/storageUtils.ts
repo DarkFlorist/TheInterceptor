@@ -174,6 +174,18 @@ export async function browserStorageLocalSet2(items: LocalStorageItems2) {
 	return await browser.storage.local.set(serialize(LocalStorageItems2, items))
 }
 
+export async function browserStorageLocalSetPendingAndTerminalState(
+	pendingTransactionsAndMessages: readonly PendingTransactionOrSignableMessage[],
+	pendingTerminalReplies: readonly InterceptedRequestForward[],
+) {
+	const pendingItems: LocalStorageItems2 = { pendingTransactionsAndMessages }
+	const terminalItems: LocalStorageItems = { pendingTerminalReplies }
+	return await browser.storage.local.set({
+		...serialize(LocalStorageItems2, pendingItems),
+		...serialize(LocalStorageItems, terminalItems),
+	})
+}
+
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {
 	return LocalStorageItems.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }

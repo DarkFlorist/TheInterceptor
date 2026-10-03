@@ -1,10 +1,11 @@
 import type { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { reportLocalRecovery } from '../utils/errors.js'
 import { doesTabExist, doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
-import { Semaphore } from '../utils/semaphore.js'
-import { browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { browserStorageLocalGet2Result, browserStorageLocalSafeParseGet, browserStorageLocalSet, browserStorageLocalSetPendingAndTerminalState } from '../utils/storageUtils.js'
+import { terminalStateSemaphore } from './terminalStateSemaphore.js'
+import { modifyObject } from '../utils/typescript.js'
 
-const pendingTerminalRepliesSemaphore = new Semaphore(1)
+const pendingTerminalRepliesSemaphore = terminalStateSemaphore
 
 export async function getPendingTerminalReplies(): Promise<readonly InterceptedRequestForward[]> {
 	const parsedStorage = await browserStorageLocalSafeParseGet('pendingTerminalReplies')
@@ -32,6 +33,30 @@ export async function appendPendingTerminalReply(reply: InterceptedRequestForwar
 		...pendingReplies.filter((pendingReply) => !doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, reply.uniqueRequestIdentifier)),
 		reply,
 	])
+}
+
+export async function queueDeferredSafeProposalTerminalReply(
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
+	signerReply: string,
+	reply: InterceptedRequestForward,
+) {
+	await pendingTerminalRepliesSemaphore.execute(async () => {
+		const pendingResult = await browserStorageLocalGet2Result('pendingTransactionsAndMessages')
+		if (!pendingResult.success) throw pendingResult.error
+		const pendingTransactions = pendingResult.value.pendingTransactionsAndMessages ?? []
+		const pendingIndex = pendingTransactions.findIndex((pending) => doesUniqueRequestIdentifiersMatch(pending.uniqueRequestIdentifier, uniqueRequestIdentifier))
+		if (pendingIndex < 0) return
+		const pending = pendingTransactions[pendingIndex]
+		if (pending === undefined) return
+		const pendingReplies = await getPendingTerminalReplies()
+		await browserStorageLocalSetPendingAndTerminalState(
+			pendingTransactions.map((entry, index) => index === pendingIndex
+				? modifyObject(entry, { deferredSafeSignerReply: { signerReply, terminalReplyQueued: true } })
+				: entry
+			),
+			[...pendingReplies.filter((pendingReply) => !doesUniqueRequestIdentifiersMatch(pendingReply.uniqueRequestIdentifier, uniqueRequestIdentifier)), reply],
+		)
+	})
 }
 
 export async function removePendingTerminalReply(uniqueRequestIdentifier: UniqueRequestIdentifier) {
