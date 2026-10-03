@@ -23,7 +23,7 @@ import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { getActiveAddressEntryForChain } from './metadataUtils.js'
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import type { ApprovalState } from './websiteAccessPolicy.js'
-import { rpcConfigurationIsReady, rpcConfigurationIsUsable, rpcServicesAreAvailable } from './rpcConfigurationAvailability.js'
+import { getRpcServicesAtAdmission, rpcConfigurationIsReady, rpcConfigurationIsUsable } from './rpcConfigurationAvailability.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
@@ -62,7 +62,7 @@ function hasSignerCallbackAccess(websiteTabConnections: WebsiteTabConnections, t
 
 async function getAvailableSimulationServices(simulationServicesOwner: SimulationServicesOwner) {
 	const rpcConfiguration = await getRpcConfigurationState()
-	return rpcServicesAreAvailable(rpcConfiguration, simulationServicesOwner) ? simulationServicesOwner.getCurrent() : undefined
+	return getRpcServicesAtAdmission(rpcConfiguration, simulationServicesOwner)
 }
 
 type SignerAccountsChangedPopupUpdate =
@@ -143,7 +143,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			return returnValue
 		}
 		const settings = requireSettings(snapshot)
-		const simulationServices = rpcServicesAreAvailable(rpcConfiguration, simulationServicesOwner) ? simulationServicesOwner.getCurrent() : undefined
+		const simulationServices = getRpcServicesAtAdmission(rpcConfiguration, simulationServicesOwner)
 		if (simulationServices !== undefined) await refreshPendingSafeSignerSelectionErrors(simulationServices.ethereum, simulationServices.tokenPriceService, tabId)
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
 		const transition = await getSigningAddressSelectionTransition(settings, tabStateChange.previousState, tabStateChange.newState)

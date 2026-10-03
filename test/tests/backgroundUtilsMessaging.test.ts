@@ -160,6 +160,27 @@ describe('backgroundUtils messaging', () => {
 		})
 	})
 
+	test('preserves a typed RPC-unavailable Safe signer reply for the popup caller', async () => {
+		installBrowserMock('unused')
+		const { sendPopupMessageWithReply, PopupRequestsReplies } = await loadModules()
+		globalThis.browser.runtime.sendMessage = async () => PopupRequestsReplies.popup_setSafeSimulationSigner.serialize({
+			type: 'SetSafeSimulationSignerReply',
+			ok: false,
+			message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
+		})
+
+		const reply = await sendPopupMessageWithReply({
+			method: 'popup_setSafeSimulationSigner',
+			data: { chainId: 1n, safeAddress: 2n, safeSimulationSignerAddress: 3n },
+		})
+
+		assert.deepEqual(reply, {
+			type: 'SetSafeSimulationSignerReply',
+			ok: false,
+			message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
+		})
+	})
+
 	test('parses latest unexpected error replies with the requested reply parser', async () => {
 		installBrowserMock('unused')
 		const { sendPopupMessageWithReply, PopupRequestsReplies } = await loadModules()

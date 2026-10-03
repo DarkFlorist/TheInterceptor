@@ -2,10 +2,8 @@ import type { InterceptedRequestForward } from '../types/interceptor-messages.js
 import { reportLocalRecovery } from '../utils/errors.js'
 import { doesTabExist, doesUniqueRequestIdentifiersMatch, type UniqueRequestIdentifier } from '../utils/requests.js'
 import { browserStorageLocalGet2Result, browserStorageLocalSafeParseGet, browserStorageLocalSet, browserStorageLocalSetPendingAndTerminalState } from '../utils/storageUtils.js'
-import { terminalStateSemaphore } from './terminalStateSemaphore.js'
+import { pendingRequestTerminalStateSemaphore } from './terminalStateSemaphore.js'
 import { modifyObject } from '../utils/typescript.js'
-
-const pendingTerminalRepliesSemaphore = terminalStateSemaphore
 
 export async function getPendingTerminalReplies(): Promise<readonly InterceptedRequestForward[]> {
 	const parsedStorage = await browserStorageLocalSafeParseGet('pendingTerminalReplies')
@@ -21,7 +19,7 @@ export async function getPendingTerminalReplies(): Promise<readonly InterceptedR
 }
 
 async function updatePendingTerminalReplies(update: (pendingReplies: readonly InterceptedRequestForward[]) => readonly InterceptedRequestForward[]) {
-	return await pendingTerminalRepliesSemaphore.execute(async () => {
+	return await pendingRequestTerminalStateSemaphore.execute(async () => {
 		const pendingTerminalReplies = update(await getPendingTerminalReplies())
 		await browserStorageLocalSet({ pendingTerminalReplies })
 		return pendingTerminalReplies
@@ -40,7 +38,7 @@ export async function queueDeferredSafeProposalTerminalReply(
 	signerReply: string,
 	reply: InterceptedRequestForward,
 ) {
-	await pendingTerminalRepliesSemaphore.execute(async () => {
+	await pendingRequestTerminalStateSemaphore.execute(async () => {
 		const pendingResult = await browserStorageLocalGet2Result('pendingTransactionsAndMessages')
 		if (!pendingResult.success) throw pendingResult.error
 		const pendingTransactions = pendingResult.value.pendingTransactionsAndMessages ?? []

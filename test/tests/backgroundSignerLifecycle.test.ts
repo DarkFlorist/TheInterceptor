@@ -197,7 +197,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual((await getPendingWatchAssetRequests())[0]?.forwardingStatus, { status: 'completed', accepted: true })
 	})
 
-	test.each(['reset', 'clear'])('keeps the admitted service snapshot when the owner is %s before execution', async (lifecycleChange) => {
+	test.each(['reset', 'clear'])('keeps the admitted service snapshot for a chain switch when the owner is %s before execution', async (lifecycleChange) => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess } = await loadModules()
 		const websiteOrigin = 'https://example.test'
@@ -248,7 +248,8 @@ describe('background eth_accounts', () => {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
 			uniqueRequestIdentifier: { requestId: 1, requestSocket: socket },
-			method: 'eth_chainId',
+			method: 'wallet_switchEthereumChain',
+			params: [{ chainId: '0x1' }],
 		}
 
 		const requestPromise = handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
@@ -260,7 +261,7 @@ describe('background eth_accounts', () => {
 		await requestPromise
 
 		const reply = messages.find((message) => message.method === request.method && message.requestId === request.uniqueRequestIdentifier.requestId)
-		assert.equal(reply?.result, 1n)
+		assert.equal(reply?.result, null)
 		assert.equal(reply?.error, undefined)
 		assert.equal(initialServices.ethereum.isBlockPolling(), false)
 		assert.equal(replacementEthereum.isBlockPolling(), lifecycleChange === 'reset')

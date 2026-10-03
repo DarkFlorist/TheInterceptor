@@ -1,12 +1,13 @@
-import { popupRpcMessageHandler, popupSnapshotMessageHandler, popupMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
+import { popupOptionalSnapshotMessageHandler, popupSnapshotMessageHandler, popupMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
 import { addOrModifyAddressBookEntry, changeAddOrModifyAddressWindowState, getAddressBookData, openNewTab, removeAddressBookEntry, requestAbiAndNameFromBlockExplorer, requestIdentifyAddress, setEnsNameForHash } from '../popupMessageHandlers.js'
+import { RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } from '../../utils/rpcConfigurationError.js'
 
 export const addressBookPopupMessageHandlers = {
-	popup_addOrModifyAddressBookEntry: popupRpcMessageHandler(
+	popup_addOrModifyAddressBookEntry: popupOptionalSnapshotMessageHandler(
 		'popup_addOrModifyAddressBookEntry',
-		async (context, request) => await addOrModifyAddressBookEntry(context.simulationServicesOwner, context.websiteTabConnections, request),
-		() => ({ type: 'AddOrModifyAddressBookEntryReply', ok: false, message: 'RPC configuration is unavailable. Restore it before changing address-book entries.' }),
+		async (context, request) => await addOrModifyAddressBookEntry(context.services?.ethereum, context.simulationServicesOwner, context.websiteTabConnections, request),
 		(request) => request.data.type === 'safe',
+		() => ({ type: 'AddOrModifyAddressBookEntryReply', ok: false, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }),
 	),
 	popup_getAddressBookData: popupMessageHandler('popup_getAddressBookData', async (_context, request) => await getAddressBookData(request)),
 	popup_removeAddressBookEntry: popupMessageHandler('popup_removeAddressBookEntry', async (context, request) => await removeAddressBookEntry(context.simulationServicesOwner, context.websiteTabConnections, request)),

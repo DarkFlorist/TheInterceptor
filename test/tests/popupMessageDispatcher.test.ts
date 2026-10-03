@@ -229,6 +229,30 @@ describe('popup message dispatcher seams', () => {
 		}), true)
 	})
 
+	test('keeps method-specific Safe failures typed when settings are unavailable', async () => {
+		const context = createDispatcherContext(async () => undefined)
+		context.settings = undefined
+		context.rpcConfiguration = { status: 'unavailable', reason: 'read-failed', error: new Error('Storage unavailable') }
+		const message = 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.'
+
+		assert.deepEqual(await dispatchPopupMessage(context, {
+			method: 'popup_setSafeSimulationSigner',
+			data: { chainId: 1n, safeAddress: 2n, safeSimulationSignerAddress: 3n },
+		}), { type: 'SetSafeSimulationSignerReply', ok: false, message })
+		assert.deepEqual(await dispatchPopupMessage(context, {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: {
+				type: 'safe',
+				name: 'Unavailable Safe',
+				address: 2n,
+				chainId: 1n,
+				entrySource: 'User',
+				useAsActiveAddress: false,
+				safeSimulationSignerAddress: 3n,
+			},
+		}), { type: 'AddOrModifyAddressBookEntryReply', ok: false, message })
+	})
+
 	test('snapshot registration captures at invocation and keeps one pair across awaits', async () => {
 		const { popupSnapshotMessageHandler } = await import('../../app/ts/background/popupMessageHandlerRegistry.js')
 		const context = createDispatcherContext(async () => undefined)
@@ -295,7 +319,7 @@ describe('popup message dispatcher seams', () => {
 		}), {
 			type: 'SetSafeSimulationSignerReply',
 			ok: false,
-			message: 'RPC configuration is unavailable. Restore it before changing the Safe simulation signer.',
+			message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
 		})
 		assert.deepEqual(await dispatchPopupMessage(context, {
 			method: 'popup_addOrModifyAddressBookEntry',
@@ -311,7 +335,7 @@ describe('popup message dispatcher seams', () => {
 		}), {
 			type: 'AddOrModifyAddressBookEntryReply',
 			ok: false,
-			message: 'RPC configuration is unavailable. Restore it before changing address-book entries.',
+			message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
 		})
 		assert.deepEqual(await dispatchPopupMessage(context, {
 			method: 'popup_addOrModifyAddressBookEntry',

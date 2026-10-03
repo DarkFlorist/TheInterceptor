@@ -1,4 +1,4 @@
-import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import type { SimulationServices, SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import type { RpcEntry } from '../types/rpc.js'
 import type { RpcConfigurationState } from './storageVariables.js'
 
@@ -19,7 +19,13 @@ export function rpcServicesAreOptional(rpcConfiguration: RpcConfigurationState) 
 }
 
 export function rpcServicesAreAvailable(rpcConfiguration: RpcConfigurationState, simulationServicesOwner: SimulationServicesOwner) {
-	return rpcConfigurationIsReady(rpcConfiguration) && simulationServicesOwner.getCurrent() !== undefined
+	return getRpcServicesAtAdmission(rpcConfiguration, simulationServicesOwner) !== undefined
+}
+
+// This is the single admission point for work that must keep using one installed service pair even when settings replace or clear the live owner during an await.
+export function getRpcServicesAtAdmission(rpcConfiguration: RpcConfigurationState, simulationServicesOwner: SimulationServicesOwner): SimulationServices | undefined {
+	if (!rpcConfigurationIsReady(rpcConfiguration)) return undefined
+	return simulationServicesOwner.getCurrent()
 }
 
 export function rpcConfigurationIsUsable(rpcConfiguration: RpcConfigurationState, simulationServicesOwner: SimulationServicesOwner) {

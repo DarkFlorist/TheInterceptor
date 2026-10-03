@@ -23,7 +23,7 @@ import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 import { hasOwnKey } from '../utils/typescript.js'
 import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
-import { terminalStateSemaphore } from './terminalStateSemaphore.js'
+import { pendingRequestTerminalStateSemaphore } from './terminalStateSemaphore.js'
 
 const reportCorruptStoredValue = (label: string) => (failure: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -44,7 +44,6 @@ const idsOfOpenedTabsRepository = createStoredValueRepository({
 export const getIdsOfOpenedTabs = idsOfOpenedTabsRepository.get
 export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => { await idsOfOpenedTabsRepository.update((previous) => ({ ...previous, ...ids })) }
 
-const pendingTransactionsSemaphore = terminalStateSemaphore
 async function readPendingTransactionsAndMessages() {
 	const result = await browserStorageLocalGet2Result('pendingTransactionsAndMessages')
 	if (!result.success) return result
@@ -63,12 +62,12 @@ async function readPendingTransactionsAndMessagesWithRecovery(): Promise<readonl
 export async function getPendingTransactionsAndMessages(): Promise<readonly PendingTransactionOrSignableMessage[]> {
 	const result = await readPendingTransactionsAndMessages()
 	if (result.success) return result.value
-	return await pendingTransactionsSemaphore.execute(readPendingTransactionsAndMessagesWithRecovery)
+	return await pendingRequestTerminalStateSemaphore.execute(readPendingTransactionsAndMessagesWithRecovery)
 }
 
 export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])
 async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
-	return await pendingTransactionsSemaphore.execute(async () => {
+	return await pendingRequestTerminalStateSemaphore.execute(async () => {
 		const pendingTransactionsAndMessages = await update(await readPendingTransactionsAndMessagesWithRecovery())
 		await browserStorageLocalSet2({ pendingTransactionsAndMessages })
 	})

@@ -1320,7 +1320,7 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	})])
 
 	const reply = await modules.setSafeSimulationSigner(
-		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
+		ethereum,
 		new Map(),
 		{
 			method: 'popup_setSafeSimulationSigner',
@@ -1341,7 +1341,7 @@ test('changes the Safe simulation signer only after validating current on-chain 
 
 	fakeSafeContract.version = 'invalid-version'
 	const unsupportedVersionFailure = await withSilencedConsole(async () => modules.setSafeSimulationSigner(
-		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
+		ethereum,
 		new Map(),
 		{
 			method: 'popup_setSafeSimulationSigner',
@@ -1360,6 +1360,7 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	fakeSafeContract.version = 'invalid-version'
 	const { addOrModifyAddressBookEntry } = await import('../../app/ts/background/popupMessageHandlers.js')
 	const unsupportedVersionSaveFailure = await withSilencedConsole(async () => addOrModifyAddressBookEntry(
+		ethereum,
 		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
 		new Map(),
 		{
@@ -1387,7 +1388,7 @@ test('refreshes Safe owner metadata and clears a stale simulation signer without
 	})])
 
 	const reply = await modules.setSafeSimulationSigner(
-		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
+		ethereum,
 		new Map(),
 		{
 			method: 'popup_setSafeSimulationSigner',

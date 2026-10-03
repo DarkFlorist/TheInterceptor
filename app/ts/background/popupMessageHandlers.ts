@@ -43,7 +43,7 @@ import { resolveWatchAsset, updateWatchAssetViewWithPendingRequest } from './win
 import { updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
-import { rpcConfigurationIsReady, rpcServicesAreAvailable } from './rpcConfigurationAvailability.js'
+import { getRpcServicesAtAdmission, rpcConfigurationIsReady } from './rpcConfigurationAvailability.js'
 import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 import { estimateSerializedStateBytes, formatEstimatedBytes } from '../utils/largeStateStore.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
@@ -113,7 +113,7 @@ export function getSafeSignerSelectionFromAccountRefresh(refreshResult: SafeSign
 	}
 }
 
-export async function confirmDialog(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
+export async function confirmDialog(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation) {
 	const pending = confirmation.data.action === 'accept'
 		? (await getPendingTransactionsAndMessages()).find((entry) =>
 			doesUniqueRequestIdentifiersMatch(entry.uniqueRequestIdentifier, confirmation.data.uniqueRequestIdentifier)
@@ -129,8 +129,6 @@ export async function confirmDialog(simulationServicesOwner: SimulationServicesO
 			return getSafeSignerSelectionFromAccountRefresh(refreshResult)
 		})()
 		: undefined
-	// Wallet account refresh may outlive an RPC switch; resolution starts with the installed pair.
-	const { ethereum, tokenPriceService } = simulationServicesOwner.requireCurrent()
 	await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, refreshedSafeSignerSelection)
 }
 
@@ -290,12 +288,12 @@ export async function removeAddressBookEntry(simulationServicesOwner: Simulation
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
 
-export async function addOrModifyAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
+export async function addOrModifyAddressBookEntry(ethereum: EthereumClientService | undefined, simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, entry: AddOrEditAddressBookEntry) {
 	try {
 		let entryToStore: AddressBookEntry = entry.data
 		if (entry.data.type === 'safe') {
 			try {
-				const { ethereum } = simulationServicesOwner.requireCurrent()
+				if (ethereum === undefined) throw createRpcConfigurationUnavailableError()
 				if (entry.data.chainId !== ethereum.getChainId()) {
 					return {
 						type: 'AddOrModifyAddressBookEntryReply' as const,
@@ -351,11 +349,10 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 }
 
 export async function setSafeSimulationSigner(
-	simulationServicesOwner: SimulationServicesOwner,
+	ethereum: EthereumClientService,
 	websiteTabConnections: WebsiteTabConnections,
 	request: SetSafeSimulationSigner,
 ) {
-	const { ethereum } = simulationServicesOwner.requireCurrent()
 	if (request.data.chainId !== ethereum.getChainId()) {
 		return {
 			type: 'SetSafeSimulationSignerReply' as const,
@@ -411,7 +408,7 @@ export async function setSafeSimulationSigner(
 		}
 	}
 	if (updatedEntry.useAsActiveAddress) {
-		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getRequiredSettings(), true)
+		await updateWebsiteApprovalAccesses(undefined, websiteTabConnections, await getRequiredSettings(), false)
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 	return { type: 'SetSafeSimulationSignerReply' as const, ok: true as const }
@@ -883,7 +880,7 @@ export async function changeSettings(simulationServicesOwner: SimulationServices
 			const error = 'error' in snapshot.rpcConfiguration ? snapshot.rpcConfiguration.error : undefined
 			throw error ?? createRpcConfigurationUnavailableError()
 		}
-		const services = rpcServicesAreAvailable(snapshot.rpcConfiguration, simulationServicesOwner) ? simulationServicesOwner.getCurrent() : undefined
+		const services = getRpcServicesAtAdmission(snapshot.rpcConfiguration, simulationServicesOwner)
 		if (services === undefined) return await requestHomePageBootstrap(websiteTabConnections, popupRefreshGeneration)
 		return await requestNewHomeData(services.ethereum, websiteTabConnections, false, true, requestAbortController, popupRefreshGeneration)
 	} catch (error: unknown) {

@@ -8,7 +8,7 @@ import { popupMessageHandler, type PopupMessageHandlerMap, type PopupReadyMessag
 import { getSettingsSnapshot, requireSettings } from './settings.js'
 import { changeActiveAddress, enableSimulationMode, modifyMakeMeRich, popupChangeActiveRpc } from './popupMessageHandlers.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
-import { rpcServicesAreAvailable } from './rpcConfigurationAvailability.js'
+import { getRpcServicesAtAdmission } from './rpcConfigurationAvailability.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 
 const settingsCoordinator = createPopupSettingsCoordinator(async (data) => await sendPopupMessageToOpenWindows({ method: 'popup_settingsChangeStatus', data }))
@@ -39,7 +39,7 @@ export const popupSettingsCommandHandlers = {
 	}),
 	popup_modifyMakeMeRich: settingsCommand('popup_modifyMakeMeRich', async (context, request) => {
 		if (await modifyMakeMeRich(request)) {
-			const services = rpcServicesAreAvailable(context.rpcConfiguration, context.simulationServicesOwner) ? context.simulationServicesOwner.getCurrent() : undefined
+			const services = getRpcServicesAtAdmission(context.rpcConfiguration, context.simulationServicesOwner)
 			if (services !== undefined) {
 				try {
 					await queuePopupSimulationRefresh({ ...services, invalidateOldState: true })
