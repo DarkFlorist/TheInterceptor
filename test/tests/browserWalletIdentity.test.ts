@@ -1,3 +1,4 @@
+import { getBrowserProviderId } from '../../app/ts/utils/browserProviderIdentity.js'
 import { expect, test } from 'bun:test'
 import { browserWalletProviderId, matchesBrowserSigningWallet } from '../../app/ts/signing/browserWallet.js'
 import type { SigningWallet } from '../../app/ts/types/signingWallet.js'
@@ -16,4 +17,11 @@ test('legacy bindings remain usable without treating their display names as EIP-
 	expect(browserWalletProviderId({ signerName: 'MetaMask' })).toBe('legacy:MetaMask')
 	expect(matchesBrowserSigningWallet({ ...wallet, providerId: 'MetaMask' }, { signerName: 'MetaMask' })).toBe(true)
 	expect(matchesBrowserSigningWallet({ ...wallet, providerId: 'legacy:MetaMask' }, { signerName: 'MetaMask', signerProvider: { rdns: 'io.metamask', ambiguous: false } })).toBe(false)
+})
+
+test('shared provider wire identity distinguishes legacy, discovered and ambiguous providers', () => {
+	expect(getBrowserProviderId('MetaMask')).toBe('legacy:MetaMask')
+	expect(getBrowserProviderId('MetaMask', { rdns: 'io.metamask' })).toBe('eip6963:io.metamask')
+	expect(getBrowserProviderId('MetaMask', { rdns: 'io.metamask', ambiguous: true })).toBeUndefined()
+	expect(getBrowserProviderId('MetaMask', { ambiguous: true })).toBeUndefined()
 })

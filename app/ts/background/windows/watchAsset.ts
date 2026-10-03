@@ -6,7 +6,7 @@ import type { InterceptedRequest, UniqueRequestIdentifier } from '../../utils/re
 import { doesUniqueRequestIdentifiersMatch } from '../../utils/requests.js'
 import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
 import { itentifyAddressViaOnChainInformation } from '../../utils/tokenIdentification.js'
-import { getPendingWatchAssetRequests, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingWatchAssetRequests, updateUserAddressBookEntries } from '../storageVariables.js'
+import { getPendingWatchAssetRequests, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, updatePendingWatchAssetRequests, updateAddressBookAndSigningWalletBindings } from '../storageVariables.js'
 import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab } from '../../utils/popupOrTab.js'
 import type { AddressBookEntries, Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../../types/addressBookTypes.js'
@@ -240,7 +240,7 @@ export async function processWatchAssetQueue(websiteTabConnections: WebsiteTabCo
 type ResolutionDependencies = {
 	getRequests: typeof getPendingWatchAssetRequests
 	updateRequests: typeof updatePendingWatchAssetRequests
-	updateAddressBook: typeof updateUserAddressBookEntries
+	updateAddressBook: typeof updateAddressBookAndSigningWalletBindings
 	publishAddressBookChanged: () => Promise<void>
 	publish: typeof publishWatchAssetRequest
 	closeDialog: typeof closePopupOrTabById
@@ -252,7 +252,7 @@ function defaultResolutionDependencies(websiteTabConnections: WebsiteTabConnecti
 	return {
 		getRequests: getPendingWatchAssetRequests,
 		updateRequests: updatePendingWatchAssetRequests,
-		updateAddressBook: updateUserAddressBookEntries,
+		updateAddressBook: updateAddressBookAndSigningWalletBindings,
 		publishAddressBookChanged: async () => await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' }),
 		publish: publishWatchAssetRequest,
 		closeDialog: closePopupOrTabById,

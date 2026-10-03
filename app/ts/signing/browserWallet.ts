@@ -1,3 +1,4 @@
+import { getBrowserProviderId } from '../utils/browserProviderIdentity.js'
 import type { EthereumJsonRpcRequest } from '../types/JsonRpc-types.js'
 import type { TabState } from '../types/user-interface-types.js'
 import type { SigningWallet } from '../types/signingWallet.js'
@@ -7,8 +8,7 @@ type BrowserSignerState = Pick<TabState, 'signerName' | 'signerProvider'>
 
 /** RDNS is stable across page sessions; EIP-6963 UUIDs are not persistent wallet identities. */
 export function browserWalletProviderId(state: BrowserSignerState) {
-	if (state.signerProvider?.ambiguous) return undefined
-	return state.signerProvider?.rdns === undefined ? `legacy:${ state.signerName }` : `eip6963:${ state.signerProvider.rdns }`
+	return getBrowserProviderId(state.signerName, state.signerProvider)
 }
 
 export function matchesBrowserSigningWallet(wallet: BrowserWallet, state: BrowserSignerState) {

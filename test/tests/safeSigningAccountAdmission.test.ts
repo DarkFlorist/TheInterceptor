@@ -1,6 +1,6 @@
 import { beforeEach, expect, spyOn, test } from 'bun:test'
 import { createBrowserMock, resetConfirmTransactionTestState, createSafeAddressBookEntry, ethereum, simulator, fakeSafeContract, activeAddress } from './confirmTransactionTestHarness.js'
-import { getUserAddressBookEntries, saveAddressSigningWallet, updateUserAddressBookEntries, getSigningWalletBinding } from '../../app/ts/background/storageVariables.js'
+import { getUserAddressBookEntries, saveAddressSigningWallet, updateAddressBookAndSigningWalletBindings, getSigningWalletBinding } from '../../app/ts/background/storageVariables.js'
 import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
 
 const { signingPageHandler } = await import('../../app/ts/background/signingPageHandler.js')
@@ -12,7 +12,7 @@ beforeEach(async () => {
 	createBrowserMock()
 	await resetConfirmTransactionTestState()
 	await browserStorageLocalSet({ userAddressBookEntriesV3: [], signingWalletBindings: [] })
-	await updateUserAddressBookEntries(() => [createSafeAddressBookEntry()])
+	await updateAddressBookAndSigningWalletBindings(() => [createSafeAddressBookEntry()])
 	fakeSafeContract.owners = [1n]
 	fakeSafeContract.threshold = 1n
 	await saveWallet(1n)

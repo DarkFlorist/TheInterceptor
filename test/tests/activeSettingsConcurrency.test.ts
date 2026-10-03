@@ -30,8 +30,8 @@ function pauseAfterFirstStorageWrite(key: string) {
 describe('active settings concurrency', () => {
 	test('publishes concurrent network transitions in persisted order', async () => {
 		installBrowserMock()
-		const { changeActiveAddressAndChain, getSettings, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()
-		await updateUserAddressBookEntries(() => [firstAddress, secondAddress])
+		const { changeActiveAddressAndChain, getSettings, updateAddressBookAndSigningWalletBindings, updateWebsiteAccess, websiteSocketToString } = await loadModules()
+		await updateAddressBookAndSigningWalletBindings(() => [firstAddress, secondAddress])
 		const websiteOrigin = 'example.test'
 		await updateWebsiteAccess(() => [{ website: { websiteOrigin }, access: true }])
 		const { port, messages } = createPort(1)
@@ -143,10 +143,10 @@ describe('active settings concurrency', () => {
 
 	test.each([true, false])('remembers the final concurrent signing selection when selecting Safe first: %j', async (safeFirst) => {
 		installBrowserMock()
-		const { activateAddressSelection, getSettings, getSigningAddressPreferences, updateUserAddressBookEntries } = await loadModules()
+		const { activateAddressSelection, getSettings, getSigningAddressPreferences, updateAddressBookAndSigningWalletBindings } = await loadModules()
 		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
 		const safe: SafeEntry = { type: 'safe', name: 'Owned Safe', address: 3n, chainId: (await getSettings()).activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
-		await updateUserAddressBookEntries(() => [firstAddress, safe])
+		await updateAddressBookAndSigningWalletBindings(() => [firstAddress, safe])
 		const signerSelection = { type: 'signer', address: firstAddress.address } as const
 		const safeSelection = { type: 'addressBookEntry', entry: safe } as const
 		const firstWriteStarted = pauseAfterFirstStorageWrite('activeSigningSafeAddress')
@@ -212,10 +212,10 @@ describe('active settings concurrency', () => {
 
 	test('retains committed Safe preferences and invalidates the popup after provider reset failure', async () => {
 		const { runtimeMessages } = installBrowserMock()
-		const { activateAddressSelection, getSettings, getSigningAddressPreferences, updateUserAddressBookEntries } = await loadModules()
+		const { activateAddressSelection, getSettings, getSigningAddressPreferences, updateAddressBookAndSigningWalletBindings } = await loadModules()
 		const { getPopupVisualisationState } = await import('../../app/ts/background/storageVariables.js')
 		const safe: SafeEntry = { type: 'safe', name: 'Owned Safe', address: 3n, chainId: (await getSettings()).activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
-		await updateUserAddressBookEntries(() => [firstAddress, safe])
+		await updateAddressBookAndSigningWalletBindings(() => [firstAddress, safe])
 		const counter = { count: 0 }
 		const services = createEthereumWithGetBlockCounter(counter)
 		const rpcNetwork = { ...(await getSettings()).activeRpcNetwork, httpsRpc: 'https://failed-install.example' }
@@ -236,10 +236,10 @@ describe('active settings concurrency', () => {
 
 	test('settles an address change that prompts for access alongside an approval that selects another address', async () => {
 		installBrowserMock()
-		const { changeActiveAddressAndChain, changeSimulationMode, getSettings, updateUserAddressBookEntries, websiteSocketToString, requestAccessFromUser, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
+		const { changeActiveAddressAndChain, changeSimulationMode, getSettings, updateAddressBookAndSigningWalletBindings, websiteSocketToString, requestAccessFromUser, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
 		const originalAddress = { ...firstAddress, askForAddressAccess: true }
 		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
-		await updateUserAddressBookEntries(() => [originalAddress, selectedAddress])
+		await updateAddressBookAndSigningWalletBindings(() => [originalAddress, selectedAddress])
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: originalAddress.address })
 		const websiteOrigin = 'example.test'
 		const socket = { tabId: 1, connectionName: 0n }
@@ -302,9 +302,9 @@ describe('active settings concurrency', () => {
 
 	test.each(['direct', 'selection'])('reports a failed access prompt without rejecting a persisted %s address change', async (entryPoint) => {
 		installBrowserMock()
-		const { activateAddressSelection, changeActiveAddressAndChain, getSettings, getLatestUnexpectedError, updateUserAddressBookEntries, websiteSocketToString, updateWebsiteApprovalAccesses } = await loadModules()
+		const { activateAddressSelection, changeActiveAddressAndChain, getSettings, getLatestUnexpectedError, updateAddressBookAndSigningWalletBindings, websiteSocketToString, updateWebsiteApprovalAccesses } = await loadModules()
 		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
-		await updateUserAddressBookEntries(() => [selectedAddress])
+		await updateAddressBookAndSigningWalletBindings(() => [selectedAddress])
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port } = createPort(socket.tabId)
 		const connections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
@@ -327,9 +327,9 @@ describe('active settings concurrency', () => {
 
 	test.each([1, 2])('continues prompting after a failure when the next connection is in tab %j', async (secondTabId) => {
 		installBrowserMock()
-		const { changeActiveAddressAndChain, getLatestUnexpectedError, updateUserAddressBookEntries, websiteSocketToString, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
+		const { changeActiveAddressAndChain, getLatestUnexpectedError, updateAddressBookAndSigningWalletBindings, websiteSocketToString, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
 		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
-		await updateUserAddressBookEntries(() => [selectedAddress])
+		await updateAddressBookAndSigningWalletBindings(() => [selectedAddress])
 		const connections: WebsiteTabConnections = new Map()
 		for (const [tabId, connectionName, websiteOrigin] of [[1, 0n, 'first.test'], [secondTabId, 1n, 'second.test']] as const) {
 			const socket = { tabId, connectionName }
@@ -368,8 +368,8 @@ describe('active settings concurrency', () => {
 
 	test('a slow icon refresh does not block the next address change or leave stale toolbar state', async () => {
 		installBrowserMock()
-		const { changeActiveAddressAndChain, getSettings, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString, getTabState } = await loadModules()
-		await updateUserAddressBookEntries(() => [firstAddress, { ...secondAddress, askForAddressAccess: true }])
+		const { changeActiveAddressAndChain, getSettings, updateAddressBookAndSigningWalletBindings, updateWebsiteAccess, websiteSocketToString, getTabState } = await loadModules()
+		await updateAddressBookAndSigningWalletBindings(() => [firstAddress, { ...secondAddress, askForAddressAccess: true }])
 		const websiteOrigin = 'example.test'
 		await updateWebsiteAccess(() => [{ website: { websiteOrigin }, access: true }])
 		const secondAccountPublished = createDeferredSignal()
@@ -428,10 +428,10 @@ describe('active settings concurrency', () => {
 
 	test.each(['immediate', 'staged'])('%s access updates prompt for the latest address rather than the reconciliation snapshot', async (completion) => {
 		installBrowserMock()
-		const { changeSimulationMode, getSettings, updateUserAddressBookEntries, websiteSocketToString, reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, updateWebsiteApprovalAccesses, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
+		const { changeSimulationMode, getSettings, updateAddressBookAndSigningWalletBindings, websiteSocketToString, reconcileWebsiteApprovalAccesses, finishWebsiteAccessUpdate, updateWebsiteApprovalAccesses, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
 		const originalAddress = { ...firstAddress, askForAddressAccess: true }
 		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
-		await updateUserAddressBookEntries(() => [originalAddress, selectedAddress])
+		await updateAddressBookAndSigningWalletBindings(() => [originalAddress, selectedAddress])
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: originalAddress.address })
 		const snapshot = await getSettings()
 		const socket = { tabId: 1, connectionName: 0n }
@@ -473,9 +473,9 @@ describe('active settings concurrency', () => {
 
 	test.each(['direct', 'selection'])('completes access UI after a persisted %s transition throws', async (entryPoint) => {
 		installBrowserMock()
-		const { activateAddressSelection, changeActiveAddressAndChain, getSettings, getTabState, updateUserAddressBookEntries, websiteSocketToString, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
+		const { activateAddressSelection, changeActiveAddressAndChain, getSettings, getTabState, updateAddressBookAndSigningWalletBindings, websiteSocketToString, getPendingAccessRequests, resolveInterceptorAccess } = await loadModules()
 		const selectedAddress = { ...secondAddress, askForAddressAccess: true }
-		await updateUserAddressBookEntries(() => [selectedAddress])
+		await updateAddressBookAndSigningWalletBindings(() => [selectedAddress])
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port } = createPort(1)
 		const connections: WebsiteTabConnections = new Map([[1, { connections: {

@@ -325,7 +325,7 @@ describe('popup settings changes', () => {
 	for (const outcome of ['accept', 'reject', 'safe', 'metadata after chain event', 'unavailable simulation'] as const) {
 		test(`preserves RPC preferences until a popup wallet switch is accepted (${ outcome })`, async () => {
 			installBrowserMock()
-			const { changeSimulationMode, getSettings, websiteSocketToString, updateTabState, updateUserAddressBookEntries, saveCurrentTabId } = await loadModules()
+			const { changeSimulationMode, getSettings, websiteSocketToString, updateTabState, updateAddressBookAndSigningWalletBindings, saveCurrentTabId } = await loadModules()
 			const { popupChangeActiveRpc } = await import('../../app/ts/background/popupMessageHandlers.js')
 			const { walletSwitchEthereumChainReply, signerChainChanged } = await import('../../app/ts/background/providerMessageHandlers.js')
 			const { setRpcList, getRpcList, getPrimaryRpcForChain } = await import('../../app/ts/background/storageVariables.js')
@@ -335,7 +335,7 @@ describe('popup settings changes', () => {
 			const originalRpcList = [currentRpc, primaryRpc, requestedRpc]
 			await setRpcList(originalRpcList)
 			await changeSimulationMode({ simulationMode: false, activeSigningAddress: 1n, activeSigningSafeAddress: outcome === 'safe' ? 3n : undefined })
-			await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Signing Safe', address: 3n, chainId: currentRpc.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [1n] }])
+			await updateAddressBookAndSigningWalletBindings(() => [{ type: 'safe', name: 'Signing Safe', address: 3n, chainId: currentRpc.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [1n] }])
 			await updateTabState(1, (previous) => ({ ...previous, signerAccounts: [1n], activeSigningAddress: 1n, signerChain: currentRpc.chainId }))
 			await saveCurrentTabId(1)
 			const socket = { tabId: 1, connectionName: 0n }
@@ -386,7 +386,7 @@ describe('popup settings changes', () => {
 
 	for (const crossChain of [true, false]) test(`dapp RPC changes preserve the selected Safe chain (crossChain=${ crossChain })`, async () => {
 		installBrowserMock()
-		const { changeSimulationMode, getSettings, websiteSocketToString, updateTabState, updateUserAddressBookEntries } = await loadModules()
+		const { changeSimulationMode, getSettings, websiteSocketToString, updateTabState, updateAddressBookAndSigningWalletBindings } = await loadModules()
 		const { changeActiveRpc, isSignerChainChangePending } = await import('../../app/ts/background/walletSwitch.js')
 		const { setRpcList, getRpcList } = await import('../../app/ts/background/storageVariables.js')
 		const currentRpc = (await getSettings()).activeRpcNetwork
@@ -394,7 +394,7 @@ describe('popup settings changes', () => {
 		const rpcList = [currentRpc, requestedRpc]
 		await setRpcList(rpcList)
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: 1n, activeSigningSafeAddress: 3n })
-		await updateUserAddressBookEntries(() => [{ type: 'safe', name: 'Signing Safe', address: 3n, chainId: currentRpc.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [1n] }])
+		await updateAddressBookAndSigningWalletBindings(() => [{ type: 'safe', name: 'Signing Safe', address: 3n, chainId: currentRpc.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [1n] }])
 		await updateTabState(1, previous => ({ ...previous, signerAccounts: [1n], activeSigningAddress: 1n, signerChain: currentRpc.chainId }))
 		const socket = { tabId: 1, connectionName: 0n }
 		const { port, messages } = createPort(1)

@@ -1,3 +1,5 @@
+import { getBrowserProviderId } from '../../ts/utils/browserProviderIdentity.js'
+
 const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
 const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
 
@@ -1806,8 +1808,8 @@ class InterceptorMessageListener {
 
 			const sendToSignerWithCatchError = async () => {
 				const identity = this.getSignerProviderIdentity()
-				const providerId = identity?.rdns === undefined ? `legacy:${ this.signerName }` : `eip6963:${ identity.rdns }`
-				if (forwardRequest.expectedProviderId !== undefined && (identity?.ambiguous || (forwardRequest.expectedProviderId !== providerId && forwardRequest.expectedProviderId !== this.signerName))) {
+				const providerId = getBrowserProviderId(this.signerName, identity)
+				if (forwardRequest.expectedProviderId !== undefined && (providerId === undefined || (forwardRequest.expectedProviderId !== providerId && forwardRequest.expectedProviderId !== this.signerName))) {
 					return { success: false as const, forwardRequest, error: { code: 4100, message: 'Select the expected saved browser wallet before continuing. Provider identity is different or ambiguous.' }, signerProviderGeneration: this.signerProviderGeneration }
 				}
 				const outcome = await this.requestFromCurrentSigner({ method: forwardRequest.method, params: 'params' in forwardRequest ? forwardRequest.params : [] })

@@ -153,7 +153,7 @@ describe('background eth_accounts', () => {
 			changeSimulationMode,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 		} = await loadModules()
 		const websiteOrigin = 'https://darkflorist.github.io'
 		const website = { websiteOrigin, icon: undefined, title: 'Sealwort' }
@@ -161,7 +161,7 @@ describe('background eth_accounts', () => {
 		const safeSignerAddress = 0x2222222222222222222222222222222222222222n
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: safeAddress, activeSigningAddress: safeSignerAddress, activeSigningSafeAddress: safeAddress })
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Treasury Safe',
 			address: safeAddress,
@@ -349,7 +349,7 @@ describe('background eth_accounts', () => {
 			changeSimulationMode,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -357,7 +357,7 @@ describe('background eth_accounts', () => {
 		const safeSignerAddress = 0x2222222222222222222222222222222222222222n
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: safeAddress, activeSigningAddress: safeSignerAddress, activeSigningSafeAddress: safeAddress })
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Treasury Safe',
 			address: safeAddress,
@@ -1009,7 +1009,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			rememberSigningAddressPreference,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			updateWebsiteAccess,
 			websiteSocketToString,
 		} = await loadModules()
@@ -1019,7 +1019,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const safeSignerAddress = 0x5252525252525252525252525252525252525252n
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: safeAddress, activeSigningAddress: safeSignerAddress, activeSigningSafeAddress: safeAddress })
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Treasury Safe',
 			address: safeAddress,
@@ -1115,7 +1115,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			rememberSigningAddressPreference,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			websiteSocketToString,
 		} = await loadModules()
 		const safeAddress = 0x5454545454545454545454545454545454545454n
@@ -1123,7 +1123,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const directEoa = 0x5656565656565656565656565656565656565656n
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: directEoa })
 		await setUseSignersAddressAsActiveAddress(true, directEoa)
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Remembered Safe',
 			address: safeAddress,
@@ -1198,7 +1198,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			handleInterceptedRequest,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			updateWebsiteAccess,
 			websiteSocketToString,
 		} = await loadModules()
@@ -1208,7 +1208,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const safeSignerAddress = 0x5656565656565656565656565656565656565656n
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: safeAddress, activeSigningAddress: safeSignerAddress, activeSigningSafeAddress: safeAddress })
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Treasury Safe',
 			address: safeAddress,
@@ -1311,7 +1311,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			handleInterceptedRequest,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			updateWebsiteAccess,
 			websiteSocketToString,
 		} = await loadModules()
@@ -1336,7 +1336,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			activeSigningSafeAddress: safeAddress,
 		})
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Treasury Safe',
 			address: safeAddress,
@@ -1430,7 +1430,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			handleInterceptedRequest,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			updateWebsiteAccess,
 			websiteSocketToString,
 		} = await loadModules()
@@ -1440,7 +1440,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const safeSignerAddress = 0x5858585858585858585858585858585858585858n
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: safeSignerAddress })
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Other-chain Safe',
 			address: safeAddress,
@@ -1492,12 +1492,12 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			getSettings,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 		} = await loadModules()
 		const safeAddress = 0x5959595959595959595959595959595959595959n
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: safeAddress })
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Other-chain simulation Safe',
 			address: safeAddress,
@@ -1525,7 +1525,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			handleInterceptedRequest,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			updateWebsiteAccess,
 			websiteSocketToString,
 		} = await loadModules()
@@ -1535,7 +1535,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const safeSignerAddress = 0x5454545454545454545454545454545454545454n
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: safeAddress, activeSigningAddress: safeSignerAddress, activeSigningSafeAddress: safeAddress })
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Simulation-only Safe',
 			address: safeAddress,
@@ -1675,7 +1675,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			getSettings,
 			handleInterceptedRequest,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			websiteSocketToString,
 		} = await loadModules()
 		const websiteOrigin = 'https://stale-safe-chain.example'
@@ -1685,7 +1685,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const formerOwner = 0x6565656565656565656565656565656565656565n
 		const socket = { tabId: 1, connectionName: 0n }
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: signerAddress, activeSigningSafeAddress: safeAddress })
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Stale signing Safe',
 			address: safeAddress,
@@ -1730,7 +1730,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			getSettings,
 			handleInterceptedRequest,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			websiteSocketToString,
 		} = await loadModules()
 		const websiteOrigin = 'https://stale-safe-chain.example'
@@ -1740,7 +1740,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const formerOwner = 0x6565656565656565656565656565656565656565n
 		const socket = { tabId: 1, connectionName: 0n }
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: signerAddress, activeSigningSafeAddress: safeAddress })
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Stale signing Safe',
 			address: safeAddress,
@@ -1878,7 +1878,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			handleInterceptedRequest,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 			updateWebsiteAccess,
 			websiteSocketToString,
 		} = await loadModules()
@@ -1888,7 +1888,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const signerAddress = 0x1717171717171717171717171717171717171717n
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: safeAddress, activeSigningAddress: signerAddress, activeSigningSafeAddress: safeAddress })
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Treasury Safe',
 			address: safeAddress,

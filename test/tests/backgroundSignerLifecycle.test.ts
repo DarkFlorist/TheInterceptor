@@ -854,7 +854,7 @@ describe('background eth_accounts', () => {
 			changeSimulationMode,
 			setUseSignersAddressAsActiveAddress,
 			updateWebsiteAccess,
-			updateUserAddressBookEntries,
+			updateAddressBookAndSigningWalletBindings,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -862,7 +862,7 @@ describe('background eth_accounts', () => {
 		const accountString = '0x4545454545454545454545454545454545454545'
 		await changeSimulationMode({ simulationMode: false, activeSimulationAddress: undefined, activeSigningAddress: undefined })
 		await setUseSignersAddressAsActiveAddress(false)
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'contact',
 			name: 'signer account',
 			address: account,
