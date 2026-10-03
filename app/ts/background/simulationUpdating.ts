@@ -34,7 +34,7 @@ import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
-import { createDelegateClearingBlockState, getEffectiveStateOverrides, hasDelegateClearingPreference, isDelegateClearedForBlock } from '../utils/delegateClearingState.js'
+import { hasDelegateClearingPreference, isDelegateClearedForBlock, preserveClearedCodeOverrides, withDelegateCleared } from '../utils/delegateClearingState.js'
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -72,7 +72,7 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 
 	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
 		inputBlocks.push({
-			...createDelegateClearingBlockState(currentBlockStateOverrides, delegateClearedAddress),
+			stateOverrides: withDelegateCleared(currentBlockStateOverrides, delegateClearedAddress),
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
 			blockTimeManipulation: previousBlockTimeManipulation,
@@ -123,7 +123,7 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 		|| (delegateClearedAddress !== undefined && inputBlocks.length === 0)
 	) {
 		inputBlocks.push({
-			...createDelegateClearingBlockState(currentBlockStateOverrides, delegateClearedAddress),
+			stateOverrides: withDelegateCleared(currentBlockStateOverrides, delegateClearedAddress),
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
 			blockTimeManipulation: previousBlockTimeManipulation,
@@ -233,9 +233,7 @@ async function getDelegationAddressesForSimulation(
 }
 
 function getDelegationsForBlock(block: SimulationStateInputBlock, delegations: ReadonlyMap<string, AddressBookEntry>) {
-	const delegateClearedAddress = block.delegateClearedAddress
-	if (delegateClearedAddress === undefined) return delegations
-	return new Map([...delegations].filter(([address]) => address !== addressString(delegateClearedAddress)))
+	return new Map([...delegations].filter(([address]) => !isDelegateClearedForBlock(block, BigInt(address))))
 }
 
 export const getGovernanceExecutionSimulationInput = (
@@ -247,7 +245,7 @@ export const getGovernanceExecutionSimulationInput = (
 	return [
 		...simulationInput,
 		{
-			...createDelegateClearingBlockState(executionStateOverrides, simulationInput[simulationInput.length - 1]?.delegateClearedAddress),
+			stateOverrides: preserveClearedCodeOverrides(simulationInput[simulationInput.length - 1]?.stateOverrides ?? {}, executionStateOverrides),
 			transactions: [executionTransaction],
 			signedMessages: [],
 			blockTimeManipulation: { type: 'SetTimetamp', timeToSet: dateToBigintSeconds(executionTimestamp) },
@@ -339,7 +337,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 				simulationStateInput: [governanceExecutionBlock],
 			simulatedBlocks: [{
 				signedMessages: [],
-				stateOverrides: getEffectiveStateOverrides(governanceExecutionBlock),
+				stateOverrides: governanceExecutionBlock.stateOverrides,
 				blockTimestamp: contractExecutionResult.executionTimestamp,
 				blockTimeManipulation: { type: 'SetTimetamp', timeToSet: dateToBigintSeconds(contractExecutionResult.executionTimestamp) },
 				simulatedTransactions: [{

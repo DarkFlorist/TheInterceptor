@@ -1,6 +1,6 @@
 import { EthereumSignedTransactionWithBlockData, EthereumQuantity, type EthereumBlockTag, EthereumData, EthereumBlockHeader, EthereumBlockHeaderWithTransactionHashes, type EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import type { IUnsignedTransaction1559 } from '../../utils/ethereum.js'
-import { MAX_BLOCK_CACHE, NEW_BLOCK_ABORT, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
+import { MAX_BLOCK_CACHE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 import { keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { addressString, bigintSecondsToDate, bytes32String, dataString, dateToBigintSeconds, max } from '../../utils/bigint.js'
@@ -17,7 +17,8 @@ import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
 import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
-import { createDelegateClearingBlockState, getEffectiveStateOverrides } from '../../utils/delegateClearingState.js'
+import { preserveClearedCodeOverrides } from '../../utils/delegateClearingState.js'
+import { createDelegationCache } from './delegationCache.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
 	const stripped = signature.slice(2)
@@ -114,9 +115,6 @@ export type PreparedEthSimulateV1Input = {
 	readonly rpcBlocks: readonly SimulationStateInputMinimalDataBlock[]
 	readonly blockOverrides: readonly BlockOverrides[]
 }
-const DELEGATION_CACHE_AGE_MS = 5 * 60 * 1000
-type PendingDelegationLookup = { promise: Promise<bigint | undefined>, controller: AbortController, waiters: number, settled: boolean }
-
 export class EthereumClientService {
 	private cachedBlock: EthereumBlockHeader | undefined = undefined
 	private cacheRefreshTimer: ReturnType<typeof setTimeout> | undefined = undefined
@@ -125,9 +123,7 @@ export class EthereumClientService {
 	private onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
 	private requestHandler
 	private rpcEntry
-	private delegationCacheGeneration = 0
-	private readonly resolvedDelegations = new Map<string, { checkedAt: number, delegate: bigint | undefined }>()
-	private readonly pendingDelegations = new Map<string, PendingDelegationLookup>()
+	private readonly delegationCache = createDelegationCache((address, controller) => this.getDelegation(address, 'latest', controller))
 
 	constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>, rpcEntry: RpcEntry) {
 		this.requestHandler = requestHandler
@@ -235,53 +231,9 @@ export class EthereumClientService {
 		return BigInt(`0x${ dataString(code.slice(3)) }`)
 	}
 
-	public readonly clearDelegationCache = () => {
-		this.delegationCacheGeneration += 1
-		this.resolvedDelegations.clear()
-		for (const pending of this.pendingDelegations.values()) pending.controller.abort(NEW_BLOCK_ABORT)
-		this.pendingDelegations.clear()
-	}
+	public readonly clearDelegationCache = () => this.delegationCache.clear()
 
-	private readonly startDelegationLookup = (address: bigint, key: string): PendingDelegationLookup => {
-		const controller = new AbortController()
-		const generation = this.delegationCacheGeneration
-		const pending: PendingDelegationLookup = { promise: this.getDelegation(address, 'latest', controller), controller, waiters: 0, settled: false }
-		pending.promise = pending.promise.then((delegate) => {
-			if (controller.signal.aborted || this.delegationCacheGeneration !== generation) throw NEW_BLOCK_ABORT
-			this.resolvedDelegations.set(key, { checkedAt: Date.now(), delegate })
-			return delegate
-		}).finally(() => {
-			pending.settled = true
-			if (this.pendingDelegations.get(key) === pending) this.pendingDelegations.delete(key)
-		})
-		this.pendingDelegations.set(key, pending)
-		return pending
-	}
-
-	public readonly getCachedDelegation = async (address: bigint, abortController?: AbortController) => {
-		if (abortController?.signal.aborted) throw abortController.signal.reason ?? NEW_BLOCK_ABORT
-		const key = addressString(address)
-		const cached = this.resolvedDelegations.get(key)
-		if (cached !== undefined && Date.now() - cached.checkedAt < DELEGATION_CACHE_AGE_MS) return cached.delegate
-		const pending = this.pendingDelegations.get(key) ?? this.startDelegationLookup(address, key)
-		pending.waiters += 1
-		const signal = abortController?.signal
-		let rejectAborted: (reason: unknown) => void = () => undefined
-		const aborted = new Promise<never>((_resolve, reject) => { rejectAborted = reject })
-		const onAbort = () => { rejectAborted(signal?.reason ?? NEW_BLOCK_ABORT) }
-		signal?.addEventListener('abort', onAbort, { once: true })
-		try {
-			if (signal?.aborted) onAbort()
-			return await Promise.race([pending.promise, aborted])
-		} finally {
-			signal?.removeEventListener('abort', onAbort)
-			pending.waiters -= 1
-			if (pending.waiters === 0 && !pending.settled) {
-				pending.controller.abort(NEW_BLOCK_ABORT)
-				if (this.pendingDelegations.get(key) === pending) this.pendingDelegations.delete(key)
-			}
-		}
-	}
+	public readonly getCachedDelegation = (address: bigint, abortController?: AbortController) => this.delegationCache.get(address, abortController)
 
 	public async getBlock(requestAbortController: AbortController | undefined, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
 	public async getBlock(requestAbortController: AbortController | undefined, blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader>
@@ -420,7 +372,7 @@ export class EthereumClientService {
 					if (index === 0) {
 						rpcBlocks.push({ ...inputBlock, transactions })
 					} else {
-						rpcBlocks.push({ transactions, ...createDelegateClearingBlockState({}, inputBlock.delegateClearedAddress), signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: inputBlock.simulateWithZeroBaseFee })
+						rpcBlocks.push({ transactions, stateOverrides: preserveClearedCodeOverrides(inputBlock.stateOverrides, {}), signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: inputBlock.simulateWithZeroBaseFee })
 					}
 				}
 				preparedBlocks.push({ inputBlock, rpcBlockCount: splitted.length })
@@ -475,7 +427,7 @@ export class EthereumClientService {
 							state: stateSets,
 						}
 					} : {},
-					...getEffectiveStateOverrides(block),
+					...block.stateOverrides,
 				}
 			}
 		}

@@ -14,14 +14,15 @@ export function withDelegateCleared(stateOverrides: StateOverrides, address: big
 	return { ...stateOverrides, [key]: { ...stateOverrides[key], code: new Uint8Array() } }
 }
 
-export function createDelegateClearingBlockState(stateOverrides: StateOverrides, address: bigint | undefined) {
-	return { stateOverrides, ...address === undefined ? {} : { delegateClearedAddress: address } }
+export function preserveClearedCodeOverrides(source: StateOverrides, target: StateOverrides): StateOverrides {
+	let result = target
+	for (const [address, override] of Object.entries(source)) {
+		if (override?.code?.length !== 0) continue
+		result = { ...result, [address]: { ...result[address], code: new Uint8Array() } }
+	}
+	return result
 }
 
-export function getEffectiveStateOverrides(block: Pick<SimulationStateInputBlock, 'stateOverrides' | 'delegateClearedAddress'>): StateOverrides {
-	return withDelegateCleared(block.stateOverrides, block.delegateClearedAddress)
-}
-
-export function isDelegateClearedForBlock(block: Pick<SimulationStateInputBlock, 'delegateClearedAddress'>, address: bigint) {
-	return block.delegateClearedAddress === address
+export function isDelegateClearedForBlock(block: Pick<SimulationStateInputBlock, 'stateOverrides'>, address: bigint) {
+	return block.stateOverrides[addressString(address)]?.code?.length === 0
 }

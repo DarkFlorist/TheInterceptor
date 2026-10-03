@@ -31,7 +31,7 @@ import { calculateRealizedEffectiveGasPrice, getBlockTimeManipulationSeconds, ge
 import { getSignedTransactionForSimulation, mockSignTransaction } from './simulationTransactionSigning.js'
 import { getMessageHashForPersonalSign, simulatePersonalSign } from './simulationPersonalSigning.js'
 import { type BalanceQuery, getTokenBalanceQueriesForTransaction } from './simulationTokenBalanceQueries.js'
-import { createDelegateClearingBlockState, getEffectiveStateOverrides, withDelegateCleared } from '../../utils/delegateClearingState.js'
+import { preserveClearedCodeOverrides } from '../../utils/delegateClearingState.js'
 
 export { getSignedTransactionForSimulation, mockSignTransaction }
 export { getMessageHashForPersonalSign, simulatePersonalSign }
@@ -356,7 +356,7 @@ const simulateBlockCallWithPreparedInputContext = async (
 				baseFeePerGas: simulateWithZeroBaseFee ? 0n : baseFeePerGas,
 				time: getNextBlockTimeStampOverride(previousBlockTime, DEFAULT_BLOCK_MANIPULATION),
 			},
-			stateOverrides: withDelegateCleared(extraOverrides, context?.prepared.rpcBlocks[simulationPrefixBlockCount - 1]?.delegateClearedAddress),
+			stateOverrides: preserveClearedCodeOverrides(context?.prepared.rpcBlocks[simulationPrefixBlockCount - 1]?.stateOverrides ?? {}, extraOverrides),
 		},
 	]
 	const simulationResult = await ethereumClientService.ethSimulateV1(blockStateCalls, parentBlock.number, requestAbortController)
@@ -503,7 +503,7 @@ const inspectSimulationInput = async (
 
 const getExecutionSimulationStateBlockBase = (callResult: GroupedEthSimulateV1BlockResult) => ({
 	signedMessages: callResult.inputBlock.signedMessages || [],
-	stateOverrides: getEffectiveStateOverrides(callResult.inputBlock),
+	stateOverrides: callResult.inputBlock.stateOverrides,
 	blockTimestamp: bigintSecondsToDate(callResult.timestamp),
 	blockTimeManipulation: callResult.inputBlock.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION,
 	blockBaseFeePerGas: callResult.baseFeePerGas,
@@ -635,14 +635,14 @@ export const appendTransactionsToInput = (simulationStateInput: SimulationStateI
 	if (simulationStateInput[blockToAppendTo] !== undefined) {
 		return simulationStateInput.map((block, index) => ({
 			...block,
-			stateOverrides: index === blockToAppendTo ? mergeStateSets(block.stateOverrides, stateOverrides) : block.stateOverrides,
+			stateOverrides: index === blockToAppendTo ? preserveClearedCodeOverrides(block.stateOverrides, mergeStateSets(block.stateOverrides, stateOverrides)) : block.stateOverrides,
 			transactions: index === blockToAppendTo ? [...block.transactions, ...newTransactions] : block.transactions,
 		}))
 	}
-	const delegateClearedAddress = simulationStateInput[simulationStateInput.length - 1]?.delegateClearedAddress
+	const previousStateOverrides = simulationStateInput[simulationStateInput.length - 1]?.stateOverrides ?? {}
 	return [
 		...simulationStateInput,
-		{ ...createDelegateClearingBlockState(stateOverrides, delegateClearedAddress), transactions: newTransactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee }
+		{ stateOverrides: preserveClearedCodeOverrides(previousStateOverrides, stateOverrides), transactions: newTransactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee }
 	]
 }
 
