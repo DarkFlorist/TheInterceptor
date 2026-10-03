@@ -259,12 +259,11 @@ export function getWalletSwitchRequestId(messages: readonly PortMessage[], index
 export function createTestSimulationServicesOwner(initial: { ethereum: EthereumClientService, tokenPriceService: TokenPriceService }, reset?: SimulationServicesOwner['reset']): SimulationServicesOwner {
 	let current: SimulationServices | undefined = initial
 	return {
-		getCurrent: () => {
+		getCurrent: () => current,
+		requireCurrent: () => {
 			if (current === undefined) throw new Error('RPC configuration is unavailable. Network requests are paused.')
 			return current
 		},
-		getCurrentOrUndefined: () => current,
-		isAvailable: () => current !== undefined,
 		reset: network => {
 			if (current === undefined) throw new Error('RPC configuration is unavailable. Network requests are paused.')
 			if (reset !== undefined) current = reset(network)

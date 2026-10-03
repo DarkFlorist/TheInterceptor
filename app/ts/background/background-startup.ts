@@ -38,7 +38,7 @@ import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_ME
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
-import { resolveRpcServicesTarget, rpcConfigurationIsReady } from './rpcConfigurationLifecycle.js'
+import { resolveRpcServicesTarget, rpcConfigurationIsReady } from './rpcConfigurationAvailability.js'
 
 const connections = new Map<number, TabConnection>()
 const safeAppsCompatibility = createSafeAppsCompatibilityFeature(connections)
@@ -50,7 +50,7 @@ const latestReceivedBridgeRequestIds = new Map<string, number>()
 
 function getSimulationServices() {
 	if (simulationServicesOwner === undefined) throw new Error('Simulation services are not initialized')
-	return simulationServicesOwner.getCurrent()
+	return simulationServicesOwner.requireCurrent()
 }
 
 async function publishRpcConnectionStatus(method: RpcConnectionStatusChangeMethod, rpcConnectionStatus: DefinedRpcConnectionStatus) {
@@ -286,9 +286,9 @@ async function startup() {
 	const rpcConfiguration = await getRpcConfigurationState()
 	const simulatorNetwork = resolveRpcServicesTarget(rpcConfiguration)
 	simulationServicesOwner = createSimulationServicesOwner(simulatorNetwork, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks, () => { void recoverPendingTerminalState() })
-	if (simulationServicesOwner.isAvailable()) await recoverPendingTerminalState()
+	if (simulationServicesOwner.getCurrent() !== undefined) await recoverPendingTerminalState()
 	const recursiveCheckIfInterceptorShouldSleep = async () => {
-		if (simulationServicesOwner?.isAvailable()) await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum, rpcConnectionStatusPublisher.publishRpcConnectionStatus))
+		if (simulationServicesOwner?.getCurrent() !== undefined) await catchAllErrorsAndCall(async () => checkIfInterceptorShouldSleep(getSimulationServices().ethereum, rpcConnectionStatusPublisher.publishRpcConnectionStatus))
 		setTimeout(recursiveCheckIfInterceptorShouldSleep, 1000)
 	}
 
@@ -339,13 +339,13 @@ const onTabUpdated = async (tabId: number, changeInfo: browser.tabs._OnUpdatedCh
 
 const onCloseWindow = async (id: number) => await catchAllErrorsAndCall(async () => {
 	const { simulationServicesOwner } = await waitForBackgroundStartup()
-	const simulationServices = simulationServicesOwner.getCurrentOrUndefined()
+	const simulationServices = simulationServicesOwner.getCurrent()
 	return await onCloseWindowOrTab({ type: 'popup' as const, id }, simulationServices?.ethereum, simulationServices?.tokenPriceService, websiteTabConnections)
 })
 
 const onCloseTab = async (id: number) => await catchAllErrorsAndCall(async () => {
 	const { simulationServicesOwner } = await waitForBackgroundStartup()
-	const simulationServices = simulationServicesOwner.getCurrentOrUndefined()
+	const simulationServices = simulationServicesOwner.getCurrent()
 	return await onCloseWindowOrTab({ type: 'tab' as const, id }, simulationServices?.ethereum, simulationServices?.tokenPriceService, websiteTabConnections)
 })
 

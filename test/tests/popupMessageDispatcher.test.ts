@@ -161,9 +161,9 @@ describe('popup message dispatcher seams', () => {
 	test('snapshot registration captures at invocation and keeps one pair across awaits', async () => {
 		const { popupSnapshotMessageHandler } = await import('../../app/ts/background/popupMessageHandlerRegistry.js')
 		const context = createDispatcherContext(async () => undefined)
-		const initial = context.simulationServicesOwner.getCurrent()
-		const replacement = createDispatcherContext(async () => undefined).simulationServicesOwner.getCurrent()
-		const last = createDispatcherContext(async () => undefined).simulationServicesOwner.getCurrent()
+		const initial = context.simulationServicesOwner.requireCurrent()
+		const replacement = createDispatcherContext(async () => undefined).simulationServicesOwner.requireCurrent()
+		const last = createDispatcherContext(async () => undefined).simulationServicesOwner.requireCurrent()
 		let next = replacement
 		context.simulationServicesOwner = createTestSimulationServicesOwner(initial, () => next)
 		const entered = createDeferredValue<void>()
@@ -200,7 +200,7 @@ describe('popup message dispatcher seams', () => {
 			context.rpcConfiguration = { status: 'ready', rpcEntries: [], activeRpcNetwork: signerOnlyNetwork }
 			context.simulationServicesOwner.clear()
 		}
-		const ownerWasAvailable = context.simulationServicesOwner.isAvailable()
+		const ownerWasAvailable = context.simulationServicesOwner.getCurrent() !== undefined
 		const unavailableReply = {
 			error: {
 				code: 4900,
@@ -247,7 +247,7 @@ describe('popup message dispatcher seams', () => {
 			data: { type: 'contact', name: 'Offline contact', address: 4n, entrySource: 'User' },
 		}), { type: 'AddOrModifyAddressBookEntryReply', ok: true })
 		assert.equal(Array.isArray(storageState.userAddressBookEntriesV3), true)
-		assert.equal(context.simulationServicesOwner.isAvailable(), ownerWasAvailable)
+		assert.equal(context.simulationServicesOwner.getCurrent() !== undefined, ownerWasAvailable)
 	})
 
 	test('returns a save failure when address-book persistence fails', async () => {
@@ -387,7 +387,7 @@ describe('popup message dispatcher seams', () => {
 
 	test('does not identify an address using a different active chain', async () => {
 		const context = createDispatcherContext(async () => undefined)
-		Object.defineProperty(context.simulationServicesOwner.getCurrent().ethereum, 'getChainId', { value: () => 1n })
+		Object.defineProperty(context.simulationServicesOwner.requireCurrent().ethereum, 'getChainId', { value: () => 1n })
 
 		assert.deepEqual(await dispatchPopupMessage(context, {
 			method: 'popup_requestIdentifyAddress',

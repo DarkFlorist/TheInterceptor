@@ -701,7 +701,7 @@ describe('background eth_accounts', () => {
 		installBrowserMock()
 		const {
 			changeSimulationMode,
-			getSettings,
+			getRequiredSettings,
 			handleInterceptedRequest,
 			popupChangeActiveRpc,
 			resolveChainChange,

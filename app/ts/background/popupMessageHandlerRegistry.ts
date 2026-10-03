@@ -5,7 +5,7 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import type { RpcConfigurationState } from './storageVariables.js'
-import { rpcServicesAreAvailable } from './rpcConfigurationLifecycle.js'
+import { rpcServicesAreAvailable } from './rpcConfigurationAvailability.js'
 import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../types/interceptor-reply-messages.js'
 
 const rpcConfigurationUnavailableReply = (): PopupReplyOption => ({ error: RPC_CONFIGURATION_UNAVAILABLE_ERROR })
@@ -67,7 +67,7 @@ export function popupSnapshotMessageHandler<Method extends PopupMessage['method'
 ): PopupMessageHandler {
 	return popupRpcMessageHandler(method, async (context, request) => {
 		const { simulationServicesOwner, resetSimulationState: _resetSimulationState, ...executionContext } = context
-		const services = simulationServicesOwner.getCurrentOrUndefined()
+		const services = simulationServicesOwner.getCurrent()
 		if (services === undefined) return rpcConfigurationUnavailableReply()
 		return await handler({ ...executionContext, services }, request)
 	})

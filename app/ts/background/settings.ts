@@ -102,7 +102,7 @@ async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, 
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
 
-export async function getSettings() : Promise<Settings> {
+export async function getRequiredSettings() : Promise<Settings> {
 	const snapshot = await getSettingsSnapshot()
 	return requireSettings(snapshot)
 }
@@ -298,7 +298,7 @@ export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boo
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
 	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
-	const [settings, signingAddressPreferences] = await Promise.all([getSettings(), getSigningAddressPreferences()])
+	const [settings, signingAddressPreferences] = await Promise.all([getRequiredSettings(), getSigningAddressPreferences()])
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
 		version: '1.6' as const,
@@ -349,7 +349,8 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 		}, exportedSetings.version === '1.5' || exportedSetings.version === '1.6' ? exportedSetings.settings.signingAddressPreferences : [])
 	}
 	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
-	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
+	const { updateWebsiteAccessAndContentScriptInjectionStrategy } = await import('./websiteAccessUpdating.js')
+	await updateWebsiteAccessAndContentScriptInjectionStrategy(() => exportedSetings.settings.websiteAccess)
 	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup)
 	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') {
 		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)

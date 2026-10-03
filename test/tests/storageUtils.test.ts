@@ -51,7 +51,7 @@ Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true
 const { browserStorageLocalGet, browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
 const { getRpcConfigurationState, getRpcConnectionStatus, getRpcList, promoteRpcAsPrimary, setRpcConfiguration } = await import('../../app/ts/background/storageVariables.js')
 const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
-const { captureRpcNetwork, getSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot } = await import('../../app/ts/background/settings.js')
+const { captureRpcNetwork, getRequiredSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot } = await import('../../app/ts/background/settings.js')
 const { restoreDefaultRpcConfiguration, retryRpcConfiguration, setNewRpcList, settingsOpened } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
 const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
 const ignoreRecoveryPublication = async () => undefined
@@ -232,7 +232,7 @@ describe('RPC storage recovery', () => {
 			const snapshot = await getSettingsSnapshot()
 			assert.equal(snapshot.rpcConfiguration.status, 'unavailable')
 			assert.equal(snapshot.settings, undefined)
-			await assert.rejects(getSettings(), /RPC configuration is unavailable/)
+			await assert.rejects(getRequiredSettings(), /RPC configuration is unavailable/)
 		} finally {
 			console.warn = originalWarn
 		}
@@ -260,7 +260,7 @@ describe('RPC storage recovery', () => {
 		resumeRpcConfigurationRead = new Promise<void>((resolve) => { releaseRead = resolve })
 		rpcConfigurationReadStarted = signalReadStarted
 
-		const settingsPromise = getSettings()
+		const settingsPromise = getRequiredSettings()
 		await readStarted
 		let saveSettled = false
 		const savePromise = setRpcConfiguration([customFallbackRpc], customFallbackRpc).then(() => { saveSettled = true })
@@ -318,15 +318,15 @@ describe('RPC storage recovery', () => {
 	test('background retry resumes stored RPC services and pauses them again if validation fails', async () => {
 		const owner = createSimulationServicesOwner(undefined, async () => undefined, async (_ethereum, error) => { throw error })
 		await retryRpcConfiguration(owner)
-		assert.equal(owner.isAvailable(), true)
-		assert.equal(owner.getCurrent().ethereum.getRpcEntry().httpsRpc, customPrimaryRpc.httpsRpc)
+		assert.equal(owner.getCurrent() !== undefined, true)
+		assert.equal(owner.requireCurrent().ethereum.getRpcEntry().httpsRpc, customPrimaryRpc.httpsRpc)
 
 		storedItems.rpcEntries = 'not-an-rpc-list'
 		const originalWarn = console.warn
 		console.warn = () => undefined
 		try {
 			await retryRpcConfiguration(owner)
-			assert.equal(owner.isAvailable(), false)
+			assert.equal(owner.getCurrent() !== undefined, false)
 			assert.equal(runtimeMessages.length, 2)
 		} finally {
 			console.warn = originalWarn
@@ -342,10 +342,10 @@ describe('RPC storage recovery', () => {
 		if (settingsReply.method !== 'popup_requestSettingsReply') return
 		assert.equal(settingsReply.data.rpcConfigurationAvailable, false)
 		assert.deepEqual(settingsReply.data.rpcEntries, [])
-		assert.equal(owner.isAvailable(), false)
+		assert.equal(owner.getCurrent() !== undefined, false)
 
 		await retryRpcConfiguration(owner)
-		assert.equal(owner.isAvailable(), true)
+		assert.equal(owner.getCurrent() !== undefined, true)
 		owner.clear()
 	})
 
@@ -360,7 +360,7 @@ describe('RPC storage recovery', () => {
 		assert.equal(settingsReply.data.rpcConfigurationAvailable, true)
 		assert.deepEqual(settingsReply.data.rpcEntries, [customPrimaryRpc, customFallbackRpc])
 		assert.equal(rpcConfigurationReadCount, 1)
-		assert.equal(owner.isAvailable(), true)
+		assert.equal(owner.getCurrent() !== undefined, true)
 		owner.clear()
 	})
 
@@ -377,10 +377,10 @@ describe('RPC storage recovery', () => {
 			const configuration = await getRpcConfigurationState()
 			assert.equal(configuration.status, 'unavailable')
 			assert.deepEqual('activeRpcNetwork' in configuration ? configuration.activeRpcNetwork : undefined, previousActiveRpc)
-			const settings = await getSettings()
+			const settings = await getRequiredSettings()
 			assert.deepEqual(settings.openedPage, { page: 'Home' })
 			assert.deepEqual(settings.activeRpcNetwork, previousActiveRpc)
-			assert.equal(owner.isAvailable(), true)
+			assert.equal(owner.getCurrent() !== undefined, true)
 		} finally {
 			console.warn = originalWarn
 			owner.clear()
@@ -395,7 +395,7 @@ describe('RPC storage recovery', () => {
 		try {
 			const configuration = await getRpcConfigurationState()
 			assert.equal(configuration.status, 'unavailable')
-			assert.equal(owner.isAvailable(), true)
+			assert.equal(owner.getCurrent() !== undefined, true)
 		} finally {
 			console.warn = originalWarn
 			owner.clear()
@@ -418,8 +418,8 @@ describe('RPC storage recovery', () => {
 			simulationMode: true,
 		}, ignoreRecoveryPublication)
 
-		assert.equal(owner.isAvailable(), true)
-		assert.equal(owner.getCurrent().ethereum.getRpcEntry().httpsRpc, privateRpc.httpsRpc)
+		assert.equal(owner.getCurrent() !== undefined, true)
+		assert.equal(owner.requireCurrent().ethereum.getRpcEntry().httpsRpc, privateRpc.httpsRpc)
 		assert.equal(writes.length, 1)
 		assert.deepEqual(Object.keys(writes[0] ?? {}), ['rpcEntries'])
 		const restoredConfiguration = await getRpcConfigurationState()
@@ -453,7 +453,7 @@ describe('RPC storage recovery', () => {
 			simulationMode: false,
 		}, async () => { recoveryPublications += 1 })
 
-		assert.equal(owner.isAvailable(), false)
+		assert.equal(owner.getCurrent() !== undefined, false)
 		assert.equal(recoveryPublications, 0)
 		assert.deepEqual(Object.keys(writes[0] ?? {}), ['rpcEntries'])
 		const restoredConfiguration = await getRpcConfigurationState()
@@ -483,7 +483,7 @@ describe('RPC storage recovery', () => {
 				websiteAccess: [],
 				simulationMode: true,
 			}, ignoreRecoveryPublication), /RPC configuration became unavailable/)
-			assert.equal(owner.isAvailable(), false)
+			assert.equal(owner.getCurrent() !== undefined, false)
 			assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_update_rpc_list'), false)
 		} finally {
 			Object.defineProperty(browser.storage.local, 'set', { configurable: true, value: originalSet })
@@ -509,7 +509,7 @@ describe('RPC storage recovery', () => {
 				simulationMode: true,
 			}, ignoreRecoveryPublication), /RPC configuration is unavailable/)
 			assert.deepEqual(writes, [])
-			assert.equal(owner.isAvailable(), false)
+			assert.equal(owner.getCurrent() !== undefined, false)
 			assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_update_rpc_list'), false)
 		} finally {
 			owner.clear()
@@ -529,7 +529,7 @@ describe('RPC storage recovery', () => {
 		}
 
 		await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [] }, settings, ignoreRecoveryPublication)
-		assert.equal(owner.isAvailable(), false)
+		assert.equal(owner.getCurrent() !== undefined, false)
 		const unavailableListUpdate = MessageToPopup.parse(runtimeMessages.at(-1))
 		assert.equal(unavailableListUpdate.method, 'popup_update_rpc_list')
 		if (unavailableListUpdate.method === 'popup_update_rpc_list') {
@@ -538,8 +538,8 @@ describe('RPC storage recovery', () => {
 
 		await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [customFallbackRpc] }, settings, ignoreRecoveryPublication)
 
-		assert.equal(owner.isAvailable(), true)
-		assert.equal(owner.getCurrent().ethereum.getRpcEntry().httpsRpc, customFallbackRpc.httpsRpc)
+		assert.equal(owner.getCurrent() !== undefined, true)
+		assert.equal(owner.requireCurrent().ethereum.getRpcEntry().httpsRpc, customFallbackRpc.httpsRpc)
 		assert.deepEqual(await getRpcList(), [customFallbackRpc])
 		assert.deepEqual((await getRpcConfigurationState()).status, 'ready')
 		owner.clear()
@@ -568,7 +568,7 @@ describe('RPC storage recovery', () => {
 		}
 
 		await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [] }, settings, ignoreRecoveryPublication)
-		assert.equal(owner.isAvailable(), false)
+		assert.equal(owner.getCurrent() !== undefined, false)
 		const emptyConfiguration = await getRpcConfigurationState()
 		assert.deepEqual(emptyConfiguration, { status: 'ready', rpcEntries: [], activeRpcNetwork: signerOnlyNetwork })
 		const emptyListUpdate = MessageToPopup.parse(runtimeMessages.at(-1))
@@ -578,7 +578,7 @@ describe('RPC storage recovery', () => {
 		}
 
 		await retryRpcConfiguration(owner)
-		assert.equal(owner.isAvailable(), false)
+		assert.equal(owner.getCurrent() !== undefined, false)
 		const retryListUpdate = MessageToPopup.parse(runtimeMessages.at(-1))
 		assert.equal(retryListUpdate.method, 'popup_update_rpc_list')
 		if (retryListUpdate.method === 'popup_update_rpc_list') {
@@ -591,7 +591,7 @@ describe('RPC storage recovery', () => {
 		if (settingsReply.method === 'popup_requestSettingsReply') assert.equal(settingsReply.data.rpcConfigurationAvailable, true)
 
 		await setNewRpcList(owner, new Map(), { method: 'popup_set_rpc_list', data: [customFallbackRpc] }, settings, ignoreRecoveryPublication)
-		assert.equal(owner.isAvailable(), false)
+		assert.equal(owner.getCurrent() !== undefined, false)
 		assert.deepEqual(await getRpcList(), [customFallbackRpc])
 		const repopulatedConfiguration = await getRpcConfigurationState()
 		assert.equal(repopulatedConfiguration.status, 'ready')

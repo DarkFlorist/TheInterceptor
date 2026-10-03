@@ -6,20 +6,20 @@ test('the service owner stays paused until an RPC is explicitly installed', () =
 	const rpc = { name: 'Restored', chainId: 1n, httpsRpc: 'https://restored.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 	let resumedCount = 0
 	const owner = createSimulationServicesOwner(undefined, async () => undefined, async (_ethereum, error) => { throw error }, {}, () => { resumedCount += 1 })
-	assert.equal(owner.isAvailable(), false)
-	assert.equal(owner.getCurrentOrUndefined(), undefined)
-	assert.throws(owner.getCurrent, /Network requests are paused/)
+	assert.equal(owner.getCurrent() !== undefined, false)
+	assert.equal(owner.getCurrent(), undefined)
+	assert.throws(owner.requireCurrent, /Network requests are paused/)
 
 	assert.throws(() => owner.reset(rpc), /Network requests are paused/)
 	const restored = owner.recover(rpc)
-	assert.equal(owner.isAvailable(), true)
-	assert.equal(owner.getCurrent(), restored)
+	assert.equal(owner.getCurrent() !== undefined, true)
+	assert.equal(owner.requireCurrent(), restored)
 	assert.equal(resumedCount, 1)
 	assert.equal(isCurrentSimulationService(owner, restored.ethereum), true)
 	owner.reset(rpc)
 	assert.equal(resumedCount, 1)
 	owner.clear()
-	assert.equal(owner.isAvailable(), false)
+	assert.equal(owner.getCurrent() !== undefined, false)
 	assert.equal(isCurrentSimulationService(owner, restored.ethereum), false)
 	assert.throws(() => owner.reset(rpc), /Network requests are paused/)
 	owner.recover(rpc)
@@ -30,19 +30,19 @@ test('the service owner stays paused until an RPC is explicitly installed', () =
 test('the service owner publishes the exact pair returned by every reset', () => {
 	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: 'https://initial.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error })
-	const original = owner.getCurrent()
+	const original = owner.requireCurrent()
 	try {
 		for (const chainId of [2n, 3n]) {
 			const network = { ...rpc, chainId, httpsRpc: `https://chain${ chainId }.invalid` }
 			const replacement = owner.reset(network)
-			assert.equal(owner.getCurrent(), replacement)
+			assert.equal(owner.requireCurrent(), replacement)
 			assert.notEqual(replacement.ethereum, original.ethereum)
 			assert.deepEqual(replacement.ethereum.getRpcEntry(), network)
 		}
 		// A captured pair remains a snapshot; it cannot mutate the owner's current selection.
 		assert.deepEqual(original.ethereum.getRpcEntry(), rpc)
-		assert.notEqual(owner.getCurrent(), original)
-	} finally { owner.getCurrent().ethereum.cleanup() }
+		assert.notEqual(owner.requireCurrent(), original)
+	} finally { owner.requireCurrent().ethereum.cleanup() }
 })
 
 
@@ -59,14 +59,14 @@ test('a captured client can execute RPC work after the owner installs its replac
 	})
 	const rpc = { name: 'Initial', chainId: 1n, httpsRpc: `${ server.url }initial`, currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
 	const owner = createSimulationServicesOwner(rpc, async () => undefined, async (_ethereum, error) => { throw error })
-	const snapshot = owner.getCurrent()
+	const snapshot = owner.requireCurrent()
 	try {
 		owner.reset({ ...rpc, httpsRpc: `${ server.url }replacement` })
 		assert.deepEqual(await snapshot.ethereum.getCode(1n, 'latest', undefined), new Uint8Array([1]))
-		assert.deepEqual(await owner.getCurrent().ethereum.getCode(1n, 'latest', undefined), new Uint8Array([1]))
+		assert.deepEqual(await owner.requireCurrent().ethereum.getCode(1n, 'latest', undefined), new Uint8Array([1]))
 		assert.deepEqual(paths, ['/initial', '/replacement'])
 	} finally {
-		owner.getCurrent().ethereum.cleanup()
+		owner.requireCurrent().ethereum.cleanup()
 		server.stop(true)
 	}
 })

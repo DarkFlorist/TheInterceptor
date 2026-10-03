@@ -38,6 +38,21 @@ export type LaunchChromeOptions = {
 	cleanupProfile?: boolean
 }
 
+const isExpectedNavigationEvaluationError = (error: unknown) => error instanceof Error && [
+	'Execution context was destroyed',
+	'Cannot find context with specified id',
+	'Inspected target navigated or closed',
+].some((message) => error.message.includes(message))
+
+export async function evaluateWhileNavigating<T>(evaluate: () => Promise<T>): Promise<T | undefined> {
+	try {
+		return await evaluate()
+	} catch (error) {
+		if (isExpectedNavigationEvaluationError(error)) return undefined
+		throw error
+	}
+}
+
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const EXTENSION_DIR = path.join(REPO_ROOT, 'app')
 

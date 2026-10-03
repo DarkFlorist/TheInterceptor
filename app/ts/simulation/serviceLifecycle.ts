@@ -64,19 +64,18 @@ export function resetSimulationServices(
 }
 
 export type SimulationServicesOwner = {
-	readonly getCurrent: () => SimulationServices
-	readonly getCurrentOrUndefined: () => SimulationServices | undefined
-	readonly isAvailable: () => boolean
+	readonly getCurrent: () => SimulationServices | undefined
+	readonly requireCurrent: () => SimulationServices
 	readonly reset: (rpcNetwork: RpcEntry) => SimulationServices
 	readonly recover: (rpcNetwork: RpcEntry) => SimulationServices
 	readonly clear: () => void
 }
 
 export const isCurrentSimulationService = (owner: SimulationServicesOwner | undefined, ethereumClientService: EthereumClientService) => {
-	return owner?.getCurrentOrUndefined()?.ethereum === ethereumClientService
+	return owner?.getCurrent()?.ethereum === ethereumClientService
 }
 
-// One owner publishes installed services. Returned pairs are snapshots for an operation; independent message handlers must read getCurrent() when their work starts.
+// One owner publishes installed services. Returned pairs are snapshots for an operation; independent message handlers must read requireCurrent() when their work starts.
 export function createSimulationServicesOwner(
 	rpcNetwork: RpcEntry | undefined,
 	newBlockAttemptCallback: NewBlockAttemptCallback,
@@ -86,12 +85,11 @@ export function createSimulationServicesOwner(
 ) {
 	let current = rpcNetwork === undefined ? undefined : createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
 	return {
-		getCurrent: () => {
+		getCurrent: () => current,
+		requireCurrent: () => {
 			if (current === undefined) throw new Error('RPC configuration is unavailable. Network requests are paused.')
 			return current
 		},
-		getCurrentOrUndefined: () => current,
-		isAvailable: () => current !== undefined,
 		reset: (nextRpc: RpcEntry): SimulationServices => {
 			if (current === undefined) throw new Error('RPC configuration is unavailable. Network requests are paused.')
 			current = resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)

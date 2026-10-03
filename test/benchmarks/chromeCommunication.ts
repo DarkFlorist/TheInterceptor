@@ -1,4 +1,4 @@
-import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl } from './chromeHarness.js'
+import { closeTarget, connectTarget, createTargetPage, evaluateWhileNavigating, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl } from './chromeHarness.js'
 import { startChromeCommunicationPageServer } from './chromeCommunicationPageServer.js'
 import type { CdpConnection } from './chromeHarness.js'
 import { authorization as eip7702Authorization, Transaction } from 'micro-eth-signer'
@@ -192,7 +192,9 @@ async function main() {
 			} finally {
 				signingModeWorkerConnection.close()
 			}
+			await pageConnection.evaluate('globalThis.__interceptorOutgoingDocument = true')
 			await pageConnection.send('Page.navigate', { url: `${ server.baseUrl }?signer=unavailable` })
+			await waitForCondition(async () => await evaluateWhileNavigating(async () => await pageConnection.evaluate<boolean>(`globalThis.location.search === '?signer=unavailable' && globalThis.__interceptorOutgoingDocument !== true`)) ?? false, 30_000, 'unavailable-signer page navigation')
 			const unavailableSignerState = await waitForCommunicationPageError(pageConnection, 30_000)
 
 			console.warn(`Interceptor Chrome communication smoke test passed for extension ${ extensionId }.`)

@@ -2,7 +2,7 @@ import { updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { popupMessageHandler, popupRecoveryMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
 import { changeSettings, exportSettings, importSettings, openNewTab, restoreDefaultRpcConfiguration, retryRpcConfiguration, setNewRpcList, settingsOpened } from '../popupMessageHandlers.js'
-import { getSettings } from '../settings.js'
+import { getRequiredSettings } from '../settings.js'
 import { publishRpcConfigurationRecovery } from '../activeSettings.js'
 
 export const settingsPopupMessageHandlers = {
@@ -13,7 +13,7 @@ export const settingsPopupMessageHandlers = {
 		const importSettingsReply = await importSettings(request)
 		await sendPopupMessageToOpenWindows(importSettingsReply)
 		if (!importSettingsReply.data.success) return
-		const importedSettings = await getSettings()
+		const importedSettings = await getRequiredSettings()
 		const popupRefreshGeneration = await updateWebsiteApprovalAccesses(context.simulationServicesOwner, context.websiteTabConnections, importedSettings, true)
 		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: importedSettings, popupRefreshGeneration })
 	}),

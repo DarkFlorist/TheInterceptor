@@ -1,7 +1,7 @@
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
-import { getSettings, getSettingsSnapshot, requireSettings, setUseTabsInsteadOfPopup, setPage, updateWebsiteAccess, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
+import { getRequiredSettings, getSettingsSnapshot, requireSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type WatchAssetConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type ForceSetGasLimitForTransaction, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
@@ -43,7 +43,7 @@ import { resolveWatchAsset, updateWatchAssetViewWithPendingRequest } from './win
 import { updateInterceptorAccessViewWithPendingRequests } from './windows/interceptorAccess.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
-import { rpcConfigurationIsReady, rpcServicesAreAvailable } from './rpcConfigurationLifecycle.js'
+import { rpcConfigurationIsReady, rpcServicesAreAvailable } from './rpcConfigurationAvailability.js'
 import { estimateSerializedStateBytes, formatEstimatedBytes } from '../utils/largeStateStore.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
@@ -59,7 +59,8 @@ export { getLastKnownCurrentTabId } from './currentTab.js'
 export { exportSettings, importSettings, restoreDefaultRpcConfiguration, retryRpcConfiguration, setNewRpcList, settingsOpened } from './popupMessageHandlers/settings.js'
 export { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, disableInterceptor, reloadConnectedTabs, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from './popupMessageHandlers/websiteAccess.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
-import { disableInterceptorForPage } from './popupMessageHandlers/websiteAccess.js'
+import { reloadConnectedTabs } from './popupMessageHandlers/websiteAccess.js'
+import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
 
 type TimestampedPopupVisualisation = {
@@ -128,7 +129,7 @@ export async function confirmDialog(simulationServicesOwner: SimulationServicesO
 		})()
 		: undefined
 	// Wallet account refresh may outlive an RPC switch; resolution starts with the installed pair.
-	const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
+	const { ethereum, tokenPriceService } = simulationServicesOwner.requireCurrent()
 	await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, confirmation, refreshedSafeSignerSelection)
 }
 
@@ -226,7 +227,7 @@ export async function changeActiveAddress(simulationServicesOwner: SimulationSer
 		await refreshSignerAccountsFromApprovedWebsitePorts(websiteTabConnections, false)
 		sendCallbackToAllConfirmedSignerOwners(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
 	}
-	const settings = await getSettings()
+	const settings = await getRequiredSettings()
 	const signerAccount = await getSignerAccount()
 	const activeAddresses = await getActiveAddresses()
 	const signerAccounts = signerAccount === undefined ? [] : [signerAccount]
@@ -283,7 +284,7 @@ export async function removeAddressBookEntry(simulationServicesOwner: Simulation
 		&& (contact.chainId === removeAddressBookEntry.data.chainId || (contact.chainId === undefined && removeAddressBookEntry.data.chainId === 1n))))
 	)
 	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses' || removeAddressBookEntry.data.addressBookCategory === 'My Safes') {
-		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getRequiredSettings(), true)
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 }
@@ -293,7 +294,7 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 		let entryToStore: AddressBookEntry = entry.data
 		if (entry.data.type === 'safe') {
 			try {
-				const { ethereum } = simulationServicesOwner.getCurrent()
+				const { ethereum } = simulationServicesOwner.requireCurrent()
 				if (entry.data.chainId !== ethereum.getChainId()) {
 					return {
 						type: 'AddOrModifyAddressBookEntryReply' as const,
@@ -331,7 +332,7 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 			}
 			return previousContacts.concat([entryToStore])
 		})
-		if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, true)
+		if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getRequiredSettings(), true, true)
 		void sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 		return { type: 'AddOrModifyAddressBookEntryReply' as const, ok: true as const }
 	} catch(error) {
@@ -353,7 +354,7 @@ export async function setSafeSimulationSigner(
 	websiteTabConnections: WebsiteTabConnections,
 	request: SetSafeSimulationSigner,
 ) {
-	const { ethereum } = simulationServicesOwner.getCurrent()
+	const { ethereum } = simulationServicesOwner.requireCurrent()
 	if (request.data.chainId !== ethereum.getChainId()) {
 		return {
 			type: 'SetSafeSimulationSignerReply' as const,
@@ -409,14 +410,14 @@ export async function setSafeSimulationSigner(
 		}
 	}
 	if (updatedEntry.useAsActiveAddress) {
-		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getRequiredSettings(), true)
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 	return { type: 'SetSafeSimulationSignerReply' as const, ok: true as const }
 }
 
 export async function changeInterceptorAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
-	await updateWebsiteAccess((previousAccess) => {
+	const disabledSitesChanged = await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => {
 		const withEntriesRemoved = previousAccess.filter((acc) => accessChange.data.find((change) => change.newEntry.website.websiteOrigin === acc.website.websiteOrigin)?.removed !== true)
 		return withEntriesRemoved.map((entry) => {
 			const changeForEntry = accessChange.data.find((change) => change.newEntry.website.websiteOrigin === entry.website.websiteOrigin)
@@ -425,13 +426,9 @@ export async function changeInterceptorAccess(simulationServicesOwner: Simulatio
 		})
 	})
 
-	const interceptorDisablesChanged = accessChange.data.filter((x) => x.newEntry.interceptorDisabled !== x.oldEntry.interceptorDisabled).map((x) => x)
-	await Promise.all(interceptorDisablesChanged.map(async (disable) => {
-		if (disable.newEntry.interceptorDisabled === undefined) return
-		return await disableInterceptorForPage(websiteTabConnections, disable.newEntry.website, disable.newEntry.interceptorDisabled)
-	}))
+	if (disabledSitesChanged) await reloadConnectedTabs(websiteTabConnections)
 
-	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getRequiredSettings(), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })
 }
 
@@ -683,7 +680,7 @@ export async function enableSimulationMode(
 	params: EnableSimulationMode,
 	signerAccountRefreshOptions: SignerAccountRefreshOptions = {},
 ) {
-	const settings = await getSettings()
+	const settings = await getRequiredSettings()
 	if (settings.simulationMode === params.data) return
 	// if we are on unsupported chain, force change to a supported one
 	if (settings.useSignersAddressAsActiveAddress || params.data === false) {
@@ -850,10 +847,10 @@ export async function refreshHomeData(
 	const newPopupRefreshGeneration = popupRefreshGeneration
 	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundRefreshStart)
 	try {
-		const currentSettings = await getSettings()
+		const currentSettings = await getRequiredSettings()
 		if (currentSettings.simulationMode) await updateSimulationMetadata(ethereum, requestAbortController)
 		if (refreshSimulation) await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { skipIfUnchanged: true })
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		if (settings.activeRpcNetwork.httpsRpc !== undefined) await makeSureInterceptorIsNotSleeping(ethereum, publishRpcConnectionStatus)
 		const updatedPage = await buildHomePageUpdate(ethereum, websiteTabConnections, {
 			requestAbortController,
@@ -885,7 +882,7 @@ export async function changeSettings(simulationServicesOwner: SimulationServices
 			const error = 'error' in snapshot.rpcConfiguration ? snapshot.rpcConfiguration.error : undefined
 			throw error ?? new Error('RPC configuration became unavailable while refreshing the popup.')
 		}
-		const services = rpcServicesAreAvailable(snapshot.rpcConfiguration, simulationServicesOwner) ? simulationServicesOwner.getCurrentOrUndefined() : undefined
+		const services = rpcServicesAreAvailable(snapshot.rpcConfiguration, simulationServicesOwner) ? simulationServicesOwner.getCurrent() : undefined
 		if (services === undefined) return await requestHomePageBootstrap(websiteTabConnections, popupRefreshGeneration)
 		return await requestNewHomeData(services.ethereum, websiteTabConnections, false, true, requestAbortController, popupRefreshGeneration)
 	} catch (error: unknown) {
@@ -1102,7 +1099,7 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 
 export const requestActiveAddresses = async () => ({ method: 'popup_requestActiveAddresses' as const, activeAddresses: await getActiveAddresses() })
 
-export const requestSimulationMode = async () => ({ method: 'popup_requestSimulationMode' as const, simulationMode: (await getSettings()).simulationMode })
+export const requestSimulationMode = async () => ({ method: 'popup_requestSimulationMode' as const, simulationMode: (await getRequiredSettings()).simulationMode })
 
 export const requestLatestUnexpectedError = async () => ({ method: 'popup_requestLatestUnexpectedError' as const, latestUnexpectedError: await getLatestUnexpectedError() })
 
@@ -1141,7 +1138,7 @@ async function buildHomePageUpdate(
 		popupRefreshGeneration: number
 	}
 ): Promise<UpdateHomePage> {
-	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
+	const settingsPromise = silenceChromeUnCaughtPromise(getRequiredSettings())
 	const rpcConnectionStatusPromise = silenceChromeUnCaughtPromise(getRpcConnectionStatus())
 	const rpcEntriesPromise = silenceChromeUnCaughtPromise(getRpcList())
 	const preSimulationBlockTimeManipulationPromise = silenceChromeUnCaughtPromise(getPreSimulationBlockTimeManipulation())
@@ -1161,7 +1158,7 @@ async function buildHomePageUpdate(
 	let settings = await settingsPromise
 	let tabState = await tabStatePromise
 	tabState = await refreshSignerAccountsForTabIfNeeded(websiteTabConnections, tabId, tabState, shouldRefreshSignerAccounts)
-	if (shouldRefreshSignerAccounts) settings = await getSettings()
+	if (shouldRefreshSignerAccounts) settings = await getRequiredSettings()
 	const activeSigningAddress = tabId === undefined ? undefined : (await getActiveAddressForCurrentPopupSignerState(settings, websiteTabConnections, tabId))?.address
 	const walletSelectedAddressBookEntry = await getWalletSelectedAddressBookEntry(tabState, settings.activeRpcNetwork.chainId)
 	const interceptorDisabled = isInterceptorDisabledForWebsite(settings, tabState.website?.websiteOrigin)
@@ -1213,7 +1210,7 @@ export async function reportUnexpectedErrorInWindow(parsedRequest: UnexpectedErr
 
 export async function requestInterceptorSimulationInput(ethereumClientService: EthereumClientService) {
 	const stack = await getInterceptorTransactionStack()
-	if (!(await getSettings()).simulationMode) {
+	if (!(await getRequiredSettings()).simulationMode) {
 		return {
 			method: 'popup_requestInterceptorSimulationInput' as const,
 			ok: false as const,
@@ -1302,7 +1299,7 @@ export async function requestCompleteVisualizedSimulation(ethereum: EthereumClie
 }
 
 export async function requestSimulationMetadata(ethereumClientService: EthereumClientService) {
-	const settings = await getSettings()
+	const settings = await getRequiredSettings()
 	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot()) : { kind: 'passthrough' as const }
 	if (simulationState.kind === 'passthrough' || simulationState.value.success === false) return {
 		method: 'popup_requestSimulationMetadata' as const,

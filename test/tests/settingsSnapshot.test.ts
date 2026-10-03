@@ -66,12 +66,12 @@ Object.defineProperty(globalThis, 'browser', {
 	},
 })
 
-const { getSettings } = await import('../../app/ts/background/settings.js')
+const { getRequiredSettings } = await import('../../app/ts/background/settings.js')
 
-test('getSettings returns one atomic browser storage snapshot', async () => {
+test('getRequiredSettings returns one atomic browser storage snapshot', async () => {
 	storageReadCount = 0
 
-	const settings = await getSettings()
+	const settings = await getRequiredSettings()
 
 	assert.equal(storageReadCount, 1)
 	assert.equal(settings.activeSimulationAddress, 0x1111111111111111111111111111111111111111n)

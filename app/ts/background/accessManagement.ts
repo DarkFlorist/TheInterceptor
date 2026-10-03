@@ -4,7 +4,7 @@ import { requestAccessFromUser } from './windows/interceptorAccess.js'
 import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
-import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
+import { getRequiredSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
@@ -22,6 +22,7 @@ import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addres
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
+import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean) {
 	const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
@@ -147,7 +148,7 @@ function getAddressesThatDoNotNeedIndividualAccesses(activeAddressEntries: Addre
 }
 
 export async function setInterceptorDisabledForWebsite(website: Website, interceptorDisabled: boolean) {
-	return await updateWebsiteAccess((previousWebsiteAccess) => {
+	return await updateWebsiteAccessAndContentScriptInjectionStrategy((previousWebsiteAccess) => {
 		const index = previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === website.websiteOrigin)
 		const previousAccess = index !== -1 ? previousWebsiteAccess[index] : undefined;
 		if (previousAccess === undefined) return [...previousWebsiteAccess, { website, addressAccess: [], interceptorDisabled } ]
@@ -277,7 +278,7 @@ async function promptForWebsiteAccesses(simulationServicesOwner: SimulationServi
 			if (!connection.wantsToConnect) continue
 			try {
 				// Reconciliation uses the committed snapshot; deferred prompts must recheck the latest settings.
-				const settings = await getSettings()
+				const settings = await getRequiredSettings()
 				const { activeAddress, access } = await getConnectionAccess(websiteTabConnections, connection, settings)
 				if (access !== 'askAccess') continue
 				await askUserForAccessOnConnectionUpdate(simulationServicesOwner, websiteTabConnections, connection.socket, connection.websiteOrigin, activeAddress, settings)
@@ -304,7 +305,7 @@ const getApprovedTabs = (websiteTabConnections: WebsiteTabConnections) => {
 }
 const getTabsAndAddressesToBlock = async (websiteTabConnections: WebsiteTabConnections) => {
 	const approvedTabIds = getApprovedTabs(websiteTabConnections)
-	const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getSettings())).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
+	const tabIdsToBlock = (await getActiveAddressesForAllTabs(await getRequiredSettings())).filter((tabData) => approvedTabIds.has(tabData.tabId)).filter((tabData) => tabData.activeAddress?.declarativeNetRequestBlockMode === 'block-all').map((tabData) => tabData.tabId)
 	const sitesToBlock = (await getWebsiteAccess()).filter((access) => access.declarativeNetRequestBlockMode === 'block-all').map((acccess) => acccess.website.websiteOrigin)
 	return {
 		tabIdsToBlock,
@@ -487,7 +488,7 @@ export async function persistWebsiteAccessChange(
 	return await finalizeWebsiteAccessChange(
 		simulationServicesOwner,
 		websiteTabConnections,
-		await getSettings(),
+		await getRequiredSettings(),
 		promptForAccessesIfNeeded,
 	)
 }

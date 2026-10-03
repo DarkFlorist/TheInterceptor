@@ -8,7 +8,7 @@ import { handleInterceptedRequest, refuseAccess } from '../background.js'
 import { activateAddressSelection } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddressEntryForChain } from '../metadataUtils.js'
-import { captureRpcNetwork, getSettings, getSettingsForCapturedRpcNetwork } from '../settings.js'
+import { captureRpcNetwork, getRequiredSettings, getSettingsForCapturedRpcNetwork } from '../settings.js'
 import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
@@ -118,7 +118,7 @@ export async function resolveInterceptorAccess(simulationServicesOwner: Simulati
 		await updateWebsiteApprovalAccesses(
 			simulationServicesOwner,
 			websiteTabConnections,
-			await getSettings(),
+			await getRequiredSettings(),
 			true,
 		)
 	}
@@ -150,7 +150,7 @@ export function filterAccessDialogAddressesForChain(activeAddresses: AddressBook
 }
 
 async function getAccessDialogActiveAddresses() {
-	const settings = await getSettings()
+	const settings = await getRequiredSettings()
 	return filterAccessDialogAddressesForChain(await getActiveAddresses(), settings.activeRpcNetwork.chainId)
 }
 
@@ -476,7 +476,7 @@ async function resolve(simulationServicesOwner: SimulationServicesOwner, website
 			}
 			if (accessReply.requestAccessToAddress === undefined) throw new Error('Changed request to page level')
 			await changeAccess(simulationServicesOwner, websiteTabConnections, accessReply, website, false)
-			const settings = await getSettings()
+			const settings = await getRequiredSettings()
 			const signerAddress = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts[0]
 			const selection = approvedAddressSelection ?? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress, 'pendingEntry')
 			await activateAddressSelection(simulationServicesOwner, websiteTabConnections, selection, {
@@ -536,7 +536,7 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 		}
 
 		const proposedSelection = await getProposedSelection()
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		const requestAccessToAddress = proposedSelection === undefined
 			? pendingAccessRequest.requestAccessToAddress
 			: proposedSelection.type === 'addressBookEntry' && proposedSelection.entry.type === 'safe'
@@ -557,7 +557,7 @@ export async function requestAddressChange(websiteTabConnections: WebsiteTabConn
 }
 
 async function getAllowedAddressSelectionForAccessRequest(pendingAccessRequest: PendingAccessRequest, address: bigint | 'signer', selectionSource: 'explicitSelection' | 'pendingEntry') {
-	const settings = await getSettings()
+	const settings = await getRequiredSettings()
 	const simulationMode = pendingAccessRequest.simulationMode && settings.simulationMode
 	const signerAccounts = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts
 	const activeAddresses = await getActiveAddresses()
@@ -577,7 +577,7 @@ async function getAllowedAddressSelectionForAccessRequest(pendingAccessRequest: 
 }
 
 export async function interceptorAccessMetadataRefresh() {
-	const settings = await getSettings()
+	const settings = await getRequiredSettings()
 	await sendPopupMessageToOpenWindows({
 		method: 'popup_interceptorAccessDialog',
 		data: {

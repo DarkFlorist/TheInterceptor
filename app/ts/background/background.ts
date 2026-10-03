@@ -3,7 +3,7 @@ import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
 import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { captureRpcNetwork, getSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot, updateWebsiteAccess } from './settings.js'
+import { captureRpcNetwork, getRequiredSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot, updateWebsiteAccess } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
 import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -36,7 +36,7 @@ import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import { getWalletCapabilities } from './walletCapabilities.js'
 import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
 import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState } from './websiteAccessPolicy.js'
-import { replyIfRpcConfigurationIsUnavailable } from './rpcConfigurationLifecycle.js'
+import { replyIfRpcConfigurationIsUnavailable } from './rpcConfigurationRequestGuard.js'
 import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../types/interceptor-reply-messages.js'
 
 if (initializeWatchAssetWindowListeners()) {
@@ -173,7 +173,7 @@ async function handleRPCRequest(
 	const withSimulationInput = async (handler: (simulationInput: ResolvedSimulationInput) => Promise<RPCReply>) => await handler(await getSimulationInput())
 	const withExecutionSimulationState = async (handler: (simulationState: ResolvedExecutionSimulationState) => Promise<RPCReply>) => await handler(await getExecutionSimulationState())
 	if (!accountOnlyMethod) {
-		const currentEthereum = simulationServicesOwner.getCurrentOrUndefined()?.ethereum
+		const currentEthereum = simulationServicesOwner.getCurrent()?.ethereum
 		if (currentEthereum !== undefined) await makeSureInterceptorIsNotSleeping(currentEthereum, publishRpcConnectionStatus)
 	}
 	const signMessage = async (signRequest: Extract<ParsedRpcRequest, { readonly method: 'personal_sign' | 'eth_signTypedData' | 'eth_signTypedData_v1' | 'eth_signTypedData_v2' | 'eth_signTypedData_v3' | 'eth_signTypedData_v4' }>) => await personalSign(ethereum, tokenPriceService, activeAddress, confirmation?.kind === 'message' ? confirmation : { kind: 'message', parameters: signRequest }, request, website, websiteTabConnections, !forwardToSigner)
@@ -313,7 +313,7 @@ async function persistApprovedAccountsForAccountRequest(
 	const accounts = getApprovedAccountsForAccountRequest(request, resolved, activeAddress)
 	if (accounts === undefined || accounts.length === 0) return
 
-	const settings = await getSettings()
+	const settings = await getRequiredSettings()
 	for (const account of accounts) {
 		const addressEntry = await getActiveAddressEntryForChain(account, settings.activeRpcNetwork.chainId)
 		const existingApprovalState = getWebsiteAddressAccessApprovalState(settings.websiteAccess, website.websiteOrigin, addressEntry)
@@ -345,7 +345,7 @@ async function revokeWebsitePermissions(
 		}
 	}))
 	clearWebsiteConnectionIntent(websiteTabConnections, websiteOrigin)
-	await finalizeWebsiteAccessChange(simulationServicesOwner, websiteTabConnections, await getSettings(), false)
+	await finalizeWebsiteAccessChange(simulationServicesOwner, websiteTabConnections, await getRequiredSettings(), false)
 	return { type: 'result' as const, method: 'wallet_revokePermissions' as const, result: null }
 }
 
@@ -410,7 +410,7 @@ function replyWithSignerAccountError(websiteTabConnections: WebsiteTabConnection
 
 export const handleInterceptedRequest = async (port: browser.runtime.Port | undefined, websiteOrigin: string, websitePromise: Promise<Website> | Website, simulationServicesOwner: SimulationServicesOwner, socket: WebsiteSocket, request: InterceptedRequest, websiteTabConnections: WebsiteTabConnections, publishRpcConnectionStatus: PublishRpcConnectionStatus): Promise<unknown> => {
 	const initialSnapshot = await getSettingsSnapshot()
-	const admittedSimulationServices = simulationServicesOwner.getCurrentOrUndefined()
+	const admittedSimulationServices = simulationServicesOwner.getCurrent()
 	const initialSettings = initialSnapshot.settings
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)
 	const providerHandler = getProviderHandler(request.method)

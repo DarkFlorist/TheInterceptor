@@ -137,7 +137,7 @@ export async function personalSign(
 }
 
 export async function switchEthereumChain(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
-	if (simulationServicesOwner.getCurrent().ethereum.getChainId() === params.params[0].chainId) {
+	if (simulationServicesOwner.requireCurrent().ethereum.getChainId() === params.params[0].chainId) {
 		// we are already on the right chain
 		return { type: 'result' as const, method: params.method, result: null }
 	}
