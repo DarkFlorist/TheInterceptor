@@ -43,8 +43,10 @@ export function CopyToClipboard(props: CopyToClipboardProps) {
 
 	const tooltipContent = 'content' in props ? (props.contentDisplayOverride ?? props.content) : props.contentDisplayOverride
 
-	return <div onClick = { performCopy } class = { props.classNames } style = { props.style ?? 'display: inherit; overflow: inherit;' }>
-		<div data-tooltip = { tooltipContent } style = 'display: inherit; overflow: inherit; width: 100%;'>
+	// Without a caller-provided style the wrapper is laid out like the plain tooltip wrapper.
+	const wrapperClass = props.style === undefined ? `tooltip-wrapper ${ props.classNames ?? '' }`.trim() : props.classNames
+	return <div onClick = { performCopy } class = { wrapperClass } style = { props.style }>
+		<div data-tooltip = { tooltipContent } class = 'tooltip-target'>
 			{ props.children }
 		</div>
 	</div>
@@ -56,8 +58,8 @@ interface ToolTipParams {
 }
 
 export function ToolTip(props: ToolTipParams) {
-	return <div style = 'display: inherit; overflow: inherit;'>
-		<div data-tooltip = { props.content.value } style = 'display: inherit; overflow: inherit; width: 100%;'>
+	return <div class = 'tooltip-wrapper'>
+		<div data-tooltip = { props.content.value } class = 'tooltip-target'>
 			{ props.children }
 		</div>
 	</div>

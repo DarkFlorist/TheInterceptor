@@ -21,13 +21,13 @@ export const EnsNamedHashComponent = (params: NameHashComponentParams) => {
 		<span class = 'small-address-container' data-value = { name }>
 			<span class = 'address-text-holder'>
 				<span class = 'small-address-baggage-tag vertical-center' style = { params.style }>
-					<span style = 'margin-right: 5px'>
+					<span class = 'ens-name-icon'>
 						<CopyToClipboard content = { name } copyMessage = 'Copied!'>
-							<img style = { { display: 'block', width: '1em', height: '1em', 'min-width': '1em', 'max-height': '1em' } } width = '16' height = '16' src = { zorbImageDataURI(stringToUint8Array(bytes32String(params.nameHash))) }/>
+							<img class = 'ens-name-icon-image' width = '16' height = '16' src = { zorbImageDataURI(stringToUint8Array(bytes32String(params.nameHash))) }/>
 						</CopyToClipboard>
 					</span>
 					<CopyToClipboard content = { name } copyMessage = 'Copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
-						<p class = 'address-text noselect nopointer' style = 'color: var(--text-color)'>{ name }</p>
+						<p class = 'address-text noselect nopointer ens-name-text'>{ name }</p>
 					</CopyToClipboard>
 					<button class = 'button is-primary is-small rename-address-button' onClick = { () => { params.editEnsNamedHashCallBack(params.type, params.nameHash, params.name) } }>
 						<span class = 'icon'>

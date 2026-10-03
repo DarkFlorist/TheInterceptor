@@ -1,6 +1,6 @@
 export function ArrowIcon(param: { color: string }) {
 	return <>
-		<svg style = 'vertical-align: middle;' width = '24' height = '24' viewBox = '0 0 24 24'>
+		<svg class = 'icon-arrow' width = '24' height = '24' viewBox = '0 0 24 24'>
 			<path fill = { param.color } d = 'M13 7v-6l11 11-11 11v-6h-13v-10z'/>
 		</svg>
 	</>
@@ -8,7 +8,7 @@ export function ArrowIcon(param: { color: string }) {
 
 export function ApproveIcon(param: { color: string }) {
 	return <>
-		<svg x = '0px' y = '0px' viewBox = '0 0 122.88 98.75' style = 'enable-background: new 0 0 122.88 98.75' width = '24' height = '24'>
+		<svg x = '0px' y = '0px' viewBox = '0 0 122.88 98.75' width = '24' height = '24'>
 			<g>
 				<path
 					fill = { param.color }

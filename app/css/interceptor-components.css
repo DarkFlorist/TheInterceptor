@@ -965,6 +965,12 @@ summary:focus {
 	font-family: 'Atkinson', monospace;
 }
 
+/* Single-purpose text helpers, for places that need nothing else and so have no class of their own. They sit after `.textbox` so `.text-wrap` can undo its preserved whitespace. */
+.text-subtitle { color: var(--subtitle-text-color) }
+.text-disabled { color: var(--disabled-text-color) }
+.text-nowrap { white-space: nowrap }
+.text-wrap { white-space: normal }
+
 .truncate {
 	white-space: nowrap;
 	text-overflow: ellipsis;

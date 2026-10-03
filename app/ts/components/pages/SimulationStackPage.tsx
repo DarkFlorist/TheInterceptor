@@ -179,7 +179,7 @@ function RichAddressesTitleCard({ numberOfAddressesMadeRich, madeRichAddressBook
 	const headerActionLabel = collapsed.value ? 'Expand rich address details' : 'Collapse rich address details'
 	const richAddressesSentence = getRichAddressesSentence(madeRichAddressBookEntries)
 	const richAddressesIntro = getRichAddressesIntro(madeRichAddressBookEntries.length)
-	return <section class = 'card' style = 'margin: 10px 0;'>
+	return <section class = 'card stack-page-rich-addresses-card'>
 		<header
 			class = 'card-header stack-card-header stack-row-link-header'
 			onClick = { () => { collapsed.value = !collapsed.value } }
@@ -200,19 +200,19 @@ function RichAddressesTitleCard({ numberOfAddressesMadeRich, madeRichAddressBook
 					<img src = '../img/success-icon.svg' width = '24' height = '24' />
 				</span>
 			</div>
-			<p class = 'card-header-title' style = 'white-space: nowrap;'>
+			<p class = 'card-header-title'>
 				Simply making { numberOfAddressesMadeRich } { numberOfAddressesMadeRich === 1 ? 'address' : 'addresses' } rich
 			</p>
 			<div class = 'card-header-icon noselect'>
 				<span class = 'icon'><ChevronIcon /></span>
 			</div>
 		</header>
-		{ collapsed.value ? <></> : <div class = 'card-content' style = 'padding-bottom: 5px;'>
+		{ collapsed.value ? <></> : <div class = 'card-content stack-page-rich-addresses-content'>
 			<div class = 'container'>
-				<p class = 'paragraph checkbox-text' style = { { marginBottom: 0 } } aria-label = { richAddressesSentence }>
+				<p class = 'paragraph checkbox-text' aria-label = { richAddressesSentence }>
 					<span>{ richAddressesIntro } </span>
 					{ madeRichAddressBookEntries.map((entry, index) =>
-						<span key = { entry.address.toString() } class = 'rich-address-sentence-group' style = 'white-space: nowrap;'>
+						<span key = { entry.address.toString() } class = 'rich-address-sentence-group text-nowrap'>
 							<RichAddressPrefix index = { index } total = { madeRichAddressBookEntries.length } />
 							<SmallAddress addressBookEntry = { entry } renameAddressCallBack = { renameAddressCallBack } />
 							<RichAddressSuffix index = { index } total = { madeRichAddressBookEntries.length } />

@@ -203,16 +203,16 @@ export function App() {
 		<main class = { isSettingsLoaded.value ? getInterceptorModeClass(simulationMode.value) : undefined }>
 			<Hint>
 				<PasteCatcher enabled = { isSettingsLoaded.value && (appPage.value.page === 'Unknown' || appPage.value.page === 'Home') } onPaste = { addressPaste } />
-				<div style = { `background-color: var(--bg-color); width: 520px; height: 600px; ${ appPage.value.page !== 'Unknown' && appPage.value.page !== 'Home' ? 'overflow: hidden;' : 'overflow-y: auto; overflow-x: hidden' }` }>
+				<div class = 'popup-frame' style = { appPage.value.page !== 'Unknown' && appPage.value.page !== 'Home' ? 'overflow: hidden;' : 'overflow-y: auto; overflow-x: hidden' }>
 					<nav class = 'navbar window-header' role = 'navigation' aria-label = 'main navigation'>
 						<div class = 'navbar-brand'>
-							<a class = 'navbar-item' style = 'cursor: unset'>
+							<a class = 'navbar-item popup-brand'>
 								<img src = '../img/LOGOA.svg' alt = 'Logo' width = '32' height = '32'/>
 								<p class = 'navbar-title'>THE INTERCEPTOR
 									<span class = 'navbar-version' title = { `${ version } - ${ gitCommitSha }` }>{ `${ version } - ${ gitCommitSha.slice(0, 8) }` }</span>
 								</p>
 							</a>
-							<div class = 'navbar-item navbar-actions' style = 'margin-left: auto; margin-right: 0;'>
+							<div class = 'navbar-item navbar-actions popup-navbar-actions'>
 								<button type = 'button' class = 'btn btn--ghost navbar-action' title = 'Website access' aria-label = 'Website access' onClick = { openWebsiteAccess }>
 									<img src = '../img/internet.svg' alt = '' width = '32' height = '32'/>
 								</button>

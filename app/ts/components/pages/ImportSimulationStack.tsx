@@ -52,7 +52,7 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 	})
 
 	const Text = (param: { text: ComponentChildren }) => {
-		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width: 100%'>
+		return <p class = 'paragraph modal-field-label'>
 			{ param.text }
 		</p>
 	}
@@ -84,11 +84,11 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 				</button>
 			</header>
 			<section class = 'modal-card-body'>
-				<div class = 'card' style = 'margin: 10px;'>
+				<div class = 'card import-stack-card'>
 					<div class = 'card-content'>
 						<div class = 'media'>
-							<div class = 'media-content' style = 'overflow-y: unset; overflow-x: unset;'>
-								<div class = 'container' style = 'margin-bottom: 10px;'>
+							<div class = 'media-content import-stack-media-content'>
+								<div class = 'container import-stack-field-container'>
 									<div class = 'simulation-stack-import-field'>
 										<Text text = { 'Interceptor Simulation Stack: ' }/>
 										<SimulationInput input = { param.simulationInput } isValid = { isValid } disabled = { isImporting.value }/>
@@ -98,7 +98,7 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 						</div>
 					</div>
 				</div>
-				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; min-height: 80px'>
+				<div class = 'modal-notice-area'>
 					{ errorString.value !== undefined ? <Notice text = { errorString.value } /> : importError.value !== undefined ? <Notice text = { importError.value } /> : <></> }
 				</div>
 			</section>

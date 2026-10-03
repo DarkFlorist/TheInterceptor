@@ -238,7 +238,7 @@ function VisualizeSwapAsset({ swapAsset, direction, renameAddressCallBack }: { s
 	switch (swapAsset.type) {
 		case 'ERC721': {
 			return <span class = 'grid swap-grid-1'>
-				<div class = 'log-cell-flexless' style = 'justify-content: center; display: flex;'>
+				<div class = 'log-cell-flexless swap-token-cell'>
 					<TokenSymbol
 						tokenEntry = { swapAsset.token }
 						tokenId = { swapAsset.tokenId }
@@ -253,7 +253,7 @@ function VisualizeSwapAsset({ swapAsset, direction, renameAddressCallBack }: { s
 		case 'ERC1155': {
 			return <>
 				<span class = 'grid swap-grid-1'>
-					<div class = 'log-cell-flexless' style = 'justify-content: center; display: flex;'>
+					<div class = 'log-cell-flexless swap-token-cell'>
 						<TokenSymbol
 							tokenEntry = { swapAsset.token }
 							tokenId = { swapAsset.tokenId }
@@ -267,10 +267,10 @@ function VisualizeSwapAsset({ swapAsset, direction, renameAddressCallBack }: { s
 				</span>
 				<span class = 'grid swap-grid'>
 					<div class = 'log-cell'/>
-					{ swapAsset.beforeAfterBalance !== undefined ? <div class = 'log-cell' style = 'justify-content: right;'>
-						<p class = 'paragraph' style = { balanceTextStyle }>Balance:&nbsp;</p>
+					{ swapAsset.beforeAfterBalance !== undefined ? <div class = 'log-cell log-cell--right'>
+						<p class = 'paragraph swap-balance-text'>Balance:&nbsp;</p>
 						<TokenOrEthValue tokenEntry = { swapAsset.token } amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } fontSize = 'normal'/>
-						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
+						<p class = 'paragraph swap-balance-text'>&nbsp;{'->'}&nbsp;</p>
 						<TokenOrEthValue tokenEntry = { swapAsset.token } amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } fontSize = 'normal'/>
 						</div> : <></>
 					}
@@ -280,7 +280,7 @@ function VisualizeSwapAsset({ swapAsset, direction, renameAddressCallBack }: { s
 		case 'ERC20': {
 			return <>
 				<span class = 'grid swap-grid'>
-					<div class = 'log-cell' style = 'justify-content: left;'>
+					<div class = 'log-cell swap-amount-cell'>
 						<TokenAmount
 							amount = { direction === 'pay' ? -swapAsset.amount : swapAsset.amount }
 							tokenEntry = { swapAsset.token }
@@ -289,7 +289,7 @@ function VisualizeSwapAsset({ swapAsset, direction, renameAddressCallBack }: { s
 							fontSize = 'big'
 						/>
 					</div>
-					<div class = 'log-cell' style = 'justify-content: right;'>
+					<div class = 'log-cell log-cell--right'>
 						<TokenSymbol
 							tokenEntry = { swapAsset.token }
 							useFullTokenName = { false }
@@ -300,9 +300,9 @@ function VisualizeSwapAsset({ swapAsset, direction, renameAddressCallBack }: { s
 					</div>
 				</span>
 				<span class = 'grid swap-grid'>
-					<div style = { { display: 'flex', justifyContent: 'left' } }>
+					<div class = 'swap-price-cell'>
 						{ swapAsset.tokenPriceEstimate !== undefined && swapAsset.tokenPriceEstimateQuoteToken !== undefined ? <>
-							<p style = { balanceTextStyle }>(</p>
+							<p class = 'swap-balance-text'>(</p>
 							<TokenPrice
 								amount = { swapAsset.amount }
 								tokenPriceEstimate = { swapAsset.tokenPriceEstimate }
@@ -310,13 +310,13 @@ function VisualizeSwapAsset({ swapAsset, direction, renameAddressCallBack }: { s
 								quoteTokenEntry = { swapAsset.tokenPriceEstimateQuoteToken }
 								renameAddressCallBack = { renameAddressCallBack }
 							/>
-							<p style = { balanceTextStyle }>)</p>
+							<p class = 'swap-balance-text'>)</p>
 						</> : <></> }
 					</div>
-					{ swapAsset.beforeAfterBalance !== undefined ? <div class = 'log-cell' style = 'justify-content: right;'>
-						<p class = 'paragraph' style = { balanceTextStyle }>Balance:&nbsp;</p>
+					{ swapAsset.beforeAfterBalance !== undefined ? <div class = 'log-cell log-cell--right'>
+						<p class = 'paragraph swap-balance-text'>Balance:&nbsp;</p>
 						<TokenOrEthValue tokenEntry = { swapAsset.token } amount = { swapAsset.beforeAfterBalance?.beforeBalance } style = { balanceTextStyle } fontSize = 'normal'/>
-						<p class = 'paragraph' style = { balanceTextStyle }>&nbsp;{'->'}&nbsp;</p>
+						<p class = 'paragraph swap-balance-text'>&nbsp;{'->'}&nbsp;</p>
 						<TokenOrEthValue tokenEntry = { swapAsset.token } amount = { swapAsset.beforeAfterBalance?.afterBalance } style = { balanceTextStyle } fontSize = 'normal'/>
 						</div> : <></>
 					}

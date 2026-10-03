@@ -31,13 +31,13 @@ export function AddressBeforeAfter({ address, beforeAndAfter, renameAddressCallB
 		<BigAddress addressBookEntry = { address } renameAddressCallBack = { renameAddressCallBack } style = { { '--bg-color' : 'var(--address-muted-bg-color)' } } />
 		{ beforeAndAfter === undefined
 			? <></>
-			: <span style = 'grid-template-columns: auto auto; display: grid; justify-content: space-between; margin-top: 10px'>
-				<span style = 'grid-template-columns: auto; display: grid;'>
-					<p class = 'paragraph' style = 'color: var(--subtitle-text-color);'> Before:</p>
+			: <span class = 'send-balance-change'>
+				<span class = 'send-balance'>
+					<p class = 'paragraph text-subtitle'> Before:</p>
 					<TokenOrEth { ... { ...tokenOrEtherDefinition, amount: beforeAndAfter.before } }/>
 				</span>
-				<span style = 'grid-template-columns: auto; display: grid;'>
-					<p class = 'paragraph' style = 'color: var(--subtitle-text-color);'> After:</p>
+				<span class = 'send-balance'>
+					<p class = 'paragraph text-subtitle'> After:</p>
 					<TokenOrEth { ... { ...tokenOrEtherDefinition, amount: beforeAndAfter.after } }/>
 				</span>
 			</span>
@@ -62,15 +62,15 @@ export function getProxyRouteLabel(viaProxypath: readonly AddressBookEntry[]) {
 
 export function ExecutionRouteNotice({ viaProxypath, renameAddressCallBack }: { viaProxypath: readonly AddressBookEntry[], renameAddressCallBack: RenameAddressCallBack }) {
 	return <div class = 'box summary-leg'>
-		<div style = 'display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px;'>
-			<span class = 'tag' style = 'background-color: var(--alpha-005); color: var(--subtitle-text-color);'>Routed</span>
-			<p class = 'paragraph' style = 'color: var(--subtitle-text-color); margin: 0;'>
+		<div class = 'send-route-summary'>
+			<span class = 'tag send-route-tag'>Routed</span>
+			<p class = 'paragraph send-route-text'>
 				{ getProxyRouteLabel(viaProxypath) }
 			</p>
 		</div>
-		<div style = 'display: flex; flex-wrap: wrap; align-items: center; gap: 6px;'>
-			<p class = 'paragraph' style = 'color: var(--subtitle-text-color); margin: 0;'>Route:</p>
-			<> { interleave(viaProxypath.map((addressBookEntry) => <SmallAddress key = { addressBookEntry.address.toString() } addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/>), <p class = 'paragraph' style = { 'color: var(--subtitle-text-color)' }>{ '->' }</p>) } </>
+		<div class = 'send-route-path'>
+			<p class = 'paragraph send-route-text'>Route:</p>
+			<> { interleave(viaProxypath.map((addressBookEntry) => <SmallAddress key = { addressBookEntry.address.toString() } addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/>), <p class = 'paragraph text-subtitle'>{ '->' }</p>) } </>
 		</div>
 	</div>
 }

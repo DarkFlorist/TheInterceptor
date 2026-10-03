@@ -381,6 +381,7 @@ svg[role="img"] {
 }
 
 .address-icon-frame {
+	background-color: var(--unimportant-text-color);
 	border-radius: 6px;
 	box-sizing: border-box;
 	height: 1em;

@@ -20,14 +20,14 @@ function ValueField({ orderOrConsideration }: { orderOrConsideration: SeaPortSin
 		return null
 	}
 	if (orderOrConsideration.itemType === 'ERC721_WITH_CRITERIA' || orderOrConsideration.itemType === 'ERC1155_WITH_CRITERIA') {
-		return <p class = 'paragraph' style = { tokenStyle }> 'Criteria: { bytes32String(orderOrConsideration.identifierOrCriteria) } </p>
+		return <p class = 'paragraph opensea-value-text'> 'Criteria: { bytes32String(orderOrConsideration.identifierOrCriteria) } </p>
 	}
 	if (orderOrConsideration.startAmount === orderOrConsideration.endAmount) {
 		return <TokenOrEthValue { ...orderOrConsideration.token } amount = { orderOrConsideration.startAmount } style = { tokenStyle } fontSize = 'big'/>
 	}
 	return <> 
 		<TokenOrEthValue { ...orderOrConsideration.token } amount = { orderOrConsideration.startAmount } style = { tokenStyle } fontSize = 'big'/>
-		<p class = 'paragraph' style = { tokenStyle }> -&nbsp;</p>
+		<p class = 'paragraph opensea-value-text'> -&nbsp;</p>
 		<TokenOrEthValue  { ...orderOrConsideration } amount = { orderOrConsideration.endAmount } style = { tokenStyle } fontSize = 'big'/>
 	</>
 }
@@ -35,10 +35,10 @@ function ValueField({ orderOrConsideration }: { orderOrConsideration: SeaPortSin
 function SwapGrid(param: VisualizeOpenSeaAssetParams) {
 	return <>
 		<span class = 'grid swap-grid'>
-			<div class = 'log-cell' style = 'justify-content: left;'>
+			<div class = 'log-cell opensea-offer-value'>
 				<ValueField orderOrConsideration = { param.orderOrConsideration } />
 			</div>
-			<div class = 'log-cell' style = 'justify-content: right;'>
+			<div class = 'log-cell log-cell--right'>
 				{ param.orderOrConsideration.itemType === 'ERC721' || param.orderOrConsideration.itemType === 'ERC1155' ?
 					<TokenOrEthSymbol { ...param.orderOrConsideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle } fontSize = 'big'/>
 				: <TokenOrEthSymbol { ...param.orderOrConsideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle } fontSize = 'big'/> }
@@ -55,18 +55,18 @@ type VisualizeOpenSeaConsiderationAssetParams = {
 
 function VisualizeOpenSeaAsset(param: VisualizeOpenSeaConsiderationAssetParams) {
 	return <>
-		<div class = 'log-cell' style = 'justify-content: right;'>
+		<div class = 'log-cell log-cell--right'>
 			<ValueField orderOrConsideration = { param.consideration } />
 		</div>
-		<div class = 'log-cell' style = 'padding-right: 0.2em'>
+		<div class = 'log-cell opensea-consideration-symbol'>
 			{ param.consideration.itemType === 'ERC721' || param.consideration.itemType === 'ERC1155' ?
 				<TokenOrEthSymbol { ...param.consideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle } fontSize = 'big'/>
 			: <TokenOrEthSymbol { ...param.consideration.token } rpcNetwork = { param.rpcNetwork } style = { tokenStyle } fontSize = 'big'/> }
 		</div>
-		<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em'>
+		<div class = 'log-cell opensea-consideration-arrow'>
 			{ <ArrowIcon color = 'var(--text-color)' /> }
 		</div>
-		<div class = 'log-cell-flexless' style = 'margin: 2px;'>
+		<div class = 'log-cell-flexless opensea-consideration-recipient'>
 			<SmallAddress addressBookEntry = { param.consideration.recipient } renameAddressCallBack = { param.renameAddressCallBack } />
 		</div>
 	</>
@@ -87,7 +87,7 @@ export function OrderComponents(param: OrderComponentsParams) {
 			</div>
 			<p class = 'summary-label'>For</p>
 			<div class = 'box swap-box'>
-				<span class = 'log-table-4' style = 'justify-content: center; column-gap: 5px;'>
+				<span class = 'log-table-4 opensea-consideration-table'>
 					{ param.openSeaOrderMessage.consideration.map((consideration, index) => <VisualizeOpenSeaAsset key = { index } consideration = { consideration } renameAddressCallBack = { param.renameAddressCallBack } rpcNetwork = { param.rpcNetwork } /> ) }
 				</span>
 			</div>

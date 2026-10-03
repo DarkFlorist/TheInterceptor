@@ -156,7 +156,9 @@ describe('UI audit fixes', () => {
 		assert.doesNotMatch(`${ addAddressSource }\n${ accessListSource }`, /background-color: var\(--danger-color\)/)
 		assert.match(configureRpcSource, /Remove<\/span><\/button>|<Trash \/> Remove<\/span><\/button>/)
 		assert.doesNotMatch(configureRpcSource, /--(?:btn-)?text-color: var\(--danger-color\)/)
-		assert.match(configureRpcSource, /--btn-text-color: var\(--destructive-action-color\)[\s\S]*?--text-color: var\(--destructive-action-color\)/)
+		assert.match(configureRpcSource, /class = 'btn btn--ghost rpc-form-remove'[^\n]*<span class = 'grid rpc-form-remove-label'><Trash \/> Remove<\/span>/)
+		assert.match(appCss, /\.rpc-form-remove\s*\{[^}]*--btn-text-color:\s*var\(--destructive-action-color\);/)
+		assert.match(appCss, /\.rpc-form-remove-label\s*\{[^}]*--text-color:\s*var\(--destructive-action-color\);/)
 	})
 
 	test('labels address editor text inputs and applies a single-column narrow layout', async () => {
@@ -240,8 +242,8 @@ describe('UI audit fixes', () => {
 			assert.doesNotMatch(source, /is-danger[^']*'[^>]*>Cancel</, sourcePath)
 		}
 		const homeSource = await Bun.file('app/ts/components/pages/Home.tsx').text()
-		assert.match(homeSource, /class = \{ `button \$\{ param\.simulationMode\.value \? 'is-primary' : 'button--secondary' \}` \}/)
-		assert.match(homeSource, /class = \{ `button \$\{ param\.simulationMode\.value \? 'button--secondary' : 'is-primary' \}` \}/)
+		assert.match(homeSource, /class = \{ `button home-mode-button \$\{ param\.simulationMode\.value \? 'is-primary home-mode-button--active' : 'button--secondary' \}` \}/)
+		assert.match(homeSource, /class = \{ `button home-mode-button \$\{ param\.simulationMode\.value \? 'button--secondary' : 'is-primary home-mode-button--active' \}` \}/)
 
 		const css = await readInterceptorAppCss()
 		// Secondary actions sit on a raised neutral surface with a hairline border, so only the primary decision carries the action colour.
@@ -288,6 +290,20 @@ describe('UI audit fixes', () => {
 		const themeCustomProperties = [...themeCss.matchAll(/(?:^|[\s{;])(--[a-z0-9-]+):/gm)].map((match) => match[1] ?? '')
 		const unusedTokens = themeCustomProperties.filter((token) => !allSources.includes(`var(${ token })`) && !allSources.includes(`var(${ token },`))
 		assert.deepEqual([...new Set(unusedTokens)], [])
+	})
+
+	test('keeps static layout in stylesheets instead of inline style attributes', async () => {
+		// A style attribute written as a plain string cannot depend on runtime values, so it belongs in a class. Strings that only place a component in its parent grid through custom properties are the exception.
+		const staticInlineStyles: string[] = []
+		for await (const file of new Bun.Glob('app/ts/**/*.tsx').scan('.')) {
+			const source = await Bun.file(file).text()
+			// Covers `style = '...'`, `style = { '...' }`, string fallbacks such as `style = { props.style ?? '...' }`, and backtick strings without interpolation.
+			for (const match of source.matchAll(/style = (?:\{ (?:[\w.]+ \?\? )?)?['`]([^'`$]*)['`]/g)) {
+				const declarations = (match[1] ?? '').split(';').map((declaration) => declaration.trim()).filter((declaration) => declaration !== '')
+				if (declarations.length === 0 || declarations.some((declaration) => !declaration.startsWith('--'))) staticInlineStyles.push(`${ file }: ${ match[0] }`)
+			}
+		}
+		assert.deepEqual(staticInlineStyles, [])
 	})
 
 	test('keeps the warning tag readable in both themes', async () => {

@@ -30,7 +30,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 
 	return ( <>
 		<div class = 'modal-background'> </div>
-		<div class = 'modal-card' style = 'height: 100%;'>
+		<div class = 'modal-card change-address-modal-card'>
 			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
@@ -50,20 +50,20 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 				<ul>
 					{ getSignerAccount() === undefined ? <></> : <li>
 						<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress('signer') } }>
-							<div class = 'card-content hoverable' style = 'cursor: pointer;'>
+							<div class = 'card-content hoverable change-address-option'>
 								<div class = 'media'>
 									<div class = 'media-left'>
 										<figure class = 'image'>
 											{ getSignerLogo(param.signerName) === undefined ?
-												<div style = 'border: 1px solid var(--strong-hairline-color); width: 40px; height: 40px;'>
-													<p class = 'title' style = 'text-align: center'> S </p>
+												<div class = 'change-address-signer-placeholder'>
+													<p class = 'title change-address-signer-initial'> S </p>
 												</div>
-												: <img src = { getSignerLogo(param.signerName) } width = '40' height = '40' style = 'max-width: 40px; max-height: 40px'/>
+												: <img src = { getSignerLogo(param.signerName) } width = '40' height = '40' class = 'change-address-signer-logo'/>
 											}
 										</figure>
 									</div>
 
-									<div class = 'media-content' style = 'overflow-y: hidden;'>
+									<div class = 'media-content change-address-signer-text'>
 										<p class = 'title is-5 is-spaced'>{ `Use address from ${ getPrettySignerName(param.signerName) }` }</p>
 										<p class = 'subtitle is-7'> { signerAddressName === undefined ? '' : signerAddressName }</p>
 									</div>
@@ -75,7 +75,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 					{ activeAddresses.map((activeAddress) => (
 						<li key = { activeAddress.address.toString() }>
 							<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress(activeAddress.address) } }>
-								<div class = 'card-content hoverable ' style = 'cursor: pointer;'>
+								<div class = 'card-content hoverable change-address-option'>
 									<BigAddress
 										addressBookEntry = { activeAddress }
 										noCopying = { true }
@@ -83,7 +83,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 										renameAddressCallBack = { param.renameAddressCallBack }
 									/>
 									{ isSignerConnected(activeAddress.address) ?
-										<div class = 'content' style = 'color: var(--text-color)'>
+										<div class = 'content change-address-connected-signer'>
 											<SignerLogoText signerName = { param.signerName } text = { ` ${ getPrettySignerName(param.signerName) } connected` }/>
 										</div> : <></>
 									}

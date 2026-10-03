@@ -85,7 +85,7 @@ function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRe
 			</header>
 			<section class = 'modal-card-body'>
 				{ removeAddressState.value.state === 'rejected' ? <ErrorComponent text = { removeAddressState.value.error.message } /> : <></> }
-				<div class = 'card' style = 'margin: 10px;'>
+				<div class = 'card address-book-removal-card'>
 					<div class = 'card-content'>
 						<BigAddress
 							addressBookEntry = { param.addressBookEntry }
@@ -158,7 +158,7 @@ function AddressBookEntryCard({ removeEntry, renameAddressCallBack, ...entry }: 
 						}
 
 						{ entry.category === 'My Active Addresses' ?
-							<label class = 'form-control' style = 'padding-top: 10px'>
+							<label class = 'form-control address-book-entry-access-setting'>
 								<input type = 'checkbox' checked = { 'askForAddressAccess' in entry && !entry.askForAddressAccess } disabled = { true }/>
 								<p class = 'paragraph checkbox-text'>Don't request for an access (insecure) </p>
 							</label>
@@ -348,7 +348,7 @@ export function AddressBook() {
 						</div>
 						<aside class = 'menu'>
 							<ul class = 'menu-list'>
-								<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> My Addresses </p>
+								<p class = 'paragraph text-disabled'> My Addresses </p>
 								<ul>
 									<li> <FilterLink name = 'My Active Addresses' currentFilter = { viewFilter.value.activeFilter } setActiveFilter = { changeFilter }/> </li>
 									<li> <FilterLink name = 'My Safes' currentFilter = { viewFilter.value.activeFilter } setActiveFilter = { changeFilter }/> </li>
@@ -356,7 +356,7 @@ export function AddressBook() {
 								</ul>
 							</ul>
 							<ul class = 'menu-list'>
-								<p class = 'paragraph' style = 'color: var(--disabled-text-color)'> Contracts </p>
+								<p class = 'paragraph text-disabled'> Contracts </p>
 								<ul>
 									<li> <FilterLink name = 'ERC20 Tokens' currentFilter = { viewFilter.value.activeFilter } setActiveFilter = { changeFilter }/> </li>
 									<li> <FilterLink name = 'Non Fungible Tokens' currentFilter = { viewFilter.value.activeFilter } setActiveFilter = { changeFilter }/> </li>

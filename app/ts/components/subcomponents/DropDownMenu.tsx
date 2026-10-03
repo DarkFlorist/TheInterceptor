@@ -19,7 +19,7 @@ type DropDownMenuParams<OptionType> = {
 
 export function DropDownMenuButtonContent({ label, pendingText }: { label: ComponentChildren, pendingText?: string }) {
 	return <>
-		<span class = 'truncate' style = { { contain: 'content' } }>{ label }</span>
+		<span class = 'truncate dropdown-button-label'>{ label }</span>
 		<span class = 'dropdown-chevron' aria-hidden = 'true' title = { pendingText }>{ pendingText === undefined ? <ChevronIcon /> : <AsyncStatusIcon state = 'pending' size = '1rem' /> }</span>
 	</>
 }
@@ -43,14 +43,14 @@ export const DropDownMenu = <OptionType extends string,>({ selected, dropDownOpt
 	}
 
 	return <div ref = { ref } class = { `dropdown ${ isOpen.value ? 'is-active' : '' }` }>
-		<div class = 'dropdown-trigger' style = { { maxWidth: '100%' } }>
-			<button type = 'button' class = { buttonClassses } disabled = { unavailable } aria-busy = { pendingText !== undefined } aria-label = { ariaLabel === undefined ? undefined : `${ ariaLabel }: ${ getOptionLabel(selected.value) }` } aria-haspopup = 'true' aria-expanded = { isOpen.value } aria-controls = { menuId } onClick = { toggle } title = { getOptionLabel(selected.value) } style = { { width: '100%' } }>
+		<div class = 'dropdown-trigger'>
+			<button type = 'button' class = { `${ buttonClassses } dropdown-trigger-button` } disabled = { unavailable } aria-busy = { pendingText !== undefined } aria-label = { ariaLabel === undefined ? undefined : `${ ariaLabel }: ${ getOptionLabel(selected.value) }` } aria-haspopup = 'true' aria-expanded = { isOpen.value } aria-controls = { menuId } onClick = { toggle } title = { getOptionLabel(selected.value) }>
 				<DropDownMenuButtonContent label = { renderOption(selected.value) } pendingText = { pendingText }/>
 			</button>
 			<span class = 'dropdown-status-text' role = 'status' aria-live = 'polite' aria-atomic = 'true'>{ pendingText }</span>
 		</div>
-		<div class = 'dropdown-menu' id = { menuId } role = 'menu' style = { { right: '0' } }>
-			<div class = 'dropdown-content' style = { { right: '0' } }> {
+		<div class = 'dropdown-menu' id = { menuId } role = 'menu'>
+			<div class = 'dropdown-content'> {
 				dropDownOptions.value.map((option, index) =>
 					<button key = { `${ option }-${ index }` } type = 'button' class = { `dropdown-item ${ option === selected.value ? 'is-active' : '' }` } onClick = { () => onChanged(option) } >
 						{ renderOption(option) }

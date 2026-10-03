@@ -260,17 +260,17 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 	const blockExplorerApiKeyDefault = useComputed(() => defaultValues?.blockExplorer?.apiKey || '')
 
 	return (
-		<form method = 'dialog' class = 'grid' style = '--gap-y: 1.5rem' onSubmit = { handleFormSubmit }>
-			<header class = 'grid' style = '--grid-cols: 1fr auto'>
-				<span style = { { fontWeight: 'bold', color: 'var(--text-color)' } }>Configure RPC Connection</span>
+		<form method = 'dialog' class = 'grid rpc-form' onSubmit = { handleFormSubmit }>
+			<header class = 'grid rpc-form-header'>
+				<span class = 'rpc-form-title'>Configure RPC Connection</span>
 				<button type = 'submit' value = 'cancel' class = 'btn btn--ghost' aria-label = 'close' formNoValidate disabled = { mutationPending }>
-					<span class = 'button-icon' style = { { fontSize: '1.5em' } }>&times;</span>
+					<span class = 'button-icon rpc-form-close-icon'>&times;</span>
 				</button>
 			</header>
 
-			<main class = 'grid' style = '--gap-y: 0.5rem'>
+			<main class = 'grid rpc-form-body'>
 				<p>Interceptor will automatically verify the RPC URL you provide and attempt to fill relevant information. Adjust the pre-populated details to your liking.</p>
-				<div class = 'grid' style = '--grid-cols: 1fr 1fr; --gap-x: 1rem; --gap-y: 0.5rem' >
+				<div class = 'grid rpc-form-fields'>
 					<RpcUrlField { ...(defaultValues?.httpsRpc !== undefined ? { defaultValue: defaultValues.httpsRpc } : {}) } />
 					<TextInput label = 'RPC Connection Name *' name = 'name' defaultValue = { networkNameDefault.value } style = '--area: 5 / span 1' required autoFocus />
 					<TextInput label = 'Chain ID' name = 'chainId' style = '--area: 5 / span 1' defaultValue = { chainIdDefault.value } required readOnly />
@@ -282,22 +282,22 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 			</main>
 			{ mutationState.value.state === 'rejected' ? <ErrorComponent text = { mutationState.value.error.message } containerStyle = { { margin: '0' } } /> : <></> }
 
-			<footer class = 'grid' style = '--grid-cols: max-content 1fr max-content max-content; --gap-x: 1rem; --btn-text-size: 0.9rem'>
+			<footer class = 'grid rpc-form-actions'>
 				{
 					confirmRemoval.value ? (
-						<div class = 'grid disclosure' style = '--gap-x: 1rem; --area: 2 / span 4'>
-							<div style = '--area: 1 / span 3'>
+						<div class = 'grid disclosure rpc-remove-confirmation'>
+							<div class = 'rpc-remove-confirmation-text'>
 								<p>You are about to remove this server permanently. Are you sure you want to proceed?</p>
 							</div>
-							<button type = 'button' class = 'btn btn--ghost' style = '--area: 2 / 2' onClick = { () => { confirmRemoval.value = false } } disabled = { mutationPending }>No</button>
-							<button type = 'submit' value = 'remove' class = 'btn btn--destructive' style = '--area: 2 / 3' formNoValidate disabled = { mutationPending }>{ mutationPending ? 'Removing...' : 'Yes, Confirm Remove' }</button>
+							<button type = 'button' class = 'btn btn--ghost rpc-remove-decline' onClick = { () => { confirmRemoval.value = false } } disabled = { mutationPending }>No</button>
+							<button type = 'submit' value = 'remove' class = 'btn btn--destructive rpc-remove-confirm' formNoValidate disabled = { mutationPending }>{ mutationPending ? 'Removing...' : 'Yes, Confirm Remove' }</button>
 						</div>
 					) : (
 						<>
-							<button type = 'submit' value = 'cancel' class = 'btn btn--ghost' style = '--area: 1 / 3' formNoValidate disabled = { mutationPending }>Cancel</button>
-							<button type = 'submit' value = 'save' class = 'btn btn--primary' style = '--area: 1 / 4' disabled = { mutationPending }>{ mutationPending ? 'Saving RPC Connection...' : 'Save RPC Connection' }</button>
+							<button type = 'submit' value = 'cancel' class = 'btn btn--ghost rpc-form-cancel' formNoValidate disabled = { mutationPending }>Cancel</button>
+							<button type = 'submit' value = 'save' class = 'btn btn--primary rpc-form-save' disabled = { mutationPending }>{ mutationPending ? 'Saving RPC Connection...' : 'Save RPC Connection' }</button>
 							{ defaultValues && onRemove ? (
-								<button type = 'button' class = 'btn btn--ghost' style = '--area: 1 / 1; --btn-text-color: var(--destructive-action-color)' onClick = { () => { confirmRemoval.value = true } } disabled = { mutationPending }><span class = 'grid' style = '--grid-cols: max-content 1fr; --gap-x: 0.5rem; --text-color: var(--destructive-action-color)'><Trash /> Remove</span></button>
+								<button type = 'button' class = 'btn btn--ghost rpc-form-remove' onClick = { () => { confirmRemoval.value = true } } disabled = { mutationPending }><span class = 'grid rpc-form-remove-label'><Trash /> Remove</span></button>
 							) : <></> }
 						</>
 					)

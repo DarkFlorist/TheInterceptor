@@ -74,7 +74,7 @@ export function ChangeChain() {
 	const websiteIcon = sanitizeStoredWebsiteIcon(chainChangeData.value.website.icon)
 	return (
 		<main>
-			<div class = 'block' style = 'margin-bottom: 0px; margin: 10px'>
+			<div class = 'block change-chain-window'>
 				<header class = 'card-header window-header'>
 					<div class = 'card-header-icon unset-cursor'>
 						<span class = 'icon'>
@@ -92,16 +92,16 @@ export function ChangeChain() {
 						{
 							websiteIcon === undefined
 								? <></>
-								: <figure class = 'media-left' style = 'margin: auto; display: block; padding: 20px'>
+								: <figure class = 'media-left request-website-icon'>
 									<div class = 'image is-64x64'>
 										<img src = { websiteIcon } width = '64' height = '64'/>
 									</div>
 								</figure>
 						}
 					</article>
-					<div class = 'media-content' style = 'padding-bottom: 10px'>
+					<div class = 'media-content change-chain-request'>
 						<div class = 'content'>
-							<p class = 'title' style = 'white-space: normal; text-align: center; padding: 10px;'>
+							<p class = 'title request-title'>
 								<b>	{ chainChangeData.value.website.websiteOrigin } </b>
 								would like to switch to
 								<b> { chainChangeData.value.rpcNetwork.name } </b>
@@ -109,7 +109,7 @@ export function ChangeChain() {
 							{ actionState.errorText === undefined ? <></> : <ErrorComponent text = { actionState.errorText }/> }
 						</div>
 					</div>
-					<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
+					<div class = 'request-actions'>
 						<AsyncActionButton
 							class = 'button button--secondary button-overflow dialog-action-button'
 							state = { rejectChainChangeState.value.state }
@@ -130,7 +130,7 @@ export function ChangeChain() {
 				</div>
 			</div>
 
-			<div class = 'content' style = 'height: 0.1px'/>
+			<div class = 'content page-bottom-spacer'/>
 		</main>
 	)
 }

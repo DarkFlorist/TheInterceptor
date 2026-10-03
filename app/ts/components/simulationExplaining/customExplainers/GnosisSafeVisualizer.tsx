@@ -158,7 +158,7 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 	if (activeAddress.value === undefined) return <></>
 	return <>
 		<div class = 'notification transaction-importance-box'>
-			<span class = 'log-table' style = 'justify-content: center; grid-template-columns: auto auto auto'>
+			<span class = 'log-table gnosis-safe-approval-summary'>
 				<div class = 'log-cell'> <p class = 'paragraph'>Approves Gnosis Safe</p> </div>
 				<div class = 'log-cell'> <SmallAddress addressBookEntry = { param.gnosisSafeMessage.verifyingContract } renameAddressCallBack = { param.renameAddressCallBack } /> </div>
 				<div class = 'log-cell'> <p class = 'paragraph'>message</p> </div>

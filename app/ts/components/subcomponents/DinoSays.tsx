@@ -2,18 +2,18 @@ import { XMarkIcon } from './icons.js'
 
 export function DinoSays( { text } : { text: string }) {
 	return <div class = 'media'>
-		<div class = 'media-left' style = 'margin-right: 0.2rem;'>
-			<img style = 'transform: scaleX(-1); justify-content: center; display: flex;' src = '../img/LOGOA.svg' width = '24' height = '24'/>
+		<div class = 'media-left dino-avatar'>
+			<img class = 'dino-image' src = '../img/LOGOA.svg' width = '24' height = '24'/>
 		</div>
-		<div class = 'media-content' style = 'overflow-y: hidden; overflow-x: clip; display: block; margin: auto;'>
+		<div class = 'media-content dino-speech'>
 			<span class = 'paragraph addressText'> - { text } </span>
 		</div>
 	</div>
 }
 
 export function DinoSaysNotification( { text, close, narrowSummary } : { text: string, close?: () => void, narrowSummary?: string }) {
-	return <div class = { narrowSummary === undefined ? undefined : 'responsive-notification' } style = 'display: flex; align-items: center; justify-content: center;'>
-		<div class = 'notification notification-importance-box' style = 'padding: 10px; display: flex;'>
+	return <div class = { narrowSummary === undefined ? 'dino-notification' : 'dino-notification responsive-notification' }>
+		<div class = 'notification notification-importance-box dino-notification-box'>
 			<DinoSays text = { text }/>
 			{ narrowSummary === undefined ? <></> : <details class = 'responsive-notification-details'>
 				<summary>{ narrowSummary }</summary>

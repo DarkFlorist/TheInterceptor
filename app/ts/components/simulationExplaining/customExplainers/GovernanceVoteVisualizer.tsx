@@ -22,9 +22,9 @@ type MissingAbiParams = {
 }
 
 function MissingAbi(params: MissingAbiParams) {
-	return <div style = 'display: block'>
+	return <div>
 		<ErrorComponent warning = { false } text = { params.errorMessage }/>
-		<div style = 'display: flex; justify-content: center; padding-top: 10px'>
+		<div class = 'governance-missing-abi-action'>
 			{ params.addressBookEntry === undefined ? <></> :
 				<button class = { 'button is-primary' } onClick = { () => params.addressBookEntry !== undefined && params.renameAddressCallBack(params.addressBookEntry) }>
 					Add Abi
@@ -47,8 +47,8 @@ function VotePanel({ inputParams }: { inputParams: SignalOrValue<GovernanceVoteI
 
 	return <>
 		<div class = 'notification transaction-importance-box'>
-			<div style = 'display: flex; justify-content: center;' >
-				<p style = { { 'font-size': 'var(--big-font-size)' } } >
+			<div class = 'governance-vote-summary'>
+				<p class = 'governance-vote-text'>
 					Vote&nbsp;<b>{ interpretSupport(resolvedInputParams.support) }</b>&nbsp;{`for proposal: ${ resolvedInputParams.proposalId } `}
 				</p>
 			</div>
@@ -56,7 +56,7 @@ function VotePanel({ inputParams }: { inputParams: SignalOrValue<GovernanceVoteI
 
 		{ resolvedInputParams.reason !== undefined || resolvedInputParams.signature !== undefined || resolvedInputParams.voter !== undefined || resolvedInputParams.params !== undefined ? <>
 			<div class = 'container'>
-				<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; row-gap: 5px; grid-template-columns: auto auto'>
+				<span class = 'log-table governance-vote-details'>
 					{ resolvedInputParams.reason !== undefined ? <>
 						<CellElement text = 'Reason:'/>
 						<CellElement text =  { resolvedInputParams.reason }/>
@@ -125,10 +125,10 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 
 	if (simTx.value === undefined || activeAddress.value === undefined) return <></>
 	if (simulateExecutionReply.value === undefined) {
-		return <div style = 'display: grid; row-gap: 10px;'>
+		return <div class = 'governance-simulation-prompt'>
 			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 			{ simTx.value.transaction.to !== undefined && 'abi' in simTx.value.transaction.to && simTx.value.transaction.to.abi !== undefined ?
-				<div style = 'display: flex; justify-content: center;'>
+				<div class = 'governance-simulate-action'>
 					<AsyncActionButton
 						class = 'button is-primary'
 						state = { governanceSimulationState }
@@ -146,7 +146,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 		</div>
 	}
 	if (simulateExecutionReply.value.data.success === false) {
-		return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
+		return <div class = 'governance-simulation-result'>
 			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 			{ simulateExecutionReply.value.data.errorType === 'MissingAbi' ? <MissingAbi
 				errorMessage = { missingAbiText }
@@ -156,14 +156,14 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 		</div>
 	}
 	if (simulateExecutionReply.value.data.result.visualizedSimulationState.success === false) {
-		return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
+		return <div class = 'governance-simulation-result'>
 			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 			<ErrorComponent text = { rpcErrorText }/>
 		</div>
 	}
 	if (govSimTx.value === undefined || results.value === undefined) return <></>
 
-	return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
+	return <div class = 'governance-simulation-result'>
 		{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 		<Transaction
 			simTx = { govSimTx.value }
@@ -238,12 +238,12 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 	return <>
 	<VotePanel inputParams = { governanceVoteInputParameters } />
 
-		<div style = 'display: grid; grid-template-rows: max-content max-content'>
-				<span class = 'log-table' style = 'padding-bottom: 10px; grid-template-columns: auto auto;'>
+		<div class = 'governance-simulation-header'>
+				<span class = 'log-table governance-simulation-title-row'>
 					<div class = 'log-cell'>
 						<p class = 'paragraph'>Simulation of this proposal's outcome should the vote pass:</p>
 					</div>
-					<div class = 'log-cell' style = 'justify-content: right;'>
+					<div class = 'log-cell log-cell--right'>
 						{ simulateExecutionReply.value === undefined ? <></> :
 							<AsyncActionButton
 								class = 'button is-primary is-small'

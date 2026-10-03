@@ -81,10 +81,9 @@ function LoadingControl({ class: className, children, style }: LoadingControlPro
 function LoadingInput() {
 	return <input
 		aria-hidden = 'true'
-		class = 'input popup-loading-shape popup-loading-control popup-loading-input'
+		class = 'input time-picker-delta-input popup-loading-shape popup-loading-control popup-loading-input'
 		disabled = { true }
 		tabIndex = { -1 }
-		style = 'width: 72px; margin-right: 10px; vertical-align: unset; text-align: center;'
 		type = 'number'
 		value = ''
 	/>
@@ -92,8 +91,8 @@ function LoadingInput() {
 
 function LoadingDropdownControl({ label }: { label: string }) {
 	return <div class = 'dropdown'>
-		<div class = 'dropdown-trigger' style = { { maxWidth: '100%' } }>
-			<LoadingControl class = 'btn btn--outline is-small' style = { { width: '100%' } }>
+		<div class = 'dropdown-trigger'>
+			<LoadingControl class = 'btn btn--outline is-small dropdown-trigger-button'>
 				<DropDownMenuButtonContent label = { label }/>
 			</LoadingControl>
 		</div>
@@ -102,7 +101,7 @@ function LoadingDropdownControl({ label }: { label: string }) {
 
 function OpenSimulationStackButtonContent() {
 	return <>
-		<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+		<span class = 'home-simulation-button-icon'>
 			<OpenInNewIcon/>
 		</span>
 		<span>View &amp; operate stack</span>
@@ -111,7 +110,7 @@ function OpenSimulationStackButtonContent() {
 
 function ClearSimulationButtonContent() {
 	return <>
-		<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+		<span class = 'home-simulation-button-icon'>
 			<BroomIcon />
 		</span>
 		<span>Clear</span>
@@ -145,7 +144,7 @@ function ActiveAddressLoadingSkeleton({ ariaLabel }: { ariaLabel?: string }) {
 		role = { ariaLabel === undefined ? undefined : 'status' }
 		class = 'log-table active-address-row popup-loading-address'
 	>
-		<div aria-hidden = 'true' class = 'log-cell' style = 'display: block;'>
+		<div aria-hidden = 'true' class = 'log-cell home-loading-address-cell'>
 			<figure class = 'multiline-card popup-loading-address-details'>
 				<span class = 'popup-loading-shape popup-loading-address-icon'/>
 				<span class = 'popup-loading-shape popup-loading-address-title'/>
@@ -194,7 +193,7 @@ function SimulationLoadingSkeleton() {
 			<div class = 'log-cell'>
 				<span class = 'popup-loading-shape popup-loading-simulation-title'/>
 			</div>
-			<div class = 'log-cell' style = 'justify-content: right; gap: 6px;'>
+			<div class = 'log-cell home-loading-simulation-actions'>
 				<LoadingControl class = 'btn btn--outline is-small'>
 					<OpenSimulationStackButtonContent/>
 				</LoadingControl>
@@ -294,14 +293,13 @@ function FirstCardHeader(param: FirstCardParams) {
 		<header class = 'px-3 py-2 popup-home-header-layout'>
 			<div>
 				<ToolTip content = { tabIconReason }>
-					<img class = 'noselect nopointer' src = { param.tabIconDetails.value.icon } width = '48' height = '48' style = { { display: 'block', width: '3rem', height: '3rem' } } />
+					<img class = 'noselect nopointer home-tab-icon' src = { param.tabIconDetails.value.icon } width = '48' height = '48' />
 				</ToolTip>
 			</div>
 			<div>
 				<div class = 'buttons has-addons popup-home-mode-selector'>
 					<AsyncActionButton
-						class = { `button ${ param.simulationMode.value ? 'is-primary' : 'button--secondary' }` }
-						style = { `margin-bottom: 0px; border-color: transparent; ${ param.simulationMode.value ? 'opacity: 1;' : '' }` }
+						class = { `button home-mode-button ${ param.simulationMode.value ? 'is-primary home-mode-button--active' : 'button--secondary' }` }
 						state = { setSimulatingState.value.state }
 						disabled = { param.simulationMode.value || controlsDisabled }
 						keepTextWhilePending = { true }
@@ -311,8 +309,7 @@ function FirstCardHeader(param: FirstCardParams) {
 						onClick = { enableSimulating }
 					/>
 					<AsyncActionButton
-						class = { `button ${ param.simulationMode.value ? 'button--secondary' : 'is-primary' }` }
-						style = { `margin-bottom: 0px; border-color: transparent; ${ param.simulationMode.value ? '' : 'opacity: 1;' }` }
+						class = { `button home-mode-button ${ param.simulationMode.value ? 'button--secondary' : 'is-primary home-mode-button--active' }` }
 						state = { setSigningState.value.state }
 						disabled = { !param.simulationMode.value || controlsDisabled }
 						keepTextWhilePending = { true }
@@ -420,15 +417,15 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 	const numberOfRichAddresses = useComputed(() => richList.value.filter((element) => element.makingRich).length)
 
 	return <>
-		<header class = 'card-header' style = 'cursor: pointer;' onClick = { () => { showList.value = !showList.value } }>
-			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em; padding: 0 0.5rem;'>
+		<header class = 'card-header home-rich-list-header' onClick = { () => { showList.value = !showList.value } }>
+			<p class = 'card-header-title collapsible-card-title home-rich-list-title'>
 				<label class = 'form-control form-control--switch' onClick = { event => { event.stopPropagation() } }>
 					<Switch disabled = { controlsDisabled } checked = { makeCurrentAddressRich.value } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeCurrentAddressRich(e.target.checked) } } } onClick = { event => { event.stopPropagation() } } />
-					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Make current account rich</p>
+					<p class = 'paragraph checkbox-text text-nowrap'> Make current account rich</p>
 				</label>
 			</p>
-			<div class = 'card-header-icon noselect' style = 'cursor: pointer;'>
-				{ numberOfRichAddresses.value === 0 ? <></> : <p class = 'paragraph checkbox-text' style = 'white-space: nowrap; color: var(--disabled-text-color); padding-right: 10px;'> (+{ numberOfRichAddresses.value } rich address{ numberOfRichAddresses.value > 1 ? 'es' : '' })</p> }
+			<div class = 'card-header-icon noselect'>
+				{ numberOfRichAddresses.value === 0 ? <></> : <p class = 'paragraph checkbox-text home-rich-address-count'> (+{ numberOfRichAddresses.value } rich address{ numberOfRichAddresses.value > 1 ? 'es' : '' })</p> }
 				<span class = 'icon'><ChevronIcon /></span>
 			</div>
 		</header>
@@ -436,18 +433,18 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 		{ richChangeState.value.state === 'rejected' ? <ErrorComponent text = { richChangeState.value.error.message }/> : <></> }
 		{ !showList.value
 			? <> { !activeAddressSetAsRichViaFixedAddressList.value || activeAddress.value === undefined ? <></> : <>
-				<div class = 'card-content-header' style = 'font-size: 0.8em;'>
-					<label class = 'form-control' style = 'gap: 1em;'>
+				<div class = 'card-content-header home-rich-active-address'>
+					<label class = 'form-control home-rich-address-option'>
 						<input type = 'checkbox' disabled = { controlsDisabled } checked = { true } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null && activeAddress.value !== undefined) { modifyRichList(activeAddress.value, e.target.checked) } } } />
 						<SmallAddress addressBookEntry = { activeAddress } renameAddressCallBack = { renameAddressCallBack } noCopying = { !isInitialHomeDataLoaded.value } noEditAddress = { !isInitialHomeDataLoaded.value } />
 					</label>
 				</div>
 			</> } </>
 			: <div class = 'card-content'>
-				<div style = { { display: 'flex', flexDirection: 'column' } } >
-					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Addresses being made rich</p>
+				<div class = 'home-rich-address-list'>
+					<p class = 'paragraph checkbox-text text-nowrap'> Addresses being made rich</p>
 					{ visibleRichList.value.map((richListElement) =>
-						<label class = 'form-control' style = 'gap: 1em;' key = { richListElement.addressBookEntry.address.toString() }>
+						<label class = 'form-control home-rich-address-option' key = { richListElement.addressBookEntry.address.toString() }>
 							<input type = 'checkbox' disabled = { controlsDisabled } checked = { richListElement.makingRich } aria-label = { `Toggle rich address ${ richListElement.addressBookEntry.address.toString() }` } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { modifyRichList(richListElement.addressBookEntry, e.target.checked) } } } />
 							<SmallAddress addressBookEntry = { richListElement.addressBookEntry } renameAddressCallBack = { renameAddressCallBack } noCopying = { !isInitialHomeDataLoaded.value } noEditAddress = { !isInitialHomeDataLoaded.value }/>
 						</label>
@@ -713,7 +710,7 @@ function FirstCard(param: FirstCardParams) {
 				}
 				{ isActiveAddressLoading ? <></> : !param.simulationMode.value ? <>
 					{ canRequestSignerAccounts.value ?
-						<div style = 'margin-top: 5px'>
+						<div class = 'home-signer-access-action'>
 							<AsyncActionButton
 								class = 'button is-primary'
 								disabled = { !param.isInitialHomeDataLoaded.value }
@@ -787,10 +784,10 @@ function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 	}
 
 	return <div class = 'simulation-results-header'>
-		<div class = 'log-cell' style = 'justify-content: left; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0;'>
-			<p class = 'h1' style = 'margin: 0;'> Simulation Results </p>
+		<div class = 'log-cell home-simulation-results-title'>
+			<p class = 'h1 home-simulation-results-heading'> Simulation Results </p>
 		</div>
-		<div class = 'log-cell' style = 'justify-content: right; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 300px;'>
+		<div class = 'log-cell home-simulation-results-actions'>
 			{ param.openSimulationStack === undefined ? <></> :
 				<button class = 'btn btn--outline is-small' onClick = { openStack } title = 'View and operate the transaction stack in a new tab' aria-label = 'View and operate the transaction stack in a new tab'>
 					<OpenSimulationStackButtonContent/>
@@ -834,7 +831,7 @@ function RichAddressesTitleCard({ numberOfAddressesMadeRich, openSimulationStack
 					<img src = '../img/success-icon.svg' width = '24' height = '24' />
 				</span>
 			</div>
-			<p class = 'card-header-title' style = 'white-space: nowrap;'>
+			<p class = 'card-header-title'>
 				Simply making { numberOfAddressesMadeRich } { numberOfAddressesMadeRich === 1 ? 'address' : 'addresses' } rich
 			</p>
 		</header>
@@ -923,7 +920,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 				</div>
 			</> }
 		</> }
-		<div class = 'content' style = 'height: 0.1px'/>
+		<div class = 'content page-bottom-spacer'/>
 	</div>
 }
 
@@ -1043,13 +1040,13 @@ export function Home(param: HomeParams) {
 				: <SimulationLoadingSkeleton/>
 			: param.simulationMode.value || !param.isFreshHomeDataLoaded.value ? <></> : <SigningModeHint signerName = { param.tabState.value?.signerName ?? 'NoSignerDetected' }/> }
 		{ tabWebsite.value === undefined ? <></> : <>
-			<div style = 'padding-top: 60px' />
+			<div class = 'home-footer-spacer' />
 			<div class = 'popup-footer popup-data-reveal'>
 				<div class = 'popup-footer-content'>
-					<div class = 'log-cell' style = 'justify-content: left;'>
+					<div class = 'log-cell home-footer-website'>
 						<WebsiteOriginText website = { tabWebsite } />
 					</div>
-					<div class = 'log-cell' style = 'justify-content: right; padding-left: 20px'>
+					<div class = 'log-cell home-footer-actions'>
 						<InterceptorDisabledButton website = { tabWebsite } disableInterceptorToggle = { disableInterceptorToggle } interceptorDisabled = { param.interceptorDisabled } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
 					</div>
 				</div>

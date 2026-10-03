@@ -51,8 +51,8 @@ function AccessCapabilities() {
 }
 
 function AccessRequestHeader(website: Website) {
-	return <header class = 'card-header' style = 'height: 40px'>
-		<div class = 'card-header-icon noselect nopointer' style = 'width: 100%;'>
+	return <header class = 'card-header access-request-header'>
+		<div class = 'card-header-icon noselect nopointer access-request-header-origin'>
 			<WebsiteOriginText website = { website } />
 		</div>
 	</header>
@@ -62,9 +62,9 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 	const showLogs = useSignal<boolean>(associatedAddresses.length > 1)
 
 	return <>
-		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px;'>
-			<header class = 'card-header noselect' style = 'cursor: pointer; min-height: 30px;' onClick = { () => { showLogs.value = !showLogs.value } }>
-				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
+		<div class = 'card collapsible-card'>
+			<header class = 'card-header noselect collapsible-card-header' onClick = { () => { showLogs.value = !showLogs.value } }>
+				<p class = 'card-header-title collapsible-card-title'>
 					{ associatedAddresses.length <= 1
 						? 'The website cannot associate any addresses with each other'
 						: <span>There are <b>{ convertNumberToCharacterRepresentationIfSmallEnough(associatedAddresses.length).toUpperCase() }</b> addresses that the website can associate together with</span>
@@ -76,12 +76,12 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 			</header>
 			{ !showLogs.value
 				? <></>
-				: <div class = 'card-content' style = 'border-bottom-left-radius: 0.25rem; border-bottom-right-radius: 0.25rem; border-left: 2px solid var(--card-bg-color); border-right: 2px solid var(--card-bg-color); border-bottom: 2px solid var(--card-bg-color);'>
+				: <div class = 'card-content collapsible-card-content'>
 					{ associatedAddresses.length <= 1
 						? <DinoSays text = { 'Given its size, a tiny dinosaur wouldn\'t be expected to know any...' } />
 						: <ul>
 							{ associatedAddresses.map( (info, index) => (
-								<li key = { info.address.toString() } style = { `margin: 0px; margin-bottom: ${ index < associatedAddresses.length - 1  ? '10px;' : '0px' }` } >
+								<li key = { info.address.toString() } class = 'access-request-associated-address' style = { `margin-bottom: ${ index < associatedAddresses.length - 1  ? '10px;' : '0px' }` } >
 									<BigAddress
 										addressBookEntry = { info }
 										renameAddressCallBack = { renameAddressCallBack }
@@ -120,7 +120,7 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 									disableButton = { false }
 									buttonText = { 'Refresh' }
 								/>
-								<p style = 'color: var(--subtitle-text-color); white-space: normal; margin-top: 6px;' class = 'subtitle is-7'>
+								<p class = 'subtitle is-7 access-request-refresh-hint'>
 									{ `You can change active address by changing it directly from ${ getPrettySignerName(accessRequest.signerName) } and clicking refresh here afterwards` }
 								</p>
 							</>
@@ -169,7 +169,7 @@ export function AccessRequestActions({ accessRequest, reject, approve, informati
 	}
 
 	return <nav class = 'popup-button-row'>
-		<div style = 'display: flex; flex-direction: row;'>
+		<div class = 'access-request-actions'>
 		<AsyncActionButton
 			class = 'button button--secondary button-overflow dialog-action-button'
 			state = { rejectState.value.state }
@@ -193,9 +193,9 @@ export function AccessRequestActions({ accessRequest, reject, approve, informati
 export function AccessRequests(param: AccessRequestParam) {
 
 	return <> { param.pendingAccessRequests.map((pendingRequest) => <Fragment key = { pendingRequest.accessRequestId }>
-		<div class = 'card' style = 'margin-bottom: 10px;'>
+		<div class = 'card access-request-card'>
 			<AccessRequestHeader { ...pendingRequest.website } />
-			<div class = 'card-content' style = 'padding-bottom: 5px;'>
+			<div class = 'card-content access-request-body'>
 				<AccessRequest
 						renameAddressCallBack =  { (entry: AddressBookEntry) => param.renameAddressCallBack(pendingRequest.accessRequestId, entry) }
 						accessRequest = { pendingRequest }

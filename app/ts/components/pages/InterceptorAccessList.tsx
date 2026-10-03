@@ -199,7 +199,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 
 	return ( <>
 		<div class = 'modal-background'> </div>
-		<div class = 'modal-card' style = 'height: 100%;'>
+		<div class = 'modal-card access-list-modal-card'>
 			<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
@@ -222,7 +222,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 							<div class = 'card'>
 								<div class = 'card-content'>
 									<div class = 'media'>
-										<div class = 'media-content' style = 'overflow-y: visible; overflow-x: unset;'>
+										<div class = 'media-content access-list-empty-message'>
 											<p class = 'paragraph'> No website is given access to The Interceptor </p>
 										</div>
 									</div>
@@ -232,7 +232,7 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 					: <></> }
 					{ editableAccessList.value === undefined ? <></> : editableAccessList.value.map((access, accessListIndex) => (
 						<li key = { access.websiteAccess.website.websiteOrigin }>
-							{ access.removed ? <p style = 'color: var(--danger-color)' > { `Forgot ${ access.websiteAccess.website.websiteOrigin }. `}</p> :
+							{ access.removed ? <p class = 'access-list-forgotten' > { `Forgot ${ access.websiteAccess.website.websiteOrigin }. `}</p> :
 								<div class = 'card'>
 									<div class = 'card-header'>
 										<div class = 'card-header-icon unset-cursor' >
@@ -240,41 +240,41 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 												<img src = { sanitizeStoredWebsiteIcon(access.websiteAccess.website.icon) ?? '../../img/question-mark-sign.svg' } width = '24' height = '24'/>
 											</p>
 										</div>
-										<div class = 'card-header-title' style = 'width: 13em'>
+										<div class = 'card-header-title access-list-origin'>
 											<CopyToClipboard
 												content = { access.websiteAccess.website.websiteOrigin }
 												copyMessage = 'Website address copied!'
 											>
-												<p class = 'paragraph noselect nopointer' style = 'text-overflow: ellipsis; overflow: hidden; white-space: nowrap; display: block; width: 13em'>
+												<p class = 'paragraph noselect nopointer access-list-origin-text'>
 													{ access.websiteAccess.website.websiteOrigin }
 												</p>
 											</CopyToClipboard>
 										</div>
 										<div class = 'card-header-icon unset-cursor'>
-											<label class = 'form-control' style = 'width: 8em;'>
+											<label class = 'form-control access-list-site-toggle'>
 												<input type = 'checkbox' checked = { access.access } onInput = { e => { if (e.target instanceof HTMLInputElement) { setWebsiteAccess(accessListIndex, { access: e.target.checked }) } } } />
 												<p class = 'paragraph checkbox-text'>Allow access</p>
 											</label>
-											<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setWebsiteAccess(accessListIndex, { removed: true }) }>
+											<button class = 'card-header-icon access-list-forget-button' aria-label = 'forget' onClick = { () => setWebsiteAccess(accessListIndex, { removed: true }) }>
 												<XMarkIcon />
 											</button>
 										</div>
 									</div>
-									<div class = 'card-content' style = 'margin-bottom: 0px;'>
+									<div class = 'card-content'>
 										<>
-											<label class = 'form-control' style = 'margin: auto'>
+											<label class = 'form-control access-list-option'>
 												<input type = 'checkbox' checked = { access.interceptorDisabled } onInput = { e => { if (e.target instanceof HTMLInputElement) { setWebsiteAccess(accessListIndex, { interceptorDisabled: e.target.checked }) } } } />
-												<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Disable Interceptor for the site (not recommended). </p>
+												<p class = 'paragraph checkbox-text text-nowrap'>Disable Interceptor for the site (not recommended). </p>
 											</label>
-											<label class = 'form-control' style = 'margin: auto'>
+											<label class = 'form-control access-list-option'>
 												<input type = 'checkbox' checked = { access.declarativeNetRequestBlockMode === 'block-all' } onInput = { e => { if (e.target instanceof HTMLInputElement) { setWebsiteAccess(accessListIndex, { declarativeNetRequestBlockMode: e.target.checked ? 'block-all' : 'disabled' }) } } } />
-												<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Block all external requests made by the site (not recommended). </p>
+												<p class = 'paragraph checkbox-text text-nowrap'>Block all external requests made by the site (not recommended). </p>
 											</label>
 											{ access.addressAccess.length === 0 ? <p class = 'paragraph'> No individual address accesses given </p> : <>
 												{ access.addressAccessModified.map((websiteAccessAddress, addressIndex) => (
-													<li key = { addressString(websiteAccessAddress.address) } style = { `margin: 0px; margin-bottom: ${ addressIndex < access.addressAccessModified.length - 1  ? '10px;' : '0px' }` }>
-														{ websiteAccessAddress.removed ? <p style = 'color: var(--danger-color)' > { `Forgot ${ metadata.value.get(addressString(websiteAccessAddress.address))?.name || checksummedAddress(websiteAccessAddress.address) }`} </p> :
-															<div style = 'display: flex; width: 100%; overflow: hidden;'>
+													<li key = { addressString(websiteAccessAddress.address) } class = 'access-list-address' style = { `margin-bottom: ${ addressIndex < access.addressAccessModified.length - 1  ? '10px;' : '0px' }` }>
+														{ websiteAccessAddress.removed ? <p class = 'access-list-forgotten' > { `Forgot ${ metadata.value.get(addressString(websiteAccessAddress.address))?.name || checksummedAddress(websiteAccessAddress.address) }`} </p> :
+															<div class = 'access-list-address-row'>
 																<SmallAddress
 																	addressBookEntry = { metadata.value.get(addressString(websiteAccessAddress.address)) || {
 																		type: 'contact',
@@ -286,12 +286,12 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 																	}}
 																	renameAddressCallBack = { param.renameAddressCallBack }
 																/>
-																<div style = 'margin-left: auto; flex-shrink: 0; display: flex'>
-																	<label class = 'form-control' style = 'margin: auto'>
+																<div class = 'access-list-address-actions'>
+																	<label class = 'form-control access-list-option'>
 																		<input type = 'checkbox' checked = { websiteAccessAddress.access } onInput = { e => { if (e.target instanceof HTMLInputElement) { setAddressAccess(accessListIndex, addressIndex, { access: e.target.checked }) } } } />
-																		<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'>Allow access</p>
+																		<p class = 'paragraph checkbox-text text-nowrap'>Allow access</p>
 																	</label>
-																	<button class = 'card-header-icon' style = 'padding: 0px;' aria-label = 'forget' onClick = { () => setAddressAccess(accessListIndex, addressIndex, { removed: true }) }>
+																	<button class = 'card-header-icon access-list-forget-button' aria-label = 'forget' onClick = { () => setAddressAccess(accessListIndex, addressIndex, { removed: true }) }>
 																		<XMarkIcon />
 																	</button>
 																</div>

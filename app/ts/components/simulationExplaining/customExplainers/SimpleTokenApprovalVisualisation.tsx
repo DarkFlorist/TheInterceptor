@@ -27,8 +27,8 @@ export function SimpleTokenApprovalVisualisation(param: SimpleTokenApprovalVisua
 			</div>
 		<p class = 'summary-label'>To spend</p>
 		<div class = 'box summary-leg'>
-			<span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'>
-				<div class = 'log-cell' style = 'justify-content: right;'>
+			<span class = 'log-table approval-amount-table'>
+				<div class = 'log-cell log-cell--right'>
 					{ param.approval.type === 'NFT All approval' ?
 						<AllApproval
 							{ ...param.approval }
@@ -36,7 +36,7 @@ export function SimpleTokenApprovalVisualisation(param: SimpleTokenApprovalVisua
 							fontSize = 'big'
 						/>
 					: <> { 'amount' in param.approval && isUnlimitedErc20Approval(param.approval.amount) ?
-							<p class = 'ellipsis' style = { `color: ${ textColor }; font-size: 28px; font-weight: 500` }><b>ALL</b></p>
+							<p class = 'ellipsis approval-unlimited-amount'><b>ALL</b></p>
 						:
 							'amount' in param.approval ?
 								<TokenAmount

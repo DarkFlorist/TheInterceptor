@@ -28,7 +28,7 @@ type AddressIconParams = {
 }
 
 const AddressIconFrame = ({ isBig, children }: { isBig: boolean, children?: ComponentChildren }) => {
-	const cssProperties: JSX.CSSProperties = { backgroundColor: 'var(--unimportant-text-color)', fontSize: isBig ? '2.5em' : '1.5em' }
+	const cssProperties: JSX.CSSProperties = { fontSize: isBig ? '2.5em' : '1.5em' }
 	const className = `address-icon-frame noselect nopointer${ children === undefined ? ' address-icon-frame--empty' : '' }`
 	return <div style = { cssProperties } class = { className } aria-hidden = 'true'>{ children }</div>
 }
@@ -45,7 +45,7 @@ export function AddressIcon(param: AddressIconParams) {
 	if (param.logoUri !== undefined) {
 		return (
 			<AddressIconFrame isBig = { param.isBig }>
-				<img src = { param.logoUri } width = '16' height = '16' style = { { display: 'block', width: '1em', minWidth: '1em', height: '1em' } } />
+				<img src = { param.logoUri } width = '16' height = '16' class = 'address-icon-image' />
 			</AddressIconFrame>
 		)
 	}
@@ -125,7 +125,7 @@ type ActiveAddressParams = {
 
 export function ActiveAddressComponent(params: ActiveAddressParams) {
 	return <div class = 'log-table active-address-row'>
-		<div class = 'log-cell' style = 'display: block;'>
+		<div class = 'log-cell address-active-cell'>
 			<BigAddress
 				addressBookEntry = { params.activeAddress }
 				renameAddressCallBack = { params.renameAddressCallBack }
@@ -160,7 +160,7 @@ export function SmallAddress({ addressBookEntry, renameAddressCallBack, noCopyin
 	const addressString = checksummedAddress(currentAddressBookEntry.address)
 
 	const generateIcon = () => {
-		if (currentAddressBookEntry?.logoUri !== undefined) return <img src = { currentAddressBookEntry.logoUri } width = '16' height = '16' style = { { minWidth: '1em', minHeight: '1em' } } />
+		if (currentAddressBookEntry?.logoUri !== undefined) return <img src = { currentAddressBookEntry.logoUri } width = '16' height = '16' class = 'inline-card-logo' />
 		return <Blockie address = { currentAddressBookEntry.address } />
 	}
 
@@ -178,7 +178,7 @@ export function WebsiteOriginText({ website, class: cssClass, style }: {
 	const { websiteOrigin, title } = currentWebsite
 	return <div class = { `website-origin-text${ cssClass === undefined ? '' : ` ${ cssClass }` }` } style = { style }>
 		<span class = 'website-origin-text-icon'>
-			{ icon === undefined ? <></> : <img src = { icon } width = '24' height = '24' style = 'width: 24px; height: 24px;' /> }
+			{ icon === undefined ? <></> : <img src = { icon } width = '24' height = '24' class = 'website-origin-text-icon-image' /> }
 		</span>
 
 		<div class = 'media-content website-origin-text-body'>
