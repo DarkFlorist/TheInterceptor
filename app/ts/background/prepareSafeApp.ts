@@ -7,6 +7,7 @@ import { hasAccess } from './websiteAccessPolicy.js'
 import { parseSafeAppsHostOrigin } from '../types/safeAppsHosting.js'
 import { INPAGE_SCRIPTS } from '../config/injectedScripts.js'
 import safeAppsPreparationMessages from '../../shared/safeAppsPreparationMessages.json'
+import { reportUnexpectedError } from '../utils/errors.js'
 
 async function prepareSafeAppTabOperation(value: string, operation: PreparationOperation): Promise<PrepareSafeAppReply['data']> {
 	const origin = parseSafeAppsHostOrigin(value)
@@ -95,7 +96,9 @@ function createSafeAppPreparationService() {
 		const operation = preparations.get(origin)
 		if (operation === undefined) return
 		// Keep the operation reserved until page cleanup finishes; a late cancellation must not cancel a subsequent retry.
-		operation.cleanup ??= clearPreparationScript(operation)
+		operation.cleanup ??= clearPreparationScript(operation).catch(async (error: unknown) => {
+			await reportUnexpectedError(error, { code: 'safe_apps_preparation_cleanup_failed' })
+		})
 		operation.abort.abort(safeAppsPreparationMessages.cancelled)
 		await operation.cleanup
 	}

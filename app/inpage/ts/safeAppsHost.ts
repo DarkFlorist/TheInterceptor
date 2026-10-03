@@ -27,12 +27,17 @@ export function installSafeAppsHost() {
 	}
 	const transport = createSafeAppsTransport(windowObject)
 	let disposed = false
-	const deliver = (data: unknown) => windowObject.dispatchEvent(new MessageEvent('message', { data, origin: windowObject.location.origin, source: apparentParent }))
+	const deliver = (data: unknown) => {
+		// The token belongs to the bridge; SDK callbacks receive their ordinary response shape.
+		const sdkData = typeof data === 'object' && data !== null && 'bridgeToken' in data ? { ...data } : data
+		if (typeof sdkData === 'object' && sdkData !== null) Reflect.deleteProperty(sdkData, 'bridgeToken')
+		windowObject.dispatchEvent(new MessageEvent('message', { data: sdkData, origin: windowObject.location.origin, source: apparentParent }))
+	}
 	const pendingRequests = createSafeAppsRequestQueue<SafeAppsRequest>({
 		replaceOldestSafeInfo: true,
 		timers: { setTimeout: windowObject.setTimeout.bind(windowObject), clearTimeout: windowObject.clearTimeout.bind(windowObject) },
 		onRejected: (request, error, reason) => {
-			if (reason === 'expired' || reason === 'superseded') transport.post(createSafeAppsCancellation(request.id))
+			if (reason === 'expired' || reason === 'superseded') transport.post(createSafeAppsCancellation(request.id, request.bridgeToken))
 			const reject = () => { if (!disposed) deliver(createSafeAppsErrorResponse(request, error)) }
 			// Let the SDK install its response listener after posting a request.
 			if (reason === 'expired') reject()
@@ -49,13 +54,18 @@ export function installSafeAppsHost() {
 			queueMicrotask(() => { if (!disposed) deliver(createSafeAppsErrorResponse(parsed, parsed.error)) })
 			return
 		}
-		if (!pendingRequests.add(parsed.request)) return
-		transport.post(parsed.request)
+		// Distinguish reused IDs with a token that works on HTTP origins too.
+		const bridgeToken = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+		const request = { ...parsed.request, bridgeToken }
+		if (!pendingRequests.add(request)) return
+		transport.post(request)
 	}
 	apparentParent.addEventListener('message', onRequest)
 	const unsubscribe = transport.subscribe(({ data }) => {
 		if (disposed || !isSafeAppsResponse(data)) return
-		if (pendingRequests.take(data.id) === undefined) return
+		const pending = pendingRequests.values().find((request) => request.id === data.id)
+		if (pending === undefined || data.bridgeToken !== undefined && data.bridgeToken !== pending.bridgeToken) return
+		pendingRequests.take(data.id)
 		deliver(data)
 	})
 	return {
@@ -67,7 +77,7 @@ export function installSafeAppsHost() {
 			unsubscribe()
 			const requests = pendingRequests.drain()
 			for (const request of requests) {
-				transport.post(createSafeAppsCancellation(request.id))
+				transport.post(createSafeAppsCancellation(request.id, request.bridgeToken))
 				deliver(createSafeAppsErrorResponse(request, 'Safe Apps hosting was disconnected.'))
 			}
 			// The SDK checks response.source against the current parent, so reject before restoring it; preserve any later page-owned replacement.

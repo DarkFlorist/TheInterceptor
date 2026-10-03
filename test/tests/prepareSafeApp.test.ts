@@ -277,7 +277,7 @@ test('background cancellation waits for a delayed prepare script before releasin
 	}
 })
 
-for (const action of ['cancel', 'close', 'get-error', 'reload-error', 'unexpected-error']) {
+for (const action of ['cancel', 'cleanup-error', 'close', 'get-error', 'reload-error', 'unexpected-error']) {
 	test(`background preparation returns typed failures for ${ action } and releases its operation/listener`, async () => {
 		const previousBrowser = Object.getOwnPropertyDescriptor(globalThis, 'browser')
 		const listeners = new Set<(tabId: number) => void>()
@@ -304,7 +304,7 @@ for (const action of ['cancel', 'close', 'get-error', 'reload-error', 'unexpecte
 			},
 			scripting: { ...createRegistrationMock('https://safe-app.example'), executeScript: async (injection: { world: string, files: string[] }) => {
 				if (injection.world === 'ISOLATED') return [{ result: 'https://safe-app.example', documentId: 'doc-1' }]
-				if (injection.files[0] === '/inpage/js/cancelSafeAppPreparationBootstrap.js') { cleanupStarted = true; await cleanup; completePreparation?.(); return [] }
+				if (injection.files[0] === '/inpage/js/cancelSafeAppPreparationBootstrap.js') { cleanupStarted = true; await cleanup; completePreparation?.(); if (action === 'cleanup-error') throw new Error('Unexpected cleanup failure'); return [] }
 				if (injection.files[0] === '/inpage/js/clearSafeAppPreparationCancellationBootstrap.js') { markerCleared = true; return [] }
 				started = true
 				if (action === 'unexpected-error') throw new Error('Unexpected browser failure')
@@ -319,14 +319,15 @@ for (const action of ['cancel', 'close', 'get-error', 'reload-error', 'unexpecte
 			else {
 				while (!started) await new Promise((resolve) => setTimeout(resolve, 0))
 				assert.match(JSON.stringify(await prepareSafeAppTab('https://safe-app.example')), /already running/)
-				if (action === 'cancel') {
+				if (action === 'cancel' || action === 'cleanup-error') {
 					const cancellation = cancelSafeAppPreparation('https://safe-app.example')
 					while (!cleanupStarted) await new Promise((resolve) => setTimeout(resolve, 0))
 					assert.match(JSON.stringify(await prepareSafeAppTab('https://safe-app.example')), /already running/)
 					completeCleanup?.()
-					await cancellation
+					if (action === 'cleanup-error') await withSilencedConsole(async () => await cancellation)
+					else await cancellation
 				} else for (const listener of listeners) listener(1)
-				assert.match(JSON.stringify(await pending), action === 'cancel' ? /cancelled/ : /tab was closed/)
+				assert.match(JSON.stringify(await pending), action === 'cancel' || action === 'cleanup-error' ? /cancelled/ : /tab was closed/)
 				if (action === 'close') {
 					// The rejected executeScript settles after cancellation won the race.
 					failPreparation?.()

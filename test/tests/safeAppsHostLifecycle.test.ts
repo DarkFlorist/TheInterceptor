@@ -5,6 +5,35 @@ import SafeAppsSDK from '@safe-global/safe-apps-sdk'
 import { installSafeAppsHost } from '../../app/inpage/ts/safeAppsHost.js'
 import { createSafeHostHarness } from '../fixtures/safeAppsHostHarness.js'
 
+test('reused SDK IDs get distinct bridge tokens and stale provider replies cannot settle the retry', async () => {
+	const { fakeWindow, framePort, emitMessage, fireTimeouts, restoreGlobals } = createSafeHostHarness()
+	try {
+		const host = installSafeAppsHost()
+		assert.ok(host)
+		const forwarded: { readonly id: string, readonly bridgeToken: string }[] = []
+		const replies: unknown[] = []
+		fakeWindow.addEventListener('message', ({ data, source }) => {
+			if (typeof data !== 'object' || data === null || !('id' in data) || data.id !== 'reused') return
+			if (source === fakeWindow && 'method' in data && 'bridgeToken' in data && typeof data.bridgeToken === 'string') forwarded.push({ id: data.id, bridgeToken: data.bridgeToken })
+			if (source === framePort && 'success' in data) replies.push(data)
+		})
+		const sdkRequest = { id: 'reused', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }
+		framePort.postMessage(sdkRequest)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(forwarded.length, 1)
+		fireTimeouts(5 * 60_000)
+		framePort.postMessage(sdkRequest)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(forwarded.length, 2)
+		assert.notEqual(forwarded[0]?.bridgeToken, forwarded[1]?.bridgeToken)
+		emitMessage({ id: 'reused', bridgeToken: forwarded[0]?.bridgeToken, success: true })
+		assert.equal(replies.length, 1)
+		emitMessage({ id: 'reused', bridgeToken: forwarded[1]?.bridgeToken, success: true })
+		assert.equal(replies.length, 2)
+		host.dispose()
+	} finally { restoreGlobals() }
+})
+
 test('Safe Apps host respects site discovery deadlines and relays eventual SDK replies within its capacity', async () => {
 	const { fakeWindow, framePort, origin, activeTimeouts, fireTimeouts, postMessage, frameWasAppended, restoreGlobals } = createSafeHostHarness()
 	try {

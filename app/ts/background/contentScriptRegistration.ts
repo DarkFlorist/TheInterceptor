@@ -1,20 +1,12 @@
-import { getSettings, getWebsiteAccessFromStoredItems } from './settings.js'
-import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from '../utils/requests.js'
+import { getWebsiteAccessFromStoredItems } from './settings.js'
 import { ContentScriptHostingSettings, contentScriptRegistrationSettingsKeys } from '../types/contentScriptSettings.js'
 import { getSafeAppsHostMatchPatterns } from '../utils/safeAppsHosting.js'
 import { getChromeSiteMatchPatterns } from '../utils/chromeMatchPatterns.js'
-import { reportLocalRecoveryBestEffort, reportUnexpectedError } from '../utils/errors.js'
-import { INPAGE_SCRIPTS, PROVIDER_SCRIPTS, SAFE_APPS_HOST_SCRIPTS } from '../config/injectedScripts.js'
+import { reportUnexpectedError } from '../utils/errors.js'
+import { INJECTABLE_SITES_WILDCARD, INPAGE_SCRIPTS, PROVIDER_SCRIPTS, SAFE_APPS_HOST_SCRIPTS } from '../config/injectedScripts.js'
 import { DEFAULT_SAFE_APPS_HOST_ORIGINS } from '../types/safeAppsHosting.js'
 import { getInterceptorDisabledSites } from './websiteAccessPolicy.js'
 
-const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
-const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
-const extensionGallerySitesRegexp = [/^https:\/\/chromewebstore\.google\.com(?:[\/?#]|$)/, /^https:\/\/chrome\.google\.com\/webstore(?:[\/?#]|$)/]
-const otherExtensionInjectionTargetErrorMessage = 'Cannot access a chrome-extension:// URL of different extension'
-const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cannot be scripted.'
-const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
-const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
 
 type ContentScriptRegistrationOutcome = 'configuration-applied' | 'hosting-failed'
 type ContentScriptConfiguration = {
@@ -65,7 +57,7 @@ function getBaseContentScripts(excludeMatches: string[], hostMatches: string[] =
 	return [{
 		id: 'inpage2',
 		allFrames: true,
-		matches: injectableSitesWildcard,
+		matches: INJECTABLE_SITES_WILDCARD,
 		excludeMatches,
 		js: ['/vendor/webextension-polyfill/dist/browser-polyfill.js', INPAGE_SCRIPTS.contentListener, INPAGE_SCRIPTS.contentListenerBootstrap],
 		runAt: 'document_start',
@@ -74,7 +66,7 @@ function getBaseContentScripts(excludeMatches: string[], hostMatches: string[] =
 	}, {
 		id: 'inpage',
 		allFrames: true,
-		matches: injectableSitesWildcard,
+		matches: INJECTABLE_SITES_WILDCARD,
 		excludeMatches: [...excludeMatches, ...hostMatches],
 		js: [...PROVIDER_SCRIPTS],
 		runAt: 'document_start',
@@ -241,30 +233,3 @@ export function createContentScriptRegistrationService() {
 
 // One service per background runtime; the reload workflow awaits the same queue as the storage observer.
 export const contentScriptRegistration = createContentScriptRegistrationService()
-
-const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {
-	if (!isInjectableSite(content.url)) return false
-	const disabledSites = getInterceptorDisabledSites((await getSettings()).websiteAccess)
-	// The tab can navigate while settings are loading, including to another extension page where injection is prohibited.
-	const thisTab = await getTabIfExists(content.tabId)
-	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false
-	const urls = [content.url, thisTab.url]
-	const hostnames = urls.map((url) => getHostWithPort(url))
-	const noMatches = disabledSites.every(excludeMatch => !hostnames.includes(excludeMatch))
-	if (!noMatches) return false
-	try {
-		await browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/dist/browser-polyfill.js', allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: INPAGE_SCRIPTS.contentListener, allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: INPAGE_SCRIPTS.documentStart, allFrames: false, runAt: 'document_start' })
-		checkAndThrowRuntimeLastError()
-	} catch(error) {
-		if (isMissingBrowserTargetError(error) || isExpectedManifestV2InjectionTargetError(error)) return false
-		reportLocalRecoveryBestEffort(error, { code: 'manifest_v2_content_script_injection_failed', message: 'Leaving this navigation without early injection.' })
-	}
-	return false
-}
-
-export const updateContentScriptInjectionStrategyManifestV2 = async () => {
-	browser.webNavigation.onCommitted.removeListener(injectLogic)
-	browser.webNavigation.onCommitted.addListener(injectLogic, { url: injectableSitesWildcard.map((urlMatches) => ({ urlMatches })) })
-}

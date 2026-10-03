@@ -18,7 +18,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import { RawInterceptedRequest, checkAndThrowRuntimeLastError, getHostWithPort, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
-import { updateContentScriptInjectionStrategyManifestV2 } from './contentScriptRegistration.js'
+import { startContentScriptInjectionStrategy } from './contentScriptInjectionStrategy.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
 import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
@@ -123,12 +123,9 @@ browser.tabs.onRemoved.addListener(async (tabId: number) => await catchAllErrors
 }))
 
 const manifestVersion = browser.runtime.getManifest().manifest_version
-const isManifestV2 = manifestVersion === 2
 const tabStateInitializationPromise = initializeTabStateStorage(manifestVersion)
 
-if (isManifestV2) {
-	updateContentScriptInjectionStrategyManifestV2()
-}
+startContentScriptInjectionStrategy()
 
 const pendingRequestLimiter = new Semaphore(40) // only allow 40 requests pending globally
 

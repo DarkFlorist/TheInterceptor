@@ -4321,3 +4321,43 @@ for (const settleWhileDisabled of [true, false]) {
 		})
 	})
 }
+
+test('late cancellation of an expired discovery cannot cancel a reused ID', async () => {
+	let settleOldRequest: (() => void) | undefined
+	let settleNewRequest: (() => void) | undefined
+	let forwarded = 0
+	const { fakeWindow, fireTimeouts, activeTimeouts } = createFakeWindow({ handleRequest: (request, reply) => {
+		if (request.method === 'connected_to_signer') {
+			reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
+			sendSafeAppsCompatibility(reply, true)
+			return true
+		}
+		if (request.method === 'eth_accounts') {
+			reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: [] })
+			return true
+		}
+		if (request.method !== 'safe_apps_request') return false
+		forwarded++
+		if (forwarded === 1) settleOldRequest = () => replyToSafeAppsRequest(request, reply, { kind: 'result', value: { safeAddress: 'old' } })
+		else settleNewRequest = () => replyToSafeAppsRequest(request, reply, { kind: 'result', value: { safeAddress: 'new' } })
+		return true
+	} })
+	await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?safe-reused-discovery-id', async () => {
+		const replies: Record<string, unknown>[] = []
+		fakeWindow.addEventListener('message', ({ data }) => { if (isRecord(data) && typeof data.success === 'boolean') replies.push(data) })
+		const request = { id: 'reused-discovery', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }
+		fakeWindow.postMessage({ ...request, bridgeToken: 'first' }, fakeWindow.location.origin)
+		await waitFor(() => settleOldRequest !== undefined)
+		assert.equal(activeTimeouts(), 1)
+		fireTimeouts(5 * 60_000)
+		assert.equal(activeTimeouts(), 0)
+		fakeWindow.postMessage({ ...request, bridgeToken: 'second' }, fakeWindow.location.origin)
+		await waitFor(() => settleNewRequest !== undefined)
+		fakeWindow.postMessage({ type: 'interceptor_safe_apps_cancel', id: request.id, bridgeToken: 'first' }, fakeWindow.location.origin)
+		settleOldRequest?.()
+		settleNewRequest?.()
+		await waitFor(() => replies.length === 1)
+		assert.deepEqual(replies, [{ id: request.id, success: true, data: { safeAddress: 'new' }, version: '9.1.0', bridgeToken: 'second' }])
+		assert.equal(activeTimeouts(), 0)
+	})
+})

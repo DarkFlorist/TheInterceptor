@@ -1,5 +1,5 @@
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { contentScriptRegistration, updateContentScriptInjectionStrategyManifestV2 } from './contentScriptRegistration.js'
+import { updateContentScriptInjectionStrategy } from './contentScriptInjectionStrategy.js'
 import { updateWebsiteAccess } from './settings.js'
 import { getInterceptorDisabledSites } from './websiteAccessPolicy.js'
 
@@ -16,9 +16,6 @@ export async function updateWebsiteAccessAndContentScriptInjectionStrategy(updat
 		disabledSitesChanged = !haveSameDisabledSites(previousWebsiteAccess, nextWebsiteAccess)
 		return nextWebsiteAccess
 	})
-	if (disabledSitesChanged) {
-		if (browser.runtime.getManifest().manifest_version === 3) await contentScriptRegistration.update()
-		else await updateContentScriptInjectionStrategyManifestV2()
-	}
+	if (disabledSitesChanged) await updateContentScriptInjectionStrategy()
 	return disabledSitesChanged
 }

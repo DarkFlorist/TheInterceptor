@@ -204,6 +204,7 @@ async function loadModules() {
 	const registration = await import('../../app/ts/background/contentScriptRegistration.js')
 	return {
 		...registration,
+		...await import('../../app/ts/background/manifestV2ContentScriptInjection.js'),
 		updateRegistration: registration.createContentScriptRegistrationService().update,
 		...await import('../../app/ts/background/storageVariables.js'),
 	}
