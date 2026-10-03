@@ -10,9 +10,9 @@ type PopupMessageProtocolEntry = {
 
 // Wire names cannot be normalized without coordinating already-open extension pages. Mark historical spellings explicitly so new handlers do not copy those conventions.
 export const popupMessageProtocol = {
-	signing_wallets: { domain: 'signing', legacyWireName: true },
-	signing_setSafeAccounts: { domain: 'signing', legacyWireName: true },
-	signing_saveWallet: { domain: 'signing', legacyWireName: true },
+	signing_wallets: { domain: 'address-book', legacyWireName: true },
+	signing_setSafeAccounts: { domain: 'safe', legacyWireName: true },
+	signing_saveWallet: { domain: 'address-book', legacyWireName: true },
 	signing_get: { domain: 'signing', legacyWireName: true },
 	signing_approve: { domain: 'signing', legacyWireName: true },
 	signing_result: { domain: 'signing', legacyWireName: true },
