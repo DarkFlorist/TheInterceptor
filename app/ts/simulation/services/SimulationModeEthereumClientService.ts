@@ -31,7 +31,7 @@ import { calculateRealizedEffectiveGasPrice, getBlockTimeManipulationSeconds, ge
 import { getSignedTransactionForSimulation, mockSignTransaction } from './simulationTransactionSigning.js'
 import { getMessageHashForPersonalSign, simulatePersonalSign } from './simulationPersonalSigning.js'
 import { type BalanceQuery, getTokenBalanceQueriesForTransaction } from './simulationTokenBalanceQueries.js'
-import { preserveClearedCodeOverrides } from '../../utils/delegateClearingState.js'
+import { carryDelegateClearing, withDelegateCleared } from '../../utils/delegateClearingState.js'
 
 export { getSignedTransactionForSimulation, mockSignTransaction }
 export { getMessageHashForPersonalSign, simulatePersonalSign }
@@ -356,7 +356,7 @@ const simulateBlockCallWithPreparedInputContext = async (
 				baseFeePerGas: simulateWithZeroBaseFee ? 0n : baseFeePerGas,
 				time: getNextBlockTimeStampOverride(previousBlockTime, DEFAULT_BLOCK_MANIPULATION),
 			},
-			stateOverrides: preserveClearedCodeOverrides(context?.prepared.rpcBlocks[simulationPrefixBlockCount - 1]?.stateOverrides ?? {}, extraOverrides),
+			stateOverrides: withDelegateCleared(extraOverrides, context?.prepared.rpcBlocks[simulationPrefixBlockCount - 1]?.delegateClearedAddress),
 		},
 	]
 	const simulationResult = await ethereumClientService.ethSimulateV1(blockStateCalls, parentBlock.number, requestAbortController)
@@ -635,14 +635,14 @@ export const appendTransactionsToInput = (simulationStateInput: SimulationStateI
 	if (simulationStateInput[blockToAppendTo] !== undefined) {
 		return simulationStateInput.map((block, index) => ({
 			...block,
-			stateOverrides: index === blockToAppendTo ? preserveClearedCodeOverrides(block.stateOverrides, mergeStateSets(block.stateOverrides, stateOverrides)) : block.stateOverrides,
+			stateOverrides: index === blockToAppendTo ? withDelegateCleared(mergeStateSets(block.stateOverrides, stateOverrides), block.delegateClearedAddress) : block.stateOverrides,
 			transactions: index === blockToAppendTo ? [...block.transactions, ...newTransactions] : block.transactions,
 		}))
 	}
-	const previousStateOverrides = simulationStateInput[simulationStateInput.length - 1]?.stateOverrides ?? {}
+	const previousBlock = simulationStateInput[simulationStateInput.length - 1]
 	return [
 		...simulationStateInput,
-		{ stateOverrides: preserveClearedCodeOverrides(previousStateOverrides, stateOverrides), transactions: newTransactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee }
+		{ ...(previousBlock === undefined ? { stateOverrides } : carryDelegateClearing(previousBlock, stateOverrides)), transactions: newTransactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee }
 	]
 }
 

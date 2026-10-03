@@ -14,15 +14,14 @@ export function withDelegateCleared(stateOverrides: StateOverrides, address: big
 	return { ...stateOverrides, [key]: { ...stateOverrides[key], code: new Uint8Array() } }
 }
 
-export function preserveClearedCodeOverrides(source: StateOverrides, target: StateOverrides): StateOverrides {
-	let result = target
-	for (const [address, override] of Object.entries(source)) {
-		if (override?.code?.length !== 0) continue
-		result = { ...result, [address]: { ...result[address], code: new Uint8Array() } }
+// Keep effective overrides and clearing intent together so RPC preparation can restore the override after a transformation.
+export function carryDelegateClearing(source: Pick<SimulationStateInputBlock, 'delegateClearedAddress'>, stateOverrides: StateOverrides) {
+	return {
+		stateOverrides: withDelegateCleared(stateOverrides, source.delegateClearedAddress),
+		delegateClearedAddress: source.delegateClearedAddress,
 	}
-	return result
 }
 
-export function isDelegateClearedForBlock(block: Pick<SimulationStateInputBlock, 'stateOverrides'>, address: bigint) {
-	return block.stateOverrides[addressString(address)]?.code?.length === 0
+export function isDelegateClearedForBlock(block: Pick<SimulationStateInputBlock, 'delegateClearedAddress'>, address: bigint) {
+	return block.delegateClearedAddress === address
 }

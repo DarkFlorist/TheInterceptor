@@ -9,8 +9,9 @@ export function getSimulationInputHash(simulationStateInput: SimulationStateInpu
 		originalRequestParameters: signedMessage.originalRequestParameters,
 	}))))
 	const overrides = stringifyJSONWithBigInts(simulationStateInput.map((x) => x.stateOverrides))
+	const delegatesCleared = stringifyJSONWithBigInts(simulationStateInput.map((x) => x.delegateClearedAddress))
 	const transactions = stringifyJSONWithBigInts(simulationStateInput.map((x) => x.transactions.map((transaction) => dataStringWith0xStart(serializeSignedTransactionToBytes(EthereumSignedTransactionToSignedTransaction(transaction.signedTransaction))))))
 	const blockTime = stringifyJSONWithBigInts(simulationStateInput.map((x) => x.blockTimeManipulation))
 	const baseFee = stringifyJSONWithBigInts(simulationStateInput.map((x) => x.simulateWithZeroBaseFee))
-	return keccak256(stringToBytes(JSON.stringify([messages, overrides, transactions, blockTime, baseFee])))
+	return keccak256(stringToBytes(JSON.stringify([messages, overrides, delegatesCleared, transactions, blockTime, baseFee])))
 }

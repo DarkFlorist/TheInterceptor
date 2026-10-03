@@ -34,7 +34,7 @@ import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
-import { hasDelegateClearingPreference, isDelegateClearedForBlock, preserveClearedCodeOverrides, withDelegateCleared } from '../utils/delegateClearingState.js'
+import { carryDelegateClearing, hasDelegateClearingPreference, isDelegateClearedForBlock, withDelegateCleared } from '../utils/delegateClearingState.js'
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -73,6 +73,7 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
 		inputBlocks.push({
 			stateOverrides: withDelegateCleared(currentBlockStateOverrides, delegateClearedAddress),
+			delegateClearedAddress,
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
 			blockTimeManipulation: previousBlockTimeManipulation,
@@ -124,6 +125,7 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 	) {
 		inputBlocks.push({
 			stateOverrides: withDelegateCleared(currentBlockStateOverrides, delegateClearedAddress),
+			delegateClearedAddress,
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
 			blockTimeManipulation: previousBlockTimeManipulation,
@@ -242,10 +244,11 @@ export const getGovernanceExecutionSimulationInput = (
 	executionTimestamp: Date,
 	executionStateOverrides: StateOverrides,
 ): SimulationStateInput => {
+	const previousBlock = simulationInput[simulationInput.length - 1]
 	return [
 		...simulationInput,
 		{
-			stateOverrides: preserveClearedCodeOverrides(simulationInput[simulationInput.length - 1]?.stateOverrides ?? {}, executionStateOverrides),
+			...(previousBlock === undefined ? { stateOverrides: executionStateOverrides } : carryDelegateClearing(previousBlock, executionStateOverrides)),
 			transactions: [executionTransaction],
 			signedMessages: [],
 			blockTimeManipulation: { type: 'SetTimetamp', timeToSet: dateToBigintSeconds(executionTimestamp) },

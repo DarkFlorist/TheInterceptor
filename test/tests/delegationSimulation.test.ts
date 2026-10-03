@@ -103,6 +103,10 @@ describe('delegate clearing in simulation', () => {
 			assert.equal(isDelegateClearedForBlock(block, activeAddress), true)
 			assert.deepEqual(block.stateOverrides[addressString(activeAddress)]?.code, new Uint8Array())
 		}
+		const markerOnlyInput = [{ ...capturedInput[0], stateOverrides: {} }]
+		const unmarkedInput = [{ ...markerOnlyInput[0], delegateClearedAddress: undefined }]
+		assert.notEqual(getSimulationInputHash(markerOnlyInput), getSimulationInputHash(unmarkedInput))
+		assert.equal(isDelegateClearedForBlock({ ...capturedInput[0], delegateClearedAddress: undefined }, activeAddress), false)
 		const parentBlockResponse = JsonRpcResponse.parse(JSON.parse(eth_getBlockByNumber_goerli_8443561_true))
 		if ('error' in parentBlockResponse) throw new Error(parentBlockResponse.error.message)
 		const ethereum = new EthereumClientService({
@@ -116,6 +120,8 @@ describe('delegate clearing in simulation', () => {
 		const rpcInput = serialize(EthSimulateV1Params, (await ethereum.prepareEthSimulateV1Input(capturedInput, 1n, undefined)).request)
 		assert.equal(rpcInput.params[0].blockStateCalls.length, 2)
 		for (const block of rpcInput.params[0].blockStateCalls) assert.equal(block.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
+		const markerOnlyRpcInput = serialize(EthSimulateV1Params, (await ethereum.prepareEthSimulateV1Input(markerOnlyInput, 1n, undefined)).request)
+		assert.equal(markerOnlyRpcInput.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
 		const parentBlock = EthereumBlockHeader.parse(parentBlockResponse.result)
 		if (parentBlock === null) throw new Error('Expected a parent block')
 		const firstBlock = capturedInput[0]

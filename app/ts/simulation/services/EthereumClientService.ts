@@ -17,7 +17,7 @@ import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
 import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
-import { preserveClearedCodeOverrides } from '../../utils/delegateClearingState.js'
+import { carryDelegateClearing, withDelegateCleared } from '../../utils/delegateClearingState.js'
 import { createDelegationCache } from './delegationCache.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
@@ -372,7 +372,7 @@ export class EthereumClientService {
 					if (index === 0) {
 						rpcBlocks.push({ ...inputBlock, transactions })
 					} else {
-						rpcBlocks.push({ transactions, stateOverrides: preserveClearedCodeOverrides(inputBlock.stateOverrides, {}), signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: inputBlock.simulateWithZeroBaseFee })
+						rpcBlocks.push({ transactions, ...carryDelegateClearing(inputBlock, {}), signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: inputBlock.simulateWithZeroBaseFee })
 					}
 				}
 				preparedBlocks.push({ inputBlock, rpcBlockCount: splitted.length })
@@ -427,7 +427,7 @@ export class EthereumClientService {
 							state: stateSets,
 						}
 					} : {},
-					...block.stateOverrides,
+					...withDelegateCleared(block.stateOverrides, block.delegateClearedAddress),
 				}
 			}
 		}
