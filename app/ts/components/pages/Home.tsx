@@ -31,6 +31,7 @@ import type { RpcEntry } from '../../types/rpc.js'
 import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
 import type { ComponentChildren, JSX } from 'preact'
 import { DropDownMenu, DropDownMenuButtonContent } from '../subcomponents/DropDownMenu.js'
+import { DelegationSimulationOption } from '../subcomponents/DelegationSimulationOption.js'
 
 function scheduleAfterPaint(callback: () => void) {
 	if (typeof globalThis.requestAnimationFrame === 'function' && typeof globalThis.cancelAnimationFrame === 'function') {
@@ -657,6 +658,7 @@ function FirstCard(param: FirstCardParams) {
 							changeActiveAddress = { param.changeActiveAddress }
 							renameAddressCallBack = { param.renameAddressCallBack }
 						/>
+						<DelegationSimulationOption activeAddress = { param.activeAddress } rpcNetwork = { param.rpcNetwork } simulationMode = { param.simulationMode }/>
 					</div>
 				}
 				{ isActiveAddressLoading || safeSimulationSignerAddressBookEntries.value === undefined ? <></> :

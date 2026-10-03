@@ -19,7 +19,7 @@ import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
-import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
+import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId, isDelegateClearingEnabled } from './settings.js'
 import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
@@ -34,6 +34,7 @@ import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
+import { getCachedDelegation } from './delegationSimulation.js'
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -59,11 +60,19 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 		getPreSimulationBlockTimeManipulation()
 	])
 	const richListPromise = silenceChromeUnCaughtPromise(richAddresses === undefined ? getAddressesbeingMadeRich(settings) : Promise.resolve(richAddresses))
+	const addressToClear = settings.simulationMode ? settings.activeSimulationAddress : undefined
+	const clearDelegatePromise = addressToClear === undefined
+		? Promise.resolve(false)
+		: silenceChromeUnCaughtPromise(isDelegateClearingEnabled(addressToClear, settings.activeRpcNetwork.chainId))
 	const stack = await getInterceptorTransactionStack()
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
-	let currentBlockStateOverrides = getMakeCurrentAddressRichStateOverride(await richListPromise)
+	let currentBlockStateOverrides: StateOverrides = getMakeCurrentAddressRichStateOverride(await richListPromise)
+	if (addressToClear !== undefined && await clearDelegatePromise) {
+		const key = addressString(addressToClear)
+		currentBlockStateOverrides = { ...currentBlockStateOverrides, [key]: { ...currentBlockStateOverrides[key], code: new Uint8Array() } }
+	}
 	let previousBlockTimeManipulation = settings.simulationMode ? preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
 	let currentBlockSimulateWithZeroBaseFee = false
 
@@ -202,7 +211,8 @@ async function getDelegationAddressesForSimulation(
 	const uniqueSenders = Array.from(new Set(simulationStateInput.flatMap((block) => block.transactions.map((transaction) => transaction.signedTransaction.from))))
 	const resolvedDelegations = await promiseAllMapAbortSafe(uniqueSenders, async (senderAddress) => {
 		try {
-			const delegationAddress = await ethereum.getDelegation(senderAddress, 'latest', requestAbortController)
+			if (simulationStateInput[0]?.stateOverrides[addressString(senderAddress)]?.code?.length === 0) return undefined
+			const delegationAddress = await getCachedDelegation(ethereum, senderAddress, requestAbortController)
 			if (delegationAddress === undefined) return undefined
 			return {
 				senderAddress,
