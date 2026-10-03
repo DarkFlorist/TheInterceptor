@@ -10,7 +10,7 @@ const otherExtensionInjectionTargetErrorMessage = 'Cannot access a chrome-extens
 const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cannot be scripted.'
 const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
 const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
-const getInterceptorDisabledSites = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((entry) => entry.interceptorDisabled === true).map((entry) => entry.website.websiteOrigin)
+export const getInterceptorDisabledSites = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((entry) => entry.interceptorDisabled === true).map((entry) => entry.website.websiteOrigin)
 
 function getManifestV3ExcludeMatchesForOrigin(origin: string) {
 	if (origin === '') return ['file:///*']
