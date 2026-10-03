@@ -49,6 +49,7 @@ import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
 import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../../types/interceptor-reply-messages.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
+const deferredSafeSignerReplySemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const NO_RESPONSE_RETRY_DELAY_MS = 50
 
@@ -295,6 +296,25 @@ async function settlePendingTerminalReply(websiteTabConnections: WebsiteTabConne
 	return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
 }
 
+async function queueDeferredSafeProposalReply(pending: PendingTransactionOrSignableMessage, safeTxHash: bigint) {
+	if (pending.originalRequestParameters.method !== 'eth_sendTransaction' && pending.originalRequestParameters.method !== 'eth_sendRawTransaction') {
+		throw new Error('A Gnosis Safe proposal must originate from a transaction request.')
+	}
+	const terminalReply = {
+		...pending.originalRequestParameters,
+		type: 'result' as const,
+		result: EthereumBytes32.parse(EthereumBytes32.serialize(safeTxHash)),
+		uniqueRequestIdentifier: pending.uniqueRequestIdentifier,
+	}
+	await queueTerminalReply(terminalReply)
+	return terminalReply
+}
+
+function removeDeferredSafeSignerReply(pending: PendingTransactionOrSignableMessage): PendingTransactionOrSignableMessage {
+	const { deferredSafeSignerReply: _deferredSafeSignerReply, ...remaining } = pending
+	return remaining
+}
+
 export async function resolvePendingSignerReply(services: ConfirmationServices | undefined, websiteTabConnections: WebsiteTabConnections, uniqueRequestIdentifier: UniqueRequestIdentifier, params: SignerReply['params'][0]) {
 	if (!params.success) {
 		const approvalStatus = params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST
@@ -317,8 +337,43 @@ export async function resolvePendingSignerReply(services: ConfirmationServices |
 		return
 	}
 	const safeFlow = getSafePendingFlow(pending)
-	const result = safeFlow?.kind === 'proposal' ? EthereumBytes32.serialize(safeFlow.pending.safeTransaction.safeTxHash) : params.reply
-	return await settlePendingTerminalReply(websiteTabConnections, pending, { type: 'result', result }, undefined)
+	if (safeFlow?.kind === 'proposal' || safeFlow?.kind === 'messageCoSign') {
+		if (typeof params.reply !== 'string') {
+			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, {
+				approvalStatus: createSafeSignerErrorStatus('The signer returned a non-string Gnosis Safe signature.'),
+			}))
+			return
+		}
+		const signerReply = params.reply
+		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, {
+			deferredSafeSignerReply: { signerReply, terminalReplyQueued: false },
+		}))
+		if (safeFlow.kind === 'proposal') {
+			const terminalReply = await queueDeferredSafeProposalReply(pending, safeFlow.pending.safeTransaction.safeTxHash)
+			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, {
+				deferredSafeSignerReply: { signerReply, terminalReplyQueued: true },
+			}))
+			return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
+		}
+		return
+	}
+	return await settlePendingTerminalReply(websiteTabConnections, pending, { type: 'result', result: params.reply }, undefined)
+}
+
+export async function resolveDeferredSafeSignerReplies(services: ConfirmationServices, websiteTabConnections: WebsiteTabConnections) {
+	return await deferredSafeSignerReplySemaphore.execute(async () => {
+		for (const pending of await getPendingTransactionsAndMessages()) {
+			if (pending.deferredSafeSignerReply === undefined) continue
+			await resolvePendingTransactionOrMessage(services.ethereum, services.tokenPriceService, websiteTabConnections, {
+				method: 'popup_confirmDialog',
+				data: {
+					uniqueRequestIdentifier: pending.uniqueRequestIdentifier,
+					action: 'signerIncluded',
+					signerReply: pending.deferredSafeSignerReply.signerReply,
+				},
+			})
+		}
+	})
 }
 
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
@@ -427,13 +482,17 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		if (confirmation.data.action === 'signerIncluded') {
 			const safeReply = await resolveSafeSignerReply(ethereum, tokenPriceService, pendingTransactionOrMessage, confirmation.data.signerReply)
 			if (safeReply.status === 'error') {
-				await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(pending, {
-					approvalStatus: safeReply.approvalStatus,
-				}))
+				await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => modifyObject(removeDeferredSafeSignerReply(pending), { approvalStatus: safeReply.approvalStatus }))
 				await updateConfirmTransactionView(ethereum, tokenPriceService)
 				return false
 			}
-			if (safeReply.status === 'success') return reply({ type: 'result', result: safeReply.result })
+			if (safeReply.status === 'success') {
+				if (pendingTransactionOrMessage.deferredSafeSignerReply?.terminalReplyQueued === true) {
+					await removePendingRequestAndUpdateView()
+					return true
+				}
+				return reply({ type: 'result', result: safeReply.result })
+			}
 			return reply({ type: 'result', result: confirmation.data.signerReply })
 		}
 		await removePendingRequestAndUpdateView()

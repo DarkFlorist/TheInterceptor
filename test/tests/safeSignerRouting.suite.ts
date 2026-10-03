@@ -125,7 +125,7 @@ test('settles a direct signing reply while RPC services are unavailable', async 
 	assert.equal(dappReply.result, modules.EthereumBytes32.serialize(signedTransaction.hash))
 })
 
-test('settles an already-signed Safe proposal with its reviewed hash while RPC services are unavailable', async () => {
+test('delivers an already-signed Safe proposal while unavailable and persists its signature after recovery', async () => {
 	const socket = { tabId: 1, connectionName: 45n }
 	const requestIdentifier = { requestId: 84, requestSocket: socket }
 	const messages: unknown[] = []
@@ -147,6 +147,10 @@ test('settles an already-signed Safe proposal with its reviewed hash while RPC s
 		input: new Uint8Array(),
 	}, 0n)
 	const safeTxHash = BigInt(getSafeTxHash(safeTx))
+	fakeSafeContract.nonce = 0n
+	fakeSafeContract.threshold = 2n
+	fakeSafeContract.owners = [safeTestOwnerAddress]
+	const signature = await safeTestOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
 	await modules.browserStorageLocalSet2({
 		pendingTransactionsAndMessages: [{
 			...pendingTransaction,
@@ -155,13 +159,13 @@ test('settles an already-signed Safe proposal with its reviewed hash while RPC s
 			approvalStatus: { status: 'WaitingForSigner' },
 			safeTransaction: {
 				safeAddress: activeAddress,
-				safeSignerAddress: recipientAddress,
+				safeSignerAddress: safeTestOwnerAddress,
 				safeVersion: '1.4.1',
 				threshold: 2n,
 				reviewedSafeState: {
 					version: '1.4.1',
 					nonce: 0n,
-					owners: [recipientAddress],
+					owners: [safeTestOwnerAddress],
 					threshold: 2n,
 				},
 				safeTxHash,
@@ -184,7 +188,7 @@ test('settles an already-signed Safe proposal with its reviewed hash while RPC s
 				params: [recipientAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))],
 				requestId: requestIdentifier.requestId,
 			},
-			reply: '0xalready-signed-safe-proposal',
+			reply: signature,
 		}],
 		interceptorRequest: true,
 		interceptorInternalRequest: true,
@@ -192,10 +196,21 @@ test('settles an already-signed Safe proposal with its reviewed hash while RPC s
 		uniqueRequestIdentifier: { requestId: 85, requestSocket: socket },
 	}, 'hasAccess', activeAddress)
 
-	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	const [deferredProposal] = await modules.getPendingTransactionsAndMessages()
+	assert.deepEqual(deferredProposal?.deferredSafeSignerReply, { signerReply: signature, terminalReplyQueued: true })
+	assert.deepEqual(await modules.getSafeTransactionStacks(), [])
 	const dappReply = messages.find((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === requestIdentifier.requestId)
 	if (!isRecord(dappReply)) throw new Error('Missing Safe proposal reply while services were unavailable')
 	assert.equal(dappReply.result, modules.EthereumBytes32.serialize(safeTxHash))
+
+	await modules.resolveDeferredSafeSignerReplies({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }, websiteTabConnections)
+
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	const [persistedStack] = await modules.getSafeTransactionStacks()
+	assert.equal(persistedStack?.transactions.length, 1)
+	assert.equal(persistedStack?.transactions[0]?.safeTxHash, safeTxHash)
+	assert.deepEqual(persistedStack?.transactions[0]?.signatures, [{ signer: safeTestOwnerAddress, signature }])
+	assert.equal(messages.filter((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === requestIdentifier.requestId).length, 1)
 })
 
 test('persists a replaced-connection signer error without refreshing over corrupt RPC configuration', async () => {
@@ -644,6 +659,16 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 	assert.equal(signerRequest.method, 'eth_signTypedData_v4')
 	assert.equal(signerRequest.params[0], addressString(alternateOwnerAddress))
 	assert.equal(JSON.parse(String(signerRequest.params[1])).domain.verifyingContract.toLowerCase(), addressString(activeAddress).toLowerCase())
+
+	await modules.updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (pending) => ({
+		...pending,
+		deferredSafeSignerReply: { signerReply: '0x1234', terminalReplyQueued: false },
+	}))
+	await modules.resolveDeferredSafeSignerReplies({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }, websiteTabConnections)
+	const [invalidDeferredCoSignRequest] = await modules.getPendingTransactionsAndMessages()
+	assert.equal(invalidDeferredCoSignRequest?.approvalStatus.status, 'SignerError')
+	assert.equal(invalidDeferredCoSignRequest?.deferredSafeSignerReply, undefined)
+	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'result' && message.requestId === uniqueRequestIdentifier.requestId), false)
 
 	const signature = await alternateOwnerAccount.signTypedData(EIP712Message.parse(safeTxToTypedDataJson(safeTx)))
 	await modules.updateUserAddressBookEntries((entries) => entries.map((entry) =>

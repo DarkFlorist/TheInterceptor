@@ -8,6 +8,7 @@ describe('background eth_accounts', () => {
 		const {
 			changeSimulationMode,
 			getRequiredSettings,
+			retryRpcConfiguration,
 			setRpcConfiguration,
 			updateDeclarativeNetRequestBlocks,
 			updateTabState,
@@ -53,7 +54,13 @@ describe('background eth_accounts', () => {
 		assert.equal(browserMock.requestBlockingCalls.sessionRuleUpdates, sessionUpdatesBeforeRecovery)
 
 		await setRpcConfiguration([settings.activeRpcNetwork], settings.activeRpcNetwork)
-		await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+		const recoveryServices = createEthereumWithGetBlockCounter({ count: 0 })
+		const simulationServicesOwner = createTestSimulationServicesOwner(
+			{ ethereum: recoveryServices.ethereum, tokenPriceService: recoveryServices.tokenPriceService },
+			() => ({ ethereum: recoveryServices.ethereum, tokenPriceService: recoveryServices.tokenPriceService }),
+		)
+		simulationServicesOwner.clear()
+		await retryRpcConfiguration(simulationServicesOwner, async () => await updateDeclarativeNetRequestBlocks(websiteTabConnections))
 		assert.equal(browserMock.requestBlockingCalls.sessionRuleUpdates, sessionUpdatesBeforeRecovery + 1)
 	})
 

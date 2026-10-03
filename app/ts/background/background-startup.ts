@@ -19,7 +19,7 @@ import { DEFAULT_TAB_CONNECTION, ICON_NOT_ACTIVE } from '../utils/constants.js'
 import { reportUnexpectedError, isExpectedInfrastructureError, printError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
 import { updateContentScriptInjectionStrategyManifestV2 } from '../utils/contentScriptsUpdating.js'
 import { checkIfInterceptorShouldSleep } from './sleeping.js'
-import { onCloseWindowOrTab, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
+import { onCloseWindowOrTab, resolveDeferredSafeSignerReplies, resolvePendingRequestsForMissingConfirmationWindows } from './windows/confirmTransaction.js'
 import { modifyObject } from '../utils/typescript.js'
 import { updateDeclarativeNetRequestBlocks } from './accessManagement.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
@@ -302,6 +302,7 @@ async function startup() {
 const recoverPendingTerminalState = createRetriableTerminalStateRecovery({
 	recover: async () => {
 		const { ethereum, tokenPriceService } = getSimulationServices()
+		await resolveDeferredSafeSignerReplies({ ethereum, tokenPriceService }, websiteTabConnections)
 		await resolvePendingRequestsForMissingConfirmationWindows(ethereum, tokenPriceService, websiteTabConnections)
 		await prunePendingTerminalRepliesForMissingTabs()
 	},

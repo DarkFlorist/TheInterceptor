@@ -77,7 +77,7 @@ export async function restoreDefaultRpcConfiguration(simulationServicesOwner: Si
 	if (transition.publishRecovery) await publishRecovery(simulationServicesOwner, websiteTabConnections, settings ?? await getRequiredSettings(), transition.activeRpcNetwork, transition.forceChainChanged)
 }
 
-export async function retryRpcConfiguration(simulationServicesOwner: SimulationServicesOwner) {
+export async function retryRpcConfiguration(simulationServicesOwner: SimulationServicesOwner, reconcileAccessRules: () => Promise<void>) {
 	const configuration = await getRpcConfigurationState()
 	if (configuration.status !== 'ready') {
 		simulationServicesOwner.clear()
@@ -88,8 +88,10 @@ export async function retryRpcConfiguration(simulationServicesOwner: SimulationS
 	if (rpcNetwork === undefined) {
 		simulationServicesOwner.clear()
 		await sendRpcListUpdate(configuration.rpcEntries, true)
+		await reconcileAccessRules()
 		return
 	}
 	simulationServicesOwner.recover(rpcNetwork)
 	await sendRpcListUpdate(configuration.rpcEntries, true)
+	await reconcileAccessRules()
 }

@@ -1,4 +1,4 @@
-import { updateWebsiteApprovalAccesses } from '../accessManagement.js'
+import { updateDeclarativeNetRequestBlocks, updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { popupMessageHandler, popupRecoveryMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
 import { changeSettings, exportSettings, importSettings, openNewTab, restoreDefaultRpcConfiguration, retryRpcConfiguration, setNewRpcList, settingsOpened } from '../popupMessageHandlers.js'
@@ -20,7 +20,10 @@ export const settingsPopupMessageHandlers = {
 		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: importedSettings, popupRefreshGeneration })
 	}),
 	popup_get_export_settings: popupMessageHandler('popup_get_export_settings', async () => await exportSettings()),
-	popup_retryRpcConfiguration: popupRecoveryMessageHandler('popup_retryRpcConfiguration', async (context) => await retryRpcConfiguration(context.simulationServicesOwner)),
+	popup_retryRpcConfiguration: popupRecoveryMessageHandler('popup_retryRpcConfiguration', async (context) => await retryRpcConfiguration(
+		context.simulationServicesOwner,
+		async () => await updateDeclarativeNetRequestBlocks(context.websiteTabConnections),
+	)),
 	popup_restoreDefaultRpcConfiguration: popupRecoveryMessageHandler('popup_restoreDefaultRpcConfiguration', async (context) => await restoreDefaultRpcConfiguration(context.simulationServicesOwner, context.websiteTabConnections, context.settings, publishRpcConfigurationRecovery)),
 	popup_set_rpc_list: popupMessageHandler('popup_set_rpc_list', async (context, request) => await setNewRpcList(context.simulationServicesOwner, context.websiteTabConnections, request, context.settings, publishRpcConfigurationRecovery)),
 } satisfies Partial<PopupMessageHandlerMap>

@@ -231,6 +231,7 @@ export async function loadModules() {
 		onCloseWindowOrTab: confirmTransaction.onCloseWindowOrTab,
 		refreshPendingSafeSignerSelectionErrors: confirmTransaction.refreshPendingSafeSignerSelectionErrors,
 		resolvePendingRequestsForMissingConfirmationWindows: confirmTransaction.resolvePendingRequestsForMissingConfirmationWindows,
+		resolveDeferredSafeSignerReplies: confirmTransaction.resolveDeferredSafeSignerReplies,
 		resolveSafeConfirmation: safeConfirmationResolver.resolveSafeConfirmation,
 		createSafeExecutionPreSimulationTransaction: safeSimulation.createSafeExecutionPreSimulationTransaction,
 		createSafeSigningSimulationInput: safeSimulation.createSafeSigningSimulationInput,
