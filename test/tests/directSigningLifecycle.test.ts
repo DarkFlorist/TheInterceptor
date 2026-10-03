@@ -2,8 +2,8 @@ import { beforeEach, afterEach, expect, spyOn, test } from 'bun:test'
 import { secp256k1 } from '@noble/curves/secp256k1'
 import { createBrowserMock, pendingTransaction, resetConfirmTransactionTestState, ethereum, simulator } from './confirmTransactionTestHarness.js'
 import { DirectSigningRecord, DirectSigningRecords } from '../../app/ts/types/directSigning.js'
-import { appendPendingTransactionOrMessage, saveAddressSigningWallet, clearPendingTransactions, getPendingTransactionsAndMessages } from '../../app/ts/background/storageVariables.js'
-import { readDirectSigningRecords, updateDirectSigning, refreshDirectSigningReview } from '../../app/ts/background/directSigning.js'
+import { appendPendingTransactionOrMessage, saveAddressSigningWallet, clearPendingTransactions, getPendingTransactionsAndMessages, readDirectSigningRecords } from '../../app/ts/background/storageVariables.js'
+import { updateDirectSigning, refreshDirectSigningReview } from '../../app/ts/background/directSigning.js'
 import { bytesFromHex, bytesToHex, ensureHex, type Hex } from '../../app/ts/utils/ethereumBytes.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumSigning.js'
 import { parseTransaction, serializeTransaction } from '../../app/ts/utils/ethereumTransactions.js'
@@ -171,4 +171,31 @@ test('returned simulation failure preserves fees and pending explanation until a
 		refresh.mockRestore()
 		chain.mockRestore()
 	}
+})
+
+test('corrupt signing history is diagnosed and preserved rather than reset', async () => {
+	const { getInterceptorErrorDiagnostics, storeDirectSigningRecord } = await import('../../app/ts/background/storageVariables.js')
+	const { withSilencedConsole } = await import('./consoleSilence.js')
+	const corrupt = { records: 'invalid' }
+	await browser.storage.local.set({ directSigningRequestsV1: corrupt })
+	await withSilencedConsole(async () => {
+		await expect(readDirectSigningRecords()).rejects.toThrow()
+		await expect(storeDirectSigningRecord(record)).rejects.toThrow()
+	})
+	expect((await browser.storage.local.get('directSigningRequestsV1')).directSigningRequestsV1).toEqual(corrupt)
+	expect((await getInterceptorErrorDiagnostics()).some((entry) => entry.code === 'direct_signing_records_corrupt')).toBe(true)
+})
+
+test('a transient signing-history read failure does not write or reset state', async () => {
+	const failure = new Error('Storage read unavailable')
+	const get = spyOn(browser.storage.local, 'get').mockRejectedValue(failure)
+	const set = spyOn(browser.storage.local, 'set')
+	try {
+		await expect(readDirectSigningRecords()).rejects.toBe(failure)
+		expect(set).not.toHaveBeenCalled()
+	} finally {
+		get.mockRestore()
+		set.mockRestore()
+	}
+	expect((await readDirectSigningRecords())[0]).toEqual(record)
 })

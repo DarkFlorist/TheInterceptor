@@ -4,7 +4,7 @@ import { addressString, bytes32String } from '../utils/bigint.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import * as funtypes from 'funtypes'
-import { type DirectSigningRecord, DirectSigningRecords, type DirectSigningRequest } from '../types/directSigning.js'
+import type { DirectSigningRecord, DirectSigningRequest } from '../types/directSigning.js'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { SignMessageParams } from '../types/jsonRpc-signing-types.js'
@@ -17,29 +17,10 @@ import { parseTransaction, serializeTransaction } from '../utils/ethereumTransac
 import { DIRECT_SIGNING_CAPABILITY_ERROR, getSigningMethodError, prepareDirectPayload, verifyDirectResult } from '../signing/backend.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
-import { getSigningWalletBinding, getPendingTransactionsAndMessages, updatePendingTransactionOrMessage } from './storageVariables.js'
+import { getSigningWalletBinding, getPendingTransactionsAndMessages, updatePendingTransactionOrMessage, readDirectSigningRecords, storeDirectSigningRecord } from './storageVariables.js'
 import { getHtmlFile } from './backgroundUtils.js'
 
 const signingStateLock = new Semaphore(1)
-const storageKey = 'directSigningRequestsV1'
-
-export async function readDirectSigningRecords() {
-	const stored: unknown = (await browser.storage.local.get(storageKey))[storageKey]
-	return stored === undefined ? [] : DirectSigningRecords.parse(stored)
-}
-
-async function storeRecord(record: DirectSigningRecord) {
-	const records = await readDirectSigningRecords()
-	const pending = await getPendingTransactionsAndMessages()
-	const retained = records.filter((item) => item.id !== record.id && (item.phase === 'submitting' || pending.some((request) => doesUniqueRequestIdentifiersMatch(request.uniqueRequestIdentifier, item.request))))
-	const history = records.filter((item) => item.id !== record.id && !retained.includes(item) && ['submitted', 'confirmed', 'cancelled'].includes(item.phase)).slice(-4)
-	const next = [...history, ...retained, record]
-	const serialized = DirectSigningRecords.serialize(next)
-	if (next.length > 16 || new TextEncoder().encode(JSON.stringify(serialized)).length > 4 * 1024 * 1024) throw signingOperationError('Too many saved signing requests. Finish or cancel pending signing requests before continuing.')
-	await browser.storage.local.set({ [storageKey]: serialized })
-	return record
-}
-
 /** Read afresh at each lifecycle boundary; a request can disappear while a device is signing. */
 async function findPendingSigningRequest(record: DirectSigningRecord) {
 	return (await getPendingTransactionsAndMessages()).find((item) => doesUniqueRequestIdentifiersMatch(item.uniqueRequestIdentifier, record.request))
@@ -125,7 +106,7 @@ export async function openDirectSigning(ethereum: EthereumClientService, prices:
 			prepareDirectPayload(input)
 			record = { id: crypto.randomUUID(), request: pending.uniqueRequestIdentifier, binding, websiteOrigin: pending.website.websiteOrigin, rpcUrl, input, revision: crypto.randomUUID(), created: Date.now(), phase: 'review' }
 			await assertCurrentBinding(record)
-			await storeRecord(record)
+			await storeDirectSigningRecord(record)
 		}
 		if (record.phase === 'review') await refreshDirectSigningReview(record, ethereum, prices)
 		await browser.tabs.create({ url: `${ browser.runtime.getURL(getHtmlFile('directSigning')) }?id=${ encodeURIComponent(record.id) }` })
@@ -142,7 +123,7 @@ export async function updateDirectSigning(request: DirectSigningRequest, refresh
 		if ('revision' in request && request.revision !== record.revision) throw signingOperationError('This approval or response belongs to an earlier review')
 		if (request.method === 'signing_cancel') {
 			if (record.phase === 'submitting' || record.phase === 'submitted' || record.phase === 'confirmed') throw signingOperationError('A submitted transaction cannot be cancelled here. Reconcile it by its transaction hash.')
-			return await storeRecord({ ...record, phase: 'cancelled', revision: crypto.randomUUID() })
+			return await storeDirectSigningRecord({ ...record, phase: 'cancelled', revision: crypto.randomUUID() })
 		}
 		if (request.method === 'signing_broadcast' && (record.phase === 'submitting' || record.phase === 'submitted' || record.phase === 'confirmed')) return await broadcast(record)
 		await assertCurrentBinding(record)
@@ -151,7 +132,7 @@ export async function updateDirectSigning(request: DirectSigningRequest, refresh
 				if (refreshReview === undefined) throw signingOperationError('Fee changes require a refreshed transaction explanation')
 				const edited = editTransactionFees(record, request)
 				await refreshReview(edited)
-				return await storeRecord(edited)
+				return await storeDirectSigningRecord(edited)
 			}
 			case 'signing_approve': return await approveSigningRequest(record)
 			case 'signing_result': return await acceptSigningResult(record, request.result)
@@ -184,14 +165,14 @@ async function approveSigningRequest(record: DirectSigningRecord) {
 	})
 	if (record.input.method === 'eth_sendTransaction' && conflictingTransaction !== undefined) throw signingOperationError('Finish or cancel this account’s pending transaction before approving another nonce')
 	await checkTransactionFreshness(record)
-	return await storeRecord({ ...record, phase: 'approved' })
+	return await storeDirectSigningRecord({ ...record, phase: 'approved' })
 }
 
 async function acceptSigningResult(record: DirectSigningRecord, result: string) {
 	if (record.phase !== 'approved') throw signingOperationError('No current approval for this signature')
 	const verifiedResult = await verifyDirectResult(record.input, result)
 	await assertCurrentBinding(record)
-	return await storeRecord({ ...record, phase: 'signed', result: verifiedResult, ...(record.input.method === 'eth_sendTransaction' ? { transactionHash: keccak256(verifiedResult) } : {}) })
+	return await storeDirectSigningRecord({ ...record, phase: 'signed', result: verifiedResult, ...(record.input.method === 'eth_sendTransaction' ? { transactionHash: keccak256(verifiedResult) } : {}) })
 }
 
 async function broadcast(record: DirectSigningRecord) {
@@ -203,19 +184,19 @@ async function broadcast(record: DirectSigningRecord) {
 	if (receipt !== null) {
 		const parsed = funtypes.ReadonlyObject({ transactionHash: EthereumBytes32, blockNumber: EthereumQuantity, status: funtypes.Union(funtypes.Literal('0x0'), funtypes.Literal('0x1')) }).parse(receipt)
 		if (parsed.transactionHash !== hash) throw signingOperationError('RPC receipt belongs to a different transaction')
-		return await storeRecord({ ...record, phase: 'confirmed', executionSucceeded: parsed.status === '0x1' })
+		return await storeDirectSigningRecord({ ...record, phase: 'confirmed', executionSucceeded: parsed.status === '0x1' })
 	}
 	const known: unknown = await rpc.jsonRpcRequest({ method: 'eth_getTransactionByHash', params: [hash] })
 	if (known !== null) {
 		if (funtypes.ReadonlyObject({ hash: EthereumBytes32 }).parse(known).hash !== hash) throw signingOperationError('RPC returned a different transaction while reconciling submission')
-		return await storeRecord({ ...record, phase: 'submitted' })
+		return await storeDirectSigningRecord({ ...record, phase: 'submitted' })
 	}
 	if (record.phase === 'submitted' || record.phase === 'confirmed') throw signingOperationError('Previously submitted transaction is not currently visible. Keep its hash and check the configured RPC before taking further action.')
 	if (record.phase === 'signed') await checkTransactionFreshness(record)
-	const submitting = await storeRecord({ ...record, phase: 'submitting' })
+	const submitting = await storeDirectSigningRecord({ ...record, phase: 'submitting' })
 	const returnedHash = EthereumBytes32.parse(await rpc.jsonRpcRequest({ method: 'eth_sendRawTransaction', params: [bytesFromHex(ensureHex(record.result))] }))
 	if (returnedHash !== hash) throw signingOperationError('RPC returned a different transaction hash; reconcile the signed transaction hash before proceeding')
-	return await storeRecord({ ...submitting, phase: 'submitted' })
+	return await storeDirectSigningRecord({ ...submitting, phase: 'submitted' })
 }
 
 /** Refresh the existing explanation using the final nonce and fees, and bind its completion to this payload revision. */

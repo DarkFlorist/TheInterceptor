@@ -13,8 +13,8 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { getErrorMessage } from '../utils/errors.js'
 import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { prepareSavedBrowserWalletForwarding } from './browserWalletForwarding.js'
-import { openDirectSigning, readDirectSigningRecords } from './directSigning.js'
-import { getSigningWalletBinding } from './storageVariables.js'
+import { openDirectSigning } from './directSigning.js'
+import { getSigningWalletBinding, readDirectSigningRecords } from './storageVariables.js'
 
 type SigningAdmission =
 	| { readonly status: 'continue', readonly forwarding: { readonly expectedProviderId?: string } }

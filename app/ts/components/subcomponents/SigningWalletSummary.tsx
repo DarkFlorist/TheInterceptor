@@ -1,11 +1,11 @@
-import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { sendPopupMessageToBackgroundPage, getHtmlFile } from '../../background/backgroundUtils.js'
 import { useEffect, useState } from 'preact/hooks'
 import type { SigningWalletBindings } from '../../types/signingWallet.js'
 import { signingWalletDescription } from '../../signing/backend.js'
 import { sendSigningPageRequest } from '../../utils/signingPageMessages.js'
 
 export function openSigningWalletSetup(address?: bigint) {
-	const page = browser.runtime.getManifest().manifest_version === 2 ? 'html/signingWallet.html' : 'html3/signingWalletV3.html'
+	const page = getHtmlFile('signingWallet')
 	return browser.tabs.create({ url: `${ browser.runtime.getURL(page) }${ address === undefined ? '' : `?address=0x${ address.toString(16).padStart(40, '0') }` }` })
 }
 

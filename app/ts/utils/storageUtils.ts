@@ -1,3 +1,4 @@
+import { DirectSigningRecords } from '../types/directSigning.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumAddressOrMissing, LiteralConverterParserFactory, serialize } from '../types/wire-types.js'
 import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
@@ -76,6 +77,7 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	signerName: SignerName,
 	signingAddressPreferences: SigningAddressPreferences,
 	signingWalletBindings: SigningWalletBindings,
+	directSigningRequestsV1: DirectSigningRecords,
 	selectedSigningAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 	currentTabId: funtypes.Union(funtypes.Undefined, funtypes.Number),
 	rpcConnectionStatus: RpcConnectionStatus,
@@ -123,6 +125,7 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('signerName'),
 	funtypes.Literal('signingAddressPreferences'),
 	funtypes.Literal('signingWalletBindings'),
+	funtypes.Literal('directSigningRequestsV1'),
 	funtypes.Literal('currentTabId'),
 	funtypes.Literal('rpcConnectionStatus'),
 	funtypes.Literal('ethereumSubscriptionsAndFilters'),
