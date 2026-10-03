@@ -1,9 +1,12 @@
-import { contentScriptRegistrationSettingsKeys, getContentScriptConfiguration, getInterceptorDisabledSites, getSettings } from './settings.js'
+import { getSettings, getWebsiteAccessFromStoredItems } from './settings.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from '../utils/requests.js'
-import type { ContentScriptConfiguration } from '../types/contentScriptSettings.js'
+import { ContentScriptHostingSettings, contentScriptRegistrationSettingsKeys } from '../types/contentScriptSettings.js'
 import { getSafeAppsHostMatchPatterns } from '../utils/safeAppsHosting.js'
+import { getChromeSiteMatchPatterns } from '../utils/chromeMatchPatterns.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from '../utils/errors.js'
 import { INPAGE_SCRIPTS, SAFE_APPS_HOST_SCRIPTS } from '../config/injectedScripts.js'
+import { DEFAULT_SAFE_APPS_HOST_ORIGINS } from '../types/safeAppsHosting.js'
+import { getInterceptorDisabledSites } from './websiteAccessPolicy.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
@@ -14,6 +17,33 @@ const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPatt
 const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
 
 type ContentScriptRegistrationOutcome = 'configuration-applied' | 'hosting-failed'
+type ContentScriptConfiguration = {
+	readonly cacheKey: string
+	readonly excludeMatches: string[]
+	readonly hosting: { readonly matches: string[], readonly origins: readonly string[] } | { readonly error: Error }
+}
+
+// One storage snapshot owns both the cache identity and the desired registration patterns.
+async function getContentScriptConfiguration(): Promise<ContentScriptConfiguration> {
+	const storedItems = await browser.storage.local.get(contentScriptRegistrationSettingsKeys)
+	const websiteAccess = await getWebsiteAccessFromStoredItems(storedItems)
+	return {
+		cacheKey: JSON.stringify(storedItems),
+		excludeMatches: getChromeSiteMatchPatterns(getInterceptorDisabledSites(websiteAccess)),
+		hosting: getHostingConfiguration(storedItems),
+	}
+}
+
+function getHostingConfiguration(storedItems: unknown): ContentScriptConfiguration['hosting'] {
+	const compatibility = ContentScriptHostingSettings.pick('safeAppsCompatibilityMode').safeParse(storedItems)
+	if (!compatibility.success) return { error: new Error(compatibility.message) }
+	// Unselected hosting data is inert while compatibility is disabled, just as in the ordinary settings getters.
+	if (compatibility.value.safeAppsCompatibilityMode !== true) return { matches: [], origins: DEFAULT_SAFE_APPS_HOST_ORIGINS }
+	const hosting = ContentScriptHostingSettings.safeParse(storedItems)
+	if (!hosting.success) return { error: new Error(hosting.message) }
+	const origins = hosting.value.safeAppsHostOrigins ?? DEFAULT_SAFE_APPS_HOST_ORIGINS
+	return { matches: getSafeAppsHostMatchPatterns(origins), origins }
+}
 
 type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 // The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
@@ -106,6 +136,7 @@ export function createContentScriptRegistrationService() {
 	let appliedSettingsKey: string | undefined
 	let appliedBaseKey: string | undefined
 	let appliedOutcome: ContentScriptRegistrationOutcome = 'configuration-applied'
+	let appliedHosting: Extract<ContentScriptConfiguration['hosting'], { readonly matches: string[] }> | undefined
 	let appliedAttempt = 0
 	const queueUpdate = (failedAttemptToRetry?: number) => {
 		const nextUpdate = previousUpdate.then(async () => {
@@ -128,11 +159,13 @@ export function createContentScriptRegistrationService() {
 				appliedAttempt += 1
 				appliedSettingsKey = settingsKey
 				appliedOutcome = outcome
+				appliedHosting = outcome === 'configuration-applied' && 'matches' in configuration.hosting ? configuration.hosting : undefined
 				return outcome
 			} catch (error: unknown) {
 				// A failed mutation can leave any script definition unknown, including a previously cached configuration.
 				appliedSettingsKey = undefined
 				appliedBaseKey = undefined
+				appliedHosting = undefined
 				throw error
 			}
 		})
@@ -171,9 +204,10 @@ export function createContentScriptRegistrationService() {
 	}
 	const ensureSafeAppsHostRegistered = async (origin: string) => {
 		if (await update() !== 'configuration-applied') return false
-		const matches = getSafeAppsHostMatchPatterns([origin])
+		const hosting = appliedHosting
+		if (hosting === undefined || !hosting.origins.includes(origin)) return false
 		const scripts = await browser.scripting.getRegisteredContentScripts()
-		return scripts.some((script) => script.id === 'safe-apps-host' && matches.every((pattern) => script.matches?.includes(pattern) === true))
+		return scripts.some((script) => script.id === 'safe-apps-host' && script.matches?.length === hosting.matches.length && hosting.matches.every((pattern) => script.matches?.includes(pattern) === true))
 	}
 	return { update, start, stop, ensureSafeAppsHostRegistered }
 }
@@ -183,7 +217,7 @@ export const contentScriptRegistration = createContentScriptRegistrationService(
 
 const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {
 	if (!isInjectableSite(content.url)) return false
-	const disabledSites = getInterceptorDisabledSites(await getSettings())
+	const disabledSites = getInterceptorDisabledSites((await getSettings()).websiteAccess)
 	// The tab can navigate while settings are loading, including to another extension page where injection is prohibited.
 	const thisTab = await getTabIfExists(content.tabId)
 	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false

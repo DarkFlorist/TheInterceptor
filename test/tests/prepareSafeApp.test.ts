@@ -2,13 +2,16 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { runInNewContext } from 'node:vm'
 import { requestSafeAppConnection } from '../../app/inpage/ts/requestSafeAppConnection.js'
-import { prepareSafeAppTab, cancelSafeAppPreparation } from '../../app/ts/background/prepareSafeApp.js'
+import { safeAppPreparation } from '../../app/ts/background/prepareSafeApp.js'
 import { requestPopupPrepareSafeApp, requestPopupCancelPrepareSafeApp } from '../../app/ts/background/backgroundUtils.js'
 import { PopupMessageReplyRequests, PopupReplyOption } from '../../app/ts/types/interceptor-reply-messages.js'
 import { SAFE_APPS_PREPARATION_TIMEOUT_MS, SAFE_APPS_PREPARATION_CANCEL_EVENT, SAFE_APPS_PREPARATION_CANCEL_MARKER } from '../../app/inpage/ts/safeAppsProtocol.js'
 import { contentScriptRegistration } from '../../app/ts/background/contentScriptRegistration.js'
 import { withSilencedConsole } from './consoleSilence.js'
 import { createSafeHostHarness } from '../fixtures/safeAppsHostHarness.js'
+
+const prepareSafeAppTab = safeAppPreparation.start
+const cancelSafeAppPreparation = safeAppPreparation.cancel
 
 function createRegistrationMock(origin: string, beforeRegister?: () => Promise<void>, initiallyRegistered = true) {
 	const scripts = new Map<string, { readonly id: string, readonly matches: readonly string[] }>()

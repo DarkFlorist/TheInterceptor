@@ -11,6 +11,7 @@ export function SafeAppsHostingSettings({ enabled, origins }: { enabled: boolean
 	const { value: cancellation, waitFor: waitForCancellation } = useAsyncState<void>()
 	const { value: action, waitFor } = useAsyncState<void>()
 	const saveOrigins = async (next: readonly string[]) => {
+		if (!enabled) throw new Error('Enable Safe Apps compatibility before changing websites.')
 		await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_ChangeSettings', data: { safeAppsHostOrigins: next } })
 		await sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport({ method: 'popup_requestSettings' })
 	}
@@ -24,10 +25,10 @@ export function SafeAppsHostingSettings({ enabled, origins }: { enabled: boolean
 				try { await requestPopupPrepareSafeApp(origin) } finally { connectingOrigin.value = undefined }
 			}) } class = 'button is-primary' />
 			{ connectingOrigin.value === origin ? <AsyncActionButton state = { cancellation.value.state } text = 'Cancel connection' pendingText = 'Cancelling…' onClick = { () => waitForCancellation(async () => await requestPopupCancelPrepareSafeApp(origin)) } class = 'button' /> : <></> }
-			<button type = 'button' class = 'button' disabled = { action.value.state === 'pending' } onClick = { () => waitFor(async () => await saveOrigins(origins.filter((existing) => existing !== origin))) }>Remove</button>
+			<button type = 'button' class = 'button' disabled = { !enabled || action.value.state === 'pending' } onClick = { () => waitFor(async () => await saveOrigins(origins.filter((existing) => existing !== origin))) }>Remove</button>
 		</div>) }
-		<label>Website URL <input type = 'url' value = { website.value } placeholder = 'https://app.example.com' onInput = { (event) => { website.value = event.currentTarget.value } } /></label>
-		<AsyncActionButton state = { action.value.state } disabled = { website.value.trim() === '' || origins.length >= SAFE_APPS_HOST_ORIGIN_LIMIT } text = 'Add website' pendingText = 'Saving…' class = 'button' onClick = { () => waitFor(async () => {
+		<label>Website URL <input type = 'url' value = { website.value } placeholder = 'https://app.example.com' disabled = { !enabled } onInput = { (event) => { website.value = event.currentTarget.value } } /></label>
+		<AsyncActionButton state = { action.value.state } disabled = { !enabled || website.value.trim() === '' || origins.length >= SAFE_APPS_HOST_ORIGIN_LIMIT } text = 'Add website' pendingText = 'Saving…' class = 'button' onClick = { () => waitFor(async () => {
 			const origin = parseSafeAppsHostOrigin(website.value.trim())
 			if (!origins.includes(origin)) await saveOrigins([...origins, origin])
 			website.value = ''

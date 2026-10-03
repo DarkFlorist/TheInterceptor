@@ -1,10 +1,11 @@
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { contentScriptRegistration, updateContentScriptInjectionStrategyManifestV2 } from './contentScriptRegistration.js'
-import { getInterceptorDisabledSites, updateWebsiteAccess } from './settings.js'
+import { updateWebsiteAccess } from './settings.js'
+import { getInterceptorDisabledSites } from './websiteAccessPolicy.js'
 
 function haveSameDisabledSites(previousWebsiteAccess: WebsiteAccessArray, nextWebsiteAccess: WebsiteAccessArray) {
-	const previousDisabledSites = new Set(getInterceptorDisabledSites({ websiteAccess: previousWebsiteAccess }))
-	const nextDisabledSites = new Set(getInterceptorDisabledSites({ websiteAccess: nextWebsiteAccess }))
+	const previousDisabledSites = new Set(getInterceptorDisabledSites(previousWebsiteAccess))
+	const nextDisabledSites = new Set(getInterceptorDisabledSites(nextWebsiteAccess))
 	return previousDisabledSites.size === nextDisabledSites.size && [...previousDisabledSites].every((origin) => nextDisabledSites.has(origin))
 }
 

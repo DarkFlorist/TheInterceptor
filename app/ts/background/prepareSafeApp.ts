@@ -61,41 +61,47 @@ type PreparationOperation = {
 	pageScript?: Promise<unknown>
 	cleanup?: Promise<void>
 }
-const preparations = new Map<string, PreparationOperation>()
 const cancelledReply = (operation: PreparationOperation): PrepareSafeAppReply['data'] => ({ success: false, errorMessage: typeof operation.abort.signal.reason === 'string' ? operation.abort.signal.reason : safeAppsPreparationMessages.cancelled })
 const isMissingPreparationDocument = (error: unknown) => isMissingBrowserTargetError(error) || error instanceof Error && (error.message.startsWith('No document with id') || error.message === 'The tab was closed.' || error.message === 'The frame was removed.' || /^Frame with ID \d+ was removed\./.test(error.message))
 
-export async function prepareSafeAppTab(value: string): Promise<PrepareSafeAppReply['data']> {
-	const origin = parseSafeAppsHostOrigin(value)
-	if (preparations.has(origin)) return { success: false, errorMessage: 'A connection preparation is already running for this website. Cancel it before retrying.' }
-	const abort = new AbortController()
-	const operation: PreparationOperation = { abort, cancelled: new Promise((resolve) => abort.signal.addEventListener('abort', () => resolve(undefined), { once: true })) }
-	preparations.set(origin, operation)
-	const onRemoved = (tabId: number) => {
-		if (operation.tabId === tabId) abort.abort('The website tab was closed. Reopen it before connecting.')
+
+// The background runtime owns every preparation until its page script and cancellation cleanup settle.
+function createSafeAppPreparationService() {
+	const preparations = new Map<string, PreparationOperation>()
+	const start = async (value: string): Promise<PrepareSafeAppReply['data']> => {
+		const origin = parseSafeAppsHostOrigin(value)
+		if (preparations.has(origin)) return { success: false, errorMessage: 'A connection preparation is already running for this website. Cancel it before retrying.' }
+		const abort = new AbortController()
+		const operation: PreparationOperation = { abort, cancelled: new Promise((resolve) => abort.signal.addEventListener('abort', () => resolve(undefined), { once: true })) }
+		preparations.set(origin, operation)
+		const onRemoved = (tabId: number) => {
+			if (operation.tabId === tabId) abort.abort('The website tab was closed. Reopen it before connecting.')
+		}
+		browser.tabs.onRemoved.addListener(onRemoved)
+		try {
+			return await prepareSafeAppTabOperation(origin, operation)
+		} catch (error: unknown) {
+			if (abort.signal.aborted) return cancelledReply(operation)
+			if (isMissingPreparationDocument(error)) return { success: false, errorMessage: 'The website tab closed or navigated. Reopen it before connecting.' }
+			throw error
+		} finally {
+			browser.tabs.onRemoved.removeListener(onRemoved)
+			try { await operation.cleanup } finally { preparations.delete(origin) }
+		}
 	}
-	browser.tabs.onRemoved.addListener(onRemoved)
-	try {
-		return await prepareSafeAppTabOperation(origin, operation)
-	} catch (error: unknown) {
-		if (abort.signal.aborted) return cancelledReply(operation)
-		if (isMissingPreparationDocument(error)) return { success: false, errorMessage: 'The website tab closed or navigated. Reopen it before connecting.' }
-		throw error
-	} finally {
-		browser.tabs.onRemoved.removeListener(onRemoved)
-		try { await operation.cleanup } finally { preparations.delete(origin) }
+	const cancel = async (value: string): Promise<void> => {
+		const origin = parseSafeAppsHostOrigin(value)
+		const operation = preparations.get(origin)
+		if (operation === undefined) return
+		// Keep the operation reserved until page cleanup finishes; a late cancellation must not cancel a subsequent retry.
+		operation.cleanup ??= clearPreparationScript(operation)
+		operation.abort.abort(safeAppsPreparationMessages.cancelled)
+		await operation.cleanup
 	}
+	return { start, cancel }
 }
 
-export async function cancelSafeAppPreparation(value: string) {
-	const origin = parseSafeAppsHostOrigin(value)
-	const operation = preparations.get(origin)
-	if (operation === undefined) return
-	// Keep the operation reserved until page cleanup finishes; a late cancellation must not cancel a subsequent retry.
-	operation.cleanup ??= clearPreparationScript(operation)
-	operation.abort.abort(safeAppsPreparationMessages.cancelled)
-	await operation.cleanup
-}
+export const safeAppPreparation = createSafeAppPreparationService()
 
 async function clearPreparationScript(operation: PreparationOperation) {
 	if (operation.tabId === undefined || operation.documentId === undefined) return

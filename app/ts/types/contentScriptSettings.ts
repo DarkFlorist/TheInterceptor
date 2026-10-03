@@ -6,9 +6,3 @@ export const ContentScriptHostingSettings = funtypes.ReadonlyPartial({ safeAppsC
 export const ContentScriptSettings = funtypes.ReadonlyPartial({ ...ContentScriptHostingSettings.fields, websiteAccess: WebsiteAccessArray })
 // Storage validation, registration snapshots and observation use the same field definitions.
 export const contentScriptRegistrationSettingsKeys = Object.keys(ContentScriptSettings.fields)
-
-export type ContentScriptConfiguration = {
-	readonly cacheKey: string
-	readonly excludeMatches: string[]
-	readonly hosting: { readonly matches: string[], readonly origins: readonly string[] } | { readonly error: Error }
-}
