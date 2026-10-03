@@ -129,7 +129,7 @@ const transactionQueueTotalGasLimitFromInput = (block: SimulationStateInputMinim
 	return block.transactions.reduce((totalGasUsed, transaction) => totalGasUsed + transaction.signedTransaction.gas, 0n)
 }
 
-const isEmptySimulationInput = (simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData) => simulationStateInput.length === 0 || isDelegateClearingOnlyInput(simulationStateInput)
+const needsNoSimulationRpc = (simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData) => simulationStateInput.length === 0 || isDelegateClearingOnlyInput(simulationStateInput)
 
 const getResolvedSimulationInputValue = (
 	simulationStateInput: ResolvedSimulationInput | SimulationStateInputMinimalData | undefined,
@@ -483,7 +483,7 @@ const inspectSimulationInput = async (
 		simulationConductedTimestamp: new Date(),
 		rpcNetwork: ethereumClientService.getRpcEntry(),
 	}
-	if (isEmptySimulationInput(simulationStateInput)) {
+	if (needsNoSimulationRpc(simulationStateInput)) {
 		return {
 			success: true,
 			base,
@@ -552,7 +552,7 @@ export const createExecutionSimulationState = async (
 export const createSimulationState = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationStateInput: SimulationStateInput): Promise<SimulationState> => {
 	const executionSimulationState = await createExecutionSimulationState(ethereumClientService, requestAbortController, simulationStateInput)
 	if (executionSimulationState.success === false) return executionSimulationState
-	if (isEmptySimulationInput(simulationStateInput)) {
+	if (needsNoSimulationRpc(simulationStateInput)) {
 		return {
 			...executionSimulationState,
 			simulatedBlocks: executionSimulationState.simulatedBlocks.map((block) => ({ ...block, simulatedTransactions: [] })),

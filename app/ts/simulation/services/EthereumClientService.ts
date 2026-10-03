@@ -233,7 +233,7 @@ export class EthereumClientService {
 
 	public readonly clearDelegationCache = () => this.delegationCache.clear()
 
-	public readonly getCachedDelegation = (address: bigint, abortController?: AbortController) => this.delegationCache.get(address, abortController)
+	public readonly getCachedDelegation = (address: bigint, abortController?: AbortController, options?: { refresh?: boolean }) => this.delegationCache.get(address, abortController, options?.refresh)
 
 	public async getBlock(requestAbortController: AbortController | undefined, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
 	public async getBlock(requestAbortController: AbortController | undefined, blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader>

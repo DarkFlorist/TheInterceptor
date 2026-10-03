@@ -271,6 +271,38 @@ describe('delegate clearing in simulation', () => {
 		assert.equal(await replacementEthereum.getCachedDelegation(activeAddress), undefined)
 	})
 
+	test('refreshes popup delegation checks after a cached no-delegate result', async () => {
+		installBrowserMock()
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
+		const settings = await getSettings()
+		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
+		let code = '0x'
+		let codeRequests = 0
+		const ethereum = new EthereumClientService({
+			rpcUrl: rpcEntry.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest(request) {
+				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
+				codeRequests += 1
+				return code
+			},
+		}, async () => undefined, async () => undefined, rpcEntry)
+		assert.equal(await ethereum.getCachedDelegation(activeAddress), undefined)
+		code = `0xef0100${ addressString(delegate).slice(2) }`
+		const requestReply = await requestDelegationSimulation(settings, ethereum, activeAddress, rpcEntry.chainId)
+		assert.deepEqual(requestReply.data.status, { type: 'delegated', delegate })
+		assert.equal(codeRequests, 2)
+		await setDelegateClearingEnabled(activeAddress, rpcEntry.chainId, true)
+		const services = { ethereum, tokenPriceService: new TokenPriceService(ethereum, 60000) }
+		const toggleReply = await setDelegationSimulation(settings, services, activeAddress, rpcEntry.chainId, true)
+		assert.deepEqual(toggleReply.data, { ok: true, address: activeAddress, chainId: rpcEntry.chainId, enabled: true })
+		assert.equal(codeRequests, 3)
+		code = '0x'
+		const missingReply = await setDelegationSimulation(settings, services, activeAddress, rpcEntry.chainId, true)
+		assert.deepEqual(missingReply.data, { ok: false, message: 'This account no longer has an EIP-7702 delegate.' })
+		assert.equal(codeRequests, 4)
+	})
+
 	test('does not cache a failed delegation lookup as no delegate', async () => {
 		let codeRequests = 0
 		const address = activeAddress + 2n

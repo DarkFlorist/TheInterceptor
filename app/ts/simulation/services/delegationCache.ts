@@ -32,11 +32,11 @@ export function createDelegationCache(lookup: (address: bigint, controller: Abor
 		return pending
 	}
 
-	const get = async (address: bigint, abortController?: AbortController) => {
+	const get = async (address: bigint, abortController?: AbortController, refresh = false) => {
 		if (abortController?.signal.aborted) throw abortController.signal.reason ?? NEW_BLOCK_ABORT
 		const key = addressString(address)
 		const cached = resolved.get(key)
-		if (cached !== undefined && Date.now() - cached.checkedAt < DELEGATION_CACHE_AGE_MS) return cached.delegate
+		if (!refresh && cached !== undefined && Date.now() - cached.checkedAt < DELEGATION_CACHE_AGE_MS) return cached.delegate
 		const pending = pendingByAddress.get(key) ?? startLookup(address, key)
 		pending.waiters += 1
 		const signal = abortController?.signal

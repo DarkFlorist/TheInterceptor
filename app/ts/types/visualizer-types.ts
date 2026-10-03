@@ -192,7 +192,7 @@ export const SimulationStateInputBlock = funtypes.ReadonlyObject({
 	blockTimeManipulation: BlockTimeManipulation,
 	simulateWithZeroBaseFee: funtypes.Boolean,
 }).And(funtypes.ReadonlyPartial({
-	// Carries the account's clearing choice into blocks derived from this input.
+	// Optional for older stored inputs; derived blocks carry this choice until RPC state overrides are built.
 	delegateClearedAddress: EthereumAddress,
 }))
 
