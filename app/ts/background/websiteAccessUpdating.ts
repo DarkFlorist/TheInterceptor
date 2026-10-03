@@ -6,6 +6,6 @@ import { updateWebsiteAccess } from './settings.js'
 export async function updateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections: WebsiteTabConnections, update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray) {
 	await updateContentScriptInjectionConfigurationAndReloadTabsIfChanged(
 		websiteTabConnections,
-		async (transaction) => await updateWebsiteAccess(update, transaction),
+		async () => await updateWebsiteAccess(update),
 	)
 }

@@ -29,20 +29,24 @@ export async function settingsOpened() {
 	})
 }
 
-export async function importSettings(settingsData: ImportSettings, websiteTabConnections: WebsiteTabConnections): Promise<ImportSettingsReply> {
+export async function importSettingsWithStateChangeStatus(settingsData: ImportSettings, websiteTabConnections: WebsiteTabConnections): Promise<{ readonly reply: ImportSettingsReply, readonly settingsMayHaveChanged: boolean }> {
 	if (!isJSON(settingsData.data.fileContents)) {
-		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSON file.' } }
+		return { reply: { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid JSON file.' } }, settingsMayHaveChanged: false }
 	}
 	const parsed = ExportedSettings.safeParse(JSON.parse(settingsData.data.fileContents))
 	if (!parsed.success) {
-		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }
+		return { reply: { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }, settingsMayHaveChanged: false }
 	}
 	try {
-		await updateContentScriptInjectionConfigurationAndReloadTabsIfChanged(websiteTabConnections, async (transaction) => await importSettingsAndAddressBook(parsed.value, transaction))
+		await updateContentScriptInjectionConfigurationAndReloadTabsIfChanged(websiteTabConnections, async () => await importSettingsAndAddressBook(parsed.value))
 	} catch (error: unknown) {
-		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: error instanceof Error ? error.message : 'Failed to refresh content script registration.' } }
+		return { reply: { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: error instanceof Error ? error.message : 'Failed to refresh content script registration.' } }, settingsMayHaveChanged: true }
 	}
-	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
+	return { reply: { method: 'popup_initiate_export_settings_reply', data: { success: true } }, settingsMayHaveChanged: true }
+}
+
+export async function importSettings(settingsData: ImportSettings, websiteTabConnections: WebsiteTabConnections): Promise<ImportSettingsReply> {
+	return (await importSettingsWithStateChangeStatus(settingsData, websiteTabConnections)).reply
 }
 
 export async function exportSettings() {

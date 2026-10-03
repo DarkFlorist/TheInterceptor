@@ -530,7 +530,7 @@ describe('popup message dispatcher seams', () => {
 		assert.deepEqual(reloadedTabs, [])
 	})
 
-	test('reports import failure and restores injection settings when content script registration fails', async () => {
+	test('reports import failure, restores injection settings, and broadcasts persisted settings when content script registration fails', async () => {
 		const previousWebsiteAccess = [{
 			website: { websiteOrigin: 'existing.test', title: 'Existing website' },
 			addressAccess: [],
@@ -584,13 +584,24 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(importReply?.method, 'popup_initiate_export_settings_reply')
 		if (importReply?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected failed import broadcast.')
 		assert.deepEqual(importReply.data, { success: false, errorMessage: 'Content script registration unavailable' })
-		assert.equal(messages.some(({ method }) => method === 'popup_settingsUpdated'), false)
+		const settingsUpdated = messages.find(({ method }) => method === 'popup_settingsUpdated')
+		assert.equal(settingsUpdated?.method, 'popup_settingsUpdated')
+		if (settingsUpdated?.method !== 'popup_settingsUpdated') throw new Error('Expected persisted settings broadcast.')
+		assert.equal(settingsUpdated.data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
+		assert.equal(settingsUpdated.data.simulationMode, false)
+		assert.deepEqual(settingsUpdated.data.websiteAccess.map((entry) => ({ origin: entry.website.websiteOrigin, interceptorDisabled: entry.interceptorDisabled })), [{ origin: 'imported-disabled.test', interceptorDisabled: false }])
 		assert.equal(storageState.metamaskCompatibilityMode, false)
-		assert.deepEqual(storageState.websiteAccess, previousWebsiteAccess)
+		assert.deepEqual(storageState.websiteAccess, [{
+			website: { websiteOrigin: 'imported-disabled.test', title: 'Imported disabled website', icon: undefined },
+			addressAccess: [],
+			access: true,
+			interceptorDisabled: false,
+			declarativeNetRequestBlockMode: 'disabled',
+		}])
 		assert.deepEqual(reloadedTabs, [])
 	})
 
-	test('reports import failure and restores injection settings when a later storage write fails', async () => {
+	test('reports import failure, restores injection settings, and broadcasts persisted settings when a later storage write fails', async () => {
 		const previousWebsiteAccess = [{
 			website: { websiteOrigin: 'existing.test', title: 'Existing website' },
 			addressAccess: [],
@@ -644,8 +655,20 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(importReply?.method, 'popup_initiate_export_settings_reply')
 		if (importReply?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected failed import broadcast.')
 		assert.deepEqual(importReply.data, { success: false, errorMessage: 'Later imported setting could not be stored' })
+		const settingsUpdated = messages.find(({ method }) => method === 'popup_settingsUpdated')
+		assert.equal(settingsUpdated?.method, 'popup_settingsUpdated')
+		if (settingsUpdated?.method !== 'popup_settingsUpdated') throw new Error('Expected persisted settings broadcast.')
+		assert.equal(settingsUpdated.data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
+		assert.equal(settingsUpdated.data.simulationMode, false)
+		assert.deepEqual(settingsUpdated.data.websiteAccess.map((entry) => ({ origin: entry.website.websiteOrigin, interceptorDisabled: entry.interceptorDisabled })), [{ origin: 'imported-disabled.test', interceptorDisabled: false }])
 		assert.equal(storageState.metamaskCompatibilityMode, false)
-		assert.deepEqual(storageState.websiteAccess, previousWebsiteAccess)
+		assert.deepEqual(storageState.websiteAccess, [{
+			website: { websiteOrigin: 'imported-disabled.test', title: 'Imported disabled website', icon: undefined },
+			addressAccess: [],
+			access: true,
+			interceptorDisabled: false,
+			declarativeNetRequestBlockMode: 'disabled',
+		}])
 		assert.deepEqual(contentScriptRegistrationOperations, [])
 		assert.deepEqual(reloadedTabs, [])
 	})

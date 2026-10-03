@@ -4,9 +4,9 @@ import { reportUnexpectedError } from '../utils/errors.js'
 import { Semaphore } from '../utils/semaphore.js'
 import { getContentScriptInjectionConfiguration, hasSameContentScriptInjectionConfiguration, restoreContentScriptInjectionConfiguration, type ContentScriptInjectionConfigurationSnapshot } from './contentScriptInjectionConfiguration.js'
 import { getConnectedTabIdsToReload, reloadTabs } from './reloadConnectedTabs.js'
-import { withContentScriptInjectionSettingsTransaction, type ContentScriptInjectionSettingsTransaction } from './settings.js'
 
 const contentScriptInjectionStrategySemaphore = new Semaphore(1)
+const contentScriptInjectionConfigurationSemaphore = new Semaphore(1)
 
 export async function refreshContentScriptInjectionStrategy(configuration?: ContentScriptInjectionConfigurationSnapshot) {
 	await contentScriptInjectionStrategySemaphore.execute(async () => {
@@ -22,18 +22,18 @@ export async function refreshContentScriptInjectionStrategyAndReloadConnectedTab
 	await reloadTabs(tabIdsToReload)
 }
 
-export async function updateContentScriptInjectionConfigurationAndReloadTabsIfChanged<T>(websiteTabConnections: WebsiteTabConnections, update: (transaction: ContentScriptInjectionSettingsTransaction) => Promise<T>) {
-	return await withContentScriptInjectionSettingsTransaction(async (transaction) => {
+export async function updateContentScriptInjectionConfigurationAndReloadTabsIfChanged<T>(websiteTabConnections: WebsiteTabConnections, update: () => Promise<T>) {
+	return await contentScriptInjectionConfigurationSemaphore.execute(async () => {
 		const configurationBeforeUpdate = await getContentScriptInjectionConfiguration()
 		try {
-			const result = await update(transaction)
+			const result = await update()
 			const configurationAfterUpdate = await getContentScriptInjectionConfiguration()
 			if (hasSameContentScriptInjectionConfiguration(configurationBeforeUpdate, configurationAfterUpdate)) return result
 			await refreshContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections, configurationAfterUpdate)
 			return result
 		} catch (error: unknown) {
 			try {
-				await restoreContentScriptInjectionConfiguration(configurationBeforeUpdate, transaction)
+				await restoreContentScriptInjectionConfiguration(configurationBeforeUpdate)
 			} catch (rollbackError: unknown) {
 				await reportUnexpectedError(rollbackError, { code: 'content_script_injection_settings_rollback_failed' })
 			}

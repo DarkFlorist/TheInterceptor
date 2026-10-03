@@ -1,7 +1,7 @@
 import { updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { popupMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
-import { changeSettings, exportSettings, importSettings, openNewTab, setNewRpcList, settingsOpened } from '../popupMessageHandlers.js'
+import { changeSettings, exportSettings, importSettingsWithStateChangeStatus, openNewTab, setNewRpcList, settingsOpened } from '../popupMessageHandlers.js'
 import { getSettings } from '../settings.js'
 
 export const settingsPopupMessageHandlers = {
@@ -9,9 +9,9 @@ export const settingsPopupMessageHandlers = {
 	popup_ChangeSettings: popupMessageHandler('popup_ChangeSettings', async (context, request) => await changeSettings(context.simulationServicesOwner, context.websiteTabConnections, request, context.simulationAbortController)),
 	popup_openSettings: popupMessageHandler('popup_openSettings', async () => await openNewTab('settingsView')),
 	popup_import_settings: popupMessageHandler('popup_import_settings', async (context, request) => {
-		const importSettingsReply = await importSettings(request, context.websiteTabConnections)
+		const { reply: importSettingsReply, settingsMayHaveChanged } = await importSettingsWithStateChangeStatus(request, context.websiteTabConnections)
 		await sendPopupMessageToOpenWindows(importSettingsReply)
-		if (!importSettingsReply.data.success) return
+		if (!settingsMayHaveChanged) return
 		const importedSettings = await getSettings()
 		const popupRefreshGeneration = await updateWebsiteApprovalAccesses(context.simulationServicesOwner, context.websiteTabConnections, importedSettings, true)
 		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: importedSettings, popupRefreshGeneration })

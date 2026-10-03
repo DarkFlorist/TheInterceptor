@@ -1,6 +1,6 @@
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { getInterceptorDisabledSites, hasSameContentScriptInjectionConfiguration, type ContentScriptInjectionConfiguration } from '../config/contentScriptInjectionConfiguration.js'
-import { getMetamaskCompatibilityMode, getSettings, restoreContentScriptInjectionSettings, type ContentScriptInjectionSettingsTransaction } from './settings.js'
+import { getMetamaskCompatibilityMode, getSettings, restoreContentScriptInjectionSettings } from './settings.js'
 
 export type ContentScriptInjectionConfigurationSnapshot = ContentScriptInjectionConfiguration & {
 	readonly websiteAccess: WebsiteAccessArray
@@ -13,6 +13,6 @@ export async function getContentScriptInjectionConfiguration(): Promise<ContentS
 	return { metamaskCompatibilityMode, interceptorDisabledSites: getInterceptorDisabledSites(settings.websiteAccess), websiteAccess: settings.websiteAccess }
 }
 
-export async function restoreContentScriptInjectionConfiguration(configuration: ContentScriptInjectionConfigurationSnapshot, transaction: ContentScriptInjectionSettingsTransaction) {
-	await restoreContentScriptInjectionSettings(configuration.metamaskCompatibilityMode, configuration.websiteAccess, transaction)
+export async function restoreContentScriptInjectionConfiguration(configuration: ContentScriptInjectionConfigurationSnapshot) {
+	await restoreContentScriptInjectionSettings(configuration.metamaskCompatibilityMode, configuration.websiteAccess)
 }

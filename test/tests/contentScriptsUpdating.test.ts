@@ -385,9 +385,9 @@ describe('content script injection strategy', () => {
 				website: { ...entry.website, title: 'Updated while refresh was pending' },
 				access: false,
 			})))
+			await newerAccessUpdate
 			releaseRegistration.resolve()
 			await assert.rejects(compatibilityUpdate, registrationError)
-			await newerAccessUpdate
 		})
 
 		assert.equal(getStorageState().metamaskCompatibilityMode, false)
