@@ -21,6 +21,7 @@ let status: DelegationStatus = { type: 'delegated', delegate }
 let requestedEnabled = false
 let lookups = 0
 let pendingSetReply: Promise<unknown> | undefined
+let pendingLookupReply: Promise<unknown> | undefined
 
 Object.defineProperty(globalThis, 'browser', {
 	value: {
@@ -29,6 +30,7 @@ Object.defineProperty(globalThis, 'browser', {
 			sendMessage: async (request: { method: string, data?: { enabled?: boolean } }) => {
 				if (request.method === 'popup_requestDelegationSimulation') {
 					lookups += 1
+					if (pendingLookupReply !== undefined) return await pendingLookupReply
 					return PopupRequestsReplies.popup_requestDelegationSimulation.serialize({ method: 'popup_requestDelegationSimulation', data: { address, chainId, status } })
 				}
 				if (request.method === 'popup_setDelegationSimulation' && request.data?.enabled !== undefined) {
@@ -51,6 +53,7 @@ afterEach(() => {
 	preferences.value = []
 	lookups = 0
 	pendingSetReply = undefined
+	pendingLookupReply = undefined
 })
 
 function option() {
@@ -81,6 +84,29 @@ async function flush() {
 }
 
 describe('delegation simulation option', () => {
+	test('lets an enabled choice be disabled while its lookup never replies', async () => {
+		const dom = installDomMock()
+		const previousHtmlInputElement = Object.getOwnPropertyDescriptor(globalThis, 'HTMLInputElement')
+		Object.defineProperty(globalThis, 'HTMLInputElement', { configurable: true, value: dom.document.createElement('input').constructor })
+		try {
+			preferences.value = [{ address, chainId }]
+			pendingLookupReply = new Promise(() => undefined)
+			await act(() => render(option(), dom.document.body))
+			await flush()
+			assert.equal(checkboxChecked(dom.document.body), true)
+			assert.match(dom.document.body.textContent, /Could not confirm the current delegate/u)
+			await changeCheckbox(dom.document.body, false)
+			await flush()
+			assert.equal(requestedEnabled, false)
+			assert.equal(checkbox(dom.document.body), undefined)
+		} finally {
+			await act(() => render(undefined, dom.document.body))
+			if (previousHtmlInputElement === undefined) Reflect.deleteProperty(globalThis, 'HTMLInputElement')
+			else Object.defineProperty(globalThis, 'HTMLInputElement', previousHtmlInputElement)
+			dom.restore()
+		}
+	})
+
 	test('keeps an enabled option available after unknown and absent delegation lookups', async () => {
 		const dom = installDomMock()
 		const previousHtmlInputElement = Object.getOwnPropertyDescriptor(globalThis, 'HTMLInputElement')

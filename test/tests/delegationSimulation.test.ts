@@ -1,6 +1,6 @@
 import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
-import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
+import { EthereumClientService, getNextBlockTimeStampOverride } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { getCurrentSimulationInput, getGovernanceExecutionSimulationInput } from '../../app/ts/background/simulationUpdating.js'
 import { requestDelegationSimulation, setDelegationSimulation } from '../../app/ts/background/popupMessageHandlers/delegationSimulation.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
@@ -18,6 +18,7 @@ import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { EthereumBlockHeader, serialize } from '../../app/ts/types/wire-types.js'
 import { SimulationStateInputBlock, toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
+import { DEFAULT_BLOCK_MANIPULATION } from '../../app/ts/config/defaults.js'
 
 const activeAddress = 0x1234567890123456789012345678901234567890n
 const rpcEntry = {
@@ -131,7 +132,8 @@ describe('delegate clearing in simulation', () => {
 		const confirmationRequest = serialize(EthSimulateV1Params, (await ethereum.prepareEthSimulateV1Input(confirmationInput, 1n, undefined)).request)
 		assert.equal(confirmationRequest.params[0].blockStateCalls.length, 1)
 		assert.equal(confirmationRequest.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
-		await assert.rejects(simulatedCallFromInput(ethereum, undefined, toResolvedSimulationInput(input), {
+		const delayedInput = [{ ...input[0], blockTimeManipulation: { type: 'SetTimetamp' as const, timeToSet: 1_800_000_000n } }]
+		await assert.rejects(simulatedCallFromInput(ethereum, undefined, toResolvedSimulationInput(delayedInput), {
 			from: activeAddress,
 			to: activeAddress + 1n,
 			value: 0n,
@@ -142,6 +144,9 @@ describe('delegate clearing in simulation', () => {
 		const callRequest = serialize(EthSimulateV1Params, ethSimulateRequests[0])
 		assert.equal(callRequest.params[0].blockStateCalls.length, 1)
 		assert.equal(callRequest.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
+		const parentBlock = EthereumBlockHeader.parse(parentBlockResponse.result)
+		if (parentBlock === null) throw new Error('Expected a parent block')
+		assert.deepEqual(ethSimulateRequests[0]?.params[0].blockStateCalls[0]?.blockOverrides?.time, getNextBlockTimeStampOverride(parentBlock.timestamp, DEFAULT_BLOCK_MANIPULATION))
 		await assert.rejects(simulateEstimateGasFromInput(ethereum, undefined, toResolvedSimulationInput(input), {
 			from: activeAddress,
 			to: activeAddress + 1n,

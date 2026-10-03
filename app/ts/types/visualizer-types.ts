@@ -191,7 +191,7 @@ export const SimulationStateInputBlock = funtypes.ReadonlyObject({
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockTimeManipulation: BlockTimeManipulation,
 	simulateWithZeroBaseFee: funtypes.Boolean,
-	// Missing values in older stored inputs parse as undefined; new block builders must carry the choice explicitly.
+	// Sole stored clearing choice; older inputs parse as undefined and block builders must carry it explicitly.
 	delegateClearedAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 })
 

@@ -37,13 +37,14 @@ export function DelegationSimulationOption({ activeAddress, rpcNetwork, simulati
 
 	const current = delegationOption.value
 	const enabled = hasDelegateClearingPreference(preferences.value, address, chainId)
-	if (current === undefined || !simulationMode.value || current.address !== address || current.chainId !== chainId || (current.status.type !== 'delegated' && !enabled)) return <></>
+	const status = current !== undefined && current.address === address && current.chainId === chainId ? current.status : { type: 'unknown' as const }
+	if (address === undefined || chainId === undefined || !simulationMode.value || (status.type !== 'delegated' && !enabled)) return <></>
 
 	const change = async (enabled: boolean) => {
 		pending.value = true
 		errorText.value = undefined
 		try {
-			const reply = await sendPopupMessageWithReply({ method: 'popup_setDelegationSimulation', data: { address: current.address, chainId: current.chainId, enabled } })
+			const reply = await sendPopupMessageWithReply({ method: 'popup_setDelegationSimulation', data: { address, chainId, enabled } })
 			if (reply === undefined) throw new Error('Interceptor did not reply while updating the delegation simulation option.')
 			if (!reply.data.ok) throw new Error(reply.data.message)
 		} catch (error) {
@@ -54,10 +55,10 @@ export function DelegationSimulationOption({ activeAddress, rpcNetwork, simulati
 	}
 
 	return <details class = 'delegation-simulation-option'>
-		<summary>{ current.status.type === 'delegated' ? 'Delegated account options' : 'Delegate clearing active' }</summary>
+		<summary>{ status.type === 'delegated' ? 'Delegated account options' : 'Delegate clearing active' }</summary>
 		<div class = 'delegation-simulation-option-content'>
-			{ current.status.type === 'delegated' ? <p class = 'paragraph'>Delegated to { checksummedAddress(current.status.delegate) }</p>
-				: <p class = 'paragraph'>{ current.status.type === 'none' ? 'No delegate is currently detected.' : 'Could not confirm the current delegate.' }</p> }
+			{ status.type === 'delegated' ? <p class = 'paragraph'>Delegated to { checksummedAddress(status.delegate) }</p>
+				: <p class = 'paragraph'>{ status.type === 'none' ? 'No delegate is currently detected.' : 'Could not confirm the current delegate.' }</p> }
 			<label class = 'form-control'>
 				<input type = 'checkbox' checked = { enabled } disabled = { pending.value } onInput = { event => {
 					if (event.target instanceof HTMLInputElement) void change(event.target.checked)

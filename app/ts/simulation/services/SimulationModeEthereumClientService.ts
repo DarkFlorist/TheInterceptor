@@ -362,7 +362,6 @@ const simulateBlockCallWithPreparedInputContext = async (
 	const previousBlockOverride = simulationPrefixBlockCount === 0 ? undefined : context?.prepared.blockOverrides[simulationPrefixBlockCount - 1]
 	const previousBlockTime = previousBlockOverride?.time ?? parentBlock.timestamp
 	const baseFeePerGas = parentBlock.baseFeePerGas === undefined ? 15_000_000n : parentBlock.baseFeePerGas
-	const blockTimeManipulation = context?.executionBlocks.length === 0 ? context.simulationStateInput[0]?.blockTimeManipulation ?? DEFAULT_BLOCK_MANIPULATION : DEFAULT_BLOCK_MANIPULATION
 	const blockStateCalls: readonly SimulateBlockCalls[] = [
 		...simulationPrefix,
 		{
@@ -370,7 +369,7 @@ const simulateBlockCallWithPreparedInputContext = async (
 			blockOverrides: {
 				...(previousBlockOverride ?? { feeRecipient: parentBlock.miner }),
 				baseFeePerGas: simulateWithZeroBaseFee ? 0n : baseFeePerGas,
-				time: getNextBlockTimeStampOverride(previousBlockTime, blockTimeManipulation),
+				time: getNextBlockTimeStampOverride(previousBlockTime, DEFAULT_BLOCK_MANIPULATION),
 			},
 			stateOverrides: withDelegateCleared(extraOverrides, getDelegateClearedAddressForPrefix(context, simulationPrefixBlockCount)),
 		},
