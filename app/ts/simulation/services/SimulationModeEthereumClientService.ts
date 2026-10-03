@@ -31,6 +31,7 @@ import { calculateRealizedEffectiveGasPrice, getBlockTimeManipulationSeconds, ge
 import { getSignedTransactionForSimulation, mockSignTransaction } from './simulationTransactionSigning.js'
 import { getMessageHashForPersonalSign, simulatePersonalSign } from './simulationPersonalSigning.js'
 import { type BalanceQuery, getTokenBalanceQueriesForTransaction } from './simulationTokenBalanceQueries.js'
+import { createDelegateClearingBlockState, withDelegateCleared } from '../../utils/delegateClearingState.js'
 
 export { getSignedTransactionForSimulation, mockSignTransaction }
 export { getMessageHashForPersonalSign, simulatePersonalSign }
@@ -633,16 +634,15 @@ export const appendTransactionsToInput = (simulationStateInput: SimulationStateI
 	const newTransactions = [...transactions]
 	if (simulationStateInput[blockToAppendTo] !== undefined) {
 		return simulationStateInput.map((block, index) => ({
-			stateOverrides: index === blockToAppendTo ? mergeStateSets(block.stateOverrides, stateOverrides) : block.stateOverrides,
+			...block,
+			stateOverrides: index === blockToAppendTo ? withDelegateCleared(mergeStateSets(block.stateOverrides, stateOverrides), block.delegateClearedAddress) : block.stateOverrides,
 			transactions: index === blockToAppendTo ? [...block.transactions, ...newTransactions] : block.transactions,
-			signedMessages: block.signedMessages,
-			blockTimeManipulation: block.blockTimeManipulation,
-			simulateWithZeroBaseFee: block.simulateWithZeroBaseFee,
 		}))
 	}
+	const delegateClearedAddress = simulationStateInput[simulationStateInput.length - 1]?.delegateClearedAddress
 	return [
 		...simulationStateInput,
-		{ stateOverrides, transactions: newTransactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee }
+		{ ...createDelegateClearingBlockState(stateOverrides, delegateClearedAddress), transactions: newTransactions, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee }
 	]
 }
 

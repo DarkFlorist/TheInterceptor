@@ -4,7 +4,10 @@ import { EthereumClientService } from '../../app/ts/simulation/services/Ethereum
 import { getCachedDelegation } from '../../app/ts/background/delegationSimulation.js'
 import { getCurrentSimulationInput } from '../../app/ts/background/simulationUpdating.js'
 import { changeSimulationMode, isDelegateClearingEnabled, setDelegateClearingEnabled, setMakeCurrentAddressRich } from '../../app/ts/background/settings.js'
+import { getSettings } from '../../app/ts/background/settings.js'
 import { installBrowserMock } from './backgroundEthAccountsTestHarness.js'
+import { updateInterceptorTransactionStack } from '../../app/ts/background/storageVariables.js'
+import { appendTransactionsToInput, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
 import { EthSimulateV1Params } from '../../app/ts/types/ethSimulate-types.js'
@@ -60,6 +63,62 @@ describe('delegate clearing in simulation', () => {
 
 		assert.equal(await setDelegateClearingEnabled(activeAddress, rpcEntry.chainId, false), true)
 		assert.equal(await isDelegateClearingEnabled(activeAddress, rpcEntry.chainId), false)
+	})
+
+	test('clears every stack block and keeps a captured preference stable after storage changes', async () => {
+		installBrowserMock()
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
+		await setDelegateClearingEnabled(activeAddress, rpcEntry.chainId, true)
+		const transaction = (identifier: bigint) => ({
+			signedTransaction: mockSignTransaction({
+				type: '1559' as const,
+				from: activeAddress,
+				to: activeAddress + 1n,
+				value: 0n,
+				input: new Uint8Array(),
+				nonce: identifier - 1n,
+				gas: 21_000n,
+				chainId: rpcEntry.chainId,
+				maxFeePerGas: 1n,
+				maxPriorityFeePerGas: 1n,
+			}),
+			website: { websiteOrigin: 'https://delegation-test.invalid', icon: undefined, title: 'Delegation test' },
+			created: new Date('2026-01-01T00:00:00Z'),
+			originalRequestParameters: { method: 'eth_sendTransaction' as const, params: [{ from: activeAddress, to: activeAddress + 1n, value: 0n, input: new Uint8Array() }] },
+			transactionIdentifier: identifier,
+		})
+		await updateInterceptorTransactionStack(() => ({ operations: [
+			{ type: 'Transaction', preSimulationTransaction: transaction(1n) },
+			{ type: 'TimeManipulation', blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 5n, deltaUnit: 'Seconds' } },
+			{ type: 'Transaction', preSimulationTransaction: transaction(2n) },
+		] }))
+		const settingsSnapshot = await getSettings()
+		await setDelegateClearingEnabled(activeAddress, rpcEntry.chainId, false)
+		const capturedInput = await getCurrentSimulationInput(undefined, settingsSnapshot)
+		assert.equal(capturedInput.length, 2)
+		for (const block of capturedInput) {
+			assert.equal(block.delegateClearedAddress, activeAddress)
+			assert.deepEqual(block.stateOverrides[addressString(activeAddress)]?.code, new Uint8Array())
+		}
+		const parentBlockResponse = JsonRpcResponse.parse(JSON.parse(eth_getBlockByNumber_goerli_8443561_true))
+		if ('error' in parentBlockResponse) throw new Error(parentBlockResponse.error.message)
+		const ethereum = new EthereumClientService({
+			rpcUrl: rpcEntry.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest(request) {
+				if (request.method !== 'eth_getBlockByNumber') throw new Error(`Unexpected RPC method ${ request.method }`)
+				return parentBlockResponse.result
+			},
+		}, async () => undefined, async () => undefined, rpcEntry)
+		const rpcInput = serialize(EthSimulateV1Params, (await ethereum.prepareEthSimulateV1Input(capturedInput, 1n, undefined)).request)
+		assert.equal(rpcInput.params[0].blockStateCalls.length, 2)
+		for (const block of rpcInput.params[0].blockStateCalls) assert.equal(block.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
+		const appended = appendTransactionsToInput(capturedInput, [transaction(3n)])
+		assert.equal(appended[2]?.delegateClearedAddress, activeAddress)
+		assert.deepEqual(appended[2]?.stateOverrides[addressString(activeAddress)]?.code, new Uint8Array())
+		const currentInput = await getCurrentSimulationInput()
+		assert.equal(currentInput[0]?.delegateClearedAddress, undefined)
+		assert.equal(currentInput[1]?.delegateClearedAddress, undefined)
 	})
 
 	test('coalesces concurrent code lookups and caches both delegated and undelegated results', async () => {

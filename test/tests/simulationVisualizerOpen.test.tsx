@@ -110,6 +110,15 @@ function MainPopupSimulationStateProbe() {
 	return <div>{ simVisResults.value.kind }</div>
 }
 
+function DelegatePreferencesProbe() {
+	const { delegateClearingPreferences } = useLiveSimulationHomeData({
+		answerMainPopupOpen: false,
+		answerSimulationDataConsumerOpen: false,
+		requestFreshHomeDataOnMount: false,
+	})
+	return <div>{ delegateClearingPreferences.value.length }</div>
+}
+
 function AddressSelectionProbe() {
 	const { activeSimulationAddress, simVisResults, simulationUpdatingState } = useLiveSimulationHomeData({
 		answerMainPopupOpen: true,
@@ -538,6 +547,29 @@ function createFailedStackHomePageUpdate(tabId: number, popupRefreshGeneration: 
 }
 
 describe('simulation visualizer open replies', () => {
+	test('applies delegate preferences from settings broadcasts and ignores an older generation', async () => {
+		const dom = installDomMock()
+		const { dispatchMessage } = installBrowserMock()
+		try {
+			await act(() => { render(h(DelegatePreferencesProbe, {}), dom.document.body) })
+			const initial = createSimulationStackHomePageUpdate(25, 1, 'Simulation popup')
+			await act(() => { dispatchMessage({ role: 'all', ...serialize(UpdateHomePage, initial) }, {}, () => undefined) })
+			assert.equal(dom.document.body.textContent, '0')
+			const preference = { address: 0x1000000000000000000000000000000000000001n, chainId: 1n }
+			await act(() => {
+				dispatchMessage(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: { ...initial.data.settings, delegateClearingPreferences: [preference] }, popupRefreshGeneration: 3 }), {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent, '1')
+			await act(() => {
+				dispatchMessage(serialize(MessageToPopup, { role: 'all', method: 'popup_settingsUpdated', data: initial.data.settings, popupRefreshGeneration: 2 }), {}, () => undefined)
+			})
+			assert.equal(dom.document.body.textContent, '1')
+		} finally {
+			await act(() => { render(undefined, dom.document.body) })
+			dom.restore()
+		}
+	})
+
 	test('stack visualizer entrypoint wraps the page in Hint for toolbar feedback', async () => {
 		const source = await Bun.file('app/ts/simulationStack.ts').text()
 

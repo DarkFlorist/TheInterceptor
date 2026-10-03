@@ -53,6 +53,7 @@ export function App() {
 		fixedAddressRichList,
 		makeCurrentAddressRich,
 		simulationMode,
+		delegateClearingPreferences,
 		numberOfAddressesMadeRich,
 		hasSafeTransactionsToExport,
 	} = useLiveSimulationHomeData({
@@ -243,6 +244,7 @@ export function App() {
 						activeAddresses = { activeAddresses }
 						walletSelectedAddressBookEntry = { walletSelectedAddressBookEntry }
 						simulationMode = { simulationMode }
+						delegateClearingPreferences = { delegateClearingPreferences }
 						tabIconDetails = { tabIconDetails }
 						currentBlockNumber = { currentBlockNumber }
 						tabState = { tabState }

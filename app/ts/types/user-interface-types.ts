@@ -16,6 +16,7 @@ import type { ReadonlySignal, Signal } from '@preact/signals'
 import { SimulationStackVersion, WalletWatchAssetParameters } from './JsonRpc-types.js'
 import type { EnrichedRichListElement } from './interceptor-reply-messages.js'
 import { ErrorWithCodeAndOptionalData } from './error.js'
+import type { DelegateClearingPreferences } from './delegationSimulation.js'
 
 export type InterceptorAccessListParams = {
 	goHome: () => void,
@@ -51,6 +52,7 @@ export type HomeParams = {
 	rpcNetwork: Signal<RpcNetwork | undefined>
 	setActiveRpcAndInformAboutIt: (entry: RpcEntry) => Promise<void>
 	simulationMode: Signal<boolean>
+	delegateClearingPreferences: Signal<DelegateClearingPreferences>
 	tabIconDetails: Signal<TabIconDetails>
 	currentBlockNumber: Signal<bigint | undefined>
 	renameAddressCallBack: RenameAddressCallBack
@@ -90,6 +92,7 @@ export type FirstCardParams = {
 	walletSelectedAddressBookEntry: Signal<AddressBookEntry | undefined>
 	changeActiveRpc: (rpcEntry: RpcEntry) => Promise<void>
 	rpcNetwork: Signal<RpcNetwork | undefined>
+	delegateClearingPreferences: Signal<DelegateClearingPreferences>
 	simulationMode: Signal<boolean>
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>

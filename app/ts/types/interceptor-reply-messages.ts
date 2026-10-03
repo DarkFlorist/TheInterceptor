@@ -264,7 +264,6 @@ const RequestDelegationSimulationReply = funtypes.ReadonlyObject({
 			funtypes.ReadonlyObject({ type: funtypes.Literal('none') }),
 			funtypes.ReadonlyObject({ type: funtypes.Literal('unknown') }),
 		),
-		enabled: funtypes.Boolean,
 	}),
 }).asReadonly()
 

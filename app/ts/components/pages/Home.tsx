@@ -658,7 +658,7 @@ function FirstCard(param: FirstCardParams) {
 							changeActiveAddress = { param.changeActiveAddress }
 							renameAddressCallBack = { param.renameAddressCallBack }
 						/>
-						<DelegationSimulationOption activeAddress = { param.activeAddress } rpcNetwork = { param.rpcNetwork } simulationMode = { param.simulationMode }/>
+						<DelegationSimulationOption activeAddress = { param.activeAddress } rpcNetwork = { param.rpcNetwork } simulationMode = { param.simulationMode } preferences = { param.delegateClearingPreferences }/>
 					</div>
 				}
 				{ isActiveAddressLoading || safeSimulationSignerAddressBookEntries.value === undefined ? <></> :
@@ -984,6 +984,7 @@ export function Home(param: HomeParams) {
 			walletSelectedAddressBookEntry = { param.walletSelectedAddressBookEntry }
 			useSignersAddressAsActiveAddress = { param.useSignersAddressAsActiveAddress }
 			activeAddress = { currentActiveAddress }
+			delegateClearingPreferences = { param.delegateClearingPreferences }
 			rpcNetwork = { param.rpcNetwork }
 			changeActiveRpc = { param.setActiveRpcAndInformAboutIt }
 			simulationMode = { param.simulationMode }

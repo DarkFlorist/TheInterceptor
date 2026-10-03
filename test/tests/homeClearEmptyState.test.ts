@@ -272,6 +272,7 @@ function createHomeParams(overrides: Partial<HomeParams> = {}): HomeParams {
 		rpcNetwork: new Signal(rpcNetwork),
 		setActiveRpcAndInformAboutIt: async () => undefined,
 		simulationMode: new Signal(true),
+		delegateClearingPreferences: new Signal([]),
 		tabIconDetails: new Signal({ icon: ICON_SIMULATING, iconReason: 'Simulating transactions.' }),
 		currentBlockNumber: new Signal<bigint | undefined>(101n),
 		renameAddressCallBack: () => undefined,

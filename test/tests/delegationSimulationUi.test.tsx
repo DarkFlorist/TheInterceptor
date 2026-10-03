@@ -4,9 +4,8 @@ import { signal } from '@preact/signals'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { DelegationSimulationOption } from '../../app/ts/components/subcomponents/DelegationSimulationOption.js'
-import { DelegateClearingPreferences } from '../../app/ts/types/delegationSimulation.js'
+import type { DelegateClearingPreferences } from '../../app/ts/types/delegationSimulation.js'
 import { PopupRequestsReplies } from '../../app/ts/types/interceptor-reply-messages.js'
-import { serialize } from '../../app/ts/types/wire-types.js'
 import { findRenderedElement, installDomMock } from './domMock.js'
 
 const address = 0x1234567890123456789012345678901234567890n
@@ -15,12 +14,11 @@ const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
 const activeAddress = signal({ type: 'contact' as const, name: 'Account', address, entrySource: 'User' as const, chainId })
 const rpcNetwork = signal({ name: 'Ethereum', chainId, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false })
 const simulationMode = signal(true)
+const preferences = signal<DelegateClearingPreferences>([])
 
 type DelegationStatus = { type: 'delegated', delegate: bigint } | { type: 'none' } | { type: 'unknown' }
-type StorageListener = (changes: { delegateClearingPreferences?: { newValue?: unknown } }, areaName: string) => void
-const storageListeners = new Set<StorageListener>()
 let status: DelegationStatus = { type: 'delegated', delegate }
-let enabled = false
+let requestedEnabled = false
 let lookups = 0
 let pendingSetReply: Promise<unknown> | undefined
 
@@ -31,21 +29,16 @@ Object.defineProperty(globalThis, 'browser', {
 			sendMessage: async (request: { method: string, data?: { enabled?: boolean } }) => {
 				if (request.method === 'popup_requestDelegationSimulation') {
 					lookups += 1
-					return PopupRequestsReplies.popup_requestDelegationSimulation.serialize({ method: 'popup_requestDelegationSimulation', data: { address, chainId, status, enabled } })
+					return PopupRequestsReplies.popup_requestDelegationSimulation.serialize({ method: 'popup_requestDelegationSimulation', data: { address, chainId, status } })
 				}
 				if (request.method === 'popup_setDelegationSimulation' && request.data?.enabled !== undefined) {
-					enabled = request.data.enabled
+					requestedEnabled = request.data.enabled
 					if (pendingSetReply !== undefined) return await pendingSetReply
-					return PopupRequestsReplies.popup_setDelegationSimulation.serialize({ method: 'popup_setDelegationSimulation', data: { ok: true, address, chainId, enabled } })
+					preferences.value = requestedEnabled ? [{ address, chainId }] : []
+					return PopupRequestsReplies.popup_setDelegationSimulation.serialize({ method: 'popup_setDelegationSimulation', data: { ok: true, address, chainId, enabled: requestedEnabled } })
 				}
 				throw new Error(`Unexpected request ${ request.method }`)
 			},
-		},
-		storage: {
-			onChanged: {
-			addListener: (listener: StorageListener) => storageListeners.add(listener),
-			removeListener: (listener: StorageListener) => storageListeners.delete(listener),
-		},
 		},
 	},
 	configurable: true,
@@ -54,14 +47,14 @@ Object.defineProperty(globalThis, 'browser', {
 
 afterEach(() => {
 	status = { type: 'delegated', delegate }
-	enabled = false
+	requestedEnabled = false
+	preferences.value = []
 	lookups = 0
 	pendingSetReply = undefined
-	storageListeners.clear()
 })
 
 function option() {
-	return h(DelegationSimulationOption, { activeAddress, rpcNetwork, simulationMode })
+	return h(DelegationSimulationOption, { activeAddress, rpcNetwork, simulationMode, preferences })
 }
 
 function checkbox(root: Parameters<typeof findRenderedElement>[0]) {
@@ -93,7 +86,7 @@ describe('delegation simulation option', () => {
 		const previousHtmlInputElement = Object.getOwnPropertyDescriptor(globalThis, 'HTMLInputElement')
 		Object.defineProperty(globalThis, 'HTMLInputElement', { configurable: true, value: dom.document.createElement('input').constructor })
 		try {
-			enabled = true
+			preferences.value = [{ address, chainId }]
 			status = { type: 'unknown' }
 			await act(() => render(option(), dom.document.body))
 			await flush()
@@ -101,11 +94,11 @@ describe('delegation simulation option', () => {
 			assert.match(dom.document.body.textContent, /Could not confirm the current delegate/u)
 			await changeCheckbox(dom.document.body, false)
 			await flush()
-			assert.equal(enabled, false)
+			assert.equal(requestedEnabled, false)
 			assert.equal(checkbox(dom.document.body), undefined)
 
 			await act(() => render(undefined, dom.document.body))
-			enabled = true
+			preferences.value = [{ address, chainId }]
 			status = { type: 'none' }
 			await act(() => render(option(), dom.document.body))
 			await flush()
@@ -113,7 +106,7 @@ describe('delegation simulation option', () => {
 			assert.match(dom.document.body.textContent, /No delegate is currently detected/u)
 
 			await act(() => render(undefined, dom.document.body))
-			enabled = false
+			preferences.value = []
 			await act(() => render(option(), dom.document.body))
 			await flush()
 			assert.equal(checkbox(dom.document.body), undefined)
@@ -141,11 +134,7 @@ describe('delegation simulation option', () => {
 			assert.equal(checkboxChecked(first), false)
 			assert.equal(checkboxChecked(second), false)
 			await changeCheckbox(first, true)
-			await act(() => {
-				const newValue = serialize(DelegateClearingPreferences, [{ address, chainId }])
-				for (const listener of storageListeners) listener({ delegateClearingPreferences: { newValue } }, 'local')
-				for (const listener of storageListeners) listener({ delegateClearingPreferences: { newValue: [] } }, 'local')
-			})
+			await act(() => { preferences.value = [{ address, chainId }]; preferences.value = [] })
 			assert.equal(checkboxChecked(first), false)
 			assert.equal(checkboxChecked(second), false)
 			resolveSetReply(PopupRequestsReplies.popup_setDelegationSimulation.serialize({ method: 'popup_setDelegationSimulation', data: { ok: true, address, chainId, enabled: true } }))
@@ -174,16 +163,11 @@ describe('delegation simulation option', () => {
 			assert.equal(checkboxChecked(first), false)
 			assert.equal(checkboxChecked(second), false)
 
-			await act(() => {
-				const newValue = serialize(DelegateClearingPreferences, [{ address, chainId }])
-				for (const listener of storageListeners) listener({ delegateClearingPreferences: { newValue } }, 'local')
-			})
+			await act(() => { preferences.value = [{ address, chainId }] })
 			assert.equal(checkboxChecked(first), true)
 			assert.equal(checkboxChecked(second), true)
 
-			await act(() => {
-				for (const listener of storageListeners) listener({ delegateClearingPreferences: { newValue: [] } }, 'local')
-			})
+			await act(() => { preferences.value = [] })
 			assert.equal(checkboxChecked(first), false)
 			assert.equal(checkboxChecked(second), false)
 			assert.equal(lookups, 2)

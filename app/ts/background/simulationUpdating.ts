@@ -19,7 +19,7 @@ import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
-import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId, isDelegateClearingEnabled } from './settings.js'
+import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
 import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
 import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
@@ -35,6 +35,7 @@ import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
 import { getCachedDelegation } from './delegationSimulation.js'
+import { createDelegateClearingBlockState, isDelegateClearedForBlock } from '../utils/delegateClearingState.js'
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -60,25 +61,20 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 		getPreSimulationBlockTimeManipulation()
 	])
 	const richListPromise = silenceChromeUnCaughtPromise(richAddresses === undefined ? getAddressesbeingMadeRich(settings) : Promise.resolve(richAddresses))
-	const addressToClear = settings.simulationMode ? settings.activeSimulationAddress : undefined
-	const clearDelegatePromise = addressToClear === undefined
-		? Promise.resolve(false)
-		: silenceChromeUnCaughtPromise(isDelegateClearingEnabled(addressToClear, settings.activeRpcNetwork.chainId))
+	const delegateClearedAddress = settings.simulationMode && settings.activeSimulationAddress !== undefined
+		&& settings.delegateClearingPreferences?.some((entry) => entry.address === settings.activeSimulationAddress && entry.chainId === settings.activeRpcNetwork.chainId)
+		? settings.activeSimulationAddress : undefined
 	const stack = await getInterceptorTransactionStack()
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []
 	let currentBlockSignedMessages: SignedMessageTransaction[] = []
 	let currentBlockStateOverrides: StateOverrides = getMakeCurrentAddressRichStateOverride(await richListPromise)
-	if (addressToClear !== undefined && await clearDelegatePromise) {
-		const key = addressString(addressToClear)
-		currentBlockStateOverrides = { ...currentBlockStateOverrides, [key]: { ...currentBlockStateOverrides[key], code: new Uint8Array() } }
-	}
 	let previousBlockTimeManipulation = settings.simulationMode ? preSimulationBlockTimeManipulation : DEFAULT_BLOCK_MANIPULATION
 	let currentBlockSimulateWithZeroBaseFee = false
 
 	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
 		inputBlocks.push({
-			stateOverrides: currentBlockStateOverrides,
+			...createDelegateClearingBlockState(currentBlockStateOverrides, delegateClearedAddress),
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
 			blockTimeManipulation: previousBlockTimeManipulation,
@@ -126,9 +122,10 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 		currentBlockTransactions.length > 0
 		|| currentBlockSignedMessages.length > 0
 		|| Object.keys(currentBlockStateOverrides).length > 0
+		|| (delegateClearedAddress !== undefined && inputBlocks.length === 0)
 	) {
 		inputBlocks.push({
-			stateOverrides: currentBlockStateOverrides,
+			...createDelegateClearingBlockState(currentBlockStateOverrides, delegateClearedAddress),
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
 			blockTimeManipulation: previousBlockTimeManipulation,
@@ -208,10 +205,11 @@ async function getDelegationAddressesForSimulation(
 	ethereum: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 ) {
-	const uniqueSenders = Array.from(new Set(simulationStateInput.flatMap((block) => block.transactions.map((transaction) => transaction.signedTransaction.from))))
+	const uniqueSenders = Array.from(new Set(simulationStateInput.flatMap((block) => block.transactions
+		.filter((transaction) => !isDelegateClearedForBlock(block, transaction.signedTransaction.from))
+		.map((transaction) => transaction.signedTransaction.from))))
 	const resolvedDelegations = await promiseAllMapAbortSafe(uniqueSenders, async (senderAddress) => {
 		try {
-			if (simulationStateInput[0]?.stateOverrides[addressString(senderAddress)]?.code?.length === 0) return undefined
 			const delegationAddress = await getCachedDelegation(ethereum, senderAddress, requestAbortController)
 			if (delegationAddress === undefined) return undefined
 			return {
@@ -234,6 +232,12 @@ async function getDelegationAddressesForSimulation(
 	return new Map(resolvedDelegations
 		.filter((entry): entry is { senderAddress: bigint, delegationEntry: AddressBookEntry } => entry !== undefined)
 		.map((entry) => [addressString(entry.senderAddress), entry.delegationEntry] as const))
+}
+
+function getDelegationsForBlock(block: SimulationStateInputBlock, delegations: ReadonlyMap<string, AddressBookEntry>) {
+	const delegateClearedAddress = block.delegateClearedAddress
+	if (delegateClearedAddress === undefined) return delegations
+	return new Map([...delegations].filter(([address]) => address !== addressString(delegateClearedAddress)))
 }
 
 export const getGovernanceExecutionSimulationInput = (
@@ -517,6 +521,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		const refreshedSimulationState = modifyObject(simulationState, { simulationConductedTimestamp: new Date() })
 
 		const visualizedBlocks = await promiseAllMapAbortSafe(simulationState.simulationStateInput, async (block, blockIndex) => {
+			const blockDelegations = getDelegationsForBlock(block, delegationAddressBySender)
 			const parsedInputDataForBlock = parsedInputDataForEachBlockAndTransaction[blockIndex]
 			if (parsedInputDataForBlock === undefined) throw new Error('Block index overflow')
 
@@ -537,7 +542,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 						parsedInputData,
 						transaction: {
 							...getFromAndToMetadata(transaction.signedTransaction, updatedMetadata.addressBookEntries),
-							...(delegationAddressBySender.get(addressString(transaction.signedTransaction.from)) !== undefined ? { delegationAddress: delegationAddressBySender.get(addressString(transaction.signedTransaction.from)) } : {}),
+							...(blockDelegations.get(addressString(transaction.signedTransaction.from)) !== undefined ? { delegationAddress: blockDelegations.get(addressString(transaction.signedTransaction.from)) } : {}),
 							rpcNetwork: settings.activeRpcNetwork,
 							...otherFields,
 						},
@@ -598,10 +603,11 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		const eventsForEachTransaction = eventsForEachBlockAndTransaction[blockIndex]
 		const parsedInputDataForBlock = parsedInputDataForEachBlockAndTransaction[blockIndex]
 		const protectorsForBlock = protectorsForEachBlockAndTransaction[blockIndex]
-		if (eventsForEachTransaction === undefined || parsedInputDataForBlock === undefined || protectorsForBlock === undefined) throw new Error('Block index overflow')
+		const inputBlock = simulationState.simulationStateInput[blockIndex]
+		if (eventsForEachTransaction === undefined || parsedInputDataForBlock === undefined || protectorsForBlock === undefined || inputBlock === undefined) throw new Error('Block index overflow')
 		return {
 			visualizedPersonalSignRequests: await promiseAllMapAbortSafe(block.signedMessages, (signedMessage) => silenceChromeUnCaughtPromise(craftPersonalSignPopupMessage(ethereum, requestAbortController, signedMessage, settings.activeRpcNetwork))),
-			simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransactions(block.simulatedTransactions, eventsForEachTransaction, simulationState.rpcNetwork, parsedInputDataForBlock, protectorsForBlock, updatedMetadata.addressBookEntries, updatedMetadata.namedTokenIds, updatedMetadata.ens, tokenPriceEstimates, weth, delegationAddressBySender),
+			simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransactions(block.simulatedTransactions, eventsForEachTransaction, simulationState.rpcNetwork, parsedInputDataForBlock, protectorsForBlock, updatedMetadata.addressBookEntries, updatedMetadata.namedTokenIds, updatedMetadata.ens, tokenPriceEstimates, weth, getDelegationsForBlock(inputBlock, delegationAddressBySender)),
 			blockTimeManipulation: block.blockTimeManipulation,
 		}
 	})
