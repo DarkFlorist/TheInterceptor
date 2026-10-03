@@ -14,6 +14,22 @@ import type { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
 import { isAccountOnlyMethod } from './accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 
+function getWalletForwardingRoute(request: InterceptedRequest, parsedRequest: EthereumJsonRpcRequest | undefined, hasRpc: boolean, activeAddress: bigint | undefined, activeSafeSigner: bigint | undefined, safeSigningMode: boolean, simulationOverlayEnabled: boolean) {
+	const rawForwardingReply = { ...request, type: 'forwardToSigner' as const, replyWithSignersReply: true as const }
+	if (parsedRequest === undefined) return SupportedEthereumJsonRpcRequestMethods.test(request) ? undefined : rawForwardingReply
+	if (!hasRpc && !isAccountOnlyMethod(parsedRequest.method)) return rawForwardingReply
+	switch (parsedRequest.method) {
+		case 'wallet_addEthereumChain':
+			return { ...parsedRequest, type: 'forwardToSigner' as const }
+		case 'eth_getStorageAt':
+			return simulationOverlayEnabled ? undefined : { ...parsedRequest, type: 'forwardToSigner' as const, replyWithSignersReply: true as const }
+		case 'wallet_getCapabilities':
+			return parsedRequest.params[0] === activeAddress && !safeSigningMode && activeSafeSigner === undefined ? rawForwardingReply : undefined
+		default:
+			return undefined
+	}
+}
+
 /** Admission owns wallet routing and early errors. Persisted signing revalidates at the approval boundary. */
 export async function resolveSigningRequest(
 	websiteTabConnections: WebsiteTabConnections,
@@ -27,25 +43,20 @@ export async function resolveSigningRequest(
 	simulationOverlayEnabled: boolean,
 	confirmation: ConfirmationRequest | undefined,
 ) {
-	const walletForwardingRequested = parsedRequest === undefined
-		? !SupportedEthereumJsonRpcRequestMethods.test(request)
-		: settings.activeRpcNetwork.httpsRpc === undefined && !isAccountOnlyMethod(parsedRequest.method)
-			|| parsedRequest.method === 'wallet_addEthereumChain'
-			|| parsedRequest.method === 'eth_getStorageAt' && !simulationOverlayEnabled
-			|| parsedRequest.method === 'wallet_getCapabilities' && parsedRequest.params[0] === activeAddress && !safeSigningMode && activeSafeSigner === undefined
-	const needsBinding = !settings.simulationMode && (isSigningOperation(request.method) || walletForwardingRequested)
+	const route = getWalletForwardingRoute(request, parsedRequest, settings.activeRpcNetwork.httpsRpc !== undefined, activeAddress, activeSafeSigner, safeSigningMode, simulationOverlayEnabled)
+	const needsBinding = !settings.simulationMode && (isSigningOperation(request.method) || route !== undefined)
 	const binding = !needsBinding || activeAddress === undefined ? undefined : await getSigningWalletBinding(activeSafeSigner ?? activeAddress)
 	if (binding !== undefined) assertSigningWalletIdentity(binding.wallet)
 	const directWallet = binding !== undefined && binding.wallet.type !== 'browser'
 	if (directWallet && request.method === 'eth_signTypedData_v4' && 'params' in request && Array.isArray(request.params) && typeof request.params[1] === 'string') parseDirectSigningTypedData(request.params[1])
 	const forwardToSigner = !settings.simulationMode && !directWallet && !request.usingInterceptorWithoutSigner
 	const safePolicyReply = getSafeModeRpcPolicyReply({ rawRequest: request, confirmation, parsedRequest, safeSigningMode, forwardToSigner, activeAddress, chainId: settings.activeRpcNetwork.chainId, hasRpcConnection: settings.activeRpcNetwork.httpsRpc !== undefined })
-	let forwarding: { type: 'forwardToSigner', expectedProviderId?: string } = { type: 'forwardToSigner' }
+	let providerIdentity: { expectedProviderId?: string } = {}
 	let forwardingError: ErrorWithCodeAndOptionalData | undefined
-	if (safePolicyReply === undefined && forwardToSigner && walletForwardingRequested && binding?.wallet.type === 'browser') {
+	if (safePolicyReply === undefined && forwardToSigner && route !== undefined && binding?.wallet.type === 'browser') {
 		const fields = await prepareSavedBrowserWalletForwarding(websiteTabConnections, socket, binding, { requestMissingAccounts: false, requireSelectedAccount: isSigningOperation(request.method), requestedAddress: parsedRequest === undefined ? undefined : browserSigningRequestAccount(parsedRequest) })
 		if (fields.error !== undefined) forwardingError = fields.error
-		else forwarding = { type: 'forwardToSigner', expectedProviderId: fields.expectedProviderId }
+		else providerIdentity = { expectedProviderId: fields.expectedProviderId }
 	}
 
 	const capabilityError = binding === undefined ? undefined : getSigningMethodError(binding.wallet.type, request.method)
@@ -53,11 +64,8 @@ export async function resolveSigningRequest(
 		: !settings.simulationMode && parsedRequest !== undefined && isSigningOperation(parsedRequest.method) && binding === undefined && !safeSigningMode && (settings.selectedSigningAddress !== undefined || request.usingInterceptorWithoutSigner)
 			? { code: 4100, message: 'No signing wallet for this address. Set up signing wallet or switch to simulation.' } : forwardingError
 	// Return the actual forwarding reply so the router cannot independently choose an unpinned forwarding path.
-	const forwardingRequest = settings.activeRpcNetwork.httpsRpc !== undefined && (parsedRequest?.method === 'wallet_addEthereumChain' || parsedRequest?.method === 'eth_getStorageAt') ? parsedRequest : request
-	const forwardingReply = safePolicyReply === undefined && admissionError === undefined && forwardToSigner && walletForwardingRequested
-		? parsedRequest?.method === 'wallet_addEthereumChain' && settings.activeRpcNetwork.httpsRpc !== undefined
-			? { ...parsedRequest, ...forwarding }
-			: { ...forwardingRequest, ...forwarding, replyWithSignersReply: true as const }
+	const forwardingReply = safePolicyReply === undefined && admissionError === undefined && forwardToSigner && route !== undefined
+		? { ...route, ...providerIdentity }
 		: undefined
 	return { forwardingReply, admissionError, safePolicyReply }
 }

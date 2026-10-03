@@ -15,7 +15,7 @@ Object.defineProperty(globalThis, 'browser', { configurable: true, writable: tru
 		set: async (items: Record<string, unknown>) => { writes.push(items); Object.assign(stored, items) },
 	} },
 } })
-const { getSigningWalletBindings, getUserAddressBookEntries, saveAddressSigningWallet, updateUserAddressBookEntries, updateAddressBookAndReconcileSigningWallets } = await import('../../app/ts/background/storageVariables.js')
+const { getSigningWalletBindings, getUserAddressBookEntries, saveAddressSigningWallet, updateUserAddressBookEntries } = await import('../../app/ts/background/storageVariables.js')
 const privateKey = '0x0000000000000000000000000000000000000000000000000000000000000001'
 const address = BigInt(privateKeyToAccount(privateKey).address)
 const ledger: SigningWallet = { type: 'ledger', label: 'Main device · Account 1', address, publicKey: bytesToHex(secp256k1.getPublicKey(bytesFromHex(privateKey), false)), derivationPath: 'm/44\'/60\'/0\'/0/0' }
@@ -87,10 +87,10 @@ test('absent bindings stay absent and corrupt persisted bindings fail closed wit
 
 test('removing the last chain-scoped entry prunes its binding while retaining another scope keeps it', async () => {
 	await saveAddressSigningWallet(address, ledger, undefined, 'Savings')
-	await updateAddressBookAndReconcileSigningWallets((entries) => [...entries, { type: 'contact', address, name: 'Chain entry', chainId: 1n, entrySource: 'User' }])
-	await updateAddressBookAndReconcileSigningWallets((entries) => entries.filter((entry) => entry.chainId === 1n))
+	await updateUserAddressBookEntries((entries) => [...entries, { type: 'contact', address, name: 'Chain entry', chainId: 1n, entrySource: 'User' }])
+	await updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.chainId === 1n))
 	expect(await getSigningWalletBindings()).toHaveLength(1)
-	await updateAddressBookAndReconcileSigningWallets(() => [])
+	await updateUserAddressBookEntries(() => [])
 	expect(await getSigningWalletBindings()).toEqual([])
 	expect(stored.signingWalletBindings).toEqual([])
 })
@@ -102,9 +102,9 @@ test('converting or adding an address as a Safe removes its ordinary signing bin
 	await addUserAddressBookEntryIfItDoesNotExist(safe)
 	expect(await getSigningWalletBindings()).toEqual([])
 	expect(writes.at(-1)).toHaveProperty('signingWalletBindings', [])
-	await updateAddressBookAndReconcileSigningWallets((entries) => entries.filter((entry) => entry.type !== 'safe'))
+	await updateUserAddressBookEntries((entries) => entries.filter((entry) => entry.type !== 'safe'))
 	await saveAddressSigningWallet(address, ledger, undefined)
-	await updateAddressBookAndReconcileSigningWallets(() => [safe])
+	await updateUserAddressBookEntries(() => [safe])
 	expect(await getSigningWalletBindings()).toEqual([])
 })
 
@@ -114,7 +114,7 @@ test('lookups never return orphaned or Safe-address bindings even from stale per
 	expect(await getSigningWalletBinding(address)).toBeUndefined()
 	await browserStorageLocalSet({ userAddressBookEntriesV3: [{ type: 'safe', address, name: 'Safe', chainId: 1n, entrySource: 'User', useAsActiveAddress: true }] })
 	expect(await getSigningWalletBinding(address)).toBeUndefined()
-	await updateAddressBookAndReconcileSigningWallets(() => [{ type: 'contact', address, name: 'Restored contact', entrySource: 'User' }])
+	await updateUserAddressBookEntries(() => [{ type: 'contact', address, name: 'Restored contact', entrySource: 'User' }])
 	expect(await getSigningWalletBinding(address)).toBeUndefined()
 })
 
@@ -163,7 +163,7 @@ test('version 1.6 backups retain Safe Apps compatibility without requiring signi
 	expect(await getUserAddressBookEntries()).toHaveLength(1)
 })
 
-test('ordinary address book edits do not read or rewrite signing bindings', async () => {
+test('metadata-only address book edits do not read or rewrite signing bindings', async () => {
 	await saveAddressSigningWallet(address, ledger, undefined, 'Savings')
 	const bindings = stored.signingWalletBindings
 	writes.length = 0
@@ -174,7 +174,7 @@ test('ordinary address book edits do not read or rewrite signing bindings', asyn
 	expect(stored.signingWalletBindings).toBe('unrelated corrupt wallet storage')
 	stored.signingWalletBindings = bindings
 	writes.length = 0
-	await updateAddressBookAndReconcileSigningWallets((entries) => entries.map((entry) => ({ ...entry, name: 'Renamed again' })))
+	await updateUserAddressBookEntries((entries) => entries.map((entry) => ({ ...entry, name: 'Renamed again' })))
 	expect(Object.keys(writes[0] ?? {})).toEqual(['userAddressBookEntriesV3'])
 })
 

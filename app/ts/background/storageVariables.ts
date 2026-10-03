@@ -336,10 +336,15 @@ async function readSigningWalletBindings(): Promise<SigningWalletBindings> {
 }
 
 // A binding is global to an ordinary address, retained while any chain-scoped entry remains. A Safe entry in any scope excludes the address from ordinary-account signing.
-function reconcileSigningWalletBindings(entries: AddressBookEntries, bindings: SigningWalletBindings) {
+function getOrdinarySigningAddresses(entries: AddressBookEntries) {
 	const ordinaryAddresses = new Set(entries.filter((entry) => entry.type !== 'safe').map((entry) => entry.address))
 	const safeAddresses = new Set(entries.filter((entry) => entry.type === 'safe').map((entry) => entry.address))
-	return bindings.filter((binding) => ordinaryAddresses.has(binding.wallet.address) && !safeAddresses.has(binding.wallet.address))
+	return new Set([...ordinaryAddresses].filter((address) => !safeAddresses.has(address)))
+}
+
+function reconcileSigningWalletBindings(entries: AddressBookEntries, bindings: SigningWalletBindings) {
+	const eligibleAddresses = getOrdinarySigningAddresses(entries)
+	return bindings.filter((binding) => eligibleAddresses.has(binding.wallet.address))
 }
 
 export async function getAddressBookAndSigningWalletBindings() {
@@ -398,18 +403,17 @@ export async function saveSafeSigningAccounts(chainId: bigint, address: bigint, 
 
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
 	await userAddressBookEntriesSemaphore.execute(async () => {
-		await browserStorageLocalSet({ userAddressBookEntriesV3: updateFunc(await getUserAddressBookEntries()) })
-	})
-}
-
-/** Explicit identity-changing edits prune orphaned and Safe-address bindings in the same transaction. */
-export async function updateAddressBookAndReconcileSigningWallets(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
-	await userAddressBookEntriesSemaphore.execute(async () => {
 		const entries = await getUserAddressBookEntries()
 		const nextEntries = updateFunc(entries)
+		const previousAddresses = getOrdinarySigningAddresses(entries)
+		const nextAddresses = getOrdinarySigningAddresses(nextEntries)
+		// Metadata-only edits cannot change binding eligibility, so they need no signing-storage access.
+		if (previousAddresses.size === nextAddresses.size && [...previousAddresses].every((address) => nextAddresses.has(address))) {
+			return await browserStorageLocalSet({ userAddressBookEntriesV3: nextEntries })
+		}
 		const bindings = await readSigningWalletBindings()
-		const previouslySupportedBindings = reconcileSigningWalletBindings(entries, bindings)
-		const nextBindings = reconcileSigningWalletBindings(nextEntries, previouslySupportedBindings)
+		// Check both snapshots so restoring an ordinary address never revives a previously orphaned binding.
+		const nextBindings = bindings.filter((binding) => previousAddresses.has(binding.wallet.address) && nextAddresses.has(binding.wallet.address))
 		return await browserStorageLocalSet({ userAddressBookEntriesV3: nextEntries, ...(nextBindings.length === bindings.length ? {} : { signingWalletBindings: nextBindings }) })
 	})
 }
@@ -433,7 +437,7 @@ export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: 
 }
 
 export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry) {
-	await updateAddressBookAndReconcileSigningWallets((entries) => {
+	await updateUserAddressBookEntries((entries) => {
 		const existingEntry = entries.find((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))
 		return existingEntry !== undefined ? entries : entries.concat(newEntry)
 	})

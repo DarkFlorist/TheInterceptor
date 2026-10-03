@@ -169,6 +169,12 @@ for (const scenario of [
 			expect(result.admissionError).toBeUndefined()
 		} else if (rdns === 'io.metamask') {
 			expect(result.forwardingReply).toMatchObject({ type: 'forwardToSigner', method: scenario.method, expectedProviderId: 'eip6963:io.metamask' })
+			if (scenario.method === 'wallet_addEthereumChain' || scenario.method === 'eth_getStorageAt') {
+				if (!parsed.success || !('params' in parsed.value)) throw new Error('Expected normalized forwarding parameters')
+				expect(result.forwardingReply).toMatchObject({ params: parsed.value.params })
+			}
+			if (scenario.method !== 'wallet_addEthereumChain') expect(result.forwardingReply).toMatchObject({ replyWithSignersReply: true })
+
 		} else {
 			expect(result.forwardingReply).toBeUndefined()
 			expect(result.admissionError).toMatchObject({ code: 4100 })
