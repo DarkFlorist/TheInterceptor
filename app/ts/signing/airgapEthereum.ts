@@ -1,3 +1,4 @@
+import { isUuidV4 } from '../utils/browserProviderIdentity.js'
 import { hmac } from '@noble/hashes/hmac'
 import { sha512 } from '@noble/hashes/sha512'
 import { concatBytes } from '@noble/hashes/utils'
@@ -96,7 +97,7 @@ export function importAirGapAccounts(type: 'crypto-hdkey' | 'crypto-account', cb
 }
 
 function requestIdBytes(requestId: string) {
-	if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(requestId)) throw new Error('AirGap request ID must be a UUID v4')
+	if (!isUuidV4(requestId)) throw new Error('AirGap request ID must be a UUID v4')
 	return bytesFromHex(ensureHex(`0x${ requestId.replaceAll('-', '') }`))
 }
 

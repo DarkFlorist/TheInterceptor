@@ -199,3 +199,40 @@ test('a transient signing-history read failure does not write or reset state', a
 	}
 	expect((await readDirectSigningRecords())[0]).toEqual(record)
 })
+
+test('storage serializes standalone writes and lifecycle transactions without losing submitting records', async () => {
+	const { storeDirectSigningRecord, withDirectSigningRecords } = await import('../../app/ts/background/storageVariables.js')
+	const first = { ...record, id: 'first', phase: 'submitting' as const }
+	const second = { ...record, id: 'second', phase: 'submitting' as const }
+	await Promise.all([storeDirectSigningRecord(first), storeDirectSigningRecord(second)])
+	expect((await readDirectSigningRecords()).map((item) => item.id)).toContain('first')
+	expect((await readDirectSigningRecords()).map((item) => item.id)).toContain('second')
+	let release: () => void = () => undefined
+	let entered: () => void = () => undefined
+	const gate = new Promise<void>((resolve) => { release = resolve })
+	const ready = new Promise<void>((resolve) => { entered = resolve })
+	const transaction = withDirectSigningRecords(async (records) => {
+		entered()
+		await gate
+		await records.store({ ...first, phase: 'confirmed' })
+	})
+	await ready
+	let stored = false
+	const standalone = storeDirectSigningRecord({ ...second, phase: 'confirmed' }).then(() => { stored = true })
+	await Promise.resolve()
+	expect(stored).toBe(false)
+	release()
+	await Promise.all([transaction, standalone])
+	const saved = await readDirectSigningRecords()
+	expect(saved.find((item) => item.id === 'first')?.phase).toBe('confirmed')
+	expect(saved.find((item) => item.id === 'second')?.phase).toBe('confirmed')
+})
+
+test('concurrent storage writes enforce the aggregate limit and preserve ambiguous submissions', async () => {
+	const { storeDirectSigningRecord } = await import('../../app/ts/background/storageVariables.js')
+	await browser.storage.local.remove('directSigningRequestsV1')
+	const results = await Promise.allSettled(Array.from({ length: 17 }, (_, index) => storeDirectSigningRecord({ ...record, id: String(index), phase: 'submitting' })))
+	expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(16)
+	expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1)
+	expect(await readDirectSigningRecords()).toHaveLength(16)
+})

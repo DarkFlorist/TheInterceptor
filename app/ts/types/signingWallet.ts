@@ -1,3 +1,4 @@
+import { isUuidV4 } from '../utils/browserProviderIdentity.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress } from './wire-types.js'
 import { SignerName } from './signerTypes.js'
@@ -22,7 +23,7 @@ export const SigningWallet = funtypes.Union(
 export type SigningWalletBinding = funtypes.Static<typeof SigningWalletBinding>
 export const SigningWalletBinding = funtypes.ReadonlyObject({
 	wallet: SigningWallet,
-	revision: funtypes.String.withConstraint((value) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(value)),
+	revision: funtypes.String.withConstraint((value) => isUuidV4(value) && value === value.toLowerCase()),
 })
 
 export type SigningWalletBindings = funtypes.Static<typeof SigningWalletBindings>

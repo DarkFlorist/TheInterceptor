@@ -1,4 +1,4 @@
-import { getBrowserProviderId } from '../../ts/utils/browserProviderIdentity.js'
+import { getBrowserProviderId, isUuidV4, isProviderRdns } from '../../ts/utils/browserProviderIdentity.js'
 
 const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
 const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
@@ -359,8 +359,7 @@ const isEip6963MetaMaskInfo = (value: unknown): value is EIP6963ProviderInfo & {
 	return typeof value === 'object'
 		&& value !== null
 		&& 'uuid' in value
-		&& typeof value.uuid === 'string'
-		&& /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.uuid)
+		&& isUuidV4(value.uuid)
 		&& 'name' in value
 		&& value.name === 'MetaMask'
 		&& 'icon' in value
@@ -1099,8 +1098,8 @@ class InterceptorMessageListener {
 			const { rdns: announcedRdns, uuid: announcedUuid } = info
 			const rdns = typeof announcedRdns === 'string' ? announcedRdns.toLowerCase() : announcedRdns
 			const uuid = typeof announcedUuid === 'string' ? announcedUuid.toLowerCase() : announcedUuid
-			if (typeof rdns !== 'string' || rdns.length > 253 || !/^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/u.test(rdns)) return
-			if (typeof uuid !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(uuid)) return
+			if (!isProviderRdns(rdns)) return
+			if (!isUuidV4(uuid)) return
 			const existing = this.providerIdentities.get(provider)
 			if (existing === undefined && this.providerIdentities.size >= 64) this.providerIdentityLimitExceeded = true
 			else {

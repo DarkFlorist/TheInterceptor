@@ -1,3 +1,4 @@
+import { isProviderRdns } from '../utils/browserProviderIdentity.js'
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 
@@ -32,6 +33,6 @@ export const SigningAddressPreferences = funtypes.ReadonlyArray(SigningAddressPr
 
 /** Discovery metadata is self-reported, not proof of a wallet's authenticity. */
 export const BrowserProviderIdentity = funtypes.ReadonlyObject({ ambiguous: funtypes.Boolean }).And(funtypes.ReadonlyPartial({
-	rdns: funtypes.String.withConstraint((value) => value.length <= 253 && /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/u.test(value)),
+	rdns: funtypes.String.withConstraint(isProviderRdns),
 }))
 export type BrowserProviderIdentity = funtypes.Static<typeof BrowserProviderIdentity>
