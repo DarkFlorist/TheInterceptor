@@ -191,8 +191,6 @@ export const SimulationStateInputBlock = funtypes.ReadonlyObject({
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockTimeManipulation: BlockTimeManipulation,
 	simulateWithZeroBaseFee: funtypes.Boolean,
-	// Sole stored clearing choice; older inputs parse as undefined and block builders must carry it explicitly.
-	delegateClearedAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 })
 
 export type SimulationStateInput = funtypes.Static<typeof SimulationStateInput>
@@ -205,7 +203,6 @@ export const SimulationStateInputMinimalDataBlock = funtypes.ReadonlyObject({
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockTimeManipulation: BlockTimeManipulation,
 	simulateWithZeroBaseFee: funtypes.Boolean,
-	delegateClearedAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
 })
 
 export type SimulationStateInputMinimalData = funtypes.Static<typeof SimulationStateInputMinimalData>
@@ -236,7 +233,10 @@ const SimulationStateSuccess = funtypes.ReadonlyObject({
 	baseFeePerGas: EthereumQuantity,
 	simulationConductedTimestamp: EthereumTimestamp,
 	rpcNetwork: RpcNetwork,
-})
+}).And(funtypes.ReadonlyPartial({
+	// Account state applied before the first simulated block; later transactions can change it.
+	simulationOverrides: StateOverrides,
+}))
 
 export type SimulationState = funtypes.Static<typeof SimulationState>
 export const SimulationState = funtypes.Union(
@@ -254,7 +254,7 @@ export const SimulationState = funtypes.Union(
 		baseFeePerGas: EthereumQuantity,
 		simulationConductedTimestamp: EthereumTimestamp,
 		rpcNetwork: RpcNetwork,
-	})
+	}).And(funtypes.ReadonlyPartial({ simulationOverrides: StateOverrides }))
 )
 
 export type PassthroughState = funtypes.Static<typeof PassthroughState>
@@ -279,11 +279,12 @@ export const ResolvedSimulationInput = funtypes.Union(
 	funtypes.ReadonlyObject({
 		kind: funtypes.Literal('simulated'),
 		value: SimulationStateInput,
+		simulationOverrides: StateOverrides,
 	})
 )
 
 export const toResolvedSimulationState = (value: SimulationState): ResolvedSimulationState => ({ kind: 'simulated', value })
-export const toResolvedSimulationInput = (value: SimulationStateInput): ResolvedSimulationInput => ({ kind: 'simulated', value })
+export const toResolvedSimulationInput = (value: SimulationStateInput, simulationOverrides: StateOverrides = {}): ResolvedSimulationInput => ({ kind: 'simulated', value, simulationOverrides })
 
 type SuccessfulSimulationState = Extract<SimulationState, { success: true }>
 export type ExecutionSimulatedTransaction = Omit<SimulatedTransaction, 'tokenBalancesAfter'>

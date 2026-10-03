@@ -34,7 +34,7 @@ import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
-import { carryDelegateClearing, hasDelegateClearingPreference, isDelegateClearedForBlock, withDelegateCleared } from '../utils/delegateClearingState.js'
+import { applySimulationOverrides, hasDelegateClearingPreference, isCodeClearedBySimulationOverrides, withDelegateCleared } from '../utils/delegateClearingState.js'
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -60,8 +60,6 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 		getPreSimulationBlockTimeManipulation()
 	])
 	const richListPromise = silenceChromeUnCaughtPromise(richAddresses === undefined ? getAddressesbeingMadeRich(settings) : Promise.resolve(richAddresses))
-	const delegateClearedAddress = settings.simulationMode && hasDelegateClearingPreference(settings.delegateClearingPreferences, settings.activeSimulationAddress, settings.activeRpcNetwork.chainId)
-		? settings.activeSimulationAddress : undefined
 	const stack = await getInterceptorTransactionStack()
 	const inputBlocks: SimulationStateInputBlock[] = []
 	let currentBlockTransactions: PreSimulationTransaction[] = []
@@ -73,7 +71,6 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
 		inputBlocks.push({
 			stateOverrides: currentBlockStateOverrides,
-			delegateClearedAddress,
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
 			blockTimeManipulation: previousBlockTimeManipulation,
@@ -121,11 +118,9 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 		currentBlockTransactions.length > 0
 		|| currentBlockSignedMessages.length > 0
 		|| Object.keys(currentBlockStateOverrides).length > 0
-		|| (delegateClearedAddress !== undefined && inputBlocks.length === 0)
 	) {
 		inputBlocks.push({
 			stateOverrides: currentBlockStateOverrides,
-			delegateClearedAddress,
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
 			blockTimeManipulation: previousBlockTimeManipulation,
@@ -135,10 +130,17 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 	return inputBlocks
 }
 
+export function getCurrentSimulationOverrides(settings: Settings): StateOverrides {
+	const address = settings.simulationMode && hasDelegateClearingPreference(settings.delegateClearingPreferences, settings.activeSimulationAddress, settings.activeRpcNetwork.chainId)
+		? settings.activeSimulationAddress : undefined
+	return withDelegateCleared({}, address)
+}
+
 export type SimulationSnapshot = {
 	readonly activeRpcNetwork: RpcNetwork
 	readonly activeStackContext: ReturnType<typeof getActiveStackContext>
 	readonly simulationStateInput: SimulationStateInput
+	readonly simulationOverrides: StateOverrides
 	readonly numberOfAddressesMadeRich: number
 }
 
@@ -150,6 +152,7 @@ export async function captureSimulationSnapshot(): Promise<SimulationSnapshot> {
 		activeRpcNetwork: settings.activeRpcNetwork,
 		activeStackContext: getActiveStackContext(settings),
 		simulationStateInput: await getCurrentSimulationInput(richAddresses, settings),
+		simulationOverrides: getCurrentSimulationOverrides(settings),
 		numberOfAddressesMadeRich: richAddresses.length,
 	}
 }
@@ -162,7 +165,7 @@ export async function getUpdatedSimulationState(ethereum: EthereumClientService,
 	const provider = getSimulationProviderForSnapshot(ethereum, snapshot)
 	if (provider === undefined) return PASSTHROUGH_STATE
 	try {
-		return toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(snapshot.simulationStateInput, provider))
+		return toResolvedSimulationState(await createSimulationStateWithNonceAndBaseFeeFixing(snapshot.simulationStateInput, provider, snapshot.simulationOverrides))
 	} catch(error: unknown) {
 		if (isExpectedInfrastructureError(error)) return PASSTHROUGH_STATE
 		await reportUnexpectedError(error, { code: 'simulation_state_refresh_failed' })
@@ -175,7 +178,7 @@ export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClient
 	if (!simulationOverlayEnabled) return { simulationInput: PASSTHROUGH_STATE, simulationState: PASSTHROUGH_STATE }
 	const snapshot = await captureSimulationSnapshot()
 	return {
-		simulationInput: toResolvedSimulationInput(snapshot.simulationStateInput),
+		simulationInput: toResolvedSimulationInput(snapshot.simulationStateInput, snapshot.simulationOverrides),
 		simulationState: await getUpdatedSimulationState(ethereum, snapshot),
 	}
 }
@@ -202,11 +205,12 @@ export async function getMetadataForSimulation(
 
 async function getDelegationAddressesForSimulation(
 	simulationStateInput: SimulationStateInput,
+	simulationOverrides: StateOverrides,
 	ethereum: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 ) {
 	const uniqueSenders = Array.from(new Set(simulationStateInput.flatMap((block) => block.transactions
-		.filter((transaction) => !isDelegateClearedForBlock(block, transaction.signedTransaction.from))
+		.filter((transaction) => !isCodeClearedBySimulationOverrides(simulationOverrides, transaction.signedTransaction.from))
 		.map((transaction) => transaction.signedTransaction.from))))
 	const resolvedDelegations = await promiseAllMapAbortSafe(uniqueSenders, async (senderAddress) => {
 		try {
@@ -234,21 +238,16 @@ async function getDelegationAddressesForSimulation(
 		.map((entry) => [addressString(entry.senderAddress), entry.delegationEntry] as const))
 }
 
-function getDelegationsForBlock(block: SimulationStateInputBlock, delegations: ReadonlyMap<string, AddressBookEntry>) {
-	return new Map([...delegations].filter(([address]) => !isDelegateClearedForBlock(block, BigInt(address))))
-}
-
 export const getGovernanceExecutionSimulationInput = (
 	simulationInput: SimulationStateInput,
 	executionTransaction: PreSimulationTransaction,
 	executionTimestamp: Date,
 	executionStateOverrides: StateOverrides,
 ): SimulationStateInput => {
-	const previousBlock = simulationInput[simulationInput.length - 1]
 	return [
 		...simulationInput,
 		{
-			...carryDelegateClearing(previousBlock ?? { delegateClearedAddress: undefined }, executionStateOverrides),
+			stateOverrides: executionStateOverrides,
 			transactions: [executionTransaction],
 			signedMessages: [],
 			blockTimeManipulation: { type: 'SetTimetamp', timeToSet: dateToBigintSeconds(executionTimestamp) },
@@ -264,6 +263,7 @@ export const getGovernanceExecutionTokenBalancesAfter = async (
 	executionTimestamp: Date,
 	executionStateOverrides: StateOverrides,
 	callResult: Parameters<typeof getTokenBalancesAfterForTransaction>[3],
+	simulationOverrides: StateOverrides = {},
 ) => {
 	const simulationInputAfterExecution = getGovernanceExecutionSimulationInput(
 		simulationInput,
@@ -276,7 +276,8 @@ export const getGovernanceExecutionTokenBalancesAfter = async (
 		undefined,
 		simulationInputAfterExecution,
 		callResult,
-		executionTransaction.signedTransaction
+		executionTransaction.signedTransaction,
+		simulationOverrides,
 	)
 }
 
@@ -304,12 +305,14 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const proposalId = funtypes.BigInt.parse(rawProposalId)
 		const addr = await identifyAddress(ethereum, undefined, pendingTransaction.transactionToSimulate.transaction.to)
 		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, errorType: 'MissingAbi' as const, errorMessage: 'ABi for the governance contract is missing', errorAddressBookEntry: addr }
-		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, proposalId)
+		const settingsSnapshot = await getSettings()
+		const simulationOverrides = getCurrentSimulationOverrides(settingsSnapshot)
+		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, proposalId, simulationOverrides)
 		if (contractExecutionResult === undefined) return returnError('Failed to simulate governance execution')
 		const parentBlock = await ethereum.getBlock(undefined)
 		if (parentBlock === null) throw new Error('The latest block is null')
 		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
-		const simulationInput = await getCurrentSimulationInput()
+		const simulationInput = await getCurrentSimulationInput(undefined, settingsSnapshot)
 		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.ethSimulateV1CallResult.gasUsed })
 		const executionTransaction: PreSimulationTransaction = {
 			signedTransaction: signedExecutionTransaction,
@@ -331,6 +334,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			contractExecutionResult.executionTimestamp,
 			contractExecutionResult.executionStateOverrides,
 			contractExecutionResult.ethSimulateV1CallResult,
+			simulationOverrides,
 		)
 
 		const governanceExecutionBlock = governanceExecutionSimulationInput[governanceExecutionSimulationInput.length - 1]
@@ -340,7 +344,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 				simulationStateInput: [governanceExecutionBlock],
 			simulatedBlocks: [{
 				signedMessages: [],
-				stateOverrides: withDelegateCleared(governanceExecutionBlock.stateOverrides, governanceExecutionBlock.delegateClearedAddress),
+				stateOverrides: applySimulationOverrides(governanceExecutionBlock.stateOverrides, simulationOverrides),
 				blockTimestamp: contractExecutionResult.executionTimestamp,
 				blockTimeManipulation: { type: 'SetTimetamp', timeToSet: dateToBigintSeconds(contractExecutionResult.executionTimestamp) },
 				simulatedTransactions: [{
@@ -352,6 +356,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 				blockBaseFeePerGas: parentBlock.baseFeePerGas,
 			}],
 			blockNumber: parentBlock.number,
+			simulationOverrides,
 			blockTimestamp: parentBlock.timestamp,
 			baseFeePerGas: parentBlock.baseFeePerGas,
 			rpcNetwork: ethereum.getRpcEntry(),
@@ -411,7 +416,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 		const gasLimit = gnosisSafeMessage.message.message.baseGas !== 0n ? {
 			gas: gnosisSafeMessage.message.message.baseGas
 		} : await (async () => {
-			const estimateGas = await simulateEstimateGasFromInput(ethereumClientService, undefined, toResolvedSimulationInput(simulationInput), transactionWithoutGas, undefined, temporaryAccountOverrides)
+			const estimateGas = await simulateEstimateGasFromInput(ethereumClientService, undefined, toResolvedSimulationInput(simulationInput, resolvedSimulationState.simulationOverrides ?? {}), transactionWithoutGas, undefined, temporaryAccountOverrides)
 			if ('error' in estimateGas) throw new Error(estimateGas.error.message)
 			return { gas: estimateGas.gas }
 		})()
@@ -423,7 +428,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] },
 			transactionIdentifier: gnosisSafeMessage.messageIdentifier,
 		}
-		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransactionToInputAndSimulate(ethereumClientService, undefined, simulationInput, [metaTransaction], undefined, temporaryAccountOverrides)
+		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransactionToInputAndSimulate(ethereumClientService, undefined, simulationInput, [metaTransaction], undefined, temporaryAccountOverrides, resolvedSimulationState.simulationOverrides ?? {})
 		return { success: true as const, result: await visualizeSimulatorState(simulationStateAfterGnosisSafeMetaTransaction, ethereumClientService, tokenPriceService, undefined) }
 	} catch(error) {
 		console.warn(error)
@@ -465,7 +470,7 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 	})
 }
 
-export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
+export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService, simulationOverrides: StateOverrides = {}) => {
 	if (simulationInput.some((block) => block.transactions.some((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n))) simulationInput = await prepareSafeDelegateSimulationInput(simulationInput, ethereum, await ethereum.getBlockNumber(undefined))
 	// Base-fee and nonce repair only rewrite transactions. Signed-message and state-override blocks must still reach the RPC handler, but inspecting them here would run an extra eth_simulateV1 request without any transaction nonce to repair.
 	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
@@ -474,26 +479,26 @@ export const prepareSimulationInputForRpc = async (simulationInput: SimulationSt
 		if (parentBlock === undefined) return simulationInput
 		const baseFeeFixedInputStateBlocks: SimulationStateInputBlock[] = []
 		for (const block of simulationInput) {
-			const { transactions } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, baseFeeFixedInputStateBlocks, block)
+			const { transactions } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, baseFeeFixedInputStateBlocks, block, simulationOverrides)
 			baseFeeFixedInputStateBlocks.push(modifyObject(block, { transactions }))
 		}
 		return baseFeeFixedInputStateBlocks
 	}
 	const baseFeeFixedInputStateBlocks = await getBaseFeeFixedInputStateBlocks()
-	const nonceFixed = await getNonceFixedSimulationStateInput(ethereum, undefined, baseFeeFixedInputStateBlocks)
+	const nonceFixed = await getNonceFixedSimulationStateInput(ethereum, undefined, baseFeeFixedInputStateBlocks, simulationOverrides)
 	return nonceFixed.nonceFixed ? nonceFixed.simulationStateInput : baseFeeFixedInputStateBlocks
 }
 
-export const buildSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
-	return await createSimulationState(ethereum, undefined, preparedSimulationInput)
+export const buildSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationStateInput, ethereum: EthereumClientService, simulationOverrides: StateOverrides = {}) => {
+	return await createSimulationState(ethereum, undefined, preparedSimulationInput, simulationOverrides)
 }
 
-export const buildExecutionSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationStateInput, ethereum: EthereumClientService): Promise<ExecutionSimulationState> => {
-	return await createExecutionSimulationState(ethereum, undefined, preparedSimulationInput)
+export const buildExecutionSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationStateInput, ethereum: EthereumClientService, simulationOverrides: StateOverrides = {}): Promise<ExecutionSimulationState> => {
+	return await createExecutionSimulationState(ethereum, undefined, preparedSimulationInput, simulationOverrides)
 }
 
-export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService) => {
-	return await buildSimulationStateFromPreparedInput(await prepareSimulationInputForRpc(simulationInput, ethereum), ethereum)
+export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService, simulationOverrides: StateOverrides = {}) => {
+	return await buildSimulationStateFromPreparedInput(await prepareSimulationInputForRpc(simulationInput, ethereum, simulationOverrides), ethereum, simulationOverrides)
 }
 
 export async function visualizeSimulatorState(simulationState: SimulationState, ethereum: EthereumClientService, tokenPriceService: TokenPriceService, requestAbortController: AbortController | undefined): Promise<VisualizedSimulatorState> {
@@ -506,7 +511,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 	}
 	const weth = await getWeth()
 	const settings = await getSettings()
-	const delegationAddressBySender = await getDelegationAddressesForSimulation(simulationState.simulationStateInput, ethereum, requestAbortController)
+	const delegationAddressBySender = await getDelegationAddressesForSimulation(simulationState.simulationStateInput, simulationState.simulationOverrides ?? {}, ethereum, requestAbortController)
 
 	const parsedInputDataForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(
 		simulationState.simulationStateInput, async (block) => {
@@ -522,7 +527,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		const refreshedSimulationState = modifyObject(simulationState, { simulationConductedTimestamp: new Date() })
 
 		const visualizedBlocks = await promiseAllMapAbortSafe(simulationState.simulationStateInput, async (block, blockIndex) => {
-			const blockDelegations = getDelegationsForBlock(block, delegationAddressBySender)
+			const blockDelegations = delegationAddressBySender
 			const parsedInputDataForBlock = parsedInputDataForEachBlockAndTransaction[blockIndex]
 			if (parsedInputDataForBlock === undefined) throw new Error('Block index overflow')
 
@@ -608,7 +613,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 		if (eventsForEachTransaction === undefined || parsedInputDataForBlock === undefined || protectorsForBlock === undefined || inputBlock === undefined) throw new Error('Block index overflow')
 		return {
 			visualizedPersonalSignRequests: await promiseAllMapAbortSafe(block.signedMessages, (signedMessage) => silenceChromeUnCaughtPromise(craftPersonalSignPopupMessage(ethereum, requestAbortController, signedMessage, settings.activeRpcNetwork))),
-			simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransactions(block.simulatedTransactions, eventsForEachTransaction, simulationState.rpcNetwork, parsedInputDataForBlock, protectorsForBlock, updatedMetadata.addressBookEntries, updatedMetadata.namedTokenIds, updatedMetadata.ens, tokenPriceEstimates, weth, getDelegationsForBlock(inputBlock, delegationAddressBySender)),
+			simulatedAndVisualizedTransactions: formSimulatedAndVisualizedTransactions(block.simulatedTransactions, eventsForEachTransaction, simulationState.rpcNetwork, parsedInputDataForBlock, protectorsForBlock, updatedMetadata.addressBookEntries, updatedMetadata.namedTokenIds, updatedMetadata.ens, tokenPriceEstimates, weth, delegationAddressBySender),
 			blockTimeManipulation: block.blockTimeManipulation,
 		}
 	})

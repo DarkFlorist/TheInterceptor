@@ -22,7 +22,7 @@ import { serialize } from '../types/wire-types.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
-import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInput, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
+import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInput, getCurrentSimulationOverrides, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
@@ -76,7 +76,10 @@ async function handleRPCRequest(
 	let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
 	const getSimulationInput = async () => {
 		if (!simulationOverlayEnabled) return PASSTHROUGH_STATE
-		if (simulationInputPromise === undefined) simulationInputPromise = (async () => toResolvedSimulationInput(await prepareSimulationInputForRpc(await getCurrentSimulationInput(), ethereum)))()
+		if (simulationInputPromise === undefined) simulationInputPromise = (async () => {
+			const simulationOverrides = getCurrentSimulationOverrides(settings)
+			return toResolvedSimulationInput(await prepareSimulationInputForRpc(await getCurrentSimulationInput(undefined, settings), ethereum, simulationOverrides), simulationOverrides)
+		})()
 		return await simulationInputPromise
 	}
 	const getExecutionSimulationState = async () => {
@@ -84,7 +87,7 @@ async function handleRPCRequest(
 		if (executionSimulationStatePromise === undefined) executionSimulationStatePromise = (async () => {
 			const simulationInput = await getSimulationInput()
 			if (simulationInput.kind === 'passthrough') return PASSTHROUGH_STATE
-			return toResolvedExecutionSimulationState(await buildExecutionSimulationStateFromPreparedInput(simulationInput.value, ethereum))
+			return toResolvedExecutionSimulationState(await buildExecutionSimulationStateFromPreparedInput(simulationInput.value, ethereum, simulationInput.simulationOverrides))
 		})()
 		return await executionSimulationStatePromise
 	}

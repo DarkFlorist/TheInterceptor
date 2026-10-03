@@ -33,7 +33,6 @@ export function createSafeSigningSimulationInput(
 	if (transactions.length === 0) return []
 	return [{
 		stateOverrides: {},
-		delegateClearedAddress: undefined,
 		transactions,
 		signedMessages: [],
 		blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,

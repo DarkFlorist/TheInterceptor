@@ -1476,6 +1476,31 @@ describe('SimulationModeEthereumClientService', () => {
 			assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.hasGetCodeOverride, true)
 		})
 
+		test('code reads after a simulated authorization use the resulting code', async () => {
+			const baseBlock = createSimulationStateInput()[0]
+			const baseTransaction = baseBlock?.transactions[0]
+			if (baseBlock === undefined || baseTransaction === undefined) throw new Error('missing simulation fixture')
+			const authority = exampleTransaction.from
+			const signedTransaction = mockSignTransaction({
+				...example7702Transaction,
+				authorizationList: [{ chainId: 1n, address: 0x1234n, nonce: 0n, authority, r: 1n, s: 2n, yParity: 'even' as const }],
+			})
+			const input = [{ ...baseBlock, transactions: [{ ...baseTransaction, signedTransaction, originalRequestParameters: { method: 'eth_sendTransaction' as const, params: [{ type: '7702' as const, authorizationList: [] }] } }] }]
+			const simulationOverrides = { [addressString(authority)]: { code: new Uint8Array() } }
+			requestHandler.ethSimulateV1Requests.length = 0
+			const code = await getSimulatedCodeFromInput(ethereum, undefined, toResolvedSimulationInput(input, simulationOverrides), authority)
+			assert.equal(code.statusCode, 'success')
+			if (code.statusCode === 'success') assert.equal(dataStringWith0xStart(code.getCodeReturn), '0x1234')
+			const request = requestHandler.ethSimulateV1Requests.at(-1)
+			assert.equal(request?.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(authority)]?.code?.length, 0)
+			assert.equal(request?.params[0].blockStateCalls.at(-1)?.stateOverrides?.[addressString(authority)]?.code, undefined)
+			const simulationState = await createSimulationState(ethereum, undefined, input, simulationOverrides)
+			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
+			const popupCode = await getSimulatedCode(ethereum, undefined, toResolvedSimulationState(simulationState), authority)
+			assert.equal(popupCode.statusCode, 'success')
+			if (popupCode.statusCode === 'success') assert.equal(dataStringWith0xStart(popupCode.getCodeReturn), '0x1234')
+		})
+
 		test('getSimulatedCodeFromInput propagates malformed code lookup output', async () => {
 			requestHandler.malformedGetCodeReturn = true
 			try {

@@ -73,7 +73,7 @@ export async function sendSubscriptionMessagesForNewBlock(
 		simulatedBlocksPromise = (async () => {
 			const simulationState = await getCachedSimulationState()
 			if (simulationState.kind === 'passthrough' || simulationState.value.success !== true) return []
-			const simulationInput = { kind: 'simulated' as const, value: simulationState.value.simulationStateInput }
+			const simulationInput = { kind: 'simulated' as const, value: simulationState.value.simulationStateInput, simulationOverrides: simulationState.value.simulationOverrides ?? {} }
 			const simulatedHead = await getSimulatedBlockNumberFromInput(ethereumClientService, undefined, simulationInput)
 			const simulatedBlocks = []
 			for (let simulatedBlockNumber = blockNumber + 1n; simulatedBlockNumber <= simulatedHead; simulatedBlockNumber++) {

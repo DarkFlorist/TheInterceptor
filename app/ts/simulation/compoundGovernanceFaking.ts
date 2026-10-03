@@ -9,8 +9,10 @@ import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { mockSignTransaction } from './services/simulationTransactionSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
 import { decodeFunctionOutputLoose, decodeFunctionOutputObjectLoose, encodeFunctionCallLoose, hasFunctionLoose } from '../utils/abiRuntime.js'
+import type { StateOverrides } from '../types/ethSimulate-types.js'
+import { applySimulationOverrides } from '../utils/delegateClearingState.js'
 
-export const simulateCompoundGovernanceExecution = async (ethereumClientService: EthereumClientService, governanceContract: AddressBookEntry, proposalId: EthereumQuantity) => {
+export const simulateCompoundGovernanceExecution = async (ethereumClientService: EthereumClientService, governanceContract: AddressBookEntry, proposalId: EthereumQuantity, simulationOverrides: StateOverrides = {}) => {
 	if (!('abi' in governanceContract) || governanceContract.abi === undefined) throw new Error(`We need to have ABI for governance contract ${ checksummedAddress(governanceContract.address) } to be able to proceed :()`)
 	const requiredFunctions = ['timelock', 'proposals', 'getActions']
 
@@ -53,14 +55,13 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	if (parentBlock === null) throw new Error('The latest block is null')
 	const input = [ {
 		stateOverrides: {},
-		delegateClearedAddress: undefined,
 		transactions: calls.map((call) => ({ signedTransaction: mockSignTransaction(call) })),
 		signedMessages: [],
 		blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
 		simulateWithZeroBaseFee: true,
 	} ] as const
 
-	const governanceContractCalls = (await ethereumClientService.simulate(input, parentBlock.number, undefined))[0]?.calls
+	const governanceContractCalls = (await ethereumClientService.simulate(input, parentBlock.number, undefined, simulationOverrides))[0]?.calls
 	if (governanceContractCalls === undefined) throw new Error('simulateTransactionsAndSignatures returned zero length aray')
 	for (const call of governanceContractCalls) {
 		if (call.status !== 'success') throw new Error('Failed to retrieve governance contracts information')
@@ -83,6 +84,9 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	}
 
 	if (eta <= dateToBigintSeconds(parentBlock.timestamp)) throw new Error('ETA has passed already')
+	const timeLockOverrides: StateOverrides = {
+		[addressString(timeLockContract)]: { code: getCompoundGovernanceTimeLockMulticall(), stateDiff: {} }
+	}
 	const query = [{
 		calls: [executingTransaction],
 		blockOverrides: {
@@ -92,9 +96,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 			feeRecipient: parentBlock.miner,
 			baseFeePerGas: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
 		},
-		stateOverrides: {
-			[addressString(timeLockContract)]: { code: getCompoundGovernanceTimeLockMulticall(), stateDiff: {} }
-		},
+		stateOverrides: applySimulationOverrides(simulationOverrides, timeLockOverrides),
 	}]
 	const ethSimulateV1CallResult = (await ethereumClientService.ethSimulateV1(query, parentBlock.number, undefined))[0]?.calls[0]
 	if (ethSimulateV1CallResult === undefined) throw new Error('ethSimulateV1 result was undefined')
@@ -102,7 +104,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 		ethSimulateV1CallResult,
 		executingTransaction,
 		executionTimestamp: bigintSecondsToDate(eta),
-		executionStateOverrides: query[0]?.stateOverrides ?? {},
+		executionStateOverrides: timeLockOverrides,
 	}
 }
 
