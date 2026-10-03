@@ -2,7 +2,7 @@ import * as assert from 'assert'
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
-import { getSomeTimeAgoText, SomeTimeAgo } from '../../app/ts/components/subcomponents/SomeTimeAgo.js'
+import { getSomeTimeAgoText, humanReadableDateDeltaLessDetailed, SomeTimeAgo } from '../../app/ts/components/subcomponents/SomeTimeAgo.js'
 import { installDateMock, installDomMock } from './domMock.js'
 
 describe('SomeTimeAgo', () => {
@@ -13,6 +13,11 @@ describe('SomeTimeAgo', () => {
 		const newerTimestamp = new Date('2024-01-01T00:00:09.000Z')
 		assert.equal(getSomeTimeAgoText(olderTimestamp, now, false, formatSeconds), '5s')
 		assert.equal(getSomeTimeAgoText(newerTimestamp, now, false, formatSeconds), '1s')
+	})
+
+	test('rounds multi-day durations using half-day boundaries', () => {
+		assert.equal(humanReadableDateDeltaLessDetailed(36.1 * 60 * 60), '2d ago')
+		assert.equal(humanReadableDateDeltaLessDetailed(47 * 60 * 60), '2d ago')
 	})
 
 	test('updates the rendered output when rerendered with a fresher timestamp', async () => {

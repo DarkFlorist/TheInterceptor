@@ -6,15 +6,18 @@ function makeError () {
 }
 
 async function copyClipboardApi (text: string) {
-	// Use the Async Clipboard API when available. Requires a secure browsing
-	// context (i.e. HTTPS)
+	// Use the Async Clipboard API when available. Requires a secure browsing context (i.e. HTTPS)
 	if (!navigator.clipboard) {
 		throw makeError()
 	}
 	return navigator.clipboard.writeText(text)
 }
 
-async function copyExecCommand (text: string) {
+export async function copyExecCommand (text: string) {
+	// Make a selection object representing the range of text selected by the user
+	const selection = globalThis.getSelection()
+	if (!selection) throw makeError()
+
 	// Put the text to copy into a <span>
 	const span = document.createElement('span')
 	span.textContent = text
@@ -27,23 +30,23 @@ async function copyExecCommand (text: string) {
 	// Add the <span> to the page
 	document.body.appendChild(span)
 
-	// Make a selection object representing the range of text selected by the user
-	const selection = globalThis.getSelection()
-	if (!selection) return
-	const range = globalThis.document.createRange()
-	selection.removeAllRanges()
-	range.selectNode(span)
-	selection.addRange(range)
-
-	// Copy text to the clipboard
 	try {
+		const range = globalThis.document.createRange()
+		selection.removeAllRanges()
+		range.selectNode(span)
+		selection.addRange(range)
+
+		// Copy text to the clipboard
 		if (!globalThis.document.execCommand('copy')) {
 			throw makeError()
 		}
 	} finally {
 		// Cleanup
-		selection.removeAllRanges()
-		globalThis.document.body.removeChild(span)
+		try {
+			selection.removeAllRanges()
+		} finally {
+			span.parentNode?.removeChild(span)
+		}
 	}
 }
 

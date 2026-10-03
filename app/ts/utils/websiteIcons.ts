@@ -1,6 +1,6 @@
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 
-export const MAX_STORED_WEBSITE_ICON_LENGTH = 1_048_576
+const MAX_STORED_WEBSITE_ICON_LENGTH = 1_048_576
 
 const DATA_IMAGE_ICON_PREFIX = /^data:image\//i
 
@@ -11,7 +11,7 @@ export function sanitizeStoredWebsiteIcon(icon: string | undefined): string | un
 	return icon
 }
 
-export function sanitizeWebsite(website: Website): Website {
+function sanitizeWebsite(website: Website): Website {
 	const icon = sanitizeStoredWebsiteIcon(website.icon)
 	if (icon === website.icon) return website
 	return { ...website, icon }

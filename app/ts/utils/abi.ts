@@ -1,4 +1,4 @@
-import type { Abi } from 'viem'
+import type { Abi } from './ethereumPrimitives.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS } from './constants.js'
 import type { AbiLike } from './abiRuntime.js'
@@ -384,6 +384,16 @@ export const Erc1155ABI = [
 	},
 ] as const satisfies Abi
 
+export const Erc1046ABI = [
+	{
+		type: 'function',
+		name: 'tokenURI',
+		stateMutability: 'view',
+		inputs: [],
+		outputs: [{ name: '', type: 'string' }],
+	},
+] as const satisfies Abi
+
 export const CompoundGovernanceAbi = [
 	{
 		type: 'function',
@@ -494,17 +504,3 @@ export const getAbi = (entry: AddressBookEntry): AbiLike | undefined => {
 	if (entry.type === 'ERC721') return Erc721ABI
 	return undefined
 }
-
-function getStringBetweenParentheses(inputString: string): string | undefined {
-	const regex = /\((.*?)\)/
-	const match = inputString.match(regex)
-	if (match === null) return undefined
-	return match[1]
-}
-
-export const extractFunctionArgumentTypes = (signature: string) => {
-	const args = getStringBetweenParentheses(signature)
-	return args === undefined || args.length === 0 ? [] : args.split(',')
-}
-
-export const removeTextBetweenBrackets = (inputString: string) => inputString.replace(/\[.*?\]/g, '')

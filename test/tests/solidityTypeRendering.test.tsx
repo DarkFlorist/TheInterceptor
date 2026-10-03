@@ -10,6 +10,8 @@ import { installDomMock } from './domMock.js'
 
 type RenderTreeNode = {
 	readonly childNodes?: readonly RenderTreeNode[]
+	readonly l?: Record<string, (event: unknown) => unknown>
+	readonly tagName?: string
 	readonly style?: { readonly cssText?: string }
 	readonly textContent?: string
 }
@@ -29,6 +31,20 @@ const collectNodesWithStyle = (node: RenderTreeNode, styleText: string): readonl
 	return matches
 }
 
+const collectElements = (node: RenderTreeNode, tagName: string): readonly RenderTreeNode[] => {
+	const matches = node.tagName === tagName.toUpperCase() ? [node] : []
+	for (const child of node.childNodes ?? []) {
+		matches.push(...collectElements(child, tagName))
+	}
+	return matches
+}
+
+const clickElement = async (element: RenderTreeNode) => {
+	const clickHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Click'))?.[1]
+	if (clickHandler === undefined) throw new Error('Expected click handler')
+	await clickHandler({ currentTarget: element })
+}
+
 const addressMetaData = [
 	{
 		type: 'ERC20',
@@ -44,7 +60,7 @@ const addressMetaData = [
 		address: CONSIDERATION_RECIPIENT_ADDRESS,
 		entrySource: 'User',
 	},
-] satisfies readonly AddressBookEntry[]
+] as const satisfies readonly AddressBookEntry[]
 
 const web3jAbiV2Tuple = {
 	type: 'tuple',
@@ -52,7 +68,7 @@ const web3jAbiV2Tuple = {
 		{ paramName: 'id', typeValue: { type: 'string', value: 'foo-id' } },
 		{ paramName: 'name', typeValue: { type: 'string', value: 'Example Foo' } },
 	],
-} satisfies PureGroupedSolidityType
+} as const satisfies PureGroupedSolidityType
 
 const seaportTupleArray = {
 	type: 'tuple[]',
@@ -71,9 +87,37 @@ const seaportTupleArray = {
 			{ paramName: 'recipient', typeValue: { type: 'address', value: CONSIDERATION_RECIPIENT_ADDRESS } },
 		],
 	],
-} satisfies PureGroupedSolidityType
+} as const satisfies PureGroupedSolidityType
 
 describe('Solidity type rendering', () => {
+	test('offers to add a missing ABI for the destination contract', async () => {
+		const dom = installDomMock()
+		const destination = {
+			type: 'contract',
+			name: 'Missing ABI Contract',
+			address: 0x8000000000000000000000000000000000000008n,
+			entrySource: 'User',
+		} as const satisfies AddressBookEntry
+		let editedEntry: AddressBookEntry | undefined
+		try {
+			await act(() => {
+				render(h(NoParsedAvailable, {
+					to: destination,
+					renameAddressCallBack: entry => { editedEntry = entry },
+				}), dom.document.body)
+			})
+
+			const addAbiButton = collectElements(dom.document.body, 'button').find(button => button.textContent === 'Add ABI')
+			assert.notEqual(addAbiButton, undefined)
+			if (addAbiButton === undefined) throw new Error('Expected Add ABI button')
+			await act(async () => { await clickElement(addAbiButton) })
+			assert.equal(editedEntry, destination)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	test('renders generic unavailable input parser copy after tuple support', async () => {
 		const dom = installDomMock()
 		try {
@@ -93,6 +137,7 @@ describe('Solidity type rendering', () => {
 			const renderedText = normalizeRenderedText(dom.document.body.textContent)
 			assert.equal(renderedText.includes('Unable to parse input data with the available ABI for Tuple Input Contract'), true)
 			assert.equal(renderedText.includes('struct'), false)
+			assert.equal(collectElements(dom.document.body, 'button').some(button => button.textContent === 'Add ABI'), false)
 		} finally {
 			dom.restore()
 		}

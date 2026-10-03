@@ -1,5 +1,6 @@
 import process from 'node:process'
 import ts from 'typescript'
+import { collectFilePaths, scriptKindForPath } from './typescript-lint-utils.mts'
 
 const shouldWrite = process.argv.includes('--write')
 
@@ -23,11 +24,6 @@ type Replacement = {
 	start: number
 	end: number
 	text: string
-}
-
-const scriptKindForPath = (path: string) => {
-	if (path.endsWith('.tsx')) return ts.ScriptKind.TSX
-	return ts.ScriptKind.TS
 }
 
 const escapeForSingleQuotedString = (value: string) => {
@@ -105,18 +101,11 @@ const collectQuoteDiagnostics = (path: string, sourceText: string) => {
 	return { diagnostics, replacements }
 }
 
-const filePaths = new Set<string>()
-for (const pattern of filePatterns) {
-	for await (const path of new Bun.Glob(pattern).scan('.')) {
-		filePaths.add(path)
-	}
-}
-
 const diagnostics: Diagnostic[] = []
 let updatedFiles = 0
 let updatedLiterals = 0
 
-for (const path of [...filePaths].sort()) {
+for (const path of await collectFilePaths(filePatterns)) {
 	const sourceText = await Bun.file(path).text()
 	const { diagnostics: fileDiagnostics, replacements } = collectQuoteDiagnostics(path, sourceText)
 	diagnostics.push(...fileDiagnostics)

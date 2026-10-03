@@ -24,7 +24,7 @@ export function ErrorComponent(props: ErrorProps) {
 	}
 	return (
 		<div style = { containerStyle }>
-			<div class = 'notification' style = { `background-color: ${ boxColor }; display: flex; align-items: flex-start; gap: 10px; padding: 10px;` }>
+			<div class = 'notification error-notification' style = { `background-color: ${ boxColor };` }>
 				<span class = 'icon' style = 'margin-left: 0px; margin-right: 0px; width: 2em; height: 2em; min-width: 2em; min-height: 2em; flex: 0 0 auto;'>
 					<img src = '../img/warning-sign-black.svg' width = '32' height = '32' style = 'width: 2em; height: 2em;'/>
 				</span>

@@ -2,7 +2,7 @@ import { addressString, addressStringWithout0x } from '../utils/bigint.js'
 import type { AddressBookEntries, AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { NamedTokenId, SimulationStateInput } from '../types/visualizer-types.js'
 import { tokenMetadata, contractMetadata, erc721Metadata, erc1155Metadata } from '@darkflorist/address-metadata'
-import { getAddress, keccak256, stringToBytes } from '../utils/viem.js'
+import { getAddress, keccak256, stringToBytes } from '../utils/ethereumPrimitives.js'
 import { ENS_ADDR_REVERSE_NODE, ENS_TOKEN_WRAPPER, ETHEREUM_COIN_ICON, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS } from '../utils/constants.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import { type IdentifiedAddress, itentifyAddressViaOnChainInformation } from '../utils/tokenIdentification.js'
@@ -10,7 +10,7 @@ import { assertNever } from '../utils/typescript.js'
 import { addEnsLabelHash, addEnsNodeHash, addUserAddressBookEntryIfItDoesNotExist, getEnsLabelHashes, getEnsNodeHashes, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import { getEnsReverseNodeHash, getEthereumNameServiceNameFromTokenId } from '../utils/ethereumNameService.js'
-import { defaultActiveAddresses } from './settings.js'
+import { DEFAULT_ACTIVE_ADDRESSES } from '../config/defaults.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { EthereumBytes32 } from '../types/wire-types.js'
 import type { ENSNameHashes } from '../types/ens.js'
@@ -19,14 +19,34 @@ import type { EnrichedEthereumEventWithMetadata, EnrichedEthereumEvents, Enriche
 import type { PureGroupedSolidityType } from '../types/solidityType.js'
 import { promiseAllMapAbortSafe } from '../utils/requests.js'
 import { getFilledInContactEntry } from '../utils/addressBookEntries.js'
+import { JsonRpcResponseError, reportLocalRecoveryBestEffort } from '../utils/errors.js'
+import { getDeployedContractAddress } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { isValidErc20Decimals } from '../utils/erc20.js'
+import { findActiveAddressBookEntryForChain } from '../utils/activeAddressSelection.js'
 
 const pathJoin = (parts: string[], sep = '/') => parts.join(sep).replace(new RegExp(sep + '{1,}', 'g'), sep)
 
 export const getFullLogoUri = (logoURI: string) => pathJoin([LOGO_URI_PREFIX, logoURI])
 
-export async function getActiveAddressEntry(address: bigint): Promise<AddressBookEntry> {
-	const identifiedAddress = await identifyAddressWithoutNode(address, undefined)
-	if (identifiedAddress?.useAsActiveAddress) return identifiedAddress
+/**
+ * Resolves metadata for an address being surfaced as an active account. This
+ * intentionally accepts metadata only from entries marked `useAsActiveAddress`;
+ * static contract/token metadata and non-active address-book entries must not
+ * supply active-account access policy.
+ */
+export async function getActiveAddressEntryForChain(address: bigint, chainId: bigint): Promise<AddressBookEntry> {
+	const identifiedAddress = findActiveAddressBookEntryForChain(await getActiveAddresses(), address, chainId, 'any')
+	if (identifiedAddress !== undefined) return identifiedAddress
+	return getUnknownActiveAddressEntry(address)
+}
+
+export async function getWalletActiveAddressEntryForChain(address: bigint, chainId: bigint): Promise<AddressBookEntry> {
+	const identifiedAddress = findActiveAddressBookEntryForChain(await getActiveAddresses(), address, chainId, 'walletAccount')
+	if (identifiedAddress !== undefined) return identifiedAddress
+	return getUnknownActiveAddressEntry(address)
+}
+
+function getUnknownActiveAddressEntry(address: bigint): AddressBookEntry {
 	return {
 		...getFilledInContactEntry(address),
 		useAsActiveAddress: true,
@@ -36,7 +56,7 @@ export async function getActiveAddressEntry(address: bigint): Promise<AddressBoo
 
 export async function getActiveAddresses() : Promise<AddressBookEntries> {
 	const activeAddresses = (await getUserAddressBookEntries()).filter((entry) => entry.useAsActiveAddress)
-	return activeAddresses === undefined || activeAddresses.length === 0 ? defaultActiveAddresses : activeAddresses
+	return activeAddresses === undefined || activeAddresses.length === 0 ? DEFAULT_ACTIVE_ADDRESSES : activeAddresses
 }
 
 export function getNativeTokenErc20(rpcEntry: RpcNetwork | undefined): Erc20TokenEntry {
@@ -56,7 +76,7 @@ async function identifyAddressWithoutNode(address: bigint, rpcEntry: RpcNetwork 
 	if (address === ETHEREUM_LOGS_LOGGER_ADDRESS) return getNativeTokenErc20(rpcEntry)
 
 	if (useLocalStorage) {
-		const userEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(rpcEntry?.chainId || 1n)).find((entry) => entry.address === address)
+		const userEntry = (await getUserAddressBookEntriesForChainIdMorePreciseFirst(rpcEntry?.chainId ?? 1n)).find((entry) => entry.address === address)
 		if (userEntry !== undefined) return userEntry
 	}
 	const addrString = addressString(address)
@@ -135,11 +155,28 @@ export async function identifyAddress(ethereumClientService: EthereumClientServi
 	const identifiedAddress = await identifyAddressWithoutNode(address, ethereumClientService.getRpcEntry(), useLocalStorage)
 	if (identifiedAddress !== undefined) return identifiedAddress
 	const addrString = addressString(address)
-	const tokenIdentification = await itentifyAddressViaOnChainInformation(ethereumClientService, requestAbortController, address)
 	const chainId = ethereumClientService.getChainId()
+	let tokenIdentification: IdentifiedAddress
+	try {
+		tokenIdentification = await itentifyAddressViaOnChainInformation(ethereumClientService, requestAbortController, address)
+	} catch(error: unknown) {
+		if (!(error instanceof JsonRpcResponseError)) throw error
+		reportLocalRecoveryBestEffort(error, {
+			code: 'token_metadata_probe_failed',
+			message: 'Using fallback address metadata after optional on-chain token probes failed.',
+			details: { address: addrString },
+		})
+		return { ...getFilledInContactEntry(address), chainId }
+	}
 	const getEntry = (tokenIdentification: IdentifiedAddress): AddressBookEntry => {
 		switch (tokenIdentification.type) {
-			case 'ERC20': return {
+			case 'ERC20': return !isValidErc20Decimals(tokenIdentification.decimals) ? {
+				name: tokenIdentification.name,
+				address,
+				type: 'contract',
+				entrySource: 'OnChain',
+				chainId,
+			} : {
 				name: tokenIdentification.name,
 				address,
 				symbol: tokenIdentification.symbol,
@@ -221,7 +258,7 @@ export function getAddressesToIdentifyForVisualiserFromTransactions(events: Enri
 
 	for (const tx of simulationStateInput.flatMap((block) => block.transactions)) {
 		addressesToFetchMetadata.push(tx.signedTransaction.from)
-		if (tx.signedTransaction.to !== null) addressesToFetchMetadata.push(tx.signedTransaction.to)
+		addressesToFetchMetadata.push(tx.signedTransaction.to ?? getDeployedContractAddress(tx.signedTransaction.from, tx.signedTransaction.nonce))
 		if (tx.signedTransaction.type === '7702') addressesToFetchMetadata.push(...tx.signedTransaction.authorizationList.map((authorization) => authorization.address))
 	}
 
@@ -230,7 +267,7 @@ export function getAddressesToIdentifyForVisualiserFromTransactions(events: Enri
 
 export async function getAddressBookEntriesForVisualiserFromTransactions(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, events: EnrichedEthereumEvents, inputData: readonly EnrichedEthereumInputData[], simulationStateInput: SimulationStateInput): Promise<AddressBookEntry[]> {
 	const addressesToIdentify = getAddressesToIdentifyForVisualiserFromTransactions(events, inputData, simulationStateInput)
-	return await promiseAllMapAbortSafe(addressesToIdentify, (address) => identifyAddress(ethereumClientService, requestAbortController, address))
+	return await promiseAllMapAbortSafe(addressesToIdentify, async (address) => await identifyAddress(ethereumClientService, requestAbortController, address))
 }
 
 export async function nameTokenIds(ethereumClientService: EthereumClientService, events: EnrichedEthereumEvents) {

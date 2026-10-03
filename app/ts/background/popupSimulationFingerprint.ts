@@ -1,4 +1,4 @@
-import { stringToBytes, keccak256 } from '../utils/viem.js'
+import { stringToBytes, keccak256 } from '../utils/ethereumPrimitives.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import type { SimulationStateInput } from '../types/visualizer-types.js'

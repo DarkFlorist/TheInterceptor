@@ -4,10 +4,13 @@ import type { ResolvedSimulationState, SimulatedTransaction } from '../types/vis
 import type { EthereumAddress } from '../types/wire-types.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { handleERC20TransferLog } from './logHandlers.js'
+import { getGasFeePaidByTransactionSender } from '../utils/transactionGasAccounting.js'
 
 const mergeSimulationOverrides = (stateOverridesArray: StateOverrides[]): StateOverrides => {
 	return stateOverridesArray.reduce((accumulator, next) => ({ ...accumulator, ...next }), {})
 }
+
+const subtractBaseFeeWithoutUnderflow = (balance: bigint, baseFee: bigint) => balance > baseFee ? balance - baseFee : 0n
 
 const getETHBalanceChanges = (baseFeePerGas: bigint, transaction: SimulatedTransaction) => {
 	if (transaction.ethSimulateV1CallResult.status === 'failure') return []
@@ -15,7 +18,13 @@ const getETHBalanceChanges = (baseFeePerGas: bigint, transaction: SimulatedTrans
 	const ethBalanceAfter = transaction.tokenBalancesAfter.filter((x) => x.token === ETHEREUM_LOGS_LOGGER_ADDRESS)
 	return ethBalanceAfter.map((balanceAfter) => {
 		const balanceAfterBalance = baseFeePerGas * transaction.ethSimulateV1CallResult.gasUsed
-		const gasFees = balanceAfter.owner === transaction.preSimulationTransaction.signedTransaction.from ? transaction.realizedGasPrice * transaction.ethSimulateV1CallResult.gasUsed : 0n
+		const gasFees = balanceAfter.owner === transaction.preSimulationTransaction.signedTransaction.from
+			? getGasFeePaidByTransactionSender({
+				gasSpent: transaction.ethSimulateV1CallResult.gasUsed,
+				realizedGasPrice: transaction.realizedGasPrice,
+				safeTransaction: transaction.preSimulationTransaction.safeTransaction,
+			})
+			: 0n
 		return {
 			address: balanceAfter.owner,
 			before: ethLogs.reduce((total, event) => {
@@ -44,7 +53,7 @@ export const getSimulatedStackV1 = (simulationState: ResolvedSimulationState, ad
 	const simulatedTransactions = simulationState.value.simulatedBlocks.flatMap((simulatedBlock) => simulatedBlock.simulatedTransactions).map((transaction) => {
 		const ethLogs = transaction.ethSimulateV1CallResult.status === 'failure' ? [] : transaction.ethSimulateV1CallResult.logs.filter((log) => log.address === ETHEREUM_LOGS_LOGGER_ADDRESS)
 		const ethBalanceAfter = transaction.tokenBalancesAfter.filter((x) => x.token === ETHEREUM_LOGS_LOGGER_ADDRESS)
-		const maxPriorityFeePerGas = transaction.preSimulationTransaction.signedTransaction.type === '1559' ? transaction.preSimulationTransaction.signedTransaction.maxPriorityFeePerGas : 0n
+		const maxPriorityFeePerGas = 'maxPriorityFeePerGas' in transaction.preSimulationTransaction.signedTransaction ? transaction.preSimulationTransaction.signedTransaction.maxPriorityFeePerGas : 0n
 		return {
 			...transaction.preSimulationTransaction.signedTransaction,
 			...transaction.ethSimulateV1CallResult,
@@ -58,9 +67,17 @@ export const getSimulatedStackV1 = (simulationState: ResolvedSimulationState, ad
 			returnValue: transaction.ethSimulateV1CallResult.returnData,
 			maxPriorityFeePerGas,
 			balanceChanges: ethBalanceAfter.map((balanceAfter) => {
-				// in the version 1.0.0 , gas price was wrongly calculated with 'maxPriorityFeePerGas', this code keeps this for 1.0.0 but fixes it for other versions
-				const balanceAfterBalance = version === '1.0.0' || balanceAfter.owner !== transaction.preSimulationTransaction.signedTransaction.from ? balanceAfter.balance : (balanceAfter.balance ?? 0n) - simulationState.value.baseFeePerGas * transaction.ethSimulateV1CallResult.gasUsed
-				const gasFees = balanceAfter.owner === transaction.preSimulationTransaction.signedTransaction.from ? transaction.realizedGasPrice * transaction.ethSimulateV1CallResult.gasUsed : 0n
+				// Version 1.0.0 omitted the base fee from its gas-price adjustment. Keep that legacy output, while 1.0.1 subtracts the base fee without producing an invalid negative JSON-RPC quantity when the sender has insufficient simulated balance.
+				const balanceAfterBalance = version === '1.0.0' || balanceAfter.owner !== transaction.preSimulationTransaction.signedTransaction.from
+					? balanceAfter.balance ?? 0n
+					: subtractBaseFeeWithoutUnderflow(balanceAfter.balance ?? 0n, simulationState.value.baseFeePerGas * transaction.ethSimulateV1CallResult.gasUsed)
+				const gasFees = balanceAfter.owner === transaction.preSimulationTransaction.signedTransaction.from
+					? getGasFeePaidByTransactionSender({
+						gasSpent: transaction.ethSimulateV1CallResult.gasUsed,
+						realizedGasPrice: transaction.realizedGasPrice,
+						safeTransaction: transaction.preSimulationTransaction.safeTransaction,
+					})
+					: 0n
 				return {
 					address: balanceAfter.owner,
 					before: ethLogs.reduce((total, event) => {
@@ -69,8 +86,8 @@ export const getSimulatedStackV1 = (simulationState: ResolvedSimulationState, ad
 						if (parsed.from === balanceAfter.owner && parsed.to !== balanceAfter.owner) return total + parsed.amount
 						if (parsed.from !== balanceAfter.owner && parsed.to === balanceAfter.owner) return total - parsed.amount
 						return total
-					}, balanceAfterBalance ?? 0n) + gasFees,
-					after: balanceAfterBalance ?? 0n,
+					}, balanceAfterBalance) + gasFees,
+					after: balanceAfterBalance,
 				}
 			}),
 			realizedGasPrice: transaction.realizedGasPrice,

@@ -9,6 +9,22 @@ interface Props {
 }
 
 const timerAttribute = 'data-hint-clickable-hide-timer-ms'
+const showHintEventName = 'interceptor:show-hint'
+
+type ShowHintEventDetail = {
+	content: string
+	delay: number
+	x: number
+	y: number
+}
+
+export const showHint = (target: HTMLElement, detail: ShowHintEventDetail) => {
+	target.dispatchEvent(new CustomEvent(showHintEventName, { bubbles: true, detail }))
+}
+
+export const clearHintTimeouts = (timeoutIds: readonly (ReturnType<typeof setTimeout> | null)[], clearTimeoutFunction = clearTimeout) => {
+	for (const timeoutId of timeoutIds) clearTimeoutFunction(timeoutId ?? undefined)
+}
 
 export default function Container(props: Props) {
 	const copyAttribute = props.attribute || 'data-hint'
@@ -65,6 +81,27 @@ export default function Container(props: Props) {
 			}, parseInt(delayValue))
 		}
 
+		const show = (event: Event) => {
+			if (!(event instanceof CustomEvent)) return
+			if (!(event.target instanceof Element) || !containerElement.contains(event.target)) return
+			const detail: unknown = event.detail
+			if (typeof detail !== 'object' || detail === null) return
+			if (!('content' in detail) || typeof detail.content !== 'string') return
+			if (!('delay' in detail) || typeof detail.delay !== 'number' || !Number.isFinite(detail.delay) || detail.delay < 0) return
+			if (!('x' in detail) || typeof detail.x !== 'number' || !('y' in detail) || typeof detail.y !== 'number') return
+
+			clearHintTimeouts([copyMessageTimeoutIdRef.current, toolTipTimeoutIdRef.current])
+			copyMessageTimeoutIdRef.current = null
+			toolTipTimeoutIdRef.current = null
+			content.value = detail.content
+			clickPosition.value = { x: detail.x, y: detail.y }
+			copyMessageTimeoutIdRef.current = setTimeout(() => {
+				content.value = ''
+				clickPosition.value = null
+				copyMessageTimeoutIdRef.current = null
+			}, detail.delay)
+		}
+
 		const mouseover = (event: MouseEvent) => {
 			const targetElement = getHintElement(event.target, toolTipAttribute) ?? getHintElement(event.target, timerAttribute)
 			if (targetElement === undefined) return
@@ -80,12 +117,17 @@ export default function Container(props: Props) {
 		containerElement.addEventListener('mouseover', mouseover)
 		containerElement.addEventListener('mouseout', hide)
 		containerElement.addEventListener('focusout', hide)
+		containerElement.addEventListener(showHintEventName, show)
 
 		return () => {
+			clearHintTimeouts([copyMessageTimeoutIdRef.current, toolTipTimeoutIdRef.current])
+			copyMessageTimeoutIdRef.current = null
+			toolTipTimeoutIdRef.current = null
 			containerElement.removeEventListener('click', click)
 			containerElement.removeEventListener('mouseover', mouseover)
 			containerElement.removeEventListener('mouseout', hide)
 			containerElement.removeEventListener('focusout', hide)
+			containerElement.removeEventListener(showHintEventName, show)
 		}
 	}, [copyAttribute, toolTipAttribute])
 

@@ -47,6 +47,21 @@ export function ManagementView() {
 		return () => globalThis.removeEventListener('hashchange', updateSelectedPage)
 	}, [])
 
+	useEffect(() => {
+		const revealSelectedTab = () => {
+			const tab = globalThis.document.getElementById(`management-tab-${ selectedPage.value }`)
+			const tabList = globalThis.document.querySelector<HTMLElement>('.management-tabs')
+			if (tab === null || tabList === null) return
+			const tabBounds = tab.getBoundingClientRect()
+			const listBounds = tabList.getBoundingClientRect()
+			if (tabBounds.left < listBounds.left) tabList.scrollLeft -= listBounds.left - tabBounds.left
+			else if (tabBounds.right > listBounds.right) tabList.scrollLeft += tabBounds.right - listBounds.right
+		}
+		revealSelectedTab()
+		globalThis.addEventListener('resize', revealSelectedTab)
+		return () => globalThis.removeEventListener('resize', revealSelectedTab)
+	}, [selectedPage.value])
+
 	function activatePage(page: ManagementPage) {
 		batch(() => {
 			mountedPages.value = mountManagementPage(mountedPages.peek(), page)
@@ -76,7 +91,7 @@ export function ManagementView() {
 			<nav class = 'management-tabs' role = 'tablist' aria-label = 'Interceptor management' onKeyDown = { handleTabKeyDown }>
 				<ManagementTab page = 'websites' selectedPage = { selectedPage.value } label = 'Websites' icon = '../img/internet.svg' selectPage = { selectPage } />
 				<ManagementTab page = 'address-book' selectedPage = { selectedPage.value } label = 'Address Book' icon = '../img/address-book.svg' selectPage = { selectPage } />
-				<ManagementTab page = 'simulation-stack' selectedPage = { selectedPage.value } label = 'Simulation Stack' icon = '../img/refresh.svg' selectPage = { selectPage } />
+				<ManagementTab page = 'simulation-stack' selectedPage = { selectedPage.value } label = 'Simulation Stack' icon = '../img/simulation-stack.svg' selectPage = { selectPage } />
 				<ManagementTab page = 'diagnostics' selectedPage = { selectedPage.value } label = 'Diagnostics' icon = '../img/warning-sign.svg' selectPage = { selectPage } />
 				<ManagementTab page = 'settings' selectedPage = { selectedPage.value } label = 'Settings' icon = '../img/settings.svg' selectPage = { selectPage } />
 			</nav>

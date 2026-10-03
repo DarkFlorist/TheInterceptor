@@ -1,15 +1,17 @@
+import { PopupSettingsChangeStatus } from './popupSettingsProtocol.js'
+import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress } from './popupSettingsRequests.js'
 import * as funtypes from 'funtypes'
-import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
+import { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, PendingWatchAssetRequest, RpcConnectionStatus, TabIconDetails, TabState } from './user-interface-types.js'
 import { EthereumAddress, EthereumBlockHeaderWithTransactionHashes, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSignedTransactionWithBlockData, NonHexBigInt, OptionalEthereumAddress } from './wire-types.js'
 import { ModifyAddressWindowState, CompleteVisualizedSimulation, BlockTimeManipulation, BlockTimeManipulationWithNoDelay, InterceptorSimulationExport } from './visualizer-types.js'
 import { UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
-import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, SimulationStackVersion, WalletAddEthereumChain } from './JsonRpc-types.js'
+import { EthGetFeeHistoryResponse, EthGetLogsResponse, EthGetStorageAtParams, EthGetStorageAtResponse, EthTransactionReceiptResponse, GetBlockReturn, SendRawTransactionParams, SendTransactionParams, SimulationStackVersion, WalletAddEthereumChain } from './JsonRpc-types.js'
 import { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from './addressBookTypes.js'
 import { Page } from './exportedSettingsTypes.js'
 import { Website, WebsiteAccess, WebsiteAccessArray } from './websiteAccessTypes.js'
 import { SignerName } from './signerTypes.js'
 import { PendingAccessRequests, PopupPendingTransactionOrSignableMessage } from './accessRequest.js'
-import { RpcEntries, RpcEntry, RpcNetwork } from './rpc.js'
+import { RpcEntries, RpcNetwork } from './rpc.js'
 import { OldSignTypedDataParams, PersonalSignParams, SignTypedDataParams } from './jsonRpc-signing-types.js'
 import { GetSimulationStackReplyV1, GetSimulationStackReplyV2 } from './simulationStackTypes.js'
 import { EnrichedRichListElement, PopupMessageReplyRequests, UnexpectedErrorOccured } from './interceptor-reply-messages.js'
@@ -17,17 +19,22 @@ import { ErrorWithCodeAndOptionalData } from './error.js'
 import { SimulateExecutionReply as SharedSimulateExecutionReply, SimulateExecutionReplyData as SharedSimulateExecutionReplyData } from './simulateExecutionReply.js'
 import { SimulateGnosisSafeTransaction as SharedSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as SharedSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
 import { EthSimulateV1Result } from './ethSimulate-types.js'
+import { SafeAppsRequestCommand } from './safeApps.js'
 
 type WalletSwitchEthereumChainReplyParams = funtypes.Static<typeof WalletSwitchEthereumChainReplyParams>
 const WalletSwitchEthereumChainReplyParams = funtypes.Tuple(funtypes.Union(
 	funtypes.ReadonlyObject({
 		accept: funtypes.Literal(true),
 		chainId: EthereumQuantity,
+		signerProviderGeneration: funtypes.Number,
+		walletSwitchRequestId: funtypes.String,
 	}),
 	funtypes.ReadonlyObject({
 		accept: funtypes.Literal(false),
 		chainId: EthereumQuantity,
-		error: ErrorWithCodeAndOptionalData
+		error: ErrorWithCodeAndOptionalData,
+		signerProviderGeneration: funtypes.Number,
+		walletSwitchRequestId: funtypes.String,
 	})
 ))
 
@@ -48,6 +55,18 @@ const InpageScriptRequestWithoutIdentifier = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_switchEthereumChain_reply'), result: funtypes.Literal('0x') }),
 )
 
+export type WatchAssetSignerRequest = funtypes.Static<typeof WatchAssetSignerRequest>
+export const WatchAssetSignerRequest = funtypes.ReadonlyObject({
+	parameters: funtypes.Unknown,
+	uniqueRequestIdentifier: UniqueRequestIdentifier,
+	signerIdentity: funtypes.ReadonlyObject({
+		tabId: funtypes.Number,
+		connectionName: EthereumQuantity,
+		ownerGeneration: funtypes.Number,
+		signerProviderGeneration: funtypes.Number,
+	}),
+})
+
 export type InpageScriptRequest = funtypes.Static<typeof InpageScriptRequest>
 export const InpageScriptRequest = funtypes.Intersect(
 	funtypes.ReadonlyObject({ uniqueRequestIdentifier: UniqueRequestIdentifier, type: funtypes.Literal('result') }),
@@ -63,14 +82,17 @@ const ErrorReturn = funtypes.ReadonlyObject({
 export type InpageScriptCallBack = funtypes.Static<typeof InpageScriptCallBack>
 export const InpageScriptCallBack = funtypes.Union(
 	ErrorReturn,
+	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_connection_status'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_chainId'), result: funtypes.ReadonlyTuple() }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_switchEthereumChain'), result: EthereumQuantity }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_switchEthereumChain'), result: EthereumQuantity, walletSwitchRequestId: funtypes.String }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_wallet_watchAsset'), result: WatchAssetSignerRequest }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_eth_requestAccounts'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('request_signer_to_eth_accounts'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('disconnect'), result: funtypes.ReadonlyTuple() }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('connect'), result: funtypes.ReadonlyTuple(EthereumQuantity) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('accountsChanged'), result: funtypes.ReadonlyArray(EthereumAddress) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('chainChanged'), result: EthereumQuantity }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('safe_apps_compatibility'), result: funtypes.ReadonlyObject({ enabled: funtypes.Boolean }).And(funtypes.ReadonlyPartial({ canRequestAccess: funtypes.Boolean })) }),
 )
 
 export type GetSimulationStackReply = funtypes.Static<typeof GetSimulationStackReply>
@@ -85,6 +107,15 @@ const WalletPermission = funtypes.ReadonlyObject({
 	caveats: funtypes.ReadonlyArray(funtypes.Unknown),
 	invoker: funtypes.String,
 })
+const WalletCapabilities = funtypes.ReadonlyRecord(
+	funtypes.String,
+	funtypes.ReadonlyRecord(funtypes.String, funtypes.Unknown),
+)
+// Keep the discriminant in a separate intersection member. Combining this method with the nested capability record makes funtypes inspect typed arrays as records while formatting parse failures, masking the useful validation error.
+const WalletCapabilitiesReply = funtypes.Intersect(
+	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getCapabilities') }),
+	funtypes.ReadonlyObject({ result: WalletCapabilities }),
+)
 const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBlockByNumber'), result: GetBlockReturn }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getBlockByHash'), result: GetBlockReturn }),
@@ -101,12 +132,16 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_blockNumber'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getCode'), result: EthereumData }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_switchEthereumChain'), result: funtypes.Null }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_watchAsset'), result: funtypes.Boolean }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_accounts'), result: funtypes.ReadonlyArray(EthereumAddress) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_requestPermissions'), result: funtypes.ReadonlyArray(WalletPermission) }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_getPermissions'), result: funtypes.ReadonlyArray(WalletPermission) }),
+	WalletCapabilitiesReply,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('wallet_revokePermissions'), result: funtypes.Null }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_gasPrice'), result: EthereumQuantity }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_maxPriorityFeePerGas'), result: EthereumQuantity }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getTransactionCount'), result: EthereumQuantity }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getStorageAt'), result: EthGetStorageAtResponse }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('interceptor_getSimulationStack'), result: GetSimulationStackReply }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getLogs'), result: EthGetLogsResponse }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_sendRawTransaction'), result: EthereumBytes32 }),
@@ -118,13 +153,14 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_simulateV1'), result: EthSimulateV1Result }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getFilterChanges'), result: EthGetLogsResponse }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getFilterLogs'), result: EthGetLogsResponse }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('safe_apps_request'), result: SafeAppsRequestCommand }),
 )
 
 type SubscriptionReturnValue = funtypes.Static<typeof SubscriptionReturnValue>
 const SubscriptionReturnValue = funtypes.ReadonlyObject({
 	method: funtypes.Literal('newHeads'),
 	result: funtypes.ReadonlyObject({
-		subscription: funtypes.Literal('newHeads'),
+		subscription: funtypes.String,
 		result: EthereumBlockHeaderWithTransactionHashes
 	})
 })
@@ -136,9 +172,10 @@ const NonForwardingRPCRequestReturnValue = funtypes.Intersect(
 )
 
 type ForwardToWallet = funtypes.Static<typeof ForwardToWallet>
+const ForwardToWalletRequest = funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams)
 const ForwardToWallet = funtypes.Intersect( // forward directly to wallet
 	funtypes.ReadonlyObject({ type: funtypes.Literal('forwardToSigner') }),
-	funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams),
+	ForwardToWalletRequest,
 )
 
 type ReplyWithSignersReplyForward = funtypes.Static<typeof ReplyWithSignersReplyForward>
@@ -146,18 +183,21 @@ const ReplyWithSignersReplyForward = funtypes.Intersect(
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('forwardToSigner'),
 		replyWithSignersReply: funtypes.Literal(true),
-		method: funtypes.String,
 	}),
-	funtypes.Partial({
-		params: funtypes.Unknown,
-	})
+	funtypes.Union(
+		ForwardToWalletRequest,
+		funtypes.Intersect(
+			funtypes.ReadonlyObject({ method: funtypes.String }),
+			funtypes.Partial({ params: funtypes.Unknown }),
+		),
+	),
 )
 
 export type RPCReply = funtypes.Static<typeof RPCReply>
 export const RPCReply = funtypes.Union(
 	NonForwardingRPCRequestReturnValue,
-	ForwardToWallet,
 	ReplyWithSignersReplyForward,
+	ForwardToWallet,
 	funtypes.ReadonlyObject({ type: funtypes.Literal('doNotReply') }),
 )
 
@@ -215,7 +255,7 @@ export const TransactionConfirmation = funtypes.ReadonlyObject({
 					signerReply: funtypes.Unknown,
 				}),
 				funtypes.ReadonlyObject({
-					action: funtypes.Union(funtypes.Literal('accept'), funtypes.Literal('noResponse')),
+					action: funtypes.Union(funtypes.Literal('accept'), funtypes.Literal('addToSafeStack'), funtypes.Literal('noResponse')),
 				}),
 				funtypes.ReadonlyObject({
 					action: funtypes.Literal('reject'),
@@ -252,27 +292,14 @@ export const InterceptorAccessChangeAddress = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
-export type ChangeActiveAddress = funtypes.Static<typeof ChangeActiveAddress>
-export const ChangeActiveAddress = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_changeActiveAddress'),
-	data: funtypes.ReadonlyObject({
-		simulationMode: funtypes.Boolean,
-		activeAddress: funtypes.Union(EthereumAddress, funtypes.Literal('signer'))
-	})
-}).asReadonly()
+export { ChangeActiveAddress } from './popupSettingsRequests.js'
 
-export type ModifyMakeMeRich = funtypes.Static<typeof ModifyMakeMeRich>
-export const ModifyMakeMeRich = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_modifyMakeMeRich'),
-	data: funtypes.ReadonlyObject({
-		add: funtypes.Boolean,
-		address: funtypes.Union(funtypes.Literal('CurrentAddress'), EthereumAddress),
-	})
-}).asReadonly()
+export { ModifyMakeMeRich } from './popupSettingsRequests.js'
 
 export type AddressBookCategory = funtypes.Static<typeof AddressBookCategory>
 export const AddressBookCategory = funtypes.Union(
 	funtypes.Literal('My Active Addresses'),
+	funtypes.Literal('My Safes'),
 	funtypes.Literal('My Contacts'),
 	funtypes.Literal('ERC20 Tokens'),
 	funtypes.Literal('ERC1155 Tokens'),
@@ -308,11 +335,7 @@ export const RequestAccountsFromSigner = funtypes.ReadonlyObject({
 	data: funtypes.Boolean
 }).asReadonly()
 
-export type EnableSimulationMode = funtypes.Static<typeof EnableSimulationMode>
-export const EnableSimulationMode = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_enableSimulationMode'),
-	data: funtypes.Boolean
-}).asReadonly()
+export { EnableSimulationMode } from './popupSettingsRequests.js'
 
 export type TransactionOrMessageIdentifier = funtypes.Static<typeof TransactionOrMessageIdentifier>
 export const TransactionOrMessageIdentifier = funtypes.Union(
@@ -397,31 +420,33 @@ export const SignerChainChangeConfirmation = funtypes.ReadonlyObject({
 export type ConnectedToSigner = funtypes.Static<typeof ConnectedToSigner>
 export const ConnectedToSigner = funtypes.ReadonlyObject({
 	method: funtypes.Literal('connected_to_signer'),
-	params: funtypes.Tuple(funtypes.Boolean, SignerName),
+	params: funtypes.Tuple(funtypes.Boolean, SignerName, funtypes.Number),
 }).asReadonly()
 
 
 type SignerReplyForwardRequest = funtypes.Static<typeof SignerReplyForwardRequest>
 const SignerReplyForwardRequest = funtypes.Intersect(
 	funtypes.ReadonlyObject({ requestId: funtypes.Number }),
-	funtypes.Union(ForwardToWallet, ReplyWithSignersReplyForward)
+	funtypes.Union(ReplyWithSignersReplyForward, ForwardToWallet)
 )
 
 export type SignerReply = funtypes.Static<typeof SignerReply>
 export const SignerReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('signer_reply'),
-	params: funtypes.Tuple(funtypes.Union(
-		funtypes.ReadonlyObject({
-			success: funtypes.Literal(true),
-			forwardRequest: SignerReplyForwardRequest,
-			reply: funtypes.Unknown,
-		}),
-		funtypes.ReadonlyObject({
-			success: funtypes.Literal(false),
-			forwardRequest: SignerReplyForwardRequest,
-			error: ErrorWithCodeAndOptionalData
-		})
-
+	params: funtypes.Tuple(funtypes.Intersect(
+		funtypes.ReadonlyObject({ signerProviderGeneration: funtypes.Number }),
+		funtypes.Union(
+			funtypes.ReadonlyObject({
+				success: funtypes.Literal(true),
+				forwardRequest: SignerReplyForwardRequest,
+				reply: funtypes.Unknown,
+			}),
+			funtypes.ReadonlyObject({
+				success: funtypes.Literal(false),
+				forwardRequest: SignerReplyForwardRequest,
+				error: ErrorWithCodeAndOptionalData
+			})
+		)
 	)),
 }).asReadonly()
 
@@ -577,6 +602,7 @@ const InterceptorAccessDialog = funtypes.ReadonlyObject({
 export type Settings = funtypes.Static<typeof Settings>
 export const Settings = funtypes.ReadonlyObject({
 	activeSimulationAddress: OptionalEthereumAddress,
+	activeSigningSafeAddress: OptionalEthereumAddress,
 	activeRpcNetwork: RpcNetwork,
 	openedPage: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
@@ -587,12 +613,14 @@ export const Settings = funtypes.ReadonlyObject({
 export type UpdateHomePage = funtypes.Static<typeof UpdateHomePage>
 export const UpdateHomePage = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_UpdateHomePage'),
+	homeDataSource: funtypes.Union(funtypes.Literal('cached'), funtypes.Literal('fresh')),
 	popupRefreshGeneration: PopupRefreshGeneration,
 	data: funtypes.ReadonlyObject({
 		visualizedSimulatorState: CompleteVisualizedSimulation,
 		activeAddresses: AddressBookEntries,
 		richList: funtypes.ReadonlyArray(EnrichedRichListElement),
 		makeCurrentAddressRich: funtypes.Boolean,
+		hasSafeTransactionsToExport: funtypes.Boolean,
 		latestUnexpectedError: funtypes.Union(funtypes.Undefined, UnexpectedErrorOccured),
 		websiteAccessAddressMetadata: AddressBookEntries,
 		tabState: TabState,
@@ -604,7 +632,27 @@ export const UpdateHomePage = funtypes.ReadonlyObject({
 		rpcEntries: RpcEntries,
 		interceptorDisabled: funtypes.Boolean,
 		preSimulationBlockTimeManipulation: BlockTimeManipulation,
-	})
+	}).And(funtypes.ReadonlyPartial({
+		walletSelectedAddressBookEntry: AddressBookEntry,
+	}))
+})
+
+export type HomePageBootstrap = funtypes.Static<typeof HomePageBootstrap>
+export const HomePageBootstrap = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_homePageBootstrap'),
+	popupRefreshGeneration: PopupRefreshGeneration,
+	data: funtypes.ReadonlyObject({
+		activeAddresses: AddressBookEntries,
+		hasSafeTransactionsToExport: funtypes.Boolean,
+		tabState: TabState,
+		settings: Settings,
+		activeSigningAddressInThisTab: OptionalEthereumAddress,
+		tabId: funtypes.Union(funtypes.Number, funtypes.Undefined),
+		rpcEntries: RpcEntries,
+		interceptorDisabled: funtypes.Boolean,
+	}).And(funtypes.ReadonlyPartial({
+		walletSelectedAddressBookEntry: AddressBookEntry,
+	}))
 })
 
 type ActiveSigningAddressChanged = funtypes.Static<typeof ActiveSigningAddressChanged>
@@ -613,15 +661,23 @@ const ActiveSigningAddressChanged = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		tabId: funtypes.Number,
 		activeSigningAddress: OptionalEthereumAddress,
+		activeSigningSafeAddress: OptionalEthereumAddress,
 	})
 })
 
 type WindowMessageSignerAccountsChanged = funtypes.Static<typeof WindowMessageSignerAccountsChanged>
 const WindowMessageSignerAccountsChanged = funtypes.ReadonlyObject({
 	method: funtypes.Literal('window_signer_accounts_changed'),
-	data: funtypes.ReadonlyObject({
-		socket: WebsiteSocket,
-	})
+	data: funtypes.Intersect(
+		funtypes.ReadonlyObject({
+			socket: WebsiteSocket,
+			signerStateOwnerGeneration: funtypes.Number,
+			signerProviderGeneration: funtypes.Number,
+		}),
+		funtypes.ReadonlyPartial({
+			error: ErrorWithCodeAndOptionalData,
+		}),
+	)
 })
 
 export type WindowMessage = funtypes.Static<typeof WindowMessage>
@@ -633,6 +689,7 @@ export const ChangeSettings = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyPartial({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
+		safeAppsCompatibilityMode: funtypes.Boolean,
 	})
 })
 
@@ -663,11 +720,7 @@ const UpdateRPCList = funtypes.ReadonlyObject({
 	data: RpcEntries,
 })
 
-export type ChangeActiveChain = funtypes.Static<typeof ChangeActiveChain>
-export const ChangeActiveChain = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_changeActiveRpc'),
-	data: RpcEntry,
-}).asReadonly()
+export { ChangeActiveChain } from './popupSettingsRequests.js'
 
 export type ChainChangeConfirmation = funtypes.Static<typeof ChainChangeConfirmation>
 export const ChainChangeConfirmation = funtypes.ReadonlyObject({
@@ -679,15 +732,34 @@ export const ChainChangeConfirmation = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
+export type WatchAssetConfirmation = funtypes.Static<typeof WatchAssetConfirmation>
+export const WatchAssetConfirmation = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_watchAssetDialog'),
+	data: funtypes.ReadonlyObject({
+		uniqueRequestIdentifier: UniqueRequestIdentifier,
+		action: funtypes.Union(
+			funtypes.Literal('add'),
+			funtypes.Literal('reject'),
+			funtypes.Literal('forward'),
+		),
+	}),
+}).asReadonly()
+
 type ChangeChainRequest = funtypes.Static<typeof ChangeChainRequest>
 const ChangeChainRequest = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_ChangeChainRequest'),
 	data: PendingChainChangeConfirmationPromise,
 })
 
+const WatchAssetRequest = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_WatchAssetRequest'),
+	data: PendingWatchAssetRequest,
+})
+
 export type PopupReadyAndListeningPage = funtypes.Static<typeof PopupReadyAndListeningPage>
 const PopupReadyAndListeningPage = funtypes.Union(
 	funtypes.Literal('changeChain'),
+	funtypes.Literal('watchAsset'),
 	funtypes.Literal('confirmTransaction'),
 	funtypes.Literal('interceptorAccess'),
 	funtypes.Literal('fetchSimulationStack'),
@@ -742,6 +814,7 @@ const SettingsOpenedReply = funtypes.ReadonlyObject({
 	data: funtypes.ReadonlyObject({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
+		safeAppsCompatibilityMode: funtypes.Boolean,
 		activeRpcNetwork: RpcNetwork,
 		rpcEntries: RpcEntries,
 	})
@@ -879,11 +952,15 @@ const PopupIsMainPopupWindowOpen = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_isMainPopupWindowOpen'),
 }).asReadonly()
 
+export { PopupSettingsChangeStatus } from './popupSettingsProtocol.js'
+
 const messageToPopupPayloadCodecs: [
+	typeof PopupSettingsChangeStatus,
 	typeof MessageToPopupSimple,
 	typeof WebsiteIconChanged,
 	typeof GetAddressBookDataReply,
 	typeof ChangeChainRequest,
+	typeof WatchAssetRequest,
 	typeof InterceptorAccessDialog,
 	typeof RpcConnectionStatusUpdate,
 	typeof SettingsUpdated,
@@ -900,14 +977,17 @@ const messageToPopupPayloadCodecs: [
 	typeof DisableInterceptorReply,
 	typeof UnexpectedErrorOccured,
 	typeof RetrieveWebsiteAccessReply,
+	typeof HomePageBootstrap,
 	typeof UpdateHomePage,
 	typeof FetchSimulationStackRequest,
 	typeof PopupIsMainPopupWindowOpen,
 ] = [
+	PopupSettingsChangeStatus,
 	MessageToPopupSimple,
 	WebsiteIconChanged,
 	GetAddressBookDataReply,
 	ChangeChainRequest,
+	WatchAssetRequest,
 	InterceptorAccessDialog,
 	RpcConnectionStatusUpdate,
 	SettingsUpdated,
@@ -924,6 +1004,7 @@ const messageToPopupPayloadCodecs: [
 	DisableInterceptorReply,
 	UnexpectedErrorOccured,
 	RetrieveWebsiteAccessReply,
+	HomePageBootstrap,
 	UpdateHomePage,
 	FetchSimulationStackRequest,
 	PopupIsMainPopupWindowOpen,
@@ -953,6 +1034,7 @@ const PopupMessageRuntype = funtypes.Union(
 	ChangeInterceptorAccess,
 	ChangeActiveChain,
 	ChainChangeConfirmation,
+	WatchAssetConfirmation,
 	EnableSimulationMode,
 	AddOrEditAddressBookEntry,
 	GetAddressBookData,
@@ -966,6 +1048,8 @@ const PopupMessageRuntype = funtypes.Union(
 			includeWebsiteAccessAddressMetadata: funtypes.Boolean,
 		}),
 	}),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestHomePageBootstrap') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSettingsChangeStatus') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_refreshHomeData') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_openSettings') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_clearUnexpectedError') }),

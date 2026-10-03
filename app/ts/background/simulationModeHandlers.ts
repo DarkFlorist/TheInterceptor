@@ -1,0 +1,217 @@
+import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../types/confirmationRequest.js'
+import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
+import { createEthereumSubscription, createNewFilter, getEthFilterChanges, getEthFilterLogs, removeEthereumSubscription } from '../simulation/services/EthereumSubscriptionService.js'
+import { createSimulationCallParams, getSimulatedBalanceFromInput, getSimulatedBlockByHashFromInput, getSimulatedBlockFromInput, getSimulatedBlockNumberFromInput, getSimulatedCodeFromInput, getSimulatedLogs, getSimulatedStorageAtFromInput, getSimulatedTransactionByHashFromInput, getSimulatedTransactionReceipt, simulatedCallFromInput, simulateEstimateGasFromInput, getSimulatedFeeHistory, getSimulatedTransactionCountFromInput, ethSimulateV1FromInput } from '../simulation/services/SimulationModeEthereumClientService.js'
+import { DEFAULT_CALL_ADDRESS, ERROR_INTERCEPTOR_GET_CODE_FAILED } from '../utils/constants.js'
+import type { WebsiteTabConnections } from '../types/user-interface-types.js'
+import type { ResolvedExecutionSimulationState, ResolvedSimulationInput } from '../types/visualizer-types.js'
+import { openChangeChainDialog } from './windows/changeChain.js'
+import type { InterceptedRequest, WebsiteSocket } from '../utils/requests.js'
+import type { EstimateGasParams, EthBalanceParams, EthBlockByHashParams, EthBlockByNumberParams, EthCallParams, EthGetStorageAtParams, EthNewFilter, EthGetLogsParams, EthSubscribeParams, EthUnSubscribeParams, FeeHistory, GetCode, GetFilterChanges, GetSimulationStack, GetTransactionCount, SwitchEthereumChainParams, TransactionByHashParams, TransactionReceiptParams, UninstallFilter, GetFilterLogs, InterceptorError } from '../types/JsonRpc-types.js'
+import type { EthSimulateV1Params } from '../types/ethSimulate-types.js'
+import type { Website } from '../types/websiteAccessTypes.js'
+import { METAMASK_ERROR_BLANKET_ERROR } from '../utils/constants.js'
+import { openConfirmTransactionDialogForMessage, openConfirmTransactionDialogForTransaction } from './windows/confirmTransaction.js'
+import { printError } from '../utils/errors.js'
+import { openFetchSimulationStackDialogOrGetCachedResult, type SimulationStackSnapshot } from './windows/fetchSimulationStack.js'
+import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
+import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
+import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import { addressString } from '../utils/bigint.js'
+
+export async function getBlockByHash(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EthBlockByHashParams) {
+	return { type: 'result' as const, method: request.method, result: await getSimulatedBlockByHashFromInput(ethereumClientService, undefined, simulationInput, request.params[0], request.params[1]) }
+}
+export async function getBlockByNumber(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EthBlockByNumberParams) {
+	return { type: 'result' as const, method: request.method, result: await getSimulatedBlockFromInput(ethereumClientService, undefined, simulationInput, request.params[0], request.params[1]) }
+}
+export async function getBalance(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EthBalanceParams) {
+	return { type: 'result' as const, method: request.method, result: await getSimulatedBalanceFromInput(ethereumClientService, undefined, simulationInput, request.params[0], request.params[1]) }
+}
+export async function getTransactionByHash(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: TransactionByHashParams) {
+	const result = await getSimulatedTransactionByHashFromInput(ethereumClientService, undefined, simulationInput, request.params[0])
+	if (result === null) return { type: 'result' as const, method: request.method, result: null }
+	return { type: 'result' as const, method: request.method, result: result }
+}
+export async function getTransactionReceipt(ethereumClientService: EthereumClientService, simulationState: ResolvedExecutionSimulationState, request: TransactionReceiptParams) {
+	return { type: 'result' as const, method: request.method, result: await getSimulatedTransactionReceipt(ethereumClientService, undefined, simulationState, request.params[0]) }
+}
+
+export async function sendTransaction(
+	ethereumClientService: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	activeAddress: bigint | undefined,
+	confirmation: TransactionConfirmationRequest,
+	request: InterceptedRequest,
+	website: Website,
+	websiteTabConnections: WebsiteTabConnections,
+	simulationMode = true,
+) {
+	markPerformance(POPUP_PERFORMANCE_MARKS.backgroundTransactionRequestReceived)
+	const action = await openConfirmTransactionDialogForTransaction(ethereumClientService, tokenPriceService, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
+	if (action.type === 'doNotReply') return action
+	return { method: confirmation.parameters.method, ...action }
+}
+
+async function singleCallWithFromOverride(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EthCallParams, from: bigint) {
+	const callParams = request.params[0]
+	const blockTag = request.params.length > 1 ? request.params[1] : 'latest' as const
+	return await simulatedCallFromInput(ethereumClientService, undefined, simulationInput, createSimulationCallParams(callParams, from), blockTag)
+}
+
+export async function call(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EthCallParams) {
+	const callParams = request.params[0]
+	const from = callParams.from !== undefined ? callParams.from : DEFAULT_CALL_ADDRESS
+	const callResult = await singleCallWithFromOverride(ethereumClientService, simulationInput, request, from)
+	return { type: 'result' as const, method: request.method, ...callResult }
+}
+
+export async function blockNumber(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput) {
+	return { type: 'result' as const, method: 'eth_blockNumber' as const, result: await getSimulatedBlockNumberFromInput(ethereumClientService, undefined, simulationInput) }
+}
+
+export async function estimateGas(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EstimateGasParams){
+	const estimatedGas = await simulateEstimateGasFromInput(ethereumClientService, undefined, simulationInput, request.params[0])
+	if ('error' in estimatedGas) return { type: 'result' as const, method: request.method, ...estimatedGas }
+	return { type: 'result' as const, method: request.method, result: estimatedGas.gas }
+}
+
+export async function subscribe(socket: WebsiteSocket, request: EthSubscribeParams) {
+	return { type: 'result' as const, method: request.method, result: await createEthereumSubscription(request, socket) }
+}
+
+export async function unsubscribe(socket: WebsiteSocket, request: EthUnSubscribeParams) {
+	return { type: 'result' as const, method: request.method, result: await removeEthereumSubscription(socket, request.params[0]) }
+}
+
+export async function getAccounts(activeAddress: bigint | undefined) {
+	if (activeAddress === undefined) return { type: 'result' as const, method: 'eth_accounts' as const, result: [] }
+	return { type: 'result' as const, method: 'eth_accounts' as const, result: [activeAddress] }
+}
+
+function accountPermission(website: Website, activeAddress: bigint) {
+	return {
+		parentCapability: 'eth_accounts',
+		caveats: [{
+			type: 'restrictReturnedAccounts',
+			value: [addressString(activeAddress)],
+		}],
+		invoker: website.websiteOrigin,
+	} as const
+}
+
+export async function requestPermissions(activeAddress: bigint | undefined, website: Website) {
+	if (activeAddress === undefined) return { type: 'result' as const, method: 'wallet_requestPermissions' as const, result: [] }
+	return { type: 'result' as const, method: 'wallet_requestPermissions' as const, result: [accountPermission(website, activeAddress)] }
+}
+
+export async function chainId(ethereumClientService: EthereumClientService) {
+	return { type: 'result' as const, method: 'eth_chainId' as const, result: ethereumClientService.getChainId() }
+}
+
+export async function netVersion(ethereumClientService: EthereumClientService) {
+	return { type: 'result' as const, method: 'net_version' as const, result: (await chainId(ethereumClientService)).result }
+}
+
+export async function gasPrice(ethereumClientService: EthereumClientService) {
+	return { type: 'result' as const, method: 'eth_gasPrice' as const, result: await ethereumClientService.getGasPrice(undefined) }
+}
+
+export async function maxPriorityFeePerGas(ethereumClientService: EthereumClientService) {
+	return { type: 'result' as const, method: 'eth_maxPriorityFeePerGas' as const, result: await ethereumClientService.getMaxPriorityFeePerGas(undefined) }
+}
+
+export async function personalSign(
+	ethereumClientService: EthereumClientService,
+	tokenPriceService: TokenPriceService,
+	activeAddress: bigint | undefined,
+	confirmation: MessageConfirmationRequest,
+	request: InterceptedRequest,
+	website: Website,
+	websiteTabConnections: WebsiteTabConnections,
+	simulationMode = true,
+) {
+	const action = await openConfirmTransactionDialogForMessage(ethereumClientService, tokenPriceService, request, confirmation, simulationMode, activeAddress, website, websiteTabConnections)
+	if (action.type === 'doNotReply') return action
+	return { method: confirmation.parameters.method, ...action }
+}
+
+export async function switchEthereumChain(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, params: SwitchEthereumChainParams, request: InterceptedRequest, simulationMode: boolean, website: Website) {
+	if (simulationServicesOwner.getCurrent().ethereum.getChainId() === params.params[0].chainId) {
+		// we are already on the right chain
+		return { type: 'result' as const, method: params.method, result: null }
+	}
+	const change = await openChangeChainDialog(simulationServicesOwner, websiteTabConnections, request, simulationMode, website, params)
+	return { type: 'result' as const, method: params.method, ...change }
+}
+
+export async function getCode(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: GetCode) {
+	const code = await getSimulatedCodeFromInput(ethereumClientService, undefined, simulationInput, request.params[0], request.params[1])
+	if (code.statusCode === 'failure') return { type: 'result' as const, method: request.method, ...ERROR_INTERCEPTOR_GET_CODE_FAILED }
+	return { type: 'result' as const, method: request.method, result: code.getCodeReturn }
+}
+
+export async function getStorageAt(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EthGetStorageAtParams) {
+	const [address, slot, blockTag] = request.params
+	return {
+		type: 'result' as const,
+		method: request.method,
+		result: await getSimulatedStorageAtFromInput(ethereumClientService, undefined, simulationInput, address, slot, blockTag),
+	}
+}
+
+export async function getPermissions(activeAddress: bigint | undefined, website: Website) {
+	if (activeAddress === undefined) return { type: 'result' as const, method: 'wallet_getPermissions' as const, params: [], result: [] }
+	return { type: 'result' as const, method: 'wallet_getPermissions' as const, params: [], result: [accountPermission(website, activeAddress)] }
+}
+
+export async function getTransactionCount(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: GetTransactionCount) {
+	return { type: 'result' as const, method: request.method, result: await getSimulatedTransactionCountFromInput(ethereumClientService, undefined, simulationInput, request.params[0], request.params[1]) }
+}
+
+export async function getLogs(ethereumClientService: EthereumClientService, simulationState: ResolvedExecutionSimulationState, request: EthGetLogsParams) {
+	return { type: 'result' as const, method: request.method, result: await getSimulatedLogs(ethereumClientService, undefined, simulationState, request.params[0]) }
+}
+
+export async function ethSimulateV1(ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput, request: EthSimulateV1Params) {
+	return { type: 'result' as const, method: request.method, result: await ethSimulateV1FromInput(ethereumClientService, undefined, simulationInput, request) }
+}
+
+export async function web3ClientVersion(ethereumClientService: EthereumClientService) {
+	return { type: 'result' as const, method: 'web3_clientVersion' as const, result: await ethereumClientService.web3ClientVersion(undefined) }
+}
+
+export async function feeHistory(ethereumClientService: EthereumClientService, request: FeeHistory) {
+	return { type: 'result' as const, method: 'eth_feeHistory' as const, result: await getSimulatedFeeHistory(ethereumClientService, undefined, request) }
+}
+
+export async function installNewFilter(socket: WebsiteSocket, request: EthNewFilter, ethereumClientService: EthereumClientService, simulationInput: ResolvedSimulationInput) {
+	return { type: 'result' as const, method: request.method, result: await createNewFilter(request, socket, ethereumClientService, undefined, simulationInput) }
+}
+
+export async function uninstallNewFilter(socket: WebsiteSocket, request: UninstallFilter) {
+	return { type: 'result' as const, method: request.method, result: await removeEthereumSubscription(socket, request.params[0]) }
+}
+
+export async function getFilterChanges(socket: WebsiteSocket, request: GetFilterChanges, ethereumClientService: EthereumClientService, simulationState: ResolvedExecutionSimulationState) {
+	const result = await getEthFilterChanges(socket, request.params[0], ethereumClientService, undefined, simulationState)
+	if (result === undefined) return { type: 'result' as const, method: request.method, error: { code: METAMASK_ERROR_BLANKET_ERROR, message: 'No filter found for identifier' } }
+
+	return { type: 'result' as const, method: request.method, result }
+}
+
+export async function getFilterLogs(socket: WebsiteSocket, request: GetFilterLogs, ethereumClientService: EthereumClientService, simulationState: ResolvedExecutionSimulationState) {
+	const result = await getEthFilterLogs(socket, request.params[0], ethereumClientService, undefined, simulationState)
+	if (result === undefined) return { type: 'result' as const, method: request.method, error: { code: METAMASK_ERROR_BLANKET_ERROR, message: 'No filter found for identifier' } }
+	return { type: 'result' as const, method: request.method, result }
+}
+
+export async function handleInterceptorError(request: InterceptorError) {
+	console.error('Ignoring page-originated InterceptorError for popup display.')
+	printError(request)
+	return { type: 'doNotReply' as const }
+}
+
+export async function requestInterceptorSimulatorStack(snapshot: SimulationStackSnapshot, simulationOverlayEnabled: boolean, websiteTabConnections: WebsiteTabConnections, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket) {
+	return await openFetchSimulationStackDialogOrGetCachedResult(snapshot, simulationOverlayEnabled, websiteTabConnections, params, website, request, socket)
+}

@@ -1,0 +1,184 @@
+/* Flexy Component */
+[class*=flexy] {
+	--gx: var(--gap-x, 0);
+	--gy: var(--gap-y, 0);
+	--px: var(--pad-x, 0);
+	--py: var(--pad-y, 0);
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--gy) var(--gx);
+	align-items: center;
+	padding: var(--py) var(--px);
+}
+.flexy-sm {
+	--pad-y: 0.5rem;
+	--gap-x: 1rem;
+}
+.flexy-lg {
+	--pad-y: 1rem;
+	--gap-x: 2rem;
+}
+
+/* Layout Component */
+:has(> .layout:first-child):not(dialog:not([open])) {
+	background: var(--bg-color);
+	display: grid;
+	grid-template-columns: var(--grid-columns, minmax(0, 1fr) minmax(0, min(800px, 100%)) minmax(0, 1fr));
+
+	.layout {
+		--grid-col: var(--grid-column, 2);
+		--line-color: var(--layout-line-color);
+		display: grid;
+		grid-column: var(--grid-col);
+		min-width: 0;
+		min-height: 100vh;
+		grid-template-rows: min-content 1fr;
+
+		&:has(header + article) {
+			grid-template-rows: min-content 1fr;
+
+			> header {
+				background-color: var(--bg-color);
+				position: sticky;
+				top: 0;
+				z-index: 10;
+			}
+		}
+
+		&:is(main > .layout) > header {
+			border-bottom: 1px solid var(--line-color);
+		}
+
+	}
+}
+
+/* Search Component */
+form[role='search'] {
+	flex: 1 1 12rem;
+	min-width: 0;
+	max-width: 100%;
+}
+
+form[role='search'] fieldset {
+	color: var(--text-color);
+	display: grid;
+	grid-template-columns: min-content minmax(0, 1fr) min-content;
+	column-gap: 0.25rem;
+	align-items: center;
+	border: 1px solid var(--line-color);
+	padding: 0.25rem;
+	border-radius: 2px;
+	min-width: 0;
+}
+
+form[role='search'] fieldset:focus-within {
+	border-color: var(--text-color);
+}
+
+form[role='search'] svg { display: block }
+
+form[role='search'] label {
+	padding: 0.25rem;
+	color: var(--line-color);
+}
+
+form[role='search'] input[type='search'] {
+	font: inherit;
+	background: transparent;
+	outline: none;
+	border: 0 none;
+	color: var(--text-color);
+	min-width: 0;
+	width: 100%;
+}
+
+form[role='search'] input[type='search']::-webkit-search-cancel-button { appearance: none }
+
+form[role='search'] input[type='search']:placeholder-shown ~ button { display: none }
+
+form[role='search'] input[type='search'] ~ button {
+	font: inherit;
+	appearance: none;
+	outline: none;
+	background: transparent;
+	border: 0 none;
+	padding: 0.25rem;
+	color: var(--disabled-text-color);
+}
+
+form[role='search'] input[type='search'] ~ button:focus {
+	color: var(--text-color);
+	outline: 1px solid;
+}
+
+/* Switch Component */
+input[role=switch] {
+	--bg-color: var(--unchecked-switch-color);
+	--checked-bg-color: var(--checked-switch-color);
+	appearance: none;
+	width: 1.75rem;
+	background: var(--bg-color);
+	display: block;
+	border-radius: 1rem;
+	padding: 4px;
+	border: 0 none;
+	cursor: pointer;
+	transition: background 400ms;
+	box-shadow: 0 0 1px inset var(--black-alpha-d6);
+}
+
+input[role=switch]:focus-visible {
+	outline: 1px solid var(--text-color);
+	outline-offset: 2px;
+}
+
+input[role=switch]:checked {
+	background: var(--checked-bg-color);
+}
+
+input[role=switch]:before {
+	content: '';
+	display: block;
+	background: var(--white-color);
+	height: 1rem;
+	border-radius: 100%;
+	width: 1rem;
+	border: none;
+	transition: transform 200ms;
+	transform: scale(1);
+	box-shadow: 0 0 3px var(--black-alpha-d6);
+}
+
+input[role=switch]:checked:before {
+	transform: translateX(0.75rem) scale(1);
+}
+
+/* Status Icon */
+[class*=status-] {
+	--bg-color: transparent;
+	--fg-color: var(--disabled-text-color);
+	--outline: none;
+
+	color: var(--fg-color);
+	background-color: var(--bg-color);
+	display: flex;
+	flex-direction: row;
+	justify-content: center;
+	align-items: center;
+	padding: 0.25em;
+	border-radius: 2px;
+	border: var(--outline);
+}
+
+.status-warn {
+	--bg-color: var(--status-warn-bg-color);
+	--fg-color: var(--status-warn-fg-color);
+}
+
+.status-danger {
+	--bg-color: var(--status-danger-bg-color);
+	--fg-color: var(--status-danger-fg-color);
+}
+
+.status-outline { --outline: 1px solid var(--status-danger-outline-color) }
+.status-lg { font-size: 1.5rem }

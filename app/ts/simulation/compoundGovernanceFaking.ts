@@ -6,7 +6,8 @@ import type { EthereumClientService } from './services/EthereumClientService.js'
 import { getCompoundGovernanceTimeLockMulticall } from '../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
-import { DEFAULT_BLOCK_MANIPULATION, mockSignTransaction } from './services/SimulationModeEthereumClientService.js'
+import { mockSignTransaction } from './services/simulationTransactionSigning.js'
+import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
 import { decodeFunctionOutputLoose, decodeFunctionOutputObjectLoose, encodeFunctionCallLoose, hasFunctionLoose } from '../utils/abiRuntime.js'
 
 export const simulateCompoundGovernanceExecution = async (ethereumClientService: EthereumClientService, governanceContract: AddressBookEntry, proposalId: EthereumQuantity) => {

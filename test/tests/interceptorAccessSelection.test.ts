@@ -1,7 +1,10 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { getSelectedPendingAccessRequest } from '../../app/ts/components/pages/InterceptorAccess.js'
+import { filterAccessDialogAddressesForChain } from '../../app/ts/background/windows/interceptorAccess.js'
+import { assertActiveAddressSelectionAllowed } from '../../app/ts/utils/activeAddressSelection.js'
 import type { PendingAccessRequest } from '../../app/ts/types/accessRequest.js'
+import type { AddressBookEntries } from '../../app/ts/types/addressBookTypes.js'
 
 function createPendingAccessRequest(accessRequestId: string, signerAccount: bigint): PendingAccessRequest {
 	return {
@@ -55,5 +58,44 @@ describe('InterceptorAccess modal request selection', () => {
 		const selectedRequest = getSelectedPendingAccessRequest([firstRequest], 'missing-request')
 
 		assert.equal(selectedRequest, undefined)
+	})
+
+	test('filters wrong-chain Safes and rejects stale direct selections', () => {
+		const currentChainSafeAddress = 0x3000000000000000000000000000000000000003n
+		const wrongChainSafeAddress = 0x4000000000000000000000000000000000000004n
+		const contactAddress = 0x5000000000000000000000000000000000000005n
+		const entries: AddressBookEntries = [{
+			type: 'safe',
+			name: 'Current-chain Safe',
+			address: currentChainSafeAddress,
+			chainId: 1n,
+			entrySource: 'User',
+			useAsActiveAddress: true,
+		}, {
+			type: 'safe',
+			name: 'Wrong-chain Safe',
+			address: wrongChainSafeAddress,
+			chainId: 2n,
+			entrySource: 'User',
+			useAsActiveAddress: true,
+		}, {
+			type: 'contact',
+			name: 'Contact',
+			address: contactAddress,
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			askForAddressAccess: true,
+		}]
+
+		assert.deepEqual(
+			filterAccessDialogAddressesForChain(entries, 1n).map(({ address }) => address),
+			[currentChainSafeAddress, contactAddress],
+		)
+		assert.doesNotThrow(() => assertActiveAddressSelectionAllowed(currentChainSafeAddress, entries, true, 1n, []))
+		assert.doesNotThrow(() => assertActiveAddressSelectionAllowed(contactAddress, entries, true, 1n, []))
+		assert.throws(
+			() => assertActiveAddressSelectionAllowed(wrongChainSafeAddress, entries, true, 1n, []),
+			/configured for another chain/u,
+		)
 	})
 })

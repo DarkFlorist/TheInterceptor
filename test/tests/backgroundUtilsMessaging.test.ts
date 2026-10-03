@@ -1,3 +1,5 @@
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { createEthereumWithGetBlockCounter } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 
@@ -64,6 +66,7 @@ async function loadModules() {
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 		...await import('../../app/ts/background/background.js'),
+		...await import('../../app/ts/background/popupMessageRouting.js'),
 		...await import('../../app/ts/types/interceptor-reply-messages.js'),
 	}
 }
@@ -202,11 +205,10 @@ describe('backgroundUtils messaging', () => {
 		globalThis.browser.runtime.sendMessage = async () => undefined
 		const { popupMessageHandler, PopupRequestsReplies } = await loadModules()
 
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const reply = await popupMessageHandler(
-			new Map() as unknown as import('../../app/ts/types/user-interface-types.js').WebsiteTabConnections,
-			{} as unknown as import('../../app/ts/simulation/services/EthereumClientService.js').EthereumClientService,
-			{} as unknown as import('../../app/ts/simulation/services/priceEstimator.js').TokenPriceService,
-			(() => undefined) as unknown as import('../../app/ts/simulation/serviceLifecycle.js').ResetSimulationServices,
+			new Map(),
+			simulationServicesOwner,
 			{ method: 'popup_requestCompleteVisualizedSimulation' },
 			{
 				activeSimulationAddress: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
@@ -230,5 +232,41 @@ describe('backgroundUtils messaging', () => {
 
 		const parsedReply = PopupRequestsReplies.popup_requestCompleteVisualizedSimulation.parse(reply)
 		assert.equal(parsedReply.method, 'popup_requestCompleteVisualizedSimulation')
+	})
+
+	test('keeps popup request parsing at the dispatcher boundary', async () => {
+		installBrowserMock('unused')
+		const { popupMessageHandler } = await loadModules()
+		const [{ EthereumClientService }, { TokenPriceService }] = await Promise.all([
+			import('../../app/ts/simulation/services/EthereumClientService.js'),
+			import('../../app/ts/simulation/services/priceEstimator.js'),
+		])
+		const ethereum: import('../../app/ts/simulation/services/EthereumClientService.js').EthereumClientService = Object.create(EthereumClientService.prototype)
+		const tokenPriceService: import('../../app/ts/simulation/services/priceEstimator.js').TokenPriceService = Object.create(TokenPriceService.prototype)
+		const reply = await withSilencedConsole(async () => await popupMessageHandler(
+			new Map(),
+			createTestSimulationServicesOwner({ ethereum, tokenPriceService }),
+			{ method: 'not_a_popup_method' },
+			{
+				activeSimulationAddress: 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n,
+				openedPage: { page: 'Home' },
+				useSignersAddressAsActiveAddress: false,
+				websiteAccess: [],
+				activeRpcNetwork: {
+					name: 'Ethereum Mainnet',
+					chainId: 1n,
+					httpsRpc: 'https://ethereum.dark.florist',
+					currencyName: 'Ether',
+					currencyTicker: 'ETH',
+					currencyLogoUri: '../img/ethereum.svg',
+					primary: true,
+					minimized: true,
+				},
+				simulationMode: true,
+			},
+			async () => undefined,
+		))
+		assert.equal(reply.error.code, -32700)
+		assert.match(reply.error.message, /not_a_popup_method/)
 	})
 })

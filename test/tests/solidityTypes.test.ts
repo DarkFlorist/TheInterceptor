@@ -1,10 +1,9 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import type { Abi, AbiEvent, AbiParameter } from 'viem'
+import { encodeAbiParameters, formatAbiItem, toEventSelector, type Abi, type AbiEvent, type AbiParameter } from '../../app/ts/utils/ethereumPrimitives.js'
 import { parseAbiParametersToSolidityVariables } from '../../app/ts/utils/solidityTypes.js'
 import { decodeEventLoose } from '../../app/ts/utils/abiRuntime.js'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
-import { encodeAbiParameters, formatAbiItem, toEventSelector } from '../../app/ts/utils/viem.js'
 import { dataStringWith0xStart } from '../../app/ts/utils/bigint.js'
 import { parseInputData } from '../../app/ts/simulation/parsing.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
@@ -42,12 +41,12 @@ const tupleAbiParameters = [
 			{ name: 'amount', type: 'uint256' },
 		],
 	},
-] satisfies readonly AbiParameter[]
+] as const satisfies readonly AbiParameter[]
 
 const bytes32LikeBytesAbiParameters = [{
 	name: 'payload',
 	type: 'bytes',
-}] satisfies readonly AbiParameter[]
+}] as const satisfies readonly AbiParameter[]
 
 const tupleWithHashFieldAbiParameters = [{
 	name: 'proof',
@@ -55,7 +54,7 @@ const tupleWithHashFieldAbiParameters = [{
 	components: [
 		{ name: 'hash', type: 'bytes32' },
 	],
-}] satisfies readonly AbiParameter[]
+}] as const satisfies readonly AbiParameter[]
 
 const tupleInputFunctionAbi = [
 	{
@@ -82,7 +81,7 @@ const tupleInputFunctionAbi = [
 		],
 		outputs: [],
 	},
-] satisfies Abi
+] as const satisfies Abi
 
 const web3jAbiV2ExampleEvent = {
 	type: 'event',
@@ -106,7 +105,7 @@ const web3jAbiV2ExampleEvent = {
 			],
 		},
 	],
-} satisfies AbiEvent
+} as const satisfies AbiEvent
 
 const seaportOrderFulfilledEvent = {
 	type: 'event',
@@ -138,7 +137,7 @@ const seaportOrderFulfilledEvent = {
 			],
 		},
 	],
-} satisfies AbiEvent
+} as const satisfies AbiEvent
 
 const indexedTupleEvent = {
 	type: 'event',
@@ -152,7 +151,7 @@ const indexedTupleEvent = {
 			{ name: 'amount', type: 'uint256' },
 		],
 	}],
-} satisfies AbiEvent
+} as const satisfies AbiEvent
 
 const indexedTupleArrayEvent = {
 	type: 'event',
@@ -166,7 +165,7 @@ const indexedTupleArrayEvent = {
 			{ name: 'amount', type: 'uint256' },
 		],
 	}],
-} satisfies AbiEvent
+} as const satisfies AbiEvent
 
 const toIndexedAddressTopic = (address: string) => `0x${ address.slice(2).padStart(64, '0') }`
 const toAddressHex = (address: bigint) => `0x${ address.toString(16).padStart(40, '0') }`

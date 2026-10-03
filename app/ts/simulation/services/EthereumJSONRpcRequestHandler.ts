@@ -1,20 +1,11 @@
 import { EthereumJsonRpcRequest, JsonRpcErrorResponse, JsonRpcResponse } from '../../types/JsonRpc-types.js'
 import { ErrorWithData, JsonRpcResponseError } from '../../utils/errors.js'
 import { EthereumQuantity, serialize } from '../../types/wire-types.js'
-import { stringToBytes, keccak256 } from '../../utils/viem.js'
+import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { fetchWithTimeout } from '../../utils/requests.js'
 import { Future } from '../../utils/future.js'
 import { recordBenchmarkRpcRequest } from '../../utils/benchmarking.js'
-import {
-	HTTP_STATUS_REQUEST_TIMEOUT,
-	HTTP_STATUS_SERVER_ERROR_RANGE_START,
-	HTTP_STATUS_TOO_EARLY,
-	HTTP_STATUS_TOO_MANY_REQUESTS,
-	JSON_RPC_ERROR_CODE_INTERNAL_ERROR,
-	JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED,
-	JSON_RPC_ERROR_CODE_RESOURCE_UNAVAILABLE,
-	TIME_BETWEEN_BLOCKS,
-} from '../../utils/constants.js'
+import { HTTP_STATUS_REQUEST_TIMEOUT, HTTP_STATUS_SERVER_ERROR_RANGE_START, HTTP_STATUS_TOO_EARLY, HTTP_STATUS_TOO_MANY_REQUESTS, JSON_RPC_ERROR_CODE_INTERNAL_ERROR, JSON_RPC_ERROR_CODE_LIMIT_EXCEEDED, JSON_RPC_ERROR_CODE_RESOURCE_UNAVAILABLE, TIME_BETWEEN_BLOCKS } from '../../utils/constants.js'
 
 type ResolvedResponse = { responseState: 'failed', status: number, response: unknown } | { responseState: 'success', response: unknown }
 export type SlowRpcRequest = {
@@ -60,6 +51,15 @@ function shouldCacheResponse(response: ResolvedResponse) {
 		return !isNonCacheableJsonRpcError(response.response)
 	}
 	return !isNonCacheableJsonRpcError(response.response)
+}
+
+function assertMatchingJsonRpcResponseId(response: ResolvedResponse, requestId: number) {
+	const rawResponse = response.response
+	if (typeof rawResponse !== 'object' || rawResponse === null || !('id' in rawResponse) || rawResponse.id === requestId) return
+	throw new ErrorWithData(`RPC response ID ${ String(rawResponse.id) } did not match request ID ${ requestId }.`, {
+		requestId,
+		responseId: rawResponse.id,
+	})
 }
 
 const DEFAULT_RPC_QUERY_EXPECTED_DURATION_MS = TIME_BETWEEN_BLOCKS * 1000
@@ -151,7 +151,9 @@ export class EthereumJSONRpcRequestHandler {
 			const startedAt = performance.now()
 			try {
 				const response = await this.fetchWithSlowRequestWarning(request, requestId, payload, timeoutMs, requestAbortController)
-				return await this.resolveResponse(response)
+				const responseObject = await this.resolveResponse(response)
+				assertMatchingJsonRpcResponseId(responseObject, requestId)
+				return responseObject
 			} finally {
 				recordBenchmarkRpcRequest(request.method, performance.now() - startedAt)
 			}
@@ -170,6 +172,7 @@ export class EthereumJSONRpcRequestHandler {
 		try {
 			const response = await this.fetchWithSlowRequestWarning(request, requestId, payload, timeoutMs, requestAbortController)
 			const responseObject = await this.resolveResponse(response)
+			assertMatchingJsonRpcResponseId(responseObject, requestId)
 			if (shouldCacheResponse(responseObject)) this.cache.set(hash, responseObject)
 			future.resolve(responseObject)
 		} catch(error: unknown) {

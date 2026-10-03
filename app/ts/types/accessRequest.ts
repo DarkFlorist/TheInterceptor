@@ -4,11 +4,12 @@ import { AddressBookEntry } from './addressBookTypes.js'
 import { EthereumAddress, EthereumQuantity, EthereumTimestamp, OptionalEthereumAddress } from './wire-types.js'
 import { SignerName } from './signerTypes.js'
 import { InterceptedRequest, UniqueRequestIdentifier, WebsiteSocket } from '../utils/requests.js'
-import { FailedToCreateWebsiteCreatedEthereumUnsignedTransaction, NamedTokenId, SignedMessageTransaction, SimulationState, TokenPriceEstimate, VisualizedSimulationState, WebsiteCreatedEthereumUnsignedTransaction, WebsiteCreatedEthereumUnsignedTransactionOrFailed } from './visualizer-types.js'
+import { FailedToCreateWebsiteCreatedEthereumTransaction, NamedTokenId, SignedMessageTransaction, SimulationState, TokenPriceEstimate, VisualizedSimulationState, WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from './visualizer-types.js'
 import { VisualizedPersonalSignRequest } from './personal-message-definitions.js'
-import { OriginalSendRequestParameters } from './JsonRpc-types.js'
+import { OriginalSendRequestParameters, SendTransactionParams } from './JsonRpc-types.js'
 import { SignMessageParams } from './jsonRpc-signing-types.js'
 import { DecodedError } from './error.js'
+import { SafeContractStateSnapshot, SafeMessageCoSignSnapshot, SafeSignerErrorDetails, SafeTransactionSigningRequest } from './safeTypes.js'
 
 export type PendingAccessRequest = funtypes.Static<typeof PendingAccessRequest>
 export const PendingAccessRequest = funtypes.ReadonlyObject({
@@ -35,7 +36,7 @@ const ConfirmTransactionSimulationBaseData = funtypes.ReadonlyObject({
 	simulationMode: funtypes.Boolean,
 	simulationStartedTimestamp: EthereumTimestamp,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,
-	transactionToSimulate: WebsiteCreatedEthereumUnsignedTransactionOrFailed,
+	transactionToSimulate: WebsiteCreatedEthereumTransactionOrFailed,
 	signerName: SignerName,
 })
 
@@ -83,7 +84,7 @@ const PendingTransactionApprovalStatus = funtypes.Union(
 		status: funtypes.Union(funtypes.Literal('SignerError')),
 		code: funtypes.Number,
 		message: funtypes.String,
-	}),
+	}).And(funtypes.ReadonlyPartial({ safeSignerErrorDetails: SafeSignerErrorDetails })),
 )
 
 type SimulatedPendingTransactionBase = funtypes.Static<typeof SimulatedPendingTransactionBase>
@@ -98,7 +99,12 @@ const SimulatedPendingTransactionBase = funtypes.ReadonlyObject({
 	transactionIdentifier: EthereumQuantity,
 	website: Website,
 	approvalStatus: PendingTransactionApprovalStatus,
-})
+}).And(funtypes.ReadonlyPartial({
+	safeTransaction: SafeTransactionSigningRequest,
+	safeExecutionSignerAddress: EthereumAddress,
+	safeExecutionOriginalRequestParameters: SendTransactionParams,
+	safeExecutionReviewedSafeState: SafeContractStateSnapshot,
+}))
 
 export type SimulatedPendingTransaction = funtypes.Static<typeof SimulatedPendingTransaction>
 export const SimulatedPendingTransaction = funtypes.Intersect(
@@ -107,11 +113,11 @@ export const SimulatedPendingTransaction = funtypes.Intersect(
 	funtypes.Union(
 		funtypes.ReadonlyObject({
 			transactionOrMessageCreationStatus: funtypes.Literal('Simulated'),
-			transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
+				transactionToSimulate: WebsiteCreatedEthereumTransaction,
 		}),
 		funtypes.ReadonlyObject({
 			transactionOrMessageCreationStatus: funtypes.Literal('FailedToSimulate'),
-			transactionToSimulate: FailedToCreateWebsiteCreatedEthereumUnsignedTransaction,
+				transactionToSimulate: FailedToCreateWebsiteCreatedEthereumTransaction,
 		}),
 	)
 )
@@ -126,7 +132,7 @@ type WaitingForSimulationPendingTransaction = funtypes.Static<typeof WaitingForS
 const WaitingForSimulationPendingTransaction = funtypes.Intersect(
 	SimulatedPendingTransactionBase,
 	funtypes.ReadonlyObject({
-		transactionToSimulate: WebsiteCreatedEthereumUnsignedTransaction,
+		transactionToSimulate: WebsiteCreatedEthereumTransaction,
 		transactionOrMessageCreationStatus: funtypes.Literal('Simulating')
 	})
 )
@@ -147,7 +153,7 @@ const PendingSignableMessage = funtypes.Intersect(
 		website: Website,
 		activeAddress: EthereumAddress,
 		approvalStatus: PendingTransactionApprovalStatus,
-	}),
+	}).And(funtypes.ReadonlyPartial({ safeMessageCoSignSnapshot: SafeMessageCoSignSnapshot })),
 	funtypes.Union(
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Literal('Simulated'), visualizedPersonalSignRequest: VisualizedPersonalSignRequest }),
 		funtypes.ReadonlyObject({ transactionOrMessageCreationStatus: funtypes.Union(funtypes.Literal('Crafting'), funtypes.Literal('Simulating')) })

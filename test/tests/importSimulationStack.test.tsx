@@ -4,7 +4,10 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { signal } from '@preact/signals'
 import { installDomMock } from './domMock.js'
-import { InterceptorSimulationExport } from '../../app/ts/types/visualizer-types.js'
+import { InterceptorSimulationExport, InterceptorTransactionStack } from '../../app/ts/types/visualizer-types.js'
+import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
+import { createSafeTx } from '../../app/ts/safe/safeCore.js'
+import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 
 const storageState: Record<string, unknown> = {}
 let runtimeSendMessage = async (_message: unknown) => undefined
@@ -100,6 +103,108 @@ const exportPayload = {
 }
 
 const exportString = JSON.stringify(InterceptorSimulationExport.serialize(exportPayload))
+const expectedInfrastructureEthereum = {
+	getBlock: async () => { throw NEW_BLOCK_ABORT },
+}
+
+const create7702ExportPayload = () => ({
+	name: 'Interceptor Simulation Export' as const,
+	version: '1.0.0' as const,
+	eth_simulateV1: {
+		method: 'eth_simulateV1' as const,
+		params: [{
+			blockStateCalls: [],
+			traceTransfers: true,
+			validation: true,
+		}, 'latest' as const],
+	},
+	interceptorSimulateStack: {
+		operations: [{
+			type: 'Transaction' as const,
+			preSimulationTransaction: {
+				signedTransaction: {
+					type: '7702' as const,
+					from: 0x1111111111111111111111111111111111111111n,
+					nonce: 7n,
+					maxFeePerGas: 2n,
+					maxPriorityFeePerGas: 1n,
+					gas: 50_000n,
+					to: 0x2222222222222222222222222222222222222222n,
+					value: 0n,
+					input: new Uint8Array(),
+					chainId: 1n,
+					hash: 0xabcden,
+					r: 3n,
+					s: 4n,
+					yParity: 'odd' as const,
+					authorizationList: [{
+						chainId: 1n,
+						address: 0x3333333333333333333333333333333333333333n,
+						nonce: 5n,
+						authority: 0x4444444444444444444444444444444444444444n,
+						r: 6n,
+						s: 7n,
+						yParity: 'even' as const,
+					}],
+				},
+				website: { websiteOrigin: 'https://example.com', icon: undefined, title: 'Example' },
+				created: new Date('2024-01-01T00:00:00.000Z'),
+				originalRequestParameters: {
+					method: 'eth_sendTransaction' as const,
+					params: [{
+						type: '7702' as const,
+						from: 0x1111111111111111111111111111111111111111n,
+						to: 0x2222222222222222222222222222222222222222n,
+						value: 0n,
+						gas: 50_000n,
+						maxFeePerGas: 2n,
+						maxPriorityFeePerGas: 1n,
+						input: new Uint8Array(),
+						authorizationList: [{
+							chainId: 1n,
+							address: 0x3333333333333333333333333333333333333333n,
+							nonce: 5n,
+							r: 6n,
+							s: 7n,
+							yParity: 'even' as const,
+						}],
+					}],
+				},
+				transactionIdentifier: 77n,
+			},
+		}],
+	},
+})
+
+function createSafeSimulationExportPayload() {
+	const payload = create7702ExportPayload()
+	const operation = payload.interceptorSimulateStack.operations[0]
+	if (operation === undefined) throw new Error('Expected transaction fixture')
+	const safeTx = createSafeTx(1n, 0x5555555555555555555555555555555555555555n, {
+		to: 0x2222222222222222222222222222222222222222n,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	return {
+		...payload,
+		interceptorSimulateStack: {
+			operations: [{
+				...operation,
+				preSimulationTransaction: {
+					...operation.preSimulationTransaction,
+					safeTransaction: {
+						safeTx,
+						safeTxHash: BigInt(getSafeTxHash(safeTx)),
+						created: new Date('2024-01-01T00:00:00.000Z'),
+						websiteOrigin: 'https://example.com',
+						transactionIdentifier: 78n,
+						signatures: [],
+					},
+				},
+			}],
+		},
+	}
+}
 
 function resetEnvironment() {
 	for (const key of Object.keys(storageState)) delete storageState[key]
@@ -166,6 +271,71 @@ describe('import simulation stack', () => {
 		assert.equal(reply.ok, false)
 		assert.match(reply.message, /quota/i)
 		assert.match(reply.message, /simulation stack/i)
+	})
+
+	test('rejects Safe operations that must use synchronized Safe stack import', async () => {
+		const modules = await modulesPromise
+		resetEnvironment()
+		const parsedExport = InterceptorSimulationExport.parse(
+			InterceptorSimulationExport.serialize(createSafeSimulationExportPayload())
+		)
+
+		const reply = await modules.importSimulationStack({} as never, {} as never, { method: 'popup_importSimulationStack', data: parsedExport })
+
+		assert.equal(reply.type, 'ImportSimulationStackReply')
+		assert.equal(reply.ok, false)
+		assert.match(reply.message, /Use Import Gnosis Safe/u)
+		assert.equal('interceptorTransactionStack' in storageState, false)
+		assert.equal('safeTransactionStacks' in storageState, false)
+	})
+
+	test('excludes synchronized Safe proposals from simulation-mode export', async () => {
+		const modules = await modulesPromise
+		resetEnvironment()
+		const safeExport = createSafeSimulationExportPayload()
+		storageState.interceptorTransactionStack = InterceptorTransactionStack.serialize(safeExport.interceptorSimulateStack)
+		storageState.simulationMode = true
+		let exportedSimulationInput: unknown
+		const ethereum = {
+			async getBlockNumber() { return 1n },
+			async ethSimulateV1Input(simulationInput: unknown) {
+				exportedSimulationInput = simulationInput
+				return { method: 'eth_simulateV1' as const, params: [{ blockStateCalls: [], traceTransfers: true, validation: true }, 'latest' as const] }
+			},
+		}
+
+		const reply = await modules.requestInterceptorSimulationInput(ethereum as never)
+
+		assert.equal(reply.ok, true)
+		if (!reply.ok) throw new Error(reply.message)
+		const exported = InterceptorSimulationExport.parse(JSON.parse(reply.ethSimulateV1InputString))
+		assert.deepEqual(exported.interceptorSimulateStack.operations, [])
+		assert.deepEqual(exportedSimulationInput, [])
+	})
+
+	test('preserves EIP-7702 authorization signatures when importing an exported stack', async () => {
+		const modules = await modulesPromise
+		resetEnvironment()
+		const serializedExport = InterceptorSimulationExport.serialize(create7702ExportPayload())
+		const parsedExport = InterceptorSimulationExport.parse(serializedExport)
+
+		const reply = await modules.importSimulationStack(expectedInfrastructureEthereum as never, {} as never, { method: 'popup_importSimulationStack', data: parsedExport })
+
+		assert.equal(reply.type, 'ImportSimulationStackReply')
+		assert.equal(reply.ok, true)
+		const storedStack = InterceptorTransactionStack.parse(storageState.interceptorTransactionStack)
+		const [operation] = storedStack.operations
+		if (operation === undefined || operation.type !== 'Transaction') throw new Error('Expected imported transaction operation')
+		assert.notEqual(operation.preSimulationTransaction.transactionIdentifier, 77n)
+		const transaction = operation.preSimulationTransaction.signedTransaction
+		assert.equal(transaction.type, '7702')
+		if (transaction.type !== '7702') throw new Error('Expected imported type-7702 transaction')
+		const [authorization] = transaction.authorizationList
+		if (authorization === undefined) throw new Error('Expected imported authorization')
+		assert.equal(authorization.authority, 0x4444444444444444444444444444444444444444n)
+		assert.equal(authorization.yParity, 'even')
+		assert.equal(authorization.r, 6n)
+		assert.equal(authorization.s, 7n)
 	})
 
 	test('keeps the modal open and shows the returned import error', async () => {

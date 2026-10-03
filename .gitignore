@@ -5,5 +5,8 @@ node_modules/
 /app/inpage/build/
 /app/inpage/js/
 /app/manifest.json
+/app/ts/generated/ethereumByteCodes.ts
 /build/*.mjs
+/safe-app/dist/
+/docs/screenshots/
 /**/output*/*

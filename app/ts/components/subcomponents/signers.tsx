@@ -13,12 +13,12 @@ const SignerLogoPlaceholder = () => <svg class = 'signer-logo-placeholder' viewB
 export function SignerLogoText(param: { signerName: SignalOrValue<SignerName>, text: SignalOrValue<string>, reserveLogoSpace?: boolean }) {
 	const signerLogo = getSignerLogo(resolveSignal(param.signerName))
 	const showLogoSlot = signerLogo !== undefined || param.reserveLogoSpace === true
-	return <p class = 'signer-logo-text'>
+	return <span class = 'signer-logo-text'>
 		{ showLogoSlot ? <span class = 'signer-logo-slot' aria-hidden = 'true'>
 			{ signerLogo === undefined ? <SignerLogoPlaceholder /> : <img width = '24' height = '24' src = { signerLogo }/> }
 		</span> : <></> }
 		<span>{ resolveSignal(param.text) }</span>
-	</p>
+	</span>
 }
 
 export function SignersLogoName(param: { signerName: SignalOrValue<SignerName> }) {

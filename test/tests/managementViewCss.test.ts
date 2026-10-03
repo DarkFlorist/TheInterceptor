@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 
-const css = await Bun.file(new URL('../../app/css/interceptor.css', import.meta.url)).text()
+const css = await Bun.file(new URL('../../app/css/interceptor-pages.css', import.meta.url)).text()
 
 function getRuleBody(selector: string) {
 	const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -13,7 +13,7 @@ function getRuleBody(selector: string) {
 describe('management view CSS', () => {
 	test('website details render above the sticky management navigation', () => {
 		const managementHeader = getRuleBody('.management-header')
-		const websiteDetails = getRuleBody('.access-details')
+		const websiteDetails = getRuleBody('.management-panel .access-details')
 		const managementHeaderZIndex = Number(managementHeader.match(/z-index:\s*(\d+)/)?.[1])
 		const websiteDetailsZIndex = Number(websiteDetails.match(/z-index:\s*(\d+)/)?.[1])
 

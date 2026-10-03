@@ -1,4 +1,4 @@
-import type { Abi, AbiItem } from 'viem'
+import type { Abi, AbiItem } from './ethereumPrimitives.js'
 import { reportLocalRecoveryBestEffort } from './errors.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import { decodeAbiValues, decodeErrorLoose, normalizeAbi, type AbiLike } from './abiRuntime.js'

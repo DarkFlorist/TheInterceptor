@@ -3,9 +3,9 @@ import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { requestPopupCompleteVisualizedSimulation, requestPopupSimulationMetadata, sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { PendingFetchSimulationStackRequestPromise } from '../../types/user-interface-types.js'
-import { Signal, useComputed, useSignal } from '@preact/signals'
+import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
-import { type CompleteVisualizedSimulation, type ModifyAddressWindowState, type SimulationAndVisualisationResults, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
+import { type CompleteVisualizedSimulation, type EditEnsNamedHashWindowState, type ModifyAddressWindowState, type SimulationAndVisualisationResults, createPassthroughCompleteVisualizedSimulation } from '../../types/visualizer-types.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { AddNewAddress } from './AddNewAddress.js'
@@ -18,14 +18,70 @@ import { SimulationStackRows } from '../simulationExplaining/Transactions.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
+import { EditEnsLabelHash } from './EditEnsLabelHash.js'
+import type { EthereumBytes32 } from '../../types/wire-types.js'
 
-type ModalState =
+export type FetchSimulationStackModalState =
 	{ page: 'modifyAddress', state: Signal<ModifyAddressWindowState> } |
+	{ page: 'editEnsNamedHash', state: EditEnsNamedHashWindowState } |
 	{ page: 'noModal' }
+
+export function FetchSimulationStackModal({ modalState, rpcEntries }: {
+	modalState: Signal<FetchSimulationStackModalState>
+	rpcEntries: Signal<RpcEntries>
+}) {
+	const close = () => {
+		modalState.value = { page: 'noModal' }
+	}
+	return <div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : '' }` }>
+		{ modalState.value.page === 'modifyAddress' ?
+			<AddNewAddress
+				setActiveAddressAndInformAboutIt = { undefined }
+				modifyAddressWindowState = { modalState.value.state }
+				close = { close }
+				activeAddress = { undefined }
+				rpcEntries = { rpcEntries }
+			/>
+		: <></> }
+		{ modalState.value.page === 'editEnsNamedHash' ?
+			<EditEnsLabelHash
+				close = { close }
+				editEnsNamedHashWindowState = { modalState.value.state }
+			/>
+		: <></> }
+	</div>
+}
+
+export function FetchSimulationStackRows({
+	simulationAndVisualisationResults,
+	activeAddress,
+	addressMetaData,
+	renameAddressCallBack,
+	modalState,
+}: {
+	simulationAndVisualisationResults: ReadonlySignal<SimulationAndVisualisationResults | undefined>
+	activeAddress: ReadonlySignal<bigint | undefined>
+	addressMetaData: ReadonlySignal<readonly AddressBookEntry[]>
+	renameAddressCallBack: (entry: AddressBookEntry) => void
+	modalState: Signal<FetchSimulationStackModalState>
+}) {
+	const editEnsNamedHashCallBack = (type: 'nameHash' | 'labelHash', nameHash: EthereumBytes32, name: string | undefined) => {
+		modalState.value = { page: 'editEnsNamedHash', state: { type, nameHash, name } }
+	}
+	return <SimulationStackRows
+		simulationAndVisualisationResults = { simulationAndVisualisationResults }
+		removeTransactionOrSignedMessage = { undefined }
+		activeAddress = { activeAddress }
+		renameAddressCallBack = { renameAddressCallBack }
+		editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
+		addressMetaData = { addressMetaData }
+		showTimePicker = { false }
+	/>
+}
 
 export function FetchSimulationStack() {
 	const changeRequest = useSignal<PendingFetchSimulationStackRequestPromise | undefined>(undefined)
-	const modalState = useSignal<ModalState>({ page: 'noModal' })
+	const modalState = useSignal<FetchSimulationStackModalState>({ page: 'noModal' })
 
 	const completeVisualizedSimulation = useSignal<CompleteVisualizedSimulation>(createPassthroughCompleteVisualizedSimulation())
 	const simulationMetadata = useSignal<SimulationMetadata | undefined>(undefined)
@@ -132,17 +188,7 @@ export function FetchSimulationStack() {
 	return (
 		<main>
 			<Hint>
-				<div class = { `modal ${ modalState.value.page !== 'noModal' ? 'is-active' : ''}` }>
-					{ modalState.value.page === 'modifyAddress' ?
-						<AddNewAddress
-							setActiveAddressAndInformAboutIt = { undefined }
-							modifyAddressWindowState = { modalState.value.state }
-							close = { () => { modalState.value = { page: 'noModal' } } }
-							activeAddress = { undefined }
-							rpcEntries = { rpcEntries }
-						/>
-					: <></> }
-				</div>
+				<FetchSimulationStackModal modalState = { modalState } rpcEntries = { rpcEntries } />
 				<div class = 'block' style = 'margin-bottom: 0px; margin: 10px'>
 					<header class = 'card-header window-header'>
 						<div class = 'card-header-icon unset-cursor'>
@@ -188,14 +234,12 @@ export function FetchSimulationStack() {
 										<p class = 'paragraph'> Simulation stack:</p>
 										<div class = 'sub-importance-box'>
 											{ !isThereSimulationStack.value ? <p class = 'paragraph'> No simulation stack</p> : <>
-												<SimulationStackRows
+												<FetchSimulationStackRows
 													simulationAndVisualisationResults = { simulationStackResults }
-													removeTransactionOrSignedMessage = { undefined }
 													activeAddress = { activeAddress }
 													renameAddressCallBack = { renameAddressCallBack }
-													editEnsNamedHashCallBack = { () => undefined }
 													addressMetaData = { addressMetaData }
-													showTimePicker = { false }
+													modalState = { modalState }
 												/>
 											</> }
 										</div>

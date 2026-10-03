@@ -1,16 +1,12 @@
 import process from 'node:process'
 import ts from 'typescript'
+import { collectFilePaths, scriptKindForPath } from './typescript-lint-utils.mts'
 
 const filePatterns = ['app/ts/**/*.ts', 'app/ts/**/*.tsx'] as const
 const allowedFiles = new Set(['app/ts/utils/errors.ts'])
 const allowedComments = ['error-reporting: console-only']
 
 type Diagnostic = { file: string, line: number, column: number, text: string }
-
-function scriptKindForPath(path: string) {
-	if (path.endsWith('.tsx')) return ts.ScriptKind.TSX
-	return ts.ScriptKind.TS
-}
 
 function hasAllowedComment(sourceText: string, node: ts.Node) {
 	return allowedComments.some((comment) => sourceText.slice(node.getFullStart(), node.getEnd()).includes(comment))
@@ -53,15 +49,8 @@ function collectConsoleErrorCatchDiagnostics(path: string, sourceText: string) {
 	return diagnostics
 }
 
-const filePaths = new Set<string>()
-for (const pattern of filePatterns) {
-	for await (const path of new Bun.Glob(pattern).scan('.')) {
-		filePaths.add(path)
-	}
-}
-
 const diagnostics = []
-for (const path of [...filePaths].sort()) {
+for (const path of await collectFilePaths(filePatterns)) {
 	const sourceText = await Bun.file(path).text()
 	diagnostics.push(...collectConsoleErrorCatchDiagnostics(path, sourceText))
 }

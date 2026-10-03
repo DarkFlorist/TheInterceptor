@@ -15,7 +15,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { CatchAllVisualizer, tokenEventToTokenSymbolParams } from './customExplainers/CatchAllVisualizer.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SignatureCard, SignatureHeader } from '../pages/PersonalSign.js'
-import { bigintSecondsToDate, bytes32String, dataStringWith0xStart } from '../../utils/bigint.js'
+import { bigintSecondsToDate, bigintToDecimalString, bytes32String, checksummedAddress, dataStringWith0xStart, stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { GovernanceVoteVisualizer } from './customExplainers/GovernanceVoteVisualizer.js'
 import { EnrichedSolidityTypeComponentWithAddressBook, StringElement } from '../subcomponents/solidityType.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
@@ -34,13 +34,13 @@ import { useEffect } from 'preact/hooks'
 import type { ComponentChildren } from 'preact'
 import type { SignalOrValue } from '../../utils/signals.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
-import { checksummedAddress, stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { normalizeSimulationStackRows, type SimulationStackMessageRow, type SimulationStackTransactionRow } from './simulationStackRows.js'
 import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { Blockie } from '../subcomponents/SVGBlockie.js'
 import { getSimulationStackElementId } from '../../utils/simulationStackTargets.js'
+import { getSimulatedTransactionInsufficientBalanceMessage } from '../../simulation/insufficientBalance.js'
 
 function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
@@ -97,9 +97,15 @@ function CompactDelegationAddress({ addressBookEntry }: { addressBookEntry: Addr
 	</div>
 }
 
-function DelegationNotice({ signer, delegates, renameAddressCallBack }: {
+type DelegationFlowEntry = {
+	key: string
 	signer: AddressBookEntry
-	delegates: readonly AddressBookEntry[]
+	delegate: AddressBookEntry
+	label: 'cleared delegate' | 'delegated to'
+}
+
+function DelegationNotice({ flows, renameAddressCallBack }: {
+	flows: readonly DelegationFlowEntry[]
 	renameAddressCallBack: RenameAddressCallBack
 }) {
 	return <div class = 'delegation-flow-banner'>
@@ -114,24 +120,37 @@ function DelegationNotice({ signer, delegates, renameAddressCallBack }: {
 			</a>
 			<p class = 'paragraph delegation-flow-title'>Delegated execution</p>
 		</div>
-		<div class = 'delegation-flow-row'>
-			<button type = 'button' class = 'delegation-flow-address-button' onClick = { () => renameAddressCallBack(signer) }>
-				<CompactDelegationAddress addressBookEntry = { signer } />
-			</button>
-			<div class = 'delegation-flow-connector'>
-				<p class = 'paragraph delegation-flow-label'>delegated to</p>
-				<DelegationFlowArrow />
-			</div>
-			<div class = 'delegation-flow-targets'>
-				{ delegates.map((delegate, index) => {
-					return <button type = 'button' class = 'delegation-flow-address-button' key = { `${ delegate.address.toString() }-${ index }` } onClick = { () => renameAddressCallBack(delegate) }>
-						<CompactDelegationAddress addressBookEntry = { delegate } />
+		<div class = 'delegation-flow-column'>
+			{ flows.map((flow) => {
+				return <div class = 'delegation-flow-row' key = { flow.key }>
+					<button type = 'button' class = 'delegation-flow-address-button' onClick = { () => renameAddressCallBack(flow.signer) }>
+						<CompactDelegationAddress addressBookEntry = { flow.signer } />
 					</button>
-				}) }
-			</div>
+					<div class = 'delegation-flow-connector'>
+						<p class = 'paragraph delegation-flow-label'>{ flow.label }</p>
+						<DelegationFlowArrow />
+					</div>
+					<div class = 'delegation-flow-targets'>
+						<button type = 'button' class = 'delegation-flow-address-button' onClick = { () => renameAddressCallBack(flow.delegate) }>
+							<CompactDelegationAddress addressBookEntry = { flow.delegate } />
+						</button>
+					</div>
+				</div>
+			}) }
 		</div>
 	</div>
 }
+
+const resolveDelegationFlows = (
+	defaultSigner: AddressBookEntry,
+	authorizations: readonly { address: bigint, authority?: bigint, delegateEntry?: AddressBookEntry }[],
+	addressMetadata: readonly AddressBookEntry[],
+): readonly DelegationFlowEntry[] => authorizations.map((authorization, index) => ({
+	key: `${ authorization.address.toString() }-${ authorization.authority?.toString() ?? defaultSigner.address.toString() }-${ index }`,
+	signer: authorization.authority === undefined ? defaultSigner : getAddressBookEntryOrAFiller(addressMetadata, authorization.authority),
+	delegate: authorization.delegateEntry ?? getAddressBookEntryOrAFiller(addressMetadata, authorization.address),
+	label: authorization.address === 0n ? 'cleared delegate' : 'delegated to',
+}))
 
 function getDelegationNotice(
 	transaction: MaybeSimulatedTransaction['transaction'],
@@ -139,14 +158,12 @@ function getDelegationNotice(
 	renameAddressCallBack: RenameAddressCallBack
 ) {
 	if (transaction.type === '7702' && transaction.authorizationList.length > 0) return <DelegationNotice
-		signer = { transaction.from }
-		delegates = { transaction.authorizationList.map((authorization) => getAddressBookEntryOrAFiller(addressMetadata.value, authorization.address)) }
+		flows = { resolveDelegationFlows(transaction.from, transaction.authorizationList, addressMetadata.value) }
 		renameAddressCallBack = { renameAddressCallBack }
 	/>
 	if (transaction.delegationAddress === undefined) return undefined
 	return <DelegationNotice
-		signer = { transaction.from }
-		delegates = { [transaction.delegationAddress] }
+		flows = { resolveDelegationFlows(transaction.from, [{ address: transaction.delegationAddress.address, delegateEntry: transaction.delegationAddress }], addressMetadata.value) }
 		renameAddressCallBack = { renameAddressCallBack }
 	/>
 }
@@ -164,7 +181,7 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 	const delegationNotice = getDelegationNotice(param.simTx.transaction, param.addressMetadata, param.renameAddressCallBack)
 	const content = (() => {
 		if (param.simTx.transactionStatus === 'Failed To Simulate') return <ErrorComponent text = { 'Failed to simulate this transaction.' } containerStyle = { { margin: '0px' } } />
-		if (param.simTx.transactionStatus === 'Transaction Failed') return <ErrorComponent text = { `The transaction fails with an error: '${ param.simTx.error.decodedErrorMessage }' ${ param.simTx.error.data !== undefined ? ` (data: '${ param.simTx.error.data }')` : '' }` } containerStyle = { { margin: '0px' } } />
+		if (param.simTx.transactionStatus === 'Transaction Failed') return <ErrorComponent text = { getSimulatedTransactionInsufficientBalanceMessage(param.simTx) ?? `The transaction fails with an error: '${ param.simTx.error.decodedErrorMessage }' ${ param.simTx.error.data !== undefined ? ` (data: '${ param.simTx.error.data }')` : '' }` } containerStyle = { { margin: '0px' } } />
 		const transactionIdentification = identifyTransaction(param.simTx)
 		switch (transactionIdentification.type) {
 			case 'SimpleTokenTransfer': return <SimpleTokenTransferVisualisation simTx = { transactionIdentification.identifiedTransaction } renameAddressCallBack = { param.renameAddressCallBack }/>
@@ -256,6 +273,12 @@ export function Transaction(param: TransactionVisualizationParameters & Collapsi
 				ariaExpanded = { param.collapsed === undefined ? undefined : !param.collapsed }
 			/>
 			{ param.collapsed === true ? <></> : <div class = 'card-content' style = 'padding-bottom: 5px;'>
+				{ param.simTx.safeTransaction === undefined ? <></> :
+					<div class = 'notification is-info' style = 'margin-bottom: 10px;'>
+						<p class = 'paragraph'><strong>Optimistic Gnosis Safe transaction</strong></p>
+						<p class = 'paragraph'>Gnosis Safe nonce { param.simTx.safeTransaction.safeTx.message.nonce.toString() }; { param.simTx.safeTransaction.signatures.length } owner signature{ param.simTx.safeTransaction.signatures.length === 1 ? '' : 's' } collected. This optimistic preview simulates the Gnosis Safe calling the destination, but does not model Gnosis Safe guards, modules, events, nonce changes, executor-dependent behavior, or network gas. Nothing has necessarily been executed onchain.</p>
+					</div>
+				}
 				<div class = 'container'>
 					<TransactionImportanceBlock { ...param } rpcNetwork = { rpcNetwork } addressMetadata = { param.addressMetaData }/>
 				</div>
@@ -368,7 +391,7 @@ function TransactionPreviewDetails({
 					<dt>To</dt>
 					<dd>{ to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { to } renameAddressCallBack = { renameAddressCallBack } /> }</dd>
 					<dt>Value</dt>
-					<dd>{ `${ signedTransaction.value.toString(10) } wei` }</dd>
+					<dd>{ `${ bigintToDecimalString(signedTransaction.value, 18n) } ether` }</dd>
 					<dt>Nonce</dt>
 					<dd>{ signedTransaction.nonce.toString(10) }</dd>
 					<dt>Chain ID</dt>
@@ -733,7 +756,7 @@ type TokenLogEventParams = {
 }
 
 function TokenLogEvent(params: TokenLogEventParams ) {
-	const style = { color: isPositiveEvent(params.tokenVisualizerResult, params.ourAddressInReferenceFrame) ? 'var(--dim-text-color)' : 'var(--negative-dim-color)' }
+	const style = { color: isPositiveEvent(params.tokenVisualizerResult, params.ourAddressInReferenceFrame) ? 'var(--dim-text-color)' : 'var(--danger-dim-color)' }
 
 	return <>
 		<div class = 'log-cell' style = 'justify-content: right;'>

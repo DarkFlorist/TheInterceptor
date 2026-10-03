@@ -1,8 +1,203 @@
+const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
+const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
+
+type SafeAppsWindow = {
+	readonly location: { readonly origin: string }
+	addEventListener(type: 'message', listener: (event: Event) => void): void
+	removeEventListener(type: 'message', listener: (event: Event) => void): void
+	postMessage(message: unknown, targetOrigin: string): void
+}
+
+type SafeAppsRequest = {
+	readonly id: string
+	readonly method: string
+	readonly params?: unknown
+}
+
+type ParsedSafeAppsRequest =
+	| { readonly id: string, readonly request: SafeAppsRequest }
+	| { readonly id: string, readonly error: string }
+
+type SafeAppsMessageEvent = { readonly data: unknown, readonly origin: string, readonly source: unknown }
+
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === 'object' && value !== null
+
+type SafeAppsRequestCandidate = { readonly id?: unknown, readonly method?: unknown, readonly env?: unknown, readonly params?: unknown }
+type SafeAppsEnvironmentCandidate = { readonly sdkVersion?: unknown }
+type SafeAppsCompatibilityCandidate = { readonly enabled?: unknown, readonly canRequestAccess?: unknown }
+type SafeAppsCommandCandidate = { readonly kind?: unknown, readonly value?: unknown, readonly method?: unknown, readonly params?: unknown, readonly mapResult?: unknown, readonly message?: unknown, readonly isTypedData?: unknown, readonly safeAddress?: unknown, readonly chainId?: unknown, readonly safeRequestContext?: unknown }
+
+const isSafeAppsRequestCandidate = (value: unknown): value is SafeAppsRequestCandidate => isRecord(value)
+const isSafeAppsEnvironmentCandidate = (value: unknown): value is SafeAppsEnvironmentCandidate => isRecord(value)
+const isSafeAppsCompatibilityCandidate = (value: unknown): value is SafeAppsCompatibilityCandidate => isRecord(value)
+const isSafeAppsCommandCandidate = (value: unknown): value is SafeAppsCommandCandidate => isRecord(value)
+
+function parseSafeAppsMessageEvent(event: Event): SafeAppsMessageEvent | undefined {
+	if (!('data' in event) || !('origin' in event) || !('source' in event) || typeof event.origin !== 'string') return undefined
+	return { data: event.data, origin: event.origin, source: event.source }
+}
+
+function parseSafeAppsRequest(data: unknown): ParsedSafeAppsRequest | undefined {
+	if (!isSafeAppsRequestCandidate(data) || typeof data.id !== 'string') return undefined
+	// The SDK envelope distinguishes Safe Apps requests from unrelated page postMessage protocols.
+	if (!isSafeAppsEnvironmentCandidate(data.env)) return undefined
+	if (typeof data.env.sdkVersion !== 'string' || !/^[1-9][0-9]*\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/.test(data.env.sdkVersion)) {
+		return { id: data.id, error: 'Safe Apps env.sdkVersion must be a supported semantic version.' }
+	}
+	if (typeof data.method !== 'string') return { id: data.id, error: 'Safe Apps method must be a string.' }
+	return { id: data.id, request: { id: data.id, method: data.method, ...(data.params === undefined ? {} : { params: data.params }) } }
+}
+
+function parseSafeAppsCompatibility(value: unknown) {
+	if (!isSafeAppsCompatibilityCandidate(value) || typeof value.enabled !== 'boolean') return undefined
+	if (value.canRequestAccess !== undefined && typeof value.canRequestAccess !== 'boolean') return undefined
+	return { enabled: value.enabled, canRequestAccess: value.canRequestAccess === true }
+}
+
+async function executeSafeAppsCommand(command: unknown, requestEthereum: EthereumRequest, requestSafeApps: (request: Pick<SafeAppsRequest, 'method' | 'params'>) => Promise<unknown>): Promise<unknown> {
+	if (!isSafeAppsCommandCandidate(command) || (command.kind !== 'result' && command.kind !== 'ethereumRequest')) throw new Error('Interceptor returned an invalid Safe Apps command.')
+	if (command.kind === 'result') return command.value
+	if (typeof command.method !== 'string' || !Array.isArray(command.params) || (command.mapResult !== 'passthrough' && command.mapResult !== 'safeTxHash' && command.mapResult !== 'safeMessage')) throw new Error('Interceptor returned an invalid Safe Apps Ethereum request.')
+	if (command.mapResult === 'safeMessage' && (typeof command.message !== 'string' || typeof command.safeAddress !== 'string' || typeof command.chainId !== 'string')) throw new Error('Interceptor returned an invalid Safe message request.')
+	const result = command.safeRequestContext === undefined
+		? await requestEthereum({ method: command.method, params: command.params })
+		: await requestSafeApps({ method: 'execute', params: command })
+	if (command.mapResult === 'passthrough') return result
+	if (command.mapResult === 'safeMessage') {
+		if (typeof result !== 'string' || !/^0x[0-9a-f]{130}$/i.test(result)) throw new Error('Interceptor returned an invalid Safe owner signature.')
+		const submitted = await requestSafeApps({ method: 'submitOffChainMessage', params: { message: command.message, signature: result, safeAddress: command.safeAddress, chainId: command.chainId, ...(command.isTypedData === true ? { isTypedData: true } : {}) } })
+		if (!isSafeAppsCommandCandidate(submitted) || submitted.kind !== 'result') throw new Error('Interceptor returned an invalid Safe message submission response.')
+		return submitted.value
+	}
+	if (typeof result !== 'string') throw new Error('Interceptor returned an invalid transaction hash.')
+	return { safeTxHash: result }
+}
+
+// Retain read-only discovery while ineligible and reissue it after eligibility changes so stale account data is never published.
+const isSafeAppsDiscoveryRequest = (request: ParsedSafeAppsRequest) => 'request' in request && (request.request.method === 'getSafeInfo' || request.request.method === 'getChainInfo' || request.request.method === 'getEnvironmentInfo')
+
+function createSafeAppsRequestHandler(requestBackground: (request: unknown) => Promise<unknown>, requestEthereum: EthereumRequest) {
+	let offChainSigning = true
+	return async (request: Pick<SafeAppsRequest, 'method' | 'params'>) => {
+		const signingRequest = request.method === 'signMessage' || request.method === 'signTypedMessage'
+		const command = await requestBackground({ method: request.method, ...(request.params === undefined ? {} : { params: request.params }), ...(signingRequest ? { offChainSigning } : {}) })
+		const result = await executeSafeAppsCommand(command, requestEthereum, requestBackground)
+		if (request.method === 'rpcCall' && isRecord(request.params)) {
+			const { call } = request.params
+			if (call === 'safe_setSettings') {
+				if (!isRecord(result)) throw new Error('Interceptor returned invalid Safe Apps settings.')
+				const { offChainSigning: updated } = result
+				if (typeof updated !== 'boolean') throw new Error('Interceptor returned invalid Safe Apps settings.')
+				offChainSigning = updated
+			}
+		}
+		return result
+	}
+}
+
+function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (request: Pick<SafeAppsRequest, 'method' | 'params'>) => Promise<unknown>, requestAccess: () => Promise<void>) {
+	let enabled = false
+	let enablementGeneration = 0
+	let canRequestAccess = false
+	let accessRequested = false
+	let accessFailure: string | undefined
+	const pendingRequests: { readonly parsedRequest: ParsedSafeAppsRequest, readonly origin: string }[] = []
+	const answerRequest = (parsedRequest: ParsedSafeAppsRequest, origin: string) => {
+		if ('error' in parsedRequest) {
+			windowObject.postMessage({ id: parsedRequest.id, success: false, error: parsedRequest.error, version: SAFE_APPS_RESPONSE_VERSION }, origin)
+			return
+		}
+		const request = parsedRequest.request
+		const requestEnablementGeneration = enablementGeneration
+		const isCurrentResponse = () => {
+			if (enabled && requestEnablementGeneration === enablementGeneration) return true
+			// Startup queries must survive a temporary loss of eligibility, but their old account data must never be published.
+			if (isSafeAppsDiscoveryRequest(parsedRequest)) {
+				if (enabled) answerRequest(parsedRequest, origin)
+				else if (pendingRequests.length < SAFE_APPS_PENDING_REQUEST_LIMIT) {
+					pendingRequests.push({ parsedRequest, origin })
+					requestAccessForDiscovery()
+				}
+			}
+			return false
+		}
+		void requestSafeApps(request).then(
+			(data) => {
+				if (!isCurrentResponse()) return
+				windowObject.postMessage({ id: request.id, success: true, data, version: SAFE_APPS_RESPONSE_VERSION }, origin)
+			},
+			(error: unknown) => {
+				if (!isCurrentResponse()) return
+				windowObject.postMessage({ id: request.id, success: false, error: error instanceof Error ? error.message : 'Safe Apps request failed.', version: SAFE_APPS_RESPONSE_VERSION }, origin)
+			},
+		)
+	}
+	const rejectPendingDiscovery = (message: string) => {
+		for (const { parsedRequest, origin } of pendingRequests.splice(0)) {
+			windowObject.postMessage({ id: parsedRequest.id, success: false, error: message, version: SAFE_APPS_RESPONSE_VERSION }, origin)
+		}
+	}
+	const requestAccessForDiscovery = () => {
+		if (enabled || !canRequestAccess || !pendingRequests.some(({ parsedRequest }) => isSafeAppsDiscoveryRequest(parsedRequest))) return
+		if (accessFailure !== undefined) {
+			rejectPendingDiscovery(accessFailure)
+			return
+		}
+		if (accessRequested) return
+		accessRequested = true
+		void requestAccess().catch((error: unknown) => {
+			accessFailure = error instanceof Error ? error.message : 'Safe Apps connection failed.'
+			if (!canRequestAccess || enabled) return
+			rejectPendingDiscovery(accessFailure)
+		})
+	}
+	const onMessage = (event: Event) => {
+		const messageEvent = parseSafeAppsMessageEvent(event)
+		if (messageEvent === undefined) return
+		if (messageEvent.source !== windowObject || messageEvent.origin !== windowObject.location.origin) return
+		const parsedRequest = parseSafeAppsRequest(messageEvent.data)
+		if (parsedRequest === undefined) return
+		if (!enabled && isSafeAppsDiscoveryRequest(parsedRequest)) {
+			if (pendingRequests.length >= SAFE_APPS_PENDING_REQUEST_LIMIT) {
+				if (enabled === false && !canRequestAccess) return
+				windowObject.postMessage({ id: parsedRequest.id, success: false, error: 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.', version: SAFE_APPS_RESPONSE_VERSION }, messageEvent.origin)
+				return
+			}
+			pendingRequests.push({ parsedRequest, origin: messageEvent.origin })
+			requestAccessForDiscovery()
+			return
+		}
+		if (enabled) answerRequest(parsedRequest, messageEvent.origin)
+	}
+	windowObject.addEventListener('message', onMessage)
+	return {
+		setEnabled(nextEnabled: boolean, nextCanRequestAccess = false) {
+			canRequestAccess = nextCanRequestAccess
+			if (enabled !== nextEnabled) enablementGeneration += 1
+			enabled = nextEnabled
+			const queuedRequests = pendingRequests.splice(0)
+			if (nextEnabled) {
+				for (const { parsedRequest, origin } of queuedRequests) answerRequest(parsedRequest, origin)
+			} else {
+				// Never defer signing or transaction requests across a disabled state.
+				pendingRequests.push(...queuedRequests.filter(({ parsedRequest }) => isSafeAppsDiscoveryRequest(parsedRequest)))
+				requestAccessForDiscovery()
+			}
+		},
+		dispose() {
+			pendingRequests.splice(0)
+			windowObject.removeEventListener('message', onMessage)
+		},
+	}
+}
+
 const METAMASK_ERROR_USER_REJECTED_REQUEST = 4001
-const METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK = 4902
+const METAMASK_ERROR_PROVIDER_DISCONNECTED = 4900
 const METAMASK_ERROR_BLANKET_ERROR = -32603
 const METAMASK_METHOD_NOT_SUPPORTED = -32004
 const METAMASK_INVALID_METHOD_PARAMS = -32602
+const SIGNER_DISCOVERY_TIMEOUT_MS = 3000
+const SIGNER_DISCOVERY_RETRY_INTERVAL_MS = 100
 
 interface IJsonRpcSuccess<TResult> {
 	readonly jsonrpc: '2.0'
@@ -64,6 +259,7 @@ const INTERNAL_BACKGROUND_METHODS = [
 	'connected_to_signer',
 	'eth_accounts_reply',
 	'InterceptorError',
+	'safe_apps_request',
 	'signer_chainChanged',
 	'signer_reply',
 	'wallet_switchEthereumChain_reply',
@@ -72,6 +268,7 @@ const INTERNAL_BACKGROUND_METHODS = [
 const isInternalBackgroundMethod = (method: string) => INTERNAL_BACKGROUND_METHODS.some((internalMethod) => internalMethod === method)
 
 type InterceptedRequestBase = {
+	readonly walletSwitchRequestId?: string,
 	readonly interceptorApproved: true,
 	readonly requestId?: number,
 	readonly method: string,
@@ -101,7 +298,17 @@ const INTERCEPTOR_BRIDGE_PORT_MESSAGE = 'interceptor_bridge_port'
 const INTERCEPTOR_BRIDGE_REQUEST_MESSAGE = 'interceptor_bridge_request'
 const REQUEST_SCOPED_PROVIDER_EVENT_METHODS = new Set(['accountsChanged', 'connect', 'disconnect', 'chainChanged'])
 
+function normalizeSignerChainId(chainId: string) {
+	// Coinbase historically emitted decimal chain IDs. Only normalize the entire value so malformed IDs are not silently truncated by Number.parseInt.
+	return /^[0-9]+$/.test(chainId) ? `0x${ BigInt(chainId).toString(16) }` : chainId
+}
+
+function chainIdToNetworkVersion(chainId: string) {
+	return BigInt(chainId).toString(10)
+}
+
 type InterceptorApprovedMessageCandidate = {
+	readonly walletSwitchRequestId?: unknown
 	readonly interceptorApproved?: unknown
 	readonly method?: unknown
 	readonly type?: unknown
@@ -193,6 +400,7 @@ function parseInterceptorApprovedMessage(data: unknown): InterceptedRequestForwa
 		...(typeof requestId === 'number' ? { requestId } : {}),
 		...(Array.isArray(params) ? { params } : {}),
 		...(typeof subscription === 'string' ? { subscription } : {}),
+		...(typeof data.walletSwitchRequestId === 'string' ? { walletSwitchRequestId: data.walletSwitchRequestId } : {}),
 	}
 	if (type === 'forwardToSigner') return {
 		...base,
@@ -240,11 +448,21 @@ interface ProviderMessage {
 }
 
 type JsonRpcResponse = IJsonRpcSuccess<unknown> | IJsonRpcError
-type LegacyJsonRpcCallback = (error: IJsonRpcError | null, response: JsonRpcResponse | JsonRpcResponse[] | null) => void
+type LegacyJsonRpcCallback = (error: Error | null, response: JsonRpcResponse | JsonRpcResponse[] | null) => void
 
 type SignerAccountsReply =
 	| { readonly type: 'success', readonly accounts: readonly string[], readonly requestAccounts: boolean }
-	| { readonly type: 'error', readonly error: { readonly code: number, readonly message: string, readonly data?: unknown }, readonly requestAccounts: boolean }
+	| { readonly type: 'error', readonly error: { readonly code: number, readonly message: string, readonly data?: unknown }, readonly requestAccounts: boolean, readonly signerUnavailable?: true }
+
+type SignerAccountsResolution = {
+	readonly signerProviderGeneration: number
+	readonly reply: SignerAccountsReply
+}
+
+type SignerProviderRequestOutcome =
+	| { readonly type: 'success', readonly reply: unknown, readonly signerProviderGeneration: number }
+	| { readonly type: 'error', readonly error: unknown, readonly signerProviderGeneration: number }
+	| { readonly type: 'providerChanged', readonly signerProviderGeneration: number }
 
 type AnyCallBack =  ((message: ProviderMessage) => void)
 	| ((connectInfo: ProviderConnectInfo) => void)
@@ -252,7 +470,16 @@ type AnyCallBack =  ((message: ProviderMessage) => void)
 	| ((error: ProviderRpcError) => void)
 	| ((chainId: string) => void)
 
-type EthereumRequest = (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }) => Promise<unknown>
+type EthereumRequestParameters = readonly unknown[] | Readonly<Record<string, unknown>>
+type EthereumRequest = (methodAndParams: { readonly method: string, readonly params?: EthereumRequestParameters }) => Promise<unknown>
+type InterceptorEthereumRequestParameters = EthereumRequestParameters
+const METHODS_ACCEPTING_NAMED_PARAMETERS: ReadonlySet<string> = new Set(['wallet_watchAsset'])
+
+function normalizeInterceptorEthereumRequestParameters(method: string, params: InterceptorEthereumRequestParameters | undefined): readonly unknown[] | undefined {
+	if (params === undefined || Array.isArray(params)) return params
+	if (!METHODS_ACCEPTING_NAMED_PARAMETERS.has(method)) throw new EthereumJsonRpcError(METAMASK_INVALID_METHOD_PARAMS, `Named parameters are not supported for ${ method }.`)
+	return [params]
+}
 
 type InjectFunctions = {
 	request: EthereumRequest
@@ -276,8 +503,10 @@ type UnsupportedWindowEthereumMethods = {
 }
 
 type WindowEthereum = InjectFunctions & {
+	isAmbire?: boolean,
 	isBraveWallet?: boolean,
 	isMetaMask?: boolean,
+	isRabby?: boolean,
 	isInterceptor?: boolean,
 	providerMap?: Map<string, WindowEthereum>, // coinbase does not inject `isCoinbaseWallet` to the window.ethereum if there's already other wallets present (eg, Interceptor or Metamask), but instead injects a provider map that contains all these providers
 	providers?: readonly WindowEthereum[],
@@ -289,12 +518,14 @@ type WindowEthereum = InjectFunctions & {
 	networkVersion?: string,
 }
 
+type LegacyWeb3 = {
+	currentProvider?: WindowEthereum
+	accounts?: readonly string[]
+}
+
 type InpageWindow = Window & {
 	ethereum?: WindowEthereum
-	web3?: {
-		currentProvider: WindowEthereum
-		accounts: readonly string[]
-	}
+	web3?: LegacyWeb3
 }
 
 const inpageWindow: InpageWindow = window
@@ -306,7 +537,7 @@ interface EIP6963ProviderInfo {
 	rdns: string
 }
 
-type SingleSendAsyncParam = { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] }
+type SingleSendAsyncParam = { readonly id: string | number | null, readonly method: string, readonly params: InterceptorEthereumRequestParameters }
 type ForwardedDiagnosticsRequestContext = {
 	readonly requestId?: number
 	readonly requestMethod?: string
@@ -319,7 +550,30 @@ type OutstandingRequest = {
 }
 
 type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconnect' | 'chainChanged'
-type Signer = 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Brave' | 'CoinbaseWallet'
+type Signer = 'NoSigner' | 'NotRecognizedSigner' | 'MetaMask' | 'Ambire' | 'Brave' | 'CoinbaseWallet' | 'Rabby'
+
+function getSignerNameFromWalletMarkers(markers: { readonly isAmbire: boolean, readonly isBrave: boolean, readonly isCoinbase: boolean, readonly isMetaMask: boolean, readonly isRabby: boolean }): Signer {
+	if (markers.isCoinbase) return 'CoinbaseWallet'
+	if (markers.isAmbire) return 'Ambire'
+	if (markers.isBrave) return 'Brave'
+	if (markers.isRabby) return 'Rabby'
+	if (markers.isMetaMask) return 'MetaMask'
+	return 'NotRecognizedSigner'
+}
+
+function canAnnouncedMetaMaskReplaceSigner(signerName: Signer): boolean {
+	switch (signerName) {
+		case 'NoSigner':
+		case 'MetaMask':
+		case 'Ambire':
+		case 'Brave':
+		case 'Rabby':
+			return true
+		case 'NotRecognizedSigner':
+		case 'CoinbaseWallet':
+			return false
+	}
+}
 
 function isForwardedDiagnosticsRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null
@@ -428,6 +682,13 @@ function setCompatibilityProperty(target: object, property: PropertyKey, value: 
 	}
 }
 
+function getLegacyWeb3WithoutInvokingAccessors(target: InpageWindow): LegacyWeb3 | undefined {
+	const descriptor = Object.getOwnPropertyDescriptor(target, 'web3')
+	if (descriptor === undefined || !('value' in descriptor) || typeof descriptor.value !== 'object' || descriptor.value === null) return undefined
+	if (Object.getOwnPropertyDescriptor(descriptor.value, '__isMetaMaskShim__')?.value === true) return undefined
+	return descriptor.value
+}
+
 function serializeForwardedDiagnostics(source: 'inpage' | 'content-script' | 'document-start', phase: string, error: unknown, context: ForwardedDiagnosticsRequestContext = {}): string {
 	return formatForwardedDiagnostics(source, phase, getForwardedDiagnosticsSummary(error), error, context)
 }
@@ -447,14 +708,27 @@ class InterceptorMessageListener {
 	}
 	private static readonly hasNoConflictingWalletMarkers = (provider: WindowEthereum) => {
 		return (provider.isMetaMask === undefined || provider.isMetaMask === true)
+			&& (provider.isAmbire === undefined || provider.isAmbire === false)
 			&& (provider.isBraveWallet === undefined || provider.isBraveWallet === false)
 			&& (provider.isCoinbaseWallet === undefined || provider.isCoinbaseWallet === false)
+			&& (provider.isRabby === undefined || provider.isRabby === false)
 			&& (provider.isInterceptor === undefined || provider.isInterceptor === false)
 	}
 
 	private connected = false
 	private requestId = 0
 	private metamaskCompatibilityMode = false
+	// The page owns SDK settings; every signing request carries its mode across background port recreation.
+	private readonly safeAppsBridge = createSafeAppsBridge(inpageWindow, createSafeAppsRequestHandler(
+		async (request) => await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [request] }),
+		async (request) => await this.WindowEthereumRequest(request),
+	), async () => {
+		// Restore persisted access after reload before considering an interactive wallet connection.
+		const accounts = await this.WindowEthereumRequest({ method: 'eth_accounts' })
+		if (!Array.isArray(accounts) || accounts.length === 0) await this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
+		// Recheck Safe eligibility after the ordinary wallet/site approval flow completes.
+		await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [{ method: 'getEnvironmentInfo' }] })
+	})
 	private signerName: Signer = 'NoSigner'
 	private signerWindowEthereumProvider: WindowEthereum | undefined = undefined
 	private signerWindowEthereumRequest: EthereumRequest | undefined = undefined
@@ -465,7 +739,13 @@ class InterceptorMessageListener {
 	private announcedMetaMaskUuid: string | undefined = undefined
 	private acceptingAnnouncedMetaMaskProviders = false
 	private signerSelectionGeneration = 0
-	private signerConnectionTransition: Promise<void> = Promise.resolve()
+	private signerProviderGeneration = 0
+	private latestSignerConnectionTransition: Promise<void> = Promise.resolve()
+	private readonly signerConnectionTransitionChangeWaiters = new Set<InterceptorFuture<void>>()
+	private readonly signerProviderChangeWaiters = new Set<InterceptorFuture<void>>()
+	private readonly signerAvailabilityWaiters = new Set<InterceptorFuture<void>>()
+	private readonly metaMaskAvailabilityWaiters = new Set<InterceptorFuture<void>>()
+	private signerDiscoveryRetryTimer: ReturnType<typeof setTimeout> | undefined = undefined
 
 	private readonly outstandingRequests: Map<number, OutstandingRequest> = new Map()
 
@@ -481,7 +761,7 @@ class InterceptorMessageListener {
 	private web3AccountsControlled = false
 
 	private signerAccounts: string[] = []
-	private pendingSignerAddressRequest: InterceptorFuture<SignerAccountsReply> | undefined = undefined
+	private pendingSignerAddressRequest: Promise<SignerAccountsResolution> | undefined = undefined
 
 	public constructor() {
 		this.connectToContentScript()
@@ -500,14 +780,16 @@ class InterceptorMessageListener {
 		if (this.metamaskCompatibilityMode && inpageWindow.ethereum !== undefined && !this.ethereumSelectedAddressControlled) {
 			setCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', address, 'window.ethereum.selectedAddress')
 		}
-		if (this.metamaskCompatibilityMode && 'web3' in inpageWindow && inpageWindow.web3 !== undefined && !this.web3AccountsControlled) {
-			setCompatibilityProperty(inpageWindow.web3, 'accounts', accounts, 'window.web3.accounts')
+		const legacyWeb3 = getLegacyWeb3WithoutInvokingAccessors(inpageWindow)
+		if (this.metamaskCompatibilityMode && legacyWeb3 !== undefined && !this.web3AccountsControlled) {
+			setCompatibilityProperty(legacyWeb3, 'accounts', accounts, 'window.web3.accounts')
 		}
 	}
 
 	private readonly hasNonConfigurableAccountCompatibilityProperty = () => {
 		if (inpageWindow.ethereum !== undefined && Object.getOwnPropertyDescriptor(inpageWindow.ethereum, 'selectedAddress')?.configurable === false) return true
-		if ('web3' in inpageWindow && inpageWindow.web3 !== undefined && Object.getOwnPropertyDescriptor(inpageWindow.web3, 'accounts')?.configurable === false) return true
+		const legacyWeb3 = getLegacyWeb3WithoutInvokingAccessors(inpageWindow)
+		if (legacyWeb3 !== undefined && Object.getOwnPropertyDescriptor(legacyWeb3, 'accounts')?.configurable === false) return true
 		return false
 	}
 
@@ -568,12 +850,15 @@ class InterceptorMessageListener {
 		if (inpageWindow.ethereum !== undefined) {
 			this.ethereumSelectedAddressControlled = this.installControlledCompatibilityProperty(inpageWindow.ethereum, 'selectedAddress', this.getControlledSelectedAddress, 'window.ethereum.selectedAddress')
 		}
-		if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) {
-			if (Object.getOwnPropertyDescriptor(inpageWindow.web3, 'accounts')?.configurable === false) {
+		const legacyWeb3 = getLegacyWeb3WithoutInvokingAccessors(inpageWindow)
+		if (legacyWeb3 !== undefined) {
+			if (Object.getOwnPropertyDescriptor(legacyWeb3, 'accounts')?.configurable === false) {
 				setCompatibilityProperty(inpageWindow, 'web3', { accounts: this.getControlledAccounts(), currentProvider: inpageWindow.ethereum as WindowEthereum }, 'window.web3')
 			}
-			this.web3AccountsControlled = this.installControlledCompatibilityProperty(inpageWindow.web3, 'accounts', this.getControlledAccounts, 'window.web3.accounts')
-			setCompatibilityProperty(inpageWindow.web3, 'currentProvider', inpageWindow.ethereum as WindowEthereum, 'window.web3.currentProvider')
+			const controlledLegacyWeb3 = getLegacyWeb3WithoutInvokingAccessors(inpageWindow)
+			if (controlledLegacyWeb3 === undefined) return
+			this.web3AccountsControlled = this.installControlledCompatibilityProperty(controlledLegacyWeb3, 'accounts', this.getControlledAccounts, 'window.web3.accounts')
+			setCompatibilityProperty(controlledLegacyWeb3, 'currentProvider', inpageWindow.ethereum as WindowEthereum, 'window.web3.currentProvider')
 		}
 	}
 
@@ -660,13 +945,14 @@ class InterceptorMessageListener {
 	}
 
 	// sends a message to interceptors background script
-	private readonly WindowEthereumRequest = async (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }) => {
+	private readonly WindowEthereumRequest = async (methodAndParams: { readonly method: string, readonly params?: InterceptorEthereumRequestParameters }) => {
 		try {
 			if (isInternalBackgroundMethod(methodAndParams.method)) throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, `Method not supported: ${ methodAndParams.method }`)
+			const params = normalizeInterceptorEthereumRequestParameters(methodAndParams.method, methodAndParams.params)
 			// make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
 			return await this.sendMessageToBackgroundPage({
 				method: methodAndParams.method,
-				...(methodAndParams.params !== undefined ? { params: methodAndParams.params } : {}),
+				...(params !== undefined ? { params } : {}),
 			})
 		} catch (error: unknown) {
 			if (error instanceof Error) throw error
@@ -674,7 +960,7 @@ class InterceptorMessageListener {
 		}
 	}
 
-	private readonly requestFromSigner = async (methodAndParams: { readonly method: string, readonly params?: readonly unknown[] }, allowRequestAccountsFallbackToRoot = false) => {
+	private readonly requestFromSigner = async (methodAndParams: { readonly method: string, readonly params?: EthereumRequestParameters }, allowRequestAccountsFallbackToRoot = false) => {
 		if (this.signerWindowEthereumRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
 		try {
 			return await this.signerWindowEthereumRequest(methodAndParams)
@@ -701,7 +987,7 @@ class InterceptorMessageListener {
 				if (!InterceptorMessageListener.isStringArray([...accounts])) return
 				this.signerAccounts = [...accounts]
 				if (this.pendingSignerAddressRequest !== undefined) return
-				this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: false }] })
+				this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: false, signerProviderGeneration: this.signerProviderGeneration }] })
 			})
 			register('connect', (_connectInfo: ProviderConnectInfo) => {
 				if (this.signerWindowEthereumProvider !== provider) return
@@ -709,12 +995,12 @@ class InterceptorMessageListener {
 			})
 			register('disconnect', (_error: ProviderRpcError) => {
 				if (this.signerWindowEthereumProvider !== provider) return
-				this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [false, signerName] })
+				const signerProviderGeneration = this.advanceSignerProviderGeneration()
+				this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [false, signerName, signerProviderGeneration] })
 			})
 			register('chainChanged', (chainId: string) => {
 				if (this.signerWindowEthereumProvider !== provider) return
-				// TODO: this is a hack to get coinbase working that calls this numbers in base 10 instead of in base 16
-				const params = /\d/.test(chainId) ? [`0x${parseInt(chainId).toString(16)}`] : [chainId]
+				const params = [normalizeSignerChainId(chainId), this.signerProviderGeneration]
 				this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params })
 			})
 			this.subscribedSignerProviders.add(provider)
@@ -758,6 +1044,78 @@ class InterceptorMessageListener {
 			this.reportSignerDiscoveryError('prepare signer provider', error)
 			return undefined
 		}
+	}
+
+	private readonly setSignerProvider = (provider: WindowEthereum | undefined, request: EthereumRequest | undefined, fallbackRequest: EthereumRequest | undefined = undefined) => {
+		if (this.signerWindowEthereumProvider !== provider) this.advanceSignerProviderGeneration()
+		this.signerWindowEthereumProvider = provider
+		this.signerWindowEthereumRequest = request
+		this.fallbackSignerWindowEthereumRequest = fallbackRequest
+	}
+
+	private readonly advanceSignerProviderGeneration = () => {
+		this.signerProviderGeneration++
+		for (const waiter of this.signerProviderChangeWaiters) waiter.resolve(undefined)
+		this.signerProviderChangeWaiters.clear()
+		return this.signerProviderGeneration
+	}
+
+	private readonly discoverAnnouncedMetaMaskProvider = () => {
+		if (this.acceptingAnnouncedMetaMaskProviders) return
+		window.addEventListener('eip6963:announceProvider', this.useAnnouncedMetaMaskProvider)
+		this.acceptingAnnouncedMetaMaskProviders = true
+		try {
+			window.dispatchEvent(new Event('eip6963:requestProvider'))
+		} catch (error: unknown) {
+			this.reportSignerDiscoveryError('request EIP-6963 signer providers', error)
+		} finally {
+			this.acceptingAnnouncedMetaMaskProviders = false
+			window.removeEventListener('eip6963:announceProvider', this.useAnnouncedMetaMaskProvider)
+		}
+	}
+
+	private readonly stopSignerDiscoveryRetries = () => {
+		if (this.signerDiscoveryRetryTimer === undefined) return
+		clearTimeout(this.signerDiscoveryRetryTimer)
+		this.signerDiscoveryRetryTimer = undefined
+	}
+
+	private readonly scheduleSignerDiscoveryRetry = () => {
+		const waitingForAnySigner = this.signerAvailabilityWaiters.size > 0 && this.signerWindowEthereumRequest === undefined
+		const waitingForMetaMaskInsteadOfBrave = this.metaMaskAvailabilityWaiters.size > 0 && this.signerName === 'Brave'
+		if (this.signerDiscoveryRetryTimer !== undefined || (!waitingForAnySigner && !waitingForMetaMaskInsteadOfBrave)) return
+		// A late wallet may start answering EIP-6963 requests without successfully replacing window.ethereum or dispatching ethereum#initialized.
+		this.signerDiscoveryRetryTimer = setTimeout(() => {
+			this.signerDiscoveryRetryTimer = undefined
+			const stillWaitingForAnySigner = this.signerAvailabilityWaiters.size > 0 && this.signerWindowEthereumRequest === undefined
+			const stillWaitingForMetaMaskInsteadOfBrave = this.metaMaskAvailabilityWaiters.size > 0 && this.signerName === 'Brave'
+			if (!stillWaitingForAnySigner && !stillWaitingForMetaMaskInsteadOfBrave) return
+			this.discoverAnnouncedMetaMaskProvider()
+			this.scheduleSignerDiscoveryRetry()
+		}, SIGNER_DISCOVERY_RETRY_INTERVAL_MS)
+	}
+
+	private readonly waitForSignerAvailability = async () => {
+		if (this.signerName === 'NoSigner' || this.signerName === 'Brave') this.discoverAnnouncedMetaMaskProvider()
+		const waitForMetaMaskInsteadOfBrave = this.signerName === 'Brave'
+		if (this.signerWindowEthereumRequest !== undefined && !waitForMetaMaskInsteadOfBrave) return true
+
+		const signerAvailability = new InterceptorFuture<void>()
+		const waiters = waitForMetaMaskInsteadOfBrave ? this.metaMaskAvailabilityWaiters : this.signerAvailabilityWaiters
+		waiters.add(signerAvailability)
+		this.scheduleSignerDiscoveryRetry()
+		let timeout: ReturnType<typeof setTimeout> | undefined
+		try {
+			await Promise.race([
+				Promise.resolve(signerAvailability),
+				new Promise<void>((resolve) => { timeout = setTimeout(resolve, SIGNER_DISCOVERY_TIMEOUT_MS) }),
+			])
+		} finally {
+			waiters.delete(signerAvailability)
+			if (this.signerAvailabilityWaiters.size === 0 && this.metaMaskAvailabilityWaiters.size === 0) this.stopSignerDiscoveryRetries()
+			if (timeout !== undefined) clearTimeout(timeout)
+		}
+		return this.signerWindowEthereumRequest !== undefined
 	}
 
 	private readonly findPreparedLegacyMetaMaskProvider = (injectedWindowEthereum: WindowEthereum) => {
@@ -805,13 +1163,11 @@ class InterceptorMessageListener {
 		const { provider, info } = announcement
 		if (provider === this.signerWindowEthereumProvider) return
 		if (this.announcedMetaMaskUuid !== undefined) return
-		if (this.signerName !== 'NoSigner' && this.signerName !== 'MetaMask' && this.signerName !== 'Brave') return
+		if (!canAnnouncedMetaMaskReplaceSigner(this.signerName)) return
 		const preparedSigner = this.prepareSignerProvider(provider, 'MetaMask')
 		if (preparedSigner === undefined) return
 		this.announcedMetaMaskUuid = info.uuid
-		this.signerWindowEthereumProvider = preparedSigner.provider
-		this.signerWindowEthereumRequest = preparedSigner.request
-		this.fallbackSignerWindowEthereumRequest = undefined
+		this.setSignerProvider(preparedSigner.provider, preparedSigner.request)
 		this.connected = preparedSigner.connected
 		this.connectToSigner('MetaMask')
 	}
@@ -850,23 +1206,18 @@ class InterceptorMessageListener {
 					}
 				}
 			}
-			return {
-				jsonrpc: '2.0',
-				id: param.id,
-				error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR }
-			}
+			throw error
 		}
 	}
 
 	private readonly WindowEthereumSendAsync = async (payload: SingleSendAsyncParam | SingleSendAsyncParam[], callback: LegacyJsonRpcCallback) => {
-		if (Array.isArray(payload)) {
-			const responses = await Promise.all(payload.map((param) => this.getWindowEthereumSendAsyncResponse(param)))
-			callback(null, responses)
-			return
-		}
-		const response = await this.getWindowEthereumSendAsyncResponse(payload)
-		if ('error' in response) {
-			callback(response, null)
+		let response: JsonRpcResponse | JsonRpcResponse[]
+		try {
+			response = Array.isArray(payload)
+				? await Promise.all(payload.map((param) => this.getWindowEthereumSendAsyncResponse(param)))
+				: await this.getWindowEthereumSendAsyncResponse(payload)
+		} catch (error: unknown) {
+			callback(error instanceof Error ? error : new Error(`Unexpected sendAsync failure: ${ String(error) }`), null)
 			return
 		}
 		callback(null, response)
@@ -928,78 +1279,114 @@ class InterceptorMessageListener {
 
 	private readonly WindowEthereumEnable = async () => this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
 
-	// attempts to call signer for eth_accounts
-	private readonly getAccountsFromSigner = async () => {
-		if (this.signerWindowEthereumRequest === undefined) return
-		try {
-			const reply = await this.requestFromSigner({ method: 'eth_accounts', params: [] })
-			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
-			if (!InterceptorMessageListener.isStringArray(reply)) throw new Error('Signer did not return a string array')
-			this.signerAccounts = reply
-			await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'success', accounts: this.signerAccounts, requestAccounts: false }] })
-			return
-		} catch (error: unknown) {
-			if (InterceptorMessageListener.getErrorCodeAndMessage(error)) return await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error }] })
-			const errorCode = InterceptorMessageListener.getErrorCode(error)
-			if (errorCode !== undefined) return await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error: { message: InterceptorMessageListener.getFallbackErrorMessage(errorCode), code: errorCode } }] })
-			if (error instanceof Error) return await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error: { message: error.message, code: METAMASK_ERROR_BLANKET_ERROR } }] })
-			return await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ type: 'error', requestAccounts: false, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } }] })
-		}
-	}
-
 	private static isStringArray(arr: unknown[]): arr is string[] {
 		return arr.every(item => typeof item === 'string');
 	}
 
+	private readonly getSignerAccountsErrorReply = (error: unknown, requestAccounts: boolean): SignerAccountsReply => {
+		if (InterceptorMessageListener.getErrorCodeAndMessage(error)) return { type: 'error', requestAccounts, error }
+		const errorCode = InterceptorMessageListener.getErrorCode(error)
+		if (errorCode !== undefined) return { type: 'error', requestAccounts, error: { message: InterceptorMessageListener.getFallbackErrorMessage(errorCode), code: errorCode } }
+		if (error instanceof Error) return { type: 'error', requestAccounts, error: { message: error.message, code: METAMASK_ERROR_BLANKET_ERROR } }
+		return { type: 'error', requestAccounts, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } }
+	}
+
+	private readonly requestFromCurrentSigner = async (methodAndParams: { readonly method: string, readonly params?: EthereumRequestParameters }, allowRequestAccountsFallbackToRoot = false): Promise<SignerProviderRequestOutcome> => {
+		const signerProviderGeneration = this.signerProviderGeneration
+		const providerChange = new InterceptorFuture<void>()
+		this.signerProviderChangeWaiters.add(providerChange)
+		const signerRequest: Promise<SignerProviderRequestOutcome> = this.requestFromSigner(methodAndParams, allowRequestAccountsFallbackToRoot).then(
+			(reply): SignerProviderRequestOutcome => ({ type: 'success', reply, signerProviderGeneration }),
+			(error: unknown): SignerProviderRequestOutcome => ({ type: 'error', error, signerProviderGeneration }),
+		)
+		const providerChanged = Promise.resolve(providerChange).then((): SignerProviderRequestOutcome => ({ type: 'providerChanged', signerProviderGeneration }))
+		try {
+			const outcome = await Promise.race([signerRequest, providerChanged])
+			if (signerProviderGeneration !== this.signerProviderGeneration) return { type: 'providerChanged', signerProviderGeneration }
+			return outcome
+		} finally {
+			this.signerProviderChangeWaiters.delete(providerChange)
+		}
+	}
+
+	private readonly resolveSignerAccountsFromCurrentProvider = async (requestAccounts: boolean): Promise<SignerAccountsResolution> => {
+		for (;;) {
+			const signerAvailable = await this.waitForSignerAvailability()
+			const signerProviderGeneration = this.signerProviderGeneration
+			if (!signerAvailable) {
+				return {
+					signerProviderGeneration,
+					reply: {
+						type: 'error',
+						requestAccounts,
+						signerUnavailable: true,
+						error: { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'No signer wallet is available to this page. Enable your wallet extension for this site, then try again.' },
+					},
+				}
+			}
+			const method = requestAccounts ? 'eth_requestAccounts' : 'eth_accounts'
+			const outcome = await this.requestFromCurrentSigner({ method, params: [] }, requestAccounts)
+			if (outcome.type === 'providerChanged') continue
+			if (outcome.type === 'error') return { signerProviderGeneration: outcome.signerProviderGeneration, reply: this.getSignerAccountsErrorReply(outcome.error, requestAccounts) }
+			const reply = outcome.reply
+			if (!Array.isArray(reply)) return { signerProviderGeneration, reply: this.getSignerAccountsErrorReply(new Error('Signer returned something else than an array'), requestAccounts) }
+			if (!InterceptorMessageListener.isStringArray(reply)) return { signerProviderGeneration, reply: this.getSignerAccountsErrorReply(new Error('Signer did not return a string array'), requestAccounts) }
+			this.signerAccounts = reply
+			return { signerProviderGeneration, reply: { type: 'success', accounts: this.signerAccounts, requestAccounts } }
+		}
+	}
+
+	private readonly sendSignerAccountsResolution = async (resolution: SignerAccountsResolution) => {
+		await this.waitForLatestSignerConnectionTransition()
+		if (resolution.signerProviderGeneration !== this.signerProviderGeneration) return false
+		await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [{ ...resolution.reply, signerProviderGeneration: resolution.signerProviderGeneration }] })
+		return true
+	}
+
+	// attempts to call signer for eth_accounts
+	private readonly getAccountsFromSigner = async () => {
+		for (;;) {
+			const resolution = await this.resolveSignerAccountsFromCurrentProvider(false)
+			if (await this.sendSignerAccountsResolution(resolution)) return
+		}
+	}
+
+	private readonly getSharedSignerAccountsResolution = async () => {
+		const existingRequest = this.pendingSignerAddressRequest
+		if (existingRequest !== undefined) return await existingRequest
+		const pendingRequest = this.resolveSignerAccountsFromCurrentProvider(true)
+		this.pendingSignerAddressRequest = pendingRequest
+		try {
+			return await pendingRequest
+		} finally {
+			if (this.pendingSignerAddressRequest === pendingRequest) this.pendingSignerAddressRequest = undefined
+		}
+	}
+
 	// attempts to call signer for eth_requestAccounts
 	private readonly requestAccountsFromSigner = async () => {
-		if (this.signerWindowEthereumRequest === undefined) return
-		if (this.pendingSignerAddressRequest !== undefined) {
-			const pendingReply = await this.pendingSignerAddressRequest
-			await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [pendingReply] })
-			return
-		}
-		this.pendingSignerAddressRequest = new InterceptorFuture()
-		try {
-			const reply = await this.requestFromSigner({ method: 'eth_requestAccounts', params: [] }, true)
-			if (!Array.isArray(reply)) throw new Error('Signer returned something else than an array')
-			if (!InterceptorMessageListener.isStringArray(reply)) throw new Error('Signer did not return a string array')
-			this.signerAccounts = reply
-			const signerReply = { type: 'success', accounts: this.signerAccounts, requestAccounts: true } as const
-			this.pendingSignerAddressRequest.resolve(signerReply)
-			await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [signerReply] })
-			return
-		} catch (error: unknown) {
-			const errorCode = InterceptorMessageListener.getErrorCode(error)
-			const signerReply = InterceptorMessageListener.getErrorCodeAndMessage(error)
-				? { type: 'error', requestAccounts: true, error } as const
-				: errorCode !== undefined
-					? { type: 'error', requestAccounts: true, error: { message: InterceptorMessageListener.getFallbackErrorMessage(errorCode), code: errorCode } } as const
-					: error instanceof Error
-						? { type: 'error', requestAccounts: true, error: { message: error.message, code: METAMASK_ERROR_BLANKET_ERROR } } as const
-						: { type: 'error', requestAccounts: true, error: { message: 'unknown error', code: METAMASK_ERROR_BLANKET_ERROR } } as const
-			this.pendingSignerAddressRequest.resolve(signerReply)
-			return await this.sendInternalMessageToBackgroundPage({ method: 'eth_accounts_reply', params: [signerReply] })
-		} finally {
-			this.pendingSignerAddressRequest = undefined
+		for (;;) {
+			const resolution = await this.getSharedSignerAccountsResolution()
+			if (await this.sendSignerAccountsResolution(resolution)) return
 		}
 	}
 
 	private readonly requestChainIdFromSigner = async () => {
 		if (this.signerWindowEthereumRequest === undefined) return
-		try {
-			const reply = await this.requestFromSigner({ method: 'eth_chainId', params: [] })
+		const outcome = await this.requestFromCurrentSigner({ method: 'eth_chainId', params: [] })
+		if (outcome.type === 'providerChanged') return
+		if (outcome.type === 'success') {
+			const reply = outcome.reply
 			if (typeof reply !== 'string') {
 				this.reportInterceptorError(serializeForwardedDiagnostics('inpage', 'request signer chain id', new Error('Signer eth_chainId returned a non-string reply.'), { requestMethod: 'eth_chainId' }))
 				return
 			}
-			return await this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params: [ reply ] })
-		} catch(error: unknown) {
-			console.error('failed to get chain Id from signer')
-			console.error(error)
-			this.reportInterceptorError(serializeForwardedDiagnostics('inpage', 'request signer chain id', error, { requestMethod: 'eth_chainId' }))
-			return undefined
+			return await this.sendInternalMessageToBackgroundPage({ method: 'signer_chainChanged', params: [reply, outcome.signerProviderGeneration] })
 		}
+		console.error('failed to get chain Id from signer')
+		console.error(outcome.error)
+		this.reportInterceptorError(serializeForwardedDiagnostics('inpage', 'request signer chain id', outcome.error, { requestMethod: 'eth_chainId' }))
+		return undefined
 	}
 
 	private static readonly getErrorCodeAndMessage = (error: unknown): error is { code: number, message: string } => {
@@ -1030,19 +1417,113 @@ class InterceptorMessageListener {
 		throw new Error('wrong type')
 	}
 
-	private readonly requestChangeChainFromSigner = async (chainId: string) => {
-		if (this.signerWindowEthereumRequest === undefined) return
-
-		try {
-			const reply = await this.requestFromSigner({ method: 'wallet_switchEthereumChain', params: [ { chainId } ] })
-			if (reply !== null) return
-			await this.sendInternalMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: true, chainId: chainId } ] })
-		} catch (error: unknown) {
-			if (InterceptorMessageListener.getErrorCodeAndMessage(error) && (error.code === METAMASK_ERROR_USER_REJECTED_REQUEST || error.code === METAMASK_ERROR_CHAIN_NOT_ADDED_TO_METAMASK)) {
-				await this.sendInternalMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [ { accept: false, chainId: chainId, error } ] })
-			}
-			throw error
+	private readonly requestChangeChainFromSigner = async (chainId: string, walletSwitchRequestId: string) => {
+		if (this.signerWindowEthereumRequest === undefined) {
+			await this.sendInternalMessageToBackgroundPage({
+				method: 'wallet_switchEthereumChain_reply',
+				params: [{
+					accept: false,
+					chainId, walletSwitchRequestId,
+					signerProviderGeneration: this.signerProviderGeneration,
+					error: { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'No signer wallet is available to this page. Enable your wallet extension for this site, then try again.' },
+				}],
+			})
+			return
 		}
+
+		const outcome = await this.requestFromCurrentSigner({ method: 'wallet_switchEthereumChain', params: [{ chainId }] })
+		if (outcome.type === 'success') {
+			const params = outcome.reply === null
+				? { accept: true as const, chainId, walletSwitchRequestId, signerProviderGeneration: outcome.signerProviderGeneration }
+				: {
+					accept: false as const,
+					chainId, walletSwitchRequestId,
+					signerProviderGeneration: outcome.signerProviderGeneration,
+					error: { code: METAMASK_ERROR_BLANKET_ERROR, message: 'Signer returned an invalid wallet_switchEthereumChain reply.' },
+				}
+			await this.sendInternalMessageToBackgroundPage({ method: 'wallet_switchEthereumChain_reply', params: [params] })
+			return
+		}
+		const error = outcome.type === 'providerChanged'
+			? { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'Signer connection changed before the previous wallet replied.' }
+			: this.normalizeSignerErrorForBackground(outcome.error)
+		await this.sendInternalMessageToBackgroundPage({
+			method: 'wallet_switchEthereumChain_reply',
+			params: [{ accept: false, chainId, walletSwitchRequestId, error, signerProviderGeneration: outcome.signerProviderGeneration }],
+		})
+	}
+
+	private readonly requestWatchAssetFromSigner = async (parameters: unknown) => {
+		if (typeof parameters !== 'object' || parameters === null || Array.isArray(parameters)
+			|| !('parameters' in parameters)
+			|| typeof parameters.parameters !== 'object'
+			|| parameters.parameters === null
+			|| Array.isArray(parameters.parameters)
+			|| !('uniqueRequestIdentifier' in parameters)
+			|| typeof parameters.uniqueRequestIdentifier !== 'object'
+			|| parameters.uniqueRequestIdentifier === null
+			|| !('requestId' in parameters.uniqueRequestIdentifier)
+			|| typeof parameters.uniqueRequestIdentifier.requestId !== 'number'
+			|| !('signerIdentity' in parameters)
+			|| typeof parameters.signerIdentity !== 'object'
+			|| parameters.signerIdentity === null
+			|| !('tabId' in parameters.signerIdentity)
+			|| typeof parameters.signerIdentity.tabId !== 'number'
+			|| !('connectionName' in parameters.signerIdentity)
+			|| typeof parameters.signerIdentity.connectionName !== 'string'
+			|| !('ownerGeneration' in parameters.signerIdentity)
+			|| typeof parameters.signerIdentity.ownerGeneration !== 'number'
+			|| !('signerProviderGeneration' in parameters.signerIdentity)
+			|| typeof parameters.signerIdentity.signerProviderGeneration !== 'number'
+		) throw new Error('Malformed wallet_watchAsset signer request.')
+		const walletParameters = Object.fromEntries(Object.entries(parameters.parameters))
+		const forwardRequest: {
+			type: 'forwardToSigner'
+			replyWithSignersReply: true
+			method: string
+			requestId: number
+			params: unknown
+		} = {
+			type: 'forwardToSigner',
+			replyWithSignersReply: true,
+			method: 'wallet_watchAsset',
+			requestId: parameters.uniqueRequestIdentifier.requestId,
+			params: parameters,
+		}
+		if (this.signerWindowEthereumRequest === undefined || this.signerProviderGeneration !== parameters.signerIdentity.signerProviderGeneration) {
+			await this.sendInternalMessageToBackgroundPage({
+				method: 'signer_reply',
+				params: [{
+					success: false,
+					forwardRequest,
+					error: { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'Signer connection changed before the watch-asset request reached the wallet.' },
+					signerProviderGeneration: parameters.signerIdentity.signerProviderGeneration,
+				}],
+			})
+			return
+		}
+		const outcome = await this.requestFromCurrentSigner({ method: 'wallet_watchAsset', params: walletParameters })
+		const signerReply: {
+			success: true
+			forwardRequest: typeof forwardRequest
+			reply: unknown
+			signerProviderGeneration: number
+		} | {
+			success: false
+			forwardRequest: typeof forwardRequest
+			error: { code: number, message: string, data?: unknown }
+			signerProviderGeneration: number
+		} = outcome.type === 'success'
+			? { success: true, forwardRequest, reply: outcome.reply, signerProviderGeneration: outcome.signerProviderGeneration }
+			: {
+				success: false,
+				forwardRequest,
+				error: outcome.type === 'error'
+					? this.normalizeSignerErrorForBackground(outcome.error)
+					: { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'Signer connection changed before the previous wallet replied.' },
+				signerProviderGeneration: outcome.signerProviderGeneration,
+			}
+		await this.sendInternalMessageToBackgroundPage({ method: 'signer_reply', params: [signerReply] })
 	}
 
 	private readonly handleReplyRequest = async(replyRequest: InterceptedRequestForwardWithResult) => {
@@ -1104,7 +1585,7 @@ class InterceptorMessageListener {
 					if (!this.connected) return
 					this.connected = false
 					for (const callback of this.onDisconnectCallBacks) {
-						callback({ name: 'disconnect', code: METAMASK_ERROR_USER_REJECTED_REQUEST, message: 'User refused access to the wallet' })
+						callback({ name: 'disconnect', code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'Provider disconnected from all chains.' })
 					}
 					return
 				}
@@ -1115,16 +1596,26 @@ class InterceptorMessageListener {
 					this.activeChainId = reply
 					if (this.metamaskCompatibilityMode && this.signerWindowEthereumRequest === undefined && inpageWindow.ethereum !== undefined) {
 						setCompatibilityProperty(inpageWindow.ethereum, 'chainId', reply, 'window.ethereum.chainId')
-						setCompatibilityProperty(inpageWindow.ethereum, 'networkVersion', Number(reply).toString(10), 'window.ethereum.networkVersion')
+						setCompatibilityProperty(inpageWindow.ethereum, 'networkVersion', chainIdToNetworkVersion(reply), 'window.ethereum.networkVersion')
 					}
 					for (const callback of this.onChainChangedCallBacks) {
 						callback(reply)
 					}
 					return
 				}
+				case 'safe_apps_compatibility': {
+					const safeAppsCompatibility = parseSafeAppsCompatibility(replyRequest.result)
+					if (safeAppsCompatibility !== undefined) this.safeAppsBridge.setEnabled(safeAppsCompatibility.enabled, safeAppsCompatibility.canRequestAccess)
+					return
+				}
 				case 'request_signer_to_eth_requestAccounts': return await this.requestAccountsFromSigner()
 				case 'request_signer_to_eth_accounts': return await this.getAccountsFromSigner()
-				case 'request_signer_to_wallet_switchEthereumChain': return await this.requestChangeChainFromSigner(replyRequest.result as string)
+				case 'request_signer_to_wallet_switchEthereumChain': {
+					if (typeof replyRequest.result !== 'string' || typeof replyRequest.walletSwitchRequestId !== 'string') throw new Error('Invalid wallet switch command')
+					return await this.requestChangeChainFromSigner(replyRequest.result, replyRequest.walletSwitchRequestId)
+				}
+				case 'request_signer_to_wallet_watchAsset': return await this.requestWatchAssetFromSigner(replyRequest.result)
+				case 'request_signer_connection_status': return await this.connectToSigner(this.signerName)
 				case 'request_signer_chainId': return await this.requestChainIdFromSigner()
 				default: break
 			}
@@ -1217,9 +1708,9 @@ class InterceptorMessageListener {
 						}
 						case 'eth_chainId': {
 							if (typeof forwardRequest.result !== 'string') throw new Error('wrong type')
-							const chainId = forwardRequest.result as string
+							const chainId = forwardRequest.result
 							setCompatibilityProperty(inpageWindow.ethereum, 'chainId', chainId, 'window.ethereum.chainId')
-							setCompatibilityProperty(inpageWindow.ethereum, 'networkVersion', Number(chainId).toString(10), 'window.ethereum.networkVersion')
+							setCompatibilityProperty(inpageWindow.ethereum, 'networkVersion', chainIdToNetworkVersion(chainId), 'window.ethereum.networkVersion')
 							this.activeChainId = chainId
 							break
 						}
@@ -1235,11 +1726,14 @@ class InterceptorMessageListener {
 			if (this.signerWindowEthereumRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
 
 			const sendToSignerWithCatchError = async () => {
-				try {
-					const reply = await this.requestFromSigner({ method: forwardRequest.method, params: 'params' in forwardRequest ? forwardRequest.params : [] })
-					return { success: true as const, forwardRequest, reply }
-				} catch(error: unknown) {
-					return { success: false as const, forwardRequest, error: this.normalizeSignerErrorForBackground(error) }
+				const outcome = await this.requestFromCurrentSigner({ method: forwardRequest.method, params: 'params' in forwardRequest ? forwardRequest.params : [] })
+				if (outcome.type === 'success') return { success: true as const, forwardRequest, reply: outcome.reply, signerProviderGeneration: outcome.signerProviderGeneration }
+				if (outcome.type === 'error') return { success: false as const, forwardRequest, error: this.normalizeSignerErrorForBackground(outcome.error), signerProviderGeneration: outcome.signerProviderGeneration }
+				return {
+					success: false as const,
+					forwardRequest,
+					error: { code: METAMASK_ERROR_PROVIDER_DISCONNECTED, message: 'Signer connection changed before the previous wallet replied.' },
+					signerProviderGeneration: outcome.signerProviderGeneration,
 				}
 			}
 			const signerReply = await sendToSignerWithCatchError()
@@ -1280,8 +1774,9 @@ class InterceptorMessageListener {
 		if (enable) {
 			if (inpageWindow.ethereum === undefined) return
 			if (!('isMetamask' in inpageWindow.ethereum)) setCompatibilityProperty(inpageWindow.ethereum, 'isMetaMask', true, 'window.ethereum.isMetaMask')
-			if ('web3' in inpageWindow && inpageWindow.web3 !== undefined) {
-				setCompatibilityProperty(inpageWindow.web3, 'currentProvider', inpageWindow.ethereum, 'window.web3.currentProvider')
+			const legacyWeb3 = getLegacyWeb3WithoutInvokingAccessors(inpageWindow)
+			if (legacyWeb3 !== undefined) {
+				setCompatibilityProperty(legacyWeb3, 'currentProvider', inpageWindow.ethereum, 'window.web3.currentProvider')
 			} else {
 				setCompatibilityProperty(inpageWindow, 'web3', { accounts: [], currentProvider: inpageWindow.ethereum }, 'window.web3')
 			}
@@ -1291,9 +1786,19 @@ class InterceptorMessageListener {
 
 	private readonly connectToSigner = (signerName: Signer) => {
 		this.signerName = signerName
+		const signerProviderGeneration = this.advanceSignerProviderGeneration()
+		if (this.signerWindowEthereumRequest !== undefined) {
+			for (const waiter of this.signerAvailabilityWaiters) waiter.resolve(undefined)
+			this.signerAvailabilityWaiters.clear()
+			if (signerName === 'MetaMask') {
+				for (const waiter of this.metaMaskAvailabilityWaiters) waiter.resolve(undefined)
+				this.metaMaskAvailabilityWaiters.clear()
+			}
+			if (this.signerAvailabilityWaiters.size === 0 && this.metaMaskAvailabilityWaiters.size === 0) this.stopSignerDiscoveryRetries()
+		}
 		const selectionGeneration = ++this.signerSelectionGeneration
 		const connectToSigner = async (): Promise<{ metamaskCompatibilityMode: boolean }> => {
-			const connectSignerReply = await this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [true, signerName] })
+			const connectSignerReply = await this.sendInternalMessageToBackgroundPage({ method: 'connected_to_signer', params: [signerName !== 'NoSigner', signerName, signerProviderGeneration] })
 			if (typeof connectSignerReply === 'object' && connectSignerReply !== null
 				&& 'metamaskCompatibilityMode' in connectSignerReply && connectSignerReply.metamaskCompatibilityMode !== null
 				&& connectSignerReply.metamaskCompatibilityMode !== undefined && typeof connectSignerReply.metamaskCompatibilityMode === 'boolean') {
@@ -1306,11 +1811,36 @@ class InterceptorMessageListener {
 			const connection = await connectToSigner()
 			if (selectionGeneration !== this.signerSelectionGeneration) return
 			this.enableMetamaskCompatibilityMode(connection.metamaskCompatibilityMode)
-			if (signerName !== 'NoSigner') await this.requestChainIdFromSigner()
+			// Account replies only require confirmed provider identity; chain initialization must not hold them back.
+			if (signerName !== 'NoSigner') void this.requestChainIdFromSigner().catch((error: unknown) => {
+				// Use the same discovery diagnostic helper as provider selection and account initialization.
+				this.reportSignerDiscoveryError('initialize signer chain', error)
+			})
 		}
-		const transition = this.signerConnectionTransition.then(completeTransition, completeTransition)
-		this.signerConnectionTransition = transition
+		// A fresh status report must not wait behind an older bridge request whose reply may have been lost during a background-worker or content-port replacement. The generation checks on both sides make late replies from superseded reports harmless.
+		const transition = completeTransition().catch((error: unknown) => {
+			this.reportSignerDiscoveryError('report signer connection status', error)
+		})
+		this.latestSignerConnectionTransition = transition
+		for (const waiter of this.signerConnectionTransitionChangeWaiters) waiter.resolve(undefined)
+		this.signerConnectionTransitionChangeWaiters.clear()
 		return transition
+	}
+
+	private readonly waitForLatestSignerConnectionTransition = async () => {
+		for (;;) {
+			const transition = this.latestSignerConnectionTransition
+			const transitionChanged = new InterceptorFuture<void>()
+			this.signerConnectionTransitionChangeWaiters.add(transitionChanged)
+			try {
+				await Promise.race([transition, Promise.resolve(transitionChanged)])
+			} finally {
+				this.signerConnectionTransitionChangeWaiters.delete(transitionChanged)
+			}
+			if (transition !== this.latestSignerConnectionTransition) continue
+			await transition
+			return
+		}
 	}
 
 	private readonly unsupportedMethods = (windowEthereum: WindowEthereum & UnsupportedWindowEthereumMethods | undefined) => {
@@ -1333,7 +1863,6 @@ class InterceptorMessageListener {
 
 	private readonly onPageLoad = () => {
 		const interceptorMessageListener = this
-		window.addEventListener('eip6963:announceProvider', this.useAnnouncedMetaMaskProvider)
 		function announceProvider() {
 			const info: EIP6963ProviderInfo = {
 				uuid: '200ecd95-afe4-4684-bce7-0f2f8bdd3498',
@@ -1349,13 +1878,12 @@ class InterceptorMessageListener {
 		}
 		window.addEventListener('eip6963:requestProvider', () => { announceProvider() } )
 		announceProvider()
-		this.acceptingAnnouncedMetaMaskProviders = true
-		try {
-			window.dispatchEvent(new Event('eip6963:requestProvider'))
-		} finally {
-			this.acceptingAnnouncedMetaMaskProviders = false
-			window.removeEventListener('eip6963:announceProvider', this.useAnnouncedMetaMaskProvider)
-		}
+		this.discoverAnnouncedMetaMaskProvider()
+	}
+
+	public readonly handleEthereumInitialized = () => {
+		this.injectEthereumIntoWindow()
+		if (this.signerName === 'NoSigner' || this.signerName === 'Brave') this.discoverAnnouncedMetaMaskProvider()
 	}
 
 	public readonly injectEthereumIntoWindow = () => {
@@ -1380,9 +1908,7 @@ class InterceptorMessageListener {
 		const useNoSigner = () => {
 			inpageWindow.ethereum = this.createInterceptorProvider(undefined)
 			this.connected = true
-			this.signerWindowEthereumProvider = undefined
-			this.signerWindowEthereumRequest = undefined
-			this.fallbackSignerWindowEthereumRequest = undefined
+			this.setSignerProvider(undefined, undefined)
 			this.connectToSigner('NoSigner')
 		}
 		let rootIsInterceptor = false
@@ -1390,15 +1916,25 @@ class InterceptorMessageListener {
 		if (rootIsInterceptor) return
 		const preparedMetaMaskProvider = this.findPreparedLegacyMetaMaskProvider(injectedWindowEthereum)
 
+		let rootIsAmbire = false
 		let rootIsBraveWallet = false
 		let rootIsCoinbaseWallet = false
 		let rootIsMetaMask = false
+		let rootIsRabby = false
 		let rootProviderMap: Map<string, WindowEthereum> | undefined
+		try { rootIsAmbire = injectedWindowEthereum.isAmbire === true } catch (error: unknown) { this.reportSignerDiscoveryError('read root Ambire marker', error) }
 		try { rootIsBraveWallet = injectedWindowEthereum.isBraveWallet === true } catch (error: unknown) { this.reportSignerDiscoveryError('read root Brave marker', error) }
 		try { rootIsCoinbaseWallet = injectedWindowEthereum.isCoinbaseWallet === true } catch (error: unknown) { this.reportSignerDiscoveryError('read root Coinbase marker', error) }
 		try { rootIsMetaMask = injectedWindowEthereum.isMetaMask === true } catch (error: unknown) { this.reportSignerDiscoveryError('read root MetaMask marker', error) }
+		try { rootIsRabby = injectedWindowEthereum.isRabby === true } catch (error: unknown) { this.reportSignerDiscoveryError('read root Rabby marker', error) }
 		try { rootProviderMap = injectedWindowEthereum.providerMap } catch (error: unknown) { this.reportSignerDiscoveryError('read root provider map', error) }
-		const rootSignerName = rootIsCoinbaseWallet ? 'CoinbaseWallet' as const : rootIsBraveWallet ? 'Brave' as const : rootIsMetaMask ? 'MetaMask' as const : 'NotRecognizedSigner' as const
+		const rootSignerName = getSignerNameFromWalletMarkers({
+			isAmbire: rootIsAmbire,
+			isBrave: rootIsBraveWallet,
+			isCoinbase: rootIsCoinbaseWallet,
+			isMetaMask: rootIsMetaMask,
+			isRabby: rootIsRabby,
+		})
 
 		if (preparedMetaMaskProvider === undefined && (rootIsBraveWallet || rootProviderMap !== undefined || rootIsCoinbaseWallet)) {
 			let mapSignerWindowEthereum: WindowEthereum | undefined
@@ -1416,9 +1952,7 @@ class InterceptorMessageListener {
 				try { fallbackRequest = injectedWindowEthereum.request.bind(injectedWindowEthereum) } catch (error: unknown) { this.reportSignerDiscoveryError('bind root fallback signer request', error) }
 			}
 			this.connected = preparedSigner.connected
-			this.signerWindowEthereumProvider = preparedSigner.provider
-			this.signerWindowEthereumRequest = preparedSigner.request
-			this.fallbackSignerWindowEthereumRequest = fallbackRequest
+			this.setSignerProvider(preparedSigner.provider, preparedSigner.request, fallbackRequest)
 			inpageWindow.ethereum = this.createInterceptorProvider(preparedSigner.provider)
 			this.installControlledAccountCompatibilityProperties()
 			this.connectToSigner(signerName)
@@ -1431,9 +1965,7 @@ class InterceptorMessageListener {
 		}
 		const fallbackSignerWindowEthereum = preparedRootSigner.provider
 		const fallbackSignerName = preparedMetaMaskProvider === undefined ? rootSignerName : 'MetaMask'
-		this.signerWindowEthereumProvider = fallbackSignerWindowEthereum
-		this.signerWindowEthereumRequest = preparedRootSigner.request // store the request object to signer
-		this.fallbackSignerWindowEthereumRequest = undefined
+		this.setSignerProvider(fallbackSignerWindowEthereum, preparedRootSigner.request)
 		this.connected = preparedRootSigner.connected
 		// we cannot inject window.ethereum alone here as it seems like window.ethereum is cached (maybe ethers.js does that?)
 		if (fallbackSignerWindowEthereum !== injectedWindowEthereum || this.hasNonConfigurableAccountCompatibilityProperty()) {
@@ -1452,11 +1984,7 @@ function injectInterceptor() {
 	window.addEventListener('message', interceptorMessageListener.onWindowMessage)
 
 	// keep listening for other wallets that announce themselves and reinject without patching dispatchEvent
-	const onEthereumInitialized = () => {
-		if (inpageWindow.ethereum?.isInterceptor) return
-		interceptorMessageListener.injectEthereumIntoWindow()
-	}
-	window.addEventListener('ethereum#initialized', onEthereumInitialized)
+	window.addEventListener('ethereum#initialized', interceptorMessageListener.handleEthereumInitialized)
 	window.dispatchEvent(new Event('ethereum#initialized'))
 }
 

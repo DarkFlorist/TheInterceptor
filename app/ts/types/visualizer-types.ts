@@ -1,3 +1,4 @@
+import { SafeMessageReview } from './safeReview.js'
 
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSendableSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction } from './wire-types.js'
@@ -15,6 +16,7 @@ import type { EditEnsNamedHashCallBack } from '../components/subcomponents/ens.j
 import { EnrichedEthereumEventWithMetadata, EnrichedEthereumInputData } from './EnrichedEthereumData.js'
 import type { ReadonlySignal } from '@preact/signals'
 import { DecodedError, ErrorWithCodeAndOptionalData } from './error.js'
+import { SafeStackTransaction } from './safeTypes.js'
 
 export type TokenBalancesAfter = funtypes.Static<typeof TokenBalancesAfter>
 export const TokenBalancesAfter = funtypes.ReadonlyArray(funtypes.ReadonlyObject({
@@ -78,7 +80,9 @@ export const NonSimulatedAndVisualizedTransactionBase = funtypes.ReadonlyObject(
 	originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
 	transactionStatus: funtypes.Literal('Failed To Simulate'),
 	error: DecodedError
-})
+}).And(funtypes.ReadonlyPartial({
+	safeTransaction: SafeStackTransaction,
+}))
 
 export type SimulatedAndVisualizedTransactionBase = funtypes.Static<typeof SimulatedAndVisualizedTransactionBase>
 export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
@@ -96,7 +100,9 @@ export const SimulatedAndVisualizedTransactionBase = funtypes.Intersect(
 		quarantine: funtypes.Boolean,
 		quarantineReasons: funtypes.ReadonlyArray(funtypes.String),
 		events: funtypes.ReadonlyArray(EnrichedEthereumEventWithMetadata),
-	}),
+	}).And(funtypes.ReadonlyPartial({
+		safeTransaction: SafeStackTransaction,
+	})),
 	funtypes.Union(
 		funtypes.ReadonlyObject({
 			transactionStatus: funtypes.Literal('Transaction Succeeded'),
@@ -121,7 +127,13 @@ export const PreSimulationTransaction = funtypes.ReadonlyObject({
 	created: EthereumTimestamp,
 	originalRequestParameters: funtypes.Union(SendTransactionParams, SendRawTransactionParams),
 	transactionIdentifier: EthereumQuantity,
-})
+}).And(funtypes.ReadonlyPartial({
+	safeTransaction: SafeStackTransaction,
+	simulationOptions: funtypes.ReadonlyObject({
+		requiredChainId: EthereumQuantity,
+		simulateWithZeroBaseFee: funtypes.Boolean,
+	}),
+}))
 
 export type SimulatedTransaction = funtypes.Static<typeof SimulatedTransaction>
 export const SimulatedTransaction = funtypes.ReadonlyObject({
@@ -131,18 +143,20 @@ export const SimulatedTransaction = funtypes.ReadonlyObject({
 	tokenBalancesAfter: TokenBalancesAfter,
 })
 
-export type WebsiteCreatedEthereumUnsignedTransaction = funtypes.Static<typeof WebsiteCreatedEthereumUnsignedTransaction>
-export const WebsiteCreatedEthereumUnsignedTransaction = funtypes.ReadonlyObject({
+export type WebsiteCreatedEthereumTransaction = funtypes.Static<typeof WebsiteCreatedEthereumTransaction>
+export const WebsiteCreatedEthereumTransaction = funtypes.ReadonlyObject({
 	website: Website,
 	created: EthereumTimestamp,
 	originalRequestParameters: OriginalSendRequestParameters,
 	transactionIdentifier: EthereumQuantity,
 	success: funtypes.Literal(true),
 	transaction: EthereumUnsignedTransaction,
-})
+}).And(funtypes.ReadonlyPartial({
+	signedTransaction: EthereumSendableSignedTransaction,
+}))
 
-export type FailedToCreateWebsiteCreatedEthereumUnsignedTransaction = funtypes.Static<typeof FailedToCreateWebsiteCreatedEthereumUnsignedTransaction>
-export const FailedToCreateWebsiteCreatedEthereumUnsignedTransaction = funtypes.ReadonlyObject({
+export type FailedToCreateWebsiteCreatedEthereumTransaction = funtypes.Static<typeof FailedToCreateWebsiteCreatedEthereumTransaction>
+export const FailedToCreateWebsiteCreatedEthereumTransaction = funtypes.ReadonlyObject({
 	website: Website,
 	created: EthereumTimestamp,
 	originalRequestParameters: OriginalSendRequestParameters,
@@ -151,8 +165,8 @@ export const FailedToCreateWebsiteCreatedEthereumUnsignedTransaction = funtypes.
 	error: ErrorWithCodeAndOptionalData
 })
 
-export type WebsiteCreatedEthereumUnsignedTransactionOrFailed = funtypes.Static<typeof WebsiteCreatedEthereumUnsignedTransactionOrFailed>
-export const WebsiteCreatedEthereumUnsignedTransactionOrFailed = funtypes.Union(WebsiteCreatedEthereumUnsignedTransaction, FailedToCreateWebsiteCreatedEthereumUnsignedTransaction)
+export type WebsiteCreatedEthereumTransactionOrFailed = funtypes.Static<typeof WebsiteCreatedEthereumTransactionOrFailed>
+export const WebsiteCreatedEthereumTransactionOrFailed = funtypes.Union(WebsiteCreatedEthereumTransaction, FailedToCreateWebsiteCreatedEthereumTransaction)
 
 export type SignedMessageTransaction = funtypes.Static<typeof SignedMessageTransaction>
 export const SignedMessageTransaction = funtypes.ReadonlyObject({
@@ -163,7 +177,12 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 	request: InterceptedRequest,
 	simulationMode: funtypes.Boolean,
 	messageIdentifier: EthereumQuantity,
-})
+}).And(funtypes.ReadonlyPartial({
+	// Safe message review is normalized at admission and persisted independently of the transport envelope.
+	safeMessageReview: SafeMessageReview,
+	// Older persisted stacks predate the distinction between the active Safe and its simulation signer.
+	activeAddress: EthereumAddress,
+}))
 
 export type SimulationStateInputBlock = funtypes.Static<typeof SimulationStateInputBlock>
 export const SimulationStateInputBlock = funtypes.ReadonlyObject({
@@ -306,7 +325,9 @@ export const TransactionWithAddressBookEntries = funtypes.Intersect(
 				r: EthereumQuantity,
 				s: EthereumQuantity,
 				yParity: funtypes.Union(funtypes.Literal('even'), funtypes.Literal('odd')),
-			})),
+			}).And(funtypes.ReadonlyPartial({
+				authority: EthereumAddress,
+			}))),
 		}),
 		funtypes.ReadonlyObject({
 			type: funtypes.Literal('4844'),
@@ -409,13 +430,13 @@ export const VisualizedSimulationState = funtypes.Union(
 	})
 )
 
-export const hasVisualizedSimulationOperations = (visualizedSimulationState: VisualizedSimulationState) => (
+const hasVisualizedSimulationOperations = (visualizedSimulationState: VisualizedSimulationState) => (
 	visualizedSimulationState.visualizedBlocks.some((block) =>
 		block.simulatedAndVisualizedTransactions.length > 0 || block.visualizedPersonalSignRequests.length > 0
 	)
 )
 
-export const isEmptyVisualizedSimulationState = (visualizedSimulationState: VisualizedSimulationState) => (
+const isEmptyVisualizedSimulationState = (visualizedSimulationState: VisualizedSimulationState) => (
 	visualizedSimulationState.success === true && !hasVisualizedSimulationOperations(visualizedSimulationState)
 )
 

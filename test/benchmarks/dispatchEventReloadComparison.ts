@@ -1,5 +1,5 @@
 import { mkdir } from 'node:fs/promises'
-import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForAnyExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts } from './chromeHarness.js'
+import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts } from './chromeHarness.js'
 import { startDispatchEventReloadPageServer } from './dispatchEventReloadPageServer.js'
 import type { CdpConnection } from './chromeHarness.js'
 
@@ -57,7 +57,7 @@ async function ensureNoopExtension() {
 }
 
 async function waitForInterceptorReadiness(browserDebugPort: number) {
-	const workerTarget = await waitForAnyExtensionServiceWorker(browserDebugPort, 30_000)
+	const workerTarget = await waitForInterceptorExtensionServiceWorker(browserDebugPort, 30_000)
 	const workerConnection = await connectTarget(browserDebugPort, workerTarget.id)
 	try {
 		await waitForPerformanceMarks(workerConnection, ['interceptor:background:loaded'], 30_000)

@@ -6,6 +6,7 @@ import { addressString } from '../../app/ts/utils/bigint.js'
 import type { EnrichedEthereumEvents, EnrichedEthereumInputData, SolidityVariable } from '../../app/ts/types/EnrichedEthereumData.js'
 import type { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
+import { getDeployedContractAddress } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 
 const TOKEN_ADDRESS = 0x1000000000000000000000000000000000000001n
 const FROM_ADDRESS = 0x2000000000000000000000000000000000000002n
@@ -25,7 +26,7 @@ const simulationWebsite = { websiteOrigin: 'https://example.com', icon: undefine
 const simulationCreated = new Date('2024-01-01T00:00:00.000Z')
 const simulationOriginalRequestParameters: SendTransactionParams = { method: 'eth_sendTransaction', params: [{ from: TX_FROM_ADDRESS, to: TX_TO_ADDRESS, value: 0n, input: new Uint8Array() }] }
 
-function getSignedTransaction(delegateAddress: bigint | undefined): SimulationStateInput[number]['transactions'][number]['signedTransaction'] {
+function getSignedTransaction(delegateAddress: bigint | undefined, to: bigint | null = TX_TO_ADDRESS): SimulationStateInput[number]['transactions'][number]['signedTransaction'] {
 	if (delegateAddress === undefined) return {
 		type: '1559',
 		from: TX_FROM_ADDRESS,
@@ -33,7 +34,7 @@ function getSignedTransaction(delegateAddress: bigint | undefined): SimulationSt
 		maxFeePerGas: 1n,
 		maxPriorityFeePerGas: 1n,
 		gas: 21_000n,
-		to: TX_TO_ADDRESS,
+		to,
 		value: 0n,
 		input: new Uint8Array(),
 		chainId: 1n,
@@ -49,7 +50,7 @@ function getSignedTransaction(delegateAddress: bigint | undefined): SimulationSt
 		maxFeePerGas: 1n,
 		maxPriorityFeePerGas: 1n,
 		gas: 21_000n,
-		to: TX_TO_ADDRESS,
+		to,
 		value: 0n,
 		input: new Uint8Array(),
 		chainId: 1n,
@@ -93,6 +94,26 @@ function assertCommonAddresses(addresses: readonly bigint[]) {
 }
 
 describe('getAddressesToIdentifyForVisualiserFromTransactions', () => {
+	test('covers the address created by contract deployment', () => {
+		const simulationStateInput: SimulationStateInput = [{
+			stateOverrides: {},
+			signedMessages: [],
+			blockTimeManipulation: ZERO_BLOCK_TIME_MANIPULATION,
+			simulateWithZeroBaseFee: false,
+			transactions: [{
+				signedTransaction: getSignedTransaction(undefined, null),
+				website: simulationWebsite,
+				created: simulationCreated,
+				originalRequestParameters: simulationOriginalRequestParameters,
+				transactionIdentifier: 1n,
+			}],
+		}]
+		const addresses = getAddressesToIdentifyForVisualiserFromTransactions([], [], simulationStateInput)
+		const deployedAddress = getDeployedContractAddress(TX_FROM_ADDRESS, 0n)
+
+		assert.equal(toAddressSet(addresses).has(addressString(deployedAddress)), true)
+	})
+
 	test('covers EIP-7702 delegation targets', () => {
 		const addresses = getAddressesForEvent({
 			type: 'NonParsed',

@@ -1,12 +1,12 @@
 import { describe, test } from 'bun:test'
 import * as assert from 'assert'
-import type { Abi } from 'viem'
-import { encodeFunctionData } from 'viem'
+import type { Abi } from '../../app/ts/utils/ethereumPrimitives.js'
 import { commonTokenOops } from '../../app/ts/simulation/protectors/commonTokenOops.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import type { IEthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
 import { UNISWAP_V2_ROUTER_ADDRESS } from '../../app/ts/utils/constants.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
+import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import type { SimulationState } from '../../app/ts/types/visualizer-types.js'
 import { EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
 import type { EthereumJsonRpcRequest } from '../../app/ts/types/JsonRpc-types.js'
@@ -104,11 +104,7 @@ describe('commonTokenOops', () => {
 			gas: '0x5208',
 			to: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
 			value: '0x0',
-			input: encodeFunctionData({
-				abi: transferAbi,
-				functionName: 'transfer',
-				args: [addressString(UNISWAP_V2_ROUTER_ADDRESS), 1n],
-			}),
+			input: encodeFunctionCall(transferAbi, 'transfer', [addressString(UNISWAP_V2_ROUTER_ADDRESS), 1n]),
 		})
 
 		const result = await commonTokenOops(transaction, ethereum, undefined, simulationState)

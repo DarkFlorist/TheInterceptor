@@ -14,6 +14,7 @@ import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
 import { type ReadonlySignal, useComputed } from '@preact/signals'
 import type { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import type { RpcNetwork } from '../../../types/rpc.js'
+import { getAddressBookEntryOrAFiller } from '../../ui-utils.js'
 
 type SendOrReceiveTokensImportanceBoxParams = {
 	sending: boolean,
@@ -137,13 +138,22 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 	}
 
 	const textColor = 'var(--text-color)'
+	const deployedContractAddress = param.simTx.transaction.to === undefined
+		? getDeployedContractAddress(param.simTx.transaction.from.address, param.simTx.transaction.nonce)
+		: undefined
+	const deployedContractEntry = deployedContractAddress === undefined
+		? undefined
+		: getAddressBookEntryOrAFiller(param.addressMetadata.value, deployedContractAddress)
 
 	return <div class = 'notification transaction-importance-box'>
 		<div style = 'display: grid; grid-template-rows: max-content max-content' >
 			{ /* contract creation */}
 			<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
-				{ param.simTx.transaction.to !== undefined ? <></> :
-					<p class = 'paragraph'> { `A contract is deployed to address ${ addressString(getDeployedContractAddress(param.simTx.transaction.from.address, param.simTx.transaction.nonce)) }` }</p>
+				{ deployedContractEntry === undefined ? <></> :
+					<p class = 'paragraph'>
+						A contract is deployed to address
+						<SmallAddress addressBookEntry = { deployedContractEntry } renameAddressCallBack = { param.renameAddressCallBack } />
+					</p>
 				}
 			</div>
 			{ /* ENS events */ }

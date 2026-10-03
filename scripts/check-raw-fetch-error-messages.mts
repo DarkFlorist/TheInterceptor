@@ -1,5 +1,6 @@
 import process from 'node:process'
 import ts from 'typescript'
+import { collectFilePaths, scriptKindForPath } from './typescript-lint-utils.mts'
 
 const filePatterns = ['app/ts/**/*.ts', 'app/ts/**/*.tsx']
 const allowedFiles = new Set([
@@ -15,11 +16,6 @@ const rawFetchErrorMessages = new Set([
 ])
 
 type Diagnostic = { file: string, line: number, column: number, text: string }
-
-function scriptKindForPath(path: string) {
-	if (path.endsWith('.tsx')) return ts.ScriptKind.TSX
-	return ts.ScriptKind.TS
-}
 
 function collectDiagnostics(path: string, sourceText: string) {
 	if (allowedFiles.has(path)) return []
@@ -38,15 +34,8 @@ function collectDiagnostics(path: string, sourceText: string) {
 	return diagnostics
 }
 
-const filePaths = new Set<string>()
-for (const pattern of filePatterns) {
-	for await (const path of new Bun.Glob(pattern).scan('.')) {
-		filePaths.add(path)
-	}
-}
-
 const diagnostics: Diagnostic[] = []
-for (const path of [...filePaths].sort()) {
+for (const path of await collectFilePaths(filePatterns)) {
 	const sourceText = await Bun.file(path).text()
 	diagnostics.push(...collectDiagnostics(path, sourceText))
 }

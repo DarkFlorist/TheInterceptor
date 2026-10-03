@@ -1,4 +1,4 @@
-import type { Abi } from 'viem'
+import type { Abi } from './ethereumPrimitives.js'
 import { Erc20ABI, Erc721ABI } from './abi.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { IEthereumClientService } from '../simulation/services/EthereumClientService.js'
@@ -6,6 +6,7 @@ import { checksummedAddress, stringToUint8Array } from './bigint.js'
 import type { Erc1155Entry, Erc20TokenEntry, Erc721Entry } from '../types/addressBookTypes.js'
 import { decodeFunctionOutputSafely, encodeFunctionCall } from './abiRuntime.js'
 import { isBigint, isBoolean, isNumberOrBigint, isString } from './typescript.js'
+import { isValidErc20Decimals } from './erc20.js'
 
 type EOA = {
 	type: 'EOA'
@@ -19,11 +20,14 @@ type UnknownContract = {
 
 export type IdentifiedAddress = (EOA | Erc20TokenEntry | Erc721Entry | Erc1155Entry | UnknownContract)
 
+const TOKEN_METADATA_PROBE_GAS_LIMIT = 500_000n
+
 async function tryAggregateMulticall(ethereumClientService: IEthereumClientService, requestAbortController: AbortController | undefined, calls: { targetAddress: EthereumAddress, callData: Uint8Array }[]): Promise<{ success: boolean, returnData: Uint8Array }[]> {
 	const results = await ethereumClientService.ethSimulateV1([{ calls: calls.map((call) => ({
 		type: '1559' as const,
 		to: call.targetAddress,
-		input: call.callData
+		input: call.callData,
+		gas: TOKEN_METADATA_PROBE_GAS_LIMIT,
 	}))}], 'latest', requestAbortController)
 	const blockResult = results[0]
 	if (blockResult === undefined) throw new Error('Failed eth_simulateV1 call: did not get a block')
@@ -88,13 +92,14 @@ export async function itentifyAddressViaOnChainInformation(ethereumClientService
 			decimals: undefined
 		}
 	}
-	if (tokenName !== undefined && tokenSymbol !== undefined && tokenDecimals !== undefined && tokenSupply !== undefined) {
+	const parsedTokenDecimals = tokenDecimals === undefined ? undefined : BigInt(tokenDecimals)
+	if (tokenName !== undefined && tokenSymbol !== undefined && parsedTokenDecimals !== undefined && isValidErc20Decimals(parsedTokenDecimals) && tokenSupply !== undefined) {
 		return {
 			type: 'ERC20',
 			address,
 			name: tokenName,
 			symbol: tokenSymbol,
-			decimals: BigInt(tokenDecimals),
+			decimals: parsedTokenDecimals,
 			entrySource: 'OnChain'
 		}
 	}

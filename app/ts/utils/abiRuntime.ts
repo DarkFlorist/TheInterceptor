@@ -1,31 +1,5 @@
-import type {
-	Abi,
-	AbiEvent,
-	AbiFunction,
-	AbiItem,
-	AbiParameter,
-	AbiStateMutability,
-	ContractEventName,
-	ContractFunctionArgs,
-	ContractFunctionName,
-	ContractFunctionReturnType,
-	DecodeEventLogReturnType,
-	DecodeFunctionDataReturnType,
-	Hex,
-} from 'viem'
-import {
-	parseAbiItem,
-	parseAbiParameters,
-	decodeAbiParameters,
-	decodeEventLog,
-	decodeFunctionData,
-	encodeAbiParameters,
-	formatAbiItem,
-	concat,
-	bytesToHex,
-	toEventSelector,
-	toFunctionSelector,
-} from './viem.js'
+import type { Abi, AbiEvent, AbiFunction, AbiItem, AbiParameter, AbiStateMutability, ContractEventName, ContractFunctionArgs, ContractFunctionName, ContractFunctionReturnType, DecodeEventLogReturnType, DecodeFunctionDataReturnType, Hex } from './ethereumPrimitives.js'
+import { parseAbiItem, parseAbiParameters, decodeAbiParameters, decodeEventLog, decodeFunctionData, encodeAbiParameters, formatAbiItem, concat, bytesToHex, isAbiDataDecodeError, toEventSelector, toFunctionSelector } from './ethereumPrimitives.js'
 
 export type AbiLike = string | readonly (string | AbiItem)[]
 
@@ -212,10 +186,6 @@ export const isValidAbiString = (abi: string) => {
 	}
 }
 
-export const hasFunction = <const TAbi extends Abi>(abi: TAbi, functionName: ContractFunctionName<TAbi>) => {
-	return abi.some((item) => item.type === 'function' && item.name === functionName)
-}
-
 export function encodeFunctionCall<
 	const TAbi extends Abi,
 	const TName extends ContractFunctionName<TAbi>,
@@ -252,16 +222,6 @@ export function decodeFunctionOutput(abi: Abi, functionName: string, data: Hex |
 	return decodeFunctionOutputUnchecked(abi, functionName, data)
 }
 
-const viemAbiDataDecodeErrorNames = new Set([
-	'AbiDecodingDataSizeInvalidError',
-	'AbiDecodingDataSizeTooSmallError',
-	'AbiDecodingZeroDataError',
-	'InvalidBytesBooleanError',
-	'PositionOutOfBoundsError',
-])
-
-const isViemAbiDataDecodeError = (error: unknown) => error instanceof Error && viemAbiDataDecodeErrorNames.has(error.name)
-
 export const decodeFunctionOutputSafely = <T>(
 	abi: Abi,
 	functionName: string,
@@ -272,7 +232,7 @@ export const decodeFunctionOutputSafely = <T>(
 	try {
 		decoded = decodeFunctionOutput(abi, functionName, data)
 	} catch (error) {
-		if (!isViemAbiDataDecodeError(error)) throw error
+		if (!isAbiDataDecodeError(error)) throw error
 		return undefined
 	}
 	return isExpectedType(decoded) ? decoded : undefined
@@ -306,10 +266,6 @@ export const decodeEventStrict = <const TAbi extends Abi>(
 		topics: [signature, ...args],
 		strict: true,
 	})
-}
-
-export const getFunctionFragmentLoose = (abiLike: AbiLike, nameOrSelector: string): AbiItem | undefined => {
-	return getFunctionFragmentInternal(normalizeAbi(abiLike), nameOrSelector)
 }
 
 export const hasFunctionLoose = (abiLike: AbiLike, functionName: string) => getFunctionFragmentInternal(normalizeAbi(abiLike), functionName) !== undefined

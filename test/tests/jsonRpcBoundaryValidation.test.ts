@@ -1,0 +1,130 @@
+import * as assert from 'assert'
+import { describe, test } from 'bun:test'
+import { EthereumJsonRpcRequest, FeeHistory, EthGetLogsRequest, EthNewFilter } from '../../app/ts/types/JsonRpc-types.js'
+import { CanonicalEthereumQuantity, EthereumAddress, EthereumBlockHeader, EthereumBlockTag, EthereumBytes16, EthereumBytes256, EthereumBytes32, EthereumQuantity, EthereumSignedTransactionWithBlockData, serialize } from '../../app/ts/types/wire-types.js'
+import { assertIsObject } from '../../app/ts/utils/typescript.js'
+import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
+
+const blockHash = `0x${ '12'.repeat(32) }`
+
+describe('JSON-RPC boundary validation', () => {
+	test('accepts safe and earliest block tags', () => {
+		assert.equal(EthereumBlockTag.parse('safe'), 'safe')
+		assert.equal(EthereumBlockTag.parse('earliest'), 'earliest')
+	})
+
+	test('preserves the standard blockHash field on new filters', () => {
+		const parsed = EthNewFilter.safeParse({ method: 'eth_newFilter', params: [{ blockHash }] })
+
+		assert.equal(parsed.success, true)
+		if (!parsed.success) throw new Error(parsed.message)
+		assert.equal(parsed.value.params[0].blockHash, BigInt(blockHash))
+	})
+
+	test('rejects the non-standard lowercase blockhash field instead of stripping it', () => {
+		assert.equal(EthereumJsonRpcRequest.safeParse({ method: 'eth_getLogs', params: [{ blockhash: blockHash }] }).success, false)
+		assert.equal(EthereumJsonRpcRequest.safeParse({ method: 'eth_newFilter', params: [{ blockhash: blockHash }] }).success, false)
+	})
+
+	test('rejects blockHash combined with block range fields', () => {
+		assert.equal(EthGetLogsRequest.safeParse({ blockHash, fromBlock: 'latest' }).success, false)
+		assert.equal(EthGetLogsRequest.safeParse({ blockHash, toBlock: 'latest' }).success, false)
+		assert.equal(EthNewFilter.safeParse({ method: 'eth_newFilter', params: [{ blockHash, fromBlock: 'latest' }] }).success, false)
+	})
+
+	test('rejects values that exceed fixed-width wire types', () => {
+		assert.throws(() => serialize(EthereumAddress, 1n << 160n))
+		assert.throws(() => serialize(EthereumBytes32, 1n << 256n))
+		assert.throws(() => serialize(EthereumBytes256, 1n << 2048n))
+		assert.throws(() => serialize(EthereumBytes16, 1n << 64n))
+	})
+
+	test('continues to serialize the largest fixed-width values', () => {
+		assert.equal(serialize(EthereumAddress, (1n << 160n) - 1n).length, 42)
+		assert.equal(serialize(EthereumBytes32, (1n << 256n) - 1n).length, 66)
+		assert.equal(serialize(EthereumBytes256, (1n << 2048n) - 1n).length, 514)
+		assert.equal(serialize(EthereumBytes16, (1n << 64n) - 1n).length, 18)
+	})
+
+	test('keeps Ethereum quantity serialization within the 256-bit parser boundary', () => {
+		const largestQuantity = (1n << 256n) - 1n
+		assert.equal(EthereumQuantity.parse(serialize(EthereumQuantity, largestQuantity)), largestQuantity)
+		assert.equal(CanonicalEthereumQuantity.parse(serialize(CanonicalEthereumQuantity, largestQuantity)), largestQuantity)
+		assert.throws(() => serialize(EthereumQuantity, 1n << 256n))
+		assert.throws(() => serialize(CanonicalEthereumQuantity, 1n << 256n))
+	})
+
+	test('accepts valid fee history reward percentiles', () => {
+		assert.equal(FeeHistory.safeParse({ method: 'eth_feeHistory', params: ['0x5', 'latest', [0, 25.5, 25.5, 100]] }).success, true)
+	})
+
+	test('rejects out-of-range and decreasing fee history reward percentiles', () => {
+		assert.equal(FeeHistory.safeParse({ method: 'eth_feeHistory', params: ['0x5', 'latest', [-1]] }).success, false)
+		assert.equal(FeeHistory.safeParse({ method: 'eth_feeHistory', params: ['0x5', 'latest', [101]] }).success, false)
+		assert.equal(FeeHistory.safeParse({ method: 'eth_feeHistory', params: ['0x5', 'latest', [75, 25]] }).success, false)
+	})
+
+	for (const data of [undefined, '0x1234']) {
+		test(`preserves calldata and optional data alias through full-block and transaction round trips (${ data })`, () => {
+			const response = JSON.parse(eth_getBlockByNumber_goerli_8443561_true)
+			assertIsObject(response)
+			assertIsObject(response.result)
+			if (!Array.isArray(response.result.transactions)) throw new Error('full block transactions missing')
+			const original = response.result.transactions[0]
+			assertIsObject(original)
+			const { data: _data, ...withoutData } = original
+			const transaction = { ...withoutData, input: '0x1234', ...(data === undefined ? {} : { data }) }
+			const block = EthereumBlockHeader.parse({ ...response.result, transactions: [transaction] })
+			const serializedBlock = serialize(EthereumBlockHeader, block)
+			if (serializedBlock === null) throw new Error('full block missing')
+			const serializedTransaction = serialize(EthereumSignedTransactionWithBlockData, EthereumSignedTransactionWithBlockData.parse(transaction))
+			for (const result of [serializedBlock.transactions[0], serializedTransaction]) {
+				if (result === undefined || !('input' in result)) throw new Error('known transaction missing')
+				assert.equal(result.input, '0x1234')
+				assert.equal(result.data, data)
+				if (data === undefined) assert.equal(Object.hasOwn(JSON.parse(JSON.stringify(result)), 'data'), false)
+			}
+		})
+	}
+
+	test('requires block data on known transactions in full block responses', () => {
+		const response = JSON.parse(eth_getBlockByNumber_goerli_8443561_true)
+		assertIsObject(response)
+		assertIsObject(response.result)
+		if (!Array.isArray(response.result.transactions)) throw new Error('full block transactions missing')
+		const transaction = response.result.transactions[0]
+		assertIsObject(transaction)
+		const { blockHash: _blockHash, blockNumber: _blockNumber, transactionIndex: _transactionIndex, data: _data, ...transactionWithoutBlockData } = transaction
+
+		assert.equal(EthereumBlockHeader.safeParse({ ...response.result, transactions: [transactionWithoutBlockData] }).success, false)
+	})
+
+	test('keeps Optimism deposits and unknown future full block transactions compatible', () => {
+		const response = JSON.parse(eth_getBlockByNumber_goerli_8443561_true)
+		assertIsObject(response)
+		assertIsObject(response.result)
+		const parsedBlock = EthereumBlockHeader.parse({
+			...response.result,
+			transactions: [{
+				type: '0x7e',
+				sourceHash: blockHash,
+				from: '0x0000000000000000000000000000000000000001',
+				to: null,
+				mint: null,
+				value: '0x0',
+				gas: '0x5208',
+				data: '0x',
+				hash: `0x${ '34'.repeat(32) }`,
+				gasPrice: '0x1',
+				nonce: '0x0',
+			}, {
+				hash: `0x${ '56'.repeat(32) }`,
+				type: '0x5',
+			}],
+		})
+		if (parsedBlock === null) throw new Error('full block was null')
+
+		assert.equal(parsedBlock.transactions[0]?.type, 'optimismDeposit')
+		assert.equal(parsedBlock.transactions[1]?.type, '0x5')
+	})
+})

@@ -395,4 +395,9 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		console.error(error)
 	}
 }
-Object.defineProperty(globalThis, contentScriptListenerGlobalKey, { configurable: true, value: listenContentScript })
+
+function registerContentScriptListener() {
+	Object.defineProperty(globalThis, contentScriptListenerGlobalKey, { configurable: true, value: listenContentScript })
+}
+
+registerContentScriptListener()

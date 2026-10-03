@@ -1,15 +1,13 @@
 import { useEffect } from 'preact/hooks'
 import type { ComponentChildren, RefObject } from 'preact'
 import type { EthereumAddress } from '../types/wire-types.js'
-import type { AddressBookEntry } from '../types/addressBookTypes.js'
+import { getSafeSignerAddresses, type AddressBookEntry } from '../types/addressBookTypes.js'
 import { addressString, bigintSecondsToDate, checksummedAddress } from '../utils/bigint.js'
 import { getFilledInContactEntry } from '../utils/addressBookEntries.js'
 import type { ChainEntry, RpcEntries } from '../types/rpc.js'
 import { CHAIN_NAMES } from '../utils/chainNames.js'
 export type { PopupOrTab } from '../utils/popupOrTab.js'
-export { getIssueWithAddressString } from '../utils/addressValidation.js'
-export { addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../utils/popupOrTab.js'
-export { getCurrentTimestampString } from '../utils/time.js'
+export { tryFocusingTabOrWindow } from '../utils/popupOrTab.js'
 
 function assertIsNode(e: EventTarget | null): asserts e is Node {
 	if (!e || !('nodeType' in e)) {
@@ -97,10 +95,17 @@ export const addressEditEntry = (entry: AddressBookEntry) => {
 			logoUri: undefined,
 			useAsActiveAddress: false,
 			abi : undefined,
+			safeVersion: undefined,
 			declarativeNetRequestBlockMode: undefined,
-			chainId: entry.chainId || 1n,
+			chainId: entry.chainId ?? 1n,
 			...entry,
 			address: checksummedAddress(entry.address),
+			safeSimulationSignerAddress: entry.type === 'safe' && entry.safeSimulationSignerAddress !== undefined
+				? checksummedAddress(entry.safeSimulationSignerAddress)
+				: undefined,
+			safeSignerAddresses: entry.type === 'safe'
+				? getSafeSignerAddresses(entry).map(checksummedAddress)
+				: [],
 		}
 	}
 }

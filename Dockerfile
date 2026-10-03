@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.13-alpine@sha256:4de475389889577f346c636f956b42a5c31501b654664e9ae5726f94d7bb5349 AS builder
+FROM oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS builder
 
 RUN apk --no-cache add zip
 
@@ -21,7 +21,8 @@ COPY app/ts/ /workspace/app/ts/
 COPY app/img/ /workspace/app/img/
 COPY app/inpage/ /workspace/app/inpage/
 COPY app/fonts/ /workspace/app/fonts/
-COPY build/tsconfig.json build/vendor.mts build/bundler.mts build/cleanOutput.mts /workspace/build/
+COPY contracts/ /workspace/contracts/
+COPY build/tsconfig.json build/vendor.mts build/bundler.mts build/cleanOutput.mts build/compileSolidityContracts.mts /workspace/build/
 
 COPY tsconfig-test.json /workspace/
 COPY test/ /workspace/test/
@@ -29,7 +30,7 @@ COPY scripts/ /workspace/scripts/
 
 WORKDIR /workspace
 RUN bun run setup-firefox
-RUN bun test
+RUN bun run test
 
 WORKDIR /workspace/app
 RUN zip ../interceptor-firefox.zip -r .

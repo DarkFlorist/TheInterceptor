@@ -55,23 +55,39 @@ describe('searchWebsiteAccess', () => {
 		assert.equal(searchWebsiteAccess('etherscan', testData)[0], testData[2])
 	})
 
-	test('ranks longer fuzzy matches ahead of shorter ones', () => {
+	test('ranks exact fuzzy matches ahead of wider spans', () => {
 		const entries: WebsiteAccessArray = [
 			createWebsiteAccess('Swap', 'swap.org'),
 			createWebsiteAccess('Spread Letters', 'sxxwxxaxxpp.org'),
 		]
 		const result = searchWebsiteAccess('swap', entries)
-		assert.deepEqual(result.map(entry => entry.website.websiteOrigin), ['sxxwxxaxxpp.org', 'swap.org'])
+		assert.deepEqual(result.map(entry => entry.website.websiteOrigin), ['swap.org', 'sxxwxxaxxpp.org'])
 	})
 
-	test('sorts multiple matches by descending fuzzy match length', () => {
+	test('sorts multiple matches by ascending fuzzy match length', () => {
 		const entries: WebsiteAccessArray = [
 			createWebsiteAccess('Shortest', 'swap.org'),
 			createWebsiteAccess('Middle', 'sxxwxxap.org'),
 			createWebsiteAccess('Longest', 'sxxwxxaxxpp.org'),
 		]
 		const result = searchWebsiteAccess('swap', entries)
-		assert.deepEqual(result.map(entry => entry.website.websiteOrigin), ['sxxwxxaxxpp.org', 'sxxwxxap.org', 'swap.org'])
+		assert.deepEqual(result.map(entry => entry.website.websiteOrigin), ['swap.org', 'sxxwxxap.org', 'sxxwxxaxxpp.org'])
+	})
+
+	test('uses the earliest position to break equal-span ties', () => {
+		const entries: WebsiteAccessArray = [
+			createWebsiteAccess('Later', 'xxswap.org'),
+			createWebsiteAccess('Earlier', 'swapxx.org'),
+		]
+		assert.deepEqual(searchWebsiteAccess('swap', entries).map(entry => entry.website.websiteOrigin), ['swapxx.org', 'xxswap.org'])
+	})
+
+	test('uses a later exact match instead of an earlier loose span in the same field', () => {
+		const entries: WebsiteAccessArray = [
+			createWebsiteAccess('Medium span', 'sxxwxxap.org'),
+			createWebsiteAccess('Later exact span', 'sxxwxxaxxpp-swap.org'),
+		]
+		assert.deepEqual(searchWebsiteAccess('swap', entries).map(entry => entry.website.websiteOrigin), ['sxxwxxaxxpp-swap.org', 'sxxwxxap.org'])
 	})
 
 	test('matches non-sequential characters', () => {

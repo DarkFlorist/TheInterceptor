@@ -1,7 +1,7 @@
 import { performance } from 'perf_hooks'
 import { BENCHMARK_RPC_REQUESTS_GLOBAL } from '../../app/ts/utils/benchmarking.js'
 import { POPUP_PERFORMANCE_MARKS } from '../../app/ts/utils/popupPerformance.js'
-import { launchChromeSession, waitForAnyExtensionServiceWorker, waitForServiceWorker, createTargetPage, connectTarget, closeTarget, waitForPerformanceMark, waitForPerformanceMarks, waitForRegisteredContentScripts, readExtensionLargeStateValue, getPerformanceSnapshot, roundToTwoDecimals, absoluteTime, waitForPopupTarget, waitForTargetByUrl, waitForTargetGone, waitForBrowserTargets } from './chromeHarness.js'
+import { launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForServiceWorker, createTargetPage, connectTarget, closeTarget, waitForPerformanceMark, waitForPerformanceMarks, waitForRegisteredContentScripts, readExtensionLargeStateValue, getPerformanceSnapshot, roundToTwoDecimals, absoluteTime, waitForPopupTarget, waitForTargetByUrl, waitForTargetGone, waitForBrowserTargets } from './chromeHarness.js'
 import { startTransactionStackPageServer } from './transactionStackPageServer.js'
 import type { CdpConnection, ChromeSession, PerformanceMarkSnapshot } from './chromeHarness.js'
 import type { BenchmarkRpcRequestSample } from '../../app/ts/utils/benchmarking.js'
@@ -300,7 +300,7 @@ async function ensureAnchorTarget(context: BenchmarkContext) {
 async function prepareBenchmarkContext(): Promise<BenchmarkContext> {
 	const chrome = await launchChromeSession()
 	try {
-		const initialWorkerTarget = await waitForAnyExtensionServiceWorker(chrome.browserDebugPort, 30_000)
+		const initialWorkerTarget = await waitForInterceptorExtensionServiceWorker(chrome.browserDebugPort, 30_000)
 		const extensionId = extractExtensionId(initialWorkerTarget.url)
 		const anchorTargetId = await createTargetPage(chrome.browserConnection, 'about:blank')
 		const workerConnection = await connectTarget(chrome.browserDebugPort, initialWorkerTarget.id)

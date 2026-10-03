@@ -6,11 +6,24 @@ import { TokenPriceService } from './services/priceEstimator.js'
 
 export type NewBlockAttemptCallback = (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
 export type OnErrorBlockCallback = (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
-export type ResetSimulationServices = (rpcNetwork: RpcEntry) => void
 
 export type SimulationServices = {
-	ethereum: EthereumClientService
-	tokenPriceService: TokenPriceService
+	readonly ethereum: EthereumClientService
+	readonly tokenPriceService: TokenPriceService
+}
+
+export function createEthereumClientService(
+	rpcNetwork: RpcEntry,
+	newBlockAttemptCallback: NewBlockAttemptCallback,
+	onErrorBlockCallback: OnErrorBlockCallback,
+	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
+) {
+	return new EthereumClientService(
+		new EthereumJSONRpcRequestHandler(rpcNetwork.httpsRpc, true, rpcRequestLifecycleCallbacks),
+		newBlockAttemptCallback,
+		onErrorBlockCallback,
+		rpcNetwork,
+	)
 }
 
 export function createSimulationServices(
@@ -20,11 +33,11 @@ export function createSimulationServices(
 	tokenPriceCacheAge = 60000,
 	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
 ): SimulationServices {
-	const ethereum = new EthereumClientService(
-		new EthereumJSONRpcRequestHandler(rpcNetwork.httpsRpc, true, rpcRequestLifecycleCallbacks),
+	const ethereum = createEthereumClientService(
+		rpcNetwork,
 		newBlockAttemptCallback,
 		onErrorBlockCallback,
-		rpcNetwork,
+		rpcRequestLifecycleCallbacks,
 	)
 	return {
 		ethereum,
@@ -39,6 +52,7 @@ export function resetSimulationServices(
 	onErrorBlockCallback: OnErrorBlockCallback,
 	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
 ): SimulationServices {
+	// Retire background polling; cleanup does not invalidate RPC methods used by an in-flight snapshot.
 	currentServices.ethereum.cleanup()
 	return createSimulationServices(
 		rpcNetwork,
@@ -47,4 +61,26 @@ export function resetSimulationServices(
 		currentServices.tokenPriceService.cacheAge,
 		rpcRequestLifecycleCallbacks,
 	)
+}
+
+export type SimulationServicesOwner = {
+	readonly getCurrent: () => SimulationServices
+	readonly reset: (rpcNetwork: RpcEntry) => SimulationServices
+}
+
+// One owner publishes installed services. Returned pairs are snapshots for an operation; independent message handlers must read getCurrent() when their work starts.
+export function createSimulationServicesOwner(
+	rpcNetwork: RpcEntry,
+	newBlockAttemptCallback: NewBlockAttemptCallback,
+	onErrorBlockCallback: OnErrorBlockCallback,
+	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
+) {
+	let current = createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
+	return {
+		getCurrent: () => current,
+		reset: (nextRpc: RpcEntry): SimulationServices => {
+			current = resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
+			return current
+		},
+	}
 }

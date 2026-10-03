@@ -1,31 +1,36 @@
+import { getRpcNetworkChange } from '../../utils/rpcNetworkChange.js'
 import type { HomeParams, FirstCardParams, SimulationStateParam, RenameAddressCallBack, TabState } from '../../types/user-interface-types.js'
 import { type SimulationAndVisualisationResults, isEmptySimulationAndVisualisationResults } from '../../types/visualizer-types.js'
-import { ActiveAddressComponent, SmallAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
+import { ActiveAddressComponent, SmallAddress, StaticBigAddress, WebsiteOriginText, getActiveAddressEntry } from '../subcomponents/address.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
 import { ICON_ACTIVE, ICON_INTERCEPTOR_DISABLED, ICON_NOT_ACTIVE, ICON_NOT_ACTIVE_WITH_SHIELD } from '../../utils/constants.js'
 import { getPrettySignerName, SignerLogoText, SignersLogoName } from '../subcomponents/signers.js'
 import { ErrorComponent } from '../subcomponents/Error.js'
 import { ToolTip } from '../subcomponents/CopyToClipboard.js'
-import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
+import { requestPopupSafeContractState, sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { TransactionOrMessageIdentifier } from '../../types/interceptor-messages.js'
-import type { AddressBookEntry } from '../../types/addressBookTypes.js'
+import { getSafeSignerAddresses, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
 import { BroomIcon, ChevronIcon, OpenInNewIcon } from '../subcomponents/icons.js'
 import { RpcSelector } from '../subcomponents/ChainSelector.js'
 import { type Signal, type ReadonlySignal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
 import { type DeltaUnit, TimePicker, type TimePickerMode, getTimeManipulatorFromSignals } from '../subcomponents/TimePicker.js'
 import { assertNever } from '../../utils/typescript.js'
-import { bigintSecondsToDate } from '../../utils/bigint.js'
-import { DEFAULT_BLOCK_MANIPULATION } from '../../simulation/services/SimulationModeEthereumClientService.js'
+import { bigintSecondsToDate, checksummedAddress, stringToAddress } from '../../utils/bigint.js'
+import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import type { EnrichedRichListElement } from '../../types/interceptor-reply-messages.js'
-import { Spinner } from '../subcomponents/Spinner.js'
 import { useResetSimulation } from '../hooks/useResetSimulation.js'
+import { getSelectableActiveAddresses, getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
+import { useModeActiveAddress } from '../hooks/useModeActiveAddress.js'
 import { updateRichListAddress } from '../../utils/richList.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
-import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
+import type { RpcEntry } from '../../types/rpc.js'
+import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
+import type { ComponentChildren, JSX } from 'preact'
+import { DropDownMenu, DropDownMenuButtonContent } from '../subcomponents/DropDownMenu.js'
 
 function scheduleAfterPaint(callback: () => void) {
 	if (typeof globalThis.requestAnimationFrame === 'function' && typeof globalThis.cancelAnimationFrame === 'function') {
@@ -40,6 +45,187 @@ function scheduleAfterPaint(callback: () => void) {
 	}
 	const timeout = globalThis.setTimeout(callback, 32)
 	return () => globalThis.clearTimeout(timeout)
+}
+
+function WalletSelectedAddressStatus({ signerName, addressBookEntry, renameAddressCallBack, cannotSignSafe = false }: {
+	readonly signerName: string
+	readonly addressBookEntry: AddressBookEntry | undefined
+	readonly renameAddressCallBack: RenameAddressCallBack
+	readonly cannotSignSafe?: boolean
+}) {
+	return <>
+		{ signerName } has{' '}
+		<SmallAddress addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack } copyOnActionOnly = { true } />
+		{' '}selected.{ cannotSignSafe ? ' You cannot sign the current Gnosis Safe with it.' : '' }
+	</>
+}
+
+async function waitForNextPaint() {
+	await new Promise<void>((resolve) => { scheduleAfterPaint(resolve) })
+}
+
+type LoadingControlProps = {
+	class: string
+	children: ComponentChildren
+	style?: JSX.CSSProperties | string
+}
+
+function LoadingControl({ class: className, children, style }: LoadingControlProps) {
+	return <button type = 'button' disabled = { true } tabIndex = { -1 } class = { `${ className } popup-loading-shape popup-loading-control` } style = { style }>
+		<span class = 'popup-loading-control-content'>{ children }</span>
+	</button>
+}
+
+function LoadingInput() {
+	return <input
+		aria-hidden = 'true'
+		class = 'input popup-loading-shape popup-loading-control popup-loading-input'
+		disabled = { true }
+		tabIndex = { -1 }
+		style = 'width: 50px; margin-right: 10px; vertical-align: unset; text-align: center;'
+		type = 'number'
+		value = ''
+	/>
+}
+
+function LoadingDropdownControl({ label }: { label: string }) {
+	return <div class = 'dropdown'>
+		<div class = 'dropdown-trigger' style = { { maxWidth: '100%' } }>
+			<LoadingControl class = 'btn btn--outline is-small' style = { { width: '100%' } }>
+				<DropDownMenuButtonContent label = { label }/>
+			</LoadingControl>
+		</div>
+	</div>
+}
+
+function OpenSimulationStackButtonContent() {
+	return <>
+		<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+			<OpenInNewIcon/>
+		</span>
+		<span>View &amp; operate stack</span>
+	</>
+}
+
+function ClearSimulationButtonContent() {
+	return <>
+		<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
+			<BroomIcon />
+		</span>
+		<span>Clear</span>
+	</>
+}
+
+function HomeHeaderLoadingSkeleton() {
+	return <header aria-hidden = 'true' class = 'px-3 py-2 popup-home-header-layout'>
+		<div>
+			<span class = 'popup-loading-shape popup-loading-home-icon'/>
+		</div>
+		<div>
+			<div class = 'buttons has-addons popup-home-mode-selector popup-loading-mode-selector'>
+				<LoadingControl class = 'button is-primary'>Simulating</LoadingControl>
+				<LoadingControl class = 'button is-primary'>
+					<SignerLogoText signerName = 'NoSignerDetected' text = 'Signing' reserveLogoSpace = { true } />
+				</LoadingControl>
+			</div>
+		</div>
+		<div class = 'popup-home-rpc-selector'>
+			<LoadingDropdownControl label = 'No RPC Selected'/>
+		</div>
+	</header>
+}
+
+function ActiveAddressLoadingSkeleton({ ariaLabel }: { ariaLabel?: string }) {
+	return <div
+		aria-busy = { ariaLabel === undefined ? undefined : true }
+		aria-hidden = { ariaLabel === undefined ? true : undefined }
+		aria-label = { ariaLabel }
+		role = { ariaLabel === undefined ? undefined : 'status' }
+		class = 'log-table active-address-row popup-loading-address'
+	>
+		<div aria-hidden = 'true' class = 'log-cell' style = 'display: block;'>
+			<figure class = 'multiline-card popup-loading-address-details'>
+				<span class = 'popup-loading-shape popup-loading-address-icon'/>
+				<span class = 'popup-loading-shape popup-loading-address-title'/>
+				<span class = 'popup-loading-shape popup-loading-address-subtitle'/>
+			</figure>
+		</div>
+		<div aria-hidden = 'true' class = 'log-cell'>
+			<div class = 'media-right'>
+				<LoadingControl class = 'button is-primary'>Change</LoadingControl>
+			</div>
+		</div>
+	</div>
+}
+
+function InlineLoadingSkeleton({ ariaLabel }: { ariaLabel: string }) {
+	return <span aria-busy = 'true' aria-label = { ariaLabel } role = 'status' class = 'popup-home-connection-status popup-loading-inline-skeleton'>
+		<span aria-hidden = 'true' class = 'popup-loading-shape'/>
+	</span>
+}
+
+function SimulationControlsLoadingSkeleton() {
+	return <div aria-busy = 'true' aria-label = 'Loading simulation controls' role = 'status' class = 'popup-simulation-controls popup-loading-controls'>
+		<header aria-hidden = 'true' class = 'card-header popup-loading-rich-list-header'>
+			<span class = 'popup-loading-shape'/>
+		</header>
+		<div aria-hidden = 'true' class = 'popup-simulation-controls-gap'/>
+		<div aria-hidden = 'true'>
+			<div class = 'time-picker-row'>
+				<span class = 'popup-loading-shape popup-loading-time-picker-label'/>
+				<div class = 'time-picker-actions'>
+					<LoadingDropdownControl label = 'For'/>
+					<div>
+						<LoadingInput/>
+						<LoadingDropdownControl label = 'Seconds'/>
+					</div>
+					<LoadingControl class = 'btn is-small is-primary'>Commit</LoadingControl>
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+function SimulationLoadingSkeleton() {
+	return <div aria-busy = 'true' aria-label = 'Loading current simulation state' role = 'status' class = 'popup-loading-simulation'>
+		<div aria-hidden = 'true' class = 'simulation-results-header'>
+			<div class = 'log-cell'>
+				<span class = 'popup-loading-shape popup-loading-simulation-title'/>
+			</div>
+			<div class = 'log-cell' style = 'justify-content: right; gap: 6px;'>
+				<LoadingControl class = 'btn btn--outline is-small'>
+					<OpenSimulationStackButtonContent/>
+				</LoadingControl>
+				<LoadingControl class = 'btn is-small is-danger'>
+					<ClearSimulationButtonContent/>
+				</LoadingControl>
+			</div>
+		</div>
+		<section aria-hidden = 'true' class = 'card simulation-summary-card'>
+			<header class = 'card-header'>
+				<div class = 'card-header-icon unset-cursor'>
+					<span class = 'popup-loading-shape popup-loading-simulation-icon'/>
+				</div>
+				<div class = 'card-header-title'>
+					<span class = 'popup-loading-shape popup-loading-simulation-card-title'/>
+				</div>
+			</header>
+			<div class = 'card-content popup-loading-simulation-content'>
+				<span class = 'popup-loading-shape'/>
+				<span class = 'popup-loading-shape'/>
+				<span class = 'popup-loading-shape'/>
+			</div>
+		</section>
+	</div>
+}
+
+function HomeLoadingSkeleton() {
+	return <section aria-busy = 'true' aria-label = 'Loading current popup state' role = 'status' class = 'card popup-home-card'>
+		<HomeHeaderLoadingSkeleton/>
+		<div class = 'card-content'>
+			<ActiveAddressLoadingSkeleton/>
+		</div>
+	</section>
 }
 
 type SignerExplanationParams = {
@@ -67,10 +253,19 @@ function FirstCardHeader(param: FirstCardParams) {
 	const { value: setSigningState, waitFor: waitForSetSigning } = useAsyncState<void>()
 	const simulatingPending = setSimulatingState.value.state === 'pending'
 	const signingPending = setSigningState.value.state === 'pending'
+	const { value: rpcChangeState, waitFor: waitForRpcChange } = useAsyncState<void>()
+	const requestedRpc = useSignal<RpcEntry | undefined>(undefined)
+	const rpcPending = rpcChangeState.value.state === 'pending'
+	const controlsDisabled = !param.isInitialHomeDataLoaded.value || param.isSettingsChangePending.value || simulatingPending || signingPending || rpcPending
+	const changeRpc = (entry: RpcEntry) => {
+		if (controlsDisabled || !getRpcNetworkChange(param.rpcNetwork.value, entry).selectionChanged) return
+		requestedRpc.value = entry
+		void waitForRpcChange(async () => { await param.changeActiveRpc(entry) })
+	}
 
 	async function enableSimulationMode(enabled: boolean ) {
-		if (!param.isInitialHomeDataLoaded.value) return
-		await sendPopupMessageToBackgroundPage( { method: 'popup_enableSimulationMode', data: enabled } )
+		if (controlsDisabled) return
+		await param.setSimulationMode(enabled)
 	}
 	const enableSimulating = () => {
 		void waitForSetSimulating(() => enableSimulationMode(true))
@@ -80,40 +275,45 @@ function FirstCardHeader(param: FirstCardParams) {
 	}
 
 	return <>
-		<header class = 'px-3 py-2' style = { { display: 'grid', gridTemplateColumns: 'max-content max-content minmax(0, max-content)', placeContent: 'space-between', columnGap: '1rem', alignItems: 'center' } }>
+		<header class = 'px-3 py-2 popup-home-header-layout'>
 			<div>
 				<ToolTip content = { tabIconReason }>
 					<img class = 'noselect nopointer' src = { param.tabIconDetails.value.icon } width = '48' height = '48' style = { { display: 'block', width: '3rem', height: '3rem' } } />
 				</ToolTip>
 			</div>
 			<div>
-				<div class = 'buttons has-addons' style = 'border-style: solid; border-color: var(--primary-color); border-radius: 6px; padding: 1px; border-width: 1px; display: inline-flex; margin-bottom: 0;' >
+				<div class = 'buttons has-addons popup-home-mode-selector'>
 					<AsyncActionButton
-						class = { `button is-primary ${ param.simulationMode.value ? '' : 'is-outlined' }` }
+						class = { `button ${ param.simulationMode.value ? 'is-primary' : 'button--secondary' }` }
 						style = { `margin-bottom: 0px; border-color: transparent; ${ param.simulationMode.value ? 'opacity: 1;' : '' }` }
 						state = { setSimulatingState.value.state }
-						disabled = { param.simulationMode.value || signingPending || !param.isInitialHomeDataLoaded.value }
+						disabled = { param.simulationMode.value || controlsDisabled }
 						keepTextWhilePending = { true }
 						pendingIndicatorPlacement = 'overlay'
-						pendingText = 'Switching to simulating mode...'
+						pendingText = { param.simulationMode.value ? 'Refreshing simulation...' : 'Switching to simulating mode...' }
 						text = 'Simulating'
 						onClick = { enableSimulating }
 					/>
 					<AsyncActionButton
-						class = { `button is-primary ${ param.simulationMode.value ? 'is-outlined' : ''}` }
+						class = { `button ${ param.simulationMode.value ? 'button--secondary' : 'is-primary' }` }
 						style = { `margin-bottom: 0px; border-color: transparent; ${ param.simulationMode.value ? '' : 'opacity: 1;' }` }
 						state = { setSigningState.value.state }
-						disabled = { !param.simulationMode.value || simulatingPending || !param.isInitialHomeDataLoaded.value }
+						disabled = { !param.simulationMode.value || controlsDisabled }
 						keepTextWhilePending = { true }
 						pendingIndicatorPlacement = 'overlay'
 						text = { <SignerLogoText signerName = { signerName } text = 'Signing' reserveLogoSpace = { true } /> }
-						pendingText = 'Switching to signing mode...'
+						pendingText = { !param.simulationMode.value ? 'Updating signing mode...' : 'Switching to signing mode...' }
 						onClick = { enableSigning }
 					/>
 				</div>
 			</div>
-			<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { param.changeActiveRpc } disabled = { !param.isInitialHomeDataLoaded.value }/>
+			<div class = 'popup-home-rpc-selector'>
+				<RpcSelector rpcEntries = { param.rpcEntries } rpcNetwork = { param.rpcNetwork } changeRpc = { changeRpc } disabled = { controlsDisabled } pendingText = { rpcPending ? (!param.simulationMode.value && requestedRpc.value?.chainId !== param.rpcNetwork.value?.chainId ? 'Waiting for wallet to switch network...' : 'Updating network...') : undefined }/>
+			</div>
 		</header>
+		{ setSimulatingState.value.state === 'rejected' ? <ErrorComponent text = { setSimulatingState.value.error.message }/> : <></> }
+		{ setSigningState.value.state === 'rejected' ? <ErrorComponent text = { setSigningState.value.error.message }/> : <></> }
+		{ rpcChangeState.value.state === 'rejected' ? <ErrorComponent text = { rpcChangeState.value.error.message }/> : <></> }
 	</>
 }
 
@@ -148,6 +348,8 @@ function InterceptorDisabledButton({ disableInterceptorToggle, interceptorDisabl
 }
 
 type RichListParams = {
+	isSettingsChangePending: ReadonlySignal<boolean>
+	setRichState: (enabled: boolean, address: bigint | 'CurrentAddress') => Promise<void>
 	makeCurrentAddressRich: Signal<boolean>
 	activeAddress: Signal<AddressBookEntry | undefined>
 	richList: Signal<readonly EnrichedRichListElement[]>
@@ -155,14 +357,27 @@ type RichListParams = {
 	isInitialHomeDataLoaded: Signal<boolean>
 }
 
-function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddressCallBack, isInitialHomeDataLoaded }: RichListParams) {
-	async function enableMakeCurrentAddressRich(enabled: boolean) {
-		if (!isInitialHomeDataLoaded.value) return
-		sendPopupMessageToBackgroundPage( { method: 'popup_modifyMakeMeRich', data: { add: enabled, address: 'CurrentAddress'} } )
-		makeCurrentAddressRich.value = enabled
+function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddressCallBack, isInitialHomeDataLoaded, isSettingsChangePending, setRichState }: RichListParams) {
+	const { value: richChangeState, waitFor: waitForRichChange } = useAsyncState<void>()
+	const controlsDisabled = !isInitialHomeDataLoaded.value || isSettingsChangePending.value || richChangeState.value.state === 'pending'
+	const saveRichChange = (enabled: boolean, address: bigint | 'CurrentAddress') => {
+		void waitForRichChange(async () => {
+			try {
+				await setRichState(enabled, address)
+			} catch (error) {
+				// Read persisted settings: a failed visualization refresh does not undo a successful save.
+				await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData', data: { refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: false } })
+				throw error
+			}
+		})
 	}
-	async function modifyRichList(addressBookEntry: AddressBookEntry, makeRich: boolean) {
-		if (!isInitialHomeDataLoaded.value) return
+	function enableMakeCurrentAddressRich(enabled: boolean) {
+		if (controlsDisabled) return
+		makeCurrentAddressRich.value = enabled
+		saveRichChange(enabled, 'CurrentAddress')
+	}
+	function modifyRichList(addressBookEntry: AddressBookEntry, makeRich: boolean) {
+		if (controlsDisabled) return
 		richList.value = updateRichListAddress(
 			richList.value,
 			addressBookEntry.address,
@@ -170,7 +385,7 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 			(element) => element.addressBookEntry.address,
 			() => ({ addressBookEntry, makingRich: true, type: 'UserAdded' as const }),
 		)
-		sendPopupMessageToBackgroundPage( { method: 'popup_modifyMakeMeRich', data: { add: makeRich, address: addressBookEntry.address } } )
+		saveRichChange(makeRich, addressBookEntry.address)
 	}
 
 	const showList = useSignal<boolean>(false)
@@ -191,7 +406,7 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 		<header class = 'card-header' style = 'cursor: pointer;' onClick = { () => { showList.value = !showList.value } }>
 			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em; padding: 0 0.5rem;'>
 				<label class = 'form-control' style = 'grid-template-columns: 1em min-content; width: min-content;' onClick = { event => { event.stopPropagation() } }>
-					<input type = 'checkbox' disabled = { !isInitialHomeDataLoaded.value } checked = { makeCurrentAddressRich.value } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeCurrentAddressRich(e.target.checked) } } } onClick = { event => { event.stopPropagation() } } />
+					<input type = 'checkbox' disabled = { controlsDisabled } checked = { makeCurrentAddressRich.value } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeCurrentAddressRich(e.target.checked) } } } onClick = { event => { event.stopPropagation() } } />
 					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Make current account rich</p>
 				</label>
 			</p>
@@ -200,11 +415,13 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 				<span class = 'icon'><ChevronIcon /></span>
 			</div>
 		</header>
+		{ richChangeState.value.state === 'pending' ? <div class = 'card-content-header' role = 'status' aria-live = 'polite'><AsyncStatusIcon state = 'pending'/> Updating balances...</div> : <></> }
+		{ richChangeState.value.state === 'rejected' ? <ErrorComponent text = { richChangeState.value.error.message }/> : <></> }
 		{ !showList.value
 			? <> { !activeAddressSetAsRichViaFixedAddressList.value || activeAddress.value === undefined ? <></> : <>
 				<div class = 'card-content-header' style = 'font-size: 0.8em;'>
 					<label class = 'form-control' style = 'gap: 1em;'>
-						<input type = 'checkbox' disabled = { !isInitialHomeDataLoaded.value } checked = { true } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null && activeAddress.value !== undefined) { modifyRichList(activeAddress.value, e.target.checked) } } } />
+						<input type = 'checkbox' disabled = { controlsDisabled } checked = { true } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null && activeAddress.value !== undefined) { modifyRichList(activeAddress.value, e.target.checked) } } } />
 						<SmallAddress addressBookEntry = { activeAddress } renameAddressCallBack = { renameAddressCallBack } noCopying = { !isInitialHomeDataLoaded.value } noEditAddress = { !isInitialHomeDataLoaded.value } />
 					</label>
 				</div>
@@ -214,7 +431,7 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Addresses being made rich</p>
 					{ visibleRichList.value.map((richListElement) =>
 						<label class = 'form-control' style = 'gap: 1em;' key = { richListElement.addressBookEntry.address.toString() }>
-							<input type = 'checkbox' disabled = { !isInitialHomeDataLoaded.value } checked = { richListElement.makingRich } aria-label = { `Toggle rich address ${ richListElement.addressBookEntry.address.toString() }` } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { modifyRichList(richListElement.addressBookEntry, e.target.checked) } } } />
+							<input type = 'checkbox' disabled = { controlsDisabled } checked = { richListElement.makingRich } aria-label = { `Toggle rich address ${ richListElement.addressBookEntry.address.toString() }` } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { modifyRichList(richListElement.addressBookEntry, e.target.checked) } } } />
 							<SmallAddress addressBookEntry = { richListElement.addressBookEntry } renameAddressCallBack = { renameAddressCallBack } noCopying = { !isInitialHomeDataLoaded.value } noEditAddress = { !isInitialHomeDataLoaded.value }/>
 						</label>
 					) }
@@ -230,11 +447,157 @@ function FirstCard(param: FirstCardParams) {
 	const timeSelectorDeltaValue = useSignal<bigint>(12n)
 	const timeSelectorDeltaUnit = useSignal<DeltaUnit>('Seconds')
 	const { value: connectToSignerButtonState, waitFor: waitForConnectToSigner } = useAsyncState<void>()
-	const signerAvailable = useComputed(() => isSignerAvailable(param.tabState.value))
+	const { value: safeSignerSelectionState, waitFor: waitForSafeSignerSelection } = useAsyncState<void>()
+	const { value: safeOwnerLookupState, waitFor: waitForSafeOwnerLookup } = useAsyncState<void>()
+	const retrievedSafeOwnerAddressBookEntries = useSignal<AddressBookEntries>([])
+	const hasAlternativeSigningAddress = useComputed(() => getSelectableActiveAddresses(
+		param.activeAddresses.value ?? [],
+		param.simulationMode.value,
+		param.rpcNetwork.value?.chainId,
+		param.tabState.value?.signerAccounts ?? [],
+	).length > 0)
+	const activeSafe = useComputed(() =>
+		param.activeAddress.value?.type === 'safe'
+			? param.activeAddress.value
+			: undefined
+	)
+	const safeSimulationSignerAddressBookEntries = useComputed(() => {
+		if (!param.simulationMode.value || activeSafe.value === undefined) return undefined
+		return getSafeSignerAddresses(activeSafe.value).map((safeSimulationSignerAddress) =>
+			getActiveAddressEntry(safeSimulationSignerAddress, [
+				...retrievedSafeOwnerAddressBookEntries.value,
+				...(param.activeAddresses.value ?? []),
+			])
+		)
+	})
+	const safeSimulationSignerOptions = useComputed(() =>
+		(safeSimulationSignerAddressBookEntries.value ?? []).map(({ address }) => checksummedAddress(address))
+	)
+	const selectedSafeSimulationSigner = useComputed(() => {
+		const safe = activeSafe.value
+		if (safe?.safeSimulationSignerAddress !== undefined) return checksummedAddress(safe.safeSimulationSignerAddress)
+		return 'Select signer'
+	})
+	const selectedSignerAddress = useComputed(() => getWalletSelectedAccount(param.tabState.value))
+	const selectedSignerAddressBookEntry = useComputed(() => {
+		const address = selectedSignerAddress.value
+		if (address === undefined) return undefined
+		if (param.walletSelectedAddressBookEntry.value?.address === address) return param.walletSelectedAddressBookEntry.value
+		return getActiveAddressEntry(address, param.activeAddresses.value ?? [])
+	})
+	const selectedSignerIsKnownSafeOwner = useComputed(() => {
+		const safe = activeSafe.value
+		const signerAddress = selectedSignerAddress.value
+		if (safe === undefined || signerAddress === undefined || safe.safeSignerAddresses === undefined) return undefined
+		return safe.safeSignerAddresses.includes(signerAddress)
+	})
+	const signerAvailable = useComputed(() =>
+		activeSafe.value === undefined ? isSignerAvailable(param.tabState.value) : selectedSignerAddress.value !== undefined
+	)
+	const canRequestSignerAccounts = useComputed(() =>
+		param.tabState.value !== undefined
+		&& param.tabState.value.signerName !== 'NoSigner'
+		&& param.tabState.value.signerName !== 'NoSignerDetected'
+		&& param.tabState.value.signerAccounts.length === 0
+		&& param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE
+		&& param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE_WITH_SHIELD
+	)
+	const isActiveAddressLoading = param.isActiveAddressChanging.value || (!param.isFreshHomeDataLoaded.value && param.activeAddress.value === undefined)
 
 	const connectToSigner = () => {
 		if (!param.isInitialHomeDataLoaded.value) return
-		void waitForConnectToSigner(() => sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true }))
+		void waitForConnectToSigner(async () => {
+			await waitForNextPaint()
+			await sendPopupMessageToBackgroundPage({ method: 'popup_requestAccountsFromSigner', data: true })
+		})
+	}
+
+	const selectSafeSigner = (safeSimulationSignerAddress: bigint) => {
+		if (!param.isInitialHomeDataLoaded.value || safeSignerSelectionState.value.state === 'pending') return
+		const safe = activeSafe.peek()
+		if (safe === undefined || !param.simulationMode.value || safe.safeSimulationSignerAddress === safeSimulationSignerAddress) return
+		const updatedSafe = { ...safe, safeSimulationSignerAddress }
+		if (param.activeAddresses.value !== undefined) {
+			param.activeAddresses.value = param.activeAddresses.value.map((entry) =>
+				entry.type === 'safe' && entry.address === safe.address && entry.chainId === safe.chainId ? updatedSafe : entry
+			)
+		}
+		void waitForSafeSignerSelection(async () => {
+			try {
+				const reply = await sendPopupMessageWithReply({
+						method: 'popup_setSafeSimulationSigner',
+					data: {
+						chainId: safe.chainId,
+						safeAddress: safe.address,
+						safeSimulationSignerAddress,
+					},
+				})
+				if (reply === undefined) throw new Error('Interceptor did not reply while changing the Safe simulation signer.')
+				if (!reply.ok) throw new Error(reply.message ?? 'Failed to change the Safe simulation signer.')
+			} catch (error) {
+				if (param.activeAddresses.value !== undefined) {
+					param.activeAddresses.value = param.activeAddresses.value.map((entry) =>
+						entry.type === 'safe' && entry.address === safe.address && entry.chainId === safe.chainId && entry.safeSimulationSignerAddress === safeSimulationSignerAddress
+							? { ...entry, safeSimulationSignerAddress: safe.safeSimulationSignerAddress }
+							: entry
+					)
+				}
+				throw error
+			}
+		})
+	}
+
+	const refreshSafeOwners = () => {
+		const safe = activeSafe.peek()
+		if (safe === undefined || !param.simulationMode.value) return
+		void waitForSafeOwnerLookup(async () => {
+			const safeContractStateReply = await requestPopupSafeContractState({ address: safe.address, chainId: safe.chainId })
+			if (safeContractStateReply === undefined) throw new Error('Interceptor did not return the current Gnosis Safe owners.')
+			const safeContractState = safeContractStateReply.data.result
+			if (!safeContractState.ok) throw new Error(safeContractState.message)
+			if (safeContractState.owners.length === 0) throw new Error('The Gnosis Safe does not have any owners.')
+			const currentSafeSimulationSignerAddress = safe.safeSimulationSignerAddress !== undefined
+				&& safeContractState.owners.includes(safe.safeSimulationSignerAddress)
+				? safe.safeSimulationSignerAddress
+				: undefined
+			retrievedSafeOwnerAddressBookEntries.value = safeContractState.ownerAddressBookEntries
+			const updateVisibleSafeOwners = (simulationSignerAddress: bigint | undefined) => {
+				if (param.activeAddresses.value === undefined) return
+				param.activeAddresses.value = param.activeAddresses.value.map((entry) =>
+					entry.type === 'safe' && entry.address === safe.address && entry.chainId === safe.chainId
+						? {
+							...entry,
+							safeSimulationSignerAddress: simulationSignerAddress,
+							safeSignerAddresses: [...safeContractState.owners],
+							safeVersion: safeContractState.version,
+						}
+						: entry
+				)
+			}
+			const reply = await sendPopupMessageWithReply({
+				method: 'popup_setSafeSimulationSigner',
+				data: {
+					chainId: safe.chainId,
+					safeAddress: safe.address,
+					safeSimulationSignerAddress: currentSafeSimulationSignerAddress,
+				},
+			})
+			if (reply === undefined) throw new Error('Interceptor did not reply while refreshing the Safe owners.')
+			if (!reply.ok) throw new Error(reply.message ?? 'Failed to refresh the Safe owners.')
+			updateVisibleSafeOwners(currentSafeSimulationSignerAddress)
+		})
+	}
+
+	const renderSafeSimulationSigner = (safeSimulationSignerAddress: string) => {
+		const address = stringToAddress(safeSimulationSignerAddress)
+		if (address === undefined) return safeSimulationSignerAddress
+		const addressBookEntry = getActiveAddressEntry(address, [
+				...retrievedSafeOwnerAddressBookEntries.value,
+				...(param.activeAddresses.value ?? []),
+			])
+		return <span class = 'safe-signer-home-option'>
+			<StaticBigAddress addressBookEntry = { addressBookEntry }/>
+		</span>
 	}
 
 	const timeSelectorOnChange = () => {
@@ -263,40 +626,76 @@ function FirstCard(param: FirstCardParams) {
 		}
 	})
 
-	if (param.tabState.value?.signerName === 'NoSigner' && param.simulationMode.value === false) {
-		return <>
-			<section class = 'card' style = 'margin: 10px;'>
-				<FirstCardHeader { ...param }/>
-				<div class = 'card-content'>
-					<DinoSays text = { 'No signer connnected. You can use Interceptor in simulation mode without a signer, but signing mode requires a browser wallet.' } />
-				</div>
-			</section>
-		</>
-	}
-
 	return <>
-		<section class = 'card' style = 'margin: 10px;'>
+		<section class = 'card popup-home-card popup-data-reveal'>
 			<FirstCardHeader { ...param }/>
 			<div class = 'card-content'>
 				{ param.useSignersAddressAsActiveAddress.value || !param.simulationMode.value ?
-					<p style = 'color: var(--text-color); text-align: left; padding-bottom: 10px'>
-						{ param.tabState.value === undefined || param.tabState.value?.signerName === 'NoSigner' ? <></> : <>Retrieving from&nbsp;<SignersLogoName signerName = { param.tabState.value.signerName } /></> }
-						{ signerAvailable.value ? <span style = 'float: right; color: var(--primary-color);'>CONNECTED</span> : <span style = 'float: right; color: var(--negative-color);'>NOT CONNECTED</span> }
+					<p class = 'popup-home-retrieval-status'>
+						{ param.tabState.value === undefined || param.tabState.value?.signerName === 'NoSigner'
+							? <span/>
+							: <span class = 'popup-home-retrieval-source'>Retrieving from <SignersLogoName signerName = { param.tabState.value.signerName } /></span> }
+						{ isActiveAddressLoading
+							? <InlineLoadingSkeleton ariaLabel = 'Loading signer connection state'/>
+							: signerAvailable.value
+								? <span class = 'popup-home-connection-status popup-data-reveal-inline' style = 'color: var(--accent-color);'>CONNECTED</span>
+								: <span class = 'popup-home-connection-status popup-data-reveal-inline' style = 'color: var(--danger-color);'>NOT CONNECTED</span>
+						}
 					</p>
 					: <></>
 				}
 
-				<ActiveAddressComponent
-					activeAddress = { param.activeAddress }
-					buttonText = { 'Change' }
-					disableButton = { !param.simulationMode.value || !param.isInitialHomeDataLoaded.value }
-					noCopying = { !param.isInitialHomeDataLoaded.value }
-					noEditAddress = { !param.isInitialHomeDataLoaded.value }
-					changeActiveAddress = { param.changeActiveAddress }
-					renameAddressCallBack = { param.renameAddressCallBack }
-				/>
-				{ !param.simulationMode.value ? <>
-					{ (param.tabState.value?.signerAccounts.length === 0 && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE && param.tabIconDetails.value.icon !== ICON_NOT_ACTIVE_WITH_SHIELD) ?
+				{ isActiveAddressLoading
+					? <ActiveAddressLoadingSkeleton ariaLabel = { param.isActiveAddressChanging.value ? 'Switching active address' : 'Loading active address' }/>
+					: <div class = 'popup-data-reveal'>
+						<ActiveAddressComponent
+							activeAddress = { param.activeAddress }
+							buttonText = { 'Change' }
+							disableButton = { param.isSettingsChangePending.value || param.isActiveAddressChangePending.value || !param.isInitialHomeDataLoaded.value || (!param.simulationMode.value && !hasAlternativeSigningAddress.value) }
+							noCopying = { !param.isInitialHomeDataLoaded.value }
+							noEditAddress = { !param.isInitialHomeDataLoaded.value }
+							changeActiveAddress = { param.changeActiveAddress }
+							renameAddressCallBack = { param.renameAddressCallBack }
+						/>
+					</div>
+				}
+				{ isActiveAddressLoading || safeSimulationSignerAddressBookEntries.value === undefined ? <></> :
+					<div class = 'safe-signer-address popup-data-reveal'>
+						<div class = 'safe-signer-home-heading'>
+							<p class = 'subtitle is-7'>Safe signer in simulation</p>
+							<AsyncActionButton
+								class = 'btn btn--outline is-small'
+								state = { safeOwnerLookupState.value.state }
+								text = { safeSimulationSignerOptions.value.length > 1 ? 'Refresh owners' : 'Retrieve owners' }
+								pendingText = { safeSimulationSignerOptions.value.length > 1 ? 'Refreshing...' : 'Retrieving...' }
+								disabled = { !param.isInitialHomeDataLoaded.value || safeSignerSelectionState.value.state === 'pending' }
+								onClick = { refreshSafeOwners }
+							/>
+						</div>
+						{ safeSimulationSignerOptions.value.length === 0 ? <></> :
+							<DropDownMenu
+								selected = { selectedSafeSimulationSigner }
+								dropDownOptions = { safeSimulationSignerOptions }
+								onChangedCallBack = { safeSimulationSignerAddress => {
+									const address = stringToAddress(safeSimulationSignerAddress)
+									if (address !== undefined) selectSafeSigner(address)
+								} }
+								buttonClassses = 'btn btn--outline is-small'
+								ariaLabel = 'Safe signer in simulation'
+								disabled = { !param.isInitialHomeDataLoaded.value || safeSignerSelectionState.value.state === 'pending' || safeOwnerLookupState.value.state === 'pending' }
+								renderOption = { renderSafeSimulationSigner }
+							/>
+						}
+						{ safeSignerSelectionState.value.state === 'rejected'
+							? <ErrorComponent text = { safeSignerSelectionState.value.error.message }/>
+							: <></> }
+						{ safeOwnerLookupState.value.state === 'rejected'
+							? <ErrorComponent text = { safeOwnerLookupState.value.error.message }/>
+							: <></> }
+					</div>
+				}
+				{ isActiveAddressLoading ? <></> : !param.simulationMode.value ? <>
+					{ canRequestSignerAccounts.value ?
 						<div style = 'margin-top: 5px'>
 							<AsyncActionButton
 								class = 'button is-primary'
@@ -310,11 +709,27 @@ function FirstCard(param: FirstCardParams) {
 								onClick = { connectToSigner }
 							/>
 						</div>
-						: <p style = 'color: var(--subtitle-text-color);' class = 'subtitle is-7'> { ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }` } </p>
+						: selectedSignerIsKnownSafeOwner.value === false && selectedSignerAddress.value !== undefined
+							? <ErrorComponent
+								warning = { true }
+								containerStyle = { { margin: '5px 0 0' } }
+								text = { <WalletSelectedAddressStatus signerName = { getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } addressBookEntry = { selectedSignerAddressBookEntry.value } renameAddressCallBack = { param.renameAddressCallBack } cannotSignSafe = { true } /> }
+							/>
+						: <p class = 'subtitle is-7 safe-signer-connection-message'> {
+							!isSignerAvailable(param.tabState.value)
+								? 'Connect a browser wallet to sign with the selected address.'
+								: activeSafe.value === undefined
+								? ` You can change active address by changing it directly from ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') }`
+								: selectedSignerAddress.value === undefined
+									? `Select a Gnosis Safe owner in ${ getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } before signing.`
+									: <WalletSelectedAddressStatus signerName = { getPrettySignerName(param.tabState.value?.signerName ?? 'NoSignerDetected') } addressBookEntry = { selectedSignerAddressBookEntry.value } renameAddressCallBack = { param.renameAddressCallBack } />
+						} </p>
 					}
-				</> : <div style = 'justify-content: space-between; padding-top: 10px;'>
-					<RichList activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
-					<div style ='padding-bottom: 10px'/>
+				</> : !param.isFreshHomeDataLoaded.value ?
+					<SimulationControlsLoadingSkeleton/>
+				: <div class = 'popup-simulation-controls popup-data-reveal'>
+					<RichList isSettingsChangePending = { param.isSettingsChangePending } setRichState = { param.setRichState } activeAddress = { param.activeAddress } makeCurrentAddressRich = { param.makeCurrentAddressRich } renameAddressCallBack = { param.renameAddressCallBack } richList = { param.richList } isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }/>
+					<div class = 'popup-simulation-controls-gap'/>
 					<TimePicker
 						startText = 'Delay first transaction'
 						mode = { timeSelectorMode }
@@ -329,11 +744,11 @@ function FirstCard(param: FirstCardParams) {
 			</div>
 		</section>
 
-		<SignerExplanation activeAddress = { param.activeAddress } tabState = { param.tabState }/>
+		{ isActiveAddressLoading ? <></> : <SignerExplanation activeAddress = { param.activeAddress } tabState = { param.tabState }/> }
 	</>
 }
 
-export const isEmptySimulation = (simulationAndVisualisationResults: SimulationAndVisualisationResults) => {
+const isEmptySimulation = (simulationAndVisualisationResults: SimulationAndVisualisationResults) => {
 	const simulationStateInput = simulationAndVisualisationResults.simulationStateInput
 	if (simulationStateInput === undefined) return isEmptySimulationAndVisualisationResults(simulationAndVisualisationResults)
 	return !simulationStateInput.some((block) => block.transactions.length > 0 || block.signedMessages.length > 0)
@@ -354,17 +769,14 @@ function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 		void waitForClearSimulation(resetSimulation)
 	}
 
-	return <div style = 'display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; padding-left: 10px; padding-right: 10px' >
+	return <div class = 'simulation-results-header'>
 		<div class = 'log-cell' style = 'justify-content: left; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0;'>
 			<p class = 'h1' style = 'margin: 0;'> Simulation Results </p>
 		</div>
 		<div class = 'log-cell' style = 'justify-content: right; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 300px;'>
 			{ param.openSimulationStack === undefined ? <></> :
-				<button class = 'btn btn--outline is-small' onClick = { openStack } title = 'Open simulation stack details in a new tab' aria-label = 'Open simulation stack details in a new tab'>
-					<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-						<OpenInNewIcon/>
-					</span>
-					<span>View stack details</span>
+				<button class = 'btn btn--outline is-small' onClick = { openStack } title = 'View and operate the transaction stack in a new tab' aria-label = 'View and operate the transaction stack in a new tab'>
+					<OpenSimulationStackButtonContent/>
 				</button>
 			}
 			{ param.disableReset === undefined || param.resetSimulation === undefined ? <></> :
@@ -373,12 +785,7 @@ function SimulationResultsHeader(param: SimulationResultsHeaderParams) {
 					state = { clearSimulationState.value.state }
 					disabled = { param.disableReset.value }
 					onClick = { clearSimulation }
-					text = { <>
-						<span style = { { marginRight: '0.25rem', fontSize: '1rem', width: '1em', height: '1em' } }>
-							<BroomIcon />
-						</span>
-						<span>Clear</span>
-					</> }
+					text = { <ClearSimulationButtonContent/> }
 					pendingText = 'Clearing...'
 				/>
 			}
@@ -429,13 +836,11 @@ function PopupVisualisation(param: SimulationStateParam) {
 	const isSimulationStatusUnknown = param.simulationUpdatingState.value === undefined || param.simulationResultState.value === undefined
 
 	if (isSimulationStatusUnknown || (isEmpty.value && param.simulationUpdatingState.value === 'updating')) {
-		return <div style = 'display: grid; place-items: center; height: 250px;'>
-			<Spinner height = '3em'/>
-		</div>
+		return <SimulationLoadingSkeleton/>
 	}
 
 	if (currentResults.kind === 'passthrough') {
-		return <div>
+		return <div class = 'popup-data-reveal'>
 			<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } />
 			{ isEmpty.value ?
 				<div style = 'padding: 10px'><DinoSays text = { 'Give me some transactions to munch on!' } /></div>
@@ -445,7 +850,7 @@ function PopupVisualisation(param: SimulationStateParam) {
 
 	const resolvedResults = currentResults.value
 
-	return <div>
+	return <div class = 'popup-data-reveal'>
 		<SimulationResultsHeader openSimulationStack = { param.openSimulationStack } disableReset = { param.disableReset } resetSimulation = { param.resetSimulation } />
 
 			{ resolvedResults.visualizedSimulationState.success === false ? <>
@@ -454,10 +859,11 @@ function PopupVisualisation(param: SimulationStateParam) {
 				<TransactionsAndSignedMessages
 				simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 				removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-				activeAddress = { param.activeSimulationAddress }
+				activeAddress = { param.visualizedAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
 				editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 				addressMetaData = { computedAddressBookEntries }
+				showTimePicker = { param.simulationMode.value }
 				displayMode = 'titleOnly'
 				openSimulationStackAt = { param.openSimulationStack }
 			/>
@@ -470,10 +876,11 @@ function PopupVisualisation(param: SimulationStateParam) {
 					<TransactionsAndSignedMessages
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 						removeTransactionOrSignedMessage = { param.removeTransactionOrSignedMessage }
-						activeAddress = { param.activeSimulationAddress }
+						activeAddress = { param.visualizedAddress }
 						renameAddressCallBack = { param.renameAddressCallBack }
 						editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 						addressMetaData = { computedAddressBookEntries }
+						showTimePicker = { param.simulationMode.value }
 						displayMode = 'titleOnly'
 						openSimulationStackAt = { param.openSimulationStack }
 					/>
@@ -482,8 +889,9 @@ function PopupVisualisation(param: SimulationStateParam) {
 						: <SimulationSummary
 							simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
 							currentBlockNumber = { param.currentBlockNumber }
-							activeAddress = { param.activeSimulationAddress }
+							activeAddress = { param.visualizedAddress }
 							renameAddressCallBack = { param.renameAddressCallBack }
+							editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 							rpcConnectionStatus = { param.rpcConnectionStatus }
 						/>
 					}
@@ -501,16 +909,17 @@ export function Home(param: HomeParams) {
 	const tabWebsite = useComputed(() => param.tabState.value?.website)
 	const disableResetUntilHomeDataLoaded = useComputed(() => disableReset.value || !param.isInitialHomeDataLoaded.value)
 
-	const activeSimulationAddress = useComputed(() =>
-		param.activeSimulationAddress.value !== undefined ? getActiveAddressEntry(param.activeSimulationAddress.value, param.activeAddresses.value) : undefined
-	)
-	const activeSigningAddress = useComputed(() =>
-		param.activeSigningAddress.value !== undefined ? getActiveAddressEntry(param.activeSigningAddress.value, param.activeAddresses.value) : undefined
-	)
-	const currentActiveAddress = useComputed(() => param.simulationMode.value ? activeSimulationAddress.value : activeSigningAddress.value)
+	const modeActiveAddress = useModeActiveAddress(param)
+	const safeStackMode = useComputed(() => !param.simulationMode.value && param.activeSigningSafeAddress.value !== undefined)
+	const currentActiveAddress = useComputed(() => {
+		const resolution = modeActiveAddress.value
+		if (resolution.activeAddress === undefined) return undefined
+		return resolution.activeAddressBookEntry ?? getActiveAddressEntry(resolution.activeAddress, param.activeAddresses.value, param.rpcNetwork.value?.chainId)
+	})
+	const visualizedAddress = useComputed(() => safeStackMode.value ? param.activeSigningSafeAddress.value : modeActiveAddress.value.activeAddress)
 
 	useEffect(() => {
-		if (!param.simulationMode.value || activeSimulationAddress.value === undefined) {
+		if ((!param.simulationMode.value && !safeStackMode.value) || visualizedAddress.value === undefined) {
 			showPopupVisualisation.value = false
 			return
 		}
@@ -518,7 +927,7 @@ export function Home(param: HomeParams) {
 		return scheduleAfterPaint(() => {
 			showPopupVisualisation.value = true
 		})
-	}, [param.simulationMode.value, activeSimulationAddress.value])
+	}, [param.simulationMode.value, safeStackMode.value, visualizedAddress.value])
 
 	useSignalEffect(() => {
 		param.simVisResults.value
@@ -552,6 +961,9 @@ export function Home(param: HomeParams) {
 		globalThis.close()
 	}
 
+	if (!param.isInitialHomeDataLoaded.value) {
+		return <HomeLoadingSkeleton/>
+	}
 	if (param.rpcNetwork.value === undefined) return <></>
 
 	return <>
@@ -560,8 +972,14 @@ export function Home(param: HomeParams) {
 		: <></> }
 
 		<FirstCard
+			isActiveAddressChanging = { param.isActiveAddressChanging }
+			isActiveAddressChangePending = { param.isActiveAddressChangePending }
+			isSettingsChangePending = { param.isSettingsChangePending }
+			setSimulationMode = { param.setSimulationMode }
+			setRichState = { param.setRichState }
 			preSimulationBlockTimeManipulation = { param.preSimulationBlockTimeManipulation }
 			activeAddresses = { param.activeAddresses }
+			walletSelectedAddressBookEntry = { param.walletSelectedAddressBookEntry }
 			useSignersAddressAsActiveAddress = { param.useSignersAddressAsActiveAddress }
 			activeAddress = { currentActiveAddress }
 			rpcNetwork = { param.rpcNetwork }
@@ -575,17 +993,19 @@ export function Home(param: HomeParams) {
 			renameAddressCallBack = { param.renameAddressCallBack }
 			rpcEntries = { param.rpcEntries }
 			isInitialHomeDataLoaded = { param.isInitialHomeDataLoaded }
+			isFreshHomeDataLoaded = { param.isFreshHomeDataLoaded }
 		/>
 
-		{ param.simulationMode.value && activeSimulationAddress.value !== undefined
+		{ (param.simulationMode.value || safeStackMode.value) && visualizedAddress.value !== undefined
 			? showPopupVisualisation.value
 				? <PopupVisualisation
+					simulationMode = { param.simulationMode }
 					simulationAndVisualisationResults = { param.simVisResults }
 					removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
 					disableReset = { disableResetUntilHomeDataLoaded }
 					resetSimulation = { resetSimulationAfterHomeDataLoaded }
 					currentBlockNumber = { param.currentBlockNumber }
-					activeSimulationAddress = { param.activeSimulationAddress }
+					visualizedAddress = { visualizedAddress }
 					renameAddressCallBack = { param.renameAddressCallBack }
 					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 					removedTransactionOrSignedMessages = { removedTransactionOrSignedMessages.value }
@@ -595,13 +1015,11 @@ export function Home(param: HomeParams) {
 					openSimulationStack = { openSimulationStack }
 					numberOfAddressesMadeRich = { param.numberOfAddressesMadeRich }
 				/>
-				: <section class = 'card' style = 'margin: 10px; min-height: 250px; display: grid; place-items: center;'>
-					<Spinner height = '3em'/>
-				</section>
+				: <SimulationLoadingSkeleton/>
 			: <></> }
 		{ tabWebsite.value === undefined ? <></> : <>
 			<div style = 'padding-top: 50px' />
-			<div class = 'popup-footer' style = 'display: flex; justify-content: center; flex-direction: column;'>
+			<div class = 'popup-footer popup-data-reveal' style = 'display: flex; justify-content: center; flex-direction: column;'>
 				<div style = 'display: grid; grid-template-columns: auto auto; padding-left: 10px; padding-right: 10px' >
 					<div class = 'log-cell' style = 'justify-content: left;'>
 						<WebsiteOriginText website = { tabWebsite } />

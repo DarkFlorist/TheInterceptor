@@ -150,6 +150,7 @@ const renderSimulationSummary = (dom: ReturnType<typeof installDomMock>, simulat
 		currentBlockNumber: new Signal<bigint | undefined>(1n),
 		activeAddress: new Signal<bigint | undefined>(RECIPIENT_ADDRESS),
 		renameAddressCallBack: () => undefined,
+		editEnsNamedHashCallBack: () => undefined,
 		rpcConnectionStatus: new Signal(undefined),
 	}),
 	dom.document.body)
