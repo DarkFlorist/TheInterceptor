@@ -15,7 +15,7 @@ export async function requestDelegationSimulation(settings: Settings, ethereum: 
 		return { method: 'popup_requestDelegationSimulation' as const, data: { address, chainId, status: { type: 'unknown' as const } } }
 	}
 	try {
-		const delegate = await ethereum.getCachedDelegation(address, undefined, { refresh: true })
+		const delegate = await ethereum.getCachedDelegation(address)
 		return { method: 'popup_requestDelegationSimulation' as const, data: { address, chainId, status: delegate === undefined ? { type: 'none' as const } : { type: 'delegated' as const, delegate } } }
 	} catch (error) {
 		if (!isExpectedInfrastructureError(error)) await reportLocalRecovery(error, { code: 'active_delegation_lookup_failed' })

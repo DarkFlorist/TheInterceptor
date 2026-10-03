@@ -1484,7 +1484,7 @@ describe('SimulationModeEthereumClientService', () => {
 
 		test('getSimulatedCodeFromInput installs the helper override and omits gas', async () => {
 			requestHandler.ethSimulateV1Calls.length = 0
-			const simulatedCode = await getSimulatedCodeFromInput(ethereum, undefined, createSimulationStateInput(), 0x1234n)
+			const simulatedCode = await getSimulatedCodeFromInput(ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), 0x1234n)
 			assert.equal(simulatedCode.statusCode, 'success')
 			if (simulatedCode.statusCode !== 'success') throw new Error('simulated code unexpectedly failed')
 			assert.equal(dataStringWith0xStart(simulatedCode.getCodeReturn), '0x1234')
@@ -1520,7 +1520,7 @@ describe('SimulationModeEthereumClientService', () => {
 		test('getSimulatedCodeFromInput propagates malformed code lookup output', async () => {
 			requestHandler.malformedGetCodeReturn = true
 			try {
-				await assert.rejects(async () => await getSimulatedCodeFromInput(ethereum, undefined, createSimulationStateInput(), 0x1234n), isAbiDataDecodeError)
+				await assert.rejects(async () => await getSimulatedCodeFromInput(ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), 0x1234n), isAbiDataDecodeError)
 			} finally {
 				requestHandler.malformedGetCodeReturn = false
 			}
@@ -1820,6 +1820,20 @@ describe('SimulationModeEthereumClientService', () => {
 
 				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 1)
 				assert.equal(result.length, 1)
+			})
+
+			test('input-based eth_simulateV1 applies idle clearing at every real parent tag without changing the response parent hash', async () => {
+				const rawResultBlock = ethSimulateSingleBlockResult[0]
+				if (rawResultBlock === undefined) throw new Error('Missing simulation result fixture')
+				const overrides = { [addressString(exampleTransaction.from)]: { code: new Uint8Array() } }
+				for (const parentTag of ['latest' as const, blockNumber, blockNumber - 1n]) {
+					const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput([], overrides), createDappEthSimulateV1Request(parentTag))
+					const sentRequest = requestHandler.ethSimulateV1Requests.at(-1)
+					assert.equal(sentRequest?.params[1], parentTag === 'latest' ? blockNumber : parentTag)
+					assert.equal(sentRequest?.params[0].blockStateCalls.length, 1)
+					assert.equal(sentRequest?.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(exampleTransaction.from)]?.code?.length, 0)
+					assert.equal(result[0]?.parentHash, BigInt(rawResultBlock.parentHash))
+				}
 			})
 
 			test('input-based eth_simulateV1 preserves validation true for explicit real parent block passthrough', async () => {

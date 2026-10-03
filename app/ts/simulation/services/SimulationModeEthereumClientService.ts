@@ -130,22 +130,11 @@ const transactionQueueTotalGasLimitFromInput = (block: SimulationStateInputMinim
 
 const hasSimulationBlocks = (simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData) => simulationStateInput.length > 0
 
-const hasSimulationContext = (simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData, simulationOverrides: StateOverrides) => hasSimulationBlocks(simulationStateInput) || Object.keys(simulationOverrides).length > 0
+// Keep the initial account state paired with its blocks. An empty stack still applies it to the first requested call.
+type PreparedSimulationInput = ResolvedSimulationInput | { readonly kind: 'simulated', readonly value: SimulationStateInputMinimalData, readonly simulationOverrides: StateOverrides }
 
-type PreparedSimulationInput = ResolvedSimulationInput | { readonly kind: 'simulated', readonly value: SimulationStateInputMinimalData, readonly simulationOverrides: StateOverrides } | SimulationStateInputMinimalData
-
-const getResolvedSimulationInputValue = (
-	simulationStateInput: PreparedSimulationInput | undefined,
-): SimulationStateInputMinimalData | undefined => {
-	if (simulationStateInput === undefined) return undefined
-	if (!('kind' in simulationStateInput)) return simulationStateInput
-	return simulationStateInput.kind === 'passthrough' ? undefined : simulationStateInput.value
-}
-
-const getResolvedSimulationOverrides = (simulationStateInput: PreparedSimulationInput | undefined): StateOverrides => {
-	if (simulationStateInput === undefined || !('kind' in simulationStateInput) || simulationStateInput.kind === 'passthrough') return {}
-	return simulationStateInput.simulationOverrides
-}
+const hasSimulationContext = (input: PreparedSimulationInput) => input.kind === 'simulated'
+	&& (hasSimulationBlocks(input.value) || Object.keys(input.simulationOverrides).length > 0)
 
 const getSimulationBlockNumber = (simulationState: SimulationState, blockDelta: number) => simulationState.blockNumber + BigInt(blockDelta) + 1n
 
@@ -159,10 +148,9 @@ const createPreparedSimulationExecutionContext = async (
 	simulationStateInput: PreparedSimulationInput | undefined,
 	baseBlockTag: EthereumBlockTag = 'latest',
 ): Promise<PreparedSimulationExecutionContext | undefined> => {
-	const resolvedSimulationInput = getResolvedSimulationInputValue(simulationStateInput)
-	if (resolvedSimulationInput === undefined) return undefined
-	const simulationOverrides = getResolvedSimulationOverrides(simulationStateInput)
-	if (!hasSimulationContext(resolvedSimulationInput, simulationOverrides)) return undefined
+	if (simulationStateInput === undefined || simulationStateInput.kind === 'passthrough' || !hasSimulationContext(simulationStateInput)) return undefined
+	const resolvedSimulationInput = simulationStateInput.value
+	const simulationOverrides = simulationStateInput.simulationOverrides
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController, baseBlockTag)
 	if (parentBlock === null) throw new Error('The latest block is null')
 	if (!hasSimulationBlocks(resolvedSimulationInput)) {
@@ -958,7 +946,7 @@ const getIdleSimulationCodeOverride = (simulationStateInput: SimulationStateInpu
 }
 
 export const getSimulatedCode = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, address: bigint, blockTag: EthereumBlockTag = 'latest') => {
-	if (simulationState.kind === 'simulated') {
+	if (simulationState.kind === 'simulated' && simulationState.value.success) {
 		const codeOverride = getIdleSimulationCodeOverride(simulationState.value.simulationStateInput, simulationState.value.simulationOverrides ?? {}, address, blockTag, simulationState.value.blockNumber)
 		if (codeOverride !== undefined) return { statusCode: 'success', getCodeReturn: codeOverride } as const
 	}
@@ -1139,7 +1127,6 @@ const getEthSimulateV1VisibleParentHash = (
 	context: PreparedSimulationExecutionContext,
 	simulationPrefixBlockCount: number,
 ) => {
-	if (simulationPrefixBlockCount === 0) return context.parentBlock.hash
 	const visibleParentBlock = context.executionBlocks[simulationPrefixBlockCount - 1]
 	if (visibleParentBlock === undefined) throw new Error('eth_simulateV1 simulation prefix block index overflow')
 	return visibleParentBlock.blockHash
@@ -1154,49 +1141,62 @@ const withEthSimulateV1VisibleParentHash = (
 	return [{ ...firstResultBlock, parentHash }, ...remainingResultBlocks]
 }
 
+const withInitialSimulationOverrides = (request: EthSimulateV1Params, simulationOverrides: StateOverrides): EthSimulateV1Params => {
+	if (Object.keys(simulationOverrides).length === 0) return request
+	const payload = {
+		...request.params[0],
+		blockStateCalls: request.params[0].blockStateCalls.map((block, blockIndex) => blockIndex === 0
+			? { ...block, stateOverrides: applySimulationOverrides(block.stateOverrides ?? {}, simulationOverrides) }
+			: block),
+	}
+	return {
+		...request,
+		params: request.params[1] === undefined ? [payload] : [payload, request.params[1]],
+	}
+}
+
 export const ethSimulateV1FromInput = async (
 	ethereumClientService: EthereumClientService,
 	requestAbortController: AbortController | undefined,
 	simulationStateInput: ResolvedSimulationInput,
 	request: EthSimulateV1Params,
 ): Promise<EthSimulateV1Result> => {
-	const resolvedSimulationInput = getResolvedSimulationInputValue(simulationStateInput)
-	if (resolvedSimulationInput === undefined || !hasSimulationContext(resolvedSimulationInput, getResolvedSimulationOverrides(simulationStateInput))) return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+	if (simulationStateInput.kind === 'passthrough' || !hasSimulationContext(simulationStateInput)) return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+	const simulationOverrides = simulationStateInput.simulationOverrides
+	const sendWithoutSimulationPrefix = async () => await ethereumClientService.ethSimulateV1Request(withInitialSimulationOverrides(request, simulationOverrides), requestAbortController)
 
 	const parentBlockTag = getEthSimulateV1ParentBlockTag(request)
 	let shouldPrepareSimulationContext: boolean
 	try {
 		shouldPrepareSimulationContext = await shouldPrepareEthSimulateV1SimulationContextForBlockTag(ethereumClientService, requestAbortController, parentBlockTag)
 	} catch (error) {
-		if (isEthSimulateV1BlockHashTag(parentBlockTag)) return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+		if (isEthSimulateV1BlockHashTag(parentBlockTag)) return await sendWithoutSimulationPrefix()
 		throw error
 	}
 	if (!shouldPrepareSimulationContext) {
-		return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+		return await sendWithoutSimulationPrefix()
 	}
 
 	let context: PreparedSimulationExecutionContext | undefined
 	try {
 		context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput)
 	} catch (error) {
-		if (isEthSimulateV1BlockHashTag(parentBlockTag)) return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+		if (isEthSimulateV1BlockHashTag(parentBlockTag)) return await sendWithoutSimulationPrefix()
 		throw error
 	}
-	if (context === undefined) return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+	if (context === undefined) return await sendWithoutSimulationPrefix()
 
 	const simulationPrefixBlockCount = getEthSimulateV1SimulationPrefixBlockCount(context, parentBlockTag)
-	if (simulationPrefixBlockCount === undefined) return await ethereumClientService.ethSimulateV1Request(request, requestAbortController)
+	if (simulationPrefixBlockCount === undefined) return await sendWithoutSimulationPrefix()
 	if (request.params[0].validation === true) throwEthSimulateV1ValidationWithSimulationStackError()
 
 	const simulationPrefixBlockStateCalls = context.prepared.request.params[0].blockStateCalls.slice(0, simulationPrefixBlockCount)
+	const requestWithOverrides = simulationPrefixBlockCount === 0 ? withInitialSimulationOverrides(request, context.simulationOverrides) : request
 	const payload: EthSimulateV1Params['params'][0] = {
-		...request.params[0],
+		...requestWithOverrides.params[0],
 		blockStateCalls: [
 			...simulationPrefixBlockStateCalls,
-			...request.params[0].blockStateCalls.map((block, blockIndex) => ({
-				...block,
-				stateOverrides: applySimulationOverrides(block.stateOverrides ?? {}, simulationPrefixBlockCount === 0 && blockIndex === 0 ? context.simulationOverrides : {}),
-			})),
+			...requestWithOverrides.params[0].blockStateCalls,
 		],
 		validation: false,
 	}
@@ -1206,10 +1206,9 @@ export const ethSimulateV1FromInput = async (
 	}
 	const result = await ethereumClientService.ethSimulateV1Request(prefixedRequest, requestAbortController)
 	if (result.length < simulationPrefixBlockStateCalls.length) throw new Error('eth_simulateV1 returned fewer blocks than the prepared simulation prefix')
-	return withEthSimulateV1VisibleParentHash(
-		result.slice(simulationPrefixBlockStateCalls.length),
-		getEthSimulateV1VisibleParentHash(context, simulationPrefixBlockCount),
-	)
+	const visibleResult = result.slice(simulationPrefixBlockStateCalls.length)
+	if (simulationPrefixBlockCount === 0) return visibleResult
+	return withEthSimulateV1VisibleParentHash(visibleResult, getEthSimulateV1VisibleParentHash(context, simulationPrefixBlockCount))
 }
 
 export async function getSimulatedBlockFromInput(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationStateInput: ResolvedSimulationInput, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>

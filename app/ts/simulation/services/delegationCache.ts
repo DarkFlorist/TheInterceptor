@@ -2,7 +2,7 @@ import { addressString } from '../../utils/bigint.js'
 import { NEW_BLOCK_ABORT } from '../../utils/constants.js'
 
 const DELEGATION_CACHE_AGE_MS = 5 * 60 * 1000
-type PendingLookup = { promise: Promise<bigint | undefined>, controller: AbortController, waiters: number, settled: boolean }
+type PendingLookup = { promise: Promise<bigint | undefined>, controller: AbortController, generation: number }
 
 export function createDelegationCache(lookup: (address: bigint, controller: AbortController) => Promise<bigint | undefined>) {
 	let generation = 0
@@ -19,13 +19,17 @@ export function createDelegationCache(lookup: (address: bigint, controller: Abor
 	const startLookup = (address: bigint, key: string): PendingLookup => {
 		const controller = new AbortController()
 		const lookupGeneration = generation
-		const pending: PendingLookup = { promise: lookup(address, controller), controller, waiters: 0, settled: false }
+		let rejectInvalidated: (reason: unknown) => void = () => undefined
+		const invalidated = new Promise<never>((_resolve, reject) => { rejectInvalidated = reject })
+		const onInvalidate = () => { rejectInvalidated(NEW_BLOCK_ABORT) }
+		controller.signal.addEventListener('abort', onInvalidate, { once: true })
+		const pending: PendingLookup = { promise: Promise.race([lookup(address, controller), invalidated]), controller, generation: lookupGeneration }
 		pending.promise = pending.promise.then((delegate) => {
 			if (controller.signal.aborted || generation !== lookupGeneration) throw NEW_BLOCK_ABORT
 			resolved.set(key, { checkedAt: Date.now(), delegate })
 			return delegate
 		}).finally(() => {
-			pending.settled = true
+			controller.signal.removeEventListener('abort', onInvalidate)
 			if (pendingByAddress.get(key) === pending) pendingByAddress.delete(key)
 		})
 		pendingByAddress.set(key, pending)
@@ -35,10 +39,7 @@ export function createDelegationCache(lookup: (address: bigint, controller: Abor
 	const get = async (address: bigint, abortController?: AbortController, refresh = false) => {
 		if (abortController?.signal.aborted) throw abortController.signal.reason ?? NEW_BLOCK_ABORT
 		const key = addressString(address)
-		const cached = resolved.get(key)
-		if (!refresh && cached !== undefined && Date.now() - cached.checkedAt < DELEGATION_CACHE_AGE_MS) return cached.delegate
-		const pending = pendingByAddress.get(key) ?? startLookup(address, key)
-		pending.waiters += 1
+		let skipCached = refresh
 		const signal = abortController?.signal
 		let rejectAborted: (reason: unknown) => void = () => undefined
 		const aborted = new Promise<never>((_resolve, reject) => { rejectAborted = reject })
@@ -46,14 +47,23 @@ export function createDelegationCache(lookup: (address: bigint, controller: Abor
 		signal?.addEventListener('abort', onAbort, { once: true })
 		try {
 			if (signal?.aborted) onAbort()
-			return await Promise.race([pending.promise, aborted])
+			for (;;) {
+				if (signal?.aborted) throw signal.reason ?? NEW_BLOCK_ABORT
+				if (!skipCached) {
+					const cached = resolved.get(key)
+					if (cached !== undefined && Date.now() - cached.checkedAt < DELEGATION_CACHE_AGE_MS) return cached.delegate
+				}
+				skipCached = false
+				const pending = pendingByAddress.get(key) ?? startLookup(address, key)
+				try {
+					return await Promise.race([pending.promise, aborted])
+				} catch (error) {
+					if (signal?.aborted) throw signal.reason ?? NEW_BLOCK_ABORT
+					if (pending.generation === generation) throw error
+				}
+			}
 		} finally {
 			signal?.removeEventListener('abort', onAbort)
-			pending.waiters -= 1
-			if (pending.waiters === 0 && !pending.settled) {
-				pending.controller.abort(NEW_BLOCK_ABORT)
-				if (pendingByAddress.get(key) === pending) pendingByAddress.delete(key)
-			}
 		}
 	}
 

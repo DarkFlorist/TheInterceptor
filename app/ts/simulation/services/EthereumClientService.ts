@@ -184,7 +184,6 @@ export class EthereumClientService {
 			const gotNewBlock = this.cachedBlock?.number !== newBlock.number
 			if (gotNewBlock) {
 				this.requestHandler.clearCache()
-				this.clearDelegationCache()
 			}
 			this.cachedBlock = newBlock
 			await this.newBlockAttemptCallback(newBlock, this, gotNewBlock)

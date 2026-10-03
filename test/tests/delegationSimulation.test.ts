@@ -16,7 +16,7 @@ import { MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
 import { EthSimulateV1Params } from '../../app/ts/types/ethSimulate-types.js'
 import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { EthereumBlockHeader, serialize } from '../../app/ts/types/wire-types.js'
-import { SimulationStateInputBlock, toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
+import { type SimulationState, SimulationStateInputBlock, toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../../app/ts/config/defaults.js'
 
@@ -109,12 +109,15 @@ describe('delegate clearing in simulation', () => {
 		assert.equal(input.length, 0)
 		const parentBlockResponse = JsonRpcResponse.parse(JSON.parse(eth_getBlockByNumber_goerli_8443561_true))
 		if ('error' in parentBlockResponse) throw new Error(parentBlockResponse.error.message)
+		const parentBlock = EthereumBlockHeader.parse(parentBlockResponse.result)
+		if (parentBlock === null) throw new Error('Expected a parent block')
 		const ethSimulateRequests: EthSimulateV1Params[] = []
 		const ethereum = new EthereumClientService({
 			rpcUrl: rpcEntry.httpsRpc,
 			clearCache() { return undefined },
 			async jsonRpcRequest(request) {
 				if (request.method === 'eth_getBlockByNumber') return parentBlockResponse.result
+				if (request.method === 'eth_blockNumber') return `0x${ parentBlock.number.toString(16) }`
 				if (request.method === 'eth_getTransactionCount') return '0x0'
 				if (request.method === 'eth_simulateV1') {
 					ethSimulateRequests.push(request)
@@ -133,6 +136,14 @@ describe('delegate clearing in simulation', () => {
 		const popupCode = await getSimulatedCode(ethereum, undefined, { kind: 'simulated', value: idleState }, activeAddress)
 		assert.equal(popupCode.statusCode, 'success')
 		if (popupCode.statusCode === 'success') assert.equal(popupCode.getCodeReturn.length, 0)
+		if (!idleState.success) throw new Error('Expected an idle simulation state')
+		const { simulatedBlocks: _simulatedBlocks, ...failedBase } = idleState
+		const failedState: SimulationState = {
+			...failedBase,
+			success: false,
+			jsonRpcError: { jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'Simulation failed' } },
+		}
+		assert.deepEqual(await getSimulatedCode(ethereum, undefined, { kind: 'simulated', value: failedState }, activeAddress), { statusCode: 'failure' })
 		assert.equal(ethSimulateRequests.length, 0)
 		const confirmationInput = appendTransactionsToInput(input, [transaction(1n)])
 		assert.equal(confirmationInput.length, 1)
@@ -150,8 +161,6 @@ describe('delegate clearing in simulation', () => {
 		const callRequest = serialize(EthSimulateV1Params, ethSimulateRequests[0])
 		assert.equal(callRequest.params[0].blockStateCalls.length, 1)
 		assert.equal(callRequest.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
-		const parentBlock = EthereumBlockHeader.parse(parentBlockResponse.result)
-		if (parentBlock === null) throw new Error('Expected a parent block')
 		assert.deepEqual(ethSimulateRequests[0]?.params[0].blockStateCalls[0]?.blockOverrides?.time, getNextBlockTimeStampOverride(parentBlock.timestamp, DEFAULT_BLOCK_MANIPULATION))
 		await assert.rejects(simulateEstimateGasFromInput(ethereum, undefined, toResolvedSimulationInput(input, simulationOverrides), {
 			from: activeAddress,
@@ -177,6 +186,13 @@ describe('delegate clearing in simulation', () => {
 		assert.equal(stackedSimulationRequest.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
 		assert.equal(stackedSimulationRequest.params[0].blockStateCalls[1]?.stateOverrides?.[addressString(activeAddress)]?.code, undefined)
 		assert.equal(stackedSimulationRequest.params[0].blockStateCalls[2]?.stateOverrides?.[addressString(activeAddress)]?.code, undefined)
+		await assert.rejects(ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(input, simulationOverrides), {
+			method: 'eth_simulateV1',
+			params: [{ blockStateCalls: [{ calls: [] }] }, parentBlock.number],
+		}), /Captured simulation request/)
+		const explicitParentRequest = serialize(EthSimulateV1Params, ethSimulateRequests.at(-1))
+		assert.equal(explicitParentRequest.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
+		assert.equal(explicitParentRequest.params[1], `0x${ parentBlock.number.toString(16) }`)
 	})
 
 	test('clears before the first stack block and keeps a captured preference stable after storage changes', async () => {
@@ -318,7 +334,7 @@ describe('delegate clearing in simulation', () => {
 		assert.equal(await replacementEthereum.getCachedDelegation(activeAddress), undefined)
 	})
 
-	test('refreshes popup delegation checks after a cached no-delegate result', async () => {
+	test('reuses cached popup checks while confirmation refreshes delegation before enabling', async () => {
 		installBrowserMock()
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
 		const settings = await getSettings()
@@ -337,17 +353,17 @@ describe('delegate clearing in simulation', () => {
 		assert.equal(await ethereum.getCachedDelegation(activeAddress), undefined)
 		code = `0xef0100${ addressString(delegate).slice(2) }`
 		const requestReply = await requestDelegationSimulation(settings, ethereum, activeAddress, rpcEntry.chainId)
-		assert.deepEqual(requestReply.data.status, { type: 'delegated', delegate })
-		assert.equal(codeRequests, 2)
+		assert.deepEqual(requestReply.data.status, { type: 'none' })
+		assert.equal(codeRequests, 1)
 		await setDelegateClearingEnabled(activeAddress, rpcEntry.chainId, true)
 		const services = { ethereum, tokenPriceService: new TokenPriceService(ethereum, 60000) }
 		const toggleReply = await setDelegationSimulation(settings, services, activeAddress, rpcEntry.chainId, true)
 		assert.deepEqual(toggleReply.data, { ok: true, address: activeAddress, chainId: rpcEntry.chainId, enabled: true })
-		assert.equal(codeRequests, 3)
+		assert.equal(codeRequests, 2)
 		code = '0x'
 		const missingReply = await setDelegationSimulation(settings, services, activeAddress, rpcEntry.chainId, true)
 		assert.deepEqual(missingReply.data, { ok: false, message: 'This account no longer has an EIP-7702 delegate.' })
-		assert.equal(codeRequests, 4)
+		assert.equal(codeRequests, 3)
 	})
 
 	test('does not cache a failed delegation lookup as no delegate', async () => {
@@ -369,7 +385,7 @@ describe('delegate clearing in simulation', () => {
 		assert.equal(codeRequests, 2)
 	})
 
-	test('invalidates delegation results on a new block and drops an aborted lookup', async () => {
+	test('keeps an abandoned lookup available to later waiters and invalidates it on cache reset', async () => {
 		let codeRequests = 0
 		let releaseFirst: (code: string) => void = () => undefined
 		const firstResponse = new Promise<string>((resolve) => { releaseFirst = resolve })
@@ -388,11 +404,11 @@ describe('delegate clearing in simulation', () => {
 		abortController.abort(new Error('Refresh replaced'))
 		await assert.rejects(abortedLookup, /Refresh replaced/u)
 		releaseFirst('0x')
-		assert.equal(await ethereum.getCachedDelegation(activeAddress), delegate)
-		assert.equal(codeRequests, 2)
+		assert.equal(await ethereum.getCachedDelegation(activeAddress), undefined)
+		assert.equal(codeRequests, 1)
 		ethereum.clearDelegationCache()
 		assert.equal(await ethereum.getCachedDelegation(activeAddress), delegate)
-		assert.equal(codeRequests, 3)
+		assert.equal(codeRequests, 2)
 	})
 
 	test('keeps a shared lookup alive when one waiting refresh is aborted', async () => {
@@ -421,7 +437,7 @@ describe('delegate clearing in simulation', () => {
 		assert.equal(codeRequests, 1)
 	})
 
-	test('discards an in-flight result when a new block invalidates the cache', async () => {
+	test('retries an in-flight delegation lookup after a cache reset invalidates it', async () => {
 		let releaseOldBlock: (code: string) => void = () => undefined
 		const oldBlockResponse = new Promise<string>((resolve) => { releaseOldBlock = resolve })
 		let codeRequests = 0
@@ -437,9 +453,33 @@ describe('delegate clearing in simulation', () => {
 		}, async () => undefined, async () => undefined, rpcEntry)
 		const staleLookup = ethereum.getCachedDelegation(activeAddress)
 		ethereum.clearDelegationCache()
+		assert.equal(await staleLookup, undefined)
 		releaseOldBlock(`0xef0100${ addressString(delegate).slice(2) }`)
-		await assert.rejects(staleLookup, /New Block Abort/u)
 		assert.equal(await ethereum.getCachedDelegation(activeAddress), undefined)
+		assert.equal(codeRequests, 2)
+	})
+
+	test('enabling delegate clearing survives a cache reset during delegation confirmation', async () => {
+		installBrowserMock()
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
+		let releaseOldBlock: (code: string) => void = () => undefined
+		const oldBlockResponse = new Promise<string>((resolve) => { releaseOldBlock = resolve })
+		let codeRequests = 0
+		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
+		const ethereum = new EthereumClientService({
+			rpcUrl: rpcEntry.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest(request) {
+				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
+				codeRequests += 1
+				return codeRequests === 1 ? await oldBlockResponse : `0xef0100${ addressString(delegate).slice(2) }`
+			},
+		}, async () => undefined, async () => undefined, rpcEntry)
+		const services = { ethereum, tokenPriceService: new TokenPriceService(ethereum, 60000) }
+		const enabling = setDelegationSimulation(await getSettings(), services, activeAddress, rpcEntry.chainId, true)
+		ethereum.clearDelegationCache()
+		assert.deepEqual((await enabling).data, { ok: true, address: activeAddress, chainId: rpcEntry.chainId, enabled: true })
+		releaseOldBlock('0x')
 		assert.equal(codeRequests, 2)
 	})
 })
