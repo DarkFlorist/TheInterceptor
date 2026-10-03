@@ -1,4 +1,4 @@
-import { SAFE_APPS_REQUEST_METHOD } from '../../ts/types/safeRpcMethods.js'
+import { SAFE_APPS_REQUEST_METHOD } from './generated/safeRpcMethods.js'
 
 const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
 const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
@@ -898,7 +898,8 @@ class InterceptorMessageListener {
 	private readonly sendMessageToBackgroundPage = async (messageMethodAndParams: MessageMethodAndParams) => {
 		this.requestId++
 		const pendingRequestId = this.requestId
-		const replayOnDisconnect = messageMethodAndParams.internal !== true && messageMethodAndParams.method === 'eth_requestAccounts'
+		const isInternalMessage = getOwnBridgeProperty(messageMethodAndParams, 'internal')?.value === true
+		const replayOnDisconnect = !isInternalMessage && messageMethodAndParams.method === 'eth_requestAccounts'
 		const future = new InterceptorFuture<unknown>()
 		this.outstandingRequests.set(pendingRequestId, {
 			future,
@@ -913,7 +914,7 @@ class InterceptorMessageListener {
 				params: messageMethodAndParams.params,
 				usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
 				requestId: pendingRequestId,
-				...(messageMethodAndParams.internal === true ? { internal: true as const } : {}),
+				...(isInternalMessage ? { internal: true as const } : {}),
 				...(replayOnDisconnect ? { replayOnDisconnect: true as const } : {}),
 			}
 			this.postToExtension(message)
@@ -975,7 +976,7 @@ class InterceptorMessageListener {
 		try {
 			if (isInternalBackgroundMethod(methodAndParams.method)) throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, `Method not supported: ${ methodAndParams.method }`)
 			const params = normalizeInterceptorEthereumRequestParameters(methodAndParams.method, methodAndParams.params)
-			// make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
+			// Rebuild public requests from method/params only; callers cannot supply the private callback marker.
 			return await this.sendMessageToBackgroundPage({
 				method: methodAndParams.method,
 				...(params !== undefined ? { params } : {}),

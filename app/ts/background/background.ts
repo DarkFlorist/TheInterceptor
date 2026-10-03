@@ -222,7 +222,7 @@ function isProviderMethod(method: string): method is keyof typeof providerHandle
 	return hasOwnKey(providerHandlers, method)
 }
 
-// Only registered incoming signer callbacks can release pending work. Reply schemas also contain outgoing notifications and are not a request-method registry.
+// The content script supplies this marker only for private-bridge callbacks; public provider payloads cannot set it. Only registered incoming callbacks release capacity.
 export function isInternalProviderCallback(request: InterceptedRequest) {
 	return request.interceptorInternalRequest === true && isProviderMethod(request.method)
 }

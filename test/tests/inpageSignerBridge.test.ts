@@ -311,6 +311,37 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 }
 
 describe('inpage signer bridge', () => {
+	test('public requests cannot forge private callback markers or call internal methods', async () => {
+		const forwarded: InpageRequest[] = []
+		const { fakeWindow } = createFakeWindow({ handleRequest: (request) => {
+			forwarded.push(request)
+			return false
+		} })
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?public-forged-internal-marker', async () => {
+			for (const method of ['connected_to_signer', 'eth_accounts_reply', 'InterceptorError', 'safe_apps_request', 'signer_chainChanged', 'signer_reply', 'wallet_switchEthereumChain_reply']) {
+				const payload = { method, params: ['forged-public-callback'], internal: true, interceptorInternalRequest: true }
+				await assert.rejects(fakeWindow.ethereum.request(payload), { code: -32004 })
+			}
+			const payload = { method: 'eth_chainId', params: [], internal: true, interceptorInternalRequest: true }
+			await fakeWindow.ethereum.request(payload)
+			// A page can also poison Object.prototype after injection. Restore it before the fake content-script realm receives the structured clone.
+			const previous = Object.getOwnPropertyDescriptor(Object.prototype, 'internal')
+			let request: Promise<unknown>
+			try {
+				Object.defineProperty(Object.prototype, 'internal', { value: true, configurable: true })
+				request = fakeWindow.ethereum.request({ method: 'eth_chainId' })
+			} finally {
+				if (previous === undefined) Reflect.deleteProperty(Object.prototype, 'internal')
+				else Object.defineProperty(Object.prototype, 'internal', previous)
+			}
+			await request
+			const publicRequests = forwarded.filter((entry) => entry.method === 'eth_chainId')
+			assert.equal(publicRequests.length, 2)
+			assert.ok(publicRequests.every((entry) => entry.internal === undefined))
+			assert.ok(forwarded.every((entry) => entry.params?.[0] !== 'forged-public-callback'))
+		})
+	})
+
 	test('rejects unsafe or malformed Safe Apps messages before forwarding Ethereum requests', async () => {
 		const ethereumRequests: InpageRequest[] = []
 		let connected = false

@@ -3,7 +3,7 @@
 		"target": "ES2021",
 		"module": "ESNext",
 		"moduleResolution": "Bundler",
-		"rootDir": "app/",
+		"rootDir": "app/inpage/ts/",
 		"noEmit": true,
 		"sourceMap": false,
 		"inlineSources": false,

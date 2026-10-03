@@ -36,8 +36,8 @@ export function haveSameHostForNetworkBlocking(sourceUrl: string, destinationUrl
 	return source !== undefined && destination !== undefined && source.host === destination.host
 }
 
-export function getWebsiteOriginForSender(sender: { readonly url?: string, readonly origin?: string }) {
-	if (sender.url === undefined) return undefined
+export function getWebsiteOriginForSender(sender: { readonly url?: string, readonly origin?: string } | undefined) {
+	if (sender?.url === undefined) return undefined
 	if (sender.origin !== undefined && !sender.url.startsWith('file:')) return getWebsiteOrigin(sender.origin)
 	return getWebsiteOrigin(sender.url)
 }

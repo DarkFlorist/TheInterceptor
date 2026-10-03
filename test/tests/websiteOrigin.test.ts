@@ -130,3 +130,38 @@ test('explicit URL aliases retain grants and disable settings before or after le
 		assert.equal(migrateWebsiteAccessOrigins(migrated), migrated)
 	}
 })
+
+test('missing browser sender metadata cannot authorize a connection', () => {
+	assert.equal(getWebsiteOriginForSender(undefined), undefined)
+	assert.equal(getWebsiteOriginForSender({}), undefined)
+	assert.equal(getWebsiteOriginForSender({ origin: 'https://example.test' }), undefined)
+})
+
+test('legacy hostname network blocks survive explicit origin collisions without replacing consent', () => {
+	const legacy = { website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy' }, access: false, interceptorDisabled: true, declarativeNetRequestBlockMode: 'block-all' as const }
+	for (const explicitUrl of ['https://example.test', 'https://example.test:443/path']) {
+		const explicit = { website: { ...legacy.website, websiteOrigin: explicitUrl, title: 'Explicit' }, access: true, addressAccess: [{ address: 1n, access: true }], interceptorDisabled: false, declarativeNetRequestBlockMode: 'disabled' as const }
+		for (const entries of [[legacy, explicit], [explicit, legacy]]) {
+			const migrated = migrateWebsiteAccessOrigins(entries)
+			assert.deepEqual(migrated, [{ ...explicit, website: { ...explicit.website, websiteOrigin: 'https://example.test' }, declarativeNetRequestBlockMode: 'block-all' }])
+			assert.equal(hasAccess(migrated, 'https://example.test'), 'hasAccess')
+			assert.equal(hasAccess(migrated, 'http://example.test'), 'askAccess')
+			assert.equal(migrateWebsiteAccessOrigins(migrated), migrated)
+		}
+	}
+})
+
+test('legacy blocks remain hostname scoped across schemes, ports and duplicate legacy records', () => {
+	const legacy = { website: { websiteOrigin: 'example.test', icon: undefined, title: undefined }, access: true, interceptorDisabled: true }
+	const blockedLegacy = { ...legacy, declarativeNetRequestBlockMode: 'block-all' as const }
+	const origins = ['https://example.test', 'http://example.test', 'https://example.test:8443', 'https://other.test']
+	const explicit = origins.map((websiteOrigin) => ({ website: { ...legacy.website, websiteOrigin }, access: false }))
+	for (const entries of [[legacy, blockedLegacy, ...explicit], [...explicit, blockedLegacy, legacy]]) {
+		const migrated = migrateWebsiteAccessOrigins(entries)
+		assert.deepEqual(migrated, explicit.map((entry) => entry.website.websiteOrigin === 'https://other.test' ? entry : { ...entry, declarativeNetRequestBlockMode: 'block-all' }))
+	}
+	for (const entries of [[legacy, blockedLegacy], [blockedLegacy, legacy]]) {
+		const migrated = migrateWebsiteAccessOrigins(entries)
+		assert.deepEqual(migrated, [{ ...blockedLegacy, website: { ...legacy.website, websiteOrigin: 'https://example.test' }, access: undefined, addressAccess: undefined, interceptorDisabled: undefined }])
+	}
+})

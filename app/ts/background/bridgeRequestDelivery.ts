@@ -17,7 +17,7 @@ export function acknowledgeAndTrackBridgeRequest(
 	return true
 }
 
-// All ports use the same validation, acknowledgement and replay watermark, including ports with unsupported document origins.
+// Runtime-port payloads come from the content script's private bridge, which alone supplies the internal callback marker; all origins share validation, acknowledgement and replay tracking.
 export function receiveBridgeRequest(latestReceivedRequestIds: Map<string, number>, socket: WebsiteSocket, port: Pick<browser.runtime.Port, 'postMessage'>, payload: unknown): InterceptedRequest | undefined {
 	if (typeof payload !== 'object' || payload === null || !('data' in payload) || typeof payload.data !== 'object' || payload.data === null || !('interceptorRequest' in payload.data)) return undefined
 	const rawMessage = RawInterceptedRequest.parse(payload.data)

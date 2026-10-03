@@ -1,7 +1,7 @@
 import { WebsiteAccessArray, type WebsiteAccess, type WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { browserStorageLocalSet } from '../utils/storageUtils.js'
 import { sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
-import { getWebsiteOrigin } from '../utils/websiteOrigin.js'
+import { getWebsiteHostname, getWebsiteOrigin } from '../utils/websiteOrigin.js'
 
 // These records name the same origin. Preserve distinct grants and safety settings; explicit denials win conflicts rather than silently broadening access.
 function mergeOriginPermissions(previous: WebsiteAccess, incoming: WebsiteAccess): WebsiteAccess {
@@ -24,6 +24,7 @@ export function migrateWebsiteAccessOrigins(entries: WebsiteAccessArray): Websit
 	const explicitOriginDestinations = new Set(entries.map((entry) => getWebsiteOrigin(entry.website.websiteOrigin)).filter((origin) => origin !== undefined))
 	const canonicalOrigins = new Set(entries.filter((entry) => getWebsiteOrigin(entry.website.websiteOrigin) === entry.website.websiteOrigin).map((entry) => entry.website.websiteOrigin))
 	const migrated = new Map<string, WebsiteAccess>()
+	const legacyBlockedHostnames = new Set<string>()
 	let changed = false
 	for (const entry of entries) {
 		const origin = entry.website.websiteOrigin
@@ -44,11 +45,20 @@ export function migrateWebsiteAccessOrigins(entries: WebsiteAccessArray): Websit
 			continue
 		}
 		const destination = getWebsiteOrigin(`https://${ origin }`)
-		if (origin === '' || origin.includes('://') || destination === undefined || explicitOriginDestinations.has(destination) || migrated.has(destination)) continue
-		// The old hostname key does not tell us which scheme was approved. Keep its metadata but require fresh consent, including for disabling interception.
+		if (origin === '' || origin.includes('://') || destination === undefined) continue
+		const hostname = getWebsiteHostname(destination)
+		if (hostname !== undefined && entry.declarativeNetRequestBlockMode === 'block-all') legacyBlockedHostnames.add(hostname)
+		if (explicitOriginDestinations.has(destination) || migrated.has(destination)) continue
+		// Ambiguous hostname grants and interception bypasses require fresh consent; explicit origin decisions remain authoritative.
 		migrated.set(destination, { ...entry, website: { ...entry.website, websiteOrigin: destination }, access: undefined, addressAccess: undefined, interceptorDisabled: undefined })
 	}
-	return changed ? [...migrated.values()] : entries
+	// Network blocking is hostname-scoped protection, independent of origin consent or interception bypasses. Preserve it even when an explicit record replaces a legacy one.
+	const result = [...migrated.values()].map((entry) => {
+		const hostname = getWebsiteHostname(entry.website.websiteOrigin)
+		if (hostname === undefined || !legacyBlockedHostnames.has(hostname) || entry.declarativeNetRequestBlockMode === 'block-all') return entry
+		return { ...entry, declarativeNetRequestBlockMode: 'block-all' as const }
+	})
+	return changed ? result : entries
 }
 
 export async function migrateWebsiteAccess() {

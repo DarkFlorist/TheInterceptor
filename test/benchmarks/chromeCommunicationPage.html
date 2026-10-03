@@ -149,6 +149,8 @@
 
 				;(async () => {
 					try {
+						// Signing fixtures wait for their mock wallet's initial handshake; ordinary communication tests start immediately.
+						await globalThis.__interceptorChromeCommunicationSignerReady
 						const ethereum = await waitForEthereum()
 						startEarlySafeAppsProbe()
 						updateState('provider-ready')

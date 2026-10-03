@@ -58,3 +58,18 @@ test('persists explicit alias permissions independently of legacy entry ordering
 		assert.deepEqual(storage.websiteAccess, expected)
 	}
 })
+
+test('persists legacy hostname blocks alongside explicit origin consent', async () => {
+	const { migrateWebsiteAccess } = await import('../../app/ts/background/websiteAccessMigration.js')
+	const legacy = { website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy' }, access: false, interceptorDisabled: true, declarativeNetRequestBlockMode: 'block-all' }
+	const explicit = { website: { ...legacy.website, websiteOrigin: 'https://example.test', title: 'Explicit' }, access: true, interceptorDisabled: false }
+	for (const entries of [[legacy, explicit], [explicit, legacy]]) {
+		const storage = installBrowserMock()
+		storage.websiteAccess = entries
+		await migrateWebsiteAccess()
+		const expected = [{ ...explicit, declarativeNetRequestBlockMode: 'block-all' }]
+		assert.deepEqual(storage.websiteAccess, expected)
+		await migrateWebsiteAccess()
+		assert.deepEqual(storage.websiteAccess, expected)
+	}
+})
