@@ -43,3 +43,18 @@ describe('website access migration', () => {
 		assert.equal(storageState.websiteAccess[1]?.website.icon, 'data:image/png;base64,Y2FjaGVk')
 	})
 })
+
+test('persists explicit alias permissions independently of legacy entry ordering', async () => {
+	const { migrateWebsiteAccess } = await import('../../app/ts/background/websiteAccessMigration.js')
+	const legacy = { website: { websiteOrigin: 'example.test', icon: undefined, title: 'Legacy' }, access: false }
+	const alias = { website: { websiteOrigin: 'https://example.test/path', icon: undefined, title: 'Explicit' }, access: true, addressAccess: [{ address: '0x0000000000000000000000000000000000000001', access: true }], interceptorDisabled: true }
+	for (const entries of [[alias, legacy], [legacy, alias]]) {
+		const storage = installBrowserMock()
+		storage.websiteAccess = entries
+		await migrateWebsiteAccess()
+		const expected = [{ ...alias, website: { ...alias.website, websiteOrigin: 'https://example.test' } }]
+		assert.deepEqual(storage.websiteAccess, expected)
+		await migrateWebsiteAccess()
+		assert.deepEqual(storage.websiteAccess, expected)
+	}
+})

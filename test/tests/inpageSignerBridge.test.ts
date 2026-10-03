@@ -939,6 +939,99 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
+	for (const { authorizedRequestMethods, allowed } of [
+		{ authorizedRequestMethods: ['personal_sign'], allowed: true },
+		{ authorizedRequestMethods: undefined, allowed: false },
+		{ authorizedRequestMethods: ['eth_sendTransaction'], allowed: false },
+		{ authorizedRequestMethods: ['personal_sign', 123], allowed: false },
+	]) {
+		test(`transport honors only matching, well-formed background method authorization: ${ JSON.stringify(authorizedRequestMethods) }`, async () => {
+			let signerCalls = 0
+			const { fakeWindow } = createFakeWindow({
+				handleRequest(request, reply) {
+					if (request.method !== 'personal_sign') return false
+					reply({ interceptorApproved: true, type: 'forwardToSigner', requestId: request.requestId, method: 'future_signing_method', params: [], replyWithSignersReply: true, authorizedRequestMethods })
+					return true
+				},
+				handleSignerRequest({ method }) {
+					if (method !== 'future_signing_method') return undefined
+					signerCalls++
+					return Promise.resolve('signed')
+				},
+			})
+			await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?method-authorization-${ JSON.stringify(authorizedRequestMethods) }`, async () => {
+				const result = fakeWindow.ethereum.request({ method: 'personal_sign', params: ['0x12', '0x1111111111111111111111111111111111111111'] })
+				if (allowed) assert.equal(await result, 'signed')
+				else await assert.rejects(result, /does not match the pending request/)
+				assert.equal(signerCalls, allowed ? 1 : 0)
+			})
+		})
+	}
+
+	test('page prototype changes cannot invent signer method authorization', async () => {
+		let signerCalls = 0
+		const { fakeWindow } = createFakeWindow({
+			handleRequest(request, reply) {
+				if (request.method !== 'personal_sign') return false
+				reply({ interceptorApproved: true, type: 'forwardToSigner', requestId: request.requestId, method: 'future_signing_method', params: [], replyWithSignersReply: true })
+				return true
+			},
+			handleSignerRequest({ method }) {
+				if (method !== 'future_signing_method') return undefined
+				signerCalls++
+				return Promise.resolve('signed')
+			},
+		})
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?inherited-method-authorization', async () => {
+			const originalIncludes = Array.prototype.includes
+			Object.defineProperty(Object.prototype, 'authorizedRequestMethods', { configurable: true, writable: true, value: ['personal_sign'] })
+			Array.prototype.includes = () => true
+			try {
+				await assert.rejects(fakeWindow.ethereum.request({ method: 'personal_sign', params: [] }), /does not match the pending request/)
+				assert.equal(signerCalls, 0)
+			} finally {
+				Array.prototype.includes = originalIncludes
+				Reflect.deleteProperty(Object.prototype, 'authorizedRequestMethods')
+			}
+		})
+	})
+
+	test('page numeric array setters cannot rewrite signer method authorization', async () => {
+		let signerCalls = 0
+		const { fakeWindow } = createFakeWindow({
+			handleRequest(request, reply) {
+				if (request.method !== 'personal_sign') return false
+				reply({ interceptorApproved: true, type: 'forwardToSigner', requestId: request.requestId, method: 'future_signing_method', params: [], replyWithSignersReply: true, authorizedRequestMethods: ['eth_sendTransaction'] })
+				return true
+			},
+			handleSignerRequest({ method }) {
+				if (method !== 'future_signing_method') return undefined
+				signerCalls++
+				return Promise.resolve('signed')
+			},
+		})
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?numeric-setter-method-authorization', async () => {
+			const defineProperty = Object.defineProperty
+			const originalIndex = Object.getOwnPropertyDescriptor(Array.prototype, '0')
+			defineProperty(Array.prototype, '0', {
+				configurable: true,
+				set(this: object, value: unknown) {
+					defineProperty(this, '0', { configurable: true, enumerable: true, writable: true, value: value === 'eth_sendTransaction' ? 'personal_sign' : value })
+				},
+			})
+			try {
+				const probe: string[] = []
+				probe[0] = 'eth_sendTransaction'
+				assert.equal(probe[0], 'personal_sign', 'The page setter must be active')
+				await assert.rejects(fakeWindow.ethereum.request({ method: 'personal_sign', params: [] }), /does not match the pending request/)
+				assert.equal(signerCalls, 0)
+			} finally {
+				if (originalIndex === undefined) Reflect.deleteProperty(Array.prototype, '0')
+				else defineProperty(Array.prototype, '0', originalIndex)
+			}
+		})
+	})
+
 	test('keeps the private bridge usable when the page replaces MessagePort.postMessage', async () => {
 		const { fakeWindow, signerRequests } = createFakeWindow()
 

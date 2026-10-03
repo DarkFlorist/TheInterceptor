@@ -74,6 +74,7 @@ for (const { explicitSender, switchAccount, refreshOutcome } of [
 				{ method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })
 			const forwarded = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
 			assert.ok(isRecord(forwarded))
+			assert.equal(forwarded.authorizedRequestMethods, undefined)
 			const parsed = SendTransactionParams.parse(forwarded)
 			assert.equal(parsed.params[0].from, reviewedSender)
 			assert.equal(parsed.params[0].gas, 45_000n)

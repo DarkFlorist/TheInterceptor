@@ -20,7 +20,8 @@ function mergeOriginPermissions(previous: WebsiteAccess, incoming: WebsiteAccess
 }
 
 export function migrateWebsiteAccessOrigins(entries: WebsiteAccessArray): WebsiteAccessArray {
-	const explicitOrigins = new Set(entries.map((entry) => getWebsiteOrigin(entry.website.websiteOrigin)).filter((origin) => origin !== undefined))
+	// Reserve every explicit URL destination before processing legacy hostnames, regardless of storage order.
+	const explicitOriginDestinations = new Set(entries.map((entry) => getWebsiteOrigin(entry.website.websiteOrigin)).filter((origin) => origin !== undefined))
 	const canonicalOrigins = new Set(entries.filter((entry) => getWebsiteOrigin(entry.website.websiteOrigin) === entry.website.websiteOrigin).map((entry) => entry.website.websiteOrigin))
 	const migrated = new Map<string, WebsiteAccess>()
 	let changed = false
@@ -43,8 +44,7 @@ export function migrateWebsiteAccessOrigins(entries: WebsiteAccessArray): Websit
 			continue
 		}
 		const destination = getWebsiteOrigin(`https://${ origin }`)
-		if (origin === '' || origin.includes('://') || destination === undefined || explicitOrigins.has(destination)) continue
-		explicitOrigins.add(destination)
+		if (origin === '' || origin.includes('://') || destination === undefined || explicitOriginDestinations.has(destination) || migrated.has(destination)) continue
 		// The old hostname key does not tell us which scheme was approved. Keep its metadata but require fresh consent, including for disabling interception.
 		migrated.set(destination, { ...entry, website: { ...entry.website, websiteOrigin: destination }, access: undefined, addressAccess: undefined, interceptorDisabled: undefined })
 	}

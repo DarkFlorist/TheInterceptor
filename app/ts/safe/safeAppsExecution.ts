@@ -1,4 +1,4 @@
-import { SAFE_APPS_REQUEST_METHOD, SAFE_EXECUTION_METHOD, SAFE_SIGNATURE_METHOD } from './safeSignerMethods.js'
+import { SAFE_APPS_REQUEST_METHOD, SAFE_EXECUTION_METHOD, SAFE_SIGNATURE_METHOD } from '../types/safeRpcMethods.js'
 import type { ConfirmationRequest } from '../types/confirmationRequest.js'
 import * as funtypes from 'funtypes'
 import type { InterceptedRequest } from '../utils/requests.js'

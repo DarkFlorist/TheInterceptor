@@ -1,4 +1,4 @@
-import { SAFE_APPS_REQUEST_METHOD } from '../safe/safeSignerMethods.js'
+import { SAFE_APPS_REQUEST_METHOD } from '../types/safeRpcMethods.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'

@@ -119,3 +119,14 @@ test('merging imported aliases cannot turn a duplicate account denial into a gra
 		assert.equal(migrated[0]?.addressAccess?.find((entry) => entry.address === 1n)?.access, false)
 	}
 })
+
+test('explicit URL aliases retain grants and disable settings before or after legacy hostnames', () => {
+	const alias = { website: { websiteOrigin: 'https://example.test/path', icon: undefined, title: 'Explicit' }, access: true, addressAccess: [{ address: 1n, access: true }], interceptorDisabled: true, declarativeNetRequestBlockMode: 'block-all' as const }
+	const legacy = { ...alias, website: { ...alias.website, websiteOrigin: 'example.test', title: 'Legacy' }, access: false }
+	const expected = [{ ...alias, website: { ...alias.website, websiteOrigin: 'https://example.test' } }]
+	for (const entries of [[alias, legacy], [legacy, alias], [legacy, alias, legacy], [alias, legacy, alias]]) {
+		const migrated = migrateWebsiteAccessOrigins(entries)
+		assert.deepEqual(migrated, expected)
+		assert.equal(migrateWebsiteAccessOrigins(migrated), migrated)
+	}
+})

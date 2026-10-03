@@ -1,4 +1,4 @@
-import { isSafeSignerMethodTranslation } from '../../ts/safe/safeSignerMethods.js'
+import { SAFE_APPS_REQUEST_METHOD } from '../../ts/types/safeRpcMethods.js'
 
 const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
 const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
@@ -261,7 +261,7 @@ const INTERNAL_BACKGROUND_METHODS = [
 	'connected_to_signer',
 	'eth_accounts_reply',
 	'InterceptorError',
-	'safe_apps_request',
+	SAFE_APPS_REQUEST_METHOD,
 	'signer_chainChanged',
 	'signer_reply',
 	'wallet_switchEthereumChain_reply',
@@ -292,7 +292,25 @@ type InterceptedRequestForwardWithError = InterceptedRequestBase & {
 	}
 }
 
-type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly type: 'forwardToSigner', readonly replyWithSignersReply?: true }
+// Snapshot authorization checks before page scripts can replace built-ins or add inherited approval fields.
+const getOwnBridgeProperty = Object.getOwnPropertyDescriptor
+const defineOwnBridgeProperty = Object.defineProperty
+const bridgeArrayIsArray = Array.isArray
+const bridgeArrayIncludes = Array.prototype.includes.call.bind(Array.prototype.includes)
+
+function parseAuthorizedRequestMethods(data: object): readonly string[] | undefined {
+	const methods: unknown = getOwnBridgeProperty(data, 'authorizedRequestMethods')?.value
+	if (!bridgeArrayIsArray(methods)) return undefined
+	const parsed: string[] = []
+	for (let index = 0; index < methods.length; index++) {
+		const method: unknown = getOwnBridgeProperty(methods, String(index))?.value
+		if (typeof method !== 'string') return undefined
+		defineOwnBridgeProperty(parsed, index, { value: method, enumerable: true })
+	}
+	return parsed
+}
+
+type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly type: 'forwardToSigner', readonly replyWithSignersReply?: true, readonly authorizedRequestMethods?: readonly string[] }
 
 type InterceptedRequestForward = InterceptedRequestForwardWithResult | InterceptedRequestForwardWithError | InterceptedRequestForwardToSigner
 
@@ -318,6 +336,7 @@ type InterceptorApprovedMessageCandidate = {
 	readonly params?: unknown
 	readonly subscription?: unknown
 	readonly replyWithSignersReply?: unknown
+	readonly authorizedRequestMethods?: unknown
 	readonly result?: unknown
 	readonly error?: unknown
 }
@@ -408,6 +427,7 @@ function parseInterceptorApprovedMessage(data: unknown): InterceptedRequestForwa
 		...base,
 		type: 'forwardToSigner',
 		...(data.replyWithSignersReply === true ? { replyWithSignersReply: true as const } : {}),
+		authorizedRequestMethods: parseAuthorizedRequestMethods(data),
 	}
 	const hasResult = 'result' in data
 	const maybeError = data.error
@@ -722,14 +742,14 @@ class InterceptorMessageListener {
 	private metamaskCompatibilityMode = false
 	// The page owns SDK settings; every signing request carries its mode across background port recreation.
 	private readonly safeAppsBridge = createSafeAppsBridge(inpageWindow, createSafeAppsRequestHandler(
-		async (request) => await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [request] }),
+		async (request) => await this.sendInternalMessageToBackgroundPage({ method: SAFE_APPS_REQUEST_METHOD, params: [request] }),
 		async (request) => await this.WindowEthereumRequest(request),
 	), async () => {
 		// Restore persisted access after reload before considering an interactive wallet connection.
 		const accounts = await this.WindowEthereumRequest({ method: 'eth_accounts' })
 		if (!Array.isArray(accounts) || accounts.length === 0) await this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
 		// Recheck Safe eligibility after the ordinary wallet/site approval flow completes.
-		await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [{ method: 'getEnvironmentInfo' }] })
+		await this.sendInternalMessageToBackgroundPage({ method: SAFE_APPS_REQUEST_METHOD, params: [{ method: 'getEnvironmentInfo' }] })
 	})
 	private signerName: Signer = 'NoSigner'
 	private signerWindowEthereumProvider: WindowEthereum | undefined = undefined
@@ -1729,7 +1749,7 @@ class InterceptorMessageListener {
 			if (forwardRequest.requestId === undefined) throw new Error('requestId missing')
 			const pendingRequest = this.outstandingRequests.get(forwardRequest.requestId)
 			if (pendingRequest === undefined) throw new Error('Request did not exist anymore')
-			if (forwardRequest.method !== pendingRequest.method && !isSafeSignerMethodTranslation(pendingRequest.method, forwardRequest.method)) {
+			if (forwardRequest.method !== pendingRequest.method && !bridgeArrayIncludes(forwardRequest.authorizedRequestMethods ?? [], pendingRequest.method)) {
 				return pendingRequest.future.reject(new EthereumJsonRpcError(-32600, 'Signer instruction does not match the pending request.'))
 			}
 			if (this.signerWindowEthereumRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')

@@ -1,3 +1,4 @@
+import { SAFE_APPS_REQUEST_METHOD } from '../types/safeRpcMethods.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
@@ -45,7 +46,7 @@ if (initializeWatchAssetWindowListeners()) {
 
 const RPC_PARSE_FAILURE_HANDLERS = [getWatchAssetRpcParseFailureReply, getWalletGetCapabilitiesParseFailureReply]
 const JSON_RPC_METHOD_NOT_FOUND = -32601
-const isInternalProviderMethod = (method: string) => isProviderMethod(method) || method === 'InterceptorError' || method === 'safe_apps_request'
+const isInternalProviderMethod = (method: string) => isProviderMethod(method) || method === 'InterceptorError' || method === SAFE_APPS_REQUEST_METHOD
 
 async function handleRPCRequest(
 	simulationServicesOwner: SimulationServicesOwner,
@@ -504,7 +505,7 @@ async function handleContentScriptMessage(simulationServicesOwner: SimulationSer
 		const signerTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 		const safeSigningMode = isActiveSigningSafe(activeAddress, settings.simulationMode, settings.activeSigningSafeAddress, settings.activeRpcNetwork.chainId, signerTabState.signerAccounts, currentChainEntries)
 		let rpcContext: RpcRequestContext = { request }
-		if (request.method === 'safe_apps_request') {
+		if (request.method === SAFE_APPS_REQUEST_METHOD) {
 			const admission = await prepareSafeAppsRequest(simulationServicesOwner.getCurrent().ethereum, websiteTabConnections, request, website, activeAddress, settings, safeSigningMode)
 			if (admission.kind === 'reply') return replyToInterceptedRequest(websiteTabConnections, admission.reply)
 			rpcContext = admission.context
