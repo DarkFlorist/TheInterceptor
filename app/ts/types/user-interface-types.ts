@@ -240,6 +240,7 @@ const WatchAssetForwardingStatus = funtypes.Union(
 )
 type WatchAssetRequestDetails = {
 	readonly website: Website
+	readonly simulationMode: boolean
 	readonly request: InterceptedRequest
 	readonly requestedAsset: WalletWatchAssetParameters
 	readonly currentToken: WatchAssetToken
@@ -257,6 +258,7 @@ type WatchAssetRequestDetails = {
 }
 const WatchAssetRequestDetails: funtypes.Codec<WatchAssetRequestDetails> = funtypes.ReadonlyObject({
 	website: Website,
+	simulationMode: funtypes.Boolean,
 	request: InterceptedRequest,
 	requestedAsset: WalletWatchAssetParameters,
 	currentToken: WatchAssetToken,
@@ -285,6 +287,7 @@ export type PendingFetchSimulationStackRequestPromise = funtypes.Static<typeof P
 export const PendingFetchSimulationStackRequestPromise = funtypes.ReadonlyObject({
 	website: Website,
 	popupOrTabId: PopupOrTabId,
+	simulationMode: funtypes.Boolean,
 	simulationOverlayEnabled: funtypes.Boolean,
 	simulationStackVersion: SimulationStackVersion,
 	uniqueRequestIdentifier: UniqueRequestIdentifier,

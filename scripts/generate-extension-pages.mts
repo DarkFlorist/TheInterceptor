@@ -15,6 +15,7 @@ export type PageDefinition = {
 }
 
 const projectRoot = path.join(path.dirname(url.fileURLToPath(import.meta.url)), '..')
+// The cascade order of the stylesheets, and the only place it is defined. Later files override earlier ones at equal specificity; `interceptor-layout.css` holds the rules that replaced inline styles and must stay last.
 export const stylesheetFilenames = [
 	'interceptor-framework.css',
 	'interceptor-controls.css',
@@ -22,6 +23,7 @@ export const stylesheetFilenames = [
 	'interceptor-components.css',
 	'interceptor-ui.css',
 	'interceptor-pages.css',
+	'interceptor-layout.css',
 ] as const
 
 export const pageDefinitions: readonly PageDefinition[] = [

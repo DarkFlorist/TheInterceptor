@@ -7,6 +7,7 @@ import { MultilineCard } from '../../app/ts/components/subcomponents/MultilineCa
 import { installDomMock } from './domMock.js'
 import { interceptorAppStylesheetPaths, readInterceptorAppCss } from './cssTestUtils.js'
 import { getToneClass, toneClassFamilies } from '../../app/ts/components/ui-utils.js'
+import { pageDefinitions, stylesheetFilenames } from '../../scripts/generate-extension-pages.mts'
 
 type TestNode = {
 	readonly childNodes?: readonly TestNode[]
@@ -371,11 +372,24 @@ describe('UI audit fixes', () => {
 		for (const requestWindow of ['App.tsx', 'pages/ConfirmTransaction.tsx', 'pages/InterceptorAccess.tsx', 'pages/ChangeChain.tsx', 'pages/WatchAsset.tsx', 'pages/FetchSimulationStack.tsx']) {
 			assert.match(await Bun.file(`app/ts/components/${ requestWindow }`).text(), /<main class = \{[^\n]*(getInterceptorModeClass\(|modeClass)/, requestWindow)
 		}
-		// A watch-asset or stack request does not carry the mode, so those windows read it from the settings instead of guessing it from the request.
-		for (const requestWindow of ['pages/WatchAsset.tsx', 'pages/FetchSimulationStack.tsx']) {
-			assert.match(await Bun.file(`app/ts/components/${ requestWindow }`).text(), /const modeClass = useInterceptorModeClass\(\)/, requestWindow)
+		// Every request carries the mode it was made in, set by the background; no window reads the mode from storage on its own.
+		assert.match(await Bun.file('app/ts/components/pages/WatchAsset.tsx').text(), /getInterceptorModeClass\(request\.value\.simulationMode\)/)
+		assert.match(await Bun.file('app/ts/components/pages/FetchSimulationStack.tsx').text(), /getInterceptorModeClass\(changeRequest\.value\.simulationMode\)/)
+		const backgroundSource = await Bun.file('app/ts/background/background.ts').text()
+		assert.match(backgroundSource, /handleWatchAssetRequest\(ethereum, websiteTabConnections, request, website, rpcRequest, settings\.simulationMode,/)
+		assert.match(backgroundSource, /requestInterceptorSimulatorStack\(await getUpdatedSimulationStackSnapshot\(ethereum, simulationOverlayEnabled\), settings\.simulationMode,/)
+	})
+
+	test('loads the layout stylesheet last on every extension page', async () => {
+		// The rules that replaced inline styles win ties only by being loaded last, so the order is a contract: one list, and every page links exactly that list in that order.
+		assert.equal(stylesheetFilenames.at(-1), 'interceptor-layout.css')
+		assert.match(await Bun.file('app/css/interceptor-layout.css').text(), /^\/\* Component layout that used to be inline style attributes\./)
+		for (const page of pageDefinitions) {
+			for (const file of [`app/html/${ page.name }.html`, `app/html3/${ page.name }V3.html`]) {
+				const linkedStylesheets = [...(await Bun.file(file).text()).matchAll(/href = '\.\.\/css\/([^']+\.css)'/g)].map((match) => match[1])
+				assert.deepEqual(linkedStylesheets, [...stylesheetFilenames], file)
+			}
 		}
-		assert.match(await Bun.file('app/ts/components/useInterceptorModeClass.ts').text(), /\(await getSettings\(\)\)\.simulationMode/)
 	})
 
 	test('keeps the warning tag readable in both themes', async () => {

@@ -105,6 +105,31 @@ function createSnapshot(balance: bigint): SimulationStackSnapshot {
 }
 
 describe('fetch simulation stack freshness', () => {
+	test('treats requests stored by an earlier version as absent instead of failing every later request', async () => {
+		for (const key of Object.keys(storageState)) delete storageState[key]
+		const storage = await import('../../app/ts/background/storageVariables.js')
+		// Records written before the mode travelled with the request have no `simulationMode`.
+		storageState.fetchSimulationStackRequestPromise = { website: { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined }, popupOrTabId: { type: 'popup', id: 1 }, simulationOverlayEnabled: true, simulationStackVersion: '2.0.0', uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 3, connectionName: '0x5' } } }
+		storageState.pendingWatchAssetRequests = [{ website: { websiteOrigin: 'https://requester.example', icon: undefined, title: undefined } }]
+		// Recovery reports each stale record with a warning; they are collected here so the long validation messages stay out of the test output.
+		const originalWarn = console.warn
+		const warnings: unknown[] = []
+		console.warn = (...messages: unknown[]) => { warnings.push(...messages) }
+		try {
+			assert.equal(await storage.getFetchSimulationStackRequestPromise(), undefined)
+			assert.deepEqual(await storage.getPendingWatchAssetRequests(), [])
+			// The next write replaces the stale record.
+			assert.deepEqual(await storage.updatePendingWatchAssetRequests((requests) => requests), [])
+			assert.deepEqual(storageState.pendingWatchAssetRequests, [])
+			await storage.setFetchSimulationStackRequestPromise(undefined)
+			assert.equal('fetchSimulationStackRequestPromise' in storageState, false)
+		} finally {
+			console.warn = originalWarn
+		}
+		assert.equal(warnings.includes('Simulation stack request was corrupt:'), true)
+		assert.equal(warnings.includes('Pending watch asset requests was corrupt:'), true)
+	})
+
 	test('returns and fingerprints the confirmation-time snapshot', async () => {
 		for (const key of Object.keys(storageState)) delete storageState[key]
 		popupWindowExists = false
@@ -122,8 +147,10 @@ describe('fetch simulation stack freshness', () => {
 			},
 		}
 
+		// Safe signing shows the overlay while the Interceptor is signing for real, so the dialog must be told the mode separately.
 		const pendingResult = modules.openFetchSimulationStackDialog(
 			initialSnapshot,
+			false,
 			true,
 			new Map(),
 			uniqueRequestIdentifier,
@@ -133,6 +160,7 @@ describe('fetch simulation stack freshness', () => {
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		const storedRequest = storageState.fetchSimulationStackRequestPromise
 		assert.equal(typeof storedRequest === 'object' && storedRequest !== null && 'simulationOverlayEnabled' in storedRequest && storedRequest.simulationOverlayEnabled, true)
+		assert.equal(typeof storedRequest === 'object' && storedRequest !== null && 'simulationMode' in storedRequest && storedRequest.simulationMode, false)
 		await modules.resolveFetchSimulationStackRequest(confirmationSnapshot, new Map(), confirmation)
 		const result = await pendingResult
 
@@ -162,17 +190,17 @@ describe('fetch simulation stack freshness', () => {
 			},
 		})
 
-		const firstRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, true, new Map(), params, website, createRequest(20), socket)
+		const firstRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, true, true, new Map(), params, website, createRequest(20), socket)
 		await modules.resolveFetchSimulationStackRequest(confirmationSnapshot, new Map(), reject(20))
 		const firstResult = await firstRequest
 		assert.ok('error' in firstResult)
 		assert.equal(popupWindowCreationCount, 1)
 
-		const cachedConfirmationResult = await modules.openFetchSimulationStackDialogOrGetCachedResult(confirmationSnapshot, true, new Map(), params, website, createRequest(21), socket)
+		const cachedConfirmationResult = await modules.openFetchSimulationStackDialogOrGetCachedResult(confirmationSnapshot, true, true, new Map(), params, website, createRequest(21), socket)
 		assert.ok('error' in cachedConfirmationResult)
 		assert.equal(popupWindowCreationCount, 1)
 
-		const initialSnapshotRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, true, new Map(), params, website, createRequest(22), socket)
+		const initialSnapshotRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, true, true, new Map(), params, website, createRequest(22), socket)
 		await modules.resolveFetchSimulationStackRequest(initialSnapshot, new Map(), reject(22))
 		await initialSnapshotRequest
 		assert.equal(popupWindowCreationCount, 2)

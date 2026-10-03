@@ -429,6 +429,7 @@ test('returns the current Safe overlay when a simulation-stack request is confir
 	await modules.setFetchSimulationStackRequestPromise({
 		website: { websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
 		popupOrTabId: { type: 'popup', id: 41 },
+		simulationMode: false,
 		simulationOverlayEnabled: true,
 		simulationStackVersion: '2.0.0',
 		uniqueRequestIdentifier,
