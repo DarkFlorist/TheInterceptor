@@ -106,3 +106,8 @@ export const updateContentScriptInjectionStrategyManifestV2 = async () => {
 	browser.webNavigation.onCommitted.removeListener(injectLogic)
 	browser.webNavigation.onCommitted.addListener(injectLogic, { url: injectableSitesWildcard.map((urlMatches) => ({ urlMatches })) })
 }
+
+export const updateContentScriptInjectionStrategy = async () => {
+	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
+	else await updateContentScriptInjectionStrategyManifestV2()
+}
