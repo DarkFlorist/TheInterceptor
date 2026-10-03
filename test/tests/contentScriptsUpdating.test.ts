@@ -3,6 +3,7 @@ import * as fs from 'node:fs'
 import { describe, test } from 'bun:test'
 import { withSilencedConsole } from './consoleSilence.js'
 import { getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from '../../app/ts/config/contentScriptInjectionArtifacts.js'
+import type { WebsiteAccessArray } from '../../app/ts/types/websiteAccessTypes.js'
 
 type RuntimeMessage = {
 	readonly method?: string
@@ -21,6 +22,7 @@ type BrowserMockOptions = {
 	readonly tabUrlAfterStorageRead?: string
 	readonly registeredContentScriptIds?: readonly string[]
 	readonly registeredContentScripts?: readonly RegisteredContentScript[]
+	readonly websiteAccess?: WebsiteAccessArray
 }
 
 type RegisteredContentScript = {
@@ -29,9 +31,10 @@ type RegisteredContentScript = {
 	readonly excludeMatches?: readonly string[]
 }
 
-function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, registerError, registerErrors, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [], registeredContentScripts: initialRegisteredContentScripts }: BrowserMockOptions = {}) {
+function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, registerError, registerErrors, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [], registeredContentScripts: initialRegisteredContentScripts, websiteAccess }: BrowserMockOptions = {}) {
 	const storageState: Record<string, unknown> = {
 		...(metamaskCompatibilityMode === undefined ? {} : { metamaskCompatibilityMode }),
+		...(websiteAccess === undefined ? {} : { websiteAccess }),
 	}
 	const sentMessages: RuntimeMessage[] = []
 	const executedScriptFiles: string[] = []
@@ -204,6 +207,14 @@ function getManifestV3WebAccessibleResources() {
 }
 
 describe('content script injection strategy', () => {
+	const disabledWebsiteAccess: WebsiteAccessArray = [{
+		website: { websiteOrigin: 'disabled.test', title: 'Disabled website', icon: undefined },
+		addressAccess: [],
+		access: false,
+		interceptorDisabled: true,
+		declarativeNetRequestBlockMode: 'disabled',
+	}]
+
 	test('serializes malformed compatibility mode values as disabled MV2 bootstrap code', () => {
 		const maliciousValue = 'true); globalThis.unexpectedCodeExecution = true; Reflect.set(globalThis, Symbol.for("ignored"), (true'
 		const code = getManifestV2IsolatedWorldInjections(maliciousValue).find((injection) => 'code' in injection)?.code
@@ -257,6 +268,36 @@ describe('content script injection strategy', () => {
 			assert.deepEqual(getReloadedTabs(), [42])
 			assert.deepEqual(getScriptingOperations(), scriptingOperationsAfterChange)
 		}
+	})
+
+	test('website access changes use the shared injection refresh and connected-tab reload coordinator', async () => {
+		const { getRegisteredContentScripts, getReloadedTabs, getScriptingOperations } = installBrowserMock({
+			registeredContentScriptIds: ['inpage', 'inpage2'],
+			websiteAccess: disabledWebsiteAccess,
+		})
+		const { updateWebsiteAccessAndContentScriptInjectionStrategy } = await import('../../app/ts/background/websiteAccessUpdating.js')
+
+		await updateWebsiteAccessAndContentScriptInjectionStrategy(new Map([[42, { connections: {} }]]), () => [])
+
+		assert.deepEqual(getScriptingOperations(), ['update'])
+		assert.equal(getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
+		assert.deepEqual(getReloadedTabs(), [42])
+	})
+
+	test('website access changes skip connected-tab reload when manifest v3 registration refresh fails', async () => {
+		const registrationError = new Error('website access registration refresh failed')
+		const { getReloadedTabs } = installBrowserMock({
+			registeredContentScriptIds: ['inpage', 'inpage2'],
+			updateError: registrationError,
+			websiteAccess: disabledWebsiteAccess,
+		})
+		const { updateWebsiteAccessAndContentScriptInjectionStrategy } = await import('../../app/ts/background/websiteAccessUpdating.js')
+		const { getLatestUnexpectedError } = await loadModules()
+
+		await withSilencedConsole(async () => await updateWebsiteAccessAndContentScriptInjectionStrategy(new Map([[42, { connections: {} }]]), () => []))
+
+		assert.deepEqual(getReloadedTabs(), [])
+		assert.equal((await getLatestUnexpectedError())?.data.message, registrationError.message)
 	})
 
 	test('exposes every manifest v3 main-world script to Chromium', () => {

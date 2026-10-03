@@ -58,7 +58,6 @@ export { getLastKnownCurrentTabId } from './currentTab.js'
 export { exportSettings, importSettings, setNewRpcList, settingsOpened } from './popupMessageHandlers/settings.js'
 export { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, disableInterceptor, reloadConnectedTabs, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from './popupMessageHandlers/websiteAccess.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
-import { reloadConnectedTabs } from './popupMessageHandlers/websiteAccess.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
 import { setMetamaskCompatibilityMode } from './metamaskCompatibilityMode.js'
@@ -417,7 +416,7 @@ export async function setSafeSimulationSigner(
 }
 
 export async function changeInterceptorAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
-	const disabledSitesChanged = await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => {
+	await updateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, (previousAccess) => {
 		const withEntriesRemoved = previousAccess.filter((acc) => accessChange.data.find((change) => change.newEntry.website.websiteOrigin === acc.website.websiteOrigin)?.removed !== true)
 		return withEntriesRemoved.map((entry) => {
 			const changeForEntry = accessChange.data.find((change) => change.newEntry.website.websiteOrigin === entry.website.websiteOrigin)
@@ -425,8 +424,6 @@ export async function changeInterceptorAccess(simulationServicesOwner: Simulatio
 			return changeForEntry.newEntry
 		})
 	})
-
-	if (disabledSitesChanged) await reloadConnectedTabs(websiteTabConnections)
 
 	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })

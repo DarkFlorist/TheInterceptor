@@ -15,8 +15,7 @@ import { updateWebsiteAccessAndContentScriptInjectionStrategy } from '../website
 export { reloadConnectedTabs } from '../reloadConnectedTabs.js'
 
 export const disableInterceptorForPage = async (websiteTabConnections: WebsiteTabConnections, website: Website, interceptorDisabled: boolean) => {
-	await setInterceptorDisabledForWebsite(website, interceptorDisabled)
-	await reloadConnectedTabs(websiteTabConnections)
+	await setInterceptorDisabledForWebsite(websiteTabConnections, website, interceptorDisabled)
 }
 
 export async function disableInterceptor(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: DisableInterceptor) {
@@ -76,7 +75,7 @@ export async function allowOrPreventAddressAccessForWebsite(websiteTabConnection
 }
 
 export async function removeWebsiteAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, parsedRequest: RemoveWebsiteAccess) {
-	await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
+	await updateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections, (previousAccess) => previousAccess.filter((access) => access.website.websiteOrigin !== parsedRequest.data.websiteOrigin))
 	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_websiteAccess_changed' })
 }

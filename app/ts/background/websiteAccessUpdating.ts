@@ -1,21 +1,11 @@
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { updateContentScriptInjectionStrategy } from '../utils/contentScriptsUpdating.js'
-import { getInterceptorDisabledSites } from './contentScriptInjectionConfiguration.js'
+import type { WebsiteTabConnections } from '../types/user-interface-types.js'
+import { updateContentScriptInjectionConfigurationAndReloadTabsIfChanged } from './contentScriptInjectionStrategy.js'
 import { updateWebsiteAccess } from './settings.js'
 
-function haveSameDisabledSites(previousWebsiteAccess: WebsiteAccessArray, nextWebsiteAccess: WebsiteAccessArray) {
-	const previousDisabledSites = new Set(getInterceptorDisabledSites(previousWebsiteAccess))
-	const nextDisabledSites = new Set(getInterceptorDisabledSites(nextWebsiteAccess))
-	return previousDisabledSites.size === nextDisabledSites.size && [...previousDisabledSites].every((origin) => nextDisabledSites.has(origin))
-}
-
-export async function updateWebsiteAccessAndContentScriptInjectionStrategy(update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray) {
-	let disabledSitesChanged = false
-	await updateWebsiteAccess((previousWebsiteAccess) => {
-		const nextWebsiteAccess = update(previousWebsiteAccess)
-		disabledSitesChanged = !haveSameDisabledSites(previousWebsiteAccess, nextWebsiteAccess)
-		return nextWebsiteAccess
-	})
-	if (disabledSitesChanged) await updateContentScriptInjectionStrategy()
-	return disabledSitesChanged
+export async function updateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections: WebsiteTabConnections, update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray) {
+	await updateContentScriptInjectionConfigurationAndReloadTabsIfChanged(
+		websiteTabConnections,
+		async () => await updateWebsiteAccess(update),
+	)
 }
