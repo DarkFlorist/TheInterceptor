@@ -107,7 +107,7 @@ describe('commonTokenOops', () => {
 			input: encodeFunctionCall(transferAbi, 'transfer', [addressString(UNISWAP_V2_ROUTER_ADDRESS), 1n]),
 		})
 
-		const result = await commonTokenOops({ transaction, feeModel: 'fee-market' }, ethereum, undefined, simulationState)
+		const result = await commonTokenOops(transaction, ethereum, undefined, simulationState)
 
 		assert.equal(result, 'Attempt to send tokens to a contract (Uniswap V2 Router 02) that cannot receive such tokens')
 	})

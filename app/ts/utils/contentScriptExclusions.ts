@@ -1,3 +1,4 @@
+import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { getWebsiteOrigin } from './websiteOrigin.js'
 
 function getCanonicalWebsiteOrigins(origins: readonly string[]) {
@@ -19,3 +20,5 @@ export function getManifestV2ExcludeGlobs(origins: readonly string[]) {
 	return getCanonicalWebsiteOrigins(origins).map((origin) => origin.startsWith('file:') ? origin : `${ origin }/*`)
 }
 
+
+export const getInterceptorDisabledSites = (websiteAccess: WebsiteAccessArray) => websiteAccess.filter((entry) => entry.interceptorDisabled === true).map((entry) => entry.website.websiteOrigin)

@@ -1,19 +1,25 @@
-import { getWebsiteAccess, getInterceptorDisabledSites } from './settings.js'
-import { getManifestV2ExcludeGlobs, getManifestV3ExcludeMatches } from '../utils/contentScriptExclusions.js'
+import { getWebsiteAccess } from './settings.js'
+import { getInterceptorDisabledSites, getManifestV2ExcludeGlobs, getManifestV3ExcludeMatches } from '../utils/contentScriptExclusions.js'
 import { Semaphore } from '../utils/semaphore.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 
 // This is the sole serialization boundary for reading desired settings, replacing registrations and retrying failed cleanup.
 const registrationUpdates = new Semaphore(1)
+let registrationNeedsRetry = false
 
 // Explicit exclusion workflows await reconciliation before reload/success. Storage-only metadata and access edits never retry browser infrastructure work.
-export async function reconcileContentScriptRegistration() {
-	await registrationUpdates.execute(async () => {
-		const disabledOrigins = getInterceptorDisabledSites({ websiteAccess: await getWebsiteAccess() })
+export async function reconcileContentScriptRegistration({ exclusionsChanged = true } = {}) {
+	return await registrationUpdates.execute(async () => {
+		if (!exclusionsChanged && !registrationNeedsRetry) return false
+		// Failed reconciliation stays pending here; storage-only updates never invoke this coordinator.
+		registrationNeedsRetry = true
+		const disabledOrigins = getInterceptorDisabledSites(await getWebsiteAccess())
 		// Always read the persisted desired state; repeating a failed toggle/import/removal is sufficient to retry.
 		if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3(disabledOrigins)
 		else await updateContentScriptInjectionStrategyManifestV2(disabledOrigins)
+		registrationNeedsRetry = false
+		return true
 	})
 }
 

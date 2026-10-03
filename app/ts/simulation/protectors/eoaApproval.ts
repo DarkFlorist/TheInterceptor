@@ -1,10 +1,10 @@
-import type { TransactionProtectorContext } from '../protectorTypes.js'
+import type { EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { parseTransaction } from '../../utils/calldata.js'
 import type { SimulationState } from '../../types/visualizer-types.js'
 import type { EthereumClientService } from '../services/EthereumClientService.js'
 import { getCodeOrError } from './commonTokenOops.js'
 
-export async function eoaApproval({ transaction }: TransactionProtectorContext, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState) {
+export async function eoaApproval(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: SimulationState) {
 	const approvalInfo = parseTransaction(transaction)
 	if (approvalInfo === undefined) return
 	if (approvalInfo.name === 'approve') {

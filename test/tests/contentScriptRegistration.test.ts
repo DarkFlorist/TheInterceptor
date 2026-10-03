@@ -340,3 +340,38 @@ for (const manifestVersion of [2, 3]) {
 		}
 	})
 }
+
+for (const manifestVersion of [2, 3]) {
+	test(`MV${ manifestVersion } removal retries failed registration even after storage is already cleared, then skips enabled-site removal`, async () => {
+		const options: { manifestVersion: number, registerError?: Error, updateError?: Error } = { manifestVersion }
+		const mock = installBrowserMock(options)
+		const { updateWebsiteAccess } = await import('../../app/ts/background/settings.js')
+		const { reconcileContentScriptRegistration } = await loadModules()
+		const { removeWebsiteAccess } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
+		const { createEthereumWithGetBlockCounter } = await import('./backgroundEthAccountsTestHarness.js')
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const website = { websiteOrigin: 'https://removal-retry.example', icon: undefined, title: undefined }
+		await updateWebsiteAccess(() => [{ website, addressAccess: [], interceptorDisabled: true }])
+		await reconcileContentScriptRegistration()
+		options.registerError = new Error('Registration unavailable')
+		options.updateError = options.registerError
+		const remove = async () => await removeWebsiteAccess(simulationServicesOwner, new Map(), { method: 'popup_removeWebsiteAccess', data: { websiteOrigin: website.websiteOrigin } })
+		await assert.rejects(remove(), /Registration unavailable/)
+		assert.deepEqual(mock.storageState.websiteAccess, [])
+		assert.equal(mock.sentMessages.some(({ method }) => method === 'popup_websiteAccess_changed'), false)
+		const operationCount = () => mock.firefoxOperations.length + mock.getScriptingOperations().length
+		const failedOperations = operationCount()
+		await updateWebsiteAccess((previous) => previous)
+		assert.equal(operationCount(), failedOperations)
+		options.registerError = undefined
+		options.updateError = undefined
+		await remove()
+		assert.equal(mock.sentMessages.filter(({ method }) => method === 'popup_websiteAccess_changed').length, 1)
+		if (manifestVersion === 2) assert.equal(mock.firefoxScripts.at(-1)?.excludeGlobs, undefined)
+		else assert.equal(mock.getRegisteredContentScripts().every((script) => script.excludeMatches?.length === 0), true)
+		await updateWebsiteAccess(() => [{ website, addressAccess: [], interceptorDisabled: false }])
+		const successfulOperations = operationCount()
+		await remove()
+		assert.equal(operationCount(), successfulOperations)
+	})
+}

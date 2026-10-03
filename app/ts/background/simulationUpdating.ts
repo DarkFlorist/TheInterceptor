@@ -1,4 +1,5 @@
-import { getTransactionProtectorContext } from './transactionProtectorContext.js'
+import { getFeeProtectionInput } from '../simulation/feeProtection.js'
+import { getRequestedTransactionFees } from '../utils/transactionFees.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { RpcNetwork } from '../types/rpc.js'
 import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
@@ -569,7 +570,9 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 					if (eventsForTransaction === undefined) throw new Error('Transaction event index overflow')
 					return eventsForTransaction
 				})
-				return await runProtectorsForTransaction(slicedSimulationState, getTransactionProtectorContext(transaction), ethereum, requestAbortController, eventsForTransactionPromise)
+				const request = transaction.originalRequestParameters
+				const requestedFees = request.method === 'eth_sendTransaction' ? getRequestedTransactionFees(request.params[0]) : undefined
+				return await runProtectorsForTransaction(slicedSimulationState, transaction.transaction, ethereum, requestAbortController, eventsForTransactionPromise, getFeeProtectionInput(transaction.transaction, requestedFees))
 			})
 		}
 	)

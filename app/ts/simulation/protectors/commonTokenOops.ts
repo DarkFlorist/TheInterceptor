@@ -1,6 +1,5 @@
-import type { TransactionProtectorContext } from '../protectorTypes.js'
 import { UNISWAP_V2_ROUTER_ADDRESS, SUSHISWAP_V2_ROUTER_ADDRESS, UNISWAP_V3_ROUTER } from '../../utils/constants.js'
-import type { EthereumAddress } from '../../types/wire-types.js'
+import type { EthereumAddress, EthereumUnsignedTransaction } from '../../types/wire-types.js'
 import { erc1155Metadata, erc721Metadata, tokenMetadata } from '@darkflorist/address-metadata'
 import { addressString } from '../../utils/bigint.js'
 import { parseTransaction } from '../../utils/calldata.js'
@@ -26,7 +25,7 @@ export async function getCodeOrError(ethereum: EthereumClientService, requestAbo
 	const identifiedAddress = await identifyAddress(ethereum, requestAbortController, address)
 	return { statusCode: 'failure' as const, message: `Failed to verify whether address ${ identifiedAddress.address }(${ identifiedAddress.name }) contains code or not.` }
 }
-export async function commonTokenOops({ transaction }: TransactionProtectorContext, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, _simulationState: SimulationState) {
+export async function commonTokenOops(transaction: EthereumUnsignedTransaction, ethereum: EthereumClientService, requestAbortController: AbortController | undefined, _simulationState: SimulationState) {
 	const transferInfo = parseTransaction(transaction)
 	if (transferInfo === undefined) return
 	if (transaction.to === null) return
