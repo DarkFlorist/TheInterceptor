@@ -1347,6 +1347,22 @@ describe('SimulationModeEthereumClientService', () => {
 			assert.deepEqual(fromStateRequest?.params[0].blockStateCalls.at(-1)?.calls[0]?.accessList, accessList)
 		})
 
+		test('state-based gas estimation uses the captured initial code override', async () => {
+			const address = exampleTransaction.from
+			const simulationOverrides = { [addressString(address)]: { code: new Uint8Array() } }
+			for (const input of [[], createSimulationStateInput()]) {
+				const state = await createSimulationState(ethereum, undefined, input, simulationOverrides)
+				if (state.success === false) throw new Error('simulation unexpectedly failed')
+				requestHandler.ethSimulateV1Requests.length = 0
+				const estimate = await simulateEstimateGas(ethereum, undefined, toResolvedSimulationState(state), {
+					from: address, to: exampleTransaction.to, value: 0n, input: new Uint8Array(),
+				})
+				if ('error' in estimate) throw new Error(`estimate gas unexpectedly failed: ${ estimate.error.message }`)
+				const request = requestHandler.ethSimulateV1Requests[0]
+				assert.equal(request?.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(address)]?.code?.length, 0)
+			}
+		})
+
 		test('simulateEstimateGasFromInput validates and projects signed 7702 authorizations', async () => {
 			requestHandler.ethSimulateV1Calls.length = 0
 			const clearDelegationAuthorization = eip7702Authorization.sign({
