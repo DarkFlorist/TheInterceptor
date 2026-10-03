@@ -1,8 +1,10 @@
-import { createSafeAppsRequest, createSafeAppsCancellation, isSafeAppsResponse, SAFE_APPS_PREPARATION_TIMEOUT_MS, SAFE_APPS_PREPARATION_CANCEL_EVENT } from './safeAppsProtocol.js'
+import { createSafeAppsRequest, createSafeAppsCancellation, isSafeAppsResponse, SAFE_APPS_PREPARATION_TIMEOUT_MS, SAFE_APPS_PREPARATION_CANCEL_EVENT, SAFE_APPS_PREPARATION_CANCEL_MARKER } from './safeAppsProtocol.js'
 import { createSafeAppsTransport } from './safeAppsTransport.js'
 
 export async function requestSafeAppConnection(origin: string): Promise<{ success: boolean, error?: string }> {
 	if (window.location.origin !== origin) return { success: false, error: 'The website navigated before connecting.' }
+	// A cancellation injected before this script starts must not leave an orphaned access request.
+	if (Reflect.get(window, SAFE_APPS_PREPARATION_CANCEL_MARKER) === true) return { success: false, error: 'Safe connection was cancelled.' }
 	const transport = createSafeAppsTransport(window)
 	return await new Promise((resolve) => {
 		const id = `interceptor-prepare-safe-${ crypto.getRandomValues(new Uint32Array(4)).join('-') }`

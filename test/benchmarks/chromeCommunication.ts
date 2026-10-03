@@ -132,8 +132,8 @@ async function main() {
 					&& scripts.some(({ id }) => id === 'inpage')
 					&& (scripts.find(({ id }) => id === 'inpage')?.excludeMatches?.length ?? 0) === 0
 					&& !scripts.some(({ id }) => id === 'safe-apps-host')
-					&& state.latestUnexpectedError?.data?.code === 'content_script_registration_failed'
-			})()`), 30_000, 'base-provider recovery and visible registration error')
+					&& state.latestUnexpectedError?.data?.code === 'safe_apps_host_registration_failed'
+			})()`), 30_000, 'base provider availability and visible hosting error')
 			await workerConnection.evaluate('browser.storage.local.set({ safeAppsHostOrigins: [] })')
 			await workerConnection.evaluate(`browser.storage.local.remove('latestUnexpectedError')`)
 		} finally {

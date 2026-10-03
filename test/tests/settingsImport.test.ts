@@ -3,6 +3,7 @@ import { beforeEach, describe, test } from 'bun:test'
 import { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
+import { withSilencedConsole } from './consoleSilence.js'
 
 type StorageKeyInput = string | string[] | Record<string, unknown> | undefined | null
 
@@ -214,6 +215,22 @@ describe('settings import', () => {
 		assert.equal(await getSafeAppsCompatibilityMode(), true)
 		assert.deepEqual(await getSafeAppsHostOrigins(), [])
 		assert.equal(ExportedSettings.safeParse({ ...legacy, version: '1.7' }).success, false)
+	})
+
+	test('repairs malformed stored hosting origins before settings and export read them', async () => {
+		const { exportSettingsAndAddressBook, getEnabledSafeAppsHostOrigins, getSafeAppsHostOrigins, setSafeAppsCompatibilityMode } = await settingsModulePromise
+		await setSafeAppsCompatibilityMode(true)
+		for (const invalidOrigins of [['https://*.invalid.example'], ['https://duplicate.example', 'https://duplicate.example'], Array.from({ length: 33 }, (_, index) => `https://site-${ index }.example`)]) {
+			await browser.storage.local.set({ safeAppsHostOrigins: invalidOrigins })
+			await withSilencedConsole(async () => {
+				assert.deepEqual(await getSafeAppsHostOrigins(), [])
+				assert.deepEqual(await getEnabledSafeAppsHostOrigins(), [])
+				const exported = await exportSettingsAndAddressBook()
+				assert.equal(exported.version, '1.7')
+				assert.deepEqual(exported.settings.safeAppsHostOrigins, [])
+			})
+			assert.deepEqual((await browser.storage.local.get('safeAppsHostOrigins')).safeAppsHostOrigins, [])
+		}
 	})
 
 	test('round-trips Safe settings in version 1.7 exports', async () => {

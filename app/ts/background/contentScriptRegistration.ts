@@ -12,13 +12,13 @@ const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cann
 const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
 const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
 
-type ContentScriptRegistrationOutcome = 'applied' | 'base-provider-recovered'
+type ContentScriptRegistrationOutcome = 'applied' | 'hosting-failed'
 
 type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 // The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
 type FixedContentScript = RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
 
-function getBaseContentScripts(excludeMatches: string[], hostMatches: string[] = []): FixedContentScript[] {
+function getBaseContentScripts(excludeMatches: string[], hostMatches: string[] = []): [FixedContentScript, FixedContentScript] {
 	return [{
 		id: 'inpage2',
 		allFrames: true,
@@ -39,48 +39,63 @@ function getBaseContentScripts(excludeMatches: string[], hostMatches: string[] =
 	}]
 }
 
-async function reconcileContentScripts(contentScripts: FixedContentScript[]) {
+async function reconcileBaseContentScripts(contentScripts: FixedContentScript[]) {
 	const registeredContentScripts = await browser.scripting.getRegisteredContentScripts()
 	const registeredContentScriptIds = new Set(registeredContentScripts.map(({ id }) => id))
 	const desiredContentScriptIds = new Set(contentScripts.map(({ id }) => id))
 	const missingContentScripts = contentScripts.filter(({ id }) => !registeredContentScriptIds.has(id))
 	const existingContentScripts = contentScripts.filter(({ id }) => registeredContentScriptIds.has(id))
-	const obsoleteContentScriptIds = registeredContentScripts.map(({ id }) => id).filter((id) => !desiredContentScriptIds.has(id))
+	const obsoleteContentScriptIds = registeredContentScripts.map(({ id }) => id).filter((id) => id !== 'safe-apps-host' && !desiredContentScriptIds.has(id))
 	if (missingContentScripts.length > 0) await browser.scripting.registerContentScripts(missingContentScripts)
 	if (existingContentScripts.length > 0) await browser.scripting.updateContentScripts(existingContentScripts)
 	if (obsoleteContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
 }
 
-const applyContentScriptInjectionStrategyManifestV3 = async (configuration: ContentScriptConfiguration): Promise<ContentScriptRegistrationOutcome> => {
-	const { excludeMatches } = configuration
-	const baseContentScripts = getBaseContentScripts(excludeMatches)
+async function removeSafeAppsHostScript() {
+	const scripts = await browser.scripting.getRegisteredContentScripts()
+	if (scripts.some(({ id }) => id === 'safe-apps-host')) await browser.scripting.unregisterContentScripts({ ids: ['safe-apps-host'] })
+}
+
+async function reconcileSafeAppsHost(configuration: ContentScriptConfiguration, baseInpageScript: FixedContentScript, baseWasReconciled: boolean) {
+	if ('error' in configuration.hosting) throw configuration.hosting.error
+	const safeAppsHostMatches = configuration.hosting.matches
+	if (safeAppsHostMatches.length === 0) {
+		await removeSafeAppsHostScript()
+		if (!baseWasReconciled) await browser.scripting.updateContentScripts([baseInpageScript])
+		return
+	}
+	const hostScript: FixedContentScript = {
+		id: 'safe-apps-host',
+		allFrames: true,
+		matches: safeAppsHostMatches,
+		excludeMatches: configuration.excludeMatches,
+		// Keep provider injection in embedded app frames, but the host itself only changes top-level pages.
+		js: ['/inpage/js/safeAppsHostBootstrap.js', '/inpage/js/inpage.js'],
+		runAt: 'document_start',
+		world: 'MAIN',
+		matchOriginAsFallback: true,
+	}
+	const scripts = await browser.scripting.getRegisteredContentScripts()
+	if (scripts.some(({ id }) => id === hostScript.id)) await browser.scripting.updateContentScripts([hostScript])
+	else await browser.scripting.registerContentScripts([hostScript])
+	const hostedInpageScript = getBaseContentScripts(configuration.excludeMatches, safeAppsHostMatches)[1]
+	await browser.scripting.updateContentScripts([hostedInpageScript])
+}
+
+const applySafeAppsHostOverlay = async (configuration: ContentScriptConfiguration, baseInpageScript: FixedContentScript, baseWasReconciled: boolean): Promise<ContentScriptRegistrationOutcome> => {
 	try {
-		if ('error' in configuration.hosting) throw configuration.hosting.error
-		const safeAppsHostMatches = configuration.hosting.matches
-		const contentScripts = getBaseContentScripts(excludeMatches, safeAppsHostMatches)
-		if (safeAppsHostMatches.length > 0) contentScripts.push({
-			id: 'safe-apps-host',
-			allFrames: true,
-			matches: safeAppsHostMatches,
-			excludeMatches,
-			// Keep provider injection in embedded app frames, but the host itself only changes top-level pages.
-			js: ['/inpage/js/safeAppsHostBootstrap.js', '/inpage/js/inpage.js'],
-			runAt: 'document_start',
-			world: 'MAIN',
-			matchOriginAsFallback: true,
-		})
-		await reconcileContentScripts(contentScripts)
+		await reconcileSafeAppsHost(configuration, baseInpageScript, baseWasReconciled)
 		return 'applied'
 	} catch (error: unknown) {
-		// Restore ordinary injection and remove stale hosts/exclusions even after a partially applied update.
+		// A partially installed host must not leave the ordinary provider excluded on that site.
 		try {
-			await reconcileContentScripts(baseContentScripts)
+			await removeSafeAppsHostScript()
+			if (!baseWasReconciled || !('error' in configuration.hosting)) await browser.scripting.updateContentScripts([baseInpageScript])
 		} catch (recoveryError: unknown) {
-			throw new AggregateError([error, recoveryError], 'Content script registration and base-provider recovery failed.')
+			throw new AggregateError([error, recoveryError], 'Safe Apps host registration and provider rollback failed.')
 		}
-		// Hosting failed, but base injection is ready. Report durably without aborting enable/disable and its required tab reload.
-		await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
-		return 'base-provider-recovered'
+		await reportUnexpectedError(error, { code: 'safe_apps_host_registration_failed' })
+		return 'hosting-failed'
 	}
 }
 
@@ -88,6 +103,7 @@ const applyContentScriptInjectionStrategyManifestV3 = async (configuration: Cont
 export function createContentScriptRegistrationService() {
 	let previousUpdate: Promise<void> = Promise.resolve()
 	let appliedSettingsKey: string | undefined
+	let appliedBaseKey: string | undefined
 	let appliedOutcome: ContentScriptRegistrationOutcome = 'applied'
 	let appliedAttempt = 0
 	const queueUpdate = (retryRecoveredAttempt?: number) => {
@@ -96,13 +112,28 @@ export function createContentScriptRegistrationService() {
 			const configuration = await getContentScriptConfiguration()
 			const settingsKey = configuration.cacheKey
 			// An explicit retry can reapply the failure it observed, but must not repeat a newer queued attempt.
-			const retryObservedFailure = appliedOutcome === 'base-provider-recovered' && retryRecoveredAttempt === appliedAttempt
+			const retryObservedFailure = appliedOutcome === 'hosting-failed' && retryRecoveredAttempt === appliedAttempt
 			if (settingsKey === appliedSettingsKey && !retryObservedFailure) return appliedOutcome
-			const outcome = await applyContentScriptInjectionStrategyManifestV3(configuration)
-			appliedAttempt += 1
-			appliedSettingsKey = settingsKey
-			appliedOutcome = outcome
-			return outcome
+			try {
+				const baseKey = JSON.stringify(configuration.excludeMatches)
+				const baseContentScripts = getBaseContentScripts(configuration.excludeMatches)
+				const baseWasReconciled = baseKey !== appliedBaseKey
+				// Only website-access exclusions require a core provider update. Hosting is a separate overlay.
+				if (baseWasReconciled) {
+					await reconcileBaseContentScripts(baseContentScripts)
+					appliedBaseKey = baseKey
+				}
+				const outcome = await applySafeAppsHostOverlay(configuration, baseContentScripts[1], baseWasReconciled)
+				appliedAttempt += 1
+				appliedSettingsKey = settingsKey
+				appliedOutcome = outcome
+				return outcome
+			} catch (error: unknown) {
+				// A failed mutation can leave any script definition unknown, including a previously cached configuration.
+				appliedSettingsKey = undefined
+				appliedBaseKey = undefined
+				throw error
+			}
 		})
 		previousUpdate = nextUpdate.then(() => undefined, () => undefined)
 		return nextUpdate
@@ -135,7 +166,7 @@ export function createContentScriptRegistrationService() {
 		started = false
 	}
 	const ensureSafeAppsHostRegistered = async (origin: string) => {
-		const retryRecoveredAttempt = appliedOutcome === 'base-provider-recovered' ? appliedAttempt : undefined
+		const retryRecoveredAttempt = appliedOutcome === 'hosting-failed' ? appliedAttempt : undefined
 		if (await queueUpdate(retryRecoveredAttempt) !== 'applied') return false
 		const matches = getSafeAppsHostMatchPatterns([origin])
 		const scripts = await browser.scripting.getRegisteredContentScripts()

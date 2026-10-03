@@ -58,6 +58,7 @@ type StartupStorageDefaults = {
 	makeCurrentAddressRich: boolean
 	fixedAddressRichList: readonly RichListElement[]
 	signingAddressPreferences: SigningAddressPreferences
+	safeAppsHostOrigins: readonly string[]
 }
 
 async function getParsedStorageValueOrDefaultFromItems<Key extends keyof StartupStorageDefaults>(storedItems: Readonly<Record<string, unknown>>, key: Key, defaultValue: StartupStorageDefaults[Key]): Promise<StartupStorageDefaults[Key]> {
@@ -288,13 +289,11 @@ export const setMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boo
 export const getSafeAppsCompatibilityMode = async() => (await browserStorageLocalGet('safeAppsCompatibilityMode'))?.safeAppsCompatibilityMode ?? false
 export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => await browserStorageLocalSet({ safeAppsCompatibilityMode })
 
-export const getSafeAppsHostOrigins = async () => (await browserStorageLocalGet('safeAppsHostOrigins'))?.safeAppsHostOrigins ?? DEFAULT_SAFE_APPS_HOST_ORIGINS
+export const getSafeAppsHostOrigins = async () => await getParsedStorageValueOrDefault('safeAppsHostOrigins', DEFAULT_SAFE_APPS_HOST_ORIGINS)
 export const setSafeAppsHostOrigins = async (origins: readonly string[]) => await browserStorageLocalSet({ safeAppsHostOrigins: SafeAppsHostOrigins.parse(origins) })
 
 export async function getEnabledSafeAppsHostOrigins() {
-	const hosting = getHostingConfiguration(await browser.storage.local.get(Object.keys(ContentScriptHostingSettings.fields)))
-	if ('error' in hosting) throw hosting.error
-	return hosting.origins
+	return await getSafeAppsCompatibilityMode() ? await getSafeAppsHostOrigins() : DEFAULT_SAFE_APPS_HOST_ORIGINS
 }
 
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {

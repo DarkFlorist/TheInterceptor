@@ -28,7 +28,9 @@ async function prepareSafeAppTabOperation(value: string, operation: PreparationO
 	if (document.documentId === undefined) return { success: false, errorMessage: 'This browser does not support Safe Apps connection preparation.' }
 	if (operation.abort.signal.aborted) return cancelledReply(operation)
 	operation.documentId = document.documentId
-	const results = await Promise.race([injectFiles({ target: { tabId: tab.id, documentIds: [document.documentId] }, world: 'MAIN', files: ['/inpage/js/prepareSafeAppBootstrap.js'] }), operation.cancelled])
+	const pageScript = injectFiles({ target: { tabId: tab.id, documentIds: [document.documentId] }, world: 'MAIN', files: ['/inpage/js/prepareSafeAppBootstrap.js'] })
+	operation.pageScript = pageScript
+	const results = await Promise.race([pageScript, operation.cancelled])
 	if (operation.abort.signal.aborted) return cancelledReply(operation)
 	const result = results?.[0]?.result
 	if (typeof result !== 'object' || result === null || !('success' in result) || result.success !== true) {
@@ -54,6 +56,7 @@ type PreparationOperation = {
 	readonly cancelled: Promise<undefined>
 	tabId?: number
 	documentId?: string
+	pageScript?: Promise<unknown>
 	cleanup?: Promise<void>
 }
 const preparations = new Map<string, PreparationOperation>()
@@ -96,9 +99,21 @@ async function clearPreparationScript(operation: PreparationOperation) {
 	if (operation.tabId === undefined || operation.documentId === undefined) return
 	const injectFiles = getChromeFileInjector()
 	if (injectFiles === undefined) return
+	const target = { tabId: operation.tabId, documentIds: [operation.documentId] }
 	try {
-		await injectFiles({ target: { tabId: operation.tabId, documentIds: [operation.documentId] }, world: 'MAIN', files: ['/inpage/js/cancelSafeAppPreparationBootstrap.js'] })
+		await injectFiles({ target, world: 'MAIN', files: ['/inpage/js/cancelSafeAppPreparationBootstrap.js'] })
+	} catch (error: unknown) {
+		if (!isMissingPreparationDocument(error)) throw error
+		return
+	}
+	// The marker stays in the document until the earlier prepare script has started or failed.
+	let pageScriptFailed = false
+	let pageScriptError: unknown
+	try { await operation.pageScript } catch (error: unknown) { pageScriptFailed = true; pageScriptError = error }
+	try {
+		await injectFiles({ target, world: 'MAIN', files: ['/inpage/js/clearSafeAppPreparationCancellationBootstrap.js'] })
 	} catch (error: unknown) {
 		if (!isMissingPreparationDocument(error)) throw error
 	}
+	if (pageScriptFailed && !isMissingPreparationDocument(pageScriptError)) throw pageScriptError
 }

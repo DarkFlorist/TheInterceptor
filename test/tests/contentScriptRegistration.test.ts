@@ -248,11 +248,57 @@ describe('content script injection strategy', () => {
 		])
 	})
 
-	test('propagates manifest v3 registration failures when base-provider recovery also fails', async () => {
+	test('propagates base provider registration failures before applying the Safe Apps host', async () => {
 		installBrowserMock({ registerError: new Error('registration failed') })
 		const { updateRegistration } = await loadModules()
 
-		await assert.rejects(updateRegistration(), { name: 'AggregateError', message: 'Content script registration and base-provider recovery failed.' })
+		await assert.rejects(updateRegistration(), /registration failed/)
+	})
+
+	test('failed host rollback propagates and reconciles the base provider on retry', async () => {
+		let failHostRegistration = true
+		let failRollback = true
+		const updatedScriptIds: string[][] = []
+		installBrowserMock({
+			safeAppsCompatibilityMode: true,
+			safeAppsHostOrigins: ['https://rollback.example'],
+			beforeRegisterContentScripts: async (scripts) => {
+				if (failHostRegistration && scripts.some(({ id }) => id === 'safe-apps-host')) throw new Error('host failed')
+			},
+			beforeUpdateContentScripts: async (scripts) => {
+				updatedScriptIds.push(scripts.map(({ id }) => id))
+				if (failRollback) { failRollback = false; throw new Error('rollback failed') }
+			},
+		})
+		const { updateRegistration } = await loadModules()
+		await assert.rejects(updateRegistration(), { name: 'AggregateError', message: 'Safe Apps host registration and provider rollback failed.' })
+		failHostRegistration = false
+		await updateRegistration()
+		assert.deepEqual(updatedScriptIds, [['inpage'], ['inpage2', 'inpage'], ['inpage']])
+	})
+
+	test('restoring previous settings repairs registrations after a failed host rollback', async () => {
+		let failedProviderUpdates = 0
+		const { getRegisteredContentScripts } = installBrowserMock({
+			safeAppsCompatibilityMode: true,
+			safeAppsHostOrigins: ['https://first.example'],
+			beforeUpdateContentScripts: async (scripts) => {
+				if (failedProviderUpdates > 0 && scripts.some(({ id }) => id === 'inpage')) {
+					failedProviderUpdates--
+					throw new Error('provider update failed')
+				}
+			},
+		})
+		const { updateRegistration } = await loadModules()
+		await updateRegistration()
+		failedProviderUpdates = 2
+		await browser.storage.local.set({ safeAppsHostOrigins: ['https://second.example'] })
+		await assert.rejects(updateRegistration(), { name: 'AggregateError', message: 'Safe Apps host registration and provider rollback failed.' })
+		assert.equal(getRegisteredContentScripts().some(({ id }) => id === 'safe-apps-host'), false)
+		await browser.storage.local.set({ safeAppsHostOrigins: ['https://first.example'] })
+		await updateRegistration()
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'safe-apps-host')?.matches, ['https://first.example:443/*'])
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.excludeMatches, ['https://first.example:443/*'])
 	})
 
 	for (const origins of [['https://*.invalid.example'], ['not-an-origin']]) test(`invalid stored hosting configuration preserves base injection: ${ origins[0] }`, async () => {
@@ -307,7 +353,7 @@ describe('content script injection strategy', () => {
 					assert.deepEqual(operations, ['update', 'reload', 'access-refresh'])
 					assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.excludeMatches, interceptorDisabled ? ['*://*.disable-recovery.example/*'] : [])
 					assert.equal(sentMessages.at(-1)?.method, 'popup_setDisableInterceptorReply')
-					assert.equal((await getLatestUnexpectedError())?.data.code, 'content_script_registration_failed')
+					assert.equal((await getLatestUnexpectedError())?.data.code, 'safe_apps_host_registration_failed')
 				}
 			})
 		} finally { registration.contentScriptRegistration.stop() }
@@ -317,7 +363,7 @@ describe('content script injection strategy', () => {
 	test('enable/disable propagates unrecovered registration errors before reload or a success reply', async () => {
 		const { reloadedTabs, sentMessages } = installBrowserMock({ registerError: new Error('Scripting unavailable') })
 		const { disableInterceptorForPage } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
-		await assert.rejects(disableInterceptorForPage(new Map(), { websiteOrigin: 'unrecoverable.example', title: undefined, icon: undefined }, true), /base-provider recovery failed/)
+		await assert.rejects(disableInterceptorForPage(new Map(), { websiteOrigin: 'unrecoverable.example', title: undefined, icon: undefined }, true), /Scripting unavailable/)
 		assert.deepEqual(reloadedTabs, [])
 		assert.equal(sentMessages.some(({ method }) => method === 'popup_setDisableInterceptorReply'), false)
 	})
@@ -341,7 +387,7 @@ describe('content script injection strategy', () => {
 			await new Promise((resolve) => setTimeout(resolve, 0))
 		})
 		assert.equal(sentMessages.at(-1)?.method, 'popup_UnexpectedErrorOccured')
-		assert.equal(sentMessages.at(-1)?.data?.code, 'content_script_registration_failed')
+		assert.equal(sentMessages.at(-1)?.data?.code, 'safe_apps_host_registration_failed')
 		registration.stop()
 		assert.equal(getStorageListenerCount(), 0)
 		const stoppedOperations = getScriptingOperations().length
@@ -381,6 +427,21 @@ describe('content script injection strategy', () => {
 			assert.deepEqual(host?.js, enabled ? ['/inpage/js/safeAppsHostBootstrap.js', '/inpage/js/inpage.js'] : undefined)
 			assert.equal(host?.matchOriginAsFallback, enabled ? true : undefined)
 		}
+	})
+
+	test('host origin changes update the host overlay without updating the isolated base provider', async () => {
+		const updatedScriptIds: string[][] = []
+		installBrowserMock({
+			safeAppsCompatibilityMode: true,
+			safeAppsHostOrigins: ['https://first.example'],
+			beforeUpdateContentScripts: async (scripts) => { updatedScriptIds.push(scripts.map(({ id }) => id)) },
+		})
+		const { updateRegistration } = await loadModules()
+		await updateRegistration()
+		const priorUpdates = updatedScriptIds.length
+		await browser.storage.local.set({ safeAppsHostOrigins: ['https://second.example'] })
+		await updateRegistration()
+		assert.deepEqual(updatedScriptIds.slice(priorUpdates), [['safe-apps-host'], ['inpage']])
 	})
 
 	test('does not host Request Finance or any other site when compatibility is enabled without explicit origins', async () => {
@@ -437,9 +498,9 @@ describe('content script injection strategy', () => {
 		})
 		const { updateRegistration } = await loadModules()
 
-		await assert.rejects(updateRegistration(), /base-provider recovery failed/)
+		await assert.rejects(updateRegistration(), /update failed/)
 
-		assert.deepEqual(getScriptingOperations(), ['update', 'update'])
+		assert.deepEqual(getScriptingOperations(), ['update'])
 		assert.deepEqual(getUnregisteredContentScriptIdBatches(), [])
 		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2', 'obsolete-inpage'])
 	})

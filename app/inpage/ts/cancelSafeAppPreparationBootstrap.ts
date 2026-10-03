@@ -1,3 +1,4 @@
-import { SAFE_APPS_PREPARATION_CANCEL_EVENT } from './safeAppsProtocol.js'
+import { SAFE_APPS_PREPARATION_CANCEL_EVENT, SAFE_APPS_PREPARATION_CANCEL_MARKER } from './safeAppsProtocol.js'
 
+Reflect.set(window, SAFE_APPS_PREPARATION_CANCEL_MARKER, true)
 window.dispatchEvent(new Event(SAFE_APPS_PREPARATION_CANCEL_EVENT))

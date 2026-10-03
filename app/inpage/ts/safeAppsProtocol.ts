@@ -4,6 +4,7 @@ export const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
 export const SAFE_APPS_REQUEST_TIMEOUT_MS = 5 * 60_000
 export const SAFE_APPS_PREPARATION_TIMEOUT_MS = 30_000
 export const SAFE_APPS_PREPARATION_CANCEL_EVENT = 'interceptor-cancel-safe-preparation'
+export const SAFE_APPS_PREPARATION_CANCEL_MARKER = 'interceptorSafePreparationCancelled'
 export type SafeAppsRequest = { readonly id: string, readonly method: string, readonly params?: unknown, readonly env: { readonly sdkVersion: string } }
 export type ParsedSafeAppsRequest = { readonly id: string, readonly request: SafeAppsRequest } | { readonly id: string, readonly error: string }
 export type SafeAppsResponse = { readonly id: string, readonly success: boolean, readonly error?: unknown }
