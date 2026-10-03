@@ -12,6 +12,7 @@ import type { GovernanceVoteInputParameters } from '../../types/interceptor-mess
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import { decodeCallDataLoose } from '../../utils/abiRuntime.js'
 import { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
+import { tokenEventGrantsSpendingRights } from '../../utils/approvals.js'
 import { analyzeProxyTokenTransfer } from '../../simulation/proxyTokenTransfer.js'
 
 type IdentifiedTransactionBase = {
@@ -47,7 +48,7 @@ function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction) {
 				identifiedTransaction: simTx,
 			}
 			case 'NFT All approval': {
-				if (tokenResult.allApprovalAdded) {
+				if (tokenEventGrantsSpendingRights(tokenResult)) {
 					return {
 						type: 'SimpleTokenApproval' as const,
 						title: `${ symbol } ALL Approval`,

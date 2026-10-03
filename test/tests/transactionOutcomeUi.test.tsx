@@ -11,12 +11,15 @@ import { getAddressOutcomeChips, TransactionOutcomeChips } from '../../app/ts/co
 import { getSimulationStackRowStatus, type SimulationStackMessageRow, type SimulationStackTransactionRow } from '../../app/ts/components/simulationExplaining/simulationStackRows.js'
 import { getInterceptorModeClass } from '../../app/ts/components/ui-utils.js'
 import { mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
-import type { AddressBookEntry, Erc20TokenEntry } from '../../app/ts/types/addressBookTypes.js'
+import type { AddressBookEntry, Erc20TokenEntry, Erc721Entry } from '../../app/ts/types/addressBookTypes.js'
 import type { TokenEvent } from '../../app/ts/types/EnrichedEthereumData.js'
 import type { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import type { VisualizedPersonalSignRequest } from '../../app/ts/types/personal-message-definitions.js'
+import { getApprovalChangeOfTokenEvent, grantsSpendingRights, tokenEventGrantsSpendingRights } from '../../app/ts/utils/approvals.js'
 import { isUnlimitedErc20Approval } from '../../app/ts/utils/erc20.js'
+import { addressString } from '../../app/ts/utils/bigint.js'
+import { summarizeLogsForAddress } from '../../app/ts/simulation/services/LogSummarizer.js'
 import type { NonSimulatedAndVisualizedTransaction, PreSimulationTransaction, SignedMessageTransaction, SimulatedAndVisualizedTransaction } from '../../app/ts/types/visualizer-types.js'
 import type { Website } from '../../app/ts/types/websiteAccessTypes.js'
 import { installDomMock } from './domMock.js'
@@ -303,6 +306,40 @@ describe('transaction outcome UI', () => {
 		const homeSource = await Bun.file('app/ts/components/pages/Home.tsx').text()
 		assert.match(homeSource, /class = 'popup-home-connection-status popup-data-reveal-inline connection-chip connection-chip--positive'>CONNECTED/)
 		assert.match(homeSource, /class = 'popup-home-connection-status popup-data-reveal-inline connection-chip connection-chip--negative'>NOT CONNECTED/)
+	})
+
+	test('classifies granted and removed approvals with one shared rule', () => {
+		assert.equal(grantsSpendingRights({ kind: 'erc20Allowance', allowance: 1n }), true)
+		assert.equal(grantsSpendingRights({ kind: 'erc20Allowance', allowance: 0n }), false)
+		assert.equal(grantsSpendingRights({ kind: 'operator', operatorApproved: true }), true)
+		assert.equal(grantsSpendingRights({ kind: 'operator', operatorApproved: false }), false)
+		assert.equal(grantsSpendingRights({ kind: 'tokenId' }), true)
+		const collection: Erc721Entry = { type: 'ERC721', name: 'Collection', symbol: 'NFT', address: 0x6000000000000000000000000000000000000006n, entrySource: 'DarkFloristMetadata' }
+		const createNftEvent = (logInformation: TokenEvent['logInformation']): TokenEvent => ({ ...createTokenEvent(usdc, sender, unknownAddress, 0n, true), address: collection.address, loggersAddressBookEntry: collection, logInformation })
+		const erc20Grant = createTokenEvent(usdc, sender, unknownAddress, 5n, true)
+		const erc20Revocation = createTokenEvent(usdc, sender, unknownAddress, 0n, true)
+		const operatorGrant = createNftEvent({ logObject: undefined, type: 'NFT All approval', from: sender, to: unknownAddress, token: collection, allApprovalAdded: true, isApproval: true })
+		const operatorRevocation = createNftEvent({ logObject: undefined, type: 'NFT All approval', from: sender, to: unknownAddress, token: collection, allApprovalAdded: false, isApproval: true })
+		const tokenIdGrant = createNftEvent({ logObject: undefined, type: 'ERC721', from: sender, to: unknownAddress, token: collection, tokenId: 7n, isApproval: true })
+		assert.deepEqual(getApprovalChangeOfTokenEvent(erc20Grant.logInformation), { kind: 'erc20Allowance', allowance: 5n })
+		assert.deepEqual(getApprovalChangeOfTokenEvent(operatorRevocation.logInformation), { kind: 'operator', operatorApproved: false })
+		assert.deepEqual(getApprovalChangeOfTokenEvent(tokenIdGrant.logInformation), { kind: 'tokenId' })
+		// A transfer is not an approval, so it can never be read as a grant.
+		assert.equal(getApprovalChangeOfTokenEvent(createTokenEvent(usdc, sender, unknownAddress, 5n, false).logInformation), undefined)
+		assert.equal(tokenEventGrantsSpendingRights(createTokenEvent(usdc, sender, unknownAddress, 5n, false).logInformation), false)
+		// The confirmation checks, the transaction title and the stack row chips must agree on the same transaction, for every kind of grant and revocation.
+		const addressMetaData = new Map([sender, unknownAddress, usdc, collection].map((entry) => [addressString(entry.address), entry]))
+		for (const [approvalEvent, granted] of [[erc20Grant, true], [erc20Revocation, false], [operatorGrant, true], [operatorRevocation, false], [tokenIdGrant, true]] as const) {
+			const expectedTone = granted ? 'warning' : 'positive'
+			const transaction = createSimulatedTransaction({ events: [approvalEvent] })
+			assert.equal(tokenEventGrantsSpendingRights(approvalEvent.logInformation), granted)
+			assert.equal(getTransactionChecks(transaction)[2]?.tone, expectedTone)
+			const outcome = summarizeLogsForAddress([transaction], addressString(sender.address), addressMetaData, [], [])
+			if (outcome === undefined) throw new Error('the sender has no summarized outcome')
+			assert.deepEqual(getAddressOutcomeChips(outcome, []).map((chip) => chip.tone), [expectedTone])
+		}
+		assert.equal(identifyTransaction(createSimulatedTransaction({ to: collection, events: [operatorGrant] })).title, 'NFT ALL Approval')
+		assert.equal(identifyTransaction(createSimulatedTransaction({ to: collection, events: [operatorRevocation] })).title, 'Remove NFT All Approval')
 	})
 
 	test('shows a swap as a paid leg and a received leg from the sender\'s point of view', async () => {

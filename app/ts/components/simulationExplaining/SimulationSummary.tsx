@@ -31,6 +31,7 @@ import type { VisualizedPersonalSignRequest } from '../../types/personal-message
 import { identifySignature } from './identifySignature.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { EnsEventsExplainer, getVisibleEnsEvents } from './customExplainers/EnsEventExplainer.js'
+import { grantsSpendingRights } from '../../utils/approvals.js'
 import { isUnlimitedErc20Approval } from '../../utils/erc20.js'
 
 type Erc20BalanceChangeParams = {
@@ -89,9 +90,10 @@ type Erc20ApprovalChangeParams = Erc20TokenEntry & {
 }
 
 function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
-	const approvalColor = param.change > 0 ? param.negativeColor : param.positiveColor
+	const grantsAllowance = grantsSpendingRights({ kind: 'erc20Allowance', allowance: param.change })
+	const approvalColor = grantsAllowance ? param.negativeColor : param.positiveColor
 
-	return <div class = { param.isImportant.value ? `summary-approval-change box token-box ${ param.change > 0 ? 'negative-box' : 'positive-box' }`: 'summary-approval-change' }>
+	return <div class = { param.isImportant.value ? `summary-approval-change box token-box ${ grantsAllowance ? 'negative-box' : 'positive-box' }`: 'summary-approval-change' }>
 		<table class = 'log-table'>
 			<div class = 'log-cell'>
 				<p class = 'ellipsis' style = { `color: ${ approvalColor };` }> Allow</p>

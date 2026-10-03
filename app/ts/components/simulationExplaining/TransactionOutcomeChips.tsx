@@ -3,6 +3,7 @@ import { summarizeLogsForAddress, type SummaryOutcome } from '../../simulation/s
 import type { AddressBookEntry, Erc20TokenEntry } from '../../types/addressBookTypes.js'
 import type { NamedTokenId, SimulatedAndVisualizedTransaction, TokenPriceEstimate } from '../../types/visualizer-types.js'
 import { abs, addressString } from '../../utils/bigint.js'
+import { grantsSpendingRights } from '../../utils/approvals.js'
 import { isUnlimitedErc20Approval } from '../../utils/erc20.js'
 import { AbbreviatedValue } from '../subcomponents/AbbreviatedValue.js'
 
@@ -52,17 +53,16 @@ export function getAddressOutcomeChips(outcome: AddressOutcome, namedTokenIds: r
 	}))
 	const erc20ApprovalChips = outcome.erc20TokenApprovalChanges.flatMap((token) => token.approvals.map((approval, index): OutcomeChip => {
 		const key = `erc20-approval-${ token.address.toString() }-${ approval.address.toString() }-${ index }`
-		if (approval.change === 0n) return { key, tone: 'positive', content: <><TokenLogo tokenEntry = { token }/><span>{ token.symbol } allowance removed</span></> }
+		if (!grantsSpendingRights({ kind: 'erc20Allowance', allowance: approval.change })) return { key, tone: 'positive', content: <><TokenLogo tokenEntry = { token }/><span>{ token.symbol } allowance removed</span></> }
 		if (isUnlimitedErc20Approval(approval.change)) return { key, tone: 'warning', content: <><span>Unlimited</span><TokenLogo tokenEntry = { token }/><span>{ token.symbol } allowance</span></> }
 		return { key, tone: 'warning', content: <><span>Allow <AbbreviatedValue amount = { approval.change } decimals = { token.decimals }/></span><TokenLogo tokenEntry = { token }/><span>{ token.symbol }</span></> }
 	}))
-	const operatorChips = outcome.erc721and1155OperatorChanges.map((token, index): OutcomeChip => ({
-		key: `operator-${ token.address.toString() }-${ index }`,
-		tone: token.operator === undefined ? 'positive' : 'warning',
-		content: token.operator === undefined
-			? <><TokenLogo tokenEntry = { token }/><span>{ token.symbol } approval removed</span></>
-			: <><span>All</span><TokenLogo tokenEntry = { token }/><span>{ token.symbol } approved</span></>,
-	}))
+	const operatorChips = outcome.erc721and1155OperatorChanges.map((token, index): OutcomeChip => {
+		const key = `operator-${ token.address.toString() }-${ index }`
+		// The log summary carries an operator only when the shared approval rule found it was granted.
+		if (token.operator === undefined) return { key, tone: 'positive', content: <><TokenLogo tokenEntry = { token }/><span>{ token.symbol } approval removed</span></> }
+		return { key, tone: 'warning', content: <><span>All</span><TokenLogo tokenEntry = { token }/><span>{ token.symbol } approved</span></> }
+	})
 	const tokenIdApprovalChips = outcome.erc721TokenIdApprovalChanges.map((approval): OutcomeChip => ({
 		key: `erc721-approval-${ approval.tokenEntry.address.toString() }-${ approval.tokenId.toString() }`,
 		tone: 'warning',

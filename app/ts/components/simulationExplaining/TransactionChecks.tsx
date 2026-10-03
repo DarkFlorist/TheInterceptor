@@ -2,6 +2,7 @@ import { extractTokenEvents } from '../../background/metadataUtils.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
 import type { SimulatedAndVisualizedTransaction } from '../../types/visualizer-types.js'
+import { tokenEventGrantsSpendingRights } from '../../utils/approvals.js'
 import { CheckMarkIcon, WarningSignIcon, XMarkIcon } from '../subcomponents/icons.js'
 
 type TransactionCheckTone = 'positive' | 'neutral' | 'warning' | 'negative'
@@ -22,16 +23,9 @@ function getDestinationCheck(destination: AddressBookEntry | undefined): Transac
 	}
 }
 
-// An approval event grants spending rights unless it sets an ERC20 allowance to zero or removes an operator.
-function grantsApproval(approval: TokenVisualizerResultWithMetadata) {
-	if (approval.type === 'ERC20') return approval.amount > 0n
-	if (approval.type === 'NFT All approval') return approval.allApprovalAdded
-	return true
-}
-
 function getApprovalCheck(approvals: readonly TokenVisualizerResultWithMetadata[]): TransactionCheck {
 	if (approvals.length === 0) return { tone: 'positive', text: 'No token approvals are changed' }
-	const grantedCount = approvals.filter(grantsApproval).length
+	const grantedCount = approvals.filter(tokenEventGrantsSpendingRights).length
 	if (grantedCount === 0) return { tone: 'positive', text: approvals.length === 1 ? 'Only removes a token approval' : 'Only removes token approvals' }
 	return { tone: 'warning', text: grantedCount === 1 ? 'Grants one token approval' : `Grants ${ grantedCount } token approvals` }
 }

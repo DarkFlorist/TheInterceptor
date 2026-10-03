@@ -15,6 +15,7 @@ import { type ReadonlySignal, useComputed } from '@preact/signals'
 import type { EditEnsNamedHashCallBack } from '../../subcomponents/ens.js'
 import type { RpcNetwork } from '../../../types/rpc.js'
 import { getAddressBookEntryOrAFiller } from '../../ui-utils.js'
+import { tokenEventGrantsSpendingRights } from '../../../utils/approvals.js'
 
 type SendOrReceiveTokensImportanceBoxParams = {
 	sending: boolean,
@@ -110,7 +111,7 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 		})
 
 		const operatorChanges: (Erc721OperatorChange | Erc1155OperatorChange)[] = sendingTokenResults.filter((x): x is TokenVisualizerNFTAllApprovalEvent => x.type === 'NFT All approval').map((entry) => {
-			return { ...entry.token, operator: 'allApprovalAdded' in entry && entry.allApprovalAdded ? entry.to : undefined }
+			return { ...entry.token, operator: tokenEventGrantsSpendingRights(entry) ? entry.to : undefined }
 		})
 
 		// token address, tokenId, approved address

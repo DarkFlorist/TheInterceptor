@@ -36,6 +36,7 @@ import type { SignalOrValue } from '../../utils/signals.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
 import { getSimulationStackRowStatus, normalizeSimulationStackRows, type SimulationStackMessageRow, type SimulationStackTransactionRow } from './simulationStackRows.js'
 import { TransactionOutcomeChips } from './TransactionOutcomeChips.js'
+import { tokenEventGrantsSpendingRights } from '../../utils/approvals.js'
 import { isUnlimitedErc20Approval } from '../../utils/erc20.js'
 import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
@@ -49,12 +50,13 @@ function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddres
 		if (!visResult.isApproval) {
 			return visResult.amount >= 0 // simple transfer
 		}
-		return visResult.amount === 0n // zero is only positive approve event
+		return !tokenEventGrantsSpendingRights(visResult) // removing an allowance is the only positive approve event
 	}
 
 	// nfts
 	if (visResult.type === 'NFT All approval') { // all approval is only positive if someone all approves us, or all approval is removed from us
-		return (visResult.allApprovalAdded && visResult.to.address === ourAddressInReferenceFrame) || (!visResult.allApprovalAdded && visResult.from.address === ourAddressInReferenceFrame)
+		const operatorApproved = tokenEventGrantsSpendingRights(visResult)
+		return (operatorApproved && visResult.to.address === ourAddressInReferenceFrame) || (!operatorApproved && visResult.from.address === ourAddressInReferenceFrame)
 	}
 
 	if (visResult.isApproval) {
