@@ -1191,10 +1191,11 @@ class InterceptorMessageListener {
 	}
 
 	private readonly replaceMetaMaskAnnouncementForCompatibilityMode = (event: Event) => {
-		if (!this.metamaskCompatibilityMode || this.replacementMetaMaskAnnouncementEvents.has(event)) return
+		if (!this.metamaskCompatibilityMode || this.acceptingAnnouncedMetaMaskProviders || this.replacementMetaMaskAnnouncementEvents.has(event)) return
 		const announcement = this.readMetaMaskAnnouncement(event)
 		if (announcement === undefined) return
-		this.useMetaMaskAnnouncement(announcement)
+		// Compatibility replacement may rebrand only the selected signer; it must not participate in signer discovery.
+		if (this.signerName !== 'MetaMask' || announcement.provider !== this.signerWindowEthereumProvider) return
 		const provider = inpageWindow.ethereum
 		if (provider === undefined || provider.isInterceptor !== true) {
 			this.reportSignerDiscoveryError('replace EIP-6963 MetaMask announcement', new Error('The Interceptor provider was not initialized'))

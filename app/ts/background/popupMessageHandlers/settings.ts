@@ -37,7 +37,11 @@ export async function importSettings(settingsData: ImportSettings, websiteTabCon
 	if (!parsed.success) {
 		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }
 	}
-	await updateContentScriptInjectionConfigurationAndReloadTabsIfChanged(websiteTabConnections, async () => await importSettingsAndAddressBook(parsed.value))
+	try {
+		await updateContentScriptInjectionConfigurationAndReloadTabsIfChanged(websiteTabConnections, async (transaction) => await importSettingsAndAddressBook(parsed.value, transaction))
+	} catch (error: unknown) {
+		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: error instanceof Error ? error.message : 'Failed to refresh content script registration.' } }
+	}
 	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
 }
 

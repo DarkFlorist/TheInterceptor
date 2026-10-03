@@ -152,7 +152,8 @@ export async function setInterceptorDisabledForWebsite(websiteTabConnections: We
 		const index = previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === website.websiteOrigin)
 		const previousAccess = index !== -1 ? previousWebsiteAccess[index] : undefined;
 		if (previousAccess === undefined) return [...previousWebsiteAccess, { website, addressAccess: [], interceptorDisabled } ]
-		return replaceElementInReadonlyArray(previousWebsiteAccess, index, { ...previousAccess, interceptorDisabled })
+		const accessWithUpdatedDisabledState = { ...previousAccess, interceptorDisabled }
+		return replaceElementInReadonlyArray(previousWebsiteAccess, index, accessWithUpdatedDisabledState)
 	})
 }
 

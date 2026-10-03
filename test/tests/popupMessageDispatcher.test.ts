@@ -1,4 +1,5 @@
 import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
+import { withSilencedConsole } from './consoleSilence.js'
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { PopupMessageDispatcherContext } from '../../app/ts/background/popupMessageDispatcher.js'
@@ -15,7 +16,10 @@ const registeredContentScripts = new Map<string, { readonly id: string, readonly
 const contentScriptRegistrationOperations: string[] = []
 const reloadedTabs: number[] = []
 let storageSetError: Error | undefined
+let storageSetErrorAfterWebsiteAccess: Error | undefined
+let failNextStorageSet = false
 let dynamicRuleUpdateError: Error | undefined
+let contentScriptRegistrationError: Error | undefined
 let addressBookBroadcastWait: Promise<void> | undefined
 
 Reflect.set(globalThis, 'chrome', { runtime: { id: 'test-extension' } })
@@ -43,7 +47,12 @@ Reflect.set(globalThis, 'browser', {
 			},
 			async set(items: Record<string, unknown>) {
 				if (storageSetError !== undefined) throw storageSetError
+				if (failNextStorageSet && storageSetErrorAfterWebsiteAccess !== undefined) {
+					failNextStorageSet = false
+					throw storageSetErrorAfterWebsiteAccess
+				}
 				Object.assign(storageState, items)
+				if ('websiteAccess' in items && !('metamaskCompatibilityMode' in items) && storageSetErrorAfterWebsiteAccess !== undefined) failNextStorageSet = true
 			},
 			async remove(keys: string | string[]) {
 				for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
@@ -60,6 +69,9 @@ Reflect.set(globalThis, 'browser', {
 		registerContentScripts: async (scripts: readonly { readonly id: string, readonly js?: readonly string[] }[]) => {
 			contentScriptRegistrationOperations.push('register')
 			contentScriptUpdateBatches.push(scripts)
+			const registrationError = contentScriptRegistrationError
+			contentScriptRegistrationError = undefined
+			if (registrationError !== undefined) throw registrationError
 			for (const script of scripts) registeredContentScripts.set(script.id, script)
 		},
 		updateContentScripts: async (scripts: readonly { readonly id: string, readonly js?: readonly string[], readonly excludeMatches?: readonly string[] }[]) => {
@@ -165,7 +177,10 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 
 beforeEach(() => {
 	storageSetError = undefined
+	storageSetErrorAfterWebsiteAccess = undefined
+	failNextStorageSet = false
 	dynamicRuleUpdateError = undefined
+	contentScriptRegistrationError = undefined
 	addressBookBroadcastWait = undefined
 	for (const key of Object.keys(storageState)) delete storageState[key]
 	sentMessages.splice(0, sentMessages.length)
@@ -512,6 +527,126 @@ describe('popup message dispatcher seams', () => {
 		reloadedTabs.splice(0, reloadedTabs.length)
 		await dispatchPopupMessage(context, { method: 'popup_import_settings', data: { fileContents: importedSettings } })
 		assert.equal(contentScriptRegistrationOperations.length, registrationOperationCount)
+		assert.deepEqual(reloadedTabs, [])
+	})
+
+	test('reports import failure and restores injection settings when content script registration fails', async () => {
+		const previousWebsiteAccess = [{
+			website: { websiteOrigin: 'existing.test', title: 'Existing website' },
+			addressAccess: [],
+			access: true,
+			interceptorDisabled: false,
+			declarativeNetRequestBlockMode: 'disabled',
+		}]
+		storageState.metamaskCompatibilityMode = false
+		storageState.websiteAccess = previousWebsiteAccess
+		registeredContentScripts.set('inpage', { id: 'inpage', js: ['/inpage/js/inpage.js'] })
+		registeredContentScripts.set('inpage2', { id: 'inpage2', js: ['/inpage/js/listenContentScript.js'] })
+		contentScriptRegistrationError = new Error('Content script registration unavailable')
+		const importedSettings = JSON.stringify({
+			name: 'InterceptorSettingsAndAddressBook',
+			version: '1.4',
+			exportedDate: '2026-07-28',
+			settings: {
+				activeSimulationAddress: '0x0000000000000000000000000000000000000002',
+				rpcNetwork: {
+					name: 'Imported network',
+					chainId: '0x1',
+					httpsRpc: 'https://example.test/rpc',
+					currencyName: 'Ether',
+					currencyTicker: 'ETH',
+					primary: true,
+					minimized: true,
+				},
+				openedPage: { page: 'Home' },
+				useSignersAddressAsActiveAddress: false,
+				websiteAccess: [{
+					website: { websiteOrigin: 'imported-disabled.test', title: 'Imported disabled website' },
+					addressAccess: [],
+					access: true,
+					interceptorDisabled: true,
+					declarativeNetRequestBlockMode: 'disabled',
+				}],
+				simulationMode: false,
+				addressBookEntries: [],
+				useTabsInsteadOfPopup: false,
+				metamaskCompatibilityMode: true,
+			},
+		})
+
+		await withSilencedConsole(async () => await dispatchPopupMessage(
+			createDispatcherContext(async () => undefined),
+			{ method: 'popup_import_settings', data: { fileContents: importedSettings } },
+		))
+
+		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
+		const importReply = messages.find(({ method }) => method === 'popup_initiate_export_settings_reply')
+		assert.equal(importReply?.method, 'popup_initiate_export_settings_reply')
+		if (importReply?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected failed import broadcast.')
+		assert.deepEqual(importReply.data, { success: false, errorMessage: 'Content script registration unavailable' })
+		assert.equal(messages.some(({ method }) => method === 'popup_settingsUpdated'), false)
+		assert.equal(storageState.metamaskCompatibilityMode, false)
+		assert.deepEqual(storageState.websiteAccess, previousWebsiteAccess)
+		assert.deepEqual(reloadedTabs, [])
+	})
+
+	test('reports import failure and restores injection settings when a later storage write fails', async () => {
+		const previousWebsiteAccess = [{
+			website: { websiteOrigin: 'existing.test', title: 'Existing website' },
+			addressAccess: [],
+			access: true,
+			interceptorDisabled: false,
+			declarativeNetRequestBlockMode: 'disabled',
+		}]
+		storageState.metamaskCompatibilityMode = false
+		storageState.websiteAccess = previousWebsiteAccess
+		registeredContentScripts.set('inpage', { id: 'inpage', js: ['/inpage/js/inpage.js'] })
+		registeredContentScripts.set('inpage2', { id: 'inpage2', js: ['/inpage/js/listenContentScript.js'] })
+		storageSetErrorAfterWebsiteAccess = new Error('Later imported setting could not be stored')
+		const importedSettings = JSON.stringify({
+			name: 'InterceptorSettingsAndAddressBook',
+			version: '1.4',
+			exportedDate: '2026-07-28',
+			settings: {
+				activeSimulationAddress: '0x0000000000000000000000000000000000000002',
+				rpcNetwork: {
+					name: 'Imported network',
+					chainId: '0x1',
+					httpsRpc: 'https://example.test/rpc',
+					currencyName: 'Ether',
+					currencyTicker: 'ETH',
+					primary: true,
+					minimized: true,
+				},
+				openedPage: { page: 'Home' },
+				useSignersAddressAsActiveAddress: false,
+				websiteAccess: [{
+					website: { websiteOrigin: 'imported-disabled.test', title: 'Imported disabled website' },
+					addressAccess: [],
+					access: true,
+					interceptorDisabled: true,
+					declarativeNetRequestBlockMode: 'disabled',
+				}],
+				simulationMode: false,
+				addressBookEntries: [],
+				useTabsInsteadOfPopup: true,
+				metamaskCompatibilityMode: true,
+			},
+		})
+
+		await dispatchPopupMessage(
+			createDispatcherContext(async () => undefined),
+			{ method: 'popup_import_settings', data: { fileContents: importedSettings } },
+		)
+
+		const messages = sentMessages.map((message) => MessageToPopup.parse(message))
+		const importReply = messages.find(({ method }) => method === 'popup_initiate_export_settings_reply')
+		assert.equal(importReply?.method, 'popup_initiate_export_settings_reply')
+		if (importReply?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected failed import broadcast.')
+		assert.deepEqual(importReply.data, { success: false, errorMessage: 'Later imported setting could not be stored' })
+		assert.equal(storageState.metamaskCompatibilityMode, false)
+		assert.deepEqual(storageState.websiteAccess, previousWebsiteAccess)
+		assert.deepEqual(contentScriptRegistrationOperations, [])
 		assert.deepEqual(reloadedTabs, [])
 	})
 

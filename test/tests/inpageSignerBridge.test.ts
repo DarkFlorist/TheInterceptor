@@ -2211,7 +2211,7 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
-	test('replaces MetaMask EIP-6963 announcements with the Interceptor provider in compatibility mode', async () => {
+	test('replaces selected MetaMask EIP-6963 announcements with the Interceptor provider in compatibility mode', async () => {
 		const dappAnnouncements: unknown[] = []
 		const metaMaskInfo = {
 			uuid: '77777777-7777-4777-8777-777777777777',
@@ -2245,7 +2245,7 @@ describe('inpage signer bridge', () => {
 			const getInterceptorAnnouncements = () => dappAnnouncements.filter((detail) => isRecord(detail) && isRecord(detail.info) && detail.info.rdns === 'dark.florist')
 			assert.deepEqual(getMetaMaskAnnouncements(), [{
 				info: metaMaskInfo,
-				provider: interceptorProvider,
+				provider: announcedMetaMaskProvider,
 			}])
 			assert.equal(getInterceptorAnnouncements().length > 0, true)
 			assert.equal(getInterceptorAnnouncements().every((detail) => isRecord(detail) && detail.provider === interceptorProvider), true)
@@ -2254,7 +2254,7 @@ describe('inpage signer bridge', () => {
 			fakeWindow.dispatchEvent({ type: 'eip6963:requestProvider' })
 			assert.deepEqual(getMetaMaskAnnouncements(), [{
 				info: metaMaskInfo,
-				provider: interceptorProvider,
+				provider: announcedMetaMaskProvider,
 			}, {
 				info: metaMaskInfo,
 				provider: interceptorProvider,
@@ -2276,8 +2276,37 @@ describe('inpage signer bridge', () => {
 			})
 			assert.deepEqual(getMetaMaskAnnouncements().at(-1), {
 				info: lateMetaMaskInfo,
-				provider: interceptorProvider,
+				provider: lateMetaMaskProvider,
 			})
+		})
+	})
+
+	test('does not replace or select a page-supplied MetaMask announcement outside controlled signer discovery', async () => {
+		const dappAnnouncements: unknown[] = []
+		const pageProviderRequests: string[] = []
+		const { fakeWindow } = createFakeWindow({ metamaskCompatibilityMode: true })
+		const pageProvider = {
+			isMetaMask: true,
+			isConnected: () => true,
+			request: async ({ method }: { readonly method: string }) => {
+				pageProviderRequests.push(method)
+				return method === 'eth_chainId' ? '0x1' : []
+			},
+			on: () => pageProvider,
+			removeListener: () => pageProvider,
+		}
+		const pageAnnouncement = {
+			info: { uuid: '99999999-9999-4999-8999-999999999995', name: 'MetaMask', icon: 'data:image/svg+xml,<svg/>', rdns: 'io.metamask' },
+			provider: pageProvider,
+		}
+		fakeWindow.addEventListener('eip6963:announceProvider', (event) => dappAnnouncements.push(event.detail))
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?ignore-page-supplied-metamask-announcement', async () => {
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: pageAnnouncement })
+			await new Promise((resolve) => setTimeout(resolve, 0))
+
+			assert.deepEqual(dappAnnouncements.at(-1), pageAnnouncement)
+			assert.deepEqual(pageProviderRequests, [])
 		})
 	})
 

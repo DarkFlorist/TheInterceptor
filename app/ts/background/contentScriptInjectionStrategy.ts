@@ -1,18 +1,43 @@
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { updateContentScriptInjectionStrategyManifestV2, updateContentScriptInjectionStrategyManifestV3 } from '../utils/contentScriptsUpdating.js'
-import { getContentScriptInjectionConfiguration, hasSameContentScriptInjectionConfiguration } from './contentScriptInjectionConfiguration.js'
-import { reloadConnectedTabs } from './reloadConnectedTabs.js'
+import { reportUnexpectedError } from '../utils/errors.js'
+import { Semaphore } from '../utils/semaphore.js'
+import { getContentScriptInjectionConfiguration, hasSameContentScriptInjectionConfiguration, restoreContentScriptInjectionConfiguration, type ContentScriptInjectionConfigurationSnapshot } from './contentScriptInjectionConfiguration.js'
+import { getConnectedTabIdsToReload, reloadTabs } from './reloadConnectedTabs.js'
+import { withContentScriptInjectionSettingsTransaction, type ContentScriptInjectionSettingsTransaction } from './settings.js'
 
-export async function refreshContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
-	if (browser.runtime.getManifest().manifest_version === 3 && !await updateContentScriptInjectionStrategyManifestV3()) return
-	if (browser.runtime.getManifest().manifest_version === 2) await updateContentScriptInjectionStrategyManifestV2()
-	await reloadConnectedTabs(websiteTabConnections)
+const contentScriptInjectionStrategySemaphore = new Semaphore(1)
+
+export async function refreshContentScriptInjectionStrategy(configuration?: ContentScriptInjectionConfigurationSnapshot) {
+	await contentScriptInjectionStrategySemaphore.execute(async () => {
+		const currentConfiguration = configuration ?? await getContentScriptInjectionConfiguration()
+		if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3(currentConfiguration)
+		else await updateContentScriptInjectionStrategyManifestV2(getContentScriptInjectionConfiguration)
+	})
 }
 
-export async function updateContentScriptInjectionConfigurationAndReloadTabsIfChanged<T>(websiteTabConnections: WebsiteTabConnections, update: () => Promise<T>) {
-	const configurationBeforeUpdate = await getContentScriptInjectionConfiguration()
-	const result = await update()
-	const configurationAfterUpdate = await getContentScriptInjectionConfiguration()
-	if (!hasSameContentScriptInjectionConfiguration(configurationBeforeUpdate, configurationAfterUpdate)) await refreshContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections)
-	return result
+export async function refreshContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections: WebsiteTabConnections, configuration?: ContentScriptInjectionConfigurationSnapshot) {
+	const tabIdsToReload = await getConnectedTabIdsToReload(websiteTabConnections)
+	await refreshContentScriptInjectionStrategy(configuration)
+	await reloadTabs(tabIdsToReload)
+}
+
+export async function updateContentScriptInjectionConfigurationAndReloadTabsIfChanged<T>(websiteTabConnections: WebsiteTabConnections, update: (transaction: ContentScriptInjectionSettingsTransaction) => Promise<T>) {
+	return await withContentScriptInjectionSettingsTransaction(async (transaction) => {
+		const configurationBeforeUpdate = await getContentScriptInjectionConfiguration()
+		try {
+			const result = await update(transaction)
+			const configurationAfterUpdate = await getContentScriptInjectionConfiguration()
+			if (hasSameContentScriptInjectionConfiguration(configurationBeforeUpdate, configurationAfterUpdate)) return result
+			await refreshContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections, configurationAfterUpdate)
+			return result
+		} catch (error: unknown) {
+			try {
+				await restoreContentScriptInjectionConfiguration(configurationBeforeUpdate, transaction)
+			} catch (rollbackError: unknown) {
+				await reportUnexpectedError(rollbackError, { code: 'content_script_injection_settings_rollback_failed' })
+			}
+			throw error
+		}
+	})
 }

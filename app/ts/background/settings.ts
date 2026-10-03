@@ -214,7 +214,19 @@ async function replaceModeAndSigningPreferencesForImport(changes: SimulationMode
 	}))
 }
 
-const websiteAccessSemaphore = new Semaphore(1)
+const contentScriptInjectionSettingsSemaphore = new Semaphore(1)
+const contentScriptInjectionSettingsTransaction = Symbol('contentScriptInjectionSettingsTransaction')
+export type ContentScriptInjectionSettingsTransaction = typeof contentScriptInjectionSettingsTransaction
+
+export async function withContentScriptInjectionSettingsTransaction<T>(transaction: (transaction: ContentScriptInjectionSettingsTransaction) => Promise<T>) {
+	return await contentScriptInjectionSettingsSemaphore.execute(async () => await transaction(contentScriptInjectionSettingsTransaction))
+}
+
+async function executeContentScriptInjectionSettingsUpdate<T>(update: () => Promise<T>, transaction?: ContentScriptInjectionSettingsTransaction) {
+	if (transaction === contentScriptInjectionSettingsTransaction) return await update()
+	return await contentScriptInjectionSettingsSemaphore.execute(update)
+}
+
 async function getNormalizedWebsiteAccessFromStorage() {
 	const rawWebsiteAccess = await getParsedStorageValueOrDefault('websiteAccess', [])
 	const sanitizedWebsiteAccess = sanitizeWebsiteAccess(rawWebsiteAccess)
@@ -225,13 +237,20 @@ export async function getWebsiteAccess() {
 	return (await getNormalizedWebsiteAccessFromStorage()).sanitizedWebsiteAccess
 }
 
-export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray) {
-	await websiteAccessSemaphore.execute(async () => {
+export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessArray) => WebsiteAccessArray, transaction?: ContentScriptInjectionSettingsTransaction) {
+	await executeContentScriptInjectionSettingsUpdate(async () => {
 		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
 		const nextWebsiteAccess = sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
 		if (nextWebsiteAccess === sanitizedWebsiteAccess && rawWebsiteAccess === sanitizedWebsiteAccess) return
 		return await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
-	})
+	}, transaction)
+}
+
+export async function restoreContentScriptInjectionSettings(metamaskCompatibilityMode: boolean, websiteAccess: WebsiteAccessArray, transaction: ContentScriptInjectionSettingsTransaction) {
+	await executeContentScriptInjectionSettingsUpdate(async () => await browserStorageLocalSet({
+		metamaskCompatibilityMode,
+		websiteAccess: sanitizeWebsiteAccess(websiteAccess),
+	}), transaction)
 }
 
 export async function updateKnownWebsiteMetadata(website: Website) {
@@ -252,7 +271,7 @@ export const getUseTabsInsteadOfPopup = async() => (await browserStorageLocalGet
 export const setUseTabsInsteadOfPopup = async(useTabsInsteadOfPopup: boolean) => await browserStorageLocalSet({ useTabsInsteadOfPopup })
 
 export const getMetamaskCompatibilityMode = async() => (await browserStorageLocalGet('metamaskCompatibilityMode'))?.metamaskCompatibilityMode ?? false
-export const persistMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean) => await browserStorageLocalSet({ metamaskCompatibilityMode })
+export const persistMetamaskCompatibilityMode = async(metamaskCompatibilityMode: boolean, transaction?: ContentScriptInjectionSettingsTransaction) => await executeContentScriptInjectionSettingsUpdate(async () => await browserStorageLocalSet({ metamaskCompatibilityMode }), transaction)
 
 export const getSafeAppsCompatibilityMode = async() => (await browserStorageLocalGet('safeAppsCompatibilityMode'))?.safeAppsCompatibilityMode ?? false
 export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boolean) => await browserStorageLocalSet({ safeAppsCompatibilityMode })
@@ -282,7 +301,7 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 	}
 }
 
-export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings) {
+export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings, contentScriptInjectionSettingsTransaction?: ContentScriptInjectionSettingsTransaction) {
 	// Pre-1.5 exports contain the legacy address shared by signing and simulation. Apply the same explicit default reset as startup rather than heuristically assigning ambiguous state to either independent mode.
 	const defaultActiveAddress = defaultActiveAddresses[0]?.address
 	if (defaultActiveAddress === undefined) throw new Error('Default active address was missing')
@@ -311,7 +330,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 		}, exportedSetings.version === '1.5' || exportedSetings.version === '1.6' ? exportedSetings.settings.signingAddressPreferences : [])
 	}
 	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
-	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
+	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess, contentScriptInjectionSettingsTransaction)
 	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup)
 	await setSafeAppsCompatibilityMode(exportedSetings.version === '1.6' ? exportedSetings.settings.safeAppsCompatibilityMode : false)
 	if (exportedSetings.version !== '1.4' && exportedSetings.version !== '1.5' && exportedSetings.version !== '1.6') {
@@ -320,7 +339,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])
 		})
 	}
-	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') await persistMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
+	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') await persistMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode, contentScriptInjectionSettingsTransaction)
 }
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })

@@ -1,7 +1,7 @@
 import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
 import { getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from '../config/contentScriptInjectionArtifacts.js'
-import { getContentScriptInjectionConfiguration } from '../background/contentScriptInjectionConfiguration.js'
+import type { ContentScriptInjectionConfiguration } from '../config/contentScriptInjectionConfiguration.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
@@ -44,11 +44,12 @@ export function getManifestV3ExcludeMatches(origins: readonly string[]) {
 	return [...patterns]
 }
 
-export const updateContentScriptInjectionStrategyManifestV3 = async () => {
-	const { metamaskCompatibilityMode, interceptorDisabledSites } = await getContentScriptInjectionConfiguration()
+export const updateContentScriptInjectionStrategyManifestV3 = async ({ metamaskCompatibilityMode, interceptorDisabledSites }: ContentScriptInjectionConfiguration) => {
 	const excludeMatches = getManifestV3ExcludeMatches(interceptorDisabledSites)
+	type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
+	let previousRegisteredContentScripts: RegisteredContentScript[] | undefined
+	let registrationMutationStarted = false
 	try {
-		type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 		// The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
 		type FixedContentScript = RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
 		const contentScripts: FixedContentScript[] = [{
@@ -70,6 +71,7 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 			matchOriginAsFallback: true
 		}]
 		const registeredContentScripts = await browser.scripting.getRegisteredContentScripts()
+		previousRegisteredContentScripts = registeredContentScripts
 		const registeredContentScriptsById = new Map(registeredContentScripts.map((registration) => [registration.id, registration]))
 		const desiredContentScriptIds = new Set(contentScripts.map(({ id }) => id))
 		const replacementContentScripts = contentScripts.filter(({ id, js }) => {
@@ -77,33 +79,45 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 			return registered !== undefined && !haveSameScriptFiles(registered.js, js)
 		})
 		const replacementContentScriptIds = new Set(replacementContentScripts.map(({ id }) => id))
-		const previousReplacementContentScripts = registeredContentScripts.filter(({ id }) => replacementContentScriptIds.has(id))
 		const missingContentScripts = contentScripts.filter(({ id }) => !registeredContentScriptsById.has(id) || replacementContentScriptIds.has(id))
 		const existingContentScripts = contentScripts.filter(({ id }) => registeredContentScriptsById.has(id) && !replacementContentScriptIds.has(id))
 		const obsoleteContentScriptIds = registeredContentScripts.map(({ id }) => id).filter((id) => !desiredContentScriptIds.has(id))
-		if (replacementContentScriptIds.size > 0) await browser.scripting.unregisterContentScripts({ ids: [...replacementContentScriptIds] })
-		try {
-			if (missingContentScripts.length > 0) await browser.scripting.registerContentScripts(missingContentScripts)
-		} catch (error) {
-			if (previousReplacementContentScripts.length > 0) {
-				try {
-					await browser.scripting.registerContentScripts(previousReplacementContentScripts)
-				} catch (rollbackError) {
-					await reportUnexpectedError(rollbackError, { code: 'content_script_registration_rollback_failed' })
-				}
-			}
-			throw error
+		if (replacementContentScriptIds.size > 0) {
+			registrationMutationStarted = true
+			await browser.scripting.unregisterContentScripts({ ids: [...replacementContentScriptIds] })
 		}
-		if (existingContentScripts.length > 0) await browser.scripting.updateContentScripts(existingContentScripts)
-		if (obsoleteContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
+		if (missingContentScripts.length > 0) {
+			registrationMutationStarted = true
+			await browser.scripting.registerContentScripts(missingContentScripts)
+		}
+		if (existingContentScripts.length > 0) {
+			registrationMutationStarted = true
+			await browser.scripting.updateContentScripts(existingContentScripts)
+		}
+		if (obsoleteContentScriptIds.length > 0) {
+			registrationMutationStarted = true
+			await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
+		}
 		return true
 	} catch (error: unknown) {
+		if (registrationMutationStarted && previousRegisteredContentScripts !== undefined) {
+			try {
+				const currentRegisteredContentScripts = await browser.scripting.getRegisteredContentScripts()
+				const currentRegisteredContentScriptIds = currentRegisteredContentScripts.map(({ id }) => id)
+				if (currentRegisteredContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: currentRegisteredContentScriptIds })
+				if (previousRegisteredContentScripts.length > 0) await browser.scripting.registerContentScripts(previousRegisteredContentScripts)
+			} catch (rollbackError) {
+				await reportUnexpectedError(rollbackError, { code: 'content_script_registration_rollback_failed' })
+			}
+		}
 		await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
-		return false
+		throw error
 	}
 }
 
-const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) => {
+type GetContentScriptInjectionConfiguration = () => Promise<ContentScriptInjectionConfiguration>
+
+const createInjectLogic = (getContentScriptInjectionConfiguration: GetContentScriptInjectionConfiguration) => async (content: browser.webNavigation._OnCommittedDetails) => {
 	if (!isInjectableSite(content.url)) return false
 	const { metamaskCompatibilityMode, interceptorDisabledSites } = await getContentScriptInjectionConfiguration()
 	// The tab can navigate while settings are loading, including to another extension page where injection is prohibited.
@@ -126,12 +140,10 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 	return false
 }
 
-export const updateContentScriptInjectionStrategyManifestV2 = async () => {
-	browser.webNavigation.onCommitted.removeListener(injectLogic)
-	browser.webNavigation.onCommitted.addListener(injectLogic, { url: injectableSitesWildcard.map((urlMatches) => ({ urlMatches })) })
-}
+let registeredManifestV2InjectLogic: ReturnType<typeof createInjectLogic> | undefined
 
-export const updateContentScriptInjectionStrategy = async () => {
-	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
-	else await updateContentScriptInjectionStrategyManifestV2()
+export const updateContentScriptInjectionStrategyManifestV2 = async (getContentScriptInjectionConfiguration: GetContentScriptInjectionConfiguration) => {
+	if (registeredManifestV2InjectLogic !== undefined) browser.webNavigation.onCommitted.removeListener(registeredManifestV2InjectLogic)
+	registeredManifestV2InjectLogic = createInjectLogic(getContentScriptInjectionConfiguration)
+	browser.webNavigation.onCommitted.addListener(registeredManifestV2InjectLogic, { url: injectableSitesWildcard.map((urlMatches) => ({ urlMatches })) })
 }
