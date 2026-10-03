@@ -260,6 +260,7 @@ export async function loadModules() {
 		flushPendingTerminalRepliesForSocket,
 		flushPendingTerminalRepliesForConnectedPortWithRetry: terminalReplyDelivery.flushPendingTerminalRepliesForConnectedPortWithRetry,
 		queueTerminalReply: terminalReplyDelivery.queueTerminalReply,
+		queueDeferredSafeProposalReply: terminalReplyDelivery.queueDeferredSafeProposalReply,
 		attemptQueuedTerminalReplyDelivery: terminalReplyDelivery.attemptQueuedTerminalReplyDelivery,
 		queueTerminalReplyAndAttemptDelivery: terminalReplyDelivery.queueTerminalReplyAndAttemptDelivery,
 		signerReply: providerMessageHandlers.signerReply,

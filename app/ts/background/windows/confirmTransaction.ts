@@ -17,7 +17,7 @@ import { getHtmlFile, sendPopupMessageToOpenWindows } from '../backgroundUtils.j
 import { appendPendingTransactionOrMessage, getInterceptorTransactionStack, getPendingTransactionsAndMessages, getRpcConnectionStatus, getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst, removePendingTransactionOrMessage, updateInterceptorTransactionStack, updatePendingTransactionOrMessage } from '../storageVariables.js'
 import { type InterceptedRequest, type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch, getUniqueRequestIdentifierString, silenceChromeUnCaughtPromise } from '../../utils/requests.js'
 import { replyToInterceptedRequestAfterManifestV2Reconnect } from '../messageSending.js'
-import { attemptQueuedTerminalReplyDelivery, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
+import { attemptQueuedTerminalReplyDelivery, queueDeferredSafeProposalReply, queueTerminalReply, queueTerminalReplyAndAttemptDelivery } from '../terminalReplyDelivery.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-types.js'
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
@@ -47,7 +47,6 @@ import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeC
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
 import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../../types/interceptor-reply-messages.js'
-import { queueDeferredSafeProposalTerminalReply } from '../pendingTerminalReplies.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const deferredSafeSignerReplySemaphore = new Semaphore(1)
@@ -350,7 +349,7 @@ export async function resolvePendingSignerReply(services: ConfirmationServices |
 		}))
 		if (safeFlow.kind === 'proposal') {
 			const terminalReply = createDeferredSafeProposalReply(pending, safeFlow.pending.safeTransaction.safeTxHash)
-			await queueDeferredSafeProposalTerminalReply(uniqueRequestIdentifier, signerReply, terminalReply)
+			await queueDeferredSafeProposalReply(uniqueRequestIdentifier, signerReply, terminalReply)
 			return await attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply)
 		}
 		return
@@ -365,7 +364,7 @@ export async function resolveDeferredSafeSignerReplies(services: ConfirmationSer
 			const safeFlow = getSafePendingFlow(pending)
 			if (safeFlow?.kind === 'proposal' && !pending.deferredSafeSignerReply.terminalReplyQueued) {
 				const terminalReply = createDeferredSafeProposalReply(pending, safeFlow.pending.safeTransaction.safeTxHash)
-				await queueDeferredSafeProposalTerminalReply(
+				await queueDeferredSafeProposalReply(
 					pending.uniqueRequestIdentifier,
 					pending.deferredSafeSignerReply.signerReply,
 					terminalReply,

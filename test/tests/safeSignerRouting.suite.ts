@@ -277,6 +277,11 @@ test('atomically queues a deferred Safe proposal result before recovery delivery
 	assert.deepEqual(pendingAfterFailedWrite?.deferredSafeSignerReply, { signerReply: signature, terminalReplyQueued: false })
 	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
 	assert.equal(await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, socket), 0)
+	await modules.queueDeferredSafeProposalReply(requestIdentifier, signature, terminalReply)
+	assert.equal(await modules.flushPendingTerminalRepliesForSocket(websiteTabConnections, socket), 1)
+	assert.equal(await modules.attemptQueuedTerminalReplyDelivery(websiteTabConnections, terminalReply), true)
+	assert.deepEqual(await modules.getPendingTerminalReplies(), [])
+	assert.equal(messages.filter((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === requestIdentifier.requestId).length, 1)
 
 	await modules.resolveDeferredSafeSignerReplies({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }, websiteTabConnections)
 
