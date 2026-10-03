@@ -1,4 +1,4 @@
-import { beforeEach, expect, test } from 'bun:test'
+import { beforeEach, expect, spyOn, test } from 'bun:test'
 import { createBrowserMock, resetConfirmTransactionTestState, createSafeAddressBookEntry, ethereum, simulator, fakeSafeContract, activeAddress } from './confirmTransactionTestHarness.js'
 import { getUserAddressBookEntries, saveAddressSigningWallet, updateUserAddressBookEntries, getSigningWalletBinding } from '../../app/ts/background/storageVariables.js'
 import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
@@ -49,4 +49,23 @@ test('Safe account handler rejects a binding removed while the Safe state is loa
 		await saveAddressSigningWallet(2n, undefined, binding?.revision)
 	}
 	expect(await select(2n)).toMatchObject({ ok: false, message: 'Set up the execution account’s signing wallet first' })
+})
+
+test('signing handler propagates unexpected storage failures to its diagnostic boundary', async () => {
+	const storage = await import('../../app/ts/background/storageVariables.js')
+	const failure = new Error('Unexpected storage failure')
+	const read = spyOn(storage, 'getAddressBookAndSigningWalletBindings').mockRejectedValue(failure)
+	try {
+		await expect(signingPageHandler({ method: 'signing_wallets' }, ethereum, simulator.tokenPriceService, new Map())).rejects.toBe(failure)
+	} finally {
+		read.mockRestore()
+	}
+})
+
+test('signing handler keeps stale binding revisions actionable', async () => {
+	const binding = await getSigningWalletBinding(1n)
+	if (binding === undefined) throw new Error('Missing test binding')
+	const reply = await signingPageHandler({ method: 'signing_saveWallet', address: 1n, wallet: undefined, revision: 'stale-revision' }, ethereum, simulator.tokenPriceService, new Map())
+	expect(reply).toMatchObject({ ok: false, message: 'Signing wallet changed. Review the current wallet before saving again.' })
+	expect(await getSigningWalletBinding(1n)).toEqual(binding)
 })

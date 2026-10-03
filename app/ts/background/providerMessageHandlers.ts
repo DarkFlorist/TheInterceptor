@@ -21,7 +21,7 @@ import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from './signingAddressSelection.js'
-import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
+import { getWalletSelectedAccount, getActiveSigningAddress } from '../utils/activeAddressSelection.js'
 import { getActiveAddressEntryForChain } from './metadataUtils.js'
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import type { ApprovalState } from './websiteAccessPolicy.js'
@@ -131,7 +131,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 		const displayedSigningSafe = await getConfiguredSigningSafe(updatedSettings, signerAccounts)
 		await sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: {
 			tabId,
-			activeSigningAddress: updatedSettings.selectedSigningAddress ?? displayedSigningSafe?.address ?? activeSigningAddress,
+			activeSigningAddress: getActiveSigningAddress(updatedSettings, { safeAddress: displayedSigningSafe?.address, signerAddress: activeSigningAddress }),
 			activeSigningSafeAddress: displayedSigningSafe?.address,
 		} })
 		// Account-change waiters must only resume after the matching Safe-or-EOA selection is fully restored.

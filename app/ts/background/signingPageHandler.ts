@@ -1,3 +1,5 @@
+import { signingOperationError, isSigningOperationError } from '../signing/signingOperationError.js'
+import { isInvalidSigningResponse } from '../signing/exactPayload.js'
 import type { SigningPageReply } from '../types/signingPageReply.js'
 import { matchesBrowserSigningWallet } from '../signing/browserWallet.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
@@ -18,9 +20,9 @@ export async function signingPageHandler(request: SigningPageRequest, ethereum: 
 			return { ok: true, bindings: data.signingWalletBindings, tabs: await getAllTabStates() }
 		}
 		if (request.method === 'signing_setSafeAccounts') {
-			if (request.chainId !== ethereum.getChainId()) throw new Error('Return to this Safe’s network before changing its signing accounts')
+			if (request.chainId !== ethereum.getChainId()) throw signingOperationError('Return to this Safe’s network before changing its signing accounts')
 			const state = await getSafeContractState(ethereum, request.address)
-			if (request.chainId !== ethereum.getChainId()) throw new Error('Return to this Safe’s network before changing its signing accounts')
+			if (request.chainId !== ethereum.getChainId()) throw signingOperationError('Return to this Safe’s network before changing its signing accounts')
 			await saveSafeSigningAccounts(request.chainId, request.address, request.owner, request.executor, state.owners)
 			await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 			return { ok: true }
@@ -28,7 +30,7 @@ export async function signingPageHandler(request: SigningPageRequest, ethereum: 
 		if (request.method === 'signing_saveWallet') {
 			if (request.wallet?.type === 'browser') {
 				const wallet = request.wallet
-				if (!(await getAllTabStates()).some((tab) => tab.signerConnected && matchesBrowserSigningWallet(wallet, tab) && tab.signerAccounts.includes(request.address))) throw new Error('Connect the browser wallet and select this account before saving it')
+				if (!(await getAllTabStates()).some((tab) => tab.signerConnected && matchesBrowserSigningWallet(wallet, tab) && tab.signerAccounts.includes(request.address))) throw signingOperationError('Connect the browser wallet and select this account before saving it')
 			}
 			await saveAddressSigningWallet(request.address, request.wallet, request.revision, request.name)
 			await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
@@ -46,6 +48,7 @@ export async function signingPageHandler(request: SigningPageRequest, ethereum: 
 		}
 		return { ok: true, record: record }
 	} catch (error) {
-		return { ok: false, message: error instanceof Error ? error.message : 'Signing operation failed' }
+		if (!isSigningOperationError(error) && !isInvalidSigningResponse(error)) throw error
+		return { ok: false, message: error.message }
 	}
 }

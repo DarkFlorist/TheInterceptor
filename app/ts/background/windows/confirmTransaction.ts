@@ -1,9 +1,5 @@
-import { invalidSigningResponse, isInvalidSigningResponse } from '../../signing/exactPayload.js'
-import { prepareSavedBrowserWalletForwarding } from '../browserWalletForwarding.js'
-import { verifyDirectResult } from '../../signing/backend.js'
-import { EIP712Message } from '../../types/eip721.js'
+import { resolveSigningConfirmationAdmission } from '../signingConfirmationAdmission.js'
 import { getSavedSafeSigningAccount } from '../safeSigningAccount.js'
-import { openDirectSigning, readDirectSigningRecords } from '../directSigning.js'
 import { getSigningWalletBinding } from '../storageVariables.js'
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
 import { SafeMessage } from '../../safe/safeMessage.js'
@@ -366,51 +362,26 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		confirmation.data.action === 'accept'
 		&& pendingTransactionOrMessage.transactionOrMessageCreationStatus !== 'Simulated'
 	) return false
-	let browserForwardingFields: { expectedProviderId?: string } = {}
-	if (!pendingTransactionOrMessage.simulationMode && pendingTransactionOrMessage.signingWalletBinding !== undefined) {
-		const binding = pendingTransactionOrMessage.signingWalletBinding
-		if (confirmation.data.action === 'accept') {
-			let expectedSigningFailure: Error | undefined
-			const signingSelectionFailure = (message: string) => {
-				expectedSigningFailure = new Error(message)
-				return expectedSigningFailure
-			}
-			try {
-				if ((await getSigningWalletBinding(binding.wallet.address))?.revision !== binding.revision) throw signingSelectionFailure('Signing wallet changed. Reject this request and review a new request.')
-				if (binding.wallet.type !== 'browser') {
-					if (signerFacingRequest.method === 'eth_sendRawTransaction') throw signingSelectionFailure('Direct wallets do not sign raw transactions')
-					await openDirectSigning(ethereum, tokenPriceService, pendingTransactionOrMessage, signerFacingRequest)
-					await updateConfirmTransactionView(ethereum, tokenPriceService)
-					return true
-				}
-				const forwarding = await prepareSavedBrowserWalletForwarding(websiteTabConnections, pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket, binding)
-				if (await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier) === undefined) return false
-				if (forwarding.error !== undefined) throw signingSelectionFailure(forwarding.error.message)
-				browserForwardingFields = { expectedProviderId: forwarding.expectedProviderId }
-			} catch (error) {
-				await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'SignerError', code: 4100, message: getErrorMessage(error) ?? 'Unable to start signing' } }))
-				await updateConfirmTransactionView(ethereum, tokenPriceService)
-				if (expectedSigningFailure === undefined || error !== expectedSigningFailure) throw error
-				return false
-			}
-		}
-		if (confirmation.data.action === 'signerIncluded' && binding.wallet.type === 'browser' && getSafePendingFlow(pendingTransactionOrMessage) === undefined && (signerFacingRequest.method === 'personal_sign' || signerFacingRequest.method === 'eth_signTypedData_v4')) {
-			try {
-				if (typeof confirmation.data.signerReply !== 'string') throw invalidSigningResponse('Browser wallet returned a non-string message signature')
-				await verifyDirectResult({ method: signerFacingRequest.method, data: signerFacingRequest.method === 'personal_sign' ? signerFacingRequest.params[0] : funtypes.String.parse(EIP712Message.serialize(signerFacingRequest.params[1])), address: `0x${ binding.wallet.address.toString(16).padStart(40, '0') }`, chainId: pendingTransactionOrMessage.signingChainId ?? ethereum.getChainId() }, confirmation.data.signerReply)
-			} catch (error) {
-				await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'SignerError', code: 4100, message: getErrorMessage(error) ?? 'Unable to verify wallet signature' } }))
-				await updateConfirmTransactionView(ethereum, tokenPriceService)
-				if (!isInvalidSigningResponse(error)) throw error
-				return false
-			}
-		}
-		if (confirmation.data.action === 'signerIncluded' && binding.wallet.type !== 'browser') {
-			const record = (await readDirectSigningRecords()).find((item) => doesUniqueRequestIdentifiersMatch(item.request, pendingTransactionOrMessage.uniqueRequestIdentifier))
-			const expected = record?.input.method === 'eth_sendTransaction' ? record.transactionHash : record?.result
-			if (record === undefined || expected !== confirmation.data.signerReply || !(record.input.method === 'eth_sendTransaction' ? ['submitted', 'confirmed'].includes(record.phase) : record.phase === 'signed')) return false
-		}
+	const admission = await resolveSigningConfirmationAdmission(ethereum, tokenPriceService, websiteTabConnections, pendingTransactionOrMessage, confirmation.data, signerFacingRequest).catch(async (error: unknown) => {
+		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'SignerError', code: 4100, message: getErrorMessage(error) ?? 'Unable to resolve signing approval' } }))
+		await updateConfirmTransactionView(ethereum, tokenPriceService)
+		throw error
+	})
+	if (admission.status === 'directSigningOpened') {
+		await updateConfirmTransactionView(ethereum, tokenPriceService)
+		return true
 	}
+	if (await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier) === undefined) return false
+	if (admission.status === 'blocked') {
+		if (admission.error !== undefined) {
+			const error = admission.error
+			await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'SignerError', ...error } }))
+			await updateConfirmTransactionView(ethereum, tokenPriceService)
+		}
+		return false
+	}
+	const browserForwardingFields = admission.forwarding
+
 	if (confirmation.data.action === 'accept' && pendingTransactionOrMessage.simulationMode === false) {
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' } }))
 		await updateConfirmTransactionView(ethereum, tokenPriceService)

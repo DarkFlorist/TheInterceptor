@@ -1,3 +1,4 @@
+import { signingOperationError } from '../signing/signingOperationError.js'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -322,20 +323,20 @@ export async function getSigningWalletBinding(address: bigint): Promise<SigningW
 export async function saveAddressSigningWallet(address: bigint, wallet: SigningWallet | undefined, expectedRevision: string | undefined, newAddressName?: string) {
 	const savedWallet = wallet === undefined ? undefined : Object.freeze({ ...wallet })
 	if (savedWallet !== undefined) {
-		if (!SigningWallet.safeSerialize(savedWallet).success) throw new Error('Invalid signing wallet public account')
-		if (savedWallet.address !== address) throw new Error('Signing wallet does not match this address')
+		if (!SigningWallet.safeSerialize(savedWallet).success) throw signingOperationError('Invalid signing wallet public account')
+		if (savedWallet.address !== address) throw signingOperationError('Signing wallet does not match this address')
 	}
 	return await userAddressBookEntriesSemaphore.execute(async () => {
 		const [entries, storedBindings] = await Promise.all([getUserAddressBookEntries(), readSigningWalletBindings()])
 		const bindings = reconcileSigningWalletBindings(entries, storedBindings)
 		const previous = bindings.find((binding) => binding.wallet.address === address)
-		if (previous?.revision !== expectedRevision) throw new Error('Signing wallet changed. Review the current wallet before saving again.')
+		if (previous?.revision !== expectedRevision) throw signingOperationError('Signing wallet changed. Review the current wallet before saving again.')
 		const existing = entries.find((entry) => entry.address === address)
-		if (entries.some((entry) => entry.address === address && entry.type === 'safe')) throw new Error('Assign a signing wallet to the Safe owner address, not the Safe.')
-		if (existing === undefined && (newAddressName === undefined || newAddressName.trim().length === 0 || newAddressName.length > 100)) throw new Error('Name the new address before saving its signing wallet')
+		if (entries.some((entry) => entry.address === address && entry.type === 'safe')) throw signingOperationError('Assign a signing wallet to the Safe owner address, not the Safe.')
+		if (existing === undefined && (newAddressName === undefined || newAddressName.trim().length === 0 || newAddressName.length > 100)) throw signingOperationError('Name the new address before saving its signing wallet')
 		const binding = savedWallet === undefined ? undefined : { wallet: savedWallet, revision: crypto.randomUUID() }
 		const nextBindings = [...bindings.filter((entry) => entry.wallet.address !== address), ...(binding === undefined ? [] : [binding])]
-		if (!SigningWalletBindings.safeSerialize(nextBindings).success) throw new Error('Too many or invalid signing wallet bindings')
+		if (!SigningWalletBindings.safeSerialize(nextBindings).success) throw signingOperationError('Too many or invalid signing wallet bindings')
 		const nextEntries: AddressBookEntries = existing !== undefined ? entries : [...entries, { type: 'contact', address, name: newAddressName?.trim() ?? '', entrySource: 'User', useAsActiveAddress: true, chainId: 'AllChains' }]
 		await browserStorageLocalSet({ userAddressBookEntriesV3: nextEntries, signingWalletBindings: nextBindings })
 		return binding
@@ -346,12 +347,12 @@ export async function saveAddressSigningWallet(address: bigint, wallet: SigningW
 export async function saveSafeSigningAccounts(chainId: bigint, address: bigint, owner: bigint, executor: bigint | undefined, owners: readonly bigint[]) {
 	await userAddressBookEntriesSemaphore.execute(async () => {
 		const entries = await getUserAddressBookEntries()
-		if (!entries.some((entry) => entry.type === 'safe' && entry.address === address && entry.chainId === chainId)) throw new Error('Save this Safe in the address book before changing its signing accounts')
+		if (!entries.some((entry) => entry.type === 'safe' && entry.address === address && entry.chainId === chainId)) throw signingOperationError('Save this Safe in the address book before changing its signing accounts')
 		const bindings = reconcileSigningWalletBindings(entries, await readSigningWalletBindings())
-		if (!owners.includes(owner)) throw new Error('The selected signing account is not a current Safe owner')
-		if (!bindings.some((binding) => binding.wallet.address === owner)) throw new Error('Set up the owner’s signing wallet first')
+		if (!owners.includes(owner)) throw signingOperationError('The selected signing account is not a current Safe owner')
+		if (!bindings.some((binding) => binding.wallet.address === owner)) throw signingOperationError('Set up the owner’s signing wallet first')
 		// A gas payer need not be a Safe owner. A public binding is configuration, not proof of authority; the execution pipeline still checks the account and verifies its actual signature.
-		if (executor !== undefined && !bindings.some((binding) => binding.wallet.address === executor)) throw new Error('Set up the execution account’s signing wallet first')
+		if (executor !== undefined && !bindings.some((binding) => binding.wallet.address === executor)) throw signingOperationError('Set up the execution account’s signing wallet first')
 		await browserStorageLocalSet({ userAddressBookEntriesV3: entries.map((entry) => entry.type === 'safe' && entry.address === address && entry.chainId === chainId ? { ...entry, safeSigningSignerAddress: owner, safeExecutionAddress: executor, safeSignerAddresses: owners } : entry) })
 	})
 }

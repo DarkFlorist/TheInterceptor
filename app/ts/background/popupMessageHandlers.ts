@@ -53,7 +53,7 @@ import { createSafeContractValidationFailure, getSafeContractSnapshot, validateS
 import { normalizeConsecutiveTimeManipulations } from '../utils/transactionStack.js'
 import { getSafePendingFlow } from '../safe/safePendingFlow.js'
 import { getOperationsForActiveStackContext, SIMULATION_STACK_CONTEXT } from '../utils/activeStackContext.js'
-import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
+import { type ActiveAddressSelection, assertActiveAddressSelectionAllowed, getActiveAddressSelection, getWalletSelectedAccount, getActiveSigningAddress } from '../utils/activeAddressSelection.js'
 export { importSafeStack, requestSafeStackExport, validateSafeTransactionStackForCurrentContract } from './safeStackHandlers.js'
 export { getLastKnownCurrentTabId } from './currentTab.js'
 export { exportSettings, importSettings, setNewRpcList, settingsOpened } from './popupMessageHandlers/settings.js'
@@ -816,7 +816,7 @@ export async function requestHomePageBootstrap(websiteTabConnections: WebsiteTab
 	const tabStatePromise = silenceChromeUnCaughtPromise(tabId === undefined ? getTabState(-1) : getTabState(tabId))
 	const settings = await settingsPromise
 	const tabState = await tabStatePromise
-	const activeSigningAddress = settings.selectedSigningAddress ?? (tabId === undefined ? undefined : (await getActiveAddressForCurrentPopupSignerState(settings, websiteTabConnections, tabId))?.address)
+	const activeSigningAddress = await getDisplayedActiveSigningAddress(settings, websiteTabConnections, tabId)
 	const walletSelectedAddressBookEntry = await getWalletSelectedAddressBookEntry(tabState, settings.activeRpcNetwork.chainId)
 	const interceptorDisabled = isInterceptorDisabledForWebsite(settings, tabState.website?.websiteOrigin)
 	await sendPopupMessageToOpenWindows({
@@ -1104,6 +1104,15 @@ async function getCachedRichData(chainId: bigint) {
 	}
 }
 
+async function getDisplayedActiveSigningAddress(settings: Settings, websiteTabConnections: WebsiteTabConnections, tabId: number | undefined) {
+	if (settings.selectedSigningAddress !== undefined) return getActiveSigningAddress(settings)
+	const eligibleAddress = tabId === undefined ? undefined : await getActiveAddressForCurrentPopupSignerState(settings, websiteTabConnections, tabId)
+	return getActiveSigningAddress(settings, {
+		safeAddress: eligibleAddress?.type === 'safe' ? eligibleAddress.address : undefined,
+		signerAddress: eligibleAddress?.type === 'safe' ? undefined : eligibleAddress?.address,
+	})
+}
+
 async function getActiveAddressForCurrentPopupSignerState(settings: Settings, websiteTabConnections: WebsiteTabConnections, tabId: number) {
 	return await getActiveAddressForCurrentSignerState(websiteTabConnections, settings, tabId, async () => await getActiveOrFirstSignerAddress(settings, tabId))
 }
@@ -1146,7 +1155,7 @@ async function buildHomePageUpdate(
 	let tabState = await tabStatePromise
 	tabState = await refreshSignerAccountsForTabIfNeeded(websiteTabConnections, tabId, tabState, shouldRefreshSignerAccounts)
 	if (shouldRefreshSignerAccounts) settings = await getSettings()
-	const activeSigningAddress = settings.selectedSigningAddress ?? (tabId === undefined ? undefined : (await getActiveAddressForCurrentPopupSignerState(settings, websiteTabConnections, tabId))?.address)
+	const activeSigningAddress = await getDisplayedActiveSigningAddress(settings, websiteTabConnections, tabId)
 	const walletSelectedAddressBookEntry = await getWalletSelectedAddressBookEntry(tabState, settings.activeRpcNetwork.chainId)
 	const interceptorDisabled = isInterceptorDisabledForWebsite(settings, tabState.website?.websiteOrigin)
 	const richData = await richDataPromise
