@@ -13,8 +13,12 @@ function injectPageWorldScripts() {
 		contentScriptListener(undefined, 'document-start')
 		const container = document.head || document.documentElement
 		const injectScriptElement = (scriptTag: HTMLScriptElement) => {
+			const removeScriptElement = () => {
+				if (scriptTag.parentNode === container) container.removeChild(scriptTag)
+			}
+			scriptTag.addEventListener('load', removeScriptElement, { once: true })
+			scriptTag.addEventListener('error', removeScriptElement, { once: true })
 			container.insertBefore(scriptTag, container.children[1])
-			container.removeChild(scriptTag)
 		}
 		const injectExternalScript = (scriptPath: string) => {
 			const scriptTag = document.createElement('script')

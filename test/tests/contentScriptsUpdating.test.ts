@@ -233,15 +233,20 @@ describe('content script injection strategy', () => {
 		])
 	})
 
-	test('compatibility setting changes refresh the current manifest strategy and reload connected tabs', async () => {
+	test('compatibility setting changes refresh the current manifest strategy and reload connected tabs only when the mode changes', async () => {
 		for (const manifestVersion of [2, 3] as const) {
-			const { getCommittedListener, getRegisteredContentScripts, getReloadedTabs } = installBrowserMock({ manifestVersion })
+			const { getCommittedListener, getRegisteredContentScripts, getReloadedTabs, getScriptingOperations } = installBrowserMock({ manifestVersion })
 			const { setMetamaskCompatibilityMode } = await import('../../app/ts/background/metamaskCompatibilityMode.js')
 			await setMetamaskCompatibilityMode(new Map([[42, { connections: {} }]]), true)
 
 			assert.deepEqual(getReloadedTabs(), [42])
 			if (manifestVersion === 2) assert.equal(typeof getCommittedListener(), 'function')
 			else assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/metamaskCompatibilityMode.js', '/inpage/js/inpage.js'])
+
+			const scriptingOperationsAfterChange = getScriptingOperations()
+			await setMetamaskCompatibilityMode(new Map([[42, { connections: {} }]]), true)
+			assert.deepEqual(getReloadedTabs(), [42])
+			assert.deepEqual(getScriptingOperations(), scriptingOperationsAfterChange)
 		}
 	})
 

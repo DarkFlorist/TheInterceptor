@@ -39,22 +39,42 @@ test('MV2 loads the configured external page-world scripts in both compatibility
 	}).outputText
 	const generatedDocumentStart = inlineDocumentStartInjectionConfiguration(compiledDocumentStart)
 	for (const metamaskCompatibilityMode of [false, true]) {
-		const injectedScripts: { readonly async: boolean, readonly src: string, readonly textContent: string }[] = []
+		type ScriptEvent = 'load' | 'error'
+		type FakeScript = { async: boolean, src: string, textContent: string, parentNode: ScriptContainer | undefined, addEventListener: (type: ScriptEvent, listener: () => void) => void }
+		type ScriptContainer = { readonly children: readonly object[], insertBefore: (script: FakeScript) => void, removeChild: (script: FakeScript) => void }
+		const injectedScripts: FakeScript[] = []
+		const removedScripts: FakeScript[] = []
+		const scriptListeners = new Map<FakeScript, Map<ScriptEvent, () => void>>()
 		const fakeGlobalThis = {
 			[Symbol.for('TheInterceptor.listenContentScript')]: () => undefined,
 			[Symbol.for('TheInterceptor.metamaskCompatibilityMode')]: metamaskCompatibilityMode,
 		}
-		const scriptContainer = {
+		const scriptContainer: ScriptContainer = {
 			children: [{}, {}],
-			insertBefore: (script: { readonly async: boolean, readonly src: string, readonly textContent: string }) => {
-				injectedScripts.push({ async: script.async, src: script.src, textContent: script.textContent })
+			insertBefore: (script: FakeScript) => {
+				script.parentNode = scriptContainer
+				injectedScripts.push(script)
 			},
-			removeChild: () => undefined,
+			removeChild: (script: FakeScript) => {
+				script.parentNode = undefined
+				removedScripts.push(script)
+			},
 		}
 		const fakeDocument = {
 			head: scriptContainer,
 			documentElement: scriptContainer,
-			createElement: () => ({ async: true, src: '', textContent: '' }),
+			createElement: () => {
+				const listeners = new Map<ScriptEvent, () => void>()
+				const script: FakeScript = {
+					async: true,
+					src: '',
+					textContent: '',
+					parentNode: undefined,
+					addEventListener: (type, listener) => { listeners.set(type, listener) },
+				}
+				scriptListeners.set(script, listeners)
+				return script
+			},
 		}
 		const fakeBrowser = {
 			runtime: {
@@ -69,10 +89,13 @@ test('MV2 loads the configured external page-world scripts in both compatibility
 			...(metamaskCompatibilityMode ? ['inpage/js/metamaskCompatibilityMode.js'] : []),
 			'inpage/js/inpage.js',
 		]
-		assert.deepEqual(injectedScripts, expectedScriptPaths.map((scriptPath) => ({
+		assert.deepEqual(injectedScripts.map(({ async, src, textContent }) => ({ async, src, textContent })), expectedScriptPaths.map((scriptPath) => ({
 			async: false,
 			src: `browser-extension://test/${ scriptPath }`,
 			textContent: '',
 		})))
+		assert.deepEqual(removedScripts, [])
+		for (const [index, script] of injectedScripts.entries()) scriptListeners.get(script)?.get(index % 2 === 0 ? 'load' : 'error')?.()
+		assert.deepEqual(removedScripts, injectedScripts)
 	}
 })

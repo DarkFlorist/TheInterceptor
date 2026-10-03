@@ -1,8 +1,7 @@
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { persistMetamaskCompatibilityMode } from './settings.js'
-import { refreshContentScriptInjectionStrategyAndReloadConnectedTabs } from './contentScriptInjectionStrategy.js'
+import { updateContentScriptInjectionConfigurationAndReloadTabsIfChanged } from './contentScriptInjectionStrategy.js'
 
 export async function setMetamaskCompatibilityMode(websiteTabConnections: WebsiteTabConnections, metamaskCompatibilityMode: boolean) {
-	await persistMetamaskCompatibilityMode(metamaskCompatibilityMode)
-	await refreshContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections)
+	await updateContentScriptInjectionConfigurationAndReloadTabsIfChanged(websiteTabConnections, async () => await persistMetamaskCompatibilityMode(metamaskCompatibilityMode))
 }

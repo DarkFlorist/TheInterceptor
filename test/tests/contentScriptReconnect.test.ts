@@ -84,6 +84,7 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 			async: true,
 			src: '',
 			textContent: '',
+			addEventListener: () => undefined,
 		}),
 	} })
 

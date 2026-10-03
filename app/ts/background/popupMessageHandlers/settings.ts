@@ -8,8 +8,7 @@ import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.
 import { getPrimaryRpcForChain, getRpcList, setRpcList } from '../storageVariables.js'
 import { exportSettingsAndAddressBook, getMetamaskCompatibilityMode, getSafeAppsCompatibilityMode, getSettings, getUseTabsInsteadOfPopup, importSettingsAndAddressBook } from '../settings.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
-import { getContentScriptInjectionConfiguration, hasSameContentScriptInjectionConfiguration } from '../contentScriptInjectionConfiguration.js'
-import { refreshContentScriptInjectionStrategyAndReloadConnectedTabs } from '../contentScriptInjectionStrategy.js'
+import { updateContentScriptInjectionConfigurationAndReloadTabsIfChanged } from '../contentScriptInjectionStrategy.js'
 
 export async function settingsOpened() {
 	const useTabsInsteadOfPopupPromise = silenceChromeUnCaughtPromise(getUseTabsInsteadOfPopup())
@@ -38,10 +37,7 @@ export async function importSettings(settingsData: ImportSettings, websiteTabCon
 	if (!parsed.success) {
 		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }
 	}
-	const configurationBeforeImport = await getContentScriptInjectionConfiguration()
-	await importSettingsAndAddressBook(parsed.value)
-	const configurationAfterImport = await getContentScriptInjectionConfiguration()
-	if (!hasSameContentScriptInjectionConfiguration(configurationBeforeImport, configurationAfterImport)) await refreshContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections)
+	await updateContentScriptInjectionConfigurationAndReloadTabsIfChanged(websiteTabConnections, async () => await importSettingsAndAddressBook(parsed.value))
 	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
 }
 
