@@ -29,13 +29,14 @@ const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(error)
 }
 
-// Keep the stored key so existing settings tabs remain discoverable after upgrade.
 export async function getManagementTabId(): Promise<number | undefined> {
-	return (await browserStorageLocalGet('idsOfOpenedTabs')).idsOfOpenedTabs?.settingsView
+	const tabIds = (await browserStorageLocalGet('idsOfOpenedTabs')).idsOfOpenedTabs
+	// Older versions tracked this same tab under settingsView.
+	return tabIds?.managementTabId ?? tabIds?.settingsView
 }
 
 export async function setManagementTabId(tabId: number): Promise<void> {
-	await browserStorageLocalSet({ idsOfOpenedTabs: { settingsView: tabId } })
+	await browserStorageLocalSet({ idsOfOpenedTabs: { managementTabId: tabId } })
 }
 
 const pendingTransactionsSemaphore = new Semaphore(1)

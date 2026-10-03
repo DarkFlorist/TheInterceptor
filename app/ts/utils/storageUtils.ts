@@ -16,8 +16,9 @@ import { ICON_ACCESS_DENIED } from './constants.js'
 import { hasOwnKey } from './typescript.js'
 
 type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
-const IdsOfOpenedTabs = funtypes.ReadonlyObject({
-	settingsView: funtypes.Union(funtypes.Undefined, funtypes.Number),
+const IdsOfOpenedTabs = funtypes.ReadonlyPartial({
+	managementTabId: funtypes.Number,
+	settingsView: funtypes.Number,
 })
 
 export type OldActiveAddressEntry = funtypes.Static<typeof OldActiveAddressEntry>

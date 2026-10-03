@@ -13,7 +13,7 @@ function replaceGlobal(name: string, value: unknown) {
 	}
 }
 
-test('management tabs reload Diagnostics and release hidden website listeners', async () => {
+test('management tabs reveal clipped selection, reload Diagnostics, and release hidden website listeners', async () => {
 	const dom = installDomMock()
 	const hashListeners = new Set<EventListenerOrEventListenerObject>()
 	const runtimeListeners = new Set<(message: unknown) => unknown>()
@@ -42,8 +42,10 @@ test('management tabs reload Diagnostics and release hidden website listeners', 
 	Object.defineProperty(globalThis.window, 'location', { configurable: true, value: location })
 	Object.defineProperty(globalThis.window, 'addEventListener', { configurable: true, value: addEventListener })
 	Object.defineProperty(globalThis.window, 'removeEventListener', { configurable: true, value: removeEventListener })
-	Object.defineProperty(dom.document, 'getElementById', { configurable: true, value: () => null })
-	Object.defineProperty(dom.document, 'querySelector', { configurable: true, value: () => null })
+	const tabListLayout = { scrollLeft: 0, getBoundingClientRect: () => ({ left: 0, right: 100 }) }
+	const diagnosticsTabLayout = { getBoundingClientRect: () => ({ left: 90, right: 150 }) }
+	Object.defineProperty(dom.document, 'getElementById', { configurable: true, value: (id: string) => id === 'management-tab-diagnostics' ? diagnosticsTabLayout : null })
+	Object.defineProperty(dom.document, 'querySelector', { configurable: true, value: (selector: string) => selector === '.management-tabs' ? tabListLayout : null })
 	const restoreBrowser = replaceGlobal('browser', {
 		runtime: {
 			lastError: undefined,
@@ -75,6 +77,7 @@ test('management tabs reload Diagnostics and release hidden website listeners', 
 
 		await selectTab('Diagnostics')
 		assert.equal(diagnosticsLoads, 1)
+		assert.equal(tabListLayout.scrollLeft, 50)
 		await selectTab('Home')
 		await selectTab('Diagnostics')
 		assert.equal(diagnosticsLoads, 2)

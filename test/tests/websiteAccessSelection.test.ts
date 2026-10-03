@@ -5,7 +5,7 @@ import { Signal } from '@preact/signals'
 import { act } from 'preact/test-utils'
 import { installDomMock } from './domMock.js'
 import type { WebsiteAccess } from '../../app/ts/types/websiteAccessTypes.js'
-import { getWebsiteOriginHash } from '../../app/ts/utils/websiteAccessHash.js'
+import { getWebsiteOriginHash } from '../../app/ts/utils/managementPages.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 type RuntimeMessage = {
@@ -225,7 +225,7 @@ describe('WebsiteAccessView selection', () => {
 		const { WebsiteAccessView } = await modulesPromise
 
 		await act(() => {
-			render(h(WebsiteAccessView, { listHash: '#websites' }), dom.document.body)
+			render(h(WebsiteAccessView, {}), dom.document.body)
 		})
 
 		await act(() => {
@@ -261,7 +261,7 @@ describe('WebsiteAccessView selection', () => {
 		const { WebsiteAccessView } = await modulesPromise
 
 		await act(() => {
-			render(h(WebsiteAccessView, { listHash: '#websites' }), dom.document.body)
+			render(h(WebsiteAccessView, {}), dom.document.body)
 		})
 
 		await act(() => {
@@ -298,7 +298,7 @@ describe('WebsiteAccessView selection', () => {
 		const { WebsiteAccessView } = await modulesPromise
 
 		await act(() => {
-			render(h(WebsiteAccessView, { listHash: '#websites' }), dom.document.body)
+			render(h(WebsiteAccessView, {}), dom.document.body)
 		})
 
 		await act(() => {
@@ -343,7 +343,7 @@ describe('WebsiteAccessView selection', () => {
 		const selectedDomain = new Signal<string | undefined>('app.sablier.com')
 		const location = { hash: '' }
 
-		clearSelectedWebsite({ location }, selectedDomain, '#websites')
+		clearSelectedWebsite({ location }, selectedDomain)
 
 		assert.equal(selectedDomain.value, undefined)
 		assert.equal(location.hash, '#websites')

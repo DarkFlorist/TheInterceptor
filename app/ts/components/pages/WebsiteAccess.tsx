@@ -22,7 +22,7 @@ import type { OptionalSignal } from '../../utils/OptionalSignal.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
-import { getWebsiteOriginFromHash, getWebsiteOriginHash, WEBSITE_ORIGIN_RADIO_NAME } from '../../utils/websiteAccessHash.js'
+import { getWebsiteListHash, getWebsiteOriginFromHash, getWebsiteOriginHash, WEBSITE_ORIGIN_RADIO_NAME } from '../../utils/managementPages.js'
 
 type WebsiteAccessContext = {
 	searchQuery: Signal<string>
@@ -98,12 +98,12 @@ export function useWebsiteAccess() {
 	return context
 }
 
-export function clearSelectedWebsite(windowObject: Pick<Window, 'location'>, selectedDomain: Signal<string | undefined>, listHash: string) {
+export function clearSelectedWebsite(windowObject: Pick<Window, 'location'>, selectedDomain: Signal<string | undefined>) {
 	selectedDomain.value = undefined
-	windowObject.location.hash = listHash
+	windowObject.location.hash = getWebsiteListHash()
 }
 
-export const WebsiteAccessView = ({ listHash }: { listHash: string }) => {
+export const WebsiteAccessView = () => {
 	return (
 		<WebsiteAccessProvider>
 			<main>
@@ -114,7 +114,7 @@ export const WebsiteAccessView = ({ listHash }: { listHash: string }) => {
 					</header>
 					<article>
 						<WebsiteSettingsList />
-						<WebsiteSettingsDetail listHash = { listHash } />
+						<WebsiteSettingsDetail />
 					</article>
 				</div>
 			</main>
@@ -257,12 +257,12 @@ const FullFrameWindow = ({ children }: { children: ComponentChildren }) => {
 
 type Modals = { page: 'noModal' } | { page: 'ModifyAddress', state: Signal<ModifyAddressWindowState> }
 
-const WebsiteSettingsDetail = ({ listHash }: { listHash: string }) => {
+const WebsiteSettingsDetail = () => {
 	const { websiteAccessList, selectedDomain } = useWebsiteAccess()
 	const selectedWebsiteAccess = useOptionalComputed(() => websiteAccessList.value.find(access => access.website.websiteOrigin === selectedDomain.value))
 	const modalState = useSignal<Modals>({ page: 'noModal' })
 	const rpcEntries = useSignal<RpcEntries>([])
-	const closeDetails = () => { clearSelectedWebsite(window, selectedDomain, listHash) }
+	const closeDetails = () => { clearSelectedWebsite(window, selectedDomain) }
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		modalState.value = { page: 'ModifyAddress', state: new Signal(addressEditEntry(entry)) }

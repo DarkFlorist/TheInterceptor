@@ -7,16 +7,7 @@ import { SettingsView } from './SettingsView.js'
 import { SimulationStackPage } from './SimulationStackPage.js'
 import { DiagnosticsView } from './DiagnosticsView.js'
 import Hint from '../subcomponents/Hint.js'
-import { getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash, managementPages, type ManagementPage } from '../../utils/managementPages.js'
-
-const managementSectionDetails: Readonly<Record<ManagementPage, { label: string, icon: string, description: string }>> = {
-	home: { label: 'Home', icon: '../img/management-home.svg', description: '' },
-	websites: { label: 'Websites', icon: '../img/internet.svg', description: 'Review website access and permissions.' },
-	'address-book': { label: 'Address Book', icon: '../img/address-book.svg', description: 'Manage saved addresses and contacts.' },
-	'simulation-stack': { label: 'Simulation Stack', icon: '../img/simulation-stack.svg', description: 'Inspect pending and simulated activity.' },
-	diagnostics: { label: 'Diagnostics', icon: '../img/diagnostics.svg', description: 'Browse recorded errors and technical details.' },
-	settings: { label: 'Settings', icon: '../img/settings.svg', description: 'Configure networks and extension preferences.' },
-}
+import { getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash, managementSections, type ManagementPage } from '../../utils/managementPages.js'
 
 type ManagementTabParams = {
 	page: ManagementPage
@@ -50,9 +41,8 @@ function ManagementHome({ selectPage }: { selectPage: (page: ManagementPage) => 
 			<p>Choose a section to manage your extension.</p>
 		</header>
 		<div class = 'management-home-grid'>
-			{ managementPages.filter((page) => page !== 'home').map((page) => {
-				const section = managementSectionDetails[page]
-				return <button key = { page } type = 'button' class = 'management-home-card' onClick = { () => selectPage(page) }>
+			{ managementSections.filter((section) => section.page !== 'home').map((section) => {
+				return <button key = { section.page } type = 'button' class = 'management-home-card' onClick = { () => selectPage(section.page) }>
 					<img src = { section.icon } width = '28' height = '28' alt = '' />
 					<span class = 'management-home-card-copy'>
 						<strong>{ section.label }</strong>
@@ -63,6 +53,17 @@ function ManagementHome({ selectPage }: { selectPage: (page: ManagementPage) => 
 			}) }
 		</div>
 	</main>
+}
+
+function ManagementPanelContent({ page, selectPage }: { page: ManagementPage, selectPage: (page: ManagementPage) => void }) {
+	switch (page) {
+		case 'home': return <ManagementHome selectPage = { selectPage } />
+		case 'websites': return <WebsiteAccessView />
+		case 'address-book': return <AddressBook />
+		case 'simulation-stack': return <Hint><SimulationStackPage /></Hint>
+		case 'diagnostics': return <DiagnosticsView />
+		case 'settings': return <SettingsView />
+	}
 }
 
 export function ManagementView() {
@@ -84,8 +85,10 @@ export function ManagementView() {
 			if (tab === null || tabList === null) return
 			const tabBounds = tab.getBoundingClientRect()
 			const listBounds = tabList.getBoundingClientRect()
-			if (tabBounds.left < listBounds.left) tabList.scrollLeft -= listBounds.left - tabBounds.left
-			else if (tabBounds.right > listBounds.right) tabList.scrollLeft += tabBounds.right - listBounds.right
+			const leftOverflow = listBounds.left - tabBounds.left
+			const rightOverflow = tabBounds.right - listBounds.right
+			if (leftOverflow > 0) tabList.scrollLeft -= leftOverflow
+			else if (rightOverflow > 0) tabList.scrollLeft += rightOverflow
 		}
 		revealSelectedTab()
 		globalThis.addEventListener('resize', revealSelectedTab)
@@ -116,72 +119,26 @@ export function ManagementView() {
 				<h1>The Interceptor</h1>
 			</div>
 			<nav class = 'management-tabs' role = 'tablist' aria-label = 'Interceptor management' onKeyDown = { handleTabKeyDown }>
-				{ managementPages.map((page) => <ManagementTab key = { page } page = { page } selectedPage = { selectedPage.value } label = { managementSectionDetails[page].label } icon = { managementSectionDetails[page].icon } selectPage = { selectPage } />) }
+				{ managementSections.map((section) => <ManagementTab key = { section.page } page = { section.page } selectedPage = { selectedPage.value } label = { section.label } icon = { section.icon } selectPage = { selectPage } />) }
 			</nav>
 		</header>
 		{ selectedPage.value === undefined && <main class = 'management-panel management-unavailable'>
 			<h2>Management page unavailable</h2>
 			<p>Choose a tab above to continue.</p>
 		</main> }
-		<section
-			id = 'management-panel-home'
-			class = 'management-panel'
-			role = 'tabpanel'
-			aria-labelledby = 'management-tab-home'
-			tabIndex = { selectedPage.value === 'home' ? 0 : -1 }
-			hidden = { selectedPage.value !== 'home' }
-		>
-			{ selectedPage.value === 'home' ? <ManagementHome selectPage = { selectPage } /> : <></> }
-		</section>
-		<section
-			id = 'management-panel-websites'
-			class = 'management-panel'
-			role = 'tabpanel'
-			aria-labelledby = 'management-tab-websites'
-			tabIndex = { selectedPage.value === 'websites' ? 0 : -1 }
-			hidden = { selectedPage.value !== 'websites' }
-		>
-			{ selectedPage.value === 'websites' ? <WebsiteAccessView listHash = { getManagementPageHash('websites') } /> : <></> }
-		</section>
-		<section
-			id = 'management-panel-address-book'
-			class = 'management-panel'
-			role = 'tabpanel'
-			aria-labelledby = 'management-tab-address-book'
-			tabIndex = { selectedPage.value === 'address-book' ? 0 : -1 }
-			hidden = { selectedPage.value !== 'address-book' }
-		>
-			{ selectedPage.value === 'address-book' ? <AddressBook /> : <></> }
-		</section>
-		<section
-			id = 'management-panel-simulation-stack'
-			class = 'management-panel'
-			role = 'tabpanel'
-			aria-labelledby = 'management-tab-simulation-stack'
-			tabIndex = { selectedPage.value === 'simulation-stack' ? 0 : -1 }
-			hidden = { selectedPage.value !== 'simulation-stack' }
-		>
-			{ selectedPage.value === 'simulation-stack' ? <Hint><SimulationStackPage /></Hint> : <></> }
-		</section>
-		<section
-			id = 'management-panel-diagnostics'
-			class = 'management-panel'
-			role = 'tabpanel'
-			aria-labelledby = 'management-tab-diagnostics'
-			tabIndex = { selectedPage.value === 'diagnostics' ? 0 : -1 }
-			hidden = { selectedPage.value !== 'diagnostics' }
-		>
-			{ selectedPage.value === 'diagnostics' ? <DiagnosticsView /> : <></> }
-		</section>
-		<section
-			id = 'management-panel-settings'
-			class = 'management-panel'
-			role = 'tabpanel'
-			aria-labelledby = 'management-tab-settings'
-			tabIndex = { selectedPage.value === 'settings' ? 0 : -1 }
-			hidden = { selectedPage.value !== 'settings' }
-		>
-			{ selectedPage.value === 'settings' ? <SettingsView /> : <></> }
-		</section>
+		{ managementSections.map((section) => {
+			const active = selectedPage.value === section.page
+			return <section
+				key = { section.page }
+				id = { `management-panel-${ section.page }` }
+				class = 'management-panel'
+				role = 'tabpanel'
+				aria-labelledby = { `management-tab-${ section.page }` }
+				tabIndex = { active ? 0 : -1 }
+				hidden = { !active }
+			>
+				{ active ? <ManagementPanelContent page = { section.page } selectPage = { selectPage } /> : <></> }
+			</section>
+		}) }
 	</div>
 }

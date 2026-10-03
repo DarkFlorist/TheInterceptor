@@ -1,8 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getManagementHashForOpenRequest, getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash, getSimulationStackManagementHash } from '../../app/ts/utils/managementPages.js'
-import { getSimulationStackTargetElementIdFromHash, getSimulationStackTargetHash } from '../../app/ts/utils/simulationStackTargets.js'
-import { getWebsiteOriginFromHash, getWebsiteOriginHash } from '../../app/ts/utils/websiteAccessHash.js'
+import { getManagementHashForOpenRequest, getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash, getSimulationStackManagementHash, getSimulationStackTargetElementIdFromHash, getSimulationStackTargetHash, getWebsiteOriginFromHash, getWebsiteOriginHash } from '../../app/ts/utils/managementPages.js'
 import type { TransactionOrMessageIdentifier } from '../../app/ts/types/interceptor-messages.js'
 
 const managementViewSource = await Bun.file(new URL('../../app/ts/components/pages/ManagementView.tsx', import.meta.url)).text()

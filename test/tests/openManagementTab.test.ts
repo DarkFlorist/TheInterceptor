@@ -1,7 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getManagementHashForOpenRequest, getSimulationStackManagementHash, type ManagementOpenRequest } from '../../app/ts/utils/managementPages.js'
-import { getSimulationStackTargetHash } from '../../app/ts/utils/simulationStackTargets.js'
+import { getManagementHashForOpenRequest, getSimulationStackManagementHash, getSimulationStackTargetHash, type ManagementOpenRequest } from '../../app/ts/utils/managementPages.js'
 
 type TabRecord = {
 	readonly id: number
@@ -30,7 +29,8 @@ type WindowUpdateDetails = {
 }
 
 type OpenedTabIds = {
-	settingsView: number | undefined
+	managementTabId?: number | undefined
+	settingsView?: number | undefined
 	addressBook?: number | undefined
 	websiteAccess?: number | undefined
 	simulationStack?: number | undefined
@@ -105,9 +105,7 @@ async function loadGetLastKnownCurrentTabId() {
 	return (await import('../../app/ts/background/popupMessageHandlers.js')).getLastKnownCurrentTabId
 }
 
-const emptyOpenedTabs = (): OpenedTabIds => ({
-	settingsView: undefined,
-})
+const emptyOpenedTabs = (): OpenedTabIds => ({})
 
 describe('open management tab', () => {
 	test('reuses the tracked management tab for its entry point and legacy popup controls', async () => {
@@ -135,6 +133,22 @@ describe('open management tab', () => {
 })
 
 describe('management tab tracking', () => {
+	test('prefers the current management tab ID over a legacy settings tab ID', async () => {
+		const { createdTabs, updatedTabs } = installBrowserMock(
+			[
+				{ id: 42, url: 'chrome-extension://test-extension/html3/settingsViewV3.html#settings' },
+				{ id: 43, url: 'chrome-extension://test-extension/html3/settingsViewV3.html#home' },
+			],
+			{ settingsView: 42, managementTabId: 43 },
+		)
+		const openManagementTab = await loadOpenManagementTab()
+
+		await openManagementTab('#diagnostics')
+
+		assert.deepEqual(createdTabs, [])
+		assert.deepEqual(updatedTabs, [{ tabId: 43, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#diagnostics' } }])
+	})
+
 	test('opens and tracks one management tab even when legacy page IDs were stored', async () => {
 		const legacyIds = { ...emptyOpenedTabs(), addressBook: 8, websiteAccess: 9, simulationStack: 10 }
 		const { createdTabs, storageState } = installBrowserMock([], legacyIds)
@@ -143,7 +157,7 @@ describe('management tab tracking', () => {
 		await openManagementTab('#diagnostics')
 
 		assert.deepEqual(createdTabs, [{ url: '/html3/settingsViewV3.html#diagnostics' }])
-		assert.equal(storageState.idsOfOpenedTabs?.settingsView, 99)
+		assert.deepEqual(storageState.idsOfOpenedTabs, { managementTabId: 99 })
 	})
 
 	test('reuses and focuses the tracked management tab window', async () => {
@@ -168,7 +182,7 @@ describe('management tab tracking', () => {
 		await openManagementTab('#settings')
 
 		assert.deepEqual(createdTabs, [{ url: '/html3/settingsViewV3.html#settings' }])
-		assert.equal(storageState.idsOfOpenedTabs?.settingsView, 99)
+		assert.deepEqual(storageState.idsOfOpenedTabs, { managementTabId: 99 })
 	})
 
 	test('does not replace a website opened in the formerly tracked tab', async () => {
@@ -182,7 +196,7 @@ describe('management tab tracking', () => {
 
 		assert.deepEqual(updatedTabs, [])
 		assert.deepEqual(createdTabs, [{ url: '/html3/settingsViewV3.html#settings' }])
-		assert.equal(storageState.idsOfOpenedTabs?.settingsView, 99)
+		assert.deepEqual(storageState.idsOfOpenedTabs, { managementTabId: 99 })
 	})
 
 	test('replaces a management tab that cannot be focused', async () => {
@@ -192,7 +206,7 @@ describe('management tab tracking', () => {
 		await openManagementTab('#settings')
 
 		assert.deepEqual(createdTabs, [{ url: '/html3/settingsViewV3.html#settings' }])
-		assert.equal(storageState.idsOfOpenedTabs?.settingsView, 99)
+		assert.deepEqual(storageState.idsOfOpenedTabs, { managementTabId: 99 })
 	})
 
 	test('keeps the stored website tab when the active tab is the standalone simulation page', async () => {
