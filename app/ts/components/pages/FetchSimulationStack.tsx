@@ -215,14 +215,14 @@ export function FetchSimulationStack() {
 							}
 						</article>
 						<div class = 'media-content fetch-stack-request-body'>
-							<div class = 'content'>
+							<div>
 								<p class = 'title request-title'>
 									<b>	{ changeRequest.value.website.websiteOrigin } </b>
 									would like to retrieve your Simulation Stack
 								</p>
 								<div class = 'notification transaction-importance-box simulation-stack-view'>
 									<div class = 'fetch-stack-section'>
-										<p class = 'paragraph fetch-stack-address-notice'> Your simulation stack includes references to the following addresses. Sharing this information may allow the website to link these addresses together:</p>
+										<p class = 'paragraph'> Your simulation stack includes references to the following addresses. Sharing this information may allow the website to link these addresses together:</p>
 										<div class = 'sub-importance-box'>
 											{ addressReferences.value.length === 0 ? <p class = 'paragraph'> No address references</p> : <></> }
 											<div class = 'fetch-stack-address-list'>

@@ -311,7 +311,7 @@ describe('UI audit fixes', () => {
 		// An ENS event is a sentence whose parts wrap as whole pieces; squeezing the parts clipped names to a single letter.
 		assert.match(css, /\.ens-table\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/)
 		assert.match(css, /\.ens-table > \.log-cell\s*\{[^}]*flex:\s*0 0 auto;[^}]*max-width:\s*100%;/)
-		// The rows are list items, so they must stay unmarked and unspaced inside `.content`, whose list rules are more specific than a single class.
+		// The rows are list items, so they must stay unmarked and unspaced even under a framework `.content` wrapper, whose list rules are more specific than a single class.
 		assert.match(css, /\.ens-events > \.ens-event\s*\{[^}]*list-style:\s*none;[^}]*margin:\s*0;/)
 		const ensSource = await Bun.file('app/ts/components/simulationExplaining/customExplainers/EnsEventExplainer.tsx').text()
 		assert.match(ensSource, /<ul class = 'ens-events'>[\s\S]*?<li key = \{[^\n]*\} class = 'ens-event'>/)
@@ -331,6 +331,25 @@ describe('UI audit fixes', () => {
 		assert.match(swapSource, /const amountClass = `coin-text--strong \$\{ direction === 'pay' \? 'coin-text--negative' : 'coin-text--positive' \}`/)
 		assert.doesNotMatch(swapSource, /tokenStyle|balanceTextStyle|amountStyle/)
 		assert.match(css, /\.address-editor \.input\.address-editor-input--invalid \{ color: var\(--danger-color\) \}/)
+	})
+
+	test('keeps the stack request and website access dialogs readable and within narrow windows', async () => {
+		const css = await readInterceptorAppCss()
+		const fetchStackSource = await Bun.file('app/ts/components/pages/FetchSimulationStack.tsx').text()
+		// The framework's `.content` wrapper gave the stack bullets and indented every address card, so the dialog body is a plain container.
+		assert.doesNotMatch(fetchStackSource, /class = 'content'/)
+		// The panel follows the window width; a fixed minimum width pushed the cards off screen in narrow windows.
+		assert.match(css, /\.simulation-stack-view\s*\{[^}]*max-width:\s*40rem;/)
+		assert.doesNotMatch(css, /\.simulation-stack-view\s*\{[^}]*min-content/)
+		assert.match(css, /\.fetch-stack-section\s*\{[^}]*min-width:\s*0;/)
+		// Dates and long phrases in ENS sentences wrap instead of being clipped.
+		assert.match(css, /\.ens-table \.ens-event-text\s*\{[^}]*white-space:\s*normal;/)
+		// Confirmation text uses the readable muted colour, and focus starts on Cancel so it never lands on an address's copy button and hides its name.
+		assert.match(css, /\.website-access-dialog\s*\{[^}]*color:\s*var\(--subtitle-text-color\);/)
+		const websiteAccessSource = await Bun.file('app/ts/components/pages/WebsiteAccess.tsx').text()
+		const cancelButtons = websiteAccessSource.match(/<Modal\.Close [^>]*>Cancel<\/Modal\.Close>/g) ?? []
+		assert.equal(cancelButtons.length, 5)
+		for (const cancelButton of cancelButtons) assert.match(cancelButton, / autoFocus>/)
 	})
 
 	test('keeps the warning tag readable in both themes', async () => {

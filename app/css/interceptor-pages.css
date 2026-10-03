@@ -622,14 +622,14 @@ header:has(form[role='search']) h1 {
 	align-items: center;
 }
 
+/* The stack request panel is a centred column that follows the window width up to a comfortable reading width. */
 .simulation-stack-view {
 	gap: 10px;
 	display: flex;
 	flex-direction: column;
-	align-items: center;
 	margin-inline: auto;
 	padding: 10px;
-	max-width: min-content;
+	max-width: 40rem;
 }
 
 .btn.is-small {
@@ -905,9 +905,10 @@ fieldset[disabled] .button.is-primary.is-danger {
 
 .website-access-denied-reset { display: inline-block }
 
+/* Confirmation text has to be read before deciding, so it uses the readable muted colour and not the disabled one. */
 .website-access-dialog {
 	text-align: center;
-	color: var(--disabled-text-color);
+	color: var(--subtitle-text-color);
 }
 
 .website-access-dialog-title {
@@ -1220,7 +1221,7 @@ fieldset[disabled] .button.is-primary.is-danger {
 	justify-content: center;
 }
 
-/* Carries the element and both classes so its spacing outranks `.content p:not(:last-child)` when a transaction is shown inside `.content`. */
+/* Carries the element and both classes so its spacing would still outrank the framework's `.content p:not(:last-child)` if a transaction is ever placed under a `.content` wrapper again. */
 p.paragraph.summary-transaction-input-label {
 	color: var(--subtitle-text-color);
 	margin-bottom: 0.25rem;
@@ -1248,7 +1249,7 @@ p.paragraph.summary-transaction-input-label {
 }
 
 /* Ether and token amounts */
-/* The ether amount is a table element, so inside `.content` it must outrank the full-width `.content table` rule. */
+/* The ether amount is a table element; the extra class keeps it above the framework's full-width `.content table` rule wherever it is placed. */
 .log-table.coin-ether { width: fit-content }
 
 .coin-ether-amount {
@@ -1470,13 +1471,19 @@ p.paragraph.summary-transaction-input-label {
 
 .fetch-stack-request-body { padding-bottom: 10px }
 
-.fetch-stack-section { width: 100% }
+/* Each section and its panel may shrink below their content, so a narrow window clips long names instead of pushing the cards off screen. */
+.fetch-stack-section {
+	min-width: 0;
+	width: 100%;
+}
 
-.fetch-stack-address-notice { min-width: 400px }
+.fetch-stack-section > .sub-importance-box { grid-template-columns: minmax(0, 1fr) }
 
+/* Address names are clipped to the dialog width, so a long address cannot push the dialog wider than a narrow window. */
 .fetch-stack-address-list {
 	display: flex;
 	flex-direction: column;
+	max-width: 100%;
 	width: max-content;
 }
 
@@ -1520,7 +1527,7 @@ p.paragraph.summary-transaction-input-label {
 	width: 100%;
 }
 
-/* The two-class selector and the marker reset keep the rows plain inside `.content`, whose list rules would add bullets and spacing. */
+/* The two-class selector and the marker reset keep the rows plain even under a framework `.content` wrapper, whose list rules would add bullets and spacing. */
 .ens-events > .ens-event {
 	background-color: var(--alpha-005);
 	border-radius: var(--radius-medium);
@@ -1561,7 +1568,11 @@ p.paragraph.summary-transaction-input-label {
 	display: inline-block;
 }
 
-.ens-event-text { color: var(--text-color) }
+/* Plain sentence text wraps when it is wider than the row, so dates and long phrases stay readable in narrow popups. */
+.ens-table .ens-event-text {
+	color: var(--text-color);
+	white-space: normal;
+}
 
 .ens-table > .ens-event-fuse-list {
 	flex-shrink: 1;

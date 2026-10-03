@@ -362,7 +362,7 @@ const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: OptionalSignal<Websi
 					<p></p>
 						<p class = 'website-access-dialog-text website-access-dialog-text--spacious'>After confirming this action, The Interceptor will stop automatically denying access requests from <WebsiteCard website = { website.value } /> and will prompt you for permission the next time you try to connect.</p>
 					<div class = 'website-access-dialog-actions'>
-						<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
+						<Modal.Close class = 'btn btn--outline' value = 'reject' autoFocus>Cancel</Modal.Close>
 						<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
 					</div>
 				</Modal.Dialog>
@@ -437,7 +437,7 @@ const RemoveAddressConfirmation = ({ website, addressBookEntry, renameAddressCal
 				</div>
 				<p class = 'website-access-dialog-question'>Remove the website's access to this address anyway?</p>
 				<div class = 'website-access-dialog-actions'>
-					<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
+					<Modal.Close class = 'btn btn--outline' value = 'reject' autoFocus>Cancel</Modal.Close>
 					<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
 				</div>
 			</Modal.Dialog>
@@ -502,7 +502,7 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal<
 								<p class = 'website-access-dialog-text'>This will prevent <WebsiteCard website = { website.value } /> from requesting resources outside its domain, which can lead to erratic behavior or even cause it to stop functioning entirely.</p>
 								<p class = 'website-access-dialog-question'>Are you sure you want to block external requests from this website?</p>
 								<div class = 'website-access-dialog-actions'>
-									<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
+									<Modal.Close class = 'btn btn--outline' value = 'reject' autoFocus>Cancel</Modal.Close>
 									<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
 								</div>
 
@@ -559,7 +559,7 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: OptionalSi
 							<p class = 'website-access-dialog-text'>Interceptor will no longer be able to simulate transactions from <WebsiteCard website = { website.value } />, which could potentially lead to loss of assets. Please exercise caution.</p>
 								<p class = 'website-access-dialog-question'>Are you sure you want to disable protection for this website?</p>
 								<div class = 'website-access-dialog-actions'>
-									<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
+									<Modal.Close class = 'btn btn--outline' value = 'reject' autoFocus>Cancel</Modal.Close>
 									<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
 								</div>
 							</Modal.Dialog>
@@ -598,7 +598,7 @@ const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal
 							<p class = 'website-access-dialog-text'>You are about to remove <WebsiteCard website = { website.value } /> from the list of allowed sites. By doing so, the website will no longer have access to your wallet addresses.</p>
 							<p class = 'website-access-dialog-question'>Are you sure you want to remove this website?</p>
 							<div class = 'website-access-dialog-actions'>
-								<Modal.Close class = 'btn btn--outline' value = 'reject'>Cancel</Modal.Close>
+								<Modal.Close class = 'btn btn--outline' value = 'reject' autoFocus>Cancel</Modal.Close>
 								<Modal.Close class = 'btn btn--destructive' value = 'confirm'>Confirm</Modal.Close>
 							</div>
 						</Modal.Dialog>
