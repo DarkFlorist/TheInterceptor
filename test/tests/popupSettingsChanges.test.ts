@@ -221,11 +221,7 @@ describe('popup settings changes', () => {
 				confirmTransactionAbortController: new AbortController(),
 				resetSimulationState: async () => undefined,
 			}, { method: 'popup_modifyMakeMeRich', data: { address: 'CurrentAddress', add: true } })
-			assert.deepEqual(result, {
-				type: 'PopupSettingsChangeReply',
-				ok: false,
-				message: 'The rich setting was saved, but RPC services are unavailable. Restore them before refreshing the simulation.',
-			})
+			assert.deepEqual(result, { type: 'PopupSettingsChangeReply', ok: true })
 			assert.equal(getBlockCalls.count, 0)
 			assert.equal(services.simulationServicesOwner.isAvailable(), unavailableState === 'corrupt configuration')
 		} finally {
@@ -259,6 +255,42 @@ describe('popup settings changes', () => {
 			assert.equal(services.simulationServicesOwner.isAvailable(), unavailableState === 'corrupt configuration')
 		} finally {
 			console.warn = originalWarn
+		}
+	})
+
+	test('keeps a saved setting successful when its follow-up storage refresh fails', async () => {
+		const { runtimeMessages } = installBrowserMock()
+		const { getSettings } = await loadModules()
+		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		const settings = await getSettings()
+		const originalGet = browser.storage.local.get
+		const originalError = console.error
+		let failNextRead = true
+		Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: async (...args: Parameters<typeof originalGet>) => {
+			if (failNextRead) {
+				failNextRead = false
+				throw new Error('Storage temporarily unavailable')
+			}
+			return await originalGet(...args)
+		} })
+		console.error = () => undefined
+		try {
+			const result = await dispatchPopupMessage({
+				...services,
+				settings,
+				websiteTabConnections: new Map(),
+				publishRpcConnectionStatus: async () => undefined,
+				simulationAbortController: new AbortController(),
+				confirmTransactionAbortController: new AbortController(),
+				resetSimulationState: async () => undefined,
+			}, { method: 'popup_ChangeSettings', data: { useTabsInsteadOfPopup: true } })
+			assert.equal(result, undefined)
+			assert.equal((await browser.storage.local.get('useTabsInsteadOfPopup')).useTabsInsteadOfPopup, true)
+			assert.equal(runtimeMessages.some((message) => message.method === 'popup_UnexpectedErrorOccured'), true)
+		} finally {
+			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalGet })
+			console.error = originalError
 		}
 	})
 

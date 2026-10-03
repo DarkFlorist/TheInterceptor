@@ -15,7 +15,7 @@ import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/webs
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
 import type { RpcConfigurationState } from './storageVariables.js'
 import { hasOwnKey } from '../utils/typescript.js'
-import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from './rpcConfigurationLifecycle.js'
+import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../types/interceptor-reply-messages.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -122,19 +122,17 @@ export async function getSettingsSnapshot(): Promise<{ readonly settings: Settin
 const capturedRpcNetworkMarker = Symbol('capturedRpcNetwork')
 export type CapturedRpcNetwork = {
 	readonly activeRpcNetwork: RpcNetwork
+	readonly fallbackSettings: Settings
 	readonly [capturedRpcNetworkMarker]: true
 }
 
-export function captureRpcNetwork(settings: Pick<Settings, 'activeRpcNetwork'>): CapturedRpcNetwork {
-	return { activeRpcNetwork: settings.activeRpcNetwork, [capturedRpcNetworkMarker]: true }
+export function captureRpcNetwork(settings: Settings): CapturedRpcNetwork {
+	return { activeRpcNetwork: settings.activeRpcNetwork, fallbackSettings: settings, [capturedRpcNetworkMarker]: true }
 }
 
 export async function getSettingsForCapturedRpcNetwork(capturedRpcNetwork: CapturedRpcNetwork): Promise<Settings> {
 	const { storedItems, rpcConfiguration } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
-	if (rpcConfiguration.status === 'unavailable' && rpcConfiguration.reason === 'read-failed') {
-		if (rpcConfiguration.error !== undefined) throw rpcConfiguration.error
-		throw new Error(RPC_CONFIGURATION_UNAVAILABLE_ERROR.message)
-	}
+	if (rpcConfiguration.status === 'unavailable' && rpcConfiguration.reason === 'read-failed') return capturedRpcNetwork.fallbackSettings
 	return await getSettingsFromStorageItems(storedItems, capturedRpcNetwork.activeRpcNetwork)
 }
 

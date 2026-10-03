@@ -1,16 +1,11 @@
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import { METAMASK_ERROR_PROVIDER_DISCONNECTED } from '../utils/constants.js'
 import type { InterceptedRequest } from '../utils/requests.js'
 import { replyToInterceptedRequest } from './messageSending.js'
 import type { RpcConfigurationState } from './storageVariables.js'
 import { getRpcConfigurationState, setRpcConfiguration, setRpcList } from './storageVariables.js'
 import type { RpcEntry, RpcNetwork } from '../types/rpc.js'
-
-export const RPC_CONFIGURATION_UNAVAILABLE_ERROR = {
-	code: METAMASK_ERROR_PROVIDER_DISCONNECTED,
-	message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
-}
+import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../types/interceptor-reply-messages.js'
 
 export function rpcConfigurationIsReady(rpcConfiguration: RpcConfigurationState): rpcConfiguration is Extract<RpcConfigurationState, { status: 'ready' }> {
 	return rpcConfiguration.status === 'ready'

@@ -140,6 +140,24 @@ beforeEach(() => {
 })
 
 describe('popup message dispatcher seams', () => {
+	test('routes recovery handlers through the registry when settings are unavailable', async () => {
+		const context = createDispatcherContext(async () => undefined)
+		context.settings = undefined
+		context.rpcConfiguration = { status: 'unavailable', reason: 'read-failed', error: new Error('Storage unavailable') }
+
+		assert.deepEqual(await dispatchPopupMessage(context, { method: 'popup_requestSimulationMode' }), {
+			error: {
+				code: 4900,
+				message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
+			},
+		})
+		await dispatchPopupMessage(context, { method: 'popup_requestSettings' })
+		assert.equal(sentMessages.some((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_requestSettingsReply'
+		}), true)
+	})
+
 	test('snapshot registration captures at invocation and keeps one pair across awaits', async () => {
 		const { popupSnapshotMessageHandler } = await import('../../app/ts/background/popupMessageHandlerRegistry.js')
 		const context = createDispatcherContext(async () => undefined)

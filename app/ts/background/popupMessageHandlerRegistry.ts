@@ -6,14 +6,14 @@ import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import type { RpcConfigurationState } from './storageVariables.js'
 import { rpcServicesAreAvailable } from './rpcConfigurationLifecycle.js'
-import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from './rpcConfigurationLifecycle.js'
+import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../types/interceptor-reply-messages.js'
 
 const rpcConfigurationUnavailableReply = (): PopupReplyOption => ({ error: RPC_CONFIGURATION_UNAVAILABLE_ERROR })
 
 export type PopupMessageDispatcherContext = {
 	websiteTabConnections: WebsiteTabConnections
 	simulationServicesOwner: SimulationServicesOwner
-	settings: Settings
+	settings: Settings | undefined
 	rpcConfiguration: RpcConfigurationState
 	publishRpcConnectionStatus: PublishRpcConnectionStatus
 	simulationAbortController: AbortController
@@ -23,11 +23,30 @@ export type PopupMessageDispatcherContext = {
 
 export type PopupMessageHandler = (context: PopupMessageDispatcherContext, request: PopupMessage) => Promise<PopupReplyOption | void>
 export type PopupMessageHandlerMap = Record<PopupMessage['method'], PopupMessageHandler>
-export const popupMessageHandler = createMethodHandlerFor<PopupMessage, PopupMessageDispatcherContext, Promise<PopupReplyOption | void>>()
+export type PopupReadyMessageDispatcherContext = Omit<PopupMessageDispatcherContext, 'settings'> & { readonly settings: Settings }
+
+const popupMethodHandler = createMethodHandlerFor<PopupMessage, PopupMessageDispatcherContext, Promise<PopupReplyOption | void>>()
+
+export function popupMessageHandler<Method extends PopupMessage['method']>(
+	method: Method,
+	handler: (context: PopupReadyMessageDispatcherContext, request: Extract<PopupMessage, { readonly method: Method }>) => Promise<PopupReplyOption | void>,
+): PopupMessageHandler {
+	return popupMethodHandler(method, async (context, request) => {
+		if (context.settings === undefined) return rpcConfigurationUnavailableReply()
+		return await handler({ ...context, settings: context.settings }, request)
+	})
+}
+
+export function popupRecoveryMessageHandler<Method extends PopupMessage['method']>(
+	method: Method,
+	handler: (context: PopupMessageDispatcherContext, request: Extract<PopupMessage, { readonly method: Method }>) => Promise<PopupReplyOption | void>,
+): PopupMessageHandler {
+	return popupMethodHandler(method, handler)
+}
 
 export function popupRpcMessageHandler<Method extends PopupMessage['method']>(
 	method: Method,
-	handler: (context: PopupMessageDispatcherContext, request: Extract<PopupMessage, { readonly method: Method }>) => Promise<PopupReplyOption | void>,
+	handler: (context: PopupReadyMessageDispatcherContext, request: Extract<PopupMessage, { readonly method: Method }>) => Promise<PopupReplyOption | void>,
 	unavailableReply?: (request: Extract<PopupMessage, { readonly method: Method }>) => PopupReplyOption,
 	requiresRpc: (request: Extract<PopupMessage, { readonly method: Method }>) => boolean = () => true,
 ): PopupMessageHandler {
@@ -38,7 +57,7 @@ export function popupRpcMessageHandler<Method extends PopupMessage['method']>(
 }
 
 // One fixed-provider operation: this context deliberately exposes neither reset nor the live owner.
-export type PopupSnapshotContext = Omit<PopupMessageDispatcherContext, 'simulationServicesOwner' | 'resetSimulationState'> & {
+export type PopupSnapshotContext = Omit<PopupReadyMessageDispatcherContext, 'simulationServicesOwner' | 'resetSimulationState'> & {
 	readonly services: SimulationServices
 }
 

@@ -879,10 +879,23 @@ export async function changeSettings(simulationServicesOwner: SimulationServices
 		await setSafeAppsCompatibilityMode(parsedRequest.data.safeAppsCompatibilityMode)
 	}
 	const popupRefreshGeneration = bumpPopupRefreshGeneration()
-	const { rpcConfiguration } = await getSettingsSnapshot()
-	const services = rpcServicesAreAvailable(rpcConfiguration, simulationServicesOwner) ? simulationServicesOwner.getCurrentOrUndefined() : undefined
-	if (services === undefined) return await requestHomePageBootstrap(websiteTabConnections, popupRefreshGeneration)
-	return await requestNewHomeData(services.ethereum, websiteTabConnections, false, true, requestAbortController, popupRefreshGeneration)
+	try {
+		const snapshot = await getSettingsSnapshot()
+		if (snapshot.settings === undefined) {
+			const error = 'error' in snapshot.rpcConfiguration ? snapshot.rpcConfiguration.error : undefined
+			throw error ?? new Error('RPC configuration became unavailable while refreshing the popup.')
+		}
+		const services = rpcServicesAreAvailable(snapshot.rpcConfiguration, simulationServicesOwner) ? simulationServicesOwner.getCurrentOrUndefined() : undefined
+		if (services === undefined) return await requestHomePageBootstrap(websiteTabConnections, popupRefreshGeneration)
+		return await requestNewHomeData(services.ethereum, websiteTabConnections, false, true, requestAbortController, popupRefreshGeneration)
+	} catch (error: unknown) {
+		await reportUnexpectedError(error, {
+			source: 'settings_home_refresh',
+			code: 'settings_saved_home_refresh_failed',
+			displayMessage: 'The setting was saved, but the popup could not be refreshed. Reopen it to retry.',
+			suppressExpectedHandledErrors: false,
+		})
+	}
 }
 
 export async function simulateGovernanceContractExecutionOnPass(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, request: SimulateGovernanceContractExecution) {

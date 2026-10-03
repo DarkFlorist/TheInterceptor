@@ -46,7 +46,7 @@ import { getSafePendingFlow } from '../../safe/safePendingFlow.js'
 import { persistUnsignedSafeTransaction, resolveSafeSignerReply } from '../safeConfirmationPersistence.js'
 import { getWalletSelectedAccount } from '../../utils/activeAddressSelection.js'
 import { createSafeSignerErrorStatus } from '../safeSignerErrors.js'
-import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../rpcConfigurationLifecycle.js'
+import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../../types/interceptor-reply-messages.js'
 
 const pendingConfirmationSemaphore = new Semaphore(1)
 const pendingNoResponseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>()

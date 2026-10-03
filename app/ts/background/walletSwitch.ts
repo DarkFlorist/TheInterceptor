@@ -12,7 +12,8 @@ import { getRpcNetworkChange, getRpcChangeRoute } from '../utils/rpcNetworkChang
 import type { RpcNetwork } from '../types/rpc.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { sendCallbackToConfirmedSignerOwner, getConfirmedSignerStateToken, runSignerStateOperation, signerConnectionReplacedError, addSignerStateReplacementListener, doSignerStateTokensMatch, signerUnavailableError, type SignerStateToken } from './signerStateOwnership.js'
-import { rpcConfigurationIsReady, RPC_CONFIGURATION_UNAVAILABLE_ERROR } from './rpcConfigurationLifecycle.js'
+import { rpcConfigurationIsReady } from './rpcConfigurationLifecycle.js'
+import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../types/interceptor-reply-messages.js'
 
 type PendingSignerChainChange = {
 	readonly walletSwitchRequestId: string

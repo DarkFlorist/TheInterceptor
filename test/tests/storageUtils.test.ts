@@ -148,13 +148,28 @@ describe('RPC storage recovery', () => {
 		assert.equal(writes.length, 0)
 	})
 
-	test('does not replace captured-network settings with defaults after a storage read failure', async () => {
+	test('preserves the complete captured settings after a storage read failure', async () => {
+		await browserStorageLocalSet({
+			independentActiveSimulationAddress: 123n,
+			activeSigningSafeAddress: 456n,
+			openedPageV2: { page: 'Settings' },
+			useSignersAddressAsActiveAddress: true,
+			websiteAccess: [{
+				website: { websiteOrigin: 'https://approved.example', icon: undefined, title: 'Approved' },
+				addressAccess: [{ address: 123n, access: true }],
+				access: true,
+			}],
+			simulationMode: false,
+		})
 		const initialSnapshot = await getSettingsSnapshot()
 		if (initialSnapshot.settings === undefined) throw new Error('Expected initial settings')
+		writes.length = 0
 		const readError = new Error('Extension storage is temporarily unavailable')
 		nextStorageReadError = readError
 
-		await assert.rejects(getSettingsForCapturedRpcNetwork(captureRpcNetwork(initialSnapshot.settings)), (error: unknown) => error === readError)
+		const settings = await getSettingsForCapturedRpcNetwork(captureRpcNetwork(initialSnapshot.settings))
+
+		assert.deepEqual(settings, initialSnapshot.settings)
 		assert.equal(writes.length, 0)
 	})
 

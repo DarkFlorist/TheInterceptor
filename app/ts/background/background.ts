@@ -36,7 +36,8 @@ import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import { getWalletCapabilities } from './walletCapabilities.js'
 import { getWalletGetCapabilitiesParseFailureReply } from './walletGetCapabilitiesRpc.js'
 import { hasAccess as getWebsiteAccessApprovalState, hasAddressAccess as getWebsiteAddressAccessApprovalState } from './websiteAccessPolicy.js'
-import { replyIfRpcConfigurationIsUnavailable, RPC_CONFIGURATION_UNAVAILABLE_ERROR } from './rpcConfigurationLifecycle.js'
+import { replyIfRpcConfigurationIsUnavailable } from './rpcConfigurationLifecycle.js'
+import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../types/interceptor-reply-messages.js'
 
 if (initializeWatchAssetWindowListeners()) {
 	void processWatchAssetQueue(undefined).catch(async (error: unknown) => {

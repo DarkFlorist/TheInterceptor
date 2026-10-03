@@ -65,6 +65,37 @@ async function getAvailableSimulationServices(simulationServicesOwner: Simulatio
 	return rpcServicesAreAvailable(rpcConfiguration, simulationServicesOwner) ? simulationServicesOwner.getCurrentOrUndefined() : undefined
 }
 
+type SignerAccountsChangedPopupUpdate =
+	| { readonly type: 'accounts-update' }
+	| { readonly type: 'active-selection', readonly tabId: number, readonly activeSigningAddress: bigint | undefined, readonly activeSigningSafeAddress: bigint | undefined }
+
+async function publishSignerAccountsChanged(
+	websiteTabConnections: WebsiteTabConnections,
+	signerStateToken: SignerStateToken,
+	popupUpdate: SignerAccountsChangedPopupUpdate,
+	error?: { readonly code: number, readonly message: string, readonly data?: string },
+) {
+	if (popupUpdate.type === 'accounts-update') {
+		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
+	} else {
+		await sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: {
+			tabId: popupUpdate.tabId,
+			activeSigningAddress: popupUpdate.activeSigningAddress,
+			activeSigningSafeAddress: popupUpdate.activeSigningSafeAddress,
+		} })
+	}
+	sendInternalWindowMessage({
+		method: 'window_signer_accounts_changed',
+		data: {
+			socket: signerStateToken.socket,
+			signerStateOwnerGeneration: signerStateToken.ownerGeneration,
+			signerProviderGeneration: signerStateToken.signerProviderGeneration,
+			...(error === undefined ? {} : { error }),
+		},
+	})
+	notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.signerAccountsChanged, signerStateToken.socket)
+}
+
 export async function ethAccountsReply(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'eth_accounts_reply' as const, result: '0x' as const }
 	if (!('params' in request)) return returnValue
@@ -90,17 +121,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			}
 			if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
 			// Wake requesters waiting for a signer accounts round-trip even when the signer rejected or errored.
-			sendInternalWindowMessage({
-				method: 'window_signer_accounts_changed',
-				data: {
-					socket: signerStateToken.socket,
-					signerStateOwnerGeneration: signerStateToken.ownerGeneration,
-					signerProviderGeneration: signerStateToken.signerProviderGeneration,
-					error: signerAccountError,
-				},
-			})
-			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
-			notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.signerAccountsChanged, signerStateToken.socket)
+			await publishSignerAccountsChanged(websiteTabConnections, signerStateToken, { type: 'accounts-update' }, signerAccountError)
 			return returnValue
 		}
 		const signerAccounts = signerAccountsReply.accounts
@@ -114,20 +135,11 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 		const snapshot = await getSettingsSnapshot()
 		const { rpcConfiguration } = snapshot
 		if (snapshot.settings === undefined) {
-			await sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: {
+			await publishSignerAccountsChanged(websiteTabConnections, signerStateToken, { type: 'active-selection',
 				tabId,
 				activeSigningAddress,
 				activeSigningSafeAddress: undefined,
-			} })
-			sendInternalWindowMessage({
-				method: 'window_signer_accounts_changed',
-				data: {
-					socket: signerStateToken.socket,
-					signerStateOwnerGeneration: signerStateToken.ownerGeneration,
-					signerProviderGeneration: signerStateToken.signerProviderGeneration,
-				},
 			})
-			notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.signerAccountsChanged, signerStateToken.socket)
 			return returnValue
 		}
 		const settings = requireSettings(snapshot)
@@ -157,21 +169,11 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 		}
 		const updatedSettings = shouldActivateAddressSelection ? await getSettings() : settings
 		const displayedSigningSafe = await getConfiguredSigningSafe(updatedSettings, signerAccounts)
-		await sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: {
+		await publishSignerAccountsChanged(websiteTabConnections, signerStateToken, { type: 'active-selection',
 			tabId,
 			activeSigningAddress: displayedSigningSafe?.address ?? activeSigningAddress,
 			activeSigningSafeAddress: displayedSigningSafe?.address,
-		} })
-		// Resume after restoring the matching selection, or after recording signer state when RPC settings are paused.
-		sendInternalWindowMessage({
-			method: 'window_signer_accounts_changed',
-			data: {
-				socket: signerStateToken.socket,
-				signerStateOwnerGeneration: signerStateToken.ownerGeneration,
-				signerProviderGeneration: signerStateToken.signerProviderGeneration,
-			},
 		})
-		notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.signerAccountsChanged, signerStateToken.socket)
 		return returnValue
 	})
 }
