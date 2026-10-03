@@ -692,7 +692,7 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressC
 				/> }
 			</> }
 		</div>
-		{ showTimePicker ? <div style = 'display: flex; justify-content: center; padding-top: 10px;'>
+		{ showTimePicker ? <div class = 'simulation-stack-delay simulation-stack-delay--centered'>
 			<TimePicker
 				startText = { 'Simulate delay' }
 				mode = { timeSelectorMode }

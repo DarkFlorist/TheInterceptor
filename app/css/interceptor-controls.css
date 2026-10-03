@@ -1,55 +1,12 @@
 /* Bulma Form */
-.input {
-  background-color: white;
-  border-color: #dbdbdb;
-  border-radius: 4px;
-  color: #363636;
-}
-
-.input::-moz-placeholder {
-  color: rgba(54, 54, 54, 0.3);
-}
-
-.input::-webkit-input-placeholder {
-  color: rgba(54, 54, 54, 0.3);
-}
-
-.input:-moz-placeholder {
-  color: rgba(54, 54, 54, 0.3);
-}
-
-.input:-ms-input-placeholder {
-  color: rgba(54, 54, 54, 0.3);
-}
-
 .input[disabled],
 fieldset[disabled] .input {
   box-shadow: none;
-  color: #7a7a7a;
-}
-
-.input[disabled]::-moz-placeholder,
-fieldset[disabled] .input::-moz-placeholder {
-  color: rgba(122, 122, 122, 0.3);
-}
-
-.input[disabled]::-webkit-input-placeholder,
-fieldset[disabled] .input::-webkit-input-placeholder {
-  color: rgba(122, 122, 122, 0.3);
-}
-
-.input[disabled]:-moz-placeholder,
-fieldset[disabled] .input:-moz-placeholder {
-  color: rgba(122, 122, 122, 0.3);
-}
-
-.input[disabled]:-ms-input-placeholder,
-fieldset[disabled] .input:-ms-input-placeholder {
-  color: rgba(122, 122, 122, 0.3);
+  color: var(--disabled-text-color);
 }
 
 .input {
-  box-shadow: inset 0 0.0625em 0.125em rgba(10, 10, 10, 0.05);
+  border-radius: 4px;
   max-width: 100%;
   width: 100%;
 }
@@ -58,24 +15,11 @@ fieldset[disabled] .input:-ms-input-placeholder {
   box-shadow: none;
 }
 
-.label {
-  color: #363636;
-  display: block;
-  font-size: 1rem;
-  font-weight: 700;
-}
-
-.label:not(:last-child) {
-  margin-bottom: 0.5em;
-}
-
 /* Bulma Components */
 
 .card {
-  background-color: white;
   border-radius: 0.25rem;
-  box-shadow: 0 0.5em 1em -0.125em rgba(10, 10, 10, 0.1), 0 0px 0 1px rgba(10, 10, 10, 0.02);
-  color: #4a4a4a;
+  color: var(--text-color);
   max-width: 100%;
   position: relative;
 }
@@ -93,13 +37,11 @@ fieldset[disabled] .input:-ms-input-placeholder {
 .card-header {
   background-color: transparent;
   align-items: stretch;
-  box-shadow: 0 0.125em 0.25em rgba(10, 10, 10, 0.1);
   display: flex;
 }
 
 .card-header-title {
   align-items: center;
-  color: #363636;
   display: flex;
   flex-grow: 1;
   font-weight: 700;
@@ -107,8 +49,6 @@ fieldset[disabled] .input:-ms-input-placeholder {
 }
 
 .card-header-icon {
-  -moz-appearance: none;
-  -webkit-appearance: none;
   appearance: none;
   background: none;
   border: none;
@@ -116,7 +56,6 @@ fieldset[disabled] .input:-ms-input-placeholder {
   font-family: inherit;
   font-size: 1em;
   margin: 0;
-  padding: 0;
   align-items: center;
   cursor: pointer;
   display: flex;
@@ -153,15 +92,12 @@ fieldset[disabled] .input:-ms-input-placeholder {
 }
 
 .dropdown-content {
-  background-color: white;
   border-radius: 4px;
-  box-shadow: 0 0.5em 1em -0.125em rgba(10, 10, 10, 0.1), 0 0px 0 1px rgba(10, 10, 10, 0.02);
   padding-bottom: 0.5rem;
   padding-top: 0.5rem;
 }
 
 .dropdown-item {
-  color: #4a4a4a;
   display: block;
   position: relative;
 }
@@ -171,18 +107,6 @@ button.dropdown-item {
   text-align: inherit;
   white-space: nowrap;
   width: 100%;
-}
-
-a.dropdown-item:hover,
-button.dropdown-item:hover {
-  background-color: whitesmoke;
-  color: #0a0a0a;
-}
-
-a.dropdown-item.is-active,
-button.dropdown-item.is-active {
-  background-color: #485fc7;
-  color: #fff;
 }
 
 .media {
@@ -196,7 +120,7 @@ button.dropdown-item.is-active {
 }
 
 .media .media {
-  border-top: 1px solid rgba(219, 219, 219, 0.5);
+  border-top: 1px solid var(--hairline-color);
   display: flex;
   padding-top: 0.75rem;
 }
@@ -214,7 +138,7 @@ button.dropdown-item.is-active {
 }
 
 .media + .media {
-  border-top: 1px solid rgba(219, 219, 219, 0.5);
+  border-top: 1px solid var(--hairline-color);
   margin-top: 1rem;
   padding-top: 1rem;
 }
@@ -274,24 +198,9 @@ button.dropdown-item.is-active {
 }
 
 .menu-list li ul {
-  border-left: 1px solid #dbdbdb;
+  border-left: 1px solid var(--hairline-color);
   margin: 0.75em;
   padding-left: 0.75em;
-}
-
-.message {
-  background-color: whitesmoke;
-  border-radius: 4px;
-  font-size: 1rem;
-}
-
-.message strong {
-  color: currentColor;
-}
-
-.message a:not(.button):not(.tag):not(.dropdown-item) {
-  color: currentColor;
-  text-decoration: underline;
 }
 
 .modal {
@@ -308,14 +217,12 @@ button.dropdown-item.is-active {
   display: flex;
 }
 
-.modal-background {
-  background-color: rgba(10, 10, 10, 0.86);
-}
-
 .modal-card {
+  display: flex;
+  flex-direction: column;
   margin: 0 20px;
-  max-height: calc(100vh - 160px);
-  overflow: auto;
+  max-height: calc(100vh - 40px);
+  overflow: hidden;
   position: relative;
   width: 100%;
 }
@@ -328,18 +235,10 @@ button.dropdown-item.is-active {
   }
 }
 
-.modal-card {
-  display: flex;
-  flex-direction: column;
-  max-height: calc(100vh - 40px);
-  overflow: hidden;
-  -ms-overflow-y: visible;
-}
-
 .modal-card-head,
 .modal-card-foot {
   align-items: center;
-  background-color: whitesmoke;
+  background-color: var(--card-bg-color);
   display: flex;
   flex-shrink: 0;
   justify-content: flex-start;
@@ -348,7 +247,7 @@ button.dropdown-item.is-active {
 }
 
 .modal-card-head {
-  border-bottom: 1px solid #dbdbdb;
+  border-bottom: 1px solid var(--hairline-color);
   border-top-left-radius: 6px;
   border-top-right-radius: 6px;
 }
@@ -356,7 +255,7 @@ button.dropdown-item.is-active {
 .modal-card-foot {
   border-bottom-left-radius: 6px;
   border-bottom-right-radius: 6px;
-  border-top: 1px solid #dbdbdb;
+  border-top: 1px solid var(--hairline-color);
 }
 
 .modal-card-foot .button:not(:last-child) {
@@ -364,8 +263,6 @@ button.dropdown-item.is-active {
 }
 
 .modal-card-body {
-  -webkit-overflow-scrolling: touch;
-  background-color: white;
   flex-grow: 1;
   flex-shrink: 1;
   overflow: auto;
@@ -373,7 +270,7 @@ button.dropdown-item.is-active {
 }
 
 .navbar {
-  background-color: white;
+  background-color: var(--window-header-bg-color);
   min-height: 3.25rem;
   position: relative;
   z-index: 30;
@@ -398,9 +295,11 @@ button.dropdown-item.is-active {
 }
 
 .navbar-item {
-  color: #4a4a4a;
+  color: var(--text-color);
   display: block;
   line-height: 1.5;
+  flex-grow: 0;
+  flex-shrink: 0;
   padding: 0.5rem 0.75rem;
   position: relative;
 }
@@ -412,16 +311,6 @@ button.dropdown-item.is-active {
 
 a.navbar-item {
   cursor: pointer;
-}
-
-a.navbar-item:focus, a.navbar-item:focus-within, a.navbar-item:hover {
-  background-color: #fafafa;
-  color: #485fc7;
-}
-
-.navbar-item {
-  flex-grow: 0;
-  flex-shrink: 0;
 }
 
 .navbar-item img {

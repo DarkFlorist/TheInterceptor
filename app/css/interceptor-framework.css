@@ -1,8 +1,7 @@
 /*! bulma.io v0.9.4 | MIT License | github.com/jgthms/bulma */
 /* Bulma Utilities */
 .button, .input {
-  -moz-appearance: none;
-  -webkit-appearance: none;
+  appearance: none;
   align-items: center;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -30,82 +29,18 @@ fieldset[disabled] .input {
   cursor: not-allowed;
 }
 
-.button {
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  user-select: none;
-}
-
-.delete {
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  user-select: none;
-  -moz-appearance: none;
-  -webkit-appearance: none;
-  background-color: rgba(10, 10, 10, 0.2);
-  border: none;
-  border-radius: 9999px;
-  cursor: pointer;
-  pointer-events: auto;
-  display: inline-block;
-  flex-grow: 0;
-  flex-shrink: 0;
-  font-size: 0;
-  height: 20px;
-  max-height: 20px;
-  max-width: 20px;
-  min-height: 20px;
-  min-width: 20px;
-  outline: none;
-  position: relative;
-  vertical-align: top;
-  width: 20px;
-}
-
-.delete::before, .delete::after {
-  background-color: white;
-  content: "";
-  display: block;
-  left: 50%;
-  position: absolute;
-  top: 50%;
-  transform: translateX(-50%) translateY(-50%) rotate(45deg);
-  transform-origin: center center;
-}
-
-.delete::before {
-  height: 2px;
-  width: 50%;
-}
-
-.delete::after {
-  height: 50%;
-  width: 2px;
-}
-
-.delete:hover, .delete:focus {
-  background-color: rgba(10, 10, 10, 0.3);
-}
-
-.delete:active {
-  background-color: rgba(10, 10, 10, 0.4);
-}
-
 .button.is-loading::after {
-  -webkit-animation: spinAround 500ms infinite linear;
-          animation: spinAround 500ms infinite linear;
-  border: 2px solid #dbdbdb;
+  animation: spinAround 500ms infinite linear;
+  border: 2px solid var(--subtitle-text-color);
   border-radius: 9999px;
   border-right-color: transparent;
   border-top-color: transparent;
   content: "";
   display: block;
   height: 1em;
-  position: relative;
+  left: calc(50% - (1em * 0.5));
+  position: absolute !important;
+  top: calc(50% - (1em * 0.5));
   width: 1em;
 }
 
@@ -158,10 +93,6 @@ textarea {
   margin: 0;
 }
 
-html {
-  box-sizing: border-box;
-}
-
 *, *::before, *::after {
   box-sizing: inherit;
 }
@@ -187,16 +118,15 @@ th:not([align]) {
 }
 
 html {
-  background-color: white;
+  background-color: var(--bg-color);
+  box-sizing: border-box;
   font-size: 16px;
   -moz-osx-font-smoothing: grayscale;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
   overflow-y: scroll;
   text-rendering: optimizeLegibility;
-  -webkit-text-size-adjust: 100%;
-     -moz-text-size-adjust: 100%;
-          text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 article,
@@ -224,14 +154,14 @@ pre {
 }
 
 body {
-  color: #4a4a4a;
+  color: var(--text-color);
   font-size: 1em;
   font-weight: 400;
   line-height: 1.5;
 }
 
 a {
-  color: #485fc7;
+  color: var(--accent-color);
   cursor: pointer;
   text-decoration: none;
 }
@@ -241,19 +171,14 @@ a strong {
 }
 
 a:hover {
-  color: #363636;
+  color: var(--highlighted-accent-color);
 }
 
 code {
-  color: #da1039;
+  color: var(--text-color);
   font-size: 0.875em;
   font-weight: normal;
   padding: 0.25em 0.5em 0.25em;
-}
-
-img {
-  height: auto;
-  max-width: 100%;
 }
 
 input[type="checkbox"],
@@ -271,7 +196,6 @@ span {
 }
 
 strong {
-  color: #363636;
   font-weight: 700;
 }
 
@@ -290,16 +214,7 @@ table th:not([align]) {
 }
 
 table th {
-  color: #363636;
-}
-
-@-webkit-keyframes spinAround {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(359deg);
-  }
+  color: var(--text-color);
 }
 
 @keyframes spinAround {
@@ -313,25 +228,18 @@ table th {
 
 /* Bulma Elements */
 .box {
-  background-color: white;
+  background-color: var(--card-bg-color);
   border-radius: 6px;
-  box-shadow: 0 0.5em 1em -0.125em rgba(10, 10, 10, 0.1), 0 0px 0 1px rgba(10, 10, 10, 0.02);
-  color: #4a4a4a;
+  box-shadow: var(--card-shadow);
+  color: var(--text-color);
   display: block;
   padding: 1.25rem;
 }
 
-a.box:hover, a.box:focus {
-  box-shadow: 0 0.5em 1em -0.125em rgba(10, 10, 10, 0.1), 0 0 0 1px #485fc7;
-}
-
-a.box:active {
-  box-shadow: inset 0 1px 2px rgba(10, 10, 10, 0.2), 0 0 0 1px #485fc7;
-}
-
 .button {
+  user-select: none;
   border-width: 1px;
-  color: #363636;
+  color: var(--text-color);
   cursor: pointer;
   justify-content: center;
   padding-bottom: calc(0.5em - 1px);
@@ -367,39 +275,35 @@ a.box:active {
 }
 
 .button:hover {
-  border-color: #b5b5b5;
-  color: #363636;
+  border-color: var(--strong-hairline-color);
+  color: var(--text-color);
 }
 
 .button:focus {
-  border-color: #485fc7;
-  color: #363636;
-}
-
-.button:focus:not(:active) {
-  box-shadow: 0 0 0 0.125em rgba(72, 95, 199, 0.25);
+  border-color: var(--accent-color);
+  color: var(--text-color);
 }
 
 .button:active {
-  border-color: #4a4a4a;
-  color: #363636;
+  border-color: var(--strong-hairline-color);
+  color: var(--text-color);
 }
 
 .button.is-primary {
   background-color: var(--primary-action-color);
   border-color: transparent;
-  color: #fff;
+  color: var(--action-text-color);
 }
 
 .button.is-primary:hover {
   background-color: var(--highlighted-primary-action-color);
   border-color: transparent;
-  color: #fff;
+  color: var(--action-text-color);
 }
 
 .button.is-primary:focus {
   border-color: transparent;
-  color: #fff;
+  color: var(--action-text-color);
 }
 
 .button.is-primary:focus:not(:active) {
@@ -409,7 +313,7 @@ a.box:active {
 .button.is-primary:active {
   background-color: var(--highlighted-primary-action-color);
   border-color: transparent;
-  color: #fff;
+  color: var(--action-text-color);
 }
 
 .button.is-primary[disabled],
@@ -422,18 +326,18 @@ fieldset[disabled] .button.is-primary {
 .button.is-danger {
   background-color: var(--destructive-action-color);
   border-color: transparent;
-  color: #fff;
+  color: var(--action-text-color);
 }
 
 .button.is-danger:hover {
   background-color: var(--highlighted-destructive-action-color);
   border-color: transparent;
-  color: #fff;
+  color: var(--action-text-color);
 }
 
 .button.is-danger:focus {
   border-color: transparent;
-  color: #fff;
+  color: var(--action-text-color);
 }
 
 .button.is-danger:focus:not(:active) {
@@ -443,7 +347,7 @@ fieldset[disabled] .button.is-primary {
 .button.is-danger:active {
   background-color: var(--highlighted-destructive-action-color);
   border-color: transparent;
-  color: #fff;
+  color: var(--action-text-color);
 }
 
 .button.is-danger[disabled],
@@ -463,8 +367,8 @@ fieldset[disabled] .button.is-danger {
 
 .button[disabled],
 fieldset[disabled] .button {
-  background-color: white;
-  border-color: #dbdbdb;
+  background-color: var(--surface-raised-color);
+  border-color: var(--strong-hairline-color);
   box-shadow: none;
   opacity: 0.5;
 }
@@ -472,13 +376,6 @@ fieldset[disabled] .button {
 .button.is-loading {
   color: transparent !important;
   pointer-events: none;
-}
-
-.button.is-loading::after {
-  position: absolute;
-  left: calc(50% - (1em * 0.5));
-  top: calc(50% - (1em * 0.5));
-  position: absolute !important;
 }
 
 .buttons {
@@ -554,7 +451,7 @@ fieldset[disabled] .button {
 .content h2,
 .content h3,
 .content h4 {
-  color: #363636;
+  color: var(--text-color);
   font-weight: 600;
   line-height: 1.125;
 }
@@ -627,7 +524,6 @@ fieldset[disabled] .button {
 }
 
 .content pre {
-  -webkit-overflow-scrolling: touch;
   overflow-x: auto;
   padding: 1.25em 1.5em;
   white-space: pre;
@@ -644,14 +540,14 @@ fieldset[disabled] .button {
 
 .content table td,
 .content table th {
-  border: 1px solid #dbdbdb;
+  border: 1px solid var(--hairline-color);
   border-width: 0 0 1px;
   padding: 0.5em 0.75em;
   vertical-align: top;
 }
 
 .content table th {
-  color: #363636;
+  color: var(--text-color);
 }
 
 .content table th:not([align]) {
@@ -661,7 +557,7 @@ fieldset[disabled] .button {
 .content table thead td,
 .content table thead th {
   border-width: 0 0 2px;
-  color: #363636;
+  color: var(--text-color);
 }
 
 .content table tbody tr:last-child td,
@@ -699,7 +595,7 @@ fieldset[disabled] .button {
 }
 
 .notification {
-  background-color: whitesmoke;
+  background-color: var(--surface-raised-color);
   border-radius: 4px;
   position: relative;
   padding: 1.25rem 2.5rem 1.25rem 1.5rem;
@@ -718,78 +614,26 @@ fieldset[disabled] .button {
   background: transparent;
 }
 
-.notification > .delete {
-  right: 0.5rem;
-  position: absolute;
-  top: 0.5rem;
-}
-
 .notification.is-info {
-  background-color: #3e8ed0;
-  color: #fff;
-}
-
-@-webkit-keyframes moveIndeterminate {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
-}
-
-@keyframes moveIndeterminate {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
+  background-color: var(--accent-soft-color);
+  color: var(--text-color);
 }
 
 .table {
-  background-color: white;
-  color: #363636;
+  background-color: transparent;
+  color: var(--text-color);
 }
 
 .table td,
 .table th {
-  border: 1px solid #dbdbdb;
+  border: 1px solid var(--hairline-color);
   border-width: 0 0 1px;
   padding: 0.5em 0.75em;
   vertical-align: top;
 }
 
-.table td.is-primary,
-.table th.is-primary {
-  background-color: var(--accent-color);
-  border-color: var(--accent-color);
-  color: #fff;
-}
-
-.table td.is-info,
-.table th.is-info {
-  background-color: #3e8ed0;
-  border-color: #3e8ed0;
-  color: #fff;
-}
-
-.table td.is-warning,
-.table th.is-warning {
-  background-color: #ffe08a;
-  border-color: #ffe08a;
-  color: rgba(0, 0, 0, 0.7);
-}
-
-.table td.is-danger,
-.table th.is-danger {
-  background-color: var(--danger-color);
-  border-color: var(--danger-color);
-  color: #fff;
-}
-
 .table th {
-  color: #363636;
+  color: var(--text-color);
 }
 
 .table th:not([align]) {
@@ -803,7 +647,7 @@ fieldset[disabled] .button {
 .table thead td,
 .table thead th {
   border-width: 0 0 2px;
-  color: #363636;
+  color: var(--text-color);
 }
 
 .table tbody {
@@ -821,9 +665,9 @@ fieldset[disabled] .button {
 
 .tag:not(body) {
   align-items: center;
-  background-color: whitesmoke;
+  background-color: var(--surface-raised-color);
   border-radius: 4px;
-  color: #4a4a4a;
+  color: var(--subtitle-text-color);
   display: inline-flex;
   font-size: 0.75rem;
   height: 2em;
@@ -834,14 +678,9 @@ fieldset[disabled] .button {
   white-space: nowrap;
 }
 
-.tag:not(body) .delete {
-  margin-left: 0.25rem;
-  margin-right: -0.375rem;
-}
-
 .tag:not(body).is-warning {
-  background-color: #ffe08a;
-  color: rgba(0, 0, 0, 0.7);
+  background-color: var(--warning-box-color);
+  color: var(--warning-box-text);
 }
 
 .tag:not(body) .icon:first-child:not(:last-child) {
@@ -884,7 +723,7 @@ a.tag:hover {
 }
 
 .title {
-  color: #363636;
+  color: var(--text-color);
   font-size: 2rem;
   font-weight: 600;
   line-height: 1.125;
@@ -904,14 +743,14 @@ a.tag:hover {
 }
 
 .subtitle {
-  color: #4a4a4a;
+  color: var(--subtitle-text-color);
   font-size: 1.25rem;
   font-weight: 400;
   line-height: 1.25;
 }
 
 .subtitle strong {
-  color: #363636;
+  color: var(--text-color);
   font-weight: 600;
 }
 
@@ -921,19 +760,4 @@ a.tag:hover {
 
 .subtitle.is-7 {
   font-size: 0.75rem;
-}
-
-.number {
-  align-items: center;
-  background-color: whitesmoke;
-  border-radius: 9999px;
-  display: inline-flex;
-  font-size: 1.25rem;
-  height: 2em;
-  justify-content: center;
-  margin-right: 1.5rem;
-  min-width: 2.5em;
-  padding: 0.25rem 0.5rem;
-  text-align: center;
-  vertical-align: top;
 }

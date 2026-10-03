@@ -5,7 +5,7 @@ import { act } from 'preact/test-utils'
 import { InlineCard } from '../../app/ts/components/subcomponents/InlineCard.js'
 import { MultilineCard } from '../../app/ts/components/subcomponents/MultilineCard.js'
 import { installDomMock } from './domMock.js'
-import { readInterceptorAppCss } from './cssTestUtils.js'
+import { interceptorAppStylesheetPaths, readInterceptorAppCss } from './cssTestUtils.js'
 
 type TestNode = {
 	readonly childNodes?: readonly TestNode[]
@@ -30,6 +30,77 @@ function contrastRatio(first: string, second: string) {
 	const firstLuminance = luminance(first)
 	const secondLuminance = luminance(second)
 	return (Math.max(firstLuminance, secondLuminance) + 0.05) / (Math.min(firstLuminance, secondLuminance) + 0.05)
+}
+
+function stripCssComments(css: string) {
+	return css.replace(/\/\*[\s\S]*?\*\//g, '')
+}
+
+// Every CSS named colour keyword, so none can stand in for a theme token.
+const namedColours = 'aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen mediumslateblue mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen steelblue tan teal thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen'.split(' ')
+const literalColourPattern = new RegExp(`#[0-9a-fA-F]{3,8}\\b|\\b(rgba?|hsla?|hwb|lab|lch|oklab|oklch)\\(|color\\(\\s*srgb|:.*\\b(${ namedColours.join('|') })\\b(?![-(])`)
+
+const colourPaletteScopes = [':root', '.interceptor-mode-signing']
+
+type CssLine = {
+	text: string
+	isSelectorLine: boolean
+	enclosingSelector: string
+}
+
+// Trimmed stylesheet lines, each with the selector of the multi-line rule that most recently opened above it.
+function getCssLines(css: string) {
+	const texts = css.split('\n').map((line) => line.trim())
+	// A comma-ended line belongs to a selector list only when the run of comma-ended lines leads to a line that opens a rule; otherwise it continues a multi-line value.
+	const leadsToRuleOpening = (index: number): boolean => {
+		const text = texts[index] ?? ''
+		if (text.endsWith('{')) return true
+		return text.endsWith(',') && leadsToRuleOpening(index + 1)
+	}
+	const lines: CssLine[] = []
+	let enclosingSelector = ''
+	for (const [index, text] of texts.entries()) {
+		if (text.endsWith('{')) enclosingSelector = text.slice(0, -1).trim()
+		lines.push({ text, isSelectorLine: leadsToRuleOpening(index), enclosingSelector })
+	}
+	return lines
+}
+
+// Properties that one multi-line rule declares more than once, where only the last declaration can apply. Font faces list fallback sources on purpose.
+function getOverwrittenDeclarations(lines: readonly CssLine[]) {
+	const overwritten: string[] = []
+	let declaredProperties = new Set<string>()
+	for (const line of lines) {
+		if (line.text.endsWith('{') || line.text.startsWith('}')) declaredProperties = new Set<string>()
+		const property = /^([a-z-]+):/.exec(line.text)?.[1]
+		if (property === undefined || line.isSelectorLine || line.enclosingSelector === '@font-face') continue
+		if (declaredProperties.has(property)) overwritten.push(`${ line.enclosingSelector } { ${ property } }`)
+		declaredProperties.add(property)
+	}
+	return overwritten
+}
+
+// Selector lists of the rules outside any at-rule, with whitespace normalised.
+function getTopLevelSelectors(css: string) {
+	const selectors: string[] = []
+	let depth = 0
+	let pending = ''
+	for (const character of css) {
+		if (character === '{') {
+			const selector = pending.trim().replace(/\s+/g, ' ')
+			if (depth === 0 && !selector.startsWith('@')) selectors.push(selector)
+			depth += 1
+			pending = ''
+		} else if (character === '}') {
+			depth -= 1
+			pending = ''
+		} else if (character === ';') {
+			pending = ''
+		} else {
+			pending += character
+		}
+	}
+	return selectors
 }
 
 describe('UI audit fixes', () => {
@@ -180,6 +251,58 @@ describe('UI audit fixes', () => {
 		// The secondary Safe action wraps onto its own compact row below the two decisions in narrow popups.
 		assert.match(css, /@container \(max-width: 42rem\)[\s\S]*?\.confirmation-action-buttons--safe > \.dialog-action-button--unsigned\s*\{[\s\S]*?flex:\s*1 1 100%;[\s\S]*?order:\s*1;/)
 		assert.match(css, /@container \(max-width: 24rem\)[\s\S]*?\.confirmation-action-buttons--safe\s*\{[\s\S]*?flex-direction:\s*column;/)
+	})
+
+	test('keeps colours in theme tokens and leaves out styles browsers ignore', async () => {
+		const stylesheets = await Promise.all(interceptorAppStylesheetPaths.map(async (stylesheetPath) => ({ stylesheetPath, css: stripCssComments(await Bun.file(stylesheetPath).text()) })))
+		for (const { stylesheetPath, css } of stylesheets) {
+			// A literal colour would not follow the light and dark themes, so colours live only in the token definitions of the theme's palette scopes.
+			const isPaletteDefinition = (line: CssLine) => stylesheetPath === 'app/css/interceptor-theme.css' && line.text.startsWith('--') && colourPaletteScopes.includes(line.enclosingSelector)
+			// Selector lines are skipped and the selector of a one-line rule is cut off, so an id selector can never be mistaken for a hex colour.
+			const literalColours = getCssLines(css).filter((line) => !line.isSelectorLine && !isPaletteDefinition(line) && literalColourPattern.test(line.text.slice(line.text.indexOf('{') + 1))).map((line) => line.text)
+			assert.deepEqual(literalColours, [], stylesheetPath)
+			// Scrollbar pseudo-elements are ignored once `scrollbar-color` is set, and the supported browsers need none of these prefixes. Firefox-only `-moz-appearance: textfield` is deliberate and stays.
+			const ignoredStyles = css.split('\n').map((line) => line.trim()).filter((line) => /::-webkit-scrollbar|(^|[\s{;])(-ms-|-moz-appearance:\s*none|-moz-user-select|-webkit-(appearance|user-select|box-align|align-items|animation|touch-callout|overflow-scrolling))|:-ms-input-placeholder|:-moz-placeholder|@-webkit-keyframes/.test(line))
+			assert.deepEqual(ignoredStyles, [], stylesheetPath)
+			// A prefixed property next to its standard form is redundant on the supported browsers.
+			const cssLines = getCssLines(css)
+			const standardDeclarations = new Set(cssLines.map((line) => `${ line.enclosingSelector }|${ /^([a-z-]+):/.exec(line.text)?.[1] ?? '' }`))
+			const redundantPrefixes = cssLines.filter((line) => {
+				const prefixedProperty = /^-(?:webkit|moz|ms)-([a-z-]+):/.exec(line.text)?.[1]
+				return prefixedProperty !== undefined && standardDeclarations.has(`${ line.enclosingSelector }|${ prefixedProperty }`)
+			}).map((line) => line.text)
+			assert.deepEqual(redundantPrefixes, [], stylesheetPath)
+			assert.deepEqual(getOverwrittenDeclarations(cssLines), [], stylesheetPath)
+			assert.doesNotMatch(css, /\{\s*\}/, `${ stylesheetPath } has an empty rule set`)
+			// Two top-level rules with the same selector list in one stylesheet hide which declaration wins; a shared group followed by a narrower rule is fine.
+			const topLevelSelectors = getTopLevelSelectors(css)
+			const repeatedSelectors = topLevelSelectors.filter((selector, index) => topLevelSelectors.indexOf(selector) !== index)
+			assert.deepEqual(repeatedSelectors, [], stylesheetPath)
+		}
+		const appCss = await readInterceptorAppCss()
+		// Every custom property that the theme defines, in any scope, must be read somewhere, or it is dead weight.
+		const sources = [appCss]
+		for await (const file of new Bun.Glob('app/ts/**/*.{ts,tsx}').scan('.')) sources.push(await Bun.file(file).text())
+		const allSources = sources.join('\n')
+		const themeCss = await Bun.file('app/css/interceptor-theme.css').text()
+		const themeCustomProperties = [...themeCss.matchAll(/(?:^|[\s{;])(--[a-z0-9-]+):/gm)].map((match) => match[1] ?? '')
+		const unusedTokens = themeCustomProperties.filter((token) => !allSources.includes(`var(${ token })`) && !allSources.includes(`var(${ token },`))
+		assert.deepEqual([...new Set(unusedTokens)], [])
+	})
+
+	test('keeps the warning tag readable in both themes', async () => {
+		const frameworkCss = await Bun.file('app/css/interceptor-framework.css').text()
+		assert.match(frameworkCss, /\.tag:not\(body\)\.is-warning\s*\{\s*background-color:\s*var\(--warning-box-color\);\s*color:\s*var\(--warning-box-text\);/)
+		const themeCss = await Bun.file('app/css/interceptor-theme.css').text()
+		const readThemedPair = (token: string) => new RegExp(`--${ token }:\\s*light-dark\\((#[0-9a-fA-F]{6}),\\s*(#[0-9a-fA-F]{6})\\)`).exec(themeCss)
+		const background = readThemedPair('warning-box-color')
+		const text = readThemedPair('warning-box-text')
+		for (const [themeName, themeIndex] of [['light', 1], ['dark', 2]] as const) {
+			const backgroundColour = background?.[themeIndex]
+			const textColour = text?.[themeIndex]
+			if (backgroundColour === undefined || textColour === undefined) throw new Error(`warning tag colours are missing for the ${ themeName } theme`)
+			assert.ok(contrastRatio(textColour, backgroundColour) >= 4.5, `warning tag needs at least 4.5:1 contrast in the ${ themeName } theme`)
+		}
 	})
 
 	test('does not use the dim outlined primary button style anywhere in the extension UI', async () => {

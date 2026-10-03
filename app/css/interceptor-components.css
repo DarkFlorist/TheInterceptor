@@ -4,102 +4,6 @@
 	scrollbar-color: var(--scrollbar-thumb-color) var(--card-bg-color) !important;
 }
 
-::-webkit-scrollbar {
-	width: 16px;
-	height: 16px;
-}
-
-::-webkit-scrollbar-corner, ::-webkit-scrollbar-track {
-	background-color: var(--card-bg-color);
-}
-
-::-webkit-scrollbar-thumb {
-	background-color: var(--scrollbar-thumb-color);
-	background-clip: padding-box;
-	border: 2px solid transparent;
-}
-
-::-webkit-scrollbar-thumb:hover {
-	background-color: var(--scrollbar-thumb-hover-color);
-}
-
-::-webkit-scrollbar-thumb:active {
-	background-color: var(--window-header-bg-color);
-}
-
-/* Buttons */
-::-webkit-scrollbar-button:single-button {
-	background-color: var(--card-bg-color);
-
-	display: block;
-	background-size: 10px;
-	background-repeat: no-repeat;
-}
-
-/* Up */
-::-webkit-scrollbar-button:single-button:vertical:decrement {
-	height: 12px;
-	width: 16px;
-	background-position: center 4px;
-	background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'var(--card-content-bg-color)'><polygon points = '50,00 0,50 100,50'/></svg>");
-}
-
-::-webkit-scrollbar-button:single-button:vertical:decrement:hover {
-	background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'rgb(112, 112, 112)'><polygon points = '50,00 0,50 100,50'/></svg>");
-}
-
-::-webkit-scrollbar-button:single-button:vertical:decrement:active {
-	background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'var(--window-header-bg-color)'><polygon points = '50,00 0,50 100,50'/></svg>");
-}
-
-/* Down */
-::-webkit-scrollbar-button:single-button:vertical:increment {
-	height: 12px;
-	width: 16px;
-	background-position: center 2px;
-	background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'var(--card-content-bg-color)'><polygon points = '0,0 100,0 50,50'/></svg>");
-}
-
-::-webkit-scrollbar-button:single-button:vertical:increment:hover {
-	background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'rgb(112, 112, 112)'><polygon points = '0,0 100,0 50,50'/></svg>");
-}
-
-::-webkit-scrollbar-button:single-button:vertical:increment:active {
-	background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'var(--window-header-bg-color)'><polygon points = '0,0 100,0 50,50'/></svg>");
-}
-
-/* Left */
-::-webkit-scrollbar-button:single-button:horizontal:decrement {
-	height: 12px;
-	width: 12px;
-	background-position: 3px 3px;
-	background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'var(--card-content-bg-color)'><polygon points = '0,50 50,100 50,0'/></svg>");
-}
-
-::-webkit-scrollbar-button:single-button:horizontal:decrement:hover {
-	background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'rgb(112, 112, 112)'><polygon points = '0,50 50,100 50,0'/></svg>");
-}
-
-::-webkit-scrollbar-button:single-button:horizontal:decrement:active {
-	background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'var(--window-header-bg-color)'><polygon points = '0,50 50,100 50,0'/></svg>");
-}
-
-/* Right */
-::-webkit-scrollbar-button:single-button:horizontal:increment {
-	height: 12px;
-	width: 12px;
-	background-position: 3px 3px;
-	background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'var(--card-content-bg-color)'><polygon points = '0,0 0,100 50,50'/></svg>");
-}
-
-::-webkit-scrollbar-button:single-button:horizontal:increment:hover {
-	background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'rgb(112, 112, 112)'><polygon points = '0,0 0,100 50,50'/></svg>");
-}
-
-::-webkit-scrollbar-button:single-button:horizontal:increment:active {
-	background-image: url("data:image/svg+xml;utf8, <svg xmlns = 'http://www.w3.org/2000/svg' width = '100' height = '100' fill = 'var(--window-header-bg-color)'><polygon points = '0,0 0,100 50,50'/></svg>");
-}
-
 .ens-table {
 	display: grid;
 	grid-template-columns: max-content;
@@ -132,9 +36,6 @@
 	overflow: hidden;
 	white-space: nowrap;
 	display: flex;
-	-ms-flex-align: center;
-	-webkit-align-items: center;
-	-webkit-box-align: center;
 	align-items: center;
 	vertical-align: middle;
 }
@@ -143,9 +44,6 @@
 	text-overflow: ellipsis;
 	overflow: hidden;
 	white-space: nowrap;
-	-ms-flex-align: center;
-	-webkit-align-items: center;
-	-webkit-box-align: center;
 	align-items: center;
 	vertical-align: middle;
 }
@@ -301,8 +199,6 @@
 }
 
 .delegation-flow-badge {
-	background-color: var(--alpha-01);
-	color: var(--subtitle-text-color);
 	margin: 0;
 	font-size: 11px;
 	padding-inline: 0.45rem;
@@ -645,7 +541,6 @@
 
 .eip-712-table {
 	display: grid;
-	grid-template-columns: max-content auto auto auto auto;
 	justify-content: center;
 	column-gap: 5px;
 	grid-template-columns: auto auto;
@@ -803,7 +698,6 @@
 	background-color: var(--surface-raised-color);
 }
 
-
 /* Keep semantic emphasis legible on dark and status-colored surfaces. */
 strong { color: inherit }
 
@@ -864,8 +758,7 @@ strong { color: inherit }
 .btn--ghost { --btn-bg-color: transparent; }
 .btn--ghost:hover:not(:disabled) { --btn-bg-color: var(--white-alpha-10); }
 
-
-:where(.actions:has(.btn), .flex) {
+:where(.actions:has(.btn)) {
 	--gap-x: 0.5rem;
 	--justify: end;
 	column-gap: var(--gap-x);
@@ -917,15 +810,12 @@ summary:focus {
 
 .svg-icon:where(details:not([open]) .details--arrow) { --icon-rotate: -90deg }
 
-:where(.grid, .flex) {
+:where(.grid) {
 	--gap-y: 0;
 	--gap-x: 0;
 	--align-items: center;
 	align-items: var(--align-items, center);
 	column-gap: var(--gap-x);
-}
-
-:where(.grid) {
 	--grid-cols: auto;
 	display: grid;
 	row-gap: var(--gap-y);
@@ -933,8 +823,6 @@ summary:focus {
 	max-width: 100%;
 	min-width: 0;
 }
-
-:where(.flex) { display: flex }
 
 :where(.grid > *) {
 	--area: auto;

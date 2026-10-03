@@ -19,16 +19,16 @@
 html { font-size: 100%; }
 body { font-family: "Inter", sans-serif; }
 
-:root {
-	color-scheme: light dark;
+/* Hooks for forcing a theme regardless of the browser preference. The bundled line icons are white, so the light theme darkens them; a filter cannot go through light-dark(), hence the explicit rules. */
+:root[data-theme='light'] {
+	color-scheme: light;
+	--icon-filter: invert(0.88);
 }
-
-/* Hooks for forcing a theme regardless of the browser preference. */
-:root[data-theme='light'] { color-scheme: light }
 :root[data-theme='dark'] { color-scheme: dark }
 
 /* Every themed colour is declared once as light-dark(light value, dark value) and follows the colour scheme in effect. */
 :root {
+	color-scheme: light dark;
 	--bg-color: light-dark(#f3f5f6, #14171a);
 	--card-bg-color: light-dark(#ffffff, #1b1f23);
 	--card-content-bg-color: light-dark(#ffffff, #1b1f23);
@@ -42,7 +42,6 @@ body { font-family: "Inter", sans-serif; }
 	--hairline-color: light-dark(rgba(15, 30, 40, 0.1), rgba(255, 255, 255, 0.08));
 	--strong-hairline-color: light-dark(rgba(15, 30, 40, 0.2), rgba(255, 255, 255, 0.16));
 	--scrollbar-thumb-color: light-dark(#c2cacf, #3a434a);
-	--scrollbar-thumb-hover-color: light-dark(#a9b3b9, #4a555d);
 	/* Matches a 5% overlay on the importance box, so address cards inside transfer summaries blend into their panel. */
 	--address-muted-bg-color: light-dark(#e3e7ea, #2e3439);
 	--card-shadow: 0 1px 2px light-dark(rgba(15, 30, 40, 0.08), rgba(0, 0, 0, 0.35));
@@ -67,7 +66,6 @@ body { font-family: "Inter", sans-serif; }
 	--warning-box-color: light-dark(#fdf3d7, #392f19);
 	--warning-box-text: light-dark(#5a3d00, #ffe7b0);
 
-	--highlighted-danger-color: light-dark(#b8322c, #f58d88);
 	--warning-color: light-dark(#a86a00, #f5b83d);
 	--danger-dim-color: light-dark(rgba(207, 59, 52, 0.7), rgba(242, 112, 106, 0.6));
 	--status-warn-bg-color: #F5934B;
@@ -90,7 +88,6 @@ body { font-family: "Inter", sans-serif; }
 	/* Despite their names these alpha tokens are contrast overlays: light tints on dark surfaces and dark tints on light ones. */
 	--white-alpha-20: light-dark(rgba(15, 30, 40, 0.16), #ffffff20);
 	--white-alpha-10: light-dark(rgba(15, 30, 40, 0.08), #ffffff10);
-	--white-alpha-08: light-dark(rgba(15, 30, 40, 0.05), #ffffff08);
 	--black-alpha-90: light-dark(rgba(15, 30, 40, 0.2), #00000090);
 	--black-alpha-d6: light-dark(rgba(15, 30, 40, 0.35), #000000d6);
 	--inline-action-color: #77738ccc;
@@ -110,9 +107,6 @@ body { font-family: "Inter", sans-serif; }
 	--normal-font-size: 14px;
 	--modal-background-color: light-dark(rgba(23, 32, 38, 0.45), rgba(10, 10, 10, 0.7))
 }
-
-/* The bundled line icons are white, so the light theme darkens them. A filter cannot go through light-dark(), hence the explicit rules. */
-:root[data-theme='light'] { --icon-filter: invert(0.88) }
 
 @media (prefers-color-scheme: light) {
 	:root:not([data-theme='dark']) { --icon-filter: invert(0.88) }
@@ -864,10 +858,6 @@ input[type=checkbox]:not([role=switch]):checked::before {
 	font-size: 14px;
 }
 
-.card-header-title {
-	color: var(--text-color);
-}
-
 .subtitle {
 	white-space: nowrap;
 	overflow: hidden;
@@ -891,6 +881,7 @@ html, body {
 }
 
 .card-header-title {
+	color: var(--text-color);
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -1489,12 +1480,6 @@ li {
 
 .window-header {
 	background-color: var(--window-header-bg-color);
-}
-.modal-card-foot.window-header {
-	background-color: var(--window-header-bg-color);
-}
-
-.window-header {
 	border-bottom: 1px solid var(--hairline-color);
 }
 
@@ -1508,15 +1493,8 @@ li {
 	color: var(--text-color);
 }
 
-.h2 {
-	color: var(--text-color);
-}
-
 .vertical-center {
 	display: inline-block;
-	-ms-flex-align: center;
-	-webkit-align-items: center;
-	-webkit-box-align: center;
 	align-items: center;
 	vertical-align: middle;
 }
@@ -1785,10 +1763,11 @@ svg.spinner > circle {
 }
 
 .simulation-results-header {
-	align-items: start;
+	align-items: center;
 	display: grid;
 	gap: 8px;
 	grid-template-columns: minmax(0, 1fr) auto;
+	margin-top: 4px;
 	padding-left: 10px;
 	padding-right: 10px;
 }
@@ -2125,11 +2104,6 @@ img:is([src$='/address-book.svg'], [src$='/internet.svg'], [src$='/settings.svg'
 	text-transform: uppercase;
 }
 
-.simulation-results-header {
-	align-items: center;
-	margin-top: 4px;
-}
-
 /* Popup stack timeline: every row is a numbered step whose ring colour carries the row status. */
 .simulation-stack-list--timeline {
 	counter-reset: stack-step;
@@ -2274,6 +2248,11 @@ img:is([src$='/address-book.svg'], [src$='/internet.svg'], [src$='/settings.svg'
 	display: flex;
 	font-size: 0.75rem;
 	padding-top: 6px;
+}
+
+.simulation-stack-delay--centered {
+	justify-content: center;
+	padding-top: 10px;
 }
 
 .simulation-stack-delay .paragraph {
