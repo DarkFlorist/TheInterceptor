@@ -296,13 +296,14 @@ describe('background eth_accounts', () => {
 		const getBlockCalls = { count: 0 }
 		const { ethereum } = createEthereumWithGetBlockCounter(getBlockCalls)
 
-		const prepared = await prepareSimulationInputForRpc(simulationInput, ethereum, {})
+		const prepared = await prepareSimulationInputForRpc({ value: simulationInput, simulationOverrides: {} }, ethereum)
 
-		assert.strictEqual(prepared, simulationInput)
+		assert.strictEqual(prepared.value, simulationInput)
+		assert.deepEqual(prepared.simulationOverrides, {})
 		assert.equal(getBlockCalls.count, 0)
-		assert.deepEqual(prepared[0]?.signedMessages, simulationInput[0].signedMessages)
-		assert.deepEqual(prepared[0]?.stateOverrides, simulationInput[0].stateOverrides)
-		assert.deepEqual(prepared[0]?.blockTimeManipulation, simulationInput[0].blockTimeManipulation)
+		assert.deepEqual(prepared.value[0]?.signedMessages, simulationInput[0].signedMessages)
+		assert.deepEqual(prepared.value[0]?.stateOverrides, simulationInput[0].stateOverrides)
+		assert.deepEqual(prepared.value[0]?.blockTimeManipulation, simulationInput[0].blockTimeManipulation)
 	})
 
 	test('returns invalid params to the webpage for malformed wallet_watchAsset requests', async () => {

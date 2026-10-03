@@ -18,7 +18,6 @@ import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
 import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
 import { getEffectiveStateOverrides } from '../../utils/delegateClearingState.js'
-import { createDelegationCache } from './delegationCache.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
 	const stripped = signature.slice(2)
@@ -123,8 +122,6 @@ export class EthereumClientService {
 	private onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
 	private requestHandler
 	private rpcEntry
-	// Popup discovery tolerates short-lived staleness; transaction metadata uses fresh block state.
-	private readonly delegationHintCache = createDelegationCache((address, controller) => this.getDelegation(address, 'latest', controller))
 
 	constructor(requestHandler: IEthereumJSONRpcRequestHandler, newBlockAttemptCallback: (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>, onErrorBlockCallback: (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>, rpcEntry: RpcEntry) {
 		this.requestHandler = requestHandler
@@ -168,7 +165,6 @@ export class EthereumClientService {
 			clearInterval(this.cacheRefreshTimer)
 			this.cacheRefreshTimer = undefined
 			this.cachedBlock = undefined
-			this.clearDelegationHintCache()
 			return
 		}
 	}
@@ -230,10 +226,6 @@ export class EthereumClientService {
 		if (code.length !== 23 || code[0] !== 0xef || code[1] !== 0x01 || code[2] !== 0x00) return undefined
 		return BigInt(`0x${ dataString(code.slice(3)) }`)
 	}
-
-	public readonly clearDelegationHintCache = () => this.delegationHintCache.clear()
-
-	public readonly getCachedDelegationHint = (address: bigint, abortController?: AbortController, options?: { refresh?: boolean }) => this.delegationHintCache.get(address, abortController, options?.refresh)
 
 	public async getBlock(requestAbortController: AbortController | undefined, blockTag?: EthereumBlockTag, fullObjects?: true): Promise<EthereumBlockHeader>
 	public async getBlock(requestAbortController: AbortController | undefined, blockTag: EthereumBlockTag, fullObjects: boolean): Promise<EthereumBlockHeaderWithTransactionHashes | EthereumBlockHeader>

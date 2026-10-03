@@ -278,6 +278,7 @@ export type SimulationInputWithOverrides<TInput extends SimulationStateInputMini
 	readonly value: TInput
 	readonly simulationOverrides: StateOverrides
 }
+export type SimulationInput = SimulationInputWithOverrides<SimulationStateInput>
 export const ResolvedSimulationInput = funtypes.Union(
 	PassthroughState,
 	funtypes.ReadonlyObject({
@@ -288,7 +289,9 @@ export const ResolvedSimulationInput = funtypes.Union(
 )
 
 export const toResolvedSimulationState = (value: SimulationState): ResolvedSimulationState => ({ kind: 'simulated', value })
-export const toResolvedSimulationInput = (value: SimulationStateInput, simulationOverrides: StateOverrides): ResolvedSimulationInput => ({ kind: 'simulated', value, simulationOverrides })
+export const toResolvedSimulationInput = <TInput extends SimulationStateInputMinimalData>({ value, simulationOverrides }: SimulationInputWithOverrides<TInput>) => ({ kind: 'simulated' as const, value, simulationOverrides })
+// Persisted states keep their existing fields; execution entry points use one input envelope.
+export const getSimulationInputFromState = (state: Pick<SimulationState, 'simulationStateInput' | 'simulationOverrides'>): SimulationInput => ({ value: state.simulationStateInput, simulationOverrides: state.simulationOverrides })
 
 type SuccessfulSimulationState = Extract<SimulationState, { success: true }>
 export type ExecutionSimulatedTransaction = Omit<SimulatedTransaction, 'tokenBalancesAfter'>

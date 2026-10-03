@@ -76,12 +76,11 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 		const provider = getSimulationProviderForSnapshot(ethereum, capturedSnapshot)
 		if (skipIfUnchanged && popupVisualisation.simulationState.kind === 'simulated' && provider !== undefined) {
 			const currentSimulationInput = await getCurrentSimulationStateInput(provider, capturedSnapshot)
-			const currentFingerprint = getPopupVisualisationFingerprint(currentSimulationInput.simulationStateInput, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber, currentSimulationInput.simulationOverrides)
+			const currentFingerprint = getPopupVisualisationFingerprint({ value: currentSimulationInput.simulationStateInput, simulationOverrides: currentSimulationInput.simulationOverrides }, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)
 			const cachedFingerprint = getPopupVisualisationFingerprint(
-				popupVisualisation.simulationState.value.simulationStateInput,
+				{ value: popupVisualisation.simulationState.value.simulationStateInput, simulationOverrides: popupVisualisation.simulationState.value.simulationOverrides },
 				popupVisualisation.simulationState.value.rpcNetwork,
 				popupVisualisation.simulationState.value.blockNumber,
-				popupVisualisation.simulationState.value.simulationOverrides,
 			)
 			if (currentFingerprint === cachedFingerprint && (capturedSnapshot.numberOfAddressesMadeRich === popupVisualisation.numberOfAddressesMadeRich)) return popupVisualisation
 		}
@@ -191,8 +190,8 @@ export async function updatePopupVisualisationState(ethereum: EthereumClientServ
 
 async function getCurrentSimulationStateInput(ethereum: EthereumClientService, snapshot: SimulationSnapshot) {
 	return {
-		simulationStateInput: snapshot.simulationStateInput,
-		simulationOverrides: snapshot.simulationOverrides,
+		simulationStateInput: snapshot.simulationInput.value,
+		simulationOverrides: snapshot.simulationInput.simulationOverrides,
 		rpcNetwork: ethereum.getRpcEntry(),
 		blockNumber: await ethereum.getBlockNumber(undefined),
 	}

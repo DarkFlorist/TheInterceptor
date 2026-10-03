@@ -127,13 +127,13 @@ describe('Nethermind testing', () => {
 	})
 
 	test('adding transaction and getting the next block should include all the same fields as Nethermind', async () => {
-		const newState = await appendTransactionToInputAndSimulate(ethereum, undefined, simulationState.simulationStateInput, [{
+		const newState = await appendTransactionToInputAndSimulate(ethereum, undefined, { value: simulationState.simulationStateInput, simulationOverrides: simulationState.simulationOverrides }, [{
 			signedTransaction: mockSignTransaction(exampleTransaction),
 			website: { websiteOrigin: 'test', icon: undefined, title: undefined },
 			created: new Date(),
 			originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
 			transactionIdentifier: 1n,
-		}], undefined, { stateOverrides: {}, simulationOverrides: {} })
+		}], undefined, {})
 		const nextBlock = await getSimulatedBlock(ethereum, undefined, toResolvedSimulationState(newState), blockNumber + 1n, true)
 		if (nextBlock === null) throw new Error('Block was null')
 		const serializedNextBlock = GetBlockReturn.serialize(nextBlock)

@@ -4,7 +4,8 @@ import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
 import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
-import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock, ExecutionSimulatedTransaction, ExecutionSimulationState, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState } from '../../types/visualizer-types.js'
+import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationInput, SimulationInputWithOverrides, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock, ExecutionSimulatedTransaction, ExecutionSimulationState, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState } from '../../types/visualizer-types.js'
+import { getSimulationInputFromState, toResolvedSimulationInput } from '../../types/visualizer-types.js'
 import type { Abi } from '../../utils/ethereumPrimitives.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { type IUnsignedTransaction1559, type IUnsignedTransaction7702, rlpEncode } from '../../utils/ethereum.js'
@@ -139,8 +140,8 @@ const hasSimulationContext = (input: PreparedSimulationInput) => input.kind === 
 
 const getSimulationBlockNumber = (simulationState: SimulationState, blockDelta: number) => simulationState.blockNumber + BigInt(blockDelta) + 1n
 
-const getHashOfSimulatedBlockFromInput = (simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData, blockDelta: number, simulationOverrides: StateOverrides) => {
-	return BigInt(keccak256(stringToBytes(`${ getSimulationInputHash(simulationStateInput, simulationOverrides) }:${ blockDelta }`)))
+const getHashOfSimulatedBlockFromInput = (simulationInput: SimulationInputWithOverrides, blockDelta: number) => {
+	return BigInt(keccak256(stringToBytes(`${ getSimulationInputHash(simulationInput) }:${ blockDelta }`)))
 }
 
 const createPreparedSimulationExecutionContext = async (
@@ -176,7 +177,7 @@ const createPreparedSimulationExecutionContext = async (
 		if (blockOverride.time === undefined) throw new Error('missing timestamp for prepared simulation block')
 		const gasUsed = transactionQueueTotalGasLimitFromInput(inputBlock)
 		const baseFeePerGas = previousBaseFeePerGas === undefined ? undefined : getNextBaseFeePerGas(previousGasUsed, parentBlock.gasLimit, previousBaseFeePerGas)
-		const blockHash = getHashOfSimulatedBlockFromInput(resolvedSimulationInput, blockIndex, simulationOverrides)
+		const blockHash = getHashOfSimulatedBlockFromInput(simulationStateInput, blockIndex)
 		const executionBlock = {
 			inputBlock,
 			blockNumber: previousBlockNumber + 1n,
@@ -385,7 +386,7 @@ const simulateBlockCallOnTopOfSimulationInput = async (
 	return await simulateBlockCallWithPreparedInputContext(
 		ethereumClientService,
 		requestAbortController,
-		await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput === undefined ? undefined : { kind: 'simulated', value: simulationStateInput, simulationOverrides: options.simulationOverrides }),
+		await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput === undefined ? undefined : toResolvedSimulationInput({ value: simulationStateInput, simulationOverrides: options.simulationOverrides })),
 		transaction,
 		options,
 	)
@@ -417,7 +418,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 	}
 	const estimateGasTransaction = await createEip1559Or7702Transaction(estimateGasTransactionBase, data)
 	try {
-		const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, { kind: 'simulated', value: currentState.simulationStateInput, simulationOverrides: currentState.simulationOverrides })
+		const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, toResolvedSimulationInput(getSimulationInputFromState(currentState)))
 		const simulateWithGasLimit = async (gasLimit: bigint) => await simulateBlockCallWithPreparedInputContext(
 			ethereumClientService,
 			requestAbortController,
@@ -467,9 +468,9 @@ export const groupEthSimulateV1ResultByInputBlocks = (prepared: PreparedEthSimul
 const inspectSimulationInput = async (
 	ethereumClientService: EthereumClientService,
 	requestAbortController: AbortController | undefined,
-	simulationStateInput: SimulationStateInput,
-	simulationOverrides: StateOverrides,
+	simulationInput: SimulationInput,
 ): Promise<SimulationInputInspection> => {
+	const { value: simulationStateInput, simulationOverrides } = simulationInput
 	const parentBlock = await ethereumClientService.getBlock(requestAbortController)
 	if (parentBlock === null) throw new Error('The latest block is null')
 	const base = {
@@ -489,7 +490,7 @@ const inspectSimulationInput = async (
 		}
 	}
 	try {
-		const { prepared, result: ethSimulateV1CallResult } = await ethereumClientService.simulatePrepared({ value: simulationStateInput, simulationOverrides }, parentBlock.number, requestAbortController)
+		const { prepared, result: ethSimulateV1CallResult } = await ethereumClientService.simulatePrepared(simulationInput, parentBlock.number, requestAbortController)
 		const groupedEthSimulateV1CallResult = groupEthSimulateV1ResultByInputBlocks(prepared, ethSimulateV1CallResult)
 		return {
 			success: true,
@@ -536,10 +537,10 @@ const createExecutionSimulationBlocks = (
 export const createExecutionSimulationState = async (
 	ethereumClientService: EthereumClientService,
 	requestAbortController: AbortController | undefined,
-	simulationStateInput: SimulationStateInput,
-	simulationOverrides: StateOverrides,
+	simulationInput: SimulationInput,
 ): Promise<ExecutionSimulationState> => {
-	const simulationInspection = await inspectSimulationInput(ethereumClientService, requestAbortController, simulationStateInput, simulationOverrides)
+	const { value: simulationStateInput, simulationOverrides } = simulationInput
+	const simulationInspection = await inspectSimulationInput(ethereumClientService, requestAbortController, simulationInput)
 	if (simulationInspection.success === false) return { ...simulationInspection.base, success: false, jsonRpcError: simulationInspection.jsonRpcError }
 	const { base, groupedEthSimulateV1CallResult } = simulationInspection
 	return {
@@ -549,8 +550,9 @@ export const createExecutionSimulationState = async (
 	}
 }
 
-export const createSimulationState = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationStateInput: SimulationStateInput, simulationOverrides: StateOverrides): Promise<SimulationState> => {
-	const executionSimulationState = await createExecutionSimulationState(ethereumClientService, requestAbortController, simulationStateInput, simulationOverrides)
+export const createSimulationState = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationInput: SimulationInput): Promise<SimulationState> => {
+	const { value: simulationStateInput, simulationOverrides } = simulationInput
+	const executionSimulationState = await createExecutionSimulationState(ethereumClientService, requestAbortController, simulationInput)
 	if (executionSimulationState.success === false) return executionSimulationState
 	if (!hasSimulationBlocks(simulationStateInput)) {
 		return {
@@ -600,7 +602,7 @@ const createPreparedSimulatedExecutionBlocks = async (
 	const context = await createPreparedSimulationExecutionContext(
 		ethereumClientService,
 		requestAbortController,
-		{ kind: 'simulated', value: simulationState.simulationStateInput, simulationOverrides: simulationState.simulationOverrides },
+		toResolvedSimulationInput(getSimulationInputFromState(simulationState)),
 		simulationState.blockNumber,
 	)
 	if (context === undefined) return []
@@ -652,19 +654,20 @@ export const appendTransactionsToInput = (simulationStateInput: SimulationStateI
 	]
 }
 
-export const appendTransactionToInputAndSimulate = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, oldSimulatedInput: SimulationStateInput, transactions: PreSimulationTransaction[], blockDelta: number | undefined, overrides: { stateOverrides: StateOverrides, simulationOverrides: StateOverrides }): Promise<SimulationState> => {
-	const simulationStateInput = appendTransactionsToInput(oldSimulatedInput, transactions, blockDelta, overrides.stateOverrides)
-	return await createSimulationState(ethereumClientService, requestAbortController, simulationStateInput, overrides.simulationOverrides)
+export const appendTransactionToInputAndSimulate = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationInput: SimulationInput, transactions: PreSimulationTransaction[], blockDelta: number | undefined, stateOverrides: StateOverrides): Promise<SimulationState> => {
+	const value = appendTransactionsToInput(simulationInput.value, transactions, blockDelta, stateOverrides)
+	return await createSimulationState(ethereumClientService, requestAbortController, { ...simulationInput, value })
 }
 
-export const getNonceFixedSimulationStateInput = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationStateInput: SimulationStateInput, simulationOverrides: StateOverrides) => {
+export const getNonceFixedSimulationStateInput = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationInput: SimulationInput) => {
+	const simulationStateInput = simulationInput.value
 	const isFixableNonceError = (transaction: PreSimulationTransaction, callResult: EthSimulateV1CallResult) => {
 		return callResult.status === 'failure'
 		&& callResult.error.message === 'wrong transaction nonce' //TODO, change to error code
 		&& transaction.originalRequestParameters.method === 'eth_sendTransaction'
 	}
-	const simulationInspection = await inspectSimulationInput(ethereumClientService, requestAbortController, simulationStateInput, simulationOverrides)
-	if (simulationInspection.success === false) return { nonceFixed: false, simulationStateInput }
+	const simulationInspection = await inspectSimulationInput(ethereumClientService, requestAbortController, simulationInput)
+	if (simulationInspection.success === false) return { nonceFixed: false, simulationInput }
 	const knownPreviousNonce = new Map<string, bigint>()
 	const blocks = simulationInspection.groupedEthSimulateV1CallResult
 
@@ -676,7 +679,7 @@ export const getNonceFixedSimulationStateInput = async(ethereumClientService: Et
 		}))
 		return nonceFixable !== undefined
 	}
-	if (!areThereNonceIssues()) return { nonceFixed: false, simulationStateInput }
+	if (!areThereNonceIssues()) return { nonceFixed: false, simulationInput }
 	const simulationInputBlocks = []
 	for (const [blockIndex, block] of blocks.entries()) {
 		const processedTransactions: PreSimulationTransaction[] = []
@@ -698,7 +701,7 @@ export const getNonceFixedSimulationStateInput = async(ethereumClientService: Et
 		if (oldBlock === undefined) throw new Error('missing block when checking for nonces')
 		simulationInputBlocks.push({ ...oldBlock, transactions: processedTransactions })
 	}
-	return { nonceFixed: true, simulationStateInput: simulationInputBlocks }
+	return { nonceFixed: true, simulationInput: { ...simulationInput, value: simulationInputBlocks } }
 }
 
 const canAffordMaxGasCost = (balance: bigint, value: bigint, gasLimit: bigint, maxFeePerGas: bigint) => {
@@ -1652,7 +1655,7 @@ export const getSimulatedLogs = async (ethereumClientService: EthereumClientServ
 	return await ethereumClientService.getLogs(logFilter, requestAbortController)
 }
 export const getSimulatedBlockNumber = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedExecutionSimulationState) => {
-	if (simulationState.kind === 'simulated') return await getSimulatedBlockNumberFromInput(ethereumClientService, requestAbortController, { kind: 'simulated', value: simulationState.value.simulationStateInput, simulationOverrides: simulationState.value.simulationOverrides })
+	if (simulationState.kind === 'simulated') return await getSimulatedBlockNumberFromInput(ethereumClientService, requestAbortController, toResolvedSimulationInput(getSimulationInputFromState(simulationState.value)))
 	return await ethereumClientService.getBlockNumber(requestAbortController)
 }
 
@@ -1761,7 +1764,7 @@ export const getSimulatedErc20Balance = async (
 }
 
 // prefer the node-provided simulated block hash when available, and fall back to a deterministic synthetic hash for grouped logical blocks
-const getHashOfSimulatedBlock = (simulationState: SimulationState, blockDelta: number) => getSimulatedBlockHeaderTemplate(simulationState, blockDelta)?.hash ?? getHashOfSimulatedBlockFromInput(simulationState.simulationStateInput, blockDelta, simulationState.simulationOverrides)
+const getHashOfSimulatedBlock = (simulationState: SimulationState, blockDelta: number) => getSimulatedBlockHeaderTemplate(simulationState, blockDelta)?.hash ?? getHashOfSimulatedBlockFromInput(getSimulationInputFromState(simulationState), blockDelta)
 
 const getSimulatedBlockHeaderTemplate = (simulationState: SimulationState, blockDelta: number) => {
 	if (simulationState.success === false) throw new JsonRpcResponseError(simulationState.jsonRpcError)

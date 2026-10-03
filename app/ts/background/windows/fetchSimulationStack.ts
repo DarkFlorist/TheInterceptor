@@ -173,7 +173,7 @@ export const openFetchSimulationStackDialog = async (
 
 export const getSimulationStackHash = (simulationState: ResolvedSimulationInput) => {
 	if (simulationState.kind === 'passthrough') return 'passthrough'
-	return getSimulationInputHash(simulationState.value, simulationState.simulationOverrides)
+	return getSimulationInputHash(simulationState)
 }
 
 export async function openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot: SimulationStackSnapshot, simulationOverlayEnabled: boolean, websiteTabConnections: WebsiteTabConnections, params: GetSimulationStack, website: Website, request: InterceptedRequest, socket: WebsiteSocket): Promise<FetchSimulationStackRequestResult> {
