@@ -5,6 +5,8 @@ import type { PrepareSafeAppReply } from '../types/interceptor-reply-messages.js
 import { getEnabledSafeAppsHostOrigins, getSettings } from './settings.js'
 import { hasAccess } from './websiteAccessPolicy.js'
 import { parseSafeAppsHostOrigin } from '../types/safeAppsHosting.js'
+import { INPAGE_SCRIPTS } from '../config/injectedScripts.js'
+import safeAppsPreparationMessages from '../../shared/safeAppsPreparationMessages.json'
 
 async function prepareSafeAppTabOperation(value: string, operation: PreparationOperation): Promise<PrepareSafeAppReply['data']> {
 	const origin = parseSafeAppsHostOrigin(value)
@@ -22,13 +24,13 @@ async function prepareSafeAppTabOperation(value: string, operation: PreparationO
 	if (injectFiles === undefined) return { success: false, errorMessage: 'This browser does not support Safe Apps connection preparation.' }
 	operation.tabId = tab.id
 	// Read the actual origin in the isolated world and bind preparation to that document, even if the tab navigates.
-	const documents = await injectFiles({ target: { tabId: tab.id, frameIds: [0] }, world: 'ISOLATED', files: ['/inpage/js/readDocumentOrigin.js'] })
+	const documents = await injectFiles({ target: { tabId: tab.id, frameIds: [0] }, world: 'ISOLATED', files: [INPAGE_SCRIPTS.readDocumentOrigin] })
 	const document = documents[0]
 	if (document === undefined || document.result !== origin) return { success: false, errorMessage: 'The website navigated before connecting.' }
 	if (document.documentId === undefined) return { success: false, errorMessage: 'This browser does not support Safe Apps connection preparation.' }
 	if (operation.abort.signal.aborted) return cancelledReply(operation)
 	operation.documentId = document.documentId
-	const pageScript = injectFiles({ target: { tabId: tab.id, documentIds: [document.documentId] }, world: 'MAIN', files: ['/inpage/js/prepareSafeAppBootstrap.js'] })
+	const pageScript = injectFiles({ target: { tabId: tab.id, documentIds: [document.documentId] }, world: 'MAIN', files: [INPAGE_SCRIPTS.prepareSafeApp] })
 	operation.pageScript = pageScript
 	const results = await Promise.race([pageScript, operation.cancelled])
 	if (operation.abort.signal.aborted) return cancelledReply(operation)
@@ -60,7 +62,7 @@ type PreparationOperation = {
 	cleanup?: Promise<void>
 }
 const preparations = new Map<string, PreparationOperation>()
-const cancelledReply = (operation: PreparationOperation): PrepareSafeAppReply['data'] => ({ success: false, errorMessage: typeof operation.abort.signal.reason === 'string' ? operation.abort.signal.reason : 'Safe connection was cancelled.' })
+const cancelledReply = (operation: PreparationOperation): PrepareSafeAppReply['data'] => ({ success: false, errorMessage: typeof operation.abort.signal.reason === 'string' ? operation.abort.signal.reason : safeAppsPreparationMessages.cancelled })
 const isMissingPreparationDocument = (error: unknown) => isMissingBrowserTargetError(error) || error instanceof Error && (error.message.startsWith('No document with id') || error.message === 'The tab was closed.' || error.message === 'The frame was removed.' || /^Frame with ID \d+ was removed\./.test(error.message))
 
 export async function prepareSafeAppTab(value: string): Promise<PrepareSafeAppReply['data']> {
@@ -91,7 +93,7 @@ export async function cancelSafeAppPreparation(value: string) {
 	if (operation === undefined) return
 	// Keep the operation reserved until page cleanup finishes; a late cancellation must not cancel a subsequent retry.
 	operation.cleanup ??= clearPreparationScript(operation)
-	operation.abort.abort('Safe connection was cancelled.')
+	operation.abort.abort(safeAppsPreparationMessages.cancelled)
 	await operation.cleanup
 }
 
@@ -101,7 +103,7 @@ async function clearPreparationScript(operation: PreparationOperation) {
 	if (injectFiles === undefined) return
 	const target = { tabId: operation.tabId, documentIds: [operation.documentId] }
 	try {
-		await injectFiles({ target, world: 'MAIN', files: ['/inpage/js/cancelSafeAppPreparationBootstrap.js'] })
+		await injectFiles({ target, world: 'MAIN', files: [INPAGE_SCRIPTS.cancelSafeAppPreparation] })
 	} catch (error: unknown) {
 		if (!isMissingPreparationDocument(error)) throw error
 		return
@@ -111,7 +113,7 @@ async function clearPreparationScript(operation: PreparationOperation) {
 	let pageScriptError: unknown
 	try { await operation.pageScript } catch (error: unknown) { pageScriptFailed = true; pageScriptError = error }
 	try {
-		await injectFiles({ target, world: 'MAIN', files: ['/inpage/js/clearSafeAppPreparationCancellationBootstrap.js'] })
+		await injectFiles({ target, world: 'MAIN', files: [INPAGE_SCRIPTS.clearSafeAppPreparationCancellation] })
 	} catch (error: unknown) {
 		if (!isMissingPreparationDocument(error)) throw error
 	}

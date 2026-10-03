@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import * as url from 'node:url'
 import * as fs from 'node:fs'
 import * as ts from 'typescript'
+import { INPAGE_SCRIPTS } from '../app/ts/config/injectedScripts.js'
 
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))
 const appDirectory = path.join(directoryOfThisFile, '..', 'app')
@@ -380,28 +381,12 @@ const runtimeEntrypointPaths = [
 	path.join(appDirectory, 'js', 'settingsView.js'),
 	path.join(appDirectory, 'js', 'simulationStack.js'),
 	path.join(appDirectory, 'js', 'websiteAccess.js'),
-	path.join(appDirectory, 'inpage', 'js', 'document_start.js'),
-	path.join(appDirectory, 'inpage', 'js', 'inpage.js'),
-	path.join(appDirectory, 'inpage', 'js', 'listenContentScript.js'),
-	path.join(appDirectory, 'inpage', 'js', 'listenContentScriptBootstrap.js'),
-	path.join(appDirectory, 'inpage', 'js', 'safeAppsHostBootstrap.js'),
-	path.join(appDirectory, 'inpage', 'js', 'prepareSafeAppBootstrap.js'),
-	path.join(appDirectory, 'inpage', 'js', 'cancelSafeAppPreparationBootstrap.js'),
-	path.join(appDirectory, 'inpage', 'js', 'clearSafeAppPreparationCancellationBootstrap.js'),
-	path.join(appDirectory, 'inpage', 'js', 'readDocumentOrigin.js'),
+	...Object.values(INPAGE_SCRIPTS).map((file) => path.join(appDirectory, file.slice(1))),
 	path.join(appDirectory, 'js', 'utils', 'ethereumPrimitives.js'),
 ]
 
 const classicRuntimeEntrypointPaths = new Set([
-	path.join(appDirectory, 'inpage', 'js', 'document_start.js'),
-	path.join(appDirectory, 'inpage', 'js', 'inpage.js'),
-	path.join(appDirectory, 'inpage', 'js', 'listenContentScript.js'),
-	path.join(appDirectory, 'inpage', 'js', 'listenContentScriptBootstrap.js'),
-	path.join(appDirectory, 'inpage', 'js', 'safeAppsHostBootstrap.js'),
-	path.join(appDirectory, 'inpage', 'js', 'prepareSafeAppBootstrap.js'),
-	path.join(appDirectory, 'inpage', 'js', 'cancelSafeAppPreparationBootstrap.js'),
-	path.join(appDirectory, 'inpage', 'js', 'clearSafeAppPreparationCancellationBootstrap.js'),
-	path.join(appDirectory, 'inpage', 'js', 'readDocumentOrigin.js'),
+	...Object.values(INPAGE_SCRIPTS).map((file) => path.join(appDirectory, file.slice(1))),
 ])
 
 export function assertClassicEntrypointHasNoModuleSyntax(filePath: string, source: string) {
@@ -494,8 +479,8 @@ async function bundleRuntimeEntrypoints() {
 		copyRuntimeEntrypoints(await buildRuntimeEntrypoints(existingEntrypoints, {
 			root: appDirectory,
 			outdir: bundledOutputDirectory,
-			inpagePath: path.join(appDirectory, 'inpage', 'js', 'inpage.js'),
-			documentStartPath: path.join(appDirectory, 'inpage', 'js', 'document_start.js'),
+			inpagePath: path.join(appDirectory, INPAGE_SCRIPTS.provider.slice(1)),
+			documentStartPath: path.join(appDirectory, INPAGE_SCRIPTS.documentStart.slice(1)),
 		}))
 	} finally {
 		fs.rmSync(bundledOutputDirectory, { recursive: true, force: true })

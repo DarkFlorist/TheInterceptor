@@ -1,6 +1,7 @@
 import * as funtypes from 'funtypes'
 
 export const DEFAULT_SAFE_APPS_HOST_ORIGINS: readonly string[] = []
+export const SAFE_APPS_HOST_ORIGIN_LIMIT = 32
 
 export function parseSafeAppsHostOrigin(value: string) {
 	let url: URL
@@ -18,4 +19,4 @@ export const SafeAppsHostOrigin = funtypes.String.withConstraint((value) => {
 	try { return parseSafeAppsHostOrigin(value) === value } catch { return false }
 })
 
-export const SafeAppsHostOrigins = funtypes.ReadonlyArray(SafeAppsHostOrigin).withConstraint((origins) => origins.length <= 32 && new Set(origins).size === origins.length)
+export const SafeAppsHostOrigins = funtypes.ReadonlyArray(SafeAppsHostOrigin).withConstraint((origins) => origins.length <= SAFE_APPS_HOST_ORIGIN_LIMIT && new Set(origins).size === origins.length)

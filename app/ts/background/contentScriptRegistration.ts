@@ -3,6 +3,7 @@ import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissi
 import type { ContentScriptConfiguration } from '../types/contentScriptSettings.js'
 import { getSafeAppsHostMatchPatterns } from '../utils/safeAppsHosting.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from '../utils/errors.js'
+import { INPAGE_SCRIPTS, SAFE_APPS_HOST_SCRIPTS } from '../config/injectedScripts.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
@@ -12,7 +13,7 @@ const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cann
 const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
 const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
 
-type ContentScriptRegistrationOutcome = 'applied' | 'hosting-failed'
+type ContentScriptRegistrationOutcome = 'configuration-applied' | 'hosting-failed'
 
 type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 // The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
@@ -24,7 +25,7 @@ function getBaseContentScripts(excludeMatches: string[], hostMatches: string[] =
 		allFrames: true,
 		matches: injectableSitesWildcard,
 		excludeMatches,
-		js: ['/vendor/webextension-polyfill/dist/browser-polyfill.js', '/inpage/js/listenContentScript.js', '/inpage/js/listenContentScriptBootstrap.js'],
+		js: ['/vendor/webextension-polyfill/dist/browser-polyfill.js', INPAGE_SCRIPTS.contentListener, INPAGE_SCRIPTS.contentListenerBootstrap],
 		runAt: 'document_start',
 		matchOriginAsFallback: true,
 	}, {
@@ -32,7 +33,7 @@ function getBaseContentScripts(excludeMatches: string[], hostMatches: string[] =
 		allFrames: true,
 		matches: injectableSitesWildcard,
 		excludeMatches: [...excludeMatches, ...hostMatches],
-		js: ['/inpage/js/inpage.js'],
+		js: [INPAGE_SCRIPTS.provider],
 		runAt: 'document_start',
 		world: 'MAIN',
 		matchOriginAsFallback: true,
@@ -70,7 +71,7 @@ async function reconcileSafeAppsHost(configuration: ContentScriptConfiguration, 
 		matches: safeAppsHostMatches,
 		excludeMatches: configuration.excludeMatches,
 		// Keep provider injection in embedded app frames, but the host itself only changes top-level pages.
-		js: ['/inpage/js/safeAppsHostBootstrap.js', '/inpage/js/inpage.js'],
+		js: [...SAFE_APPS_HOST_SCRIPTS],
 		runAt: 'document_start',
 		world: 'MAIN',
 		matchOriginAsFallback: true,
@@ -85,7 +86,7 @@ async function reconcileSafeAppsHost(configuration: ContentScriptConfiguration, 
 const applySafeAppsHostOverlay = async (configuration: ContentScriptConfiguration, baseInpageScript: FixedContentScript, baseWasReconciled: boolean): Promise<ContentScriptRegistrationOutcome> => {
 	try {
 		await reconcileSafeAppsHost(configuration, baseInpageScript, baseWasReconciled)
-		return 'applied'
+		return 'configuration-applied'
 	} catch (error: unknown) {
 		// A partially installed host must not leave the ordinary provider excluded on that site.
 		try {
@@ -104,15 +105,15 @@ export function createContentScriptRegistrationService() {
 	let previousUpdate: Promise<void> = Promise.resolve()
 	let appliedSettingsKey: string | undefined
 	let appliedBaseKey: string | undefined
-	let appliedOutcome: ContentScriptRegistrationOutcome = 'applied'
+	let appliedOutcome: ContentScriptRegistrationOutcome = 'configuration-applied'
 	let appliedAttempt = 0
-	const queueUpdate = (retryRecoveredAttempt?: number) => {
+	const queueUpdate = (failedAttemptToRetry?: number) => {
 		const nextUpdate = previousUpdate.then(async () => {
 			// Read inside the queue so subsequent writes cannot leave the last requested update applying stale state.
 			const configuration = await getContentScriptConfiguration()
 			const settingsKey = configuration.cacheKey
-			// An explicit retry can reapply the failure it observed, but must not repeat a newer queued attempt.
-			const retryObservedFailure = appliedOutcome === 'hosting-failed' && retryRecoveredAttempt === appliedAttempt
+			// Concurrent callers may retry the failure they observed once; a newer queued attempt owns subsequent retries.
+			const retryObservedFailure = appliedOutcome === 'hosting-failed' && failedAttemptToRetry === appliedAttempt
 			if (settingsKey === appliedSettingsKey && !retryObservedFailure) return appliedOutcome
 			try {
 				const baseKey = JSON.stringify(configuration.excludeMatches)
@@ -138,8 +139,11 @@ export function createContentScriptRegistrationService() {
 		previousUpdate = nextUpdate.then(() => undefined, () => undefined)
 		return nextUpdate
 	}
-	// Ordinary reloads only need readiness; hosting-specific success and retry decisions remain inside the service.
-	const update = async () => { await queueUpdate() }
+	// Explicit callers receive the outcome and may retry a cached hosting failure; concurrent callers share one retry.
+	const update = async (): Promise<ContentScriptRegistrationOutcome> => {
+		const failedAttemptToRetry = appliedOutcome === 'hosting-failed' ? appliedAttempt : undefined
+		return await queueUpdate(failedAttemptToRetry)
+	}
 	const updateAndReport = async () => {
 		try {
 			await update()
@@ -166,8 +170,7 @@ export function createContentScriptRegistrationService() {
 		started = false
 	}
 	const ensureSafeAppsHostRegistered = async (origin: string) => {
-		const retryRecoveredAttempt = appliedOutcome === 'hosting-failed' ? appliedAttempt : undefined
-		if (await queueUpdate(retryRecoveredAttempt) !== 'applied') return false
+		if (await update() !== 'configuration-applied') return false
 		const matches = getSafeAppsHostMatchPatterns([origin])
 		const scripts = await browser.scripting.getRegisteredContentScripts()
 		return scripts.some((script) => script.id === 'safe-apps-host' && matches.every((pattern) => script.matches?.includes(pattern) === true))
@@ -190,8 +193,8 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 	if (!noMatches) return false
 	try {
 		await browser.tabs.executeScript(content.tabId, { file: '/vendor/webextension-polyfill/dist/browser-polyfill.js', allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/listenContentScript.js', allFrames: false, runAt: 'document_start' })
-		await browser.tabs.executeScript(content.tabId, { file: '/inpage/js/document_start.js', allFrames: false, runAt: 'document_start' })
+		await browser.tabs.executeScript(content.tabId, { file: INPAGE_SCRIPTS.contentListener, allFrames: false, runAt: 'document_start' })
+		await browser.tabs.executeScript(content.tabId, { file: INPAGE_SCRIPTS.documentStart, allFrames: false, runAt: 'document_start' })
 		checkAndThrowRuntimeLastError()
 	} catch(error) {
 		if (isMissingBrowserTargetError(error) || isExpectedManifestV2InjectionTargetError(error)) return false

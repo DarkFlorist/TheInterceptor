@@ -106,3 +106,27 @@ test('native parent messaging rejects embedded callers before re-posting under t
 		assert.deepEqual(forwarded, ['top-discovery'])
 	} finally { restoreGlobals() }
 })
+
+test('host answers malformed SDK requests from its own page without forwarding them', async () => {
+	const { fakeWindow, emitParentMessage, restoreGlobals } = createSafeHostHarness()
+	try {
+		installSafeAppsHost()
+		const responses: unknown[] = []
+		const forwarded: unknown[] = []
+		fakeWindow.addEventListener('message', (event) => {
+			if (!('data' in event)) return
+			if ('source' in event && event.source === fakeWindow) forwarded.push(event.data)
+			else responses.push(event.data)
+		})
+		emitParentMessage({ id: 'bad-version', method: 'getSafeInfo', env: { sdkVersion: 'invalid' } })
+		emitParentMessage({ id: 'bad-method', env: { sdkVersion: '9.1.0' } })
+		emitParentMessage({ id: 'other-origin', method: 'getSafeInfo', env: { sdkVersion: 'invalid' } }, 'https://unapproved.example')
+		emitParentMessage({ id: 'unrelated' })
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.deepEqual(forwarded, [])
+		assert.deepEqual(responses, [
+			{ id: 'bad-version', success: false, error: 'Safe Apps env.sdkVersion must be a supported semantic version.', version: '9.1.0' },
+			{ id: 'bad-method', success: false, error: 'Safe Apps method must be a string.', version: '9.1.0' },
+		])
+	} finally { restoreGlobals() }
+})

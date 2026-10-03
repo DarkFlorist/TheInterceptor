@@ -1,4 +1,4 @@
-import { createSafeAppsErrorResponse, createSafeAppsCancellation, isSafeAppsRequest, isSafeAppsResponse, type SafeAppsRequest } from './safeAppsProtocol.js'
+import { createSafeAppsErrorResponse, createSafeAppsCancellation, parseSafeAppsRequest, isSafeAppsResponse, type SafeAppsRequest } from './safeAppsProtocol.js'
 import { createSafeAppsRequestQueue } from './safeAppsRequestQueue.js'
 import { createSafeAppsTransport } from './safeAppsTransport.js'
 
@@ -42,10 +42,15 @@ export function installSafeAppsHost() {
 	// Listen on the real frame: native postMessage supplies the actual caller's source and origin.
 	const onRequest = (event: MessageEvent<unknown>) => {
 		if (disposed || event.source !== windowObject || event.origin !== windowObject.location.origin) return
-		const message = event.data
-		if (!isSafeAppsRequest(message)) return
-		if (!pendingRequests.add(message)) return
-		transport.post(message)
+		const parsed = parseSafeAppsRequest(event.data)
+		if (parsed === undefined) return
+		if ('error' in parsed) {
+			// The caller installs its response listener after posting the request.
+			queueMicrotask(() => { if (!disposed) deliver(createSafeAppsErrorResponse(parsed, parsed.error)) })
+			return
+		}
+		if (!pendingRequests.add(parsed.request)) return
+		transport.post(parsed.request)
 	}
 	apparentParent.addEventListener('message', onRequest)
 	const unsubscribe = transport.subscribe(({ data }) => {

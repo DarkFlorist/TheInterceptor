@@ -1,6 +1,6 @@
 import { useSignal } from '@preact/signals'
 import { requestPopupPrepareSafeApp, requestPopupCancelPrepareSafeApp, sendPopupMessageToBackgroundPageWithoutUnexpectedErrorReport } from '../../background/backgroundUtils.js'
-import { parseSafeAppsHostOrigin } from '../../types/safeAppsHosting.js'
+import { parseSafeAppsHostOrigin, SAFE_APPS_HOST_ORIGIN_LIMIT } from '../../types/safeAppsHosting.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { AsyncActionButton } from './AsyncAction.js'
 import { ErrorComponent } from './Error.js'
@@ -27,7 +27,7 @@ export function SafeAppsHostingSettings({ enabled, origins }: { enabled: boolean
 			<button type = 'button' class = 'button' disabled = { action.value.state === 'pending' } onClick = { () => waitFor(async () => await saveOrigins(origins.filter((existing) => existing !== origin))) }>Remove</button>
 		</div>) }
 		<label>Website URL <input type = 'url' value = { website.value } placeholder = 'https://app.example.com' onInput = { (event) => { website.value = event.currentTarget.value } } /></label>
-		<AsyncActionButton state = { action.value.state } disabled = { website.value.trim() === '' || origins.length >= 32 } text = 'Add website' pendingText = 'Saving…' class = 'button' onClick = { () => waitFor(async () => {
+		<AsyncActionButton state = { action.value.state } disabled = { website.value.trim() === '' || origins.length >= SAFE_APPS_HOST_ORIGIN_LIMIT } text = 'Add website' pendingText = 'Saving…' class = 'button' onClick = { () => waitFor(async () => {
 			const origin = parseSafeAppsHostOrigin(website.value.trim())
 			if (!origins.includes(origin)) await saveOrigins([...origins, origin])
 			website.value = ''

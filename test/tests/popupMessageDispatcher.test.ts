@@ -164,6 +164,9 @@ beforeEach(() => {
 describe('popup message dispatcher seams', () => {
 	test('refreshes manifest v3 content script exclusions after removing a disabled website', async () => {
 		storageState.websiteAccess = [disabledWebsiteAccess]
+		const { contentScriptRegistration } = await import('../../app/ts/background/contentScriptRegistration.js')
+		await contentScriptRegistration.update()
+		contentScriptUpdateBatches.splice(0, contentScriptUpdateBatches.length)
 
 		await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
 			method: 'popup_removeWebsiteAccess',
@@ -192,6 +195,9 @@ describe('popup message dispatcher seams', () => {
 
 	test('refreshes manifest v3 content script exclusions after the access editor removes a disabled website', async () => {
 		storageState.websiteAccess = [disabledWebsiteAccess]
+		const { contentScriptRegistration } = await import('../../app/ts/background/contentScriptRegistration.js')
+		await contentScriptRegistration.update()
+		contentScriptUpdateBatches.splice(0, contentScriptUpdateBatches.length)
 
 		await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
 			method: 'popup_changeInterceptorAccess',

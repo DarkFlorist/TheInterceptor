@@ -330,7 +330,7 @@ describe('content script injection strategy', () => {
 	})
 
 	test('enable/disable awaits recovered registrations, coalesces the storage update, reloads and replies', async () => {
-		const { getRegisteredContentScripts, getScriptingOperations, reloadedTabs, sentMessages, recordAccessRefresh } = installBrowserMock({ emitStorageEvents: true, safeAppsCompatibilityMode: true, safeAppsHostOrigins: ['not-an-origin'] })
+		const { getRegisteredContentScripts, getScriptingOperations, reloadedTabs, sentMessages, recordAccessRefresh } = installBrowserMock({ emitStorageEvents: true, safeAppsCompatibilityMode: true, safeAppsHostOrigins: ['not-an-origin'], registeredContentScriptIds: ['inpage', 'inpage2'] })
 		const registration = await import('../../app/ts/background/contentScriptRegistration.js')
 		const { disableInterceptor } = await import('../../app/ts/background/popupMessageHandlers/websiteAccess.js')
 		const { getLatestUnexpectedError } = await import('../../app/ts/background/storageVariables.js')
@@ -699,6 +699,23 @@ test('explicit hosting retries coalesce the observed recovery and can retry agai
 		assert.equal(await service.ensureSafeAppsHostRegistered(origin), true)
 		assert.equal(hostAttempts, 3)
 	})
+})
+
+test('explicit registration update returns its hosting outcome and retries a cached failure', async () => {
+	let hostAttempts = 0
+	installBrowserMock({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: ['https://retry.example'], beforeRegisterContentScripts: async (scripts) => {
+		if (!scripts.some(({ id }) => id === 'safe-apps-host')) return
+		hostAttempts++
+		if (hostAttempts === 1) throw new Error('Transient host failure')
+	} })
+	const { createContentScriptRegistrationService } = await loadModules()
+	const service = createContentScriptRegistrationService()
+	await withSilencedConsole(async () => {
+		assert.equal(await service.update(), 'hosting-failed')
+		assert.equal(await service.update(), 'configuration-applied')
+	})
+	assert.equal(hostAttempts, 2)
+	assert.equal(await service.ensureSafeAppsHostRegistered('https://retry.example'), true)
 })
 
 
