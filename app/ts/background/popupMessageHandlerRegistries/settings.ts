@@ -41,13 +41,17 @@ export const settingsPopupMessageHandlers = {
 	popup_setDelegationSimulation: popupSnapshotMessageHandler('popup_setDelegationSimulation', async (context, request) => {
 		const { address, chainId, enabled } = request.data
 		const network = context.settings.activeRpcNetwork
-		const providerNetwork = context.services.ethereum.getRpcEntry()
-		if (!context.settings.simulationMode || context.settings.activeSimulationAddress !== address || network.chainId !== chainId
-			|| network.httpsRpc === undefined || providerNetwork.chainId !== chainId || providerNetwork.httpsRpc !== network.httpsRpc) {
+		if (!context.settings.simulationMode || context.settings.activeSimulationAddress !== address || network.chainId !== chainId) {
 			return { method: 'popup_setDelegationSimulation', data: { ok: false, message: 'The active simulation account or network changed. Please try again.' } }
 		}
-		if (enabled && await getCachedDelegation(context.services.ethereum, address) === undefined) {
-			return { method: 'popup_setDelegationSimulation', data: { ok: false, message: 'This account no longer has an EIP-7702 delegate.' } }
+		if (enabled) {
+			const providerNetwork = context.services.ethereum.getRpcEntry()
+			if (network.httpsRpc === undefined || providerNetwork.chainId !== chainId || providerNetwork.httpsRpc !== network.httpsRpc) {
+				return { method: 'popup_setDelegationSimulation', data: { ok: false, message: 'The active simulation network changed. Please try again.' } }
+			}
+			if (await getCachedDelegation(context.services.ethereum, address) === undefined) {
+				return { method: 'popup_setDelegationSimulation', data: { ok: false, message: 'This account no longer has an EIP-7702 delegate.' } }
+			}
 		}
 		const changed = await setDelegateClearingEnabled(address, chainId, enabled)
 		if (changed) await queuePopupSimulationRefresh({ ...context.services, invalidateOldState: true })
