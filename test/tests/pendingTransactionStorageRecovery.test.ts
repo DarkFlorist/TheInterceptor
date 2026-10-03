@@ -6,7 +6,7 @@ const storageState: Record<string, unknown> = {}
 const storageWrites: Record<string, unknown>[] = []
 let storageReadError: Error | undefined
 
-globalThis.browser = {
+Object.defineProperty(globalThis, 'browser', { configurable: true, writable: true, value: {
 	storage: {
 		local: {
 			async get(keys?: string | string[] | Record<string, unknown> | null) {
@@ -25,9 +25,9 @@ globalThis.browser = {
 			},
 		},
 	},
-} as unknown as typeof globalThis.browser
+} })
 
-const { clearPendingTransactions } = await import('../../app/ts/background/storageVariables.js')
+const { clearPendingTransactions, getPendingTransactionsAndMessages } = await import('../../app/ts/background/storageVariables.js')
 
 beforeEach(() => {
 	for (const key of Object.keys(storageState)) delete storageState[key]
@@ -48,6 +48,7 @@ test('does not erase pending transaction storage after a transient read failure'
 	storageReadError = new Error('Storage temporarily unavailable')
 
 	await assert.rejects(clearPendingTransactions(), /Storage temporarily unavailable/)
+	await assert.rejects(getPendingTransactionsAndMessages(), /Storage temporarily unavailable/)
 
 	assert.deepEqual(storageState.pendingTransactionsAndMessages, [])
 	assert.equal(storageWrites.length, 0)

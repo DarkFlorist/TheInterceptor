@@ -20,7 +20,7 @@ import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { isAccountConnectionMethod } from '../accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
-import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, signerConnectionReplacedError, signerUnavailableError, tabHasApprovedWebsiteConnection, waitForConfirmedSignerStateToken } from '../signerStateOwnership.js'
+import { runSignerStateOperation, getConfirmedSignerStateToken, isSignerStateTokenCurrent, signerConnectionReplacedError, signerUnavailableError, tabHasApprovedWebsiteConnection, waitForConfirmedSignerStateToken } from '../signerStateOwnership.js'
 import { assertActiveAddressSelectionAllowed, includePersistedAddressBookEntry } from '../../utils/activeAddressSelection.js'
 
 type OpenedDialogWithListeners = {
@@ -195,45 +195,58 @@ async function requestSignerAccountsFromSigner(
 	options: SignerAccountRefreshOptions = {},
 ) {
 	return await serializeSignerAccountRequest(websiteTabConnections, socket.tabId, async () => {
-		const signerStateToken = await waitForConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
-		if (signerStateToken === undefined) return { accounts: [], error: signerUnavailableError }
-		const tabState = await getTabState(socket.tabId)
-		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return { accounts: [], error: signerConnectionReplacedError }
-		if (onlyIfUnavailable && tabState.signerAccounts.length !== 0) return { accounts: tabState.signerAccounts, error: undefined }
+		if (await waitForConfirmedSignerStateToken(websiteTabConnections, socket.tabId) === undefined) return { accounts: [], error: signerUnavailableError }
+		// Read cached accounts and dispatch under the same lock as signer status reports. Otherwise a reconnect report can invalidate the token during the storage read, before any wallet request is sent.
+		const prepared = await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
+			const signerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+			if (signerStateToken === undefined) return { kind: 'complete' as const, accounts: [], error: signerUnavailableError }
+			const tabState = await getTabState(socket.tabId)
+			if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return { kind: 'complete' as const, accounts: [], error: signerConnectionReplacedError }
+			if (onlyIfUnavailable && tabState.signerAccounts.length !== 0) return { kind: 'complete' as const, accounts: tabState.signerAccounts, error: undefined }
 
-		const future = new Future<ErrorWithCodeAndOptionalData | undefined>
-		const listener = createInternalMessageListener( (message: WindowMessage) => {
-			if (message.method !== 'window_signer_accounts_changed') return
-			if (websiteSocketToString(message.data.socket) !== websiteSocketToString(signerStateToken.socket)) return
-			const currentSignerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
-			const messageMatchesCurrentSignerState = currentSignerStateToken !== undefined
-				&& currentSignerStateToken.port === signerStateToken.port
-				&& message.data.signerStateOwnerGeneration === currentSignerStateToken.ownerGeneration
-				&& message.data.signerProviderGeneration === currentSignerStateToken.signerProviderGeneration
-			const messageSettlesInitialSignerState = message.data.signerStateOwnerGeneration === signerStateToken.ownerGeneration
-				&& message.data.signerProviderGeneration === signerStateToken.signerProviderGeneration
-				&& currentSignerStateToken?.port !== signerStateToken.port
-			if (messageMatchesCurrentSignerState) return future.resolve(message.data.error)
-			if (messageSettlesInitialSignerState) return future.resolve(message.data.error ?? signerConnectionReplacedError)
+			const future = new Future<ErrorWithCodeAndOptionalData | undefined>
+			const listener = createInternalMessageListener( (message: WindowMessage) => {
+				if (message.method !== 'window_signer_accounts_changed') return
+				if (websiteSocketToString(message.data.socket) !== websiteSocketToString(signerStateToken.socket)) return
+				const currentSignerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
+				const messageMatchesCurrentSignerState = currentSignerStateToken !== undefined
+					&& currentSignerStateToken.port === signerStateToken.port
+					&& message.data.signerStateOwnerGeneration === currentSignerStateToken.ownerGeneration
+					&& message.data.signerProviderGeneration === currentSignerStateToken.signerProviderGeneration
+				const messageSettlesInitialSignerState = message.data.signerStateOwnerGeneration === signerStateToken.ownerGeneration
+					&& message.data.signerProviderGeneration === signerStateToken.signerProviderGeneration
+					&& currentSignerStateToken?.port !== signerStateToken.port
+				if (messageMatchesCurrentSignerState) return future.resolve(message.data.error)
+				if (messageSettlesInitialSignerState) return future.resolve(message.data.error ?? signerConnectionReplacedError)
+			})
+			const channel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
+			const dispose = () => {
+				channel.removeEventListener('message', listener)
+				channel.close()
+			}
+			try {
+				channel.addEventListener('message', listener)
+				const callback = requestAccounts
+					? { type: 'result' as const, method: 'request_signer_to_eth_requestAccounts' as const, result: [] as const }
+					: { type: 'result' as const, method: 'request_signer_to_eth_accounts' as const, result: [] as const }
+				if (!sendSubscriptionReplyOrCallBackToPort(signerStateToken.port, callback)) {
+					dispose()
+					return { kind: 'complete' as const, accounts: [], error: signerConnectionReplacedError }
+				}
+				return { kind: 'pending' as const, signerStateToken, future, dispose }
+			} catch (error) {
+				dispose()
+				throw error
+			}
 		})
-		const channel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
+		if (prepared.kind === 'complete') return { accounts: prepared.accounts, error: prepared.error }
+		const { signerStateToken, future, dispose } = prepared
 		let error: ErrorWithCodeAndOptionalData | undefined
 		try {
-			channel.addEventListener('message', listener)
-			const requestSignerAccountsMessage = requestAccounts
-				? { type: 'result' as const, method: 'request_signer_to_eth_requestAccounts' as const, result: [] as const }
-				: { type: 'result' as const, method: 'request_signer_to_eth_accounts' as const, result: [] as const }
-			const messageSent = isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)
-				&& sendSubscriptionReplyOrCallBackToPort(signerStateToken.port, requestSignerAccountsMessage)
-			if (messageSent) {
-				error = requestAccounts
-					? await future
-					: await waitForSignerAccountReply(future, options.passiveReplyTimeoutMs ?? SIGNER_ACCOUNT_REPLY_TIMEOUT_MS)
-			}
-			else error = signerConnectionReplacedError
+			// Replies and reconnection reports need the signer-state lock, so never hold it while waiting.
+			error = requestAccounts ? await future : await waitForSignerAccountReply(future, options.passiveReplyTimeoutMs ?? SIGNER_ACCOUNT_REPLY_TIMEOUT_MS)
 		} finally {
-			channel.removeEventListener('message', listener)
-			channel.close()
+			dispose()
 		}
 		const completedSignerStateToken = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 		if (completedSignerStateToken?.port !== signerStateToken.port) return { accounts: [], error: error ?? signerConnectionReplacedError }

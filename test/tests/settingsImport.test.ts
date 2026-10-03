@@ -201,13 +201,13 @@ describe('settings import', () => {
 		assert.deepEqual(await getPage(), { page: 'Settings' })
 	})
 
-	test('round-trips Safe settings in version 1.6 exports', async () => {
+	test('round-trips Safe settings in version 1.7 exports', async () => {
 		const signingSafeAddress = 0x4444444444444444444444444444444444444444n
 		const signerAddress = 0x4545454545454545454545454545454545454545n
 		const { changeSimulationMode, exportSettingsAndAddressBook, getSafeAppsCompatibilityMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference, setSafeAppsCompatibilityMode } = await settingsModulePromise
-		const { updateUserAddressBookEntries, getTabState } = await storageVariablesModulePromise
+		const { updateAddressBookAndSigningWalletBindings, getTabState } = await storageVariablesModulePromise
 		const { getSigningAddressSelectionTransition } = await signingAddressSelectionModulePromise
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Exported signing Safe',
 			address: signingSafeAddress,
@@ -225,8 +225,8 @@ describe('settings import', () => {
 		await setSafeAppsCompatibilityMode(true)
 
 		const exportedSettings = await exportSettingsAndAddressBook()
-		assert.equal(exportedSettings.version, '1.6')
-		if (exportedSettings.version !== '1.6') throw new Error('Expected current settings export version')
+		assert.equal(exportedSettings.version, '1.7')
+		if (exportedSettings.version !== '1.7') throw new Error('Expected current settings export version')
 		assert.equal(exportedSettings.settings.activeSigningSafeAddress, signingSafeAddress)
 		assert.deepEqual(exportedSettings.settings.signingAddressPreferences, [{ signerAddress, selection: 'safe', safeAddress: signingSafeAddress, chainId: testRpcNetwork.chainId }])
 		assert.equal(exportedSettings.settings.safeAppsCompatibilityMode, true)
@@ -251,8 +251,8 @@ describe('settings import', () => {
 		const signingSafeAddress = 0x4646464646464646464646464646464646464646n
 		const signerAddress = 0x4747474747474747474747474747474747474747n
 		const { changeSimulationMode, exportSettingsAndAddressBook, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
-		const { updateUserAddressBookEntries } = await storageVariablesModulePromise
-		await updateUserAddressBookEntries(() => [{
+		const { updateAddressBookAndSigningWalletBindings } = await storageVariablesModulePromise
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Ordered import Safe',
 			address: signingSafeAddress,
@@ -352,9 +352,9 @@ describe('settings import', () => {
 		const signingSafeAddress = 0x7070707070707070707070707070707070707070n
 		const signerAddress = 0x7171717171717171717171717171717171717171n
 		const { getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
-		const { getTabState, updateUserAddressBookEntries } = await storageVariablesModulePromise
+		const { getTabState, updateAddressBookAndSigningWalletBindings } = await storageVariablesModulePromise
 		const { getSigningAddressSelectionTransition } = await signingAddressSelectionModulePromise
-		await updateUserAddressBookEntries(() => [{
+		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Pre-import signing Safe',
 			address: signingSafeAddress,

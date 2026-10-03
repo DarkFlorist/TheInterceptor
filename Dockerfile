@@ -22,7 +22,7 @@ COPY app/img/ /workspace/app/img/
 COPY app/inpage/ /workspace/app/inpage/
 COPY app/fonts/ /workspace/app/fonts/
 COPY contracts/ /workspace/contracts/
-COPY build/tsconfig.json build/vendor.mts build/bundler.mts build/cleanOutput.mts build/compileSolidityContracts.mts /workspace/build/
+COPY build/tsconfig.json build/*.mts /workspace/build/
 
 COPY tsconfig-test.json /workspace/
 COPY test/ /workspace/test/

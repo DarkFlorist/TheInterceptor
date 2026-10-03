@@ -489,3 +489,17 @@ describe('popup message dispatcher seams', () => {
 		assert.ok(dynamicRuleEventIndex < settingsUpdatedEventIndex)
 	})
 })
+
+test('signing requests and typed replies use the popup registry', async () => {
+	const { PopupMessage } = await import('../../app/ts/types/interceptor-messages.js')
+	const { PopupReplyOption, PopupRequestsReplies } = await import('../../app/ts/types/interceptor-reply-messages.js')
+	const request = PopupMessage.parse({ method: 'signing_wallets' })
+	const reply = await dispatchPopupMessage(createDispatcherContext(async () => undefined), request)
+	const decoded = PopupRequestsReplies.signing_wallets.parse(PopupReplyOption.serialize(reply))
+	assert.equal(decoded.ok, true)
+	if (!decoded.ok) throw new Error(decoded.message)
+	assert.deepEqual(decoded.bindings, [])
+	assert.deepEqual(decoded.tabs, [])
+	assert.equal(PopupMessage.safeParse({ method: 'signing_result', id: 'request', revision: 'revision', result: 42 }).success, false)
+	assert.equal(PopupRequestsReplies.signing_get.safeParse({ ok: true, record: {} }).success, false)
+})

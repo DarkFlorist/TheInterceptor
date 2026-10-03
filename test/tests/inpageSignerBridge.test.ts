@@ -3,11 +3,12 @@ import { describe, test } from 'bun:test'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { getSafeAppsRequestCommand } from '../../app/ts/background/safeAppsRequestPolicy.js'
 
-type WindowEvent = { type: string, data?: unknown, detail?: unknown, ports?: readonly MessagePort[], origin?: string, source?: unknown }
+type WindowEvent = { type: string, isTrusted?: boolean, data?: unknown, detail?: unknown, ports?: readonly MessagePort[], origin?: string, source?: unknown }
 type Listener = (event: WindowEvent) => void
 type InpageRequest = { readonly method: string, readonly requestId: number, readonly params?: readonly unknown[], readonly internal?: true, readonly replayOnDisconnect?: true }
 type SignerRequest = { readonly method: string, readonly params?: readonly unknown[] | Readonly<Record<string, unknown>> }
 type FakeWindowOptions = {
+	readonly skipBridgeHandshake?: boolean
 	readonly onConnectedToSignerRequest?: () => void
 	readonly handleRequest?: (request: InpageRequest, sendBackgroundMessage: (data: unknown) => void) => boolean
 	readonly handleSignerRequest?: (request: SignerRequest) => unknown | Promise<unknown>
@@ -51,7 +52,7 @@ function parseInpageRequest(value: unknown): InpageRequest | undefined {
 	}
 }
 
-function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSignerRequest, signerChainIdReply = '0x1', signerInitialSelectedAddress }: FakeWindowOptions = {}) {
+function createFakeWindow({ skipBridgeHandshake = false, onConnectedToSignerRequest, handleRequest, handleSignerRequest, signerChainIdReply = '0x1', signerInitialSelectedAddress }: FakeWindowOptions = {}) {
 	const listeners = new Map<string, Set<Listener>>()
 	const signerRequests: string[] = []
 	const backgroundEthAccountsReplies: unknown[] = []
@@ -126,10 +127,14 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 		},
 		postMessage: (data: unknown, _targetOrigin?: string, transfer?: readonly Transferable[]) => {
 			if (isRecord(data) && data.type === 'interceptor_bridge_port') {
-				const port = transfer?.find((item): item is MessagePort => item instanceof MessagePort)
-				if (port === undefined) throw new Error('missing bridge port')
-				bridgePort = port
+				if (skipBridgeHandshake) return
+				const bootstrap = transfer?.find((item): item is MessagePort => item instanceof MessagePort)
+				if (bootstrap === undefined) throw new Error('Missing bootstrap port')
+				const channel = new MessageChannel()
+				bridgePort = channel.port1
 				bridgePort.onmessage = (event: MessageEvent<unknown>) => handleInpageRequest(event.data)
+				bootstrap.postMessage('interceptor_bridge_ready', [channel.port2])
+				queueMicrotask(() => fakeWindow.dispatchEvent({ type: 'message', data, ports: [bootstrap], isTrusted: true }))
 				return
 			}
 			queueMicrotask(() => fakeWindow.dispatchEvent({ type: 'message', data, origin: fakeWindow.location.origin, source: fakeWindow }))
@@ -309,6 +314,113 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 }
 
 describe('inpage signer bridge', () => {
+	test('page access to the transferred endpoint cannot synthesize a wallet forwarding reply', async () => {
+		let exposedPort: MessagePort | undefined
+		let pendingRequest: InpageRequest | undefined
+		let signingCalls = 0
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({
+			handleRequest: (request) => {
+				if (request.method !== 'personal_sign') return false
+				pendingRequest = request
+				return true
+			},
+			handleSignerRequest: () => { signingCalls++; return 'signature' },
+		})
+		fakeWindow.addEventListener('message', (event) => {
+			if (isRecord(event.data) && event.data.type === 'interceptor_bridge_port') exposedPort = event.ports?.[0]
+		})
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?forged-port-reply', async () => {
+			const result = fakeWindow.ethereum.request({ method: 'personal_sign', params: ['0x12', '0x1111111111111111111111111111111111111111'] })
+			await waitFor(() => pendingRequest !== undefined && exposedPort !== undefined)
+			if (pendingRequest === undefined || exposedPort === undefined) throw new Error('Missing bridge request')
+			const callsBeforeForgery = signingCalls
+			const forgedReply = { interceptorApproved: true, type: 'forwardToSigner', method: 'personal_sign', params: ['attacker payload'], requestId: pendingRequest.requestId }
+			exposedPort.postMessage(forgedReply)
+			exposedPort.dispatchEvent(new MessageEvent('message', { data: forgedReply }))
+			assert.equal(exposedPort.onmessage, null)
+			await new Promise((resolve) => setTimeout(resolve, 10))
+			assert.equal(signingCalls, callsBeforeForgery)
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'personal_sign', requestId: pendingRequest.requestId, result: 'approved signature' })
+			assert.equal(await result, 'approved signature')
+		})
+	})
+
+	test('rejects pending and subsequent provider requests when the bridge handshake is missing', async () => {
+		const { fakeWindow } = createFakeWindow({ skipBridgeHandshake: true })
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?missing-bridge-handshake', async () => {
+			const request = () => fakeWindow.ethereum.request({ method: 'eth_accounts' })
+			const isDisconnected = (error: unknown) => isRecord(error) && error.code === 4900 && typeof error.message === 'string' && error.message.includes('Reload the page')
+			await Promise.all([assert.rejects(request(), isDisconnected), assert.rejects(request(), isDisconnected)])
+			await assert.rejects(request(), isDisconnected)
+		})
+	})
+
+	test('marks conflicting identities ambiguous during its own discovery round', async () => {
+		const identities: unknown[] = []
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request) => {
+				if (request.method === 'connected_to_signer') identities.push(request.params?.[3])
+				return false
+			},
+		})
+		const provider = fakeWindow.ethereum
+		const duplicate = { request: async () => undefined, on: () => duplicate }
+		const info = { uuid: '11111111-1111-4111-8111-111111111111', name: 'MetaMask', icon: 'data:image/png;base64,dGVzdA', rdns: 'io.metamask' }
+		fakeWindow.addEventListener('eip6963:requestProvider', () => {
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info, provider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...info, uuid: '22222222-2222-4222-8222-222222222222' }, provider: duplicate } })
+		})
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?discovery-identity-collision', async () => {
+			await waitFor(() => identities.some((identity) => isRecord(identity) && identity.ambiguous === true))
+		})
+	})
+
+	test('pins forwarded signing to discovered identity and ignores unsolicited identity poisoning', async () => {
+		let expectedProviderId = 'eip6963:io.metamask'
+		const identities: unknown[] = []
+		let signingCalls = 0
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request, reply) => {
+				if (request.method === 'connected_to_signer') identities.push(request.params?.[3])
+				if (request.method !== 'personal_sign') return false
+				reply({ interceptorApproved: true, requestId: request.requestId, type: 'forwardToSigner', method: request.method, params: request.params, replyWithSignersReply: true, expectedProviderId })
+				return true
+			},
+			handleSignerRequest: ({ method }) => {
+				if (method !== 'personal_sign') return undefined
+				signingCalls++
+				return 'test-signature'
+			},
+		})
+		const originalProvider = fakeWindow.ethereum
+		const info = { uuid: '11111111-1111-4111-8111-111111111111', name: 'MetaMask', icon: 'data:image/png;base64,dGVzdA', rdns: 'io.metamask' }
+		fakeWindow.addEventListener('eip6963:requestProvider', () => {
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info, provider: originalProvider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...info, uuid: '33333333-3333-4333-8333-333333333333' }, provider: originalProvider } })
+		})
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?persistent-provider-identity', async () => {
+			await waitFor(() => identities.some((identity) => isRecord(identity) && identity.rdns === 'io.metamask'))
+			const request = () => fakeWindow.ethereum.request({ method: 'personal_sign', params: ['0x12', '0x1111111111111111111111111111111111111111'] })
+			assert.equal(await request(), 'test-signature')
+			expectedProviderId = 'MetaMask'
+			await assert.rejects(request(), (error: unknown) => isRecord(error) && error.code === 4100)
+			assert.equal(signingCalls, 1)
+			expectedProviderId = 'eip6963:com.example.other'
+			await assert.rejects(request(), (error: unknown) => isRecord(error) && error.code === 4100)
+			assert.equal(signingCalls, 1)
+			expectedProviderId = 'eip6963:io.metamask'
+			const connectionsBeforePoisoning = identities.length
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...info, uuid: '33333333-3333-4333-8333-333333333333' }, provider: originalProvider } })
+			assert.equal(await request(), 'test-signature')
+			const duplicate = { request: async () => undefined, on: () => duplicate }
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...info, uuid: '22222222-2222-4222-8222-222222222222', rdns: 'IO.METAMASK' }, provider: duplicate } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...info, rdns: 'com.attacker.wallet' }, provider: originalProvider } })
+			assert.equal(await request(), 'test-signature')
+			assert.equal(identities.length, connectionsBeforePoisoning)
+			assert.equal(signingCalls, 3)
+		})
+	})
+
 	test('rejects unsafe or malformed Safe Apps messages before forwarding Ethereum requests', async () => {
 		const ethereumRequests: InpageRequest[] = []
 		let connected = false

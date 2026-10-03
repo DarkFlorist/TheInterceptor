@@ -1,3 +1,4 @@
+import { hasPinnedSigningAddress } from './safeSigningAccount.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { TabState } from '../types/user-interface-types.js'
 import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
@@ -41,6 +42,7 @@ export async function getSigningAddressSelectionTransition(
 	previousTabState: TabState,
 	currentTabState: TabState,
 ): Promise<SigningAddressSelectionTransition> {
+	if (!settings.simulationMode && await hasPinnedSigningAddress(settings)) return { shouldActivate: false, selection: undefined, signerAddress: currentTabState.signerAccounts[0] }
 	const selectedSafe = await getConfiguredSigningSafe(settings, currentTabState.signerAccounts)
 	const configuredActiveAddress = settings.simulationMode
 		? settings.activeSimulationAddress

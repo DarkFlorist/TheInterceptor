@@ -254,7 +254,7 @@ export async function loadModules() {
 			return updated.safeTransactionStacks
 		},
 		updateTabState: storageVariables.updateTabState,
-		updateUserAddressBookEntries: storageVariables.updateUserAddressBookEntries,
+		updateAddressBookAndSigningWalletBindings: storageVariables.updateAddressBookAndSigningWalletBindings,
 		flushPendingTerminalRepliesForSocket,
 		flushPendingTerminalRepliesForConnectedPortWithRetry: terminalReplyDelivery.flushPendingTerminalRepliesForConnectedPortWithRetry,
 		queueTerminalReply: terminalReplyDelivery.queueTerminalReply,
