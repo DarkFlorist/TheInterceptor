@@ -1,3 +1,4 @@
+import { SAFE_APPS_REQUEST_METHOD } from './safeRpcMethods.js'
 import { PopupSettingsChangeStatus } from './popupSettingsProtocol.js'
 import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress } from './popupSettingsRequests.js'
 import * as funtypes from 'funtypes'
@@ -153,7 +154,7 @@ const NonForwardingRPCRequestSuccessfullReturnValue = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_simulateV1'), result: EthSimulateV1Result }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getFilterChanges'), result: EthGetLogsResponse }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('eth_getFilterLogs'), result: EthGetLogsResponse }),
-	funtypes.ReadonlyObject({ method: funtypes.Literal('safe_apps_request'), result: SafeAppsRequestCommand }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal(SAFE_APPS_REQUEST_METHOD), result: SafeAppsRequestCommand }),
 )
 
 type SubscriptionReturnValue = funtypes.Static<typeof SubscriptionReturnValue>
@@ -171,15 +172,19 @@ const NonForwardingRPCRequestReturnValue = funtypes.Intersect(
 	funtypes.Union(NonForwardingRPCRequestSuccessfullReturnValue, ErrorReturn)
 )
 
+const SignerMethodAuthorization = funtypes.ReadonlyPartial({ authorizedRequestMethods: funtypes.ReadonlyArray(funtypes.String) })
+
 type ForwardToWallet = funtypes.Static<typeof ForwardToWallet>
 const ForwardToWalletRequest = funtypes.Union(SendRawTransactionParams, SendTransactionParams, PersonalSignParams, SignTypedDataParams, OldSignTypedDataParams, WalletAddEthereumChain, EthGetStorageAtParams)
 const ForwardToWallet = funtypes.Intersect( // forward directly to wallet
+	SignerMethodAuthorization,
 	funtypes.ReadonlyObject({ type: funtypes.Literal('forwardToSigner') }),
 	ForwardToWalletRequest,
 )
 
 type ReplyWithSignersReplyForward = funtypes.Static<typeof ReplyWithSignersReplyForward>
 const ReplyWithSignersReplyForward = funtypes.Intersect(
+	SignerMethodAuthorization,
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('forwardToSigner'),
 		replyWithSignersReply: funtypes.Literal(true),

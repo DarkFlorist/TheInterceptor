@@ -154,11 +154,6 @@ export const checkAndPrintRuntimeLastError = () => {
 	if (error !== null && error !== undefined && error.message !== undefined) console.error(error)
 }
 
-export const getHostWithPort = (urlString: string): string => {
-	const url = new URL(urlString)
-	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
-}
-
 export const silenceChromeUnCaughtPromise = <ReturnValue>(maybeAwaitedFunction: Promise<ReturnValue>) => {
 	void maybeAwaitedFunction.catch(() => undefined)
 	return maybeAwaitedFunction

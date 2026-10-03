@@ -1,3 +1,5 @@
+import { SAFE_APPS_REQUEST_METHOD } from './generated/safeRpcMethods.js'
+
 const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
 const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
 
@@ -259,7 +261,7 @@ const INTERNAL_BACKGROUND_METHODS = [
 	'connected_to_signer',
 	'eth_accounts_reply',
 	'InterceptorError',
-	'safe_apps_request',
+	SAFE_APPS_REQUEST_METHOD,
 	'signer_chainChanged',
 	'signer_reply',
 	'wallet_switchEthereumChain_reply',
@@ -290,7 +292,25 @@ type InterceptedRequestForwardWithError = InterceptedRequestBase & {
 	}
 }
 
-type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly type: 'forwardToSigner', readonly replyWithSignersReply?: true }
+// Snapshot authorization checks before page scripts can replace built-ins or add inherited approval fields.
+const getOwnBridgeProperty = Object.getOwnPropertyDescriptor
+const defineOwnBridgeProperty = Object.defineProperty
+const bridgeArrayIsArray = Array.isArray
+const bridgeArrayIncludes = Array.prototype.includes.call.bind(Array.prototype.includes)
+
+function parseAuthorizedRequestMethods(data: object): readonly string[] | undefined {
+	const methods: unknown = getOwnBridgeProperty(data, 'authorizedRequestMethods')?.value
+	if (!bridgeArrayIsArray(methods)) return undefined
+	const parsed: string[] = []
+	for (let index = 0; index < methods.length; index++) {
+		const method: unknown = getOwnBridgeProperty(methods, String(index))?.value
+		if (typeof method !== 'string') return undefined
+		defineOwnBridgeProperty(parsed, index, { value: method, enumerable: true })
+	}
+	return parsed
+}
+
+type InterceptedRequestForwardToSigner = InterceptedRequestBase & { readonly type: 'forwardToSigner', readonly replyWithSignersReply?: true, readonly authorizedRequestMethods?: readonly string[] }
 
 type InterceptedRequestForward = InterceptedRequestForwardWithResult | InterceptedRequestForwardWithError | InterceptedRequestForwardToSigner
 
@@ -316,6 +336,7 @@ type InterceptorApprovedMessageCandidate = {
 	readonly params?: unknown
 	readonly subscription?: unknown
 	readonly replyWithSignersReply?: unknown
+	readonly authorizedRequestMethods?: unknown
 	readonly result?: unknown
 	readonly error?: unknown
 }
@@ -406,6 +427,7 @@ function parseInterceptorApprovedMessage(data: unknown): InterceptedRequestForwa
 		...base,
 		type: 'forwardToSigner',
 		...(data.replyWithSignersReply === true ? { replyWithSignersReply: true as const } : {}),
+		authorizedRequestMethods: parseAuthorizedRequestMethods(data),
 	}
 	const hasResult = 'result' in data
 	const maybeError = data.error
@@ -720,20 +742,20 @@ class InterceptorMessageListener {
 	private metamaskCompatibilityMode = false
 	// The page owns SDK settings; every signing request carries its mode across background port recreation.
 	private readonly safeAppsBridge = createSafeAppsBridge(inpageWindow, createSafeAppsRequestHandler(
-		async (request) => await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [request] }),
+		async (request) => await this.sendInternalMessageToBackgroundPage({ method: SAFE_APPS_REQUEST_METHOD, params: [request] }),
 		async (request) => await this.WindowEthereumRequest(request),
 	), async () => {
 		// Restore persisted access after reload before considering an interactive wallet connection.
 		const accounts = await this.WindowEthereumRequest({ method: 'eth_accounts' })
 		if (!Array.isArray(accounts) || accounts.length === 0) await this.WindowEthereumRequest({ method: 'eth_requestAccounts' })
 		// Recheck Safe eligibility after the ordinary wallet/site approval flow completes.
-		await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [{ method: 'getEnvironmentInfo' }] })
+		await this.sendInternalMessageToBackgroundPage({ method: SAFE_APPS_REQUEST_METHOD, params: [{ method: 'getEnvironmentInfo' }] })
 	})
 	private signerName: Signer = 'NoSigner'
 	private signerWindowEthereumProvider: WindowEthereum | undefined = undefined
 	private signerWindowEthereumRequest: EthereumRequest | undefined = undefined
 	private fallbackSignerWindowEthereumRequest: EthereumRequest | undefined = undefined
-	private extensionMessagePort: MessagePort | undefined = undefined
+	private postToExtension: ((message: BridgeRequest) => void) | undefined = undefined
 	private readonly subscribedSignerProviders = new WeakSet<object>()
 	private readonly rejectedSignerProviders = new WeakSet<object>()
 	private announcedMetaMaskUuid: string | undefined = undefined
@@ -864,15 +886,20 @@ class InterceptorMessageListener {
 
 	private readonly connectToContentScript = () => {
 		const channel = new MessageChannel()
-		this.extensionMessagePort = channel.port1
-		channel.port1.onmessage = (messageEvent: MessageEvent<unknown>) => { void this.onMessage(messageEvent) }
+		// Capture native operations before page scripts run, so replacing MessagePort methods or MessageEvent.data cannot reveal our private endpoint later.
+		this.postToExtension = channel.port1.postMessage.bind(channel.port1)
+		const getData = Object.getOwnPropertyDescriptor(MessageEvent.prototype, 'data')?.get
+		if (getData === undefined) throw new Error('MessageEvent.data is unavailable')
+		const readData = getData.call.bind(getData)
+		channel.port1.onmessage = (messageEvent: MessageEvent<unknown>) => { void this.onMessage({ type: 'message', data: readData(messageEvent) }) }
 		window.postMessage({ type: INTERCEPTOR_BRIDGE_PORT_MESSAGE }, '*', [channel.port2])
 	}
 
 	private readonly sendMessageToBackgroundPage = async (messageMethodAndParams: MessageMethodAndParams) => {
 		this.requestId++
 		const pendingRequestId = this.requestId
-		const replayOnDisconnect = messageMethodAndParams.internal !== true && messageMethodAndParams.method === 'eth_requestAccounts'
+		const isInternalMessage = getOwnBridgeProperty(messageMethodAndParams, 'internal')?.value === true
+		const replayOnDisconnect = !isInternalMessage && messageMethodAndParams.method === 'eth_requestAccounts'
 		const future = new InterceptorFuture<unknown>()
 		this.outstandingRequests.set(pendingRequestId, {
 			future,
@@ -880,17 +907,17 @@ class InterceptorMessageListener {
 			requestScopedProviderEventCallbacks: [],
 		})
 		try {
-			if (this.extensionMessagePort === undefined) throw new Error('Interceptor content script bridge is not connected')
+			if (this.postToExtension === undefined) throw new Error('Interceptor content script bridge is not connected')
 			const message: BridgeRequest = {
 				type: INTERCEPTOR_BRIDGE_REQUEST_MESSAGE,
 				method: messageMethodAndParams.method,
 				params: messageMethodAndParams.params,
 				usingInterceptorWithoutSigner: this.signerWindowEthereumRequest === undefined,
 				requestId: pendingRequestId,
-				...(messageMethodAndParams.internal === true ? { internal: true as const } : {}),
+				...(isInternalMessage ? { internal: true as const } : {}),
 				...(replayOnDisconnect ? { replayOnDisconnect: true as const } : {}),
 			}
-			this.extensionMessagePort.postMessage(message)
+			this.postToExtension(message)
 			return await future
 		} finally {
 			this.outstandingRequests.delete(pendingRequestId)
@@ -924,7 +951,7 @@ class InterceptorMessageListener {
 
 	private readonly reportInterceptorError = (diagnostics: string) => {
 		try {
-			if (this.extensionMessagePort === undefined) return
+			if (this.postToExtension === undefined) return
 			const message: BridgeRequest = {
 				type: INTERCEPTOR_BRIDGE_REQUEST_MESSAGE,
 				method: 'InterceptorError',
@@ -933,7 +960,7 @@ class InterceptorMessageListener {
 				requestId: -1,
 				internal: true,
 			}
-			this.extensionMessagePort.postMessage(message)
+			this.postToExtension(message)
 		} catch(reportingError: unknown) {
 			console.error('Failed to report InterceptorError diagnostics')
 			console.error(reportingError)
@@ -949,7 +976,7 @@ class InterceptorMessageListener {
 		try {
 			if (isInternalBackgroundMethod(methodAndParams.method)) throw new EthereumJsonRpcError(METAMASK_METHOD_NOT_SUPPORTED, `Method not supported: ${ methodAndParams.method }`)
 			const params = normalizeInterceptorEthereumRequestParameters(methodAndParams.method, methodAndParams.params)
-			// make a message that the background script will catch and reply us. We'll wait until the background script replies to us and return only after that
+			// Rebuild public requests from method/params only; callers cannot supply the private callback marker.
 			return await this.sendMessageToBackgroundPage({
 				method: methodAndParams.method,
 				...(params !== undefined ? { params } : {}),
@@ -1723,6 +1750,9 @@ class InterceptorMessageListener {
 			if (forwardRequest.requestId === undefined) throw new Error('requestId missing')
 			const pendingRequest = this.outstandingRequests.get(forwardRequest.requestId)
 			if (pendingRequest === undefined) throw new Error('Request did not exist anymore')
+			if (forwardRequest.method !== pendingRequest.method && !bridgeArrayIncludes(forwardRequest.authorizedRequestMethods ?? [], pendingRequest.method)) {
+				return pendingRequest.future.reject(new EthereumJsonRpcError(-32600, 'Signer instruction does not match the pending request.'))
+			}
 			if (this.signerWindowEthereumRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')
 
 			const sendToSignerWithCatchError = async () => {

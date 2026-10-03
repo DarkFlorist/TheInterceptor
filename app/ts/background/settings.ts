@@ -1,3 +1,4 @@
+import { migrateWebsiteAccessOrigins } from './websiteAccessMigration.js'
 import type { ActiveAddress, ExportedSettings, Page } from '../types/exportedSettingsTypes.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import { Semaphore } from '../utils/semaphore.js'
@@ -229,8 +230,7 @@ export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessA
 	await websiteAccessSemaphore.execute(async () => {
 		const { rawWebsiteAccess, sanitizedWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
 		const nextWebsiteAccess = sanitizeWebsiteAccess(updateFunc(sanitizedWebsiteAccess))
-		if (nextWebsiteAccess === sanitizedWebsiteAccess && rawWebsiteAccess === sanitizedWebsiteAccess) return
-		return await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
+		if (nextWebsiteAccess !== sanitizedWebsiteAccess || rawWebsiteAccess !== sanitizedWebsiteAccess) await browserStorageLocalSet({ websiteAccess: nextWebsiteAccess })
 	})
 }
 
@@ -311,7 +311,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 		}, exportedSetings.version === '1.5' || exportedSetings.version === '1.6' ? exportedSetings.settings.signingAddressPreferences : [])
 	}
 	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
-	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
+	await updateWebsiteAccess(() => migrateWebsiteAccessOrigins(exportedSetings.settings.websiteAccess))
 	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup)
 	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') {
 		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)

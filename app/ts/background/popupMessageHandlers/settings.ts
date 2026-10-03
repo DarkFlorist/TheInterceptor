@@ -1,3 +1,4 @@
+import { reconcileContentScriptRegistration } from '../contentScriptRegistration.js'
 import type { ImportSettings, ImportSettingsReply, SetRpcList, Settings } from '../../types/interceptor-messages.js'
 import { ExportedSettings } from '../../types/exportedSettingsTypes.js'
 import { serialize } from '../../types/wire-types.js'
@@ -36,6 +37,7 @@ export async function importSettings(settingsData: ImportSettings): Promise<Impo
 		return { method: 'popup_initiate_export_settings_reply', data: { success: false, errorMessage: 'Failed to read the file. It is not a valid interceptor settings file' } }
 	}
 	await importSettingsAndAddressBook(parsed.value)
+	await reconcileContentScriptRegistration()
 	return { method: 'popup_initiate_export_settings_reply', data: { success: true } }
 }
 

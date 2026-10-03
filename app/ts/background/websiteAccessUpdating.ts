@@ -1,5 +1,6 @@
+import { reconcileContentScriptRegistration } from './contentScriptRegistration.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { getInterceptorDisabledSites, updateContentScriptInjectionStrategy } from '../utils/contentScriptsUpdating.js'
+import { getInterceptorDisabledSites } from '../utils/contentScriptExclusions.js'
 import { updateWebsiteAccess } from './settings.js'
 
 function haveSameDisabledSites(previousWebsiteAccess: WebsiteAccessArray, nextWebsiteAccess: WebsiteAccessArray) {
@@ -15,6 +16,5 @@ export async function updateWebsiteAccessAndContentScriptInjectionStrategy(updat
 		disabledSitesChanged = !haveSameDisabledSites(previousWebsiteAccess, nextWebsiteAccess)
 		return nextWebsiteAccess
 	})
-	if (disabledSitesChanged) await updateContentScriptInjectionStrategy()
-	return disabledSitesChanged
+	return await reconcileContentScriptRegistration({ exclusionsChanged: disabledSitesChanged })
 }
