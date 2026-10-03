@@ -306,6 +306,33 @@ describe('UI audit fixes', () => {
 		assert.deepEqual(staticInlineStyles, [])
 	})
 
+	test('lays out ENS events and signing field tables with the shared detail styles', async () => {
+		const css = await readInterceptorAppCss()
+		// An ENS event is a sentence whose parts wrap as whole pieces; squeezing the parts clipped names to a single letter.
+		assert.match(css, /\.ens-table\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/)
+		assert.match(css, /\.ens-table > \.log-cell\s*\{[^}]*flex:\s*0 0 auto;[^}]*max-width:\s*100%;/)
+		// The rows are list items, so they must stay unmarked and unspaced inside `.content`, whose list rules are more specific than a single class.
+		assert.match(css, /\.ens-events > \.ens-event\s*\{[^}]*list-style:\s*none;[^}]*margin:\s*0;/)
+		const ensSource = await Bun.file('app/ts/components/simulationExplaining/customExplainers/EnsEventExplainer.tsx').text()
+		assert.match(ensSource, /<ul class = 'ens-events'>[\s\S]*?<li key = \{[^\n]*\} class = 'ens-event'>/)
+		assert.doesNotMatch(ensSource, /positive-box|textColor/)
+		// Typed-data, Safe and hash tables share one two-column layout with the values starting on a common line, like the raw transaction details.
+		assert.match(css, /\.eip-712-table, \.safe-signing-fields, \.signature-hash-table\s*\{[^}]*grid-template-columns:\s*max-content minmax\(0, 1fr\);/)
+		assert.match(css, /\.eip-712-table > \.log-cell:nth-child\(even\), \.safe-signing-fields > \.log-cell:nth-child\(even\), \.signature-hash-table > \.log-cell:nth-child\(even\) \{ justify-content: start \}/)
+		const personalSignSource = await Bun.file('app/ts/components/pages/PersonalSign.tsx').text()
+		assert.match(personalSignSource, /<p class = 'summary-label'>Domain<\/p>[\s\S]*?<p class = 'summary-label'>Message<\/p>/)
+	})
+
+	test('passes static tones to coin and card components as classes', async () => {
+		const css = await readInterceptorAppCss()
+		// The inline card colours its own label, so a tone has to outrank that rule to apply to the label as well.
+		for (const tone of ['strong', 'subtitle', 'negative', 'positive']) assert.match(css, new RegExp(`\\.coin-text--${ tone }, \\.inline-card data\\.coin-text--${ tone } \\{`))
+		const swapSource = await Bun.file('app/ts/components/simulationExplaining/SwapTransactions.tsx').text()
+		assert.match(swapSource, /const amountClass = `coin-text--strong \$\{ direction === 'pay' \? 'coin-text--negative' : 'coin-text--positive' \}`/)
+		assert.doesNotMatch(swapSource, /tokenStyle|balanceTextStyle|amountStyle/)
+		assert.match(css, /\.address-editor \.input\.address-editor-input--invalid \{ color: var\(--danger-color\) \}/)
+	})
+
 	test('keeps the warning tag readable in both themes', async () => {
 		const frameworkCss = await Bun.file('app/css/interceptor-framework.css').text()
 		assert.match(frameworkCss, /\.tag:not\(body\)\.is-warning\s*\{\s*background-color:\s*var\(--warning-box-color\);\s*color:\s*var\(--warning-box-text\);/)

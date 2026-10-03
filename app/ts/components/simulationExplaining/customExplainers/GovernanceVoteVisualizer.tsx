@@ -241,7 +241,7 @@ export function GovernanceVoteVisualizer(param: GovernanceVoteVisualizerParams) 
 		<div class = 'governance-simulation-header'>
 				<span class = 'log-table governance-simulation-title-row'>
 					<div class = 'log-cell'>
-						<p class = 'paragraph'>Simulation of this proposal's outcome should the vote pass:</p>
+						<p class = 'summary-label'>Outcome if the vote passes</p>
 					</div>
 					<div class = 'log-cell log-cell--right'>
 						{ simulateExecutionReply.value === undefined ? <></> :

@@ -66,6 +66,9 @@ export function humanReadableDateFromSeconds(timeInSeconds: bigint) {
 	return humanReadableDate(bigintSecondsToDate(timeInSeconds))
 }
 
+// Appends an optional modifier class, such as a tone passed by a caller, to an element's own classes.
+export const withModifierClass = (baseClass: string, modifierClass: string | undefined) => modifierClass === undefined ? baseClass : `${ baseClass } ${ modifierClass }`
+
 export const CellElement = (param: { text: ComponentChildren, useLegibleFont?: boolean }) => {
 	return <div class = 'log-cell log-cell--right'>
 		<p class = { `paragraph${ param.useLegibleFont ? ' text-legible' : '' } log-cell-text` }>{ param.text }</p>

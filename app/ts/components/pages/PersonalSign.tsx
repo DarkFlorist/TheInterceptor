@@ -222,7 +222,7 @@ function EIP712Table({ enrichedEIP712Message, renameAddressCallBack, isSubTable 
 			<CellElement text = { <EIP712Value entry = { entry }/> }/>
 		</>
 	}
-	return <span class = { isSubTable ? 'eip-712-table signature-eip-712-sub-table' : 'eip-712-table' }>
+	return <span class = { isSubTable ? 'eip-712-table eip-712-table--nested' : 'eip-712-table' }>
 		{ Object.entries(enrichedEIP712Message).map(([name, entry]) => <EIP712Entry key = { name } entry = { entry } name = { name }/>) }
 	</span>
 }
@@ -234,11 +234,13 @@ type ArbitraryEIP712Params = {
 
 function ArbitraryEIP712({ enrichedEIP712, renameAddressCallBack }: ArbitraryEIP712Params) {
 	return <>
+		<p class = 'summary-label'>Domain</p>
 		<EIP712Table
 			enrichedEIP712Message = { enrichedEIP712.domain }
 			renameAddressCallBack = { renameAddressCallBack }
 			isSubTable = { false }
 		/>
+		<p class = 'summary-label'>Message</p>
 		<EIP712Table
 			enrichedEIP712Message = { enrichedEIP712.message }
 			renameAddressCallBack = { renameAddressCallBack }
@@ -314,14 +316,12 @@ function ExtraDetailsInner({ visualizedPersonalSignRequest, renameAddressCallBac
 		case 'EIP712':
 		case 'SafeMessage':
 		case 'NotParsed': return <>
-			<span class = 'log-table signature-hash-table'>
-				{ visualizedPersonalSignRequest.type === 'NotParsed' ? <></> : <>
-					<CellElement text = 'Domain Hash: '/>
-					<CellElement text = { visualizedPersonalSignRequest.domainHash }/>
-				</> }
-				<CellElement text = 'Message Hash: '/>
-				<CellElement text = { visualizedPersonalSignRequest.messageHash }/>
-			</span>
+			{ visualizedPersonalSignRequest.type === 'NotParsed' ? <></> : <>
+				<CellElement text = 'Domain Hash: '/>
+				<CellElement text = { visualizedPersonalSignRequest.domainHash }/>
+			</> }
+			<CellElement text = 'Message Hash: '/>
+			<CellElement text = { visualizedPersonalSignRequest.messageHash }/>
 		</>
 		case 'OrderComponents': return <OrderComponentsExtraDetails orderComponents = { visualizedPersonalSignRequest.message } renameAddressCallBack = { renameAddressCallBack }/>
 		case 'Permit': return <PermitExtraDetails permit = { visualizedPersonalSignRequest }/>

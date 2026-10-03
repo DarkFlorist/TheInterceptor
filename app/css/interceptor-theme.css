@@ -384,10 +384,15 @@ svg[role="img"] {
 	background-color: var(--unimportant-text-color);
 	border-radius: 6px;
 	box-sizing: border-box;
+	font-size: 1.5em;
 	height: 1em;
 	overflow: hidden;
 	width: 1em;
 }
+
+.address-icon-frame--big { font-size: 2.5em }
+
+.address-icon-frame > svg { display: block }
 
 .address-icon-frame--empty {
 	background: color-mix(in srgb, var(--text-color) 5%, transparent) !important;
@@ -1370,20 +1375,6 @@ li {
 
 .simulation-summary-section-content {
 	padding: 8px;
-}
-
-.simulation-summary-ens-changes .simulation-summary-section-content > .vertical-center,
-.simulation-summary-ens-changes .simulation-summary-section-content > .vertical-center > .token-box {
-	box-sizing: border-box;
-	display: block;
-	width: 100%;
-}
-
-.simulation-summary-ens-changes .ens-table {
-	align-items: center;
-	display: flex;
-	flex-wrap: wrap;
-	gap: 4px;
 }
 
 .simulation-summary-signature-list {

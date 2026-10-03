@@ -6,7 +6,6 @@ fieldset[disabled] .input {
 }
 
 .input {
-  border-radius: 4px;
   max-width: 100%;
   width: 100%;
 }
@@ -18,7 +17,6 @@ fieldset[disabled] .input {
 /* Bulma Components */
 
 .card {
-  border-radius: 0.25rem;
   color: var(--text-color);
   max-width: 100%;
   position: relative;
@@ -35,7 +33,6 @@ fieldset[disabled] .input {
 }
 
 .card-header {
-  background-color: transparent;
   align-items: stretch;
   display: flex;
 }
@@ -63,15 +60,6 @@ fieldset[disabled] .input {
   padding: 0.75rem 1rem;
 }
 
-.card-content {
-  background-color: transparent;
-  padding: 1.5rem;
-}
-
-.card .media:not(:last-child) {
-  margin-bottom: 1.5rem;
-}
-
 .dropdown {
   display: inline-flex;
   position: relative;
@@ -89,12 +77,6 @@ fieldset[disabled] .input {
   position: absolute;
   top: 100%;
   z-index: 20;
-}
-
-.dropdown-content {
-  border-radius: 4px;
-  padding-bottom: 0.5rem;
-  padding-top: 0.5rem;
 }
 
 .dropdown-item {
@@ -266,7 +248,6 @@ button.dropdown-item {
   flex-grow: 1;
   flex-shrink: 1;
   overflow: auto;
-  padding: 20px;
 }
 
 .navbar {

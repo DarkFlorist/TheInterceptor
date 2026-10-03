@@ -4,17 +4,12 @@
   appearance: none;
   align-items: center;
   border: 1px solid transparent;
-  border-radius: 4px;
   box-shadow: none;
   display: inline-flex;
   font-size: 1rem;
   height: 2.5em;
   justify-content: flex-start;
   line-height: 1.5;
-  padding-bottom: calc(0.5em - 1px);
-  padding-left: calc(0.75em - 1px);
-  padding-right: calc(0.75em - 1px);
-  padding-top: calc(0.5em - 1px);
   position: relative;
   vertical-align: top;
 }
@@ -120,7 +115,6 @@ th:not([align]) {
 html {
   background-color: var(--bg-color);
   box-sizing: border-box;
-  font-size: 16px;
   -moz-osx-font-smoothing: grayscale;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
@@ -306,10 +300,6 @@ table th {
   color: var(--action-text-color);
 }
 
-.button.is-primary:focus:not(:active) {
-  box-shadow: 0 0 0 0.125em color-mix(in srgb, var(--primary-action-color) 25%, transparent);
-}
-
 .button.is-primary:active {
   background-color: var(--highlighted-primary-action-color);
   border-color: transparent;
@@ -437,14 +427,6 @@ fieldset[disabled] .button {
 
 .content li + li {
   margin-top: 0.25em;
-}
-
-.content p:not(:last-child),
-.content dl:not(:last-child),
-.content ul:not(:last-child),
-.content pre:not(:last-child),
-.content table:not(:last-child) {
-  margin-bottom: 1em;
 }
 
 .content h1,
@@ -596,7 +578,6 @@ fieldset[disabled] .button {
 
 .notification {
   background-color: var(--surface-raised-color);
-  border-radius: 4px;
   position: relative;
   padding: 1.25rem 2.5rem 1.25rem 1.5rem;
 }
@@ -723,10 +704,8 @@ a.tag:hover {
 }
 
 .title {
-  color: var(--text-color);
   font-size: 2rem;
   font-weight: 600;
-  line-height: 1.125;
 }
 
 .title strong {
@@ -743,7 +722,6 @@ a.tag:hover {
 }
 
 .subtitle {
-  color: var(--subtitle-text-color);
   font-size: 1.25rem;
   font-weight: 400;
   line-height: 1.25;

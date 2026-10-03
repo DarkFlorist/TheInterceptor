@@ -2,6 +2,7 @@ import type { JSX } from 'preact/jsx-runtime'
 import { useSignal } from '@preact/signals'
 import { clipboardCopy } from './clipboardcopy.js'
 import { CopyIcon, EditIcon } from './icons.js'
+import { withModifierClass } from '../ui-utils.js'
 import { Tooltip, type TooltipConfig } from './Tooltip.js'
 
 type InlineCardProps = {
@@ -10,6 +11,7 @@ type InlineCardProps = {
 	copyValue?: string
 	noCopy?: boolean
 	style?: JSX.CSSProperties
+	class?: string
 	onEditClicked?: JSX.MouseEventHandler<HTMLButtonElement>
 	statusMessageDuration?: number
 	warningMessage?: string
@@ -36,18 +38,18 @@ export const InlineCard = (props: InlineCardProps) => {
 	const hasAction = !props.noCopy || props.onEditClicked !== undefined
 
 	return (
-		<span class = 'inline-card' role = 'figure' style = { props.style } title = { props.label }>
+		<span class = { withModifierClass('inline-card', props.class) } role = 'figure' style = { props.style } title = { props.label }>
 			{ props.warningMessage ? <WarningSign message = { props.warningMessage } /> : <></> }
 			<span role = 'img'><Icon /></span>
-			<data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data>
+			<data class = { withModifierClass('truncate text-legible', props.class) } style = { props.style } value = { props.label }>{ props.label }</data>
 			<span class = 'inline-card-actions' role = { hasAction ? 'group' : undefined } aria-hidden = { props.nonInteractive || !hasAction } aria-label = { props.noExpandButtons || props.nonInteractive || !hasAction ? undefined : 'Spell-out actions' }>
 				{ props.nonInteractive ? <>
 					<span role = 'img'><Icon /></span>
-					<span><data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data></span>
+					<span><data class = { withModifierClass('truncate text-legible', props.class) } style = { props.style } value = { props.label }>{ props.label }</data></span>
 				</> : !props.noCopy && props.copyOnActionOnly ? <>
 					<span class = 'inline-card-expanded-label'>
 						<span role = 'img'><Icon /></span>
-						<span><data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data></span>
+						<span><data class = { withModifierClass('truncate text-legible', props.class) } style = { props.style } value = { props.label }>{ props.label }</data></span>
 					</span>
 					<button class = 'inline-card-copy-action' type = 'button' onClick = { copyTextToClipboard } value = { props.copyValue } aria-label = { `Copy ${ props.label }` }>
 						<span title = 'Copy'>
@@ -58,7 +60,7 @@ export const InlineCard = (props: InlineCardProps) => {
 				</> : !props.noCopy ? (
 					<button type = 'button' onClick = { copyTextToClipboard } value = { props.copyValue }>
 						<span role = 'img'><Icon /></span>
-						<span><data class = 'truncate text-legible' style = { props.style } value = { props.label }>{ props.label }</data></span>
+						<span><data class = { withModifierClass('truncate text-legible', props.class) } style = { props.style } value = { props.label }>{ props.label }</data></span>
 						<span title = 'Copy'>
 							<CopyIcon />
 							<span>copy</span>
@@ -67,7 +69,7 @@ export const InlineCard = (props: InlineCardProps) => {
 				) : <>
 					<span class = 'inline-card-static-action'>
 						<span role = 'img'><Icon /></span>
-						<span><data class = 'text-legible' style = { props.style } value = { props.label }>{ props.label }</data></span>
+						<span><data class = { withModifierClass('text-legible', props.class) } style = { props.style } value = { props.label }>{ props.label }</data></span>
 					</span>
 				</>
 				}

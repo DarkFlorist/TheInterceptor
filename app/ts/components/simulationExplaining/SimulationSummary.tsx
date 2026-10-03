@@ -367,7 +367,7 @@ function SummarizeAddress(param: SummarizeAddressParams) {
 			<BigAddress
 				addressBookEntry = { param.balanceSummary.summaryFor }
 				renameAddressCallBack = { param.renameAddressCallBack }
-				style = { { '--bg-color': 'var(--importance-box-color)' } }
+				class = 'multiline-card--importance'
 			/> :
 			<SmallAddress
 				textColor = { positiveNegativeColors.positiveColor }
@@ -577,13 +577,13 @@ export function GasFee({ tx, rpcNetwork }: { tx: TransactionGasses, rpcNetwork: 
 		<div class = 'log-cell'>
 			<EtherAmount
 				amount = { getGasFeePaidByTransactionSender(tx) }
-				style = { { color: 'var(--subtitle-text-color)' } }
+				class = 'coin-text--subtitle'
 				fontSize = 'normal'
 			/>
 		</div>
 		<div class = 'log-cell'>
 			<EtherSymbol
-				style = { { color: 'var(--subtitle-text-color)' } }
+				class = 'coin-text--subtitle'
 				rpcNetwork = { rpcNetwork }
 				fontSize = 'normal'
 			/>
@@ -811,12 +811,11 @@ function EnsChangesSummary({ ensEvents, editEnsNamedHashCallBack, renameAddressC
 	return <Collapsible
 		summary = { `ENS changes (${ visibleEnsEvents.length })` }
 		defaultOpen
-		class = 'card simulation-summary-section-card simulation-summary-ens-changes'
+		class = 'card simulation-summary-section-card'
 	>
 		<div class = 'card-content simulation-summary-section-content'>
 			<EnsEventsExplainer
 				ensEvents = { visibleEnsEvents }
-				textColor = 'var(--text-color)'
 				editEnsNamedHashCallBack = { editEnsNamedHashCallBack }
 				renameAddressCallBack = { renameAddressCallBack }
 				rpcNetwork = { rpcNetwork }

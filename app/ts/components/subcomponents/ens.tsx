@@ -26,7 +26,7 @@ export const EnsNamedHashComponent = (params: NameHashComponentParams) => {
 							<img class = 'ens-name-icon-image' width = '16' height = '16' src = { zorbImageDataURI(stringToUint8Array(bytes32String(params.nameHash))) }/>
 						</CopyToClipboard>
 					</span>
-					<CopyToClipboard content = { name } copyMessage = 'Copied!' style = { { 'text-overflow': 'ellipsis', overflow: 'hidden' } }>
+					<CopyToClipboard content = { name } copyMessage = 'Copied!' classNames = 'ens-name-copy'>
 						<p class = 'address-text noselect nopointer ens-name-text'>{ name }</p>
 					</CopyToClipboard>
 					<button class = 'button is-primary is-small rename-address-button' onClick = { () => { params.editEnsNamedHashCallBack(params.type, params.nameHash, params.name) } }>

@@ -7,7 +7,7 @@ import { assertNever } from '../../../utils/typescript.js'
 import { getDeployedContractAddress } from '../../../simulation/services/SimulationModeEthereumClientService.js'
 import { addressString } from '../../../utils/bigint.js'
 import { extractEnsEvents, extractTokenEvents } from '../../../background/metadataUtils.js'
-import { EnsEventsExplainer } from './EnsEventExplainer.js'
+import { EnsEventsExplainer, getVisibleEnsEvents } from './EnsEventExplainer.js'
 import type { TokenVisualizerErc20Event, TokenVisualizerErc721Event, TokenVisualizerNFTAllApprovalEvent, TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
 import { deduplicateByFunction } from '../../../utils/array.js'
 import type { AddressBookEntry } from '../../../types/addressBookTypes.js'
@@ -157,10 +157,10 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 				}
 			</div>
 			{ /* ENS events */ }
-			<div class = 'log-cell catch-all-section'>
+			<div>
+				{ getVisibleEnsEvents(ensEvents).length === 0 ? <></> : <p class = 'summary-label'>ENS changes</p> }
 				<EnsEventsExplainer
 					ensEvents = { ensEvents }
-					textColor = { textColor }
 					renameAddressCallBack = { param.renameAddressCallBack }
 					editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }
 					rpcNetwork = { param.rpcNetwork.value }
@@ -172,7 +172,7 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 			<BigAddress
 				addressBookEntry = { eventsGrouped.currentAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
-				style = { { '--bg-color': 'var(--importance-box-color)' } }
+				class = 'multiline-card--importance'
 			/>
 			<div class = 'catch-all-sections'>
 				<div class = 'log-cell catch-all-section'>

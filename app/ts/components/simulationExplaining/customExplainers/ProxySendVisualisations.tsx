@@ -24,7 +24,7 @@ function ProxyMultiSend({ transaction, asset, sender, receivers, renameAddressCa
 	return <div class = 'notification transaction-importance-box'>
 		<span class = 'summary-heading'>
 			<p class = 'paragraph summary-heading-text'>Send&nbsp;</p>
-			<TokenOrEth { ...asset } useFullTokenName = { false } style = { { 'font-weight': '500' } } fontSize = 'big' />
+			<TokenOrEth { ...asset } useFullTokenName = { false } class = 'coin-text--strong' fontSize = 'big' />
 		</span>
 		{ viaProxypath === undefined ? <></> : <ExecutionRouteNotice viaProxypath = { viaProxypath } renameAddressCallBack = { renameAddressCallBack } /> }
 		<p class = 'summary-label'>From</p>

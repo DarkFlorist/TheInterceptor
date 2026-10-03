@@ -6,6 +6,7 @@ import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBo
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
+import { withModifierClass } from '../ui-utils.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../../utils/addressBook.js'
 import { Blockie } from './SVGBlockie.js'
 import { InlineCard } from './InlineCard.js'
@@ -28,16 +29,15 @@ type AddressIconParams = {
 }
 
 const AddressIconFrame = ({ isBig, children }: { isBig: boolean, children?: ComponentChildren }) => {
-	const cssProperties: JSX.CSSProperties = { fontSize: isBig ? '2.5em' : '1.5em' }
-	const className = `address-icon-frame noselect nopointer${ children === undefined ? ' address-icon-frame--empty' : '' }`
-	return <div style = { cssProperties } class = { className } aria-hidden = 'true'>{ children }</div>
+	const sizedClass = withModifierClass('address-icon-frame noselect nopointer', isBig ? 'address-icon-frame--big' : undefined)
+	return <div class = { withModifierClass(sizedClass, children === undefined ? 'address-icon-frame--empty' : undefined) } aria-hidden = 'true'>{ children }</div>
 }
 
 export function AddressIcon(param: AddressIconParams) {
 	if (param.address !== undefined && param.logoUri === undefined) {
 		return (
 			<AddressIconFrame isBig = { param.isBig }>
-				<Blockie address = { param.address } style = { { display: 'block' } } />
+				<Blockie address = { param.address } />
 			</AddressIconFrame>
 		)
 	}
@@ -60,6 +60,7 @@ type BigAddressParams = {
 	readonly noEditAddress?: boolean
 	readonly renameAddressCallBack: RenameAddressCallBack
 	readonly style?: JSX.CSSProperties
+	readonly class?: string
 }
 
 function getBigAddressText(addressBookEntry: AddressBookEntry | undefined) {
@@ -110,7 +111,7 @@ export function BigAddress(params: BigAddressParams) {
 		...(!params.noCopying && addressString) ? configPartialWithCopyOnClick : { onClick: undefined }
 	}
 
-	return <MultilineCard label = { labelConfig } note = { noteConfig } icon = { iconConfig } style = { params.style } />
+	return <MultilineCard label = { labelConfig } note = { noteConfig } icon = { iconConfig } style = { params.style } class = { params.class } />
 }
 
 type ActiveAddressParams = {

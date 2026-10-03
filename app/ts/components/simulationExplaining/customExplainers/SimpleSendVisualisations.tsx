@@ -28,7 +28,7 @@ type TransferAddressParams = BeforeAfterAddress & {
 
 export function AddressBeforeAfter({ address, beforeAndAfter, renameAddressCallBack, tokenOrEtherDefinition }: TransferAddressParams) {
 	return <>
-		<BigAddress addressBookEntry = { address } renameAddressCallBack = { renameAddressCallBack } style = { { '--bg-color' : 'var(--address-muted-bg-color)' } } />
+		<BigAddress addressBookEntry = { address } renameAddressCallBack = { renameAddressCallBack } class = 'multiline-card--muted' />
 		{ beforeAndAfter === undefined
 			? <></>
 			: <span class = 'send-balance-change'>
@@ -82,7 +82,7 @@ export function SimpleSend({ transaction, asset, sender, receiver, renameAddress
 			<TokenOrEth
 				{ ...asset }
 				useFullTokenName = { false }
-				style = { { 'font-weight': '500' } }
+				class = 'coin-text--strong'
 				fontSize = 'big'
 			/>
 		</span>

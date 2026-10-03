@@ -1239,6 +1239,9 @@ p.paragraph.summary-transaction-input-label {
 	justify-content: left;
 }
 
+/* The price estimate is secondary to the amounts, so its token card is set smaller than the surrounding text. */
+.swap-price-cell .inline-card, .swap-price-cell .inline-card data { font-size: 14px }
+
 .swap-balance-text {
 	font-size: 14px;
 	color: var(--subtitle-text-color);
@@ -1270,6 +1273,19 @@ p.paragraph.summary-transaction-input-label {
 }
 
 .token-all-approval { color: var(--text-color) }
+
+/* Tones that callers pass to the coin and inline-card components through their class prop. The data selectors outrank the inline card's own label colour. */
+.coin-text--strong, .inline-card data.coin-text--strong { font-weight: 500 }
+.coin-text--subtitle, .inline-card data.coin-text--subtitle { color: var(--subtitle-text-color) }
+.coin-text--negative, .inline-card data.coin-text--negative { color: var(--danger-color) }
+.coin-text--positive, .inline-card data.coin-text--positive { color: var(--positive-color) }
+
+/* Backgrounds for the big address card, set by the views that place it on a tinted panel. */
+.multiline-card--importance { --bg-color: var(--importance-box-color) }
+.multiline-card--muted { --bg-color: var(--address-muted-bg-color) }
+
+/* An address or ABI that does not parse is shown in the danger colour, also while the field is disabled. */
+.address-editor .input.address-editor-input--invalid { color: var(--danger-color) }
 
 /* Inline card icons */
 .inline-card-logo {
@@ -1434,12 +1450,16 @@ p.paragraph.summary-transaction-input-label {
 }
 
 /* Gnosis Safe signing details */
-/* Two-column tables of hashes and fields in the signing details. */
-.safe-signing-fields, .signature-hash-table {
-	justify-content: center;
-	column-gap: 5px;
-	grid-template-columns: auto auto;
+/* Field tables of signing requests read like the raw transaction details: muted labels ending on one line, values starting on the next. */
+.eip-712-table, .safe-signing-fields, .signature-hash-table {
+	column-gap: 0.75rem;
+	grid-template-columns: max-content minmax(0, 1fr);
+	row-gap: 2px;
 }
+
+.eip-712-table > .log-cell:nth-child(even), .safe-signing-fields > .log-cell:nth-child(even), .signature-hash-table > .log-cell:nth-child(even) { justify-content: start }
+
+.eip-712-table > .log-cell:nth-child(even) > .log-cell-text, .safe-signing-fields > .log-cell:nth-child(even) > .log-cell-text, .signature-hash-table > .log-cell:nth-child(even) > .log-cell-text { color: var(--text-color) }
 
 .safe-signing-exact-values { margin-top: 10px }
 
@@ -1490,19 +1510,69 @@ p.paragraph.summary-transaction-input-label {
 	min-height: 80px;
 }
 
-/* ENS event explainer */
+/* ENS event explainer: every event is one sentence in a neutral row, and its parts wrap as whole pieces instead of being squeezed. */
+.ens-events {
+	display: grid;
+	gap: 4px;
+	list-style: none;
+	min-width: 0;
+	white-space: normal;
+	width: 100%;
+}
+
+/* The two-class selector and the marker reset keep the rows plain inside `.content`, whose list rules would add bullets and spacing. */
+.ens-events > .ens-event {
+	background-color: var(--alpha-005);
+	border-radius: var(--radius-medium);
+	list-style: none;
+	margin: 0;
+	min-width: 0;
+	padding: 6px 10px;
+}
+
+.ens-table {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 6px;
+}
+
+/* A part keeps its natural width and moves to the next line when the row is full; only a part wider than the whole row is clipped. */
+.ens-table > .log-cell {
+	flex: 0 0 auto;
+	max-width: 100%;
+}
+
+/* Free text such as record keys, values and hashes may break inside the part. */
+.ens-table > .log-cell:has(> .textbox) {
+	flex-shrink: 1;
+	white-space: normal;
+}
+
+.ens-table .textbox {
+	overflow-wrap: anywhere;
+	padding: 1px 6px;
+	white-space: normal;
+	word-break: normal;
+}
+
 .ens-event-text, .catch-all-event-text {
 	margin-bottom: 0px;
 	display: inline-block;
 }
-.ens-event-fuse-list { display: block }
-.ens-event-fuse {
-	white-space: nowrap;
-	background-color: var(--alpha-015);
-	margin: 5px;
+
+.ens-event-text { color: var(--text-color) }
+
+.ens-table > .ens-event-fuse-list {
+	flex-shrink: 1;
+	flex-wrap: wrap;
+	gap: 4px;
 }
-/* The ENS changes summary sets its token boxes to block with a four-class selector; the ENS event box stays inline-block there as well. */
-.simulation-summary-ens-changes .simulation-summary-section-content > .vertical-center > .token-box.ens-event-box { display: inline-block }
+
+.ens-table .ens-event-fuse {
+	background-color: var(--alpha-015);
+	white-space: nowrap;
+}
 
 /* Catch-all transaction visualizer */
 .catch-all-sections {
@@ -1593,8 +1663,9 @@ p.paragraph.summary-transaction-input-label {
 	grid-template-rows: max-content max-content;
 }
 .governance-simulation-title-row {
-	padding-bottom: 10px;
+	align-items: end;
 	grid-template-columns: auto auto;
+	padding: 8px 0 4px;
 }
 /* Gnosis Safe visualizer */
 .gnosis-safe-approval-summary {
@@ -1827,8 +1898,6 @@ p.paragraph.summary-transaction-input-label {
 }
 
 .signature-eip-712-array-item { display: inline-flex }
-
-.signature-eip-712-sub-table { justify-content: space-between }
 
 .signature-safe-extra-details { grid-column: 1 / -1 }
 
@@ -2065,6 +2134,13 @@ p.paragraph.summary-transaction-input-label {
 	display: inherit;
 	overflow: inherit;
 	width: 100%;
+}
+
+/* The copyable ENS name is a block that truncates, unlike the default wrapper that mirrors its parent. */
+.tooltip-wrapper.ens-name-copy {
+	display: block;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 /* Time picker */

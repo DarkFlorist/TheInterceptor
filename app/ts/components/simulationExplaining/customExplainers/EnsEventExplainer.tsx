@@ -9,7 +9,6 @@ import { type EditEnsNamedHashCallBack, EnsNamedHashComponent } from '../../subc
 
 type EnsEvenExplainerParam = {
 	ensEvent: EnsEvent,
-	textColor: string,
 	renameAddressCallBack: RenameAddressCallBack,
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack,
 	rpcNetwork: RpcNetwork,
@@ -17,12 +16,11 @@ type EnsEvenExplainerParam = {
 
 const expiresToDateString = (expires: bigint) => bigintSecondsToDate(expires).toISOString()
 
-const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, renameAddressCallBack, rpcNetwork }: EnsEvenExplainerParam) => {
-	const textStyle = `color: ${ textColor }`
+const VisualizeEnsEvent = ({ ensEvent, editEnsNamedHashCallBack, renameAddressCallBack, rpcNetwork }: EnsEvenExplainerParam) => {
 	switch(ensEvent.subType) {
 		case 'ENSAddrChanged': return <div class = 'ens-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					Change
 				</p>
 			</div>
@@ -30,7 +28,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<EnsNamedHashComponent type = 'nameHash' nameHash = { ensEvent.logInformation.node.nameHash } name = { ensEvent.logInformation.node.name } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					to resolve as
 				</p>
 			</div>
@@ -41,7 +39,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 		case 'ENSAddressChanged': return <></>
 		case 'ENSBaseRegistrarNameRegistered': return <div class = 'ens-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					Register
 				</p>
 			</div>
@@ -49,7 +47,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<EnsNamedHashComponent type = 'labelHash' nameHash = { ensEvent.logInformation.labelHash.labelHash } name = { ensEvent.logInformation.labelHash.label } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					to
 				</p>
 			</div>
@@ -57,7 +55,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<SmallAddress addressBookEntry = { ensEvent.logInformation.owner } renameAddressCallBack = { renameAddressCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					{ `with expiration date of ${ expiresToDateString(ensEvent.logInformation.expires) }` }
 				</p>
 			</div>
@@ -65,7 +63,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 		case 'ENSBaseRegistrarNameRenewed': return <></> // the information of this log is already covered in ENSControllerNameRenewed event
 		case 'ENSContentHashChanged': return <div class = 'ens-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					Change ENS content hash of
 				</p>
 			</div>
@@ -73,7 +71,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<EnsNamedHashComponent type = 'nameHash' nameHash = { ensEvent.logInformation.node.nameHash } name = { ensEvent.logInformation.node.name } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					to
 				</p>
 			</div>
@@ -85,7 +83,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 		</div>
 		case 'ENSControllerNameRegistered': return <div class = 'ens-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					Register
 				</p>
 			</div>
@@ -93,7 +91,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<EnsNamedHashComponent type = 'labelHash' nameHash = { ensEvent.logInformation.labelHash.labelHash } name = { ensEvent.logInformation.labelHash.label } editEnsNamedHashCallBack = { editEnsNamedHashCallBack } addDotEth = { true }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					for
 				</p>
 			</div>
@@ -101,7 +99,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<SmallAddress addressBookEntry = { ensEvent.logInformation.owner } renameAddressCallBack = { renameAddressCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					{ `to expire on ${ expiresToDateString(ensEvent.logInformation.expires) } for` }
 				</p>
 			</div>
@@ -111,7 +109,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 		</div>
 		case 'ENSControllerNameRenewed': return <div class = 'ens-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					Renew
 				</p>
 			</div>
@@ -119,7 +117,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<EnsNamedHashComponent type = 'labelHash' nameHash = { ensEvent.logInformation.labelHash.labelHash } name = { ensEvent.logInformation.labelHash.label } editEnsNamedHashCallBack = { editEnsNamedHashCallBack } addDotEth =  { true }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					{ `to expire on ${ expiresToDateString(ensEvent.logInformation.expires) } for` }
 				</p>
 			</div>
@@ -129,7 +127,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 		</div>
 		case 'ENSExpiryExtended': return <div class = 'ens-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					Renew
 				</p>
 			</div>
@@ -137,14 +135,14 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<EnsNamedHashComponent type = 'nameHash' nameHash = { ensEvent.logInformation.node.nameHash } name = { ensEvent.logInformation.node.name } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					{ `to expire on ${ expiresToDateString(ensEvent.logInformation.expires) }` }
 				</p>
 			</div>
 		</div>
 		case 'ENSFusesSet': return <div class = 'ens-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					Set
 				</p>
 			</div>
@@ -152,7 +150,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<EnsNamedHashComponent type = 'nameHash' nameHash = { ensEvent.logInformation.node.nameHash } name = { ensEvent.logInformation.node.name } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					fuses to
 				</p>
 			</div>
@@ -166,7 +164,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 		</div>
 		case 'ENSNameChanged': return <div class = 'ens-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					Change
 				</p>
 			</div>
@@ -174,14 +172,14 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<EnsNamedHashComponent type = 'nameHash' nameHash = { ensEvent.logInformation.node.nameHash } name = { ensEvent.logInformation.node.name } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					{ `to ${ ensEvent.logInformation.name }` }
 				</p>
 			</div>
 		</div>
 		case 'ENSNameUnwrapped': return <div class = 'ens-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					Unwrap
 				</p>
 			</div>
@@ -189,7 +187,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<EnsNamedHashComponent type = 'nameHash' nameHash = { ensEvent.logInformation.node.nameHash } name = { ensEvent.logInformation.node.name } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					to
 				</p>
 			</div>
@@ -199,7 +197,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 		</div>
 		case 'ENSNameWrapped': return <div class = 'ens-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					Wrap
 				</p>
 			</div>
@@ -207,7 +205,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<EnsNamedHashComponent type = 'nameHash' nameHash = { ensEvent.logInformation.node.nameHash } name = { ensEvent.logInformation.node.name } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					to
 				</p>
 			</div>
@@ -215,11 +213,11 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<SmallAddress addressBookEntry = { ensEvent.logInformation.owner } renameAddressCallBack = { renameAddressCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					{ `to expire on ${ expiresToDateString(ensEvent.logInformation.expires) } with fuses` }
 				</p>
 			</div>
-			<div class = 'log-cell'>
+			<div class = 'log-cell ens-event-fuse-list'>
 				{ ensEvent.logInformation.fuses.map((fuse) => <>
 					<div class = 'textbox ens-event-fuse'>
 						<p class = 'paragraph'> { fuse }</p>
@@ -229,7 +227,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 		</div>
 		case 'ENSNewOwner': return <div class = 'ens-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					Assign
 				</p>
 			</div>
@@ -237,7 +235,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<SmallAddress addressBookEntry = { ensEvent.logInformation.owner } renameAddressCallBack = { renameAddressCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					as owner of subdomain
 				</p>
 			</div>
@@ -245,7 +243,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<EnsNamedHashComponent type = 'labelHash' nameHash = { ensEvent.logInformation.labelHash.labelHash } name = { ensEvent.logInformation.labelHash.label } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					under domain
 				</p>
 			</div>
@@ -255,7 +253,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 		</div>
 		case 'ENSNewResolver': return <div class = 'ens-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					Set
 				</p>
 			</div>
@@ -263,7 +261,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<SmallAddress addressBookEntry = { ensEvent.logInformation.address } renameAddressCallBack = { renameAddressCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					as a resolver for
 				</p>
 			</div>
@@ -273,7 +271,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 		</div>
 		case 'ENSNewTTL': return <div class = 'ens-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					Set
 				</p>
 			</div>
@@ -281,14 +279,14 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<EnsNamedHashComponent type = 'nameHash' nameHash = { ensEvent.logInformation.node.nameHash } name = { ensEvent.logInformation.node.name } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					{ `TTL to ${ ensEvent.logInformation.ttl }` }
 				</p>
 			</div>
 		</div>
 		case 'ENSReverseClaimed': return <div class = 'ens-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					Set ENS reverse address of
 				</p>
 			</div>
@@ -296,7 +294,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<EnsNamedHashComponent type = 'nameHash' nameHash = { ensEvent.logInformation.node.nameHash } name = { ensEvent.logInformation.node.name } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					to
 				</p>
 			</div>
@@ -306,7 +304,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 		</div>
 		case 'ENSTextChanged': return <div class = 'ens-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					Change ENS text value of
 				</p>
 			</div>
@@ -314,7 +312,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<EnsNamedHashComponent type = 'nameHash' nameHash = { ensEvent.logInformation.node.nameHash } name = { ensEvent.logInformation.node.name } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					for key
 				</p>
 			</div>
@@ -324,7 +322,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				</div>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					(
 				</p>
 			</div>
@@ -334,14 +332,14 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				</div>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					)
 				</p>
 			</div>
 		</div>
 		case 'ENSTextChangedKeyValue': return <div class = 'ens-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					Change ENS text value of
 				</p>
 			</div>
@@ -349,7 +347,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<EnsNamedHashComponent type = 'nameHash' nameHash = { ensEvent.logInformation.node.nameHash } name = { ensEvent.logInformation.node.name } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					for key
 				</p>
 			</div>
@@ -359,7 +357,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				</div>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					(
 				</p>
 			</div>
@@ -369,7 +367,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				</div>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					) to
 				</p>
 			</div>
@@ -381,7 +379,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 		</div>
 		case 'ENSTransfer': return <div class = 'ens-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					Transfer
 				</p>
 			</div>
@@ -389,7 +387,7 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 				<EnsNamedHashComponent type = 'nameHash' nameHash = { ensEvent.logInformation.node.nameHash } name = { ensEvent.logInformation.node.name } editEnsNamedHashCallBack = { editEnsNamedHashCallBack }/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis paragraph ens-event-text' style = { textStyle }>
+				<p class = 'ellipsis paragraph ens-event-text'>
 					to
 				</p>
 			</div>
@@ -403,7 +401,6 @@ const VisualizeEnsEvent = ({ ensEvent, textColor, editEnsNamedHashCallBack, rena
 
 type EnsEvenExplainerParams = {
 	ensEvents: readonly EnsEvent[],
-	textColor: string,
 	renameAddressCallBack: RenameAddressCallBack,
 	editEnsNamedHashCallBack: EditEnsNamedHashCallBack,
 	rpcNetwork: RpcNetwork,
@@ -412,14 +409,13 @@ type EnsEvenExplainerParams = {
 export const getVisibleEnsEvents = (ensEvents: readonly EnsEvent[]) =>
 	ensEvents.filter((ensEvent) => ensEvent.subType !== 'ENSAddressChanged' && ensEvent.subType !== 'ENSBaseRegistrarNameRenewed')
 
+// Every ENS event reads as one sentence in its own row; the parts of the sentence wrap as whole pieces.
 export function EnsEventsExplainer(param: EnsEvenExplainerParams) {
-	return <>
+	return <ul class = 'ens-events'>
 		{ getVisibleEnsEvents(param.ensEvents).map((ensEvent, index) =>
-			<div key = { `${ ensEvent.subType }-${ index }` } class = 'vertical-center'>
-				<div class = 'box token-box vertical-center positive-box ens-event-box'>
-					<VisualizeEnsEvent ensEvent = { ensEvent } textColor = { param.textColor } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack } renameAddressCallBack = { param.renameAddressCallBack } rpcNetwork = { param.rpcNetwork }/>
-				</div>
-			</div>
+			<li key = { `${ ensEvent.subType }-${ index }` } class = 'ens-event'>
+				<VisualizeEnsEvent ensEvent = { ensEvent } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack } renameAddressCallBack = { param.renameAddressCallBack } rpcNetwork = { param.rpcNetwork }/>
+			</li>
 		) }
-	</>
+	</ul>
 }

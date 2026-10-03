@@ -313,9 +313,13 @@ describe('transaction outcome UI', () => {
 			const text = (dom.document.body.textContent ?? '').replace(/\s+/g, ' ')
 			assert.match(text, /You pay\s*- 5/)
 			assert.match(text, /You receive\s*\+ 2\.5/)
-			// The DOM mock does not expose inline styles, so the loss and gain colours are pinned at the source.
-			const swapSource = await Bun.file('app/ts/components/simulationExplaining/SwapTransactions.tsx').text()
-			assert.match(swapSource, /color: direction === 'pay' \? 'var\(--danger-color\)' : 'var\(--positive-color\)'/)
+			// The paid amount carries the negative tone and the received amount the positive one; the tones map to the loss and gain colours.
+			const amountClasses = collectByTag(dom.document.body, 'P').map((paragraph) => paragraph.getAttribute?.('class') ?? '').filter((className) => className.includes('token-amount') || className.includes('coin-ether-amount'))
+			assert.equal(amountClasses.filter((className) => className.includes('coin-text--negative')).length, 1)
+			assert.equal(amountClasses.filter((className) => className.includes('coin-text--positive')).length, 1)
+			const css = await readInterceptorAppCss()
+			assert.match(css, /\.coin-text--negative, \.inline-card data\.coin-text--negative \{ color: var\(--danger-color\) \}/)
+			assert.match(css, /\.coin-text--positive, \.inline-card data\.coin-text--positive \{ color: var\(--positive-color\) \}/)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()

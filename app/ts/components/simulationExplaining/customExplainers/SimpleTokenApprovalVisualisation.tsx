@@ -15,8 +15,6 @@ type SimpleTokenApprovalVisualisation = {
 }
 
 export function SimpleTokenApprovalVisualisation(param: SimpleTokenApprovalVisualisation) {
-	const textColor = 'var(--danger-color)'
-
 	return <div class = 'notification transaction-importance-box'>
 		<p class = 'summary-label'>Allow</p>
 			<div class = 'box summary-leg'>
@@ -32,7 +30,7 @@ export function SimpleTokenApprovalVisualisation(param: SimpleTokenApprovalVisua
 					{ param.approval.type === 'NFT All approval' ?
 						<AllApproval
 							{ ...param.approval }
-							style = { { 'font-weight': '500', color: textColor } }
+							class = 'coin-text--strong coin-text--negative'
 							fontSize = 'big'
 						/>
 					: <> { 'amount' in param.approval && isUnlimitedErc20Approval(param.approval.amount) ?
@@ -42,7 +40,7 @@ export function SimpleTokenApprovalVisualisation(param: SimpleTokenApprovalVisua
 								<TokenAmount
 									amount = { param.approval.amount }
 									tokenEntry = { param.approval.token }
-									style = { { 'font-weight': '500', color: textColor } }
+									class = 'coin-text--strong coin-text--negative'
 									fontSize = 'big'
 								/>
 							: <></>
@@ -53,7 +51,7 @@ export function SimpleTokenApprovalVisualisation(param: SimpleTokenApprovalVisua
 						<TokenSymbol
 							{ ...tokenEventToTokenSymbolParams(param.approval) }
 							useFullTokenName = { false }
-							style = { { 'font-weight': '500', color: textColor } }
+							class = 'coin-text--strong coin-text--negative'
 							renameAddressCallBack = { param.renameAddressCallBack }
 							fontSize = 'big'
 						/>
