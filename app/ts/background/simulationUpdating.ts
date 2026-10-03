@@ -72,7 +72,7 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 
 	const pushBlock = (blockTimeManipulation: BlockTimeManipulation) => {
 		inputBlocks.push({
-			stateOverrides: withDelegateCleared(currentBlockStateOverrides, delegateClearedAddress),
+			stateOverrides: currentBlockStateOverrides,
 			delegateClearedAddress,
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
@@ -124,7 +124,7 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 		|| (delegateClearedAddress !== undefined && inputBlocks.length === 0)
 	) {
 		inputBlocks.push({
-			stateOverrides: withDelegateCleared(currentBlockStateOverrides, delegateClearedAddress),
+			stateOverrides: currentBlockStateOverrides,
 			delegateClearedAddress,
 			transactions: currentBlockTransactions,
 			signedMessages: currentBlockSignedMessages,
@@ -340,7 +340,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 				simulationStateInput: [governanceExecutionBlock],
 			simulatedBlocks: [{
 				signedMessages: [],
-				stateOverrides: governanceExecutionBlock.stateOverrides,
+				stateOverrides: withDelegateCleared(governanceExecutionBlock.stateOverrides, governanceExecutionBlock.delegateClearedAddress),
 				blockTimestamp: contractExecutionResult.executionTimestamp,
 				blockTimeManipulation: { type: 'SetTimetamp', timeToSet: dateToBigintSeconds(contractExecutionResult.executionTimestamp) },
 				simulatedTransactions: [{
