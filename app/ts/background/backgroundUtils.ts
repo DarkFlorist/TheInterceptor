@@ -209,6 +209,17 @@ export async function requestPopupIdentifyAddress(data: PopupRequestByMethod<'po
 	return reply?.method === 'popup_requestIdentifyAddress' ? reply : undefined
 }
 
+export async function requestPopupPrepareSafeApp(origin: string) {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_prepareSafeApp', data: { origin } })
+	if (reply?.method !== 'popup_prepareSafeApp') throw new Error(getMissingPopupReplyErrorMessage('Safe App connection preparation'))
+	if (!reply.data.success) throw new Error(reply.data.errorMessage)
+}
+
+export async function requestPopupCancelPrepareSafeApp(origin: string) {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_cancelPrepareSafeApp', data: { origin } })
+	if (reply?.method !== 'popup_cancelPrepareSafeApp') throw new Error(getMissingPopupReplyErrorMessage('Safe App preparation cancellation'))
+}
+
 export async function requestPopupSafeContractState(data: PopupRequestByMethod<'popup_requestSafeContractState'>['data']) {
 	const reply = await sendPopupMessageWithReply({ method: 'popup_requestSafeContractState', data })
 	return reply?.method === 'popup_requestSafeContractState' ? reply : undefined

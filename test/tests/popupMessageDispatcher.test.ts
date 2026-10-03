@@ -164,6 +164,9 @@ beforeEach(() => {
 describe('popup message dispatcher seams', () => {
 	test('refreshes manifest v3 content script exclusions after removing a disabled website', async () => {
 		storageState.websiteAccess = [disabledWebsiteAccess]
+		const { contentScriptRegistration } = await import('../../app/ts/background/contentScriptRegistration.js')
+		await contentScriptRegistration.update()
+		contentScriptUpdateBatches.splice(0, contentScriptUpdateBatches.length)
 
 		await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
 			method: 'popup_removeWebsiteAccess',
@@ -192,6 +195,9 @@ describe('popup message dispatcher seams', () => {
 
 	test('refreshes manifest v3 content script exclusions after the access editor removes a disabled website', async () => {
 		storageState.websiteAccess = [disabledWebsiteAccess]
+		const { contentScriptRegistration } = await import('../../app/ts/background/contentScriptRegistration.js')
+		await contentScriptRegistration.update()
+		contentScriptUpdateBatches.splice(0, contentScriptUpdateBatches.length)
 
 		await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
 			method: 'popup_changeInterceptorAccess',
@@ -388,6 +394,20 @@ describe('popup message dispatcher seams', () => {
 			method: 'popup_requestIdentifyAddress',
 			data: { chainId: 10n, addressBookEntry: undefined },
 		})
+	})
+
+	test('routes Safe App preparation to background policy and returns an actionable rejection', async () => {
+		assert.deepEqual(await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_prepareSafeApp',
+			data: { origin: 'https://safe-app.example' },
+		}), {
+			method: 'popup_prepareSafeApp',
+			data: { success: false, errorMessage: 'Enable Safe Apps compatibility and add this website first.' },
+		})
+	})
+
+	test('routes idempotent Safe App preparation cancellation through the typed Safe protocol', async () => {
+		assert.deepEqual(await dispatchPopupMessage(createDispatcherContext(async () => undefined), { method: 'popup_cancelPrepareSafeApp', data: { origin: 'https://safe-app.example' } }), { method: 'popup_cancelPrepareSafeApp', data: { success: true } })
 	})
 
 	test('routes Safe contract state through its dedicated protocol', async () => {
