@@ -229,8 +229,10 @@ export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata) {
 	return `Swap ${ sent } for ${ to }`
 }
 
-function VisualizeSwapAsset({ swapAsset, renameAddressCallBack }: { swapAsset: SwapAsset, renameAddressCallBack: RenameAddressCallBack }) {
+// The paid leg is shown as a loss and the received leg as a gain, matching the outcome chips and the simulation summary.
+function VisualizeSwapAsset({ swapAsset, direction, renameAddressCallBack }: { swapAsset: SwapAsset, direction: 'pay' | 'receive', renameAddressCallBack: RenameAddressCallBack }) {
 	const tokenStyle = { 'font-weight': '500' }
+	const amountStyle = { ...tokenStyle, color: direction === 'pay' ? 'var(--danger-color)' : 'var(--positive-color)' }
 	const balanceTextStyle = { 'font-size': '14px', color: 'var(--subtitle-text-color)' }
 
 	switch (swapAsset.type) {
@@ -280,9 +282,10 @@ function VisualizeSwapAsset({ swapAsset, renameAddressCallBack }: { swapAsset: S
 				<span class = 'grid swap-grid'>
 					<div class = 'log-cell' style = 'justify-content: left;'>
 						<TokenAmount
-							amount = { swapAsset.amount }
+							amount = { direction === 'pay' ? -swapAsset.amount : swapAsset.amount }
 							tokenEntry = { swapAsset.token }
-							style = { tokenStyle }
+							showSign = { true }
+							style = { amountStyle }
 							fontSize = 'big'
 						/>
 					</div>
@@ -328,14 +331,14 @@ export function SwapVisualization(param: SwapVisualizationParams) {
 	if (param.identifiedSwap === false) return <></>
 
 	return <div class = 'notification transaction-importance-box'>
-		<div style = 'display: grid; grid-template-rows: max-content max-content max-content max-content;'>
-			<p class = 'paragraph'> Swap </p>
+		<div class = 'summary-legs'>
+			<p class = 'summary-label'>You pay</p>
 			<div class = 'box swap-box'>
-				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.sendAsset } renameAddressCallBack = { param.renameAddressCallBack } />
+				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.sendAsset } direction = 'pay' renameAddressCallBack = { param.renameAddressCallBack } />
 			</div>
-			<p class = 'paragraph'> For </p>
+			<p class = 'summary-label'>You receive</p>
 			<div class = 'box swap-box'>
-				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.receiveAsset } renameAddressCallBack = { param.renameAddressCallBack } />
+				<VisualizeSwapAsset swapAsset = { param.identifiedSwap.receiveAsset } direction = 'receive' renameAddressCallBack = { param.renameAddressCallBack } />
 			</div>
 		</div>
 	</div>

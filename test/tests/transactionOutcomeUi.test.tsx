@@ -5,6 +5,7 @@ import { act } from 'preact/test-utils'
 import { getNativeTokenErc20 } from '../../app/ts/background/metadataUtils.js'
 import { ConfirmationActionButtons, getSimulationStackPosition, isSignatureAdvisedAgainst, isTransactionAdvisedAgainst } from '../../app/ts/components/pages/ConfirmTransaction.js'
 import { identifyTransaction } from '../../app/ts/components/simulationExplaining/identifyTransaction.js'
+import { identifySwap, SwapVisualization } from '../../app/ts/components/simulationExplaining/SwapTransactions.js'
 import { getTransactionChecks } from '../../app/ts/components/simulationExplaining/TransactionChecks.js'
 import { getAddressOutcomeChips, TransactionOutcomeChips } from '../../app/ts/components/simulationExplaining/TransactionOutcomeChips.js'
 import { getSimulationStackRowStatus, type SimulationStackMessageRow, type SimulationStackTransactionRow } from '../../app/ts/components/simulationExplaining/simulationStackRows.js'
@@ -130,11 +131,13 @@ type TestNode = {
 	readonly getAttribute?: (name: string) => string | null
 }
 
-function collectButtons(node: TestNode, results: TestNode[] = []) {
-	if (node.tagName === 'BUTTON') results.push(node)
-	for (const child of node.childNodes ?? []) collectButtons(child, results)
+function collectByTag(node: TestNode, tagName: string, results: TestNode[] = []) {
+	if (node.tagName === tagName) results.push(node)
+	for (const child of node.childNodes ?? []) collectByTag(child, tagName, results)
 	return results
 }
+
+const collectButtons = (node: TestNode) => collectByTag(node, 'BUTTON')
 
 describe('transaction outcome UI', () => {
 	test('summarises a stack row with one status where failures outrank warnings', () => {
@@ -300,6 +303,39 @@ describe('transaction outcome UI', () => {
 		const homeSource = await Bun.file('app/ts/components/pages/Home.tsx').text()
 		assert.match(homeSource, /class = 'popup-home-connection-status popup-data-reveal-inline connection-chip connection-chip--positive'>CONNECTED/)
 		assert.match(homeSource, /class = 'popup-home-connection-status popup-data-reveal-inline connection-chip connection-chip--negative'>NOT CONNECTED/)
+	})
+
+	test('shows a swap as a paid leg and a received leg from the sender\'s point of view', async () => {
+		const swap = createSimulatedTransaction({ events: [createTokenEvent(nativeToken, sender, knownContract, 5n * 10n ** 18n, false), createTokenEvent(usdc, knownContract, sender, 2_500_000n, false)] })
+		const dom = installDomMock()
+		try {
+			await act(() => render(<SwapVisualization identifiedSwap = { identifySwap(swap) } renameAddressCallBack = { () => undefined }/>, dom.document.body))
+			const text = (dom.document.body.textContent ?? '').replace(/\s+/g, ' ')
+			assert.match(text, /You pay\s*- 5/)
+			assert.match(text, /You receive\s*\+ 2\.5/)
+			// The DOM mock does not expose inline styles, so the loss and gain colours are pinned at the source.
+			const swapSource = await Bun.file('app/ts/components/simulationExplaining/SwapTransactions.tsx').text()
+			assert.match(swapSource, /color: direction === 'pay' \? 'var\(--danger-color\)' : 'var\(--positive-color\)'/)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
+	})
+
+	test('gives every text field and summary leg one shared style', async () => {
+		const css = await readInterceptorAppCss()
+		assert.match(css, /\.input,\s*\.address-editor \.address-editor-field \.btn\s*\{[\s\S]*?border:\s*1px solid var\(--white-alpha-20\);[\s\S]*?border-radius:\s*var\(--radius-small\);/)
+		assert.match(css, /\.text-input > input\s*\{[\s\S]*?border:\s*1px solid var\(--border-color\);[\s\S]*?border-radius:\s*var\(--radius-small\);/)
+		assert.match(css, /\.box\.summary-leg, \.box\.swap-box\s*\{[\s\S]*?background-color:\s*var\(--alpha-005\);[\s\S]*?border-radius:\s*var\(--radius-medium\);/)
+		// Disabled fields must not react to hover as if they were editable.
+		assert.match(css, /\.input:not\(:disabled\):hover,/)
+		assert.doesNotMatch(css, /(^|\n)\.input:hover/)
+		// Focus needs the same specificity as hover, or a hovered field would lose its focus border.
+		assert.match(css, /\.input:not\(:disabled\):focus,/)
+		// Legs must not fall back to the framework's white box, which is what an unstyled `.box` renders as.
+		for (const sourcePath of ['app/ts/components/simulationExplaining/customExplainers/SimpleSendVisualisations.tsx', 'app/ts/components/simulationExplaining/customExplainers/ProxySendVisualisations.tsx', 'app/ts/components/simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.tsx']) {
+			assert.doesNotMatch(await Bun.file(sourcePath).text(), /class = 'box'/, sourcePath)
+		}
 	})
 
 	test('tints pages by mode and themes every colour for light and dark', async () => {

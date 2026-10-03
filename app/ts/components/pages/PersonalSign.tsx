@@ -361,7 +361,7 @@ function RawMessage({ visualizedPersonalSignRequest }: ExtraDetailsCardParams) {
 }
 
 function Signer({ signer, renameAddressCallBack }: { signer: AddressBookEntry, renameAddressCallBack: (entry: AddressBookEntry) => void, }) {
-	return <span class = 'log-table' style = 'margin-top: 10px; column-gap: 5px; justify-content: space-between; grid-template-columns: auto auto'>
+	return <span class = 'log-table transaction-meta-row' style = 'margin-top: 10px; column-gap: 5px; justify-content: space-between; grid-template-columns: auto auto'>
 		<div class = 'log-cell' style = ''>
 			<p style = { 'color: var(--subtitle-text-color);' }> Signing address: </p>
 		</div>
@@ -394,7 +394,7 @@ export function SignatureCard(params: SignatureCardParams) {
 				renameAddressCallBack = { params.renameAddressCallBack }
 			/>
 
-			<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
+			<span class = 'log-table transaction-meta-row' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
 				<div class = 'log-cell'> <TransactionCreated created = { params.visualizedPersonalSignRequest.created } /> </div>
 				<div class = 'log-cell' style = 'justify-content: right;'></div>
 			</span>

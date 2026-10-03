@@ -57,7 +57,7 @@ const TimePickerModeViews = ({ mode, absoluteTime, timePickerDeltaOptionsSignal,
 		case 'No Delay': return <></>
 		case 'Until': return <input type = 'datetime-local' disabled = { disabled } class = 'timepicker-datetime-local' value = { formatDateToLocalDateTimeValue(absoluteTime.value) } onInput = { absoluteTimeChanged } />
 		case 'For': return <div>
-			<input class = 'input' disabled = { disabled } style = 'width: 50px; margin-right: 10px; vertical-align: unset; text-align: center;' type = 'number' value = { deltaValue.value?.toString() ?? '' } onInput = { changeDeltaValue } />
+			<input class = 'input' disabled = { disabled } style = 'width: 72px; margin-right: 10px; vertical-align: unset; text-align: center;' type = 'number' value = { deltaValue.value?.toString() ?? '' } onInput = { changeDeltaValue } />
 			<DropDownMenu selected = { deltaUnit } dropDownOptions = { timePickerDeltaOptionsSignal } onChangedCallBack = { changeDeltaUnit } buttonClassses = { 'btn btn--outline is-small' } disabled = { disabled }/>
 		</div>
 		default: assertNever(mode.value)

@@ -199,7 +199,7 @@ const EmptyAccessList = () => {
 	const { searchQuery } = useWebsiteAccess()
 	const clearSearch = () => { searchQuery.value = '' }
 	return (
-		<div style = { { display: 'flex', flexDirection: 'column', rowGap: '0.5rem', border: '1px dashed var(--line-color)', padding: '2rem 1rem', textAlign: 'center', margin: '1rem 0', alignItems: 'center' } }>
+		<div class = 'dashed-prompt' style = { { display: 'flex', flexDirection: 'column', rowGap: '0.5rem', padding: '2rem 1rem', textAlign: 'center', margin: '1rem 0', alignItems: 'center' } }>
 			<p style = { { color: 'var(--disabled-text-color)', fontSize: '0.9rem', lineHeight: 1.2 } }>Did not find anything that matched your search query</p>
 			<button onClick = { clearSearch } type = 'button' class = 'btn btn--outline btn--sm' style = { { fontSize: '0.9rem' } }>Clear Search</button>
 		</div>
@@ -352,7 +352,7 @@ const NoAccessPrompt = ({ websiteAccess }: { websiteAccess: OptionalSignal<Websi
 	}
 
 	return (
-		<div style = { { color: 'var(--disabled-text-color)', border: '1px dashed', padding: '2rem', maxWidth: '50ch', textAlign: 'center', margin: '1rem auto' } }>
+		<div class = 'dashed-prompt' style = { { color: 'var(--disabled-text-color)', padding: '2rem', maxWidth: '50ch', textAlign: 'center', margin: '1rem auto' } }>
 			<h4 style = { { fontWeight: 600, color: 'var(--text-color)', lineHeight: '1.25', marginBottom: '0.5rem' } }>This website was denied access to The Interceptor.</h4>
 				<p style = { { fontSize: '0.875rem', lineHeight: 1.25, marginBottom: '1rem' } }>Interceptor will automatically deny further requests from <WebsiteCard website = { website.value } /> for access while this preference is set.</p>
 			<Modal>
@@ -401,7 +401,7 @@ const AddressAccessCard = ({ website, addressAccess, renameAddressCallBack }: { 
 
 	if (addressBookEntry.deepValue === undefined) return <></>
 	return (
-		<div style = { { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) min-content min-content', columnGap: '1rem', alignItems: 'center' } }>
+		<div class = 'address-access-card'>
 			<BigAddress addressBookEntry = { addressBookEntry.deepValue } noEditAddress = { true } renameAddressCallBack = { renameAddressCallBack } />
 			<RemoveAddressConfirmation website = { website } addressBookEntry = { addressBookEntry.deepValue } renameAddressCallBack = { renameAddressCallBack } />
 			<Switch checked = { addressAccess.access } onChange = { setAddressAccess } />
@@ -476,7 +476,7 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal<
 	}
 
 	return (
-		<article class = 'flexy flexy-lg'>
+		<article class = 'flexy flexy-lg website-setting-card'>
 			<figure><i class = 'status-lg status-warn'><RequestBlockedIcon /></i></figure>
 			<section class = 'flexy' style = { { flex: 1, '--pad-y': 0 } }>
 				<div style = { { contain: 'inline-size', flex: '1 20ch', marginBottom: '0.5rem' } }>
@@ -495,7 +495,7 @@ const BlockRequestSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal<
 						/>
 					) : (
 						<Modal>
-							<Modal.Open class = 'btn btn--destructive'><span style = { { whiteSpace: 'nowrap' } }>Block Requests</span></Modal.Open>
+							<Modal.Open class = 'btn btn--danger-outline'><span style = { { whiteSpace: 'nowrap' } }>Block Requests</span></Modal.Open>
 							<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectRequestBlocking }>
 								<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Confirm Blocking External Requests</h2>
 								<p></p>
@@ -533,7 +533,7 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: OptionalSi
 	const website = useComputed(() => websiteAccess.deepValue?.website)
 
 	return (
-		<article class = 'flexy flexy-lg'>
+		<article class = 'flexy flexy-lg website-setting-card'>
 			<figure><i class = 'status-lg status-danger'><InterceptorDisabledIcon /></i></figure>
 			<section class = 'flexy' style = { { flex: 1, '--pad-y': 0 } }>
 				<div style = { { contain: 'inline-size', flex: '1 20ch', marginBottom: '0.5rem' } }>
@@ -552,7 +552,7 @@ const DisableProtectionSetting = ({ websiteAccess }: { websiteAccess: OptionalSi
 						/>
 					) : (
 						<Modal>
-							<Modal.Open class = 'btn btn--destructive'><span style = { { whiteSpace: 'nowrap' } }>Disable Protection</span></Modal.Open>
+							<Modal.Open class = 'btn btn--danger-outline'><span style = { { whiteSpace: 'nowrap' } }>Disable Protection</span></Modal.Open>
 							<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectDialog }>
 								<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Disable Interceptor Protection</h2>
 								<p></p>
@@ -582,7 +582,7 @@ const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal
 	}
 
 	return (
-		<article class = 'flexy flexy-lg'>
+		<article class = 'flexy flexy-lg website-setting-card'>
 			<figure><i class = 'status-lg status-outline' style = { { '--fg-color': 'var(--status-danger-outline-color)', '--outline': '1px solid var(--status-danger-outline-color)' } }><TrashIcon /></i></figure>
 			<section class = 'flexy' style = { { flex: 1, '--pad-y': 0 } }>
 				<div style = { { contain: 'inline-size', flex: '1 20ch', marginBottom: '0.5rem' } }>
@@ -591,7 +591,7 @@ const RemoveWebsiteSetting = ({ websiteAccess }: { websiteAccess: OptionalSignal
 				</div>
 				<aside>
 					<Modal>
-						<Modal.Open class = 'btn btn--destructive'><span style = { { whiteSpace: 'nowrap' } }>Remove Website</span></Modal.Open>
+						<Modal.Open class = 'btn btn--danger-outline'><span style = { { whiteSpace: 'nowrap' } }>Remove Website</span></Modal.Open>
 						<Modal.Dialog class = 'dialog' style = { { textAlign: 'center', color: 'var(--disabled-text-color)' } } onModalClose = { confirmOrRejectUpdate }>
 							<h2 style = { { fontWeight: 600, fontSize: '1.125rem', color: 'var(--text-color)', marginBlock: '1rem' } }>Confirm Website Removal</h2>
 							<p></p>
@@ -613,7 +613,7 @@ const WebsiteCard = ({ website }: { website: Website | undefined }) => {
 	if (website === undefined) return <></>
 	const websiteIcon = sanitizeStoredWebsiteIcon(website.icon)
 	return (
-		<div style = { { display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.125rem 0.25rem', borderRadius: '2px', backgroundColor: 'var(--card-bg-color)', verticalAlign: 'bottom' } }>
+		<div style = { { display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.125rem 0.25rem', borderRadius: 'var(--radius-small)', backgroundColor: 'var(--surface-raised-color)', verticalAlign: 'bottom' } }>
 			{ websiteIcon === undefined ? <></> : <img style = { { inlineSize: '1rem' } } width = '16' height = '16' src = { websiteIcon } /> }
 			<div style = { { fontSize: '0.875rem', color: 'var(--text-color)' } }>{ website.websiteOrigin }</div>
 		</div>

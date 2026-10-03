@@ -222,11 +222,53 @@
 .transaction-importance-box {
 	background-color: var(--importance-box-color);
 	border-radius: var(--radius-medium);
-	padding: 10px;
-	margin: auto;
-	margin-bottom: 10px;
-	max-width: fit-content;
+	padding: 12px;
+	margin: 0 0 10px;
 	color: var(--text-color)
+}
+
+/* Shared vocabulary of the transaction summaries: small labels, raised legs and a quiet meta line. */
+.summary-label {
+	color: var(--subtitle-text-color);
+	font-size: 0.75rem;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	margin: 8px 0 4px;
+	text-transform: uppercase;
+}
+
+.summary-label:first-child {
+	margin-top: 0;
+}
+
+.box.summary-leg, .box.swap-box {
+	background-color: var(--alpha-005);
+	border-radius: var(--radius-medium);
+	box-shadow: none;
+	color: var(--text-color);
+	margin-bottom: 0;
+	padding: 10px 12px;
+}
+
+.summary-legs {
+	display: grid;
+}
+
+.summary-heading, .summary-subheading {
+	align-items: baseline;
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+}
+
+.summary-heading-text {
+	font-size: var(--big-font-size);
+	font-weight: 500;
+}
+
+.summary-meta {
+	display: inline-flex;
+	margin-top: 8px;
 }
 
 .notification-importance-box {
@@ -460,12 +502,7 @@
 }
 
 .swap-box {
-	background-color: var(--alpha-005);
-	border-radius: var(--radius-medium);
-	box-shadow: unset;
-	margin-bottom: 0px;
 	display: grid;
-	padding: 10px;
 }
 
 .swap-grid {
@@ -729,6 +766,7 @@
 	width: 100%;
 }
 
+/* The summary panel is full width by default; this keeps it inside the single-column result grid even if that default changes. */
 .safe-outcome-panel__result .transaction-importance-box {
 	box-sizing: border-box;
 	max-width: 100%;
@@ -953,11 +991,12 @@ summary:focus {
 }
 
 .dialog {
-	background: var(--bg-color);
+	background: var(--card-bg-color);
 	color: var(--text-color);
-	border: 0 none;
+	border: 1px solid var(--hairline-color);
+	box-shadow: var(--overlay-shadow);
 	padding: 1em;
-	border-radius: 6px;
+	border-radius: var(--radius-large);
 	width: calc(100vw - 4em);
 	max-width: 36em;
 }
@@ -971,25 +1010,32 @@ summary:focus {
 
 .text-input {
 	--text-size: 1em;
-	--label-color: var(--disabled-text-color);
-	--border-color: var(--strong-hairline-color);
-	--columns: 1fr min-content;
+	--label-color: var(--subtitle-text-color);
+	--border-color: var(--white-alpha-20);
+	--columns: minmax(0, 1fr) auto;
+	align-items: center;
 	display: grid;
 	grid-template-columns: var(--columns);
-	border-bottom: 1px solid var(--border-color);
-	align-items: center;
+	row-gap: 4px;
 }
 
 .text-input:focus-within { --border-color: var(--accent-color) }
 
+/* Same boxed field as `.input`; the label sits above it instead of floating over the value. */
 .text-input > input {
 	font: inherit;
 	grid-area: 2 / 1;
-	background-color: var(--bg-color, transparent);
+	background-color: var(--alpha-005);
+	border: 1px solid var(--border-color);
+	border-radius: var(--radius-small);
 	color: var(--text-color);
+	min-width: 0;
 	outline: none;
-	padding: 0.2em 0;
-	border: 0 none;
+	padding: 5px 10px;
+}
+
+.text-input > input:focus {
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 22%, transparent);
 }
 
 /* remove browser autofill styles */
@@ -998,22 +1044,18 @@ summary:focus {
 	-webkit-text-fill-color: var(--text-color, initial);
 }
 
-.text-input > input::placeholder { color: transparent; }
-
-.text-input > input:where(:disabled, :read-only) { --text-color: var(--border-color) }
+.text-input > input:where(:disabled, :read-only) { --text-color: var(--disabled-text-color) }
 .text-input > input:where(:invalid) { --text-color: var(--danger-color) }
+
+.text-input > :nth-child(3) {
+	margin-left: 6px;
+}
 
 :where(.text-input:has(input) > span) {
 	grid-area: 1 / span 2;
 	color: var(--label-color);
-	transform-origin: bottom left;
-	transition: transform 150ms;
-	transform: translateY(1.525em);
-}
-
-:where(.text-input:focus-within span, .text-input input:not(:placeholder-shown) + span) {
-	transform: translateY(0) scale(0.75);
-	--label-color: var(--subtitle-text-color);
+	font-size: 0.75rem;
+	font-weight: 500;
 }
 
 .disclosure {

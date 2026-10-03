@@ -61,7 +61,7 @@ export function getProxyRouteLabel(viaProxypath: readonly AddressBookEntry[]) {
 }
 
 export function ExecutionRouteNotice({ viaProxypath, renameAddressCallBack }: { viaProxypath: readonly AddressBookEntry[], renameAddressCallBack: RenameAddressCallBack }) {
-	return <div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 12px;'>
+	return <div class = 'box summary-leg'>
 		<div style = 'display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px;'>
 			<span class = 'tag' style = 'background-color: var(--alpha-005); color: var(--subtitle-text-color);'>Routed</span>
 			<p class = 'paragraph' style = 'color: var(--subtitle-text-color); margin: 0;'>
@@ -77,8 +77,8 @@ export function ExecutionRouteNotice({ viaProxypath, renameAddressCallBack }: { 
 
 export function SimpleSend({ transaction, asset, sender, receiver, renameAddressCallBack, viaProxypath, receiverLabel } : SimpleSendParams) {
 	return <div class = 'notification transaction-importance-box'>
-		<span style = 'grid-template-columns: auto auto auto auto; justify-content: center; display: grid; align-items: baseline;'>
-			<p class = 'paragraph' style = 'font-size: 28px; font-weight: 500; justify-self: right;'> Send&nbsp;</p>
+		<span class = 'summary-heading'>
+			<p class = 'paragraph summary-heading-text'>Send&nbsp;</p>
 			<TokenOrEth
 				{ ...asset }
 				useFullTokenName = { false }
@@ -87,23 +87,23 @@ export function SimpleSend({ transaction, asset, sender, receiver, renameAddress
 			/>
 		</span>
 		{ viaProxypath === undefined ? <></> : <ExecutionRouteNotice viaProxypath = { viaProxypath } renameAddressCallBack = { renameAddressCallBack } /> }
-		<p class = 'paragraph'> From </p>
-		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
+		<p class = 'summary-label'>From</p>
+		<div class = 'box summary-leg'>
 			<AddressBeforeAfter
 				{ ...sender }
 				renameAddressCallBack = { renameAddressCallBack }
 				tokenOrEtherDefinition = { asset }
 			/>
 		</div>
-		<p class = 'paragraph'>{ receiverLabel ?? (viaProxypath === undefined ? 'To' : 'Final recipient') } </p>
-		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
+		<p class = 'summary-label'>{ receiverLabel ?? (viaProxypath === undefined ? 'To' : 'Final recipient') }</p>
+		<div class = 'box summary-leg'>
 			<AddressBeforeAfter
 				{ ...receiver }
 				renameAddressCallBack = { renameAddressCallBack }
 				tokenOrEtherDefinition = { asset }
 			/>
 		</div>
-		<span class = 'log-table' style = { { display: 'inline-flex', marginTop: '5px' } }>
+		<span class = 'log-table transaction-meta-row summary-meta'>
 			<GasFee tx = { transaction } rpcNetwork = { transaction.rpcNetwork } />
 		</span>
 	</div>

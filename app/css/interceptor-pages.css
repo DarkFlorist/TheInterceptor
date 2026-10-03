@@ -157,16 +157,18 @@ header:has(form[role='search']) h1 {
 
 [role=option]:has([type=radio]) {
 	--heading-color: var(--text-color);
-	--heading-weight: normal;
+	--heading-weight: 600;
 	--subheading-color: var(--disabled-text-color);
 	margin: 0;
-	border-bottom: 1px solid var(--white-alpha-10);
+	border-bottom: 1px solid var(--hairline-color);
+	border-radius: var(--radius-medium);
+	padding-inline: 12px;
 	position: relative;
 }
 
 [role=option]:has([type=radio]):focus-within,
 [role=option]:has([type=radio]):hover {
-	background: linear-gradient(to right, transparent 0%, var(--white-alpha-08) 50%, transparent 100%);
+	background: var(--surface-raised-color);
 }
 
 [role=option] [type=radio] {
@@ -633,7 +635,7 @@ header:has(form[role='search']) h1 {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	justify-self: center;
+	margin-inline: auto;
 	padding: 10px;
 	max-width: min-content;
 }
@@ -761,4 +763,30 @@ fieldset[disabled] .button.is-primary.is-danger {
 		color: var(--text-color);
 		margin-top: 0.5rem;
 	}
+}
+
+/* Website access details */
+.website-setting-card {
+	background-color: var(--card-bg-color);
+	border: 1px solid var(--hairline-color);
+	border-radius: var(--radius-large);
+	box-shadow: var(--card-shadow);
+	margin-bottom: 8px;
+	padding-inline: 16px;
+}
+
+.address-access-card {
+	align-items: center;
+	background-color: var(--card-bg-color);
+	border: 1px solid var(--hairline-color);
+	border-radius: var(--radius-medium);
+	column-gap: 1rem;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) min-content min-content;
+	padding: 8px 12px;
+}
+
+.dashed-prompt {
+	border: 1px dashed var(--strong-hairline-color);
+	border-radius: var(--radius-large);
 }

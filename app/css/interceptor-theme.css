@@ -336,30 +336,6 @@ svg[role="img"] {
 	min-height: 32px;
 }
 
-.address-editor .input,
-.address-editor .address-editor-field .btn {
-	background: color-mix(in srgb, var(--text-color) 5%, transparent);
-	border: 1px solid var(--white-alpha-20);
-	border-radius: 6px;
-	box-shadow: none;
-	box-sizing: border-box;
-	color: var(--text-color);
-	line-height: 20px;
-	padding: 5px 10px;
-}
-
-.address-editor .input:hover,
-.address-editor .address-editor-field .btn:hover {
-	background: var(--white-alpha-10);
-	border: 1px solid var(--highlighted-accent-color);
-}
-
-.address-editor .input:focus,
-.address-editor .address-editor-field .btn:focus {
-	border: 1px solid var(--accent-color);
-	box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 22%, transparent);
-}
-
 .address-editor-identity {
 	display: grid;
 	align-items: start;
@@ -1053,31 +1029,34 @@ html, body {
 	background-color: var(--highlighted-accent-color)
 }
 
-.input {
-	background: rgba(0, 0, 0, 0);
+/* One boxed field style for every text input and for the select-like buttons of the address editor. */
+.input,
+.address-editor .address-editor-field .btn {
+	background: var(--alpha-005);
+	border: 1px solid var(--white-alpha-20);
+	border-radius: var(--radius-small);
+	box-shadow: none;
+	box-sizing: border-box;
 	color: var(--text-color);
-	padding: 0px;
-	height: unset;
-	border: unset;
-	border-radius: unset;
-	border-bottom: 2px solid var(--strong-hairline-color);
-	box-shadow: none;
-	font-size: 13px;
 	font-family: 'Inter', sans-serif;
+	font-size: 13px;
+	height: unset;
+	line-height: 20px;
+	padding: 5px 10px;
 }
 
-.input:hover {
-	border: unset;
-	border-bottom: 2px solid var(--highlighted-accent-color);
-	box-shadow: none;
+.input:not(:disabled):hover,
+.address-editor .address-editor-field .btn:not(:disabled):hover {
+	background: var(--white-alpha-10);
+	border: 1px solid var(--highlighted-accent-color);
 }
 
-.input:focus {
-	border: unset;
-	border-radius: unset;
-	border-bottom: 2px solid var(--accent-color);
-	box-shadow: none;
- }
+/* Same specificity as the hover rule above, so a focused field keeps its accent border while hovered. */
+.input:not(:disabled):focus,
+.address-editor .address-editor-field .btn:not(:disabled):focus {
+	border: 1px solid var(--accent-color);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 22%, transparent);
+}
 
 .simulation-stack-import-field {
 	display: flex;
@@ -1315,7 +1294,7 @@ html, body {
 }
 
 .input:not([type='checkbox']):disabled, input:not([type='checkbox'])[disabled] {
-	border-bottom: unset
+	cursor: not-allowed;
 }
 
 .button:focus:not(:active) {
@@ -1413,12 +1392,6 @@ li {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 4px;
-}
-
-.simulation-summary-card .transaction-importance-box {
-	box-sizing: border-box;
-	max-width: none;
-	width: 100%;
 }
 
 .simulation-summary-signature-list {

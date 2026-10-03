@@ -84,7 +84,7 @@ function LoadingInput() {
 		class = 'input popup-loading-shape popup-loading-control popup-loading-input'
 		disabled = { true }
 		tabIndex = { -1 }
-		style = 'width: 50px; margin-right: 10px; vertical-align: unset; text-align: center;'
+		style = 'width: 72px; margin-right: 10px; vertical-align: unset; text-align: center;'
 		type = 'number'
 		value = ''
 	/>
