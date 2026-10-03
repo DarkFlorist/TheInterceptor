@@ -34,6 +34,8 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 	let chainChangeRemovalDeferred = false
 	const requestBlockingCalls = {
 		declarativeNetRequestUpdates: 0,
+		dynamicRuleUpdates: 0,
+		sessionRuleUpdates: 0,
 		webRequestListenerAdds: 0,
 		webRequestListenerRemovals: 0,
 	}
@@ -106,10 +108,12 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 			async getSessionRules() { return [] },
 			async updateDynamicRules() {
 				requestBlockingCalls.declarativeNetRequestUpdates += 1
+				requestBlockingCalls.dynamicRuleUpdates += 1
 				return undefined
 			},
 			async updateSessionRules() {
 				requestBlockingCalls.declarativeNetRequestUpdates += 1
+				requestBlockingCalls.sessionRuleUpdates += 1
 				return undefined
 			},
 		},

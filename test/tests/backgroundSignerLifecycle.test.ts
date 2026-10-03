@@ -3,6 +3,60 @@ import { describe, test } from 'bun:test'
 import { getWalletSwitchRequestId, confirmedSignerOwnership, createDeferredValue, createEthereumWithGetBlockCounter, createPort, createTestSimulationServicesOwner, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
+	test('keeps startup blocking reconciliation available while RPC settings recover', async () => {
+		const browserMock = installBrowserMock({ manifestVersion: 3 })
+		const {
+			changeSimulationMode,
+			getRequiredSettings,
+			setRpcConfiguration,
+			updateDeclarativeNetRequestBlocks,
+			updateTabState,
+			updateUserAddressBookEntries,
+			updateWebsiteAccess,
+			websiteSocketToString,
+		} = await loadModules()
+		const activeAddress = 0x1010101010101010101010101010101010101010n
+		const settings = await getRequiredSettings()
+		await updateUserAddressBookEntries(() => [{
+			type: 'contact',
+			name: 'Blocked active address',
+			address: activeAddress,
+			chainId: 'AllChains',
+			entrySource: 'User',
+			useAsActiveAddress: true,
+			askForAddressAccess: false,
+			declarativeNetRequestBlockMode: 'block-all',
+		}])
+		await changeSimulationMode({ simulationMode: false, activeSigningAddress: activeAddress })
+		const tabId = 9876
+		await updateTabState(tabId, (previous) => ({ ...previous, signerAccounts: [activeAddress], activeSigningAddress: activeAddress }))
+		const websiteOrigin = 'startup-recovery.example'
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin, icon: undefined, title: undefined }, access: true, declarativeNetRequestBlockMode: 'block-all' }])
+		const socket = { tabId, connectionName: 0n }
+		const { port } = createPort(tabId)
+		const websiteTabConnections = new Map([[tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt' })
+		const dynamicUpdatesBeforeRecovery = browserMock.requestBlockingCalls.dynamicRuleUpdates
+		const sessionUpdatesBeforeRecovery = browserMock.requestBlockingCalls.sessionRuleUpdates
+
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+		} finally {
+			console.warn = originalWarn
+		}
+
+		assert.equal(browserMock.requestBlockingCalls.dynamicRuleUpdates, dynamicUpdatesBeforeRecovery + 1)
+		assert.equal(browserMock.requestBlockingCalls.sessionRuleUpdates, sessionUpdatesBeforeRecovery)
+
+		await setRpcConfiguration([settings.activeRpcNetwork], settings.activeRpcNetwork)
+		await updateDeclarativeNetRequestBlocks(websiteTabConnections)
+		assert.equal(browserMock.requestBlockingCalls.sessionRuleUpdates, sessionUpdatesBeforeRecovery + 1)
+	})
+
 	test('completes signer callbacks but rejects RPC requests while configuration and services are unavailable', async () => {
 		const { readStoredValue } = installBrowserMock()
 		const {
