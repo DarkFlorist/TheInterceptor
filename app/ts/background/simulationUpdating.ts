@@ -14,7 +14,7 @@ import type { EnrichedEthereumEvents, EnrichedEthereumInputData } from '../types
 import type { PendingTransaction } from '../types/accessRequest.js'
 import type { AddressBookEntry, Erc20TokenEntry } from '../types/addressBookTypes.js'
 import type { SimulateExecutionReplyData } from '../types/interceptor-messages.js'
-import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type SimulationState, type SimulationInput, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, toResolvedSimulationInput, toResolvedSimulationState } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type BlockTimeManipulation, type ExecutionSimulationState, type NonSimulatedAndVisualizedTransaction, type PreSimulationTransaction, type SignedMessageTransaction, type SimulationState, type SimulationInput, type SimulationStateInput, type SimulationStateInputBlock, type VisualizedSimulatorState, createSimulatedInput, toResolvedSimulationState } from '../types/visualizer-types.js'
 import { get4Byte, get4ByteString } from '../utils/calldata.js'
 import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANSACTION } from '../utils/constants.js'
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
@@ -139,10 +139,7 @@ export function getCurrentSimulationOverrides(settings: Settings, purpose: 'what
 }
 
 export async function getCurrentSimulationInputWithOverrides(settings: Settings, purpose: 'what-if' | 'signing' = 'what-if', richAddresses?: readonly bigint[]): Promise<SimulationInput> {
-	return {
-		value: await getCurrentSimulationInput(richAddresses, settings),
-		simulationOverrides: getCurrentSimulationOverrides(settings, purpose),
-	}
+	return createSimulatedInput(await getCurrentSimulationInput(richAddresses, settings), getCurrentSimulationOverrides(settings, purpose))
 }
 
 export type SimulationSnapshot = {
@@ -185,7 +182,7 @@ export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClient
 	if (!simulationOverlayEnabled) return { simulationInput: PASSTHROUGH_STATE, simulationState: PASSTHROUGH_STATE }
 	const snapshot = await captureSimulationSnapshot()
 	return {
-		simulationInput: toResolvedSimulationInput(snapshot.simulationInput),
+		simulationInput: snapshot.simulationInput,
 		simulationState: await getUpdatedSimulationState(ethereum, snapshot),
 	}
 }
@@ -346,10 +343,11 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		if (governanceExecutionBlock === undefined) throw new Error('Missing governance execution simulation block')
 		const governanceContractSimulationState: SimulationState = {
 			success: true,
-				simulationStateInput: [governanceExecutionBlock],
+			simulationStateInput: [governanceExecutionBlock],
 			simulatedBlocks: [{
 				signedMessages: [],
-				stateOverrides: getEffectiveStateOverrides(governanceExecutionBlock.stateOverrides, simulationOverrides, governanceExecutionSimulationInput.length - 1),
+				// This visualization contains only the standalone execution block.
+				stateOverrides: getEffectiveStateOverrides(governanceExecutionBlock.stateOverrides, simulationOverrides, 0),
 				blockTimestamp: contractExecutionResult.executionTimestamp,
 				blockTimeManipulation: { type: 'SetTimetamp', timeToSet: dateToBigintSeconds(contractExecutionResult.executionTimestamp) },
 				simulatedTransactions: [{
@@ -421,7 +419,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 		const gasLimit = gnosisSafeMessage.message.message.baseGas !== 0n ? {
 			gas: gnosisSafeMessage.message.message.baseGas
 		} : await (async () => {
-			const estimateGas = await simulateEstimateGasFromInput(ethereumClientService, undefined, toResolvedSimulationInput({ value: simulationInput, simulationOverrides: resolvedSimulationState.simulationOverrides }), transactionWithoutGas, undefined, temporaryAccountOverrides)
+			const estimateGas = await simulateEstimateGasFromInput(ethereumClientService, undefined, createSimulatedInput(simulationInput, resolvedSimulationState.simulationOverrides), transactionWithoutGas, undefined, temporaryAccountOverrides)
 			if ('error' in estimateGas) throw new Error(estimateGas.error.message)
 			return { gas: estimateGas.gas }
 		})()
@@ -433,7 +431,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] },
 			transactionIdentifier: gnosisSafeMessage.messageIdentifier,
 		}
-		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransactionToInputAndSimulate(ethereumClientService, undefined, { value: simulationInput, simulationOverrides: resolvedSimulationState.simulationOverrides }, [metaTransaction], undefined, temporaryAccountOverrides)
+		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransactionToInputAndSimulate(ethereumClientService, undefined, createSimulatedInput(simulationInput, resolvedSimulationState.simulationOverrides), [metaTransaction], undefined, temporaryAccountOverrides)
 		return { success: true as const, result: await visualizeSimulatorState(simulationStateAfterGnosisSafeMetaTransaction, ethereumClientService, tokenPriceService, undefined) }
 	} catch(error) {
 		console.warn(error)
@@ -480,7 +478,7 @@ export const prepareSimulationInputForRpc = async (input: SimulationInput, ether
 	const { simulationOverrides } = input
 	if (simulationInput.some((block) => block.transactions.some((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n))) simulationInput = await prepareSafeDelegateSimulationInput(simulationInput, ethereum, await ethereum.getBlockNumber(undefined))
 	// Base-fee and nonce repair only rewrite transactions. Signed-message and state-override blocks must still reach the RPC handler, but inspecting them here would run an extra eth_simulateV1 request without any transaction nonce to repair.
-	if (simulationInput.every((block) => block.transactions.length === 0)) return { value: simulationInput, simulationOverrides }
+	if (simulationInput.every((block) => block.transactions.length === 0)) return { ...input, value: simulationInput }
 	const parentBlock = await ethereum.getBlock(undefined)
 	const getBaseFeeFixedInputStateBlocks = async () => {
 		if (parentBlock === undefined) return simulationInput
@@ -492,7 +490,7 @@ export const prepareSimulationInputForRpc = async (input: SimulationInput, ether
 		return baseFeeFixedInputStateBlocks
 	}
 	const baseFeeFixedInputStateBlocks = await getBaseFeeFixedInputStateBlocks()
-	const nonceFixed = await getNonceFixedSimulationStateInput(ethereum, undefined, { value: baseFeeFixedInputStateBlocks, simulationOverrides })
+	const nonceFixed = await getNonceFixedSimulationStateInput(ethereum, undefined, createSimulatedInput(baseFeeFixedInputStateBlocks, simulationOverrides))
 	return nonceFixed.simulationInput
 }
 

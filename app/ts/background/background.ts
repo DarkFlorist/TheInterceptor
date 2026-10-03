@@ -5,7 +5,7 @@ import 'webextension-polyfill'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { getSettings, updateWebsiteAccess } from './settings.js'
 import { blockNumber, call, chainId, estimateGas, gasPrice, getAccounts, getBalance, getBlockByNumber, getBlockByHash, getCode, getFilterChanges, getFilterLogs, getLogs, getPermissions, getStorageAt, getTransactionByHash, getTransactionCount, getTransactionReceipt, handleInterceptorError, installNewFilter, maxPriorityFeePerGas, netVersion, personalSign, requestInterceptorSimulatorStack, requestPermissions, sendTransaction, subscribe, switchEthereumChain, ethSimulateV1, feeHistory, uninstallNewFilter, unsubscribe, web3ClientVersion } from './simulationModeHandlers.js'
-import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState, toResolvedSimulationInput } from '../types/visualizer-types.js'
+import { PASSTHROUGH_STATE, type ResolvedExecutionSimulationState, type ResolvedSimulationInput, toResolvedExecutionSimulationState } from '../types/visualizer-types.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { askForSignerAccountsFromSignerIfNotAvailable, requestAccessFromUser } from './windows/interceptorAccess.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_NOT_AUTHORIZED, METAMASK_ERROR_NOT_CONNECTED_TO_CHAIN, METAMASK_ERROR_PROVIDER_DISCONNECTED, METAMASK_ERROR_USER_REJECTED_REQUEST, ERROR_INTERCEPTOR_DISABLED } from '../utils/constants.js'
@@ -77,7 +77,7 @@ async function handleRPCRequest(
 	const getSimulationInput = async () => {
 		if (!simulationOverlayEnabled) return PASSTHROUGH_STATE
 		if (simulationInputPromise === undefined) simulationInputPromise = (async () => {
-			return toResolvedSimulationInput(await prepareSimulationInputForRpc(await getCurrentSimulationInputWithOverrides(settings), ethereum))
+			return await prepareSimulationInputForRpc(await getCurrentSimulationInputWithOverrides(settings), ethereum)
 		})()
 		return await simulationInputPromise
 	}
@@ -86,7 +86,7 @@ async function handleRPCRequest(
 		if (executionSimulationStatePromise === undefined) executionSimulationStatePromise = (async () => {
 			const simulationInput = await getSimulationInput()
 			if (simulationInput.kind === 'passthrough') return PASSTHROUGH_STATE
-			return toResolvedExecutionSimulationState(await buildExecutionSimulationStateFromPreparedInput({ value: simulationInput.value, simulationOverrides: simulationInput.simulationOverrides }, ethereum))
+			return toResolvedExecutionSimulationState(await buildExecutionSimulationStateFromPreparedInput(simulationInput, ethereum))
 		})()
 		return await executionSimulationStatePromise
 	}

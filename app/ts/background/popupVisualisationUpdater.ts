@@ -76,9 +76,9 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 		const provider = getSimulationProviderForSnapshot(ethereum, capturedSnapshot)
 		if (skipIfUnchanged && popupVisualisation.simulationState.kind === 'simulated' && provider !== undefined) {
 			const currentSimulationInput = await getCurrentSimulationStateInput(provider, capturedSnapshot)
-			const currentFingerprint = getPopupVisualisationFingerprint({ value: currentSimulationInput.simulationStateInput, simulationOverrides: currentSimulationInput.simulationOverrides }, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)
+			const currentFingerprint = getPopupVisualisationFingerprint({ kind: 'simulated', value: currentSimulationInput.simulationStateInput, simulationOverrides: currentSimulationInput.simulationOverrides }, currentSimulationInput.rpcNetwork, currentSimulationInput.blockNumber)
 			const cachedFingerprint = getPopupVisualisationFingerprint(
-				{ value: popupVisualisation.simulationState.value.simulationStateInput, simulationOverrides: popupVisualisation.simulationState.value.simulationOverrides },
+				{ kind: 'simulated', value: popupVisualisation.simulationState.value.simulationStateInput, simulationOverrides: popupVisualisation.simulationState.value.simulationOverrides },
 				popupVisualisation.simulationState.value.rpcNetwork,
 				popupVisualisation.simulationState.value.blockNumber,
 			)

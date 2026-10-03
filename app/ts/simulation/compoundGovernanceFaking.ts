@@ -61,7 +61,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 		simulateWithZeroBaseFee: true,
 	} ] as const
 
-	const governanceContractCalls = (await ethereumClientService.simulate({ value: input, simulationOverrides }, parentBlock.number, undefined))[0]?.calls
+	const governanceContractCalls = (await ethereumClientService.simulate({ kind: 'simulated', value: input, simulationOverrides }, parentBlock.number, undefined))[0]?.calls
 	if (governanceContractCalls === undefined) throw new Error('simulateTransactionsAndSignatures returned zero length aray')
 	for (const call of governanceContractCalls) {
 		if (call.status !== 'success') throw new Error('Failed to retrieve governance contracts information')

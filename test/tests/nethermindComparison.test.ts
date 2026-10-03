@@ -127,7 +127,7 @@ describe('Nethermind testing', () => {
 	})
 
 	test('adding transaction and getting the next block should include all the same fields as Nethermind', async () => {
-		const newState = await appendTransactionToInputAndSimulate(ethereum, undefined, { value: simulationState.simulationStateInput, simulationOverrides: simulationState.simulationOverrides }, [{
+		const newState = await appendTransactionToInputAndSimulate(ethereum, undefined, { kind: 'simulated', value: simulationState.simulationStateInput, simulationOverrides: simulationState.simulationOverrides }, [{
 			signedTransaction: mockSignTransaction(exampleTransaction),
 			website: { websiteOrigin: 'test', icon: undefined, title: undefined },
 			created: new Date(),

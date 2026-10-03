@@ -4,8 +4,8 @@ import type { PreparedEthSimulateV1Input } from './EthereumClientService.js'
 import { type EthereumSignedTransactionWithBlockData, type EthereumBlockTag, type EthereumAddress, type EthereumBlockHeader, type EthereumBlockHeaderWithTransactionHashes, EthereumData, EthereumQuantity, EthereumBytes32, type EthereumSendableSignedTransaction } from '../../types/wire-types.js'
 import { addressString, bigintSecondsToDate, bigintToUint8Array, dataStringWith0xStart, dateToBigintSeconds, max, min, stringToUint8Array } from '../../utils/bigint.js'
 import { CANNOT_SIMULATE_OFF_LEGACY_BLOCK, ERROR_INTERCEPTOR_GAS_ESTIMATION_FAILED, ETHEREUM_LOGS_LOGGER_ADDRESS, MOCK_ADDRESS, MULTICALL3, Multicall3ABI, DEFAULT_CALL_ADDRESS, GAS_PER_BLOB } from '../../utils/constants.js'
-import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationInput, SimulationInputWithOverrides, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock, ExecutionSimulatedTransaction, ExecutionSimulationState, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState } from '../../types/visualizer-types.js'
-import { getSimulationInputFromState, toResolvedSimulationInput } from '../../types/visualizer-types.js'
+import type { SimulatedTransaction, SimulationState, TokenBalancesAfter, PreSimulationTransaction, SimulationStateBlock, SimulationStateInput, SimulationInput, SimulatedInput, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock, ExecutionSimulatedTransaction, ExecutionSimulationState, ResolvedExecutionSimulationState, ResolvedSimulationInput, ResolvedSimulationState } from '../../types/visualizer-types.js'
+import { createSimulatedInput, getSimulationInputFromState } from '../../types/visualizer-types.js'
 import type { Abi } from '../../utils/ethereumPrimitives.js'
 import { stringToBytes, keccak256 } from '../../utils/ethereumPrimitives.js'
 import { type IUnsignedTransaction1559, type IUnsignedTransaction7702, rlpEncode } from '../../utils/ethereum.js'
@@ -133,14 +133,14 @@ const transactionQueueTotalGasLimitFromInput = (block: SimulationStateInputMinim
 const hasSimulationBlocks = (simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData) => simulationStateInput.length > 0
 
 // Keep the initial account state paired with its blocks. An empty stack still applies it to the first requested call.
-type PreparedSimulationInput = ResolvedSimulationInput | { readonly kind: 'simulated', readonly value: SimulationStateInputMinimalData, readonly simulationOverrides: StateOverrides }
+type PreparedSimulationInput = ResolvedSimulationInput | SimulatedInput<SimulationStateInputMinimalData>
 
 const hasSimulationContext = (input: PreparedSimulationInput) => input.kind === 'simulated'
 	&& (hasSimulationBlocks(input.value) || Object.keys(input.simulationOverrides).length > 0)
 
 const getSimulationBlockNumber = (simulationState: SimulationState, blockDelta: number) => simulationState.blockNumber + BigInt(blockDelta) + 1n
 
-const getHashOfSimulatedBlockFromInput = (simulationInput: SimulationInputWithOverrides, blockDelta: number) => {
+const getHashOfSimulatedBlockFromInput = (simulationInput: SimulatedInput<SimulationStateInputMinimalData>, blockDelta: number) => {
 	return BigInt(keccak256(stringToBytes(`${ getSimulationInputHash(simulationInput) }:${ blockDelta }`)))
 }
 
@@ -386,7 +386,7 @@ const simulateBlockCallOnTopOfSimulationInput = async (
 	return await simulateBlockCallWithPreparedInputContext(
 		ethereumClientService,
 		requestAbortController,
-		await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput === undefined ? undefined : toResolvedSimulationInput({ value: simulationStateInput, simulationOverrides: options.simulationOverrides })),
+		await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, simulationStateInput === undefined ? undefined : createSimulatedInput(simulationStateInput, options.simulationOverrides)),
 		transaction,
 		options,
 	)
@@ -418,7 +418,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 	}
 	const estimateGasTransaction = await createEip1559Or7702Transaction(estimateGasTransactionBase, data)
 	try {
-		const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, toResolvedSimulationInput(getSimulationInputFromState(currentState)))
+		const context = await createPreparedSimulationExecutionContext(ethereumClientService, requestAbortController, getSimulationInputFromState(currentState))
 		const simulateWithGasLimit = async (gasLimit: bigint) => await simulateBlockCallWithPreparedInputContext(
 			ethereumClientService,
 			requestAbortController,
@@ -602,7 +602,7 @@ const createPreparedSimulatedExecutionBlocks = async (
 	const context = await createPreparedSimulationExecutionContext(
 		ethereumClientService,
 		requestAbortController,
-		toResolvedSimulationInput(getSimulationInputFromState(simulationState)),
+		getSimulationInputFromState(simulationState),
 		simulationState.blockNumber,
 	)
 	if (context === undefined) return []
@@ -1145,15 +1145,16 @@ const withEthSimulateV1VisibleParentHash = (
 	return [{ ...firstResultBlock, parentHash }, ...remainingResultBlocks]
 }
 
-const withInitialSimulationOverrides = (request: EthSimulateV1Params, simulationOverrides: StateOverrides, blockOffset: number): EthSimulateV1Params => {
-	if (Object.keys(simulationOverrides).length === 0) return request
+const withInitialSimulationOverrides = (request: EthSimulateV1Params, simulationOverrides: StateOverrides, precedingSimulatedBlockCount: number): EthSimulateV1Params => {
+	if (precedingSimulatedBlockCount !== 0 || Object.keys(simulationOverrides).length === 0) return request
+	const [firstBlock, ...remainingBlocks] = request.params[0].blockStateCalls
+	if (firstBlock === undefined) return request
 	const payload = {
 		...request.params[0],
-		blockStateCalls: request.params[0].blockStateCalls.map((block, blockIndex) => {
-			const originalOverrides = block.stateOverrides ?? {}
-			const stateOverrides = getEffectiveStateOverrides(originalOverrides, simulationOverrides, blockOffset + blockIndex)
-			return stateOverrides === originalOverrides ? block : { ...block, stateOverrides }
-		}),
+		blockStateCalls: [{
+			...firstBlock,
+			stateOverrides: getEffectiveStateOverrides(firstBlock.stateOverrides ?? {}, simulationOverrides, 0),
+		}, ...remainingBlocks],
 	}
 	return {
 		...request,
@@ -1655,7 +1656,7 @@ export const getSimulatedLogs = async (ethereumClientService: EthereumClientServ
 	return await ethereumClientService.getLogs(logFilter, requestAbortController)
 }
 export const getSimulatedBlockNumber = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedExecutionSimulationState) => {
-	if (simulationState.kind === 'simulated') return await getSimulatedBlockNumberFromInput(ethereumClientService, requestAbortController, toResolvedSimulationInput(getSimulationInputFromState(simulationState.value)))
+	if (simulationState.kind === 'simulated') return await getSimulatedBlockNumberFromInput(ethereumClientService, requestAbortController, getSimulationInputFromState(simulationState.value))
 	return await ethereumClientService.getBlockNumber(requestAbortController)
 }
 

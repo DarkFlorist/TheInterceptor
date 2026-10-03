@@ -12,7 +12,7 @@ import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
 import type { RpcEntry } from '../../types/rpc.js'
-import type { BlockTimeManipulation, SimulationInputWithOverrides, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
+import type { BlockTimeManipulation, SimulatedInput, SimulationStateInputMinimalData, SimulationStateInputMinimalDataBlock } from '../../types/visualizer-types.js'
 import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
@@ -322,7 +322,7 @@ export class EthereumClientService {
 		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(request, requestAbortController))
 	}
 
-	public readonly prepareEthSimulateV1Input = async (simulationInput: SimulationInputWithOverrides, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
+	public readonly prepareEthSimulateV1Input = async (simulationInput: SimulatedInput, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
 		const simulationStateInput = simulationInput.value
 		const simulationOverrides = simulationInput.simulationOverrides
 		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
@@ -447,11 +447,11 @@ export class EthereumClientService {
 		}
 	}
 
-	public readonly ethSimulateV1Input = async (simulationInput: SimulationInputWithOverrides, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
+	public readonly ethSimulateV1Input = async (simulationInput: SimulatedInput, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
 		return (await this.prepareEthSimulateV1Input(simulationInput, blockNumber, requestAbortController)).request
 	}
 
-	public readonly simulatePrepared = async (simulationInput: SimulationInputWithOverrides, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
+	public readonly simulatePrepared = async (simulationInput: SimulatedInput, blockNumber: bigint, requestAbortController: AbortController | undefined) => {
 		const prepared = await this.prepareEthSimulateV1Input(simulationInput, blockNumber, requestAbortController)
 		return {
 			prepared,
@@ -459,7 +459,7 @@ export class EthereumClientService {
 		}
 	}
 
-	public readonly simulate = async (simulationInput: SimulationInputWithOverrides, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<EthSimulateV1Result> => {
+	public readonly simulate = async (simulationInput: SimulatedInput, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<EthSimulateV1Result> => {
 		const input = await this.ethSimulateV1Input(simulationInput, blockNumber, requestAbortController)
 		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(input))
 	}

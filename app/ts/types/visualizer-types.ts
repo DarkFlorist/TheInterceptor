@@ -273,12 +273,13 @@ export const ResolvedSimulationState = funtypes.Union(
 	})
 )
 
-export type ResolvedSimulationInput = funtypes.Static<typeof ResolvedSimulationInput>
-export type SimulationInputWithOverrides<TInput extends SimulationStateInputMinimalData = SimulationStateInputMinimalData> = {
+export type SimulatedInput<TInput extends SimulationStateInputMinimalData = SimulationStateInputMinimalData> = {
+	readonly kind: 'simulated'
 	readonly value: TInput
 	readonly simulationOverrides: StateOverrides
 }
-export type SimulationInput = SimulationInputWithOverrides<SimulationStateInput>
+export type SimulationInput = SimulatedInput<SimulationStateInput>
+export type ResolvedSimulationInput = PassthroughState | SimulationInput
 export const ResolvedSimulationInput = funtypes.Union(
 	PassthroughState,
 	funtypes.ReadonlyObject({
@@ -289,9 +290,9 @@ export const ResolvedSimulationInput = funtypes.Union(
 )
 
 export const toResolvedSimulationState = (value: SimulationState): ResolvedSimulationState => ({ kind: 'simulated', value })
-export const toResolvedSimulationInput = <TInput extends SimulationStateInputMinimalData>({ value, simulationOverrides }: SimulationInputWithOverrides<TInput>) => ({ kind: 'simulated' as const, value, simulationOverrides })
+export const createSimulatedInput = <TInput extends SimulationStateInputMinimalData>(value: TInput, simulationOverrides: StateOverrides): SimulatedInput<TInput> => ({ kind: 'simulated', value, simulationOverrides })
 // Persisted states keep their existing fields; execution entry points use one input envelope.
-export const getSimulationInputFromState = (state: Pick<SimulationState, 'simulationStateInput' | 'simulationOverrides'>): SimulationInput => ({ value: state.simulationStateInput, simulationOverrides: state.simulationOverrides })
+export const getSimulationInputFromState = (state: Pick<SimulationState, 'simulationStateInput' | 'simulationOverrides'>): SimulationInput => createSimulatedInput(state.simulationStateInput, state.simulationOverrides)
 
 type SuccessfulSimulationState = Extract<SimulationState, { success: true }>
 export type ExecutionSimulatedTransaction = Omit<SimulatedTransaction, 'tokenBalancesAfter'>

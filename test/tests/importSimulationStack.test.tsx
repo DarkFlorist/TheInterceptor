@@ -9,7 +9,7 @@ import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
-import type { SimulationInputWithOverrides } from '../../app/ts/types/visualizer-types.js'
+import type { SimulatedInput } from '../../app/ts/types/visualizer-types.js'
 
 const storageState: Record<string, unknown> = {}
 let runtimeSendMessage = async (_message: unknown) => undefined
@@ -302,10 +302,10 @@ describe('import simulation stack', () => {
 		const safeExport = createSafeSimulationExportPayload()
 		storageState.interceptorTransactionStack = InterceptorTransactionStack.serialize(safeExport.interceptorSimulateStack)
 		storageState.simulationMode = true
-		let exportedSimulationInput: SimulationInputWithOverrides | undefined
+		let exportedSimulationInput: SimulatedInput | undefined
 		const ethereum = {
 			async getBlockNumber() { return 1n },
-			async ethSimulateV1Input(simulationInput: SimulationInputWithOverrides) {
+			async ethSimulateV1Input(simulationInput: SimulatedInput) {
 				exportedSimulationInput = simulationInput
 				return { method: 'eth_simulateV1' as const, params: [{ blockStateCalls: [], traceTransfers: true, validation: true }, 'latest' as const] }
 			},
@@ -317,13 +317,14 @@ describe('import simulation stack', () => {
 		if (!reply.ok) throw new Error(reply.message)
 		const exported = InterceptorSimulationExport.parse(JSON.parse(reply.ethSimulateV1InputString))
 		assert.deepEqual(exported.interceptorSimulateStack.operations, [])
-		assert.deepEqual(exportedSimulationInput, { value: [], simulationOverrides: {} })
+		assert.deepEqual(exportedSimulationInput, { kind: 'simulated', value: [], simulationOverrides: {} })
 
 		const { getSettings, setDelegateClearingEnabled } = await import('../../app/ts/background/settings.js')
 		const settings = await getSettings()
 		await setDelegateClearingEnabled(settings.activeSimulationAddress, settings.activeRpcNetwork.chainId, true)
 		await modules.requestInterceptorSimulationInput(ethereum as never)
 		assert.deepEqual(exportedSimulationInput, {
+			kind: 'simulated',
 			value: [],
 			simulationOverrides: { [addressString(settings.activeSimulationAddress)]: { code: new Uint8Array() } },
 		})
@@ -337,10 +338,10 @@ describe('import simulation stack', () => {
 		const { getSettings, setDelegateClearingEnabled } = await import('../../app/ts/background/settings.js')
 		const settings = await getSettings()
 		await setDelegateClearingEnabled(settings.activeSimulationAddress, settings.activeRpcNetwork.chainId, true)
-		let exportedSimulationInput: SimulationInputWithOverrides | undefined
+		let exportedSimulationInput: SimulatedInput | undefined
 		const ethereum = {
 			async getBlockNumber() { return 1n },
-			async ethSimulateV1Input(simulationInput: SimulationInputWithOverrides) {
+			async ethSimulateV1Input(simulationInput: SimulatedInput) {
 				exportedSimulationInput = simulationInput
 				return { method: 'eth_simulateV1' as const, params: [{ blockStateCalls: [], traceTransfers: true, validation: true }, 'latest' as const] }
 			},
