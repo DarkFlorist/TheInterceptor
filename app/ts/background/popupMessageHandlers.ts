@@ -59,7 +59,7 @@ export { exportSettings, importSettings, setNewRpcList, settingsOpened } from '.
 export { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, disableInterceptor, reloadConnectedTabs, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from './popupMessageHandlers/websiteAccess.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
 import { reloadConnectedTabs } from './popupMessageHandlers/websiteAccess.js'
-import { updateWebsiteAccessAndContentScriptInjectionStrategy } from '../utils/contentScriptsUpdating.js'
+import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
 import { getConfiguredSigningSafeForChain } from './signingAddressSelection.js'
 
 type TimestampedPopupVisualisation = {
@@ -416,8 +416,7 @@ export async function setSafeSimulationSigner(
 }
 
 export async function changeInterceptorAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, accessChange: ChangeInterceptorAccess) {
-	const interceptorDisabledStateChanged = accessChange.data.some((change) => change.newEntry.interceptorDisabled !== change.oldEntry.interceptorDisabled)
-	await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => {
+	const disabledSitesChanged = await updateWebsiteAccessAndContentScriptInjectionStrategy((previousAccess) => {
 		const withEntriesRemoved = previousAccess.filter((acc) => accessChange.data.find((change) => change.newEntry.website.websiteOrigin === acc.website.websiteOrigin)?.removed !== true)
 		return withEntriesRemoved.map((entry) => {
 			const changeForEntry = accessChange.data.find((change) => change.newEntry.website.websiteOrigin === entry.website.websiteOrigin)
@@ -426,7 +425,7 @@ export async function changeInterceptorAccess(simulationServicesOwner: Simulatio
 		})
 	})
 
-	if (interceptorDisabledStateChanged) await reloadConnectedTabs(websiteTabConnections)
+	if (disabledSitesChanged) await reloadConnectedTabs(websiteTabConnections)
 
 	await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
 	await sendPopupMessageToOpenWindows({ method: 'popup_interceptor_access_changed' })

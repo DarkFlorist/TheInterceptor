@@ -1,4 +1,4 @@
-import { getSettings, updateWebsiteAccess } from '../background/settings.js'
+import { getSettings } from '../background/settings.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
@@ -108,21 +108,4 @@ export const updateContentScriptInjectionStrategyManifestV2 = async () => {
 export const updateContentScriptInjectionStrategy = async () => {
 	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
 	else await updateContentScriptInjectionStrategyManifestV2()
-}
-
-function haveSameDisabledSites(previousWebsiteAccess: WebsiteAccessArray, nextWebsiteAccess: WebsiteAccessArray) {
-	const previousDisabledSites = new Set(getInterceptorDisabledSites(previousWebsiteAccess))
-	const nextDisabledSites = new Set(getInterceptorDisabledSites(nextWebsiteAccess))
-	return previousDisabledSites.size === nextDisabledSites.size && [...previousDisabledSites].every((origin) => nextDisabledSites.has(origin))
-}
-
-export async function updateWebsiteAccessAndContentScriptInjectionStrategy(update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray) {
-	let disabledSitesChanged = false
-	await updateWebsiteAccess((previousWebsiteAccess) => {
-		const nextWebsiteAccess = update(previousWebsiteAccess)
-		disabledSitesChanged = !haveSameDisabledSites(previousWebsiteAccess, nextWebsiteAccess)
-		return nextWebsiteAccess
-	})
-	if (disabledSitesChanged) await updateContentScriptInjectionStrategy()
-	return disabledSitesChanged
 }

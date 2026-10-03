@@ -2,7 +2,6 @@ import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.
 import type { AllowOrPreventAddressAccessForWebsite, BlockOrAllowExternalRequests, DisableInterceptor, RemoveWebsiteAccess, RemoveWebsiteAddressAccess, RetrieveWebsiteAccess } from '../../types/interceptor-messages.js'
 import type { EthereumAddress } from '../../types/wire-types.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
-import { updateWebsiteAccessAndContentScriptInjectionStrategy } from '../../utils/contentScriptsUpdating.js'
 import { getErrorMessage, reportUnexpectedError } from '../../utils/errors.js'
 import { checkAndThrowRuntimeLastError } from '../../utils/requests.js'
 import { modifyObject } from '../../utils/typescript.js'
@@ -13,6 +12,7 @@ import { getSettings, updateWebsiteAccess } from '../settings.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAddressMetadataForAccess } from '../windows/interceptorAccess.js'
 import { searchWebsiteAccess } from '../websiteAccessSearch.js'
+import { updateWebsiteAccessAndContentScriptInjectionStrategy } from '../websiteAccessUpdating.js'
 
 const isMissingTabReloadError = (error: unknown) => {
 	const message = getErrorMessage(error)
