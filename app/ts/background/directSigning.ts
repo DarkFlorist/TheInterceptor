@@ -1,3 +1,4 @@
+import { assertSigningWalletIdentity } from '../signing/publicAccountIdentity.js'
 import { signingOperationError } from '../signing/signingOperationError.js'
 import { addressString, bytes32String } from '../utils/bigint.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -45,6 +46,7 @@ async function findPendingSigningRequest(record: DirectSigningRecord) {
 }
 
 async function assertCurrentBinding(record: DirectSigningRecord) {
+	assertSigningWalletIdentity(record.binding.wallet)
 	const current = await getSigningWalletBinding(record.binding.wallet.address)
 	if (current?.revision !== record.binding.revision) throw signingOperationError('Signing wallet changed. Cancel this request and review a new request with the current wallet.')
 	const pending = await findPendingSigningRequest(record)
@@ -99,6 +101,7 @@ async function prepareTransaction(ethereum: EthereumClientService, request: Send
 export async function openDirectSigning(ethereum: EthereumClientService, prices: TokenPriceService, pending: PendingTransactionOrSignableMessage, request: SendTransactionParams | SignMessageParams) {
 	return await signingStateLock.execute(async () => {
 		if (pending.simulationMode || pending.signingWalletBinding === undefined || pending.signingWalletBinding.wallet.type === 'browser') throw signingOperationError('This request is not bound to a direct signing wallet')
+		assertSigningWalletIdentity(pending.signingWalletBinding.wallet)
 		if (pending.signingChainId !== ethereum.getChainId()) throw signingOperationError('Signing network changed. Return to the request’s original network before continuing.')
 		const existing = (await readDirectSigningRecords()).find((record) => doesUniqueRequestIdentifiersMatch(record.request, pending.uniqueRequestIdentifier))
 		let record = existing

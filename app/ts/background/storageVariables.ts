@@ -1,3 +1,4 @@
+import { assertSigningWalletIdentity } from '../signing/publicAccountIdentity.js'
 import { signingOperationError } from '../signing/signingOperationError.js'
 import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
@@ -335,6 +336,7 @@ export async function saveAddressSigningWallet(address: bigint, wallet: SigningW
 	if (savedWallet !== undefined) {
 		if (!SigningWallet.safeSerialize(savedWallet).success) throw signingOperationError('Invalid signing wallet public account')
 		if (savedWallet.address !== address) throw signingOperationError('Signing wallet does not match this address')
+		assertSigningWalletIdentity(savedWallet)
 	}
 	return await userAddressBookEntriesSemaphore.execute(async () => {
 		const [entries, storedBindings] = await Promise.all([getUserAddressBookEntries(), readSigningWalletBindings()])
@@ -369,16 +371,25 @@ export async function saveSafeSigningAccounts(chainId: bigint, address: bigint, 
 
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
 	await userAddressBookEntriesSemaphore.execute(async () => {
+		await browserStorageLocalSet({ userAddressBookEntriesV3: updateFunc(await getUserAddressBookEntries()) })
+	})
+}
+
+/** Explicit identity-changing edits prune orphaned and Safe-address bindings in the same transaction. */
+export async function updateAddressBookAndReconcileSigningWallets(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
+	await userAddressBookEntriesSemaphore.execute(async () => {
 		const entries = await getUserAddressBookEntries()
 		const nextEntries = updateFunc(entries)
 		const bindings = await readSigningWalletBindings()
 		const previouslySupportedBindings = reconcileSigningWalletBindings(entries, bindings)
-		return await browserStorageLocalSet({ userAddressBookEntriesV3: nextEntries, ...(bindings.length === 0 ? {} : { signingWalletBindings: reconcileSigningWalletBindings(nextEntries, previouslySupportedBindings) }) })
+		const nextBindings = reconcileSigningWalletBindings(nextEntries, previouslySupportedBindings)
+		return await browserStorageLocalSet({ userAddressBookEntriesV3: nextEntries, ...(nextBindings.length === bindings.length ? {} : { signingWalletBindings: nextBindings }) })
 	})
 }
 
 export async function replaceAddressBookAndSigningWalletBindings(entriesOrUpdate: AddressBookEntries | ((previous: AddressBookEntries) => AddressBookEntries), bindings: SigningWalletBindings) {
 	if (!SigningWalletBindings.safeSerialize(bindings).success) throw new Error('Invalid imported signing wallet bindings')
+	for (const binding of bindings) assertSigningWalletIdentity(binding.wallet)
 	await userAddressBookEntriesSemaphore.execute(async () => {
 		const entries = typeof entriesOrUpdate === 'function' ? entriesOrUpdate(await getUserAddressBookEntries()) : entriesOrUpdate
 		if (reconcileSigningWalletBindings(entries, bindings).length !== bindings.length) throw new Error('Imported signing wallets must belong to ordinary addresses in the imported address book')
@@ -395,7 +406,7 @@ export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: 
 }
 
 export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry) {
-	await updateUserAddressBookEntries((entries) => {
+	await updateAddressBookAndReconcileSigningWallets((entries) => {
 		const existingEntry = entries.find((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))
 		return existingEntry !== undefined ? entries : entries.concat(newEntry)
 	})

@@ -2,7 +2,7 @@ import { hmac } from '@noble/hashes/hmac'
 import { sha512 } from '@noble/hashes/sha512'
 import { concatBytes } from '@noble/hashes/utils'
 import { secp256k1 } from '@noble/curves/secp256k1'
-import { addr } from 'micro-eth-signer'
+import { publicKeyAddress } from './publicAccountIdentity.js'
 import { bytesFromHex, bytesToHex, ensureHex, getAddress, type Hex } from '../utils/ethereumBytes.js'
 import { decodeAirGapCbor, encodeAirGapCbor, type AirGapCbor } from './airgapCbor.js'
 import { parseDerivationPath } from '../utils/derivationPath.js'
@@ -72,7 +72,7 @@ function importHdKey(value: AirGapCbor, masterFingerprint: number | undefined, c
 		publicKey = publicChild(change.publicKey, change.chainCode, childIndex).publicKey
 		derivationPath += `/0/${ childIndex }`
 	} else if (components[6] !== 0n || components[7] !== false || components[9] !== false) throw new Error('Unsupported AirGap Ethereum change or address path')
-	return Object.freeze({ address: getAddress(addr.fromPublicKey(publicKey)), publicKey: bytesToHex(publicKey), derivationPath, sourceFingerprint })
+	return Object.freeze({ address: publicKeyAddress(bytesToHex(publicKey)), publicKey: bytesToHex(publicKey), derivationPath, sourceFingerprint })
 }
 
 export function importAirGapAccounts(type: 'crypto-hdkey' | 'crypto-account', cbor: Uint8Array, childIndex = 0): readonly AirGapPublicAccount[] {
@@ -102,7 +102,7 @@ function requestIdBytes(requestId: string) {
 
 export function encodeAirGapSigningRequest(account: AirGapPublicAccount, payload: DirectPayload, chainId: bigint, requestId: string): Uint8Array {
 	if (chainId < 1n || chainId > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('Chain ID exceeds AirGap protocol interoperability limits')
-	if (getAddress(account.address) !== getAddress(payload.expectedAddress) || getAddress(addr.fromPublicKey(bytesFromHex(account.publicKey))) !== getAddress(account.address)) throw new Error('AirGap public account does not match the request')
+	if (getAddress(account.address) !== getAddress(payload.expectedAddress) || publicKeyAddress(account.publicKey) !== getAddress(account.address)) throw new Error('AirGap public account does not match the request')
 	const sourceFingerprint = fingerprint(BigInt(account.sourceFingerprint))
 	let data: Uint8Array
 	let dataType: bigint

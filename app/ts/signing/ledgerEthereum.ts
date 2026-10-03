@@ -1,4 +1,4 @@
-import { addr } from 'micro-eth-signer'
+import { publicKeyAddress } from './publicAccountIdentity.js'
 import { concatBytes } from '@noble/hashes/utils'
 import { bytesFromHex, bytesToHex, getAddress, type Hex } from '../utils/ethereumBytes.js'
 import { assembleSignedTransaction, preparePersonalSigningPayload, prepareTransactionSigningPayload, prepareTypedDataSigningPayload, verifyPersonalSigningResponse, verifyTypedDataSigningResponse, type PersonalSigningPayload, type TransactionSigningPayload, type TypedDataSigningPayload } from './exactPayload.js'
@@ -21,7 +21,7 @@ export async function readLedgerAccount(exchange: LedgerExchange, derivationPath
 	if (response.length !== 107 || response[0] !== 65 || response[1] !== 4 || response[66] !== 40) throw new Error('Malformed Ledger public-account response')
 	const publicKey = bytesToHex(response.slice(1, 66))
 	const address = getAddress(`0x${ new TextDecoder('ascii', { fatal: true }).decode(response.slice(67)) }`)
-	if (getAddress(addr.fromPublicKey(bytesFromHex(publicKey))) !== address) throw new Error('Ledger address does not match its public key')
+	if (publicKeyAddress(publicKey) !== address) throw new Error('Ledger address does not match its public key')
 	if (expectedAddress !== undefined && address !== getAddress(expectedAddress)) throw new Error('This Ledger does not contain the expected account. Connect the saved wallet and use its saved derivation path.')
 	return Object.freeze({ address, publicKey, derivationPath })
 }

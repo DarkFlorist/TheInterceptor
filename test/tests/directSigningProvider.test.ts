@@ -175,3 +175,17 @@ for (const scenario of [
 		}
 	}
 })
+
+test('direct signing admission rejects a structurally valid persisted key/address mismatch', async () => {
+	installBrowserMock()
+	await loadModules()
+	const { resolveSigningRequest } = await import('../../app/ts/background/signingRequestResolver.js')
+	const privateKey = '0x0000000000000000000000000000000000000000000000000000000000000001'
+	await browserStorageLocalSet({
+		userAddressBookEntriesV3: [{ type: 'contact', address: 4n, name: 'Invalid identity', entrySource: 'User' }],
+		signingWalletBindings: [{ wallet: { type: 'ledger', address: 4n, label: 'Invalid', publicKey: bytesToHex(secp256k1.getPublicKey(bytesFromHex(privateKey), false)), derivationPath: 'm/44\'/60\'/0\'/0/0' }, revision: crypto.randomUUID() }],
+	})
+	const socket = { tabId: 1, connectionName: 0n }
+	const request = { method: 'personal_sign', params: ['0x01', '0x0000000000000000000000000000000000000004'], interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket } }
+	await expect(resolveSigningRequest(new Map(), socket, request, undefined, { ...await getSettings(), simulationMode: false }, 4n, undefined, false, false, undefined)).rejects.toThrow('public key')
+})

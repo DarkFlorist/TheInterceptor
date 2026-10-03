@@ -1,3 +1,4 @@
+import { assertSigningWalletIdentity } from '../signing/publicAccountIdentity.js'
 import { getSafeModeRpcPolicyReply } from '../safe/safeRequestPolicy.js'
 import type { ConfirmationRequest } from '../types/confirmationRequest.js'
 import { getSigningMethodError } from '../signing/backend.js'
@@ -34,6 +35,7 @@ export async function resolveSigningRequest(
 			|| parsedRequest.method === 'wallet_getCapabilities' && parsedRequest.params[0] === activeAddress && !safeSigningMode && activeSafeSigner === undefined
 	const needsBinding = !settings.simulationMode && (isSigningOperation(request.method) || walletForwardingRequested)
 	const binding = !needsBinding || activeAddress === undefined ? undefined : await getSigningWalletBinding(activeSafeSigner ?? activeAddress)
+	if (binding !== undefined) assertSigningWalletIdentity(binding.wallet)
 	const directWallet = binding !== undefined && binding.wallet.type !== 'browser'
 	if (directWallet && request.method === 'eth_signTypedData_v4' && 'params' in request && Array.isArray(request.params) && typeof request.params[1] === 'string') parseDirectSigningTypedData(request.params[1])
 	const forwardToSigner = !settings.simulationMode && !directWallet && !request.usingInterceptorWithoutSigner
