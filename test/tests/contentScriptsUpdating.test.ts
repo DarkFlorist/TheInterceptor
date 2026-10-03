@@ -416,6 +416,71 @@ describe('content script injection strategy', () => {
 		assert.deepEqual(getReloadedTabs(), [42, 42])
 	})
 
+	test('failed settings import rollback completes before a queued compatibility update', async () => {
+		const registrationError = new Error('delayed imported registration refresh failed')
+		const registrationStarted = createDeferred()
+		const releaseRegistration = createDeferred()
+		const { getRegisteredContentScripts, getStorageState } = installBrowserMock({
+			metamaskCompatibilityMode: false,
+			registerErrors: [registrationError],
+			registerWait: releaseRegistration.promise,
+			onRegister: () => registrationStarted.resolve(),
+			registeredContentScriptIds: ['inpage', 'inpage2'],
+		})
+		const { updateContentScriptInjectionConfigurationAndReloadTabsIfChanged } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
+		const { persistMetamaskCompatibilityMode, withSettingsImportRollback } = await import('../../app/ts/background/settings.js')
+		const { setMetamaskCompatibilityMode } = await import('../../app/ts/background/metamaskCompatibilityMode.js')
+
+		await withSilencedConsole(async () => {
+			const failedImport = updateContentScriptInjectionConfigurationAndReloadTabsIfChanged(
+				new Map(),
+				async () => await persistMetamaskCompatibilityMode(true),
+				withSettingsImportRollback,
+			)
+			await registrationStarted.promise
+			const queuedCompatibilityUpdate = setMetamaskCompatibilityMode(new Map(), true)
+			releaseRegistration.resolve()
+			await assert.rejects(failedImport, registrationError)
+			await queuedCompatibilityUpdate
+		})
+
+		assert.equal(getStorageState().metamaskCompatibilityMode, true)
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/metamaskCompatibilityMode.js', '/inpage/js/inpage.js'])
+	})
+
+	test('failed settings import rollback completes before a queued disabled-site update', async () => {
+		const registrationError = new Error('delayed imported registration refresh failed')
+		const registrationStarted = createDeferred()
+		const releaseRegistration = createDeferred()
+		const { getRegisteredContentScripts, getStorageState } = installBrowserMock({
+			metamaskCompatibilityMode: false,
+			registerErrors: [registrationError],
+			registerWait: releaseRegistration.promise,
+			onRegister: () => registrationStarted.resolve(),
+			registeredContentScriptIds: ['inpage', 'inpage2'],
+			websiteAccess: [],
+		})
+		const { updateContentScriptInjectionConfigurationAndReloadTabsIfChanged } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
+		const { persistMetamaskCompatibilityMode, withSettingsImportRollback } = await import('../../app/ts/background/settings.js')
+		const { updateWebsiteAccessAndContentScriptInjectionStrategy } = await import('../../app/ts/background/websiteAccessUpdating.js')
+
+		await withSilencedConsole(async () => {
+			const failedImport = updateContentScriptInjectionConfigurationAndReloadTabsIfChanged(
+				new Map(),
+				async () => await persistMetamaskCompatibilityMode(true),
+				withSettingsImportRollback,
+			)
+			await registrationStarted.promise
+			const queuedWebsiteAccessUpdate = updateWebsiteAccessAndContentScriptInjectionStrategy(new Map(), () => disabledWebsiteAccess)
+			releaseRegistration.resolve()
+			await assert.rejects(failedImport, registrationError)
+			await queuedWebsiteAccessUpdate
+		})
+
+		assert.deepEqual(getStorageState().websiteAccess, disabledWebsiteAccess)
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.excludeMatches, ['*://*.disabled.test/*'])
+	})
+
 	test('website access changes use the shared injection refresh and connected-tab reload coordinator', async () => {
 		const { getRegisteredContentScripts, getReloadedTabs, getScriptingOperations } = installBrowserMock({
 			registeredContentScriptIds: ['inpage', 'inpage2'],

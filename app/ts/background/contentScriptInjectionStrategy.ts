@@ -8,6 +8,12 @@ import { getConnectedTabIdsToReload, reloadTabs } from './reloadConnectedTabs.js
 const contentScriptInjectionStrategySemaphore = new Semaphore(1)
 const contentScriptInjectionConfigurationSemaphore = new Semaphore(1)
 
+type ConfigurationUpdateTransaction = <T>(update: () => Promise<T>) => Promise<T>
+
+async function runConfigurationUpdate<T>(update: () => Promise<T>) {
+	return await update()
+}
+
 export async function refreshContentScriptInjectionStrategy(configuration?: ContentScriptInjectionConfigurationSnapshot) {
 	await contentScriptInjectionStrategySemaphore.execute(async () => {
 		const currentConfiguration = configuration ?? await getContentScriptInjectionConfiguration()
@@ -22,8 +28,8 @@ export async function refreshContentScriptInjectionStrategyAndReloadConnectedTab
 	await reloadTabs(tabIdsToReload)
 }
 
-export async function updateContentScriptInjectionConfigurationAndReloadTabsIfChanged<T>(websiteTabConnections: WebsiteTabConnections, update: () => Promise<T>) {
-	return await contentScriptInjectionConfigurationSemaphore.execute(async () => {
+export async function updateContentScriptInjectionConfigurationAndReloadTabsIfChanged<T>(websiteTabConnections: WebsiteTabConnections, update: () => Promise<T>, transaction: ConfigurationUpdateTransaction = runConfigurationUpdate) {
+	return await contentScriptInjectionConfigurationSemaphore.execute(async () => await transaction(async () => {
 		const configurationBeforeUpdate = await getContentScriptInjectionConfiguration()
 		try {
 			const result = await update()
@@ -39,5 +45,5 @@ export async function updateContentScriptInjectionConfigurationAndReloadTabsIfCh
 			}
 			throw error
 		}
-	})
+	}))
 }
