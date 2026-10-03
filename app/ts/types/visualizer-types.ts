@@ -203,7 +203,7 @@ export const SimulationStateInputMinimalDataBlock = funtypes.ReadonlyObject({
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockTimeManipulation: BlockTimeManipulation,
 	simulateWithZeroBaseFee: funtypes.Boolean,
-})
+}).And(funtypes.ReadonlyPartial({ delegateClearedAddress: EthereumAddress }))
 
 export type SimulationStateInputMinimalData = funtypes.Static<typeof SimulationStateInputMinimalData>
 export const SimulationStateInputMinimalData = funtypes.ReadonlyArray(SimulationStateInputMinimalDataBlock)

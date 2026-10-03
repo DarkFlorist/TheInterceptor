@@ -17,6 +17,7 @@ import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
 import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
+import { createDelegateClearingBlockState } from '../../utils/delegateClearingState.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
 	const stripped = signature.slice(2)
@@ -361,7 +362,7 @@ export class EthereumClientService {
 					if (index === 0) {
 						rpcBlocks.push({ ...inputBlock, transactions })
 					} else {
-						rpcBlocks.push({ transactions, stateOverrides: {}, signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: inputBlock.simulateWithZeroBaseFee })
+						rpcBlocks.push({ transactions, ...createDelegateClearingBlockState({}, inputBlock.delegateClearedAddress), signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: inputBlock.simulateWithZeroBaseFee })
 					}
 				}
 				preparedBlocks.push({ inputBlock, rpcBlockCount: splitted.length })

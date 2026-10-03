@@ -1,7 +1,7 @@
 import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { getCachedDelegation } from '../../app/ts/background/delegationSimulation.js'
+import { getCachedDelegation, invalidateCachedDelegation } from '../../app/ts/background/delegationSimulation.js'
 import { getCurrentSimulationInput } from '../../app/ts/background/simulationUpdating.js'
 import { changeSimulationMode, isDelegateClearingEnabled, setDelegateClearingEnabled, setMakeCurrentAddressRich } from '../../app/ts/background/settings.js'
 import { getSettings } from '../../app/ts/background/settings.js'
@@ -12,7 +12,7 @@ import { addressString } from '../../app/ts/utils/bigint.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
 import { EthSimulateV1Params } from '../../app/ts/types/ethSimulate-types.js'
 import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
-import { serialize } from '../../app/ts/types/wire-types.js'
+import { EthereumBlockHeader, serialize } from '../../app/ts/types/wire-types.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
 
 const activeAddress = 0x1234567890123456789012345678901234567890n
@@ -113,6 +113,19 @@ describe('delegate clearing in simulation', () => {
 		const rpcInput = serialize(EthSimulateV1Params, (await ethereum.prepareEthSimulateV1Input(capturedInput, 1n, undefined)).request)
 		assert.equal(rpcInput.params[0].blockStateCalls.length, 2)
 		for (const block of rpcInput.params[0].blockStateCalls) assert.equal(block.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
+		const parentBlock = EthereumBlockHeader.parse(parentBlockResponse.result)
+		if (parentBlock === null) throw new Error('Expected a parent block')
+		const firstBlock = capturedInput[0]
+		if (firstBlock === undefined) throw new Error('Expected the first simulation block')
+		const firstTransaction = transaction(1n)
+		const secondTransaction = transaction(2n)
+		const overfullInput = [{ ...firstBlock, transactions: [
+			{ ...firstTransaction, signedTransaction: { ...firstTransaction.signedTransaction, gas: parentBlock.gasLimit } },
+			{ ...secondTransaction, signedTransaction: { ...secondTransaction.signedTransaction, gas: parentBlock.gasLimit } },
+		] }]
+		const splitRpcInput = serialize(EthSimulateV1Params, (await ethereum.prepareEthSimulateV1Input(overfullInput, 1n, undefined)).request)
+		assert.equal(splitRpcInput.params[0].blockStateCalls.length, 2)
+		for (const block of splitRpcInput.params[0].blockStateCalls) assert.equal(block.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
 		const appended = appendTransactionsToInput(capturedInput, [transaction(3n)])
 		assert.equal(appended[2]?.delegateClearedAddress, activeAddress)
 		assert.deepEqual(appended[2]?.stateOverrides[addressString(activeAddress)]?.code, new Uint8Array())
@@ -169,6 +182,80 @@ describe('delegate clearing in simulation', () => {
 
 		await assert.rejects(getCachedDelegation(ethereum, address), /RPC unavailable/)
 		assert.equal(await getCachedDelegation(ethereum, address), undefined)
+		assert.equal(codeRequests, 2)
+	})
+
+	test('invalidates delegation results on a new block and drops an aborted lookup', async () => {
+		let codeRequests = 0
+		let releaseFirst: (code: string) => void = () => undefined
+		const firstResponse = new Promise<string>((resolve) => { releaseFirst = resolve })
+		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
+		const ethereum = new EthereumClientService({
+			rpcUrl: rpcEntry.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest(request) {
+				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
+				codeRequests += 1
+				return codeRequests === 1 ? await firstResponse : `0xef0100${ addressString(delegate).slice(2) }`
+			},
+		}, async () => undefined, async () => undefined, rpcEntry)
+		const abortController = new AbortController()
+		const abortedLookup = getCachedDelegation(ethereum, activeAddress, abortController)
+		abortController.abort(new Error('Refresh replaced'))
+		await assert.rejects(abortedLookup, /Refresh replaced/u)
+		releaseFirst('0x')
+		assert.equal(await getCachedDelegation(ethereum, activeAddress), delegate)
+		assert.equal(codeRequests, 2)
+		invalidateCachedDelegation(ethereum)
+		assert.equal(await getCachedDelegation(ethereum, activeAddress), delegate)
+		assert.equal(codeRequests, 3)
+	})
+
+	test('keeps a shared lookup alive when one waiting refresh is aborted', async () => {
+		let releaseLookup: (code: string) => void = () => undefined
+		const response = new Promise<string>((resolve) => { releaseLookup = resolve })
+		let codeRequests = 0
+		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
+		const ethereum = new EthereumClientService({
+			rpcUrl: rpcEntry.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest(request, abortController) {
+				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
+				if (abortController === undefined) throw new Error('Expected the shared lookup to be abortable')
+				codeRequests += 1
+				return await response
+			},
+		}, async () => undefined, async () => undefined, rpcEntry)
+		const abortController = new AbortController()
+		const aborted = getCachedDelegation(ethereum, activeAddress, abortController)
+		const surviving = getCachedDelegation(ethereum, activeAddress)
+		abortController.abort(new Error('Refresh replaced'))
+		await assert.rejects(aborted, /Refresh replaced/u)
+		releaseLookup(`0xef0100${ addressString(delegate).slice(2) }`)
+		assert.equal(await surviving, delegate)
+		assert.equal(await getCachedDelegation(ethereum, activeAddress), delegate)
+		assert.equal(codeRequests, 1)
+	})
+
+	test('discards an in-flight result when a new block invalidates the cache', async () => {
+		let releaseOldBlock: (code: string) => void = () => undefined
+		const oldBlockResponse = new Promise<string>((resolve) => { releaseOldBlock = resolve })
+		let codeRequests = 0
+		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
+		const ethereum = new EthereumClientService({
+			rpcUrl: rpcEntry.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest(request) {
+				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
+				codeRequests += 1
+				return codeRequests === 1 ? await oldBlockResponse : '0x'
+			},
+		}, async () => undefined, async () => undefined, rpcEntry)
+		const staleLookup = getCachedDelegation(ethereum, activeAddress)
+		invalidateCachedDelegation(ethereum)
+		releaseOldBlock(`0xef0100${ addressString(delegate).slice(2) }`)
+		await assert.rejects(staleLookup, /New Block Abort/u)
+		assert.equal(await getCachedDelegation(ethereum, activeAddress), undefined)
 		assert.equal(codeRequests, 2)
 	})
 })
