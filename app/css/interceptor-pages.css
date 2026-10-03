@@ -262,7 +262,6 @@ header:has(form[role='search']) h1 {
 
 .inline-card {
 	--bg-color: transparent;
-	--highlighted-inline-action-color: white;
 	--bg-inline-padding: 4px;
 	--bg-block-padding: 1px;
 	--image-size: 1em;
@@ -375,7 +374,7 @@ header:has(form[role='search']) h1 {
 				}
 
 				&:is(:is(:hover,:focus) > *) {
-					color: black;
+					color: var(--highlighted-inline-action-text-color);
 					background: var(--highlighted-inline-action-color);
 					outline: none;
 
@@ -512,8 +511,8 @@ header:has(form[role='search']) h1 {
 
 			&:hover, &:focus {
 				> span {
-					background: var(--white-color);
-					color: var(--black-color);
+					background: var(--highlighted-inline-action-color);
+					color: var(--highlighted-inline-action-text-color);
 
 					span { display: inline }
 					svg { display: none }
@@ -580,7 +579,7 @@ header:has(form[role='search']) h1 {
 
 .tooltip {
 	background: var(--tooltip-color);
-	color: var(--white-color);
+	color: var(--tooltip-text-color);
 	padding: 0.3125rem 0.6875rem;
 	border: 0 none;
 	border-radius: 4px;

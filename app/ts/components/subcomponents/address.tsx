@@ -135,7 +135,7 @@ export function ActiveAddressComponent(params: ActiveAddressParams) {
 		</div>
 		<div class = 'log-cell'>
 			<div class = 'media-right'>
-				<button class = 'button is-primary' disabled = { params.disableButton } onClick = { params.changeActiveAddress } >
+				<button class = 'button button--secondary' disabled = { params.disableButton } onClick = { params.changeActiveAddress } >
 					{ params.buttonText }
 				</button>
 			</div>

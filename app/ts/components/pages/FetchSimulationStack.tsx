@@ -249,7 +249,7 @@ export function FetchSimulationStack() {
 						</div>
 						<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
 							<AsyncActionButton
-								class = { 'button is-danger dialog-action-button' }
+								class = 'button button--secondary button-overflow dialog-action-button'
 								state = { rejectRequestState.value.state }
 								disabled = { allowPending }
 								text = { 'Don' + '\u0027' + 't allow' }
@@ -257,7 +257,7 @@ export function FetchSimulationStack() {
 								onClick = { rejectRequest }
 							/>
 							<AsyncActionButton
-								class = { 'button is-primary dialog-action-button' }
+								class = 'button is-primary button-overflow dialog-action-button dialog-action-button--confirm'
 								state = { allowRequestState.value.state }
 								disabled = { rejectPending }
 								text = 'Allow'

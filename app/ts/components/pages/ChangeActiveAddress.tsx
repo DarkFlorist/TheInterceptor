@@ -55,7 +55,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 									<div class = 'media-left'>
 										<figure class = 'image'>
 											{ getSignerLogo(param.signerName) === undefined ?
-												<div style = 'border: 1px solid white; width: 40px; height: 40px;'>
+												<div style = 'border: 1px solid var(--strong-hairline-color); width: 40px; height: 40px;'>
 													<p class = 'title' style = 'text-align: center'> S </p>
 												</div>
 												: <img src = { getSignerLogo(param.signerName) } width = '40' height = '40' style = 'max-width: 40px; max-height: 40px'/>

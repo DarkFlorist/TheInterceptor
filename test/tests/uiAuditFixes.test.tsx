@@ -44,8 +44,9 @@ describe('UI audit fixes', () => {
 		const appCss = await readInterceptorAppCss()
 		const frameworkCss = await Bun.file('app/css/interceptor-framework.css').text()
 		const pageCss = await Bun.file('app/css/interceptor-pages.css').text()
-		assert.match(css, /--accent-color:\s*#[0-9a-fA-F]{6}/)
-		assert.match(css, /--danger-color:\s*#[0-9a-fA-F]{6}/)
+		// Text and outline colours are themed, so each one carries a light and a dark value.
+		assert.match(css, /--accent-color:\s*light-dark\(#[0-9a-fA-F]{6}, #[0-9a-fA-F]{6}\)/)
+		assert.match(css, /--danger-color:\s*light-dark\(#[0-9a-fA-F]{6}, #[0-9a-fA-F]{6}\)/)
 		const deprecatedTokens = [
 			'primary-color',
 			'highlighted-primary-color',
@@ -155,17 +156,29 @@ describe('UI audit fixes', () => {
 
 	test('keeps secondary actions readable and visually lighter than the primary decisions', async () => {
 		const confirmSource = await Bun.file('app/ts/components/pages/ConfirmTransaction.tsx').text()
-		assert.match(confirmSource, /class = 'button button--secondary button-overflow dialog-action-button'[\s\S]*?text = 'Add unsigned'/)
+		assert.match(confirmSource, /class = 'button button--secondary button-overflow dialog-action-button dialog-action-button--unsigned'[\s\S]*?text = 'Add unsigned'/)
+		// Every approve/reject dialog uses the same hierarchy: a quiet reject and a single primary confirm.
+		for (const dialogPath of ['app/ts/components/pages/ChangeChain.tsx', 'app/ts/components/pages/FetchSimulationStack.tsx']) {
+			const dialogSource = await Bun.file(dialogPath).text()
+			assert.match(dialogSource, /class = 'button button--secondary button-overflow dialog-action-button'/, dialogPath)
+			assert.match(dialogSource, /class = 'button is-primary button-overflow dialog-action-button dialog-action-button--confirm'/, dialogPath)
+		}
+		for (const sourcePath of ['app/ts/components/pages/ChangeChain.tsx', 'app/ts/components/pages/FetchSimulationStack.tsx', 'app/ts/components/pages/WatchAsset.tsx', 'app/ts/components/pages/InterceptorAccessList.tsx', 'app/ts/AddressBook.tsx']) {
+			const source = await Bun.file(sourcePath).text()
+			assert.doesNotMatch(source, /'button is-danger|is-warning is-danger|'button is-link/, sourcePath)
+			assert.doesNotMatch(source, /is-danger[^']*'[^>]*>Cancel</, sourcePath)
+		}
 		const homeSource = await Bun.file('app/ts/components/pages/Home.tsx').text()
 		assert.match(homeSource, /class = \{ `button \$\{ param\.simulationMode\.value \? 'is-primary' : 'button--secondary' \}` \}/)
 		assert.match(homeSource, /class = \{ `button \$\{ param\.simulationMode\.value \? 'button--secondary' : 'is-primary' \}` \}/)
 
 		const css = await readInterceptorAppCss()
-		assert.match(css, /\.button\.button--secondary\s*\{[\s\S]*?border:\s*1px solid var\(--accent-color\);[\s\S]*?color:\s*var\(--text-color\);/)
-		assert.match(css, /\.button\.button--secondary:hover, \.button\.button--secondary:focus, \.button\.button--secondary:active\s*\{[\s\S]*?background-color:\s*var\(--primary-action-color\);/)
-		assert.match(css, /\.button\.button--secondary\[disabled\]\s*\{[\s\S]*?border-color:\s*var\(--disabled-action-color\);[\s\S]*?color:\s*var\(--text-color\);/)
+		// Secondary actions sit on a raised neutral surface with a hairline border, so only the primary decision carries the action colour.
+		assert.match(css, /\.button\.button--secondary\s*\{[\s\S]*?background-color:\s*var\(--surface-raised-color\);[\s\S]*?border:\s*1px solid var\(--strong-hairline-color\);[\s\S]*?color:\s*var\(--text-color\);/)
+		assert.match(css, /\.button\.button--secondary:hover, \.button\.button--secondary:focus, \.button\.button--secondary:active\s*\{[\s\S]*?background-color:\s*var\(--surface-highest-color\);[\s\S]*?color:\s*var\(--text-color\);/)
+		assert.match(css, /\.button\.button--secondary\[disabled\]\s*\{[\s\S]*?border-color:\s*var\(--strong-hairline-color\);[\s\S]*?color:\s*var\(--text-color\);/)
 		// The secondary Safe action wraps onto its own compact row below the two decisions in narrow popups.
-		assert.match(css, /@container \(max-width: 42rem\)[\s\S]*?\.confirmation-action-buttons--safe > \.button--secondary\s*\{[\s\S]*?flex:\s*1 1 100%;[\s\S]*?order:\s*1;/)
+		assert.match(css, /@container \(max-width: 42rem\)[\s\S]*?\.confirmation-action-buttons--safe > \.dialog-action-button--unsigned\s*\{[\s\S]*?flex:\s*1 1 100%;[\s\S]*?order:\s*1;/)
 		assert.match(css, /@container \(max-width: 24rem\)[\s\S]*?\.confirmation-action-buttons--safe\s*\{[\s\S]*?flex-direction:\s*column;/)
 	})
 

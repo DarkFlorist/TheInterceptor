@@ -26,6 +26,20 @@ export const BroomIcon = () => {
 	</svg>
 }
 
+export const WarningSignIcon = () => {
+	return <svg aria-hidden = 'true' width = '1em' height = '1em' viewBox = '0 0 24 24' fill = 'none' xmlns = 'http://www.w3.org/2000/svg'>
+		<circle cx = '12' cy = '12' r = '10' stroke = 'currentColor' stroke-width = '1.8'/>
+		<path d = 'M12 6.5V13.5' stroke = 'currentColor' stroke-width = '2.2' stroke-linecap = 'round'/>
+		<circle cx = '12' cy = '17' r = '1.3' fill = 'currentColor'/>
+	</svg>
+}
+
+export const CheckMarkIcon = () => {
+	return <svg aria-hidden = 'true' width = '1em' height = '1em' viewBox = '0 0 16 16' fill = 'none' xmlns = 'http://www.w3.org/2000/svg'>
+		<path d = 'M2.5 8.5L6.2 12L13.5 4.5' stroke = 'currentColor' stroke-width = '2' stroke-linecap = 'round' stroke-linejoin = 'round'/>
+	</svg>
+}
+
 export const XMarkIcon = () => {
 	return <svg width = '1em' height = '1em' viewBox = '0 0 16 16' fill = 'none' xmlns = 'http://www.w3.org/2000/svg'>
 		<path d = 'M3 3L13 13M13 3L3 13' stroke = 'currentColor' stroke-width = '2' stroke-linecap = 'round'/>

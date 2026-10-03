@@ -127,7 +127,7 @@ function ImportExport() {
 			: <></> }
 		<div class = 'popup-button-row'>
 			<div class = 'settings-import-export-actions'>
-				<label class = { `button is-primary is-danger settings-import-export-button ${ importSettingsState.value.state === 'pending' ? 'is-loading' : '' }` }>
+				<label class = { `button button--secondary settings-import-export-button ${ importSettingsState.value.state === 'pending' ? 'is-loading' : '' }` }>
 					{ importSettingsState.value.state === 'pending' ? 'Importing settings...' : 'Import settings' }
 					<input type = 'file' accept = '.json' onInput = { importSettings } disabled = { importSettingsState.value.state === 'pending' } style = 'position: absolute; width: 100%; height: 100%; opacity: 0;' />
 				</label>

@@ -31,10 +31,11 @@ import type { VisualizedPersonalSignRequest } from '../../types/personal-message
 import { identifySignature } from './identifySignature.js'
 import { Collapsible } from '../subcomponents/Collapsible.js'
 import { EnsEventsExplainer, getVisibleEnsEvents } from './customExplainers/EnsEventExplainer.js'
+import { isUnlimitedErc20Approval } from '../../utils/erc20.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
-	textColor: string,
+	positiveColor: string,
 	negativeColor: string,
 	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack
@@ -49,7 +50,7 @@ function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 	if ( param.erc20TokenBalanceChanges.length === 0 ) return <></>
 	return <>
 		{ Array.from(param.erc20TokenBalanceChanges).map((erc20TokenBalanceChange, index) => {
-			const style =  { color: erc20TokenBalanceChange.changeAmount > 0n ? param.textColor : param.negativeColor }
+			const style =  { color: erc20TokenBalanceChange.changeAmount > 0n ? param.positiveColor : param.negativeColor }
 			return <div key = { `${ erc20TokenBalanceChange.address.toString() }-${ index }-${ erc20TokenBalanceChange.changeAmount.toString() }` } class = 'vertical-center' style = 'display: flex'>
 				<div class = { param.isImportant.value ? `box token-box ${ erc20TokenBalanceChange.changeAmount < 0n ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex' >
 					<TokenWithAmount
@@ -81,38 +82,38 @@ function Erc20BalanceChange(param: Erc20BalanceChangeParams) {
 type Erc20ApprovalChangeParams = Erc20TokenEntry & {
 	change: bigint,
 	entryToApprove: AddressBookEntry,
-	textColor: string,
+	positiveColor: string,
 	negativeColor: string,
 	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack,
 }
 
 function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
-	const textColor = param.change > 0 ? param.negativeColor : param.textColor
+	const approvalColor = param.change > 0 ? param.negativeColor : param.positiveColor
 
 	return <div class = { param.isImportant.value ? `box token-box ${ param.change > 0 ? 'negative-box' : 'positive-box' }`: '' } style = 'display: inline-flex'>
 		<table class = 'log-table'>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis' style = { `color: ${ textColor };` }> Allow</p>
+				<p class = 'ellipsis' style = { `color: ${ approvalColor };` }> Allow</p>
 			</div>
 			<div class = 'log-cell'>
 				<SmallAddress
 					addressBookEntry = { param.entryToApprove }
-					textColor = { textColor }
+					textColor = { approvalColor }
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 			</div>
 			<div class = 'log-cell'>
-				<p class = 'ellipsis' style = { `color: ${ textColor };` }> to spend </p>
+				<p class = 'ellipsis' style = { `color: ${ approvalColor };` }> to spend </p>
 			</div>
 			<div class = 'log-cell' style = 'justify-content: right;'>
-				{ param.change > 2n ** 100n ?
-					<p class = 'ellipsis' style = { `color: ${ textColor };` }> <b>ALL</b></p>
+				{ isUnlimitedErc20Approval(param.change) ?
+					<p class = 'ellipsis' style = { `color: ${ approvalColor };` }> <b>ALL</b></p>
 					:
 					<TokenAmount
 						tokenEntry = { param }
 						amount = { param.change }
-						style = { { color: textColor } }
+						style = { { color: approvalColor } }
 						fontSize = 'normal'
 					/>
 				}
@@ -120,7 +121,7 @@ function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 			<div class = 'log-cell'>
 				<TokenSymbol
 					tokenEntry = { param }
-					style = { { color: textColor } }
+					style = { { color: approvalColor } }
 					useFullTokenName = { true }
 					renameAddressCallBack = { param.renameAddressCallBack }
 					fontSize = 'normal'
@@ -132,7 +133,7 @@ function Erc20ApprovalChange(param: Erc20ApprovalChangeParams) {
 
 type Erc20ApprovalChangesParams = {
 	erc20TokenApprovalChanges: ERC20TokenApprovalChange[]
-	textColor: string,
+	positiveColor: string,
 	negativeColor: string,
 	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack,
@@ -148,7 +149,7 @@ export function Erc20ApprovalChanges(param: Erc20ApprovalChangesParams ) {
 					entryToApprove: entryToApprove,
 					change: entryToApprove.change,
 					address: token.address,
-					textColor: param.textColor,
+					positiveColor: param.positiveColor,
 					negativeColor: param.negativeColor,
 					isImportant: param.isImportant,
 					renameAddressCallBack: param.renameAddressCallBack,
@@ -162,7 +163,7 @@ type Erc721TokenBalanceChange = (Erc721Entry & { received: boolean, tokenId: big
 
 type Erc721TokenChangesParams = {
 	Erc721TokenBalanceChanges: Erc721TokenBalanceChange[],
-	textColor: string,
+	positiveColor: string,
 	negativeColor: string,
 	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack,
@@ -174,13 +175,13 @@ function Erc721TokenChanges(param: Erc721TokenChangesParams ) {
 		{ param.Erc721TokenBalanceChanges.map((tokenChange) => (
 			<div key = { `${ tokenChange.address.toString() }-${ tokenChange.tokenId.toString() }` } class = 'vertical-center' style = 'display: flex'>
 				<div class = { param.isImportant.value ? `box token-box ${ !tokenChange.received ? 'negative-box' : 'positive-box' }`: '' } style = 'display: flex'>
-					<p class = 'noselect nopointer' style = { `color: ${ param.textColor }; align-items: center` }>
+					<p class = 'noselect nopointer' style = { `color: ${ tokenChange.received ? param.positiveColor : param.negativeColor }; align-items: center` }>
 						&nbsp;{ `${ tokenChange.received ? '+' : '-' }` }&nbsp;
 					</p>
 					<TokenOrEth
 						tokenEntry = { tokenChange }
 						tokenId = { tokenChange.tokenId }
-						style = { { color: param.textColor } }
+						style = { { color: tokenChange.received ? param.positiveColor : param.negativeColor } }
 						useFullTokenName = { true }
 						showSign = { true }
 						renameAddressCallBack = { param.renameAddressCallBack }
@@ -197,7 +198,7 @@ export type Erc1155OperatorChange = (Erc1155Entry & { operator: AddressBookEntry
 
 type Erc721Or1155OperatorChangesParams = {
 	erc721or1155OperatorChanges: Erc721and1155OperatorChange[]
-	textColor: string,
+	positiveColor: string,
 	negativeColor: string,
 	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack,
@@ -240,13 +241,13 @@ export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesPa
 					<div class = { param.isImportant.value ? 'box token-box positive-box': '' } >
 						<table class = 'log-table'>
 							<div class = 'log-cell'>
-								<p class = 'ellipsis' style = { `color: ${ param.textColor };` }> to NOT spend ANY</p>
+								<p class = 'ellipsis' style = { `color: ${ param.positiveColor };` }> to NOT spend ANY</p>
 							</div>
 							<div class = 'log-cell'>
 								<TokenSymbol
 									tokenEntry = { token }
 									tokenId = { undefined }
-									style = { { color: param.textColor } }
+									style = { { color: param.positiveColor } }
 									useFullTokenName = { true }
 									renameAddressCallBack = { param.renameAddressCallBack }
 									fontSize = 'normal'
@@ -262,7 +263,7 @@ export function Erc721or1155OperatorChanges(param: Erc721Or1155OperatorChangesPa
 
 type Erc721TokenIdApprovalChangesParams = {
 	Erc721TokenIdApprovalChanges: Erc721TokenApprovalChange[]
-	textColor: string,
+	positiveColor: string,
 	negativeColor: string,
 	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack,
@@ -309,7 +310,7 @@ export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChanges
 
 type Erc1155TokenChangesParams = {
 	Erc1155TokenBalanceChanges: Erc1155TokenBalanceChange[],
-	textColor: string,
+	positiveColor: string,
 	negativeColor: string,
 	isImportant: ReadonlySignal<boolean>,
 	renameAddressCallBack: RenameAddressCallBack,
@@ -328,7 +329,7 @@ function Erc1155TokenChanges(param: Erc1155TokenChangesParams ) {
 						tokenId = { tokenChange.tokenId }
 						tokenIdName = { param.namedTokenIds.find((namedTokenId) => namedTokenId.tokenAddress === tokenChange.address && namedTokenId.tokenId === tokenChange.tokenId)?.tokenIdName }
 						amount = { tokenChange.changeAmount }
-						style = { { color: param.textColor } }
+						style = { { color: tokenChange.changeAmount < 0n ? param.negativeColor : param.positiveColor } }
 						useFullTokenName = { true }
 						showSign = { true }
 						renameAddressCallBack = { param.renameAddressCallBack }
@@ -350,13 +351,14 @@ type SummarizeAddressParams = {
 
 function SummarizeAddress(param: SummarizeAddressParams) {
 	const isOwnAddress = useComputed(() => param.balanceSummary.summaryFor.useAsActiveAddress || param.balanceSummary.summaryFor.address === param.activeAddress.value)
+	// positiveColor paints gains and neutral rows, negativeColor paints losses and newly granted approvals.
 	const positiveNegativeColors = isOwnAddress.value
 		? {
-			textColor: 'var(--text-color)',
-			negativeColor: 'var(--text-color)'
+			positiveColor: 'var(--positive-color)',
+			negativeColor: 'var(--danger-color)'
 		}
 		: {
-			textColor: 'var(--disabled-text-color)',
+			positiveColor: 'var(--disabled-text-color)',
 			negativeColor: 'var(--danger-dim-color)'
 		}
 
@@ -368,7 +370,7 @@ function SummarizeAddress(param: SummarizeAddressParams) {
 				style = { { '--bg-color': 'var(--importance-box-color)' } }
 			/> :
 			<SmallAddress
-				textColor = { positiveNegativeColors.textColor }
+				textColor = { positiveNegativeColors.positiveColor }
 				addressBookEntry = { param.balanceSummary.summaryFor }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
@@ -377,42 +379,42 @@ function SummarizeAddress(param: SummarizeAddressParams) {
 		<div class = 'content' style = 'margin-bottom: 0px;'>
 			<Erc20BalanceChange
 				erc20TokenBalanceChanges = { param.balanceSummary.erc20TokenBalanceChanges }
-				textColor = { positiveNegativeColors.textColor }
+				positiveColor = { positiveNegativeColors.positiveColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<Erc20ApprovalChanges
 				erc20TokenApprovalChanges = { param.balanceSummary.erc20TokenApprovalChanges }
-				textColor = { positiveNegativeColors.textColor }
+				positiveColor = { positiveNegativeColors.positiveColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<Erc721TokenChanges
 				Erc721TokenBalanceChanges = { param.balanceSummary.erc721TokenBalanceChanges }
-				textColor = { positiveNegativeColors.textColor }
+				positiveColor = { positiveNegativeColors.positiveColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<Erc721or1155OperatorChanges
 				erc721or1155OperatorChanges = { param.balanceSummary.erc721and1155OperatorChanges }
-				textColor = { positiveNegativeColors.textColor }
+				positiveColor = { positiveNegativeColors.positiveColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<Erc721TokenIdApprovalChanges
 				Erc721TokenIdApprovalChanges = { param.balanceSummary.erc721TokenIdApprovalChanges }
-				textColor = { positiveNegativeColors.textColor }
+				positiveColor = { positiveNegativeColors.positiveColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
 			/>
 			<Erc1155TokenChanges
 				Erc1155TokenBalanceChanges = { param.balanceSummary.erc1155TokenBalanceChanges }
-				textColor = { positiveNegativeColors.textColor }
+				positiveColor = { positiveNegativeColors.positiveColor }
 				negativeColor = { positiveNegativeColors.negativeColor }
 				isImportant = { isOwnAddress }
 				renameAddressCallBack = { param.renameAddressCallBack }
@@ -910,7 +912,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 					}
 				</div>
 
-				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto;'>
+				<span class = 'log-table transaction-meta-row' style = 'margin-top: 10px; grid-template-columns: auto;'>
 					<div class = 'log-cell' style = 'justify-content: right;'>
 						<SimulatedInBlockNumber
 							simulationBlockNumber = { getSimulationDisplayBlockNumber(simulationAndVisualisationResults.blockNumber, simulationAndVisualisationResults.visualizedSimulationState.visualizedBlocks.length) }
@@ -956,7 +958,7 @@ export function GasLimitEditor({ transactionIdentifier, initialGasLimit, isRawTr
 	)
 
 	return <>
-		<span style = 'padding: 2px; background: rgba(255, 255, 255, 0.1); border-bottom: 1.5px solid var(--text-color);'>
+		<span style = 'padding: 2px; background: var(--white-alpha-10); border-bottom: 1.5px solid var(--text-color);'>
 			<IntegerInput
 				autoSize = { true }
 				value = { gasLimit }

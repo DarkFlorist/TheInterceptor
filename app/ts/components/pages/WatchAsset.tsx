@@ -86,8 +86,8 @@ export function WalletForwardingResult({ pendingRequest }: { pendingRequest: Pen
 	const status = pendingRequest.forwardingStatus
 	if (status === undefined || status.status === 'pending') return <></>
 	const walletName = pendingRequest.forwardToSigner === undefined ? 'The wallet' : getPrettySignerName(pendingRequest.forwardToSigner.signerName)
-	if (status.status === 'error') return <div class = 'notification is-danger is-light' role = 'alert' style = 'padding: 8px; margin-bottom: 12px'>{ status.message }</div>
-	return <div class = { `notification ${ status.accepted ? 'is-success' : 'is-warning' } is-light` } role = 'status' style = 'padding: 8px; margin-bottom: 12px'>
+	if (status.status === 'error') return <div class = 'notification result-notice result-notice--negative' role = 'alert'>{ status.message }</div>
+	return <div class = { `notification result-notice ${ status.accepted ? 'result-notice--positive' : 'result-notice--warning' }` } role = 'status'>
 		{ status.accepted ? `${ walletName } added the asset.` : `${ walletName } did not add the asset.` }
 	</div>
 }
@@ -102,9 +102,9 @@ export function WatchAssetActions({ forwardToSigner, forwardingStatus, submittin
 	const actionsDisabled = submitting || waitingForWallet
 	const signerName = forwardToSigner?.signerName
 	return <div style = 'display: flex; gap: 8px; justify-content: center; flex-wrap: wrap'>
-		<button class = 'button is-danger' disabled = { actionsDisabled } onClick = { () => choose('reject') }>Don't add</button>
+		<button class = 'button button--secondary' disabled = { actionsDisabled } onClick = { () => choose('reject') }>Don't add</button>
 		<AsyncActionButton
-			class = 'button is-link'
+			class = 'button button--secondary'
 			state = { waitingForWallet ? 'pending' : 'inactive' }
 			disabled = { actionsDisabled || forwardToSigner === undefined }
 			onClick = { () => choose('forward') }

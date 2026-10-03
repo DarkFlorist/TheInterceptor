@@ -34,7 +34,9 @@ import { useEffect } from 'preact/hooks'
 import type { ComponentChildren } from 'preact'
 import type { SignalOrValue } from '../../utils/signals.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
-import { normalizeSimulationStackRows, type SimulationStackMessageRow, type SimulationStackTransactionRow } from './simulationStackRows.js'
+import { getSimulationStackRowStatus, normalizeSimulationStackRows, type SimulationStackMessageRow, type SimulationStackTransactionRow } from './simulationStackRows.js'
+import { TransactionOutcomeChips } from './TransactionOutcomeChips.js'
+import { isUnlimitedErc20Approval } from '../../utils/erc20.js'
 import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { EthereumSendableSignedTransaction } from '../../types/wire-types.js'
@@ -297,7 +299,7 @@ export function Transaction(param: TransactionVisualizationParameters & Collapsi
 				<RawTransactionDetailsCard isRawTransaction = { param.simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { param.simTx.transaction } transactionIdentifier = { param.simTx.transactionIdentifier } parsedInputData = { param.simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in param.simTx ? param.simTx.gasSpent : undefined } addressMetaData = { param.addressMetaData } />
 				<SenderReceiver from = { param.simTx.transaction.from } to = { param.simTx.transaction.to } renameAddressCallBack = { param.renameAddressCallBack }/>
 
-				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
+				<span class = 'log-table transaction-meta-row' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
 					<div class = 'log-cell'>
 						<TransactionCreated created = { param.simTx.created } />
 					</div>
@@ -409,7 +411,7 @@ function TransactionPreviewDetails({
 					: <TransactionInput parsedInputData = { parsedInputData } input = { signedTransaction.input } to = { to } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } />
 				}
 			</div>
-			<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
+			<span class = 'log-table transaction-meta-row' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
 				<div class = 'log-cell'>
 					<TransactionCreated created = { created } />
 				</div>
@@ -463,7 +465,7 @@ function MessagePreviewDetails({
 					numberOfUnderTransactions = { 0 }
 				/>
 			</div> }
-			<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
+			<span class = 'log-table transaction-meta-row' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
 				<div class = 'log-cell'>
 					<TransactionCreated created = { created } />
 				</div>
@@ -498,10 +500,16 @@ function TransactionOrMessageTitleOnlyCard({
 	stackRow,
 	removeTransactionOrSignedMessage,
 	openSimulationStackAt,
+	simulationAndVisualisationResults,
+	activeAddress,
+	addressMetaData,
 }: {
 	stackRow: SimulationStackTransactionRow | SimulationStackMessageRow
 	removeTransactionOrSignedMessage?: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	openSimulationStackAt?: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
+	simulationAndVisualisationResults: SimulationAndVisualisationResults | undefined
+	activeAddress: bigint | undefined
+	addressMetaData: readonly AddressBookEntry[]
 }) {
 	const stackRowIdentifier = getStackRowIdentifier(stackRow)
 	const openHeader = openSimulationStackAt === undefined ? undefined : () => openSimulationStackAt(stackRowIdentifier)
@@ -532,6 +540,15 @@ function TransactionOrMessageTitleOnlyCard({
 		}
 		return <div class = 'card'>
 			<TransactionHeader simTx = { simulatedTransaction } removeTransactionOrSignedMessage = { remove } onHeaderClick = { openHeader } />
+			{ simulatedTransaction.transactionStatus === 'Failed To Simulate' ? <></> : <div class = 'stack-row-outcome'>
+				<TransactionOutcomeChips
+					simTx = { simulatedTransaction }
+					activeAddress = { activeAddress }
+					addressMetaData = { addressMetaData }
+					tokenPriceEstimates = { simulationAndVisualisationResults?.tokenPriceEstimates ?? [] }
+					namedTokenIds = { simulationAndVisualisationResults?.namedTokenIds ?? [] }
+				/>
+			</div> }
 		</div>
 	}
 	if (stackRow.status === 'failed') {
@@ -608,9 +625,12 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressC
 				stackRow = { stackRow }
 				removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
 				openSimulationStackAt = { openSimulationStackAt }
+				simulationAndVisualisationResults = { currentSimulationAndVisualisationResults }
+				activeAddress = { activeAddress.value }
+				addressMetaData = { addressMetaData.value }
 			/>
 		</div>
-		{ showTimePicker ? <div style = 'display: flex; justify-content: center; padding-top: 10px;'>
+		{ showTimePicker ? <div class = 'simulation-stack-delay'>
 			<TimePicker
 				startText = { 'Simulate delay' }
 				mode = { timeSelectorMode }
@@ -720,13 +740,14 @@ export function SimulationStackRows(param: SimulationStackRowsParams) {
 			results.visualizedSimulationState,
 		)
 	})
-	return <ul class = 'simulation-stack-list'> {
+	return <ul class = { `simulation-stack-list${ param.displayMode === 'titleOnly' ? ' simulation-stack-list--timeline' : '' }` }> {
 		transactionsAndMessagesInBlock.value.flatMap((block, blockIndex) => {
 			const nextBlockManipulator = transactionsAndMessagesInBlock.value[blockIndex + 1]?.blockTimeManipulation || { type: 'No Delay' } as const
 			return block.rows.map((stackRow, transactionIndex) => {
 				const stackRowElementId = getSimulationStackElementId(getStackRowIdentifier(stackRow))
 				return <li
 					key = { stackRow.type === 'Message' ? `message-${ stackRow.signedMessageTransaction.messageIdentifier.toString() }` : `transaction-${ stackRow.preSimulationTransaction.transactionIdentifier.toString() }` }
+					data-stack-status = { getSimulationStackRowStatus(stackRow) }
 				>
 					<TransactionOrMessageWithBlockTimeManipulator
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
@@ -766,7 +787,7 @@ function TokenLogEvent(params: TokenLogEventParams ) {
 					style = { style }
 					fontSize = 'normal'
 				/>
-			: <> { 'amount' in params.tokenVisualizerResult && params.tokenVisualizerResult.amount >= (2n ** 96n - 1n ) && params.tokenVisualizerResult.isApproval ?
+			: <> { 'amount' in params.tokenVisualizerResult && isUnlimitedErc20Approval(params.tokenVisualizerResult.amount) && params.tokenVisualizerResult.isApproval ?
 					<p class = 'ellipsis' style = { `color: ${ style.color }` }><b>ALL</b></p>
 				:
 					'amount' in params.tokenVisualizerResult ?

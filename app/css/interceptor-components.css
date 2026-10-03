@@ -1,7 +1,7 @@
 /* Scrollbar */
 
 :root {
-	scrollbar-color: var(--window-header-bg-color) var(--card-bg-color) !important;
+	scrollbar-color: var(--scrollbar-thumb-color) var(--card-bg-color) !important;
 }
 
 ::-webkit-scrollbar {
@@ -14,13 +14,13 @@
 }
 
 ::-webkit-scrollbar-thumb {
-	background-color: var(--window-header-bg-color);
+	background-color: var(--scrollbar-thumb-color);
 	background-clip: padding-box;
 	border: 2px solid transparent;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-	background-color: rgb(112, 112, 112);
+	background-color: var(--scrollbar-thumb-hover-color);
 }
 
 ::-webkit-scrollbar-thumb:active {
@@ -230,6 +230,7 @@
 
 .transaction-importance-box {
 	background-color: var(--importance-box-color);
+	border-radius: var(--radius-medium);
 	padding: 10px;
 	margin: auto;
 	margin-bottom: 10px;
@@ -239,6 +240,8 @@
 
 .notification-importance-box {
 	background-color: var(--importance-box-color);
+	border: 1px solid var(--hairline-color);
+	border-radius: var(--radius-medium);
 	padding: 10px;
 	margin: auto;
 	margin-bottom: 10px;
@@ -467,6 +470,7 @@
 
 .swap-box {
 	background-color: var(--alpha-005);
+	border-radius: var(--radius-medium);
 	box-shadow: unset;
 	margin-bottom: 0px;
 	display: grid;
@@ -487,10 +491,10 @@
 
 .textbox {
 	background-color: var(--alpha-005);
-	padding: 5px;
+	padding: 6px 8px;
 	word-break: break-all;
 	white-space: pre-wrap;
-	border-radius: 4px;
+	border-radius: var(--radius-small);
 }
 
 .dialog-button-left {
@@ -510,25 +514,57 @@
 	margin-bottom: 0px;
 }
 
-/* Secondary action: light text and a thin accent border stay readable on dark surfaces, unlike the dim outlined primary style. */
+/* Secondary action: a quiet raised surface with a hairline border, so the single primary action on a screen stays the loudest control. */
 .button.button--secondary {
-	background-color: var(--alpha-005);
-	border: 1px solid var(--accent-color);
+	background-color: var(--surface-raised-color);
+	border: 1px solid var(--strong-hairline-color);
 	color: var(--text-color);
 }
 
 .button.button--secondary:hover, .button.button--secondary:focus, .button.button--secondary:active {
-	background-color: var(--primary-action-color);
-	border-color: var(--highlighted-accent-color);
+	background-color: var(--surface-highest-color);
+	border-color: var(--accent-line-color);
 	color: var(--text-color);
 }
 
 /* The framework already dims disabled buttons with opacity, so keep the label colour as-is to match the neighbouring actions. */
 .button.button--secondary[disabled] {
 	background-color: transparent;
-	border-color: var(--disabled-action-color);
+	border-color: var(--strong-hairline-color);
 	box-shadow: none;
 	color: var(--text-color);
+}
+
+/* Recommended action: looks like the primary action without the is-primary class, which marks the confirming action of a dialog. */
+.button.button--recommended {
+	background-color: var(--primary-action-color);
+	border-color: transparent;
+	color: var(--action-text-color);
+}
+
+.button.button--recommended:not([disabled]):hover, .button.button--recommended:not([disabled]):focus {
+	background-color: var(--highlighted-primary-action-color);
+	color: var(--action-text-color);
+}
+
+/* Outlined destructive action: going ahead is possible but not what the Interceptor recommends. */
+.button.button--danger-outline {
+	background-color: transparent;
+	border: 1px solid var(--danger-line-color);
+	color: var(--danger-color);
+}
+
+.button.button--danger-outline:not([disabled]):hover, .button.button--danger-outline:not([disabled]):focus {
+	background-color: var(--danger-soft-color);
+	border-color: var(--danger-color);
+	color: var(--danger-color);
+}
+
+.button.button--danger-outline[disabled] {
+	background-color: transparent;
+	border-color: var(--danger-line-color);
+	box-shadow: none;
+	color: var(--danger-color);
 }
 
 .confirmation-action-buttons-container {
@@ -553,7 +589,7 @@
 	}
 
 	/* A full basis with shrink lets the lone secondary absorb its own side margins, and 2.125em (vs. the 2.5em button height) keeps it visibly lighter. */
-	.confirmation-action-buttons--safe > .button--secondary {
+	.confirmation-action-buttons--safe > .dialog-action-button--unsigned {
 		flex: 1 1 100%;
 		height: 2.125em;
 		order: 1;
@@ -609,9 +645,8 @@
 	justify-content: space-around;
 	width: 100%;
 	flex-direction: column;
-	padding-bottom: 10px;
-	padding-top: 10px;
-	border-radius: 10px 10px 0 0;
+	padding-bottom: 12px;
+	padding-top: 12px;
 }
 
 .settings-import-export-actions {
@@ -648,7 +683,7 @@
 	border-style: dashed;
 	background: unset;
 	border-width: medium;
-	border-color: white;
+	border-color: var(--text-color);
 }
 
 .safe-outcome-panel {
@@ -731,10 +766,12 @@
 	left: 20px;
 	bottom: 0;
 	width: 480px;
-	height: 40px;
-	border-top-left-radius: 0.25rem;
-	border-top-right-radius: 0.25rem;
-	background-color: var(--window-header-bg-color);
+	height: 48px;
+	border: 1px solid var(--strong-hairline-color);
+	border-bottom: 0;
+	border-top-left-radius: var(--radius-medium);
+	border-top-right-radius: var(--radius-medium);
+	background-color: var(--surface-raised-color);
 }
 
 
@@ -743,7 +780,7 @@ strong { color: inherit }
 
 :where(.btn) {
 	--s-justify: var(--btn-justify, center);
-	--s-bg: var(--btn-bg-color, gray);
+	--s-bg: var(--btn-bg-color, var(--surface-highest-color));
 	--s-fg: var(--btn-text-color, var(--text-color));
 	--s-size: var(--btn-text-size , 1em);
 	--s-outline: var(--btn-outline, none);
@@ -762,13 +799,14 @@ strong { color: inherit }
 	min-height: 2.25em;
 	padding: 0 0.75em;
 	border: var(--s-outline);
-	border-radius: 4px;
+	border-radius: 8px;
 	cursor: pointer;
 	display: flex;
 	align-items: center;
 }
 
-.btn:disabled { cursor: not-allowed; --btn-brightness: 0.6; --btn-saturation: 0.2 }
+/* Disabled buttons fade instead of darkening, so they read as inactive on both light and dark surfaces. */
+.btn:disabled { cursor: not-allowed; opacity: 0.5; --btn-saturation: 0.4 }
 .btn:not(:disabled):hover { --btn-brightness: 1.25 }
 .btn:not(:disabled):focus { --btn-outline: 1px solid var(--s-fg) }
 
@@ -782,8 +820,16 @@ strong { color: inherit }
 
 .btn--outline {
 	--btn-bg-color: transparent;
-	--btn-outline: 1px solid var(--white-alpha-20);
+	--btn-outline: 1px solid var(--strong-hairline-color);
 }
+
+.btn--danger-outline {
+	--btn-bg-color: transparent;
+	--btn-outline: 1px solid var(--danger-line-color);
+	--btn-text-color: var(--danger-color);
+}
+
+.btn--danger-outline:not(:disabled):hover { --btn-bg-color: var(--danger-soft-color); --btn-brightness: 1 }
 
 .btn--outline:hover:not(:disabled) { --btn-bg-color: var(--white-alpha-10) }
 .btn--ghost { --btn-bg-color: transparent; }
@@ -802,7 +848,7 @@ strong { color: inherit }
 
 details {
 	--s-text-size: var(--text-size, 0.85rem);
-	--s-base-color: color(srgb .4 .4 .4);
+	--s-base-color: var(--disabled-text-color);
 	outline: none;
 }
 
@@ -817,7 +863,7 @@ summary {
 }
 
 summary:hover {
-	--s-base-color: color( srgb .6 .6 .6);
+	--s-base-color: var(--subtitle-text-color);
 }
 
 summary:focus {
@@ -870,9 +916,9 @@ summary:focus {
 .brief {
 	--grid-cols: minmax(0, 1fr) minmax(0, max-content);
 	--gap-x: 1rem;
-	--hl-color: white;
-	background-color: color(srgb .3 .3 .3);
-	color: color(srgb .6 .6 .6);
+	--hl-color: var(--text-color);
+	background-color: var(--surface-raised-color);
+	color: var(--subtitle-text-color);
 	box-sizing: border-box;
 	font-size: var(--text-size, inherit);
 	font-weight: var(--font-weight, normal);
@@ -889,7 +935,7 @@ summary:focus {
 .rpc-summary-details {
 	--grid-cols: minmax(0, 1fr);
 	--gap-y: 0.125rem;
-	--text-color: gray;
+	--text-color: var(--subtitle-text-color);
 	min-width: 0;
 }
 
@@ -934,8 +980,8 @@ summary:focus {
 
 .text-input {
 	--text-size: 1em;
-	--label-color: color(srgb .3 .3 .3);
-	--border-color: color(srgb .4 .4 .4);
+	--label-color: var(--disabled-text-color);
+	--border-color: var(--strong-hairline-color);
 	--columns: 1fr min-content;
 	display: grid;
 	grid-template-columns: var(--columns);
@@ -943,7 +989,7 @@ summary:focus {
 	align-items: center;
 }
 
-.text-input:focus-within { --border-color: white }
+.text-input:focus-within { --border-color: var(--accent-color) }
 
 .text-input > input {
 	font: inherit;
@@ -976,7 +1022,7 @@ summary:focus {
 
 :where(.text-input:focus-within span, .text-input input:not(:placeholder-shown) + span) {
 	transform: translateY(0) scale(0.75);
-	--label-color: color(srgb .5 .5 .5);
+	--label-color: var(--subtitle-text-color);
 }
 
 .disclosure {
@@ -1029,7 +1075,7 @@ summary:focus {
 .key-value-pair dd {
 	justify-self: start;
 	text-align: left;
-	color: white;
+	color: var(--text-color);
 }
 
 pre {
@@ -1071,13 +1117,13 @@ fieldset label:has([type=radio]):before {
 	width: 0.3125rem;
 	height: 0.3125rem;
 	border-radius: 100%;
-	outline: 1px solid var(--white-color);
+	outline: 1px solid var(--text-color);
 	outline-offset: 0.1875rem;
 	margin: 0.1875rem;
 }
 
 fieldset label:has([type=radio]:checked):before {
-	background: var(--white-color);
+	background: var(--text-color);
 }
 
 [type=radio]:where(label > *) {

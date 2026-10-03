@@ -66,3 +66,18 @@ export function normalizeSimulationStackRows(simulationStateInput: SimulationSta
 		}
 	})
 }
+
+export type SimulationStackRowStatus = 'success' | 'warning' | 'failed' | 'pending'
+
+// The single status a stack row is summarised with: failures outrank warnings, and anything not simulated yet is pending.
+export function getSimulationStackRowStatus(stackRow: SimulationStackTransactionRow | SimulationStackMessageRow): SimulationStackRowStatus {
+	if (stackRow.type === 'Message') {
+		if (stackRow.status !== 'simulated' || stackRow.visualizedPersonalSignRequest === undefined) return 'pending'
+		if (stackRow.visualizedPersonalSignRequest.isValidMessage === false) return 'failed'
+		return stackRow.visualizedPersonalSignRequest.quarantine ? 'warning' : 'success'
+	}
+	if (stackRow.status === 'failed') return 'failed'
+	if (stackRow.status !== 'simulated' || stackRow.simulatedTransaction === undefined) return 'pending'
+	if (stackRow.simulatedTransaction.transactionStatus !== 'Transaction Succeeded') return 'failed'
+	return stackRow.simulatedTransaction.quarantine ? 'warning' : 'success'
+}

@@ -96,13 +96,13 @@ function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRe
 			</section>
 			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
 				<AsyncActionButton
-					class = 'button is-success is-primary'
+					class = 'button is-primary is-danger'
 					state = { removeAddressState.value.state }
 					onClick = { remove }
 					text = 'Remove'
 					pendingText = 'Removing...'
 				/>
-				<button class = 'button is-warning is-danger' onClick = { param.close } disabled = { removePending }>Cancel</button>
+				<button class = 'button button--secondary' onClick = { param.close } disabled = { removePending }>Cancel</button>
 			</footer>
 		</div>
 	</>

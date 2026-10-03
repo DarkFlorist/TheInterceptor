@@ -188,7 +188,7 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
 					<Erc20ApprovalChanges
 						erc20TokenApprovalChanges = { eventsGrouped.erc20TokenApprovalChanges }
-						textColor = { textColor }
+						positiveColor = { textColor }
 						negativeColor = { textColor }
 						isImportant = { useComputed(() => true) }
 						renameAddressCallBack = { param.renameAddressCallBack }
@@ -197,7 +197,7 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
 					<Erc721or1155OperatorChanges
 						erc721or1155OperatorChanges = { eventsGrouped.operatorChanges }
-						textColor = { textColor }
+						positiveColor = { textColor }
 						negativeColor = { textColor }
 						isImportant = { useComputed(() => true) }
 						renameAddressCallBack = { param.renameAddressCallBack }
@@ -206,7 +206,7 @@ export function CatchAllVisualizer(param: CatchAllVisualizerParams) {
 				<div class = 'log-cell' style = 'justify-content: left; display: grid;'>
 					<Erc721TokenIdApprovalChanges
 						Erc721TokenIdApprovalChanges = { eventsGrouped.tokenIdApprovalChanges }
-						textColor = { textColor }
+						positiveColor = { textColor }
 						negativeColor = { textColor }
 						isImportant = { useComputed(() => true) }
 						renameAddressCallBack = { param.renameAddressCallBack }

@@ -262,7 +262,7 @@ const ConfigureRpcForm = ({ defaultValues, onCancel, onSave, onRemove }: Configu
 	return (
 		<form method = 'dialog' class = 'grid' style = '--gap-y: 1.5rem' onSubmit = { handleFormSubmit }>
 			<header class = 'grid' style = '--grid-cols: 1fr auto'>
-				<span style = { { fontWeight: 'bold', color: 'white' } }>Configure RPC Connection</span>
+				<span style = { { fontWeight: 'bold', color: 'var(--text-color)' } }>Configure RPC Connection</span>
 				<button type = 'submit' value = 'cancel' class = 'btn btn--ghost' aria-label = 'close' formNoValidate disabled = { mutationPending }>
 					<span class = 'button-icon' style = { { fontSize: '1.5em' } }>&times;</span>
 				</button>

@@ -720,20 +720,21 @@ button.dropdown-item.is-active {
 }
 
 .menu-list a {
-  border-radius: 2px;
+  border-radius: 8px;
   color: var(--text-color);
   display: block;
   padding: 0.5em 0.75em;
 }
 
 .menu-list a:hover {
-  background-color: var(--highlighted-accent-color);
+  background-color: var(--surface-raised-color);
   color: var(--text-color);
 }
 
 .menu-list a.is-active {
-  background-color: #485fc7;
-  color: #fff;
+  background-color: var(--accent-soft-color);
+  color: var(--accent-color);
+  font-weight: 600;
 }
 
 .menu-list li ul {

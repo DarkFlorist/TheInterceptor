@@ -5,6 +5,7 @@ import { GasFee, type TransactionGasses } from '../SimulationSummary.js'
 import { tokenEventToTokenSymbolParams } from './CatchAllVisualizer.js'
 import type { RpcNetwork } from '../../../types/rpc.js'
 import type { TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
+import { isUnlimitedErc20Approval } from '../../../utils/erc20.js'
 
 type SimpleTokenApprovalVisualisation = {
 	approval: TokenVisualizerResultWithMetadata
@@ -38,7 +39,7 @@ export function SimpleTokenApprovalVisualisation(param: SimpleTokenApprovalVisua
 							style = { { 'font-weight': '500', color: textColor } }
 							fontSize = 'big'
 						/>
-					: <> { 'amount' in param.approval && param.approval.amount >= (2n ** 96n - 1n ) ?
+					: <> { 'amount' in param.approval && isUnlimitedErc20Approval(param.approval.amount) ?
 							<p class = 'ellipsis' style = { `color: ${ textColor }; font-size: 28px; font-weight: 500` }><b>ALL</b></p>
 						:
 							'amount' in param.approval ?

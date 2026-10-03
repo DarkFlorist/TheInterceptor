@@ -116,6 +116,8 @@ input[role=switch] {
 	--bg-color: var(--unchecked-switch-color);
 	--checked-bg-color: var(--checked-switch-color);
 	appearance: none;
+	box-sizing: content-box;
+	flex: 0 0 auto;
 	width: 1.75rem;
 	background: var(--bg-color);
 	display: block;

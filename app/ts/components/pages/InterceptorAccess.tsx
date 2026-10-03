@@ -6,7 +6,7 @@ import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
-import { addressEditEntry, convertNumberToCharacterRepresentationIfSmallEnough } from '../ui-utils.js'
+import { addressEditEntry, convertNumberToCharacterRepresentationIfSmallEnough, getInterceptorModeClass } from '../ui-utils.js'
 import { ChangeActiveAddress } from './ChangeActiveAddress.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import { getPrettySignerName } from '../subcomponents/signers.js'
@@ -16,7 +16,7 @@ import type { PendingAccessRequest, PendingAccessRequests } from '../../types/ac
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
 import type { RpcEntries } from '../../types/rpc.js'
 import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
-import { ChevronIcon } from '../subcomponents/icons.js'
+import { CheckMarkIcon, ChevronIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
@@ -25,15 +25,29 @@ import { useAsyncState } from '../../utils/preact-utilities.js'
 import { respondToAccessRequest } from './interceptorAccessResponse.js'
 import { getSelectableActiveAddresses, includePersistedAddressBookEntry, isActiveAddressSelectionAllowed } from '../../utils/activeAddressSelection.js'
 
-function Title({ icon, title} : {icon: string | undefined, title: string}) {
-	const websiteIcon = sanitizeStoredWebsiteIcon(icon)
-	return <span style = 'font-weight: 900; line-height: 48px'>
-		{ websiteIcon === undefined
-			? <></>
-			: <img src = { websiteIcon } width = '48' height = '48' style = 'width: 48px; height: 48px; vertical-align: bottom; margin-right: 10px;'/>
-		}
-		{ title }
-	</span>
+function AccessRequestHero({ website, request }: { website: Website, request: string }) {
+	const websiteIcon = sanitizeStoredWebsiteIcon(website.icon)
+	return <div class = 'access-request-hero'>
+		{ websiteIcon === undefined ? <></> : <img class = 'access-request-site-icon' src = { websiteIcon } alt = '' width = '56' height = '56'/> }
+		<p class = 'access-request-site'>{ website.title === undefined ? website.websiteOrigin : website.title }</p>
+		<p class = 'access-request-ask'>{ request }</p>
+	</div>
+}
+
+// Spells out what granting access does and does not allow, so the privacy model is visible at the moment of the decision.
+function AccessCapabilities() {
+	return <div class = 'access-capabilities'>
+		<p class = 'access-capabilities-heading'>This site will be able to</p>
+		<ul class = 'transaction-checks access-capabilities-list'>
+			<li class = 'transaction-check transaction-check--positive'><span class = 'transaction-check-icon'><CheckMarkIcon/></span><span class = 'transaction-check-text'>See this address and its public balances and activity</span></li>
+			<li class = 'transaction-check transaction-check--positive'><span class = 'transaction-check-icon'><CheckMarkIcon/></span><span class = 'transaction-check-text'>Ask you to review transactions and signatures</span></li>
+		</ul>
+		<p class = 'access-capabilities-heading'>It will not be able to</p>
+		<ul class = 'transaction-checks access-capabilities-list'>
+			<li class = 'transaction-check transaction-check--negative'><span class = 'transaction-check-icon'><XMarkIcon/></span><span class = 'transaction-check-text'>Send transactions or sign anything without your confirmation</span></li>
+			<li class = 'transaction-check transaction-check--negative'><span class = 'transaction-check-icon'><XMarkIcon/></span><span class = 'transaction-check-text'>See your other addresses unless you grant access to them</span></li>
+		</ul>
+	</div>
 }
 
 function AccessRequestHeader(website: Website) {
@@ -49,14 +63,11 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 
 	return <>
 		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px;'>
-			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showLogs.value = !showLogs.value } }>
+			<header class = 'card-header noselect' style = 'cursor: pointer; min-height: 30px;' onClick = { () => { showLogs.value = !showLogs.value } }>
 				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
 					{ associatedAddresses.length <= 1
 						? 'The website cannot associate any addresses with each other'
-						: <> There are&nbsp;
-							<b>{ convertNumberToCharacterRepresentationIfSmallEnough(associatedAddresses.length).toUpperCase() } </b>
-							&nbsp;addresses that the website can associate together with
-						</>
+						: <span>There are <b>{ convertNumberToCharacterRepresentationIfSmallEnough(associatedAddresses.length).toUpperCase() }</b> addresses that the website can associate together with</span>
 					}
 				</p>
 				<div class = 'card-header-icon'>
@@ -88,20 +99,12 @@ function AssociatedTogether({ associatedAddresses, renameAddressCallBack }: { as
 function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddress, refreshActiveAddress }: { renameAddressCallBack: (entry: AddressBookEntry) => void, accessRequest: PendingAccessRequest, changeActiveAddress: () => void, refreshActiveAddress: () => Promise<void> }) {
 	return <>
 		{ accessRequest.requestAccessToAddress === undefined ?
-		<div style = 'margin: 10px'>
-			<p class = 'title is-4' style = 'text-align: center; margin-top: 40px; margin-bottom: 40px;'>
-				<Title icon = { accessRequest.website.icon } title = { accessRequest.website.title === undefined ? accessRequest.website.websiteOrigin : accessRequest.website.title }/>
-				<br/>
-				would like to connect to The Interceptor
-			</p>
-		</div> :
+			<AccessRequestHero website = { accessRequest.website } request = 'would like to connect to The Interceptor'/>
+		:
 			<>
-				<div class = 'notification' style = 'background-color: var(--importance-box-color); color: var(--text-color)'>
-					<p class = 'title is-3' style = 'text-align: center; margin-bottom: 10px;'>
-						<Title icon = { accessRequest.website.icon } title = { accessRequest.website.title === undefined ? accessRequest.website.websiteOrigin : accessRequest.website.title }/>
-						&nbsp;would like to connect to your account:
-					</p>
-					<div class = 'notification' style = 'padding: 10px; background-color: var(--alpha-015); justify-content: center; '>
+				<AccessRequestHero website = { accessRequest.website } request = 'would like to connect to your account'/>
+				<div class = 'access-request-account'>
+					<div>
 						{ accessRequest.simulationMode ?
 							<ActiveAddressComponent
 								activeAddress = { accessRequest.requestAccessToAddress }
@@ -117,7 +120,7 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 									disableButton = { false }
 									buttonText = { 'Refresh' }
 								/>
-								<p style = 'color: var(--subtitle-text-color); white-space: normal;' class = 'subtitle is-7'>
+								<p style = 'color: var(--subtitle-text-color); white-space: normal; margin-top: 6px;' class = 'subtitle is-7'>
 									{ `You can change active address by changing it directly from ${ getPrettySignerName(accessRequest.signerName) } and clicking refresh here afterwards` }
 								</p>
 							</>
@@ -125,6 +128,7 @@ function AccessRequest({ renameAddressCallBack, accessRequest, changeActiveAddre
 					</div>
 				</div>
 
+				<AccessCapabilities/>
 				<AssociatedTogether
 					associatedAddresses = { accessRequest.associatedAddresses }
 					renameAddressCallBack = { renameAddressCallBack }
@@ -167,7 +171,7 @@ export function AccessRequestActions({ accessRequest, reject, approve, informati
 	return <nav class = 'popup-button-row'>
 		<div style = 'display: flex; flex-direction: row;'>
 		<AsyncActionButton
-			class = 'button is-primary is-danger dialog-action-button'
+			class = 'button button--secondary button-overflow dialog-action-button'
 			state = { rejectState.value.state }
 			text = 'Deny Access'
 			pendingText = 'Denying access...'
@@ -175,7 +179,7 @@ export function AccessRequestActions({ accessRequest, reject, approve, informati
 		disabled = { disabled || approvePending }
 		/>
 		<AsyncActionButton
-			class = 'button is-primary dialog-action-button'
+			class = 'button is-primary button-overflow dialog-action-button dialog-action-button--confirm'
 			state = { approveState.value.state }
 			text = 'Grant Access'
 			pendingText = 'Granting access...'
@@ -359,7 +363,7 @@ export function InterceptorAccess() {
 	const selectedAccessRequest = selectedPendingAccessRequest.value
 	const isModalActive = appPage.value.page !== 'Home' && selectedAccessRequest !== undefined
 
-	return <main>
+	return <main class = { selectedAccessRequest === undefined ? undefined : getInterceptorModeClass(selectedAccessRequest.simulationMode) }>
 		<Hint>
 			<div class = { `modal ${ isModalActive ? 'is-active' : ''}` }>
 				{ (appPage.value.page === 'AddNewAddress' || appPage.value.page === 'ModifyAddress') && selectedAccessRequest !== undefined

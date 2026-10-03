@@ -20,37 +20,56 @@ html { font-size: 100%; }
 body { font-family: "Inter", sans-serif; }
 
 :root {
-	--bg-color: #303030;
-	--card-bg-color: #424242;
-	--card-content-bg-color: #484848;
-	--card-header-bg-color: #404040;
-	--window-header-bg-color: #606060;
-	--surface-mid-color: #3e3e3e;
-	--surface-dark-color: #222222;
-	--layout-line-color: #505050;
-	--address-muted-bg-color: #757575;
+	color-scheme: light dark;
+}
 
-	--disabled-card-color: rgba(10, 10, 10, 0.6);
-	--accent-color: #58a5b3;
-	--highlighted-accent-color: #79b7c2;
-	--disabled-action-color: #3d737d;
+/* Hooks for forcing a theme regardless of the browser preference. */
+:root[data-theme='light'] { color-scheme: light }
+:root[data-theme='dark'] { color-scheme: dark }
+
+/* Every themed colour is declared once as light-dark(light value, dark value) and follows the colour scheme in effect. */
+:root {
+	--bg-color: light-dark(#f3f5f6, #14171a);
+	--card-bg-color: light-dark(#ffffff, #1b1f23);
+	--card-content-bg-color: light-dark(#ffffff, #1b1f23);
+	--card-header-bg-color: light-dark(#f7f9fa, #1f2428);
+	--window-header-bg-color: light-dark(#ffffff, #1b1f23);
+	--surface-mid-color: light-dark(#eef1f3, #23292e);
+	--surface-raised-color: light-dark(#eef1f3, #23292e);
+	--surface-highest-color: light-dark(#e2e7ea, #2c3339);
+	--surface-dark-color: light-dark(#e9edef, #0e1113);
+	--layout-line-color: light-dark(#d5dbde, #2b3238);
+	--hairline-color: light-dark(rgba(15, 30, 40, 0.1), rgba(255, 255, 255, 0.08));
+	--strong-hairline-color: light-dark(rgba(15, 30, 40, 0.2), rgba(255, 255, 255, 0.16));
+	--scrollbar-thumb-color: light-dark(#c2cacf, #3a434a);
+	--scrollbar-thumb-hover-color: light-dark(#a9b3b9, #4a555d);
+	/* Matches a 5% overlay on the importance box, so address cards inside transfer summaries blend into their panel. */
+	--address-muted-bg-color: light-dark(#e3e7ea, #2e3439);
+	--card-shadow: 0 1px 2px light-dark(rgba(15, 30, 40, 0.08), rgba(0, 0, 0, 0.35));
+	--overlay-shadow: 0 18px 50px light-dark(rgba(15, 30, 40, 0.25), rgba(0, 0, 0, 0.55));
+
+	--disabled-card-color: light-dark(rgba(243, 245, 246, 0.6), rgba(14, 17, 19, 0.6));
+	--accent-color: light-dark(#1f7f8f, #5bb8c7);
+	--highlighted-accent-color: light-dark(#2a93a4, #7ccbd7);
+	--disabled-action-color: light-dark(#8fb9c0, #2f5f68);
 	--primary-action-color: #357783;
 	--highlighted-primary-action-color: #397f8c;
+	--action-text-color: #ffffff;
 
-	--positive-color: #4caf50;
-	--danger-color: #f6685e;
+	--positive-color: light-dark(#1f8f5a, #4cc38a);
+	--danger-color: light-dark(#cf3b34, #f2706a);
 	--destructive-action-color: #b83e37;
 	--highlighted-destructive-action-color: #c04941;
 
-	--error-box-color:#FFB6B6;
-	--error-box-text: #000000;
+	--error-box-color: light-dark(#fbe9e7, #3a2225);
+	--error-box-text: light-dark(#5c1512, #ffdcd9);
 
-	--warning-box-color:#FFC107;
-	--warning-box-text: #000000;
+	--warning-box-color: light-dark(#fdf3d7, #392f19);
+	--warning-box-text: light-dark(#5a3d00, #ffe7b0);
 
-	--highlighted-danger-color: #f77f76;
-	--warning-color: #FFC107;
-	--danger-dim-color: rgba(246, 104, 94, 0.5);
+	--highlighted-danger-color: light-dark(#b8322c, #f58d88);
+	--warning-color: light-dark(#a86a00, #f5b83d);
+	--danger-dim-color: light-dark(rgba(207, 59, 52, 0.7), rgba(242, 112, 106, 0.6));
 	--status-warn-bg-color: #F5934B;
 	--status-warn-fg-color: #753100;
 	--status-danger-bg-color: #FF7272;
@@ -59,33 +78,66 @@ body { font-family: "Inter", sans-serif; }
 	--status-dimmed-bg-color: #c05858;
 	--status-alert-text-color: #e6cb1f;
 
-	--text-color: #ffffff;
-	--subtitle-text-color: rgba(255, 255, 255, 0.7);
-	--disabled-text-color: rgba(255, 255, 255, 0.5);
-	--unimportant-text-color: rgba(255, 255, 255, 0.2);
-	--importance-box-color: rgba(109, 109, 109);
-	--dim-text-color: rgba(255, 255, 255, 0.8);
-	--alpha-005: rgba(255, 255, 255, 0.05);
-	--alpha-015: rgba(255, 255, 255, 0.15);
+	--text-color: light-dark(#172026, #e9edf0);
+	--subtitle-text-color: light-dark(rgba(23, 32, 38, 0.68), rgba(233, 237, 240, 0.68));
+	--disabled-text-color: light-dark(rgba(23, 32, 38, 0.5), rgba(233, 237, 240, 0.5));
+	--unimportant-text-color: light-dark(rgba(23, 32, 38, 0.22), rgba(233, 237, 240, 0.2));
+	--importance-box-color: light-dark(#eef1f3, #23292e);
+	--dim-text-color: light-dark(rgba(23, 32, 38, 0.8), rgba(233, 237, 240, 0.8));
+	--alpha-005: light-dark(rgba(15, 30, 40, 0.05), rgba(255, 255, 255, 0.05));
+	--alpha-015: light-dark(rgba(15, 30, 40, 0.12), rgba(255, 255, 255, 0.15));
 	--white-color: #fff;
 	--black-color: #000000;
-	--white-alpha-20: #ffffff20;
-	--white-alpha-10: #ffffff10;
-	--white-alpha-08: #ffffff08;
-	--black-alpha-90: #00000090;
-	--black-alpha-d6: #000000d6;
+	/* Despite their names these alpha tokens are contrast overlays: light tints on dark surfaces and dark tints on light ones. */
+	--white-alpha-20: light-dark(rgba(15, 30, 40, 0.16), #ffffff20);
+	--white-alpha-10: light-dark(rgba(15, 30, 40, 0.08), #ffffff10);
+	--white-alpha-08: light-dark(rgba(15, 30, 40, 0.05), #ffffff08);
+	--black-alpha-90: light-dark(rgba(15, 30, 40, 0.2), #00000090);
+	--black-alpha-d6: light-dark(rgba(15, 30, 40, 0.35), #000000d6);
 	--inline-action-color: #77738ccc;
-	--checked-switch-color: #378b37;
-	--unchecked-switch-color: #922929;
-	--tooltip-color: #222222;
+	--highlighted-inline-action-color: light-dark(#172026, #ffffff);
+	--highlighted-inline-action-text-color: light-dark(#ffffff, #000000);
+	--checked-switch-color: #357783;
+	--unchecked-switch-color: light-dark(#b4bec4, #4a555d);
+	--tooltip-color: light-dark(#172026, #0e1113);
+	--tooltip-text-color: #e9edf0;
+	--icon-filter: none;
+
+	--radius-small: 6px;
+	--radius-medium: 10px;
+	--radius-large: 14px;
 
 	--big-font-size: 28px;
 	--normal-font-size: 14px;
-	--modal-background-color: rgba(10, 10, 10, .7)
+	--modal-background-color: light-dark(rgba(23, 32, 38, 0.45), rgba(10, 10, 10, 0.7))
 }
 
-* {
-    color-scheme: dark;
+/* The bundled line icons are white, so the light theme darkens them. A filter cannot go through light-dark(), hence the explicit rules. */
+:root[data-theme='light'] { --icon-filter: invert(0.88) }
+
+@media (prefers-color-scheme: light) {
+	:root:not([data-theme='dark']) { --icon-filter: invert(0.88) }
+}
+
+/* Tints derived from the accent and status colours. They are declared wherever those colours are redefined so each scope mixes its own values. */
+:root, .interceptor-mode-signing {
+	--accent-soft-color: color-mix(in srgb, var(--accent-color) 13%, transparent);
+	--accent-line-color: color-mix(in srgb, var(--accent-color) 40%, transparent);
+	--positive-soft-color: color-mix(in srgb, var(--positive-color) 14%, transparent);
+	--danger-soft-color: color-mix(in srgb, var(--danger-color) 14%, transparent);
+	--danger-line-color: color-mix(in srgb, var(--danger-color) 42%, transparent);
+	--warning-soft-color: color-mix(in srgb, var(--warning-color) 14%, transparent);
+	--warning-line-color: color-mix(in srgb, var(--warning-color) 42%, transparent);
+}
+
+/* Signing mode moves real funds, so its pages swap the calm simulation accent for an amber one. */
+.interceptor-mode-signing {
+	--accent-color: light-dark(#a86400, #f0a53a);
+	--highlighted-accent-color: light-dark(#c27a10, #f6bd6c);
+	--disabled-action-color: light-dark(#d9b98a, #6b4a1c);
+	--primary-action-color: #9a5b06;
+	--highlighted-primary-action-color: #a66307;
+	--checked-switch-color: #9a5b06;
 }
 
 :where(svg[role=img], figure > svg, figure > img) { display: block }
@@ -101,7 +153,7 @@ data {
 .is-divider {
 	display: block;
 	position: relative;
-	border-top: 0.1rem solid #dbdbdb;
+	border-top: 0.1rem solid var(--strong-hairline-color);
 	height: 0.1rem;
 	margin: 2rem 0;
 	text-align: center;
@@ -166,13 +218,13 @@ svg[role="img"] {
 	width: 0.3125rem;
 	height: 0.3125rem;
 	border-radius: 100%;
-	outline: 1px solid var(--white-color);
+	outline: 1px solid var(--text-color);
 	outline-offset: 0.1875rem;
 	margin: 0.1875rem;
 }
 
 .safe-signer-option:has([type=radio]:checked):before {
-	background: var(--white-color);
+	background: var(--text-color);
 }
 
 .safe-signer-option-address {
@@ -770,7 +822,7 @@ svg[role="img"] {
 }
 
 .address-editor input[role=switch]:checked::before {
-	background: var(--black-color);
+	background: var(--white-color);
 	transform: translateX(16px);
 }
 
@@ -787,7 +839,7 @@ svg[role="img"] {
 .address-editor-modal {
 	border: 1px solid var(--layout-line-color);
 	border-radius: 10px;
-	box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+	box-shadow: var(--overlay-shadow);
 	max-width: min(468px, calc(100% - 32px));
 }
 
@@ -828,32 +880,30 @@ svg[role="img"] {
 
 input[type=checkbox]:not([role=switch]) {
 	appearance: none;
-	background-color: var(--white-color);
 	margin: 0;
 	font-size: 1.2em;
-	color: var(--black-color);
+	color: var(--bg-color);
 	place-content: center;
 	width: 1.15em;
 	height: 1.15em;
 	display: grid;
-	border-radius: 3px;
-	background-color: var(--unimportant-text-color);
-	border: 1px solid var(--black-color);
+	border-radius: 5px;
+	background-color: var(--alpha-005);
+	border: 1.5px solid var(--strong-hairline-color);
 }
 
 input[type=checkbox]:not([role=switch])::before {
 	content: '✔';
 	place-content: center;
 	display: flex;
-	color: var(--black-color);
+	color: var(--bg-color);
 	line-height: 1.15em;
 	width: 1.15em;
 	height: 1.15em;
 	transform: scale(0);
-	border-radius: 3px;
+	border-radius: 4px;
 	transition: 120ms transform ease-in-out;
 	background-color: var(--accent-color);
-	border: 1px solid var(--black-color);
 }
 
 input[type=checkbox]:not([role=switch]):checked::before {
@@ -864,16 +914,18 @@ input[type=checkbox]:not([role=switch]):checked::before {
 	position: fixed;
 	z-index: 9999;
 	cursor: default;
-	border: 1px solid var(--white-color);
-	background-color: var(--card-bg-color);
+	border: 1px solid var(--strong-hairline-color);
+	border-radius: var(--radius-small);
+	background-color: var(--tooltip-color);
+	box-shadow: var(--card-shadow);
 	max-width: 100%;
 	font-size: 0.75rem;
 }
 
 .preact-hint__content {
-	padding: 2px;
+	padding: 3px 7px;
 	border-radius: 1px;
-	color: var(--text-color);
+	color: var(--tooltip-text-color);
 	display: block;
 	white-space: normal;
 	max-width: 100%;
@@ -1072,7 +1124,7 @@ html, body {
 	height: unset;
 	border: unset;
 	border-radius: unset;
-	border-bottom: 2px solid white;
+	border-bottom: 2px solid var(--strong-hairline-color);
 	box-shadow: none;
 	font-size: 13px;
 	font-family: 'Inter', sans-serif;
@@ -1360,7 +1412,25 @@ li {
 
 .card {
 	background-color: var(--card-bg-color);
-	box-shadow: 0 1px 4px 1px rgba(0, 0, 0, 0.5);
+	border: 1px solid var(--hairline-color);
+	border-radius: var(--radius-large);
+	box-shadow: var(--card-shadow);
+}
+
+/* Cards nested inside a card are sections of it, so they step down to the medium radius and drop the shadow. */
+.card .card {
+	border-radius: var(--radius-medium);
+	box-shadow: none;
+}
+
+.card > .card-header:first-child, .card > .card-content:first-child {
+	border-top-left-radius: inherit;
+	border-top-right-radius: inherit;
+}
+
+.card > .card-header:last-child, .card > .card-content:last-child {
+	border-bottom-left-radius: inherit;
+	border-bottom-right-radius: inherit;
 }
 
 .simulation-summary-card {
@@ -1483,18 +1553,18 @@ li {
 }
 
 .card-content {
-	padding: 10px;
+	padding: 12px;
 	background-color: var(--card-content-bg-color);
-	border-bottom-left-radius: 0.25rem;
-	border-bottom-right-radius: 0.25rem;
-	border-left: 2px solid var(--card-bg-color);
-	border-right: 2px solid var(--card-bg-color);
-	border-bottom: 2px solid var(--card-bg-color);
 }
 
 .card-header {
 	column-gap: 1rem;
 	background-color: var(--card-header-bg-color);
+	box-shadow: none;
+}
+
+.card-header:has(+ .card-content) {
+	border-bottom: 1px solid var(--hairline-color);
 }
 
 .card-header.window-header {
@@ -1508,8 +1578,13 @@ li {
 	background-color: var(--window-header-bg-color);
 }
 
+.window-header {
+	border-bottom: 1px solid var(--hairline-color);
+}
+
 .window-footer {
 	background-color: var(--window-header-bg-color);
+	border-top: 1px solid var(--hairline-color);
 	display: block;
 }
 
@@ -1531,11 +1606,12 @@ li {
 }
 
 .token-box {
-	padding: 4px;
-	background-color: var(--highlighted-accent-color);
+	padding: 3px 8px;
+	background-color: var(--accent-soft-color);
+	border-radius: var(--radius-medium);
 	box-shadow: unset;
-	margin-bottom: 5px;
-	margin-top: 5px;
+	margin-bottom: 4px;
+	margin-top: 4px;
 }
 
 .content p:not(:last-child), .content dl:not(:last-child), .content ol:not(:last-child), .content ul:not(:last-child), .content blockquote:not(:last-child), .content pre:not(:last-child) {
@@ -1547,13 +1623,13 @@ li {
 }
 
 .positive-box {
-	background-color: var(--positive-color);
-	color: var(--text-color);
+	background-color: var(--positive-soft-color);
+	color: var(--positive-color);
 }
 
 .negative-box {
-	background-color: var(--danger-color);
-	color: var(--text-color);
+	background-color: var(--danger-soft-color);
+	color: var(--danger-color);
 }
 
 .dropdown-trigger > button.is-danger:before {
@@ -1561,7 +1637,7 @@ li {
 	width: 1.1em;
 	height: 1.1em;
 	font-size: 0.9em;
-	background: white;
+	background: var(--white-color);
 	color: var(--danger-color);
 	flex: 0 0 auto;
 	align-items: center;
@@ -1571,9 +1647,10 @@ li {
 }
 
 .dropdown-content {
-	background-color: var(--card-content-bg-color);
-	box-shadow: 0px 8px 16px 0px rgb(0 0 0 / 20%);
-	border: 1px solid var(--white-alpha-20);
+	background-color: var(--surface-raised-color);
+	border-radius: var(--radius-medium);
+	box-shadow: var(--overlay-shadow);
+	border: 1px solid var(--strong-hairline-color);
 	position: absolute;
 	z-index: 20;
 	padding: 10px;
@@ -1698,12 +1775,31 @@ svg.spinner > circle {
 	place-content: space-between;
 }
 
+/* Segmented control: the track is a raised surface and only the active mode is filled. */
 .buttons.popup-home-mode-selector {
-	border: 1px solid var(--accent-color);
-	border-radius: 6px;
+	background-color: var(--surface-raised-color);
+	border: 1px solid var(--hairline-color);
+	border-radius: var(--radius-medium);
 	display: inline-flex;
+	gap: 2px;
 	margin-bottom: 0;
-	padding: 1px;
+	padding: 3px;
+}
+
+.buttons.popup-home-mode-selector > .button {
+	border-radius: 7px;
+	height: 2.125em;
+	margin-right: 0;
+}
+
+.buttons.popup-home-mode-selector > .button.button--secondary {
+	background-color: transparent;
+	color: var(--subtitle-text-color);
+}
+
+.buttons.popup-home-mode-selector > .button.button--secondary:not([disabled]):hover {
+	background-color: var(--surface-highest-color);
+	color: var(--text-color);
 }
 
 .popup-home-rpc-selector {
@@ -1970,4 +2066,563 @@ svg.spinner > circle {
 	top: 50%;
 	left: 50%;
 	transform: translate(-50%, -50%);
+}
+
+/* Shared control shapes */
+.button {
+	border-radius: var(--radius-medium);
+	font-weight: 600;
+}
+
+.button.is-small {
+	border-radius: 8px;
+}
+
+.notification {
+	border-radius: var(--radius-medium);
+}
+
+/* Error and warning notices are tinted panels with a matching outline, so they read as alerts without overpowering the content. */
+.error-notification, .unexpected-error-notification {
+	border: 1px solid var(--danger-line-color);
+	color: var(--danger-color);
+}
+
+.error-notification[data-severity='warning'] {
+	border-color: var(--warning-line-color);
+	color: var(--warning-color);
+}
+
+.unexpected-error-message {
+	border: 1px solid var(--danger-line-color);
+	border-radius: var(--radius-small);
+	max-height: 100px;
+	overflow-x: hidden;
+	overflow-y: auto;
+	padding: 6px 8px;
+}
+
+.error-notification-icon {
+	flex: 0 0 auto;
+	font-size: 1.5rem;
+	line-height: 1;
+}
+
+.error-notification-icon > svg {
+	display: block;
+}
+
+.navbar.window-header, .navbar.window-header .navbar-brand {
+	min-height: 3rem;
+}
+
+.navbar-title {
+	color: var(--text-color);
+	font-size: 0.8125rem;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	padding-left: 8px;
+}
+
+.navbar-version {
+	color: var(--disabled-text-color);
+	font-size: 0.6875rem;
+	font-weight: 400;
+	letter-spacing: 0;
+	padding-left: 6px;
+}
+
+.navbar-actions {
+	align-items: center;
+	display: flex;
+	gap: 2px;
+}
+
+.navbar-action {
+	align-items: center;
+	padding: 0;
+	border-radius: 8px;
+	cursor: pointer;
+	display: inline-flex;
+	height: 2.25rem;
+	justify-content: center;
+	width: 2.25rem;
+}
+
+.navbar-action:hover, .navbar-action:focus-visible {
+	background-color: var(--surface-raised-color);
+}
+
+.navbar-action > img {
+	height: 1.375rem;
+	opacity: 0.8;
+	width: 1.375rem;
+}
+
+/* The bundled line icons are drawn in white; the light theme darkens them through this filter. */
+img:is([src$='/address-book.svg'], [src$='/internet.svg'], [src$='/settings.svg'], [src$='/access-key.svg'], [src$='/LOGOA.svg'], [src$='/rename.svg'], [src$='/question-mark-sign.svg']) {
+	filter: var(--icon-filter);
+}
+
+/* Popup home */
+.popup-mode-banner {
+	background-color: var(--accent-soft-color);
+	border: 1px solid var(--accent-line-color);
+	border-radius: var(--radius-medium);
+	color: var(--accent-color);
+	font-size: 0.8125rem;
+	line-height: 1.35;
+	margin: 0 0.75rem 0.5rem;
+	padding: 7px 12px;
+}
+
+.connection-chip {
+	border-radius: 999px;
+	font-size: 0.6875rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	line-height: 1;
+	padding: 5px 9px;
+}
+
+.connection-chip--positive {
+	background-color: var(--positive-soft-color);
+	color: var(--positive-color);
+}
+
+.connection-chip--negative {
+	background-color: var(--danger-soft-color);
+	color: var(--danger-color);
+}
+
+.form-control.form-control--switch {
+	align-items: center;
+	grid-template-columns: max-content minmax(0, max-content);
+	width: max-content;
+}
+
+.simulation-results-header .h1 {
+	color: var(--subtitle-text-color);
+	font-size: 0.75rem;
+	font-weight: 700;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+}
+
+.simulation-results-header {
+	align-items: center;
+	margin-top: 4px;
+}
+
+/* Popup stack timeline: every row is a numbered step whose ring colour carries the row status. */
+.simulation-stack-list--timeline {
+	counter-reset: stack-step;
+	margin: 8px 10px 0;
+	padding: 0;
+}
+
+.simulation-stack-list--timeline > li {
+	column-gap: 10px;
+	counter-increment: stack-step;
+	display: grid;
+	grid-template-columns: 28px minmax(0, 1fr);
+	margin: 0;
+	padding-bottom: 8px;
+	position: relative;
+}
+
+.simulation-stack-list--timeline > li > * {
+	grid-column: 2;
+	min-width: 0;
+}
+
+.simulation-stack-list--timeline > li::before {
+	align-self: start;
+	background-color: var(--bg-color);
+	border: 2px solid var(--positive-color);
+	border-radius: 50%;
+	box-sizing: border-box;
+	color: var(--positive-color);
+	content: counter(stack-step);
+	font-size: 0.75rem;
+	font-weight: 700;
+	grid-column: 1;
+	grid-row: 1;
+	height: 28px;
+	line-height: 24px;
+	margin-top: 8px;
+	text-align: center;
+	width: 28px;
+	z-index: 1;
+}
+
+.simulation-stack-list--timeline > li::after {
+	background-color: var(--strong-hairline-color);
+	bottom: -8px;
+	content: '';
+	left: 13px;
+	position: absolute;
+	top: 36px;
+	width: 2px;
+}
+
+.simulation-stack-list--timeline > li:last-child::after {
+	display: none;
+}
+
+.simulation-stack-list--timeline > li[data-stack-status='warning']::before {
+	background-color: var(--warning-soft-color);
+	border-color: var(--warning-color);
+	color: var(--warning-color);
+}
+
+.simulation-stack-list--timeline > li[data-stack-status='failed']::before {
+	background-color: var(--danger-soft-color);
+	border-color: var(--danger-color);
+	color: var(--danger-color);
+}
+
+.simulation-stack-list--timeline > li[data-stack-status='pending']::before {
+	border-color: var(--strong-hairline-color);
+	color: var(--subtitle-text-color);
+}
+
+/* The numbered ring already shows the status, so the header icon would only repeat it. */
+.simulation-stack-list--timeline .stack-card-header > div.card-header-icon {
+	display: none;
+}
+
+.simulation-stack-list--timeline .stack-card-header > .card-header-title {
+	padding-left: 12px;
+}
+
+.simulation-stack-list--timeline .stack-card-header {
+	background-color: transparent;
+	border-bottom: 0;
+}
+
+.stack-row-outcome {
+	padding: 0 12px 10px;
+}
+
+.outcome-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.outcome-chip {
+	align-items: center;
+	background-color: var(--surface-raised-color);
+	border-radius: 999px;
+	color: var(--subtitle-text-color);
+	display: inline-flex;
+	font-size: 0.75rem;
+	font-weight: 600;
+	gap: 0.3em;
+	line-height: 1;
+	margin: 0;
+	max-width: 100%;
+	min-height: 22px;
+	padding: 3px 9px;
+	white-space: nowrap;
+}
+
+.outcome-chip--positive {
+	background-color: var(--positive-soft-color);
+	color: var(--positive-color);
+}
+
+.outcome-chip--negative {
+	background-color: var(--danger-soft-color);
+	color: var(--danger-color);
+}
+
+.outcome-chip--warning {
+	background-color: var(--warning-soft-color);
+	color: var(--warning-color);
+}
+
+.outcome-chip-logo {
+	border-radius: 50%;
+	height: 14px;
+	width: 14px;
+}
+
+.simulation-stack-delay {
+	align-items: center;
+	color: var(--subtitle-text-color);
+	display: flex;
+	font-size: 0.75rem;
+	padding-top: 6px;
+}
+
+.simulation-stack-delay .paragraph {
+	color: var(--subtitle-text-color);
+	font-size: 0.75rem;
+}
+
+.card.simulation-stack-prelude {
+	margin: 8px 10px 0 48px;
+}
+
+.empty-state {
+	background-color: var(--card-bg-color);
+	border: 1px solid var(--hairline-color);
+	border-radius: var(--radius-large);
+	display: grid;
+	justify-items: center;
+	margin: 10px;
+	padding: 22px 20px 24px;
+	row-gap: 6px;
+	text-align: center;
+}
+
+.empty-state-image {
+	height: 64px;
+	opacity: 0.9;
+	width: 64px;
+}
+
+.empty-state-title {
+	color: var(--text-color);
+	font-size: 0.9375rem;
+	font-weight: 650;
+}
+
+.empty-state-text {
+	color: var(--subtitle-text-color);
+	font-size: 0.8125rem;
+	line-height: 1.45;
+	max-width: 22rem;
+}
+
+.popup-footer-content {
+	align-items: center;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	height: 100%;
+	padding: 0 12px;
+}
+
+/* Confirmation dialog */
+.transaction-steps {
+	display: grid;
+	margin-bottom: 10px;
+	row-gap: 4px;
+}
+
+.transaction-steps-heading {
+	align-items: center;
+	column-gap: 10px;
+	display: flex;
+	justify-content: space-between;
+}
+
+.transaction-steps-label {
+	color: var(--subtitle-text-color);
+	flex: 0 0 auto;
+	font-size: 0.6875rem;
+	font-weight: 700;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+}
+
+.transaction-steps-track {
+	display: flex;
+	flex: 0 1 auto;
+	flex-wrap: wrap;
+	gap: 4px;
+	justify-content: flex-end;
+	list-style: none;
+	margin: 0;
+	min-width: 0;
+	padding: 0;
+}
+
+.transaction-step {
+	background-color: var(--positive-color);
+	border-radius: 2px;
+	height: 4px;
+	margin: 0;
+	opacity: 0.55;
+	width: 14px;
+}
+
+.transaction-step--current {
+	background-color: var(--accent-color);
+	opacity: 1;
+	width: 26px;
+}
+
+/* Step names stay available to assistive technology and as the hover title; the context line below spells them out visually. */
+.transaction-step-name {
+	border: 0;
+	clip: rect(0, 0, 0, 0);
+	height: 1px;
+	margin: -1px;
+	overflow: hidden;
+	padding: 0;
+	position: absolute;
+	white-space: nowrap;
+	width: 1px;
+}
+
+.transaction-steps-context {
+	color: var(--disabled-text-color);
+	font-size: 0.75rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.transaction-checks {
+	background-color: var(--alpha-005);
+	border-radius: var(--radius-medium);
+	display: grid;
+	list-style: none;
+	margin: 10px 0;
+	padding: 10px 12px;
+	row-gap: 6px;
+}
+
+.transaction-check {
+	align-items: start;
+	color: var(--text-color);
+	column-gap: 8px;
+	display: grid;
+	font-size: 0.8125rem;
+	grid-template-columns: 1rem minmax(0, 1fr);
+	line-height: 1.35;
+	margin: 0;
+}
+
+.transaction-check-icon {
+	display: grid;
+	font-size: 1rem;
+	height: 1.1rem;
+	place-items: center;
+}
+
+.transaction-check-text {
+	overflow-wrap: anywhere;
+}
+
+.transaction-check--positive > .transaction-check-icon { color: var(--positive-color) }
+.transaction-check--warning > .transaction-check-icon { color: var(--warning-color) }
+.transaction-check--negative > .transaction-check-icon { color: var(--danger-color) }
+.transaction-check--neutral > .transaction-check-icon { color: var(--disabled-text-color) }
+
+.transaction-check-dot {
+	background-color: currentColor;
+	border-radius: 50%;
+	height: 6px;
+	width: 6px;
+}
+
+.transaction-meta-row {
+	--normal-font-size: 0.75rem;
+}
+
+.transaction-meta-row, .transaction-meta-row p {
+	font-size: 0.75rem;
+}
+
+/* Collapsible detail sections inside a card are flat rows rather than raised cards. */
+.card-content > .card, .card-content .container > .card {
+	background-color: transparent;
+	border-color: var(--hairline-color);
+}
+
+.card-content > .card > .card-header {
+	background-color: var(--alpha-005);
+}
+
+/* Whichever action the Interceptor recommends gets the wider button. */
+.confirmation-action-buttons > .button--recommended {
+	flex-grow: 1.5;
+}
+
+/* Website access request */
+.access-request-hero {
+	display: grid;
+	justify-items: center;
+	padding: 18px 12px 14px;
+	row-gap: 4px;
+	text-align: center;
+}
+
+.access-request-site-icon {
+	border-radius: var(--radius-large);
+	height: 56px;
+	margin-bottom: 6px;
+	width: 56px;
+}
+
+.access-request-site {
+	color: var(--text-color);
+	font-size: 1.25rem;
+	font-weight: 700;
+	line-height: 1.25;
+	max-width: 100%;
+	overflow-wrap: anywhere;
+}
+
+.access-request-ask {
+	color: var(--subtitle-text-color);
+	font-size: 0.9375rem;
+}
+
+.access-request-account {
+	background-color: var(--surface-raised-color);
+	border: 1px solid var(--hairline-color);
+	border-radius: var(--radius-medium);
+	padding: 10px 12px;
+}
+
+.access-capabilities {
+	margin-top: 12px;
+}
+
+.access-capabilities-heading {
+	color: var(--subtitle-text-color);
+	font-size: 0.6875rem;
+	font-weight: 700;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+}
+
+.transaction-checks.access-capabilities-list {
+	margin: 6px 0 12px;
+}
+
+/* Outcome of a finished action, tinted by result. */
+.result-notice {
+	border: 1px solid var(--hairline-color);
+	color: var(--text-color);
+	margin-bottom: 12px;
+	padding: 8px 12px;
+}
+
+.result-notice--positive {
+	background-color: var(--positive-soft-color);
+	border-color: color-mix(in srgb, var(--positive-color) 42%, transparent);
+}
+
+.result-notice--warning {
+	background-color: var(--warning-soft-color);
+	border-color: var(--warning-line-color);
+}
+
+.result-notice--negative {
+	background-color: var(--danger-soft-color);
+	border-color: var(--danger-line-color);
+}
+
+/* Request dialogs outside the confirmation page share its rule: the confirming action is the wider one. */
+.dialog-action-button--confirm.is-primary {
+	flex-grow: 1.5;
 }

@@ -2,6 +2,7 @@ import { Component, type ComponentChild, type ComponentChildren, type JSX } from
 import type { Signal } from '@preact/signals'
 import { SomeTimeAgo } from './SomeTimeAgo.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
+import { WarningSignIcon } from './icons.js'
 
 interface ErrorProps {
 	text: SignalOrValue<ComponentChild>
@@ -24,10 +25,8 @@ export function ErrorComponent(props: ErrorProps) {
 	}
 	return (
 		<div style = { containerStyle }>
-			<div class = 'notification error-notification' style = { `background-color: ${ boxColor };` }>
-				<span class = 'icon' style = 'margin-left: 0px; margin-right: 0px; width: 2em; height: 2em; min-width: 2em; min-height: 2em; flex: 0 0 auto;'>
-					<img src = '../img/warning-sign-black.svg' width = '32' height = '32' style = 'width: 2em; height: 2em;'/>
-				</span>
+			<div class = 'notification error-notification' data-severity = { props.warning === true ? 'warning' : 'error' } style = { `background-color: ${ boxColor };` }>
+				<span class = 'error-notification-icon'><WarningSignIcon/></span>
 				<p class = 'paragraph' style = { `margin: 0px; min-width: 0; flex: 1; color: ${ textColor }; white-space: normal; overflow-wrap: anywhere; word-break: break-word;` }> { resolveSignal(props.text) } </p>
 			</div>
 		</div>
@@ -55,7 +54,7 @@ export function ErrorCheckBox(props: ErrorCheckboxProps) {
 	const textColor = props.warning === true ? 'var(--warning-box-text)' : 'var(--error-box-text)'
 	return (
 		<div>
-			<div class = 'notification' style = { `background-color: ${ boxColor }; padding: 10px;` }>
+			<div class = 'notification error-notification' data-severity = { props.warning === true ? 'warning' : 'error' } style = { `background-color: ${ boxColor };` }>
 				<label class = 'form-control' style = { `color: ${ textColor }; font-size: 1em;` }>
 					<input type = 'checkbox'
 						checked = { props.checked.value }
@@ -115,21 +114,19 @@ export function UnexpectedError({ error, close }: UnexpectedErrorParams) {
 		error.debugId === undefined ? undefined : `debug: ${ error.debugId }`,
 	].filter((value): value is string => value !== undefined)
 	return (
-		<div class = 'notification' style = { 'background-color: var(--error-box-color); padding: 10px; margin: 10px;' }>
-			<div style = 'display: flex; padding-bottom: 10px;'>
-				<span class = 'icon' style = 'margin-left: 0px; margin-right: 5px; width: 2em; height: 2em; min-width: 2em; min-height: 2em;'>
-					<img src = '../img/warning-sign-black.svg' width = '32' height = '32' style = 'width: 2em; height: 2em;'/>
-				</span>
-				<p class = 'paragraph' style = { 'margin-left: 10px; color: var(--error-box-text); align-self: center; font-weight: bold;' }>
+		<div class = 'notification unexpected-error-notification' data-severity = 'error' style = { 'background-color: var(--error-box-color); padding: 10px; margin: 10px;' }>
+			<div style = 'display: flex; align-items: center; gap: 10px; padding-bottom: 10px;'>
+				<span class = 'error-notification-icon'><WarningSignIcon/></span>
+				<p class = 'paragraph' style = { 'color: var(--error-box-text); align-self: center; font-weight: bold;' }>
 					An unexpected error occured! <SomeTimeAgo priorTimestamp = { error.timestamp } /> ago
 				</p>
 			</div>
-			<div style = { 'overflow-y: auto; overflow-x: hidden; max-height: 100px; border-style: solid;' }>
+			<div class = 'unexpected-error-message'>
 				<p class = 'paragraph' style = { 'color: var(--error-box-text);' }> { error.message } </p>
 				{ metadata.length > 0 ? <p class = 'paragraph' style = { 'color: var(--error-box-text); font-size: 0.8em;' }> { metadata.join(' | ') } </p> : <></> }
 			</div>
 			<div style = 'overflow: hidden; display: flex; justify-content: space-around; width: 100%; height: 50px; padding-top: 10px;'>
-				<button class = 'button is-success is-primary' onClick = { close }> { 'close' } </button>
+				<button class = 'button button--secondary' onClick = { close }> { 'close' } </button>
 			</div>
 		</div>
 	)
