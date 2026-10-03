@@ -9,7 +9,11 @@ export function withDelegateCleared(stateOverrides: StateOverrides, address: big
 }
 
 export function createDelegateClearingBlockState(stateOverrides: StateOverrides, address: bigint | undefined) {
-	return { stateOverrides: withDelegateCleared(stateOverrides, address), ...address === undefined ? {} : { delegateClearedAddress: address } }
+	return { stateOverrides, ...address === undefined ? {} : { delegateClearedAddress: address } }
+}
+
+export function getEffectiveStateOverrides(block: Pick<SimulationStateInputBlock, 'stateOverrides' | 'delegateClearedAddress'>): StateOverrides {
+	return withDelegateCleared(block.stateOverrides, block.delegateClearedAddress)
 }
 
 export function isDelegateClearedForBlock(block: Pick<SimulationStateInputBlock, 'delegateClearedAddress'>, address: bigint) {

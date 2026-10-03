@@ -34,8 +34,7 @@ import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
-import { getCachedDelegation } from './delegationSimulation.js'
-import { createDelegateClearingBlockState, isDelegateClearedForBlock } from '../utils/delegateClearingState.js'
+import { createDelegateClearingBlockState, getEffectiveStateOverrides, isDelegateClearedForBlock } from '../utils/delegateClearingState.js'
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -210,7 +209,7 @@ async function getDelegationAddressesForSimulation(
 		.map((transaction) => transaction.signedTransaction.from))))
 	const resolvedDelegations = await promiseAllMapAbortSafe(uniqueSenders, async (senderAddress) => {
 		try {
-			const delegationAddress = await getCachedDelegation(ethereum, senderAddress, requestAbortController)
+			const delegationAddress = await ethereum.getCachedDelegation(senderAddress, requestAbortController)
 			if (delegationAddress === undefined) return undefined
 			return {
 				senderAddress,
@@ -249,7 +248,7 @@ export const getGovernanceExecutionSimulationInput = (
 	return [
 		...simulationInput,
 		{
-			stateOverrides: executionStateOverrides,
+			...createDelegateClearingBlockState(executionStateOverrides, simulationInput[simulationInput.length - 1]?.delegateClearedAddress),
 			transactions: [executionTransaction],
 			signedMessages: [],
 			blockTimeManipulation: { type: 'SetTimetamp', timeToSet: dateToBigintSeconds(executionTimestamp) },
@@ -334,12 +333,14 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			contractExecutionResult.ethSimulateV1CallResult,
 		)
 
+		const governanceExecutionBlock = governanceExecutionSimulationInput[governanceExecutionSimulationInput.length - 1]
+		if (governanceExecutionBlock === undefined) throw new Error('Missing governance execution simulation block')
 		const governanceContractSimulationState: SimulationState = {
 			success: true,
-			simulationStateInput: governanceExecutionSimulationInput.slice(-1),
+				simulationStateInput: [governanceExecutionBlock],
 			simulatedBlocks: [{
 				signedMessages: [],
-				stateOverrides: contractExecutionResult.executionStateOverrides,
+				stateOverrides: getEffectiveStateOverrides(governanceExecutionBlock),
 				blockTimestamp: contractExecutionResult.executionTimestamp,
 				blockTimeManipulation: { type: 'SetTimetamp', timeToSet: dateToBigintSeconds(contractExecutionResult.executionTimestamp) },
 				simulatedTransactions: [{

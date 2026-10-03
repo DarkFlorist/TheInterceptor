@@ -39,7 +39,6 @@ import { acknowledgeAndTrackBridgeRequest, INTERCEPTOR_BRIDGE_ACKNOWLEDGEMENT_ME
 import { registerWebsiteConnectionAndProvisionallyClaimSignerState } from './signerStateOwnership.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import { initializeTabStateStorage } from './tabStateLifecycle.js'
-import { invalidateCachedDelegation } from './delegationSimulation.js'
 
 const connections = new Map<number, TabConnection>()
 const safeAppsCompatibility = createSafeAppsCompatibilityFeature(connections)
@@ -230,7 +229,6 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) {
 	if (ethereumClientService !== getSimulationServices().ethereum) return
 	if (blockheader === null) throw new Error('The latest block is null')
-	if (isNewBlock) invalidateCachedDelegation(ethereumClientService)
 	try {
 		const rpcConnectionStatus = {
 			isConnected: true,

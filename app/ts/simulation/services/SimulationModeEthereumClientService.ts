@@ -31,7 +31,7 @@ import { calculateRealizedEffectiveGasPrice, getBlockTimeManipulationSeconds, ge
 import { getSignedTransactionForSimulation, mockSignTransaction } from './simulationTransactionSigning.js'
 import { getMessageHashForPersonalSign, simulatePersonalSign } from './simulationPersonalSigning.js'
 import { type BalanceQuery, getTokenBalanceQueriesForTransaction } from './simulationTokenBalanceQueries.js'
-import { createDelegateClearingBlockState, withDelegateCleared } from '../../utils/delegateClearingState.js'
+import { createDelegateClearingBlockState, getEffectiveStateOverrides, withDelegateCleared } from '../../utils/delegateClearingState.js'
 
 export { getSignedTransactionForSimulation, mockSignTransaction }
 export { getMessageHashForPersonalSign, simulatePersonalSign }
@@ -356,7 +356,7 @@ const simulateBlockCallWithPreparedInputContext = async (
 				baseFeePerGas: simulateWithZeroBaseFee ? 0n : baseFeePerGas,
 				time: getNextBlockTimeStampOverride(previousBlockTime, DEFAULT_BLOCK_MANIPULATION),
 			},
-			stateOverrides: extraOverrides,
+			stateOverrides: withDelegateCleared(extraOverrides, context?.prepared.rpcBlocks[simulationPrefixBlockCount - 1]?.delegateClearedAddress),
 		},
 	]
 	const simulationResult = await ethereumClientService.ethSimulateV1(blockStateCalls, parentBlock.number, requestAbortController)
@@ -503,7 +503,7 @@ const inspectSimulationInput = async (
 
 const getExecutionSimulationStateBlockBase = (callResult: GroupedEthSimulateV1BlockResult) => ({
 	signedMessages: callResult.inputBlock.signedMessages || [],
-	stateOverrides: callResult.inputBlock.stateOverrides || {},
+	stateOverrides: getEffectiveStateOverrides(callResult.inputBlock),
 	blockTimestamp: bigintSecondsToDate(callResult.timestamp),
 	blockTimeManipulation: callResult.inputBlock.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION,
 	blockBaseFeePerGas: callResult.baseFeePerGas,
@@ -635,7 +635,7 @@ export const appendTransactionsToInput = (simulationStateInput: SimulationStateI
 	if (simulationStateInput[blockToAppendTo] !== undefined) {
 		return simulationStateInput.map((block, index) => ({
 			...block,
-			stateOverrides: index === blockToAppendTo ? withDelegateCleared(mergeStateSets(block.stateOverrides, stateOverrides), block.delegateClearedAddress) : block.stateOverrides,
+			stateOverrides: index === blockToAppendTo ? mergeStateSets(block.stateOverrides, stateOverrides) : block.stateOverrides,
 			transactions: index === blockToAppendTo ? [...block.transactions, ...newTransactions] : block.transactions,
 		}))
 	}
