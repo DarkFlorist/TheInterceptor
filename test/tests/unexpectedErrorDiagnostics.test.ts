@@ -181,6 +181,46 @@ const storageDiagnostic = (index: number, rawError: string): InterceptorErrorDia
 })
 
 describe('unexpected error diagnostics', () => {
+	test('preserves diagnostics stored before raw errors were recorded', async () => {
+		browserMock.reset()
+		const { appendInterceptorErrorDiagnostic, getInterceptorErrorDiagnostics } = await modulesPromise
+		await browserMock.writeStorage({ interceptorErrorDiagnostics: [{
+			timestamp: '0x6955b900',
+			source: 'background',
+			code: 'legacy_failure',
+			category: 'unexpected',
+			severity: 'error',
+			message: 'Previously recorded failure',
+			userVisible: true,
+		}] })
+
+		const legacy = await getInterceptorErrorDiagnostics()
+		assert.equal(legacy.length, 1)
+		assert.equal(legacy[0]?.message, 'Previously recorded failure')
+		assert.equal(legacy[0]?.rawError, undefined)
+
+		await appendInterceptorErrorDiagnostic(storageDiagnostic(2, 'new raw error'))
+		assert.deepEqual((await getInterceptorErrorDiagnostics()).map((record) => record.code), ['legacy_failure', 'storage_2'])
+	})
+
+	test('preserves the latest unexpected error stored without raw details', async () => {
+		browserMock.reset()
+		const { getLatestUnexpectedError } = await modulesPromise
+		await browserMock.writeStorage({ latestUnexpectedError: {
+			method: 'popup_UnexpectedErrorOccured',
+			data: {
+				timestamp: '0x6955b900',
+				message: 'Previously recorded popup failure',
+				source: 'popup',
+				code: 'legacy_popup_failure',
+			},
+		} })
+
+		const latest = await getLatestUnexpectedError()
+		assert.equal(latest?.data.message, 'Previously recorded popup failure')
+		assert.equal(latest?.data.rawError, undefined)
+	})
+
 	test('returns and clears stored diagnostics for the management page', async () => {
 		browserMock.reset()
 		const { appendInterceptorErrorDiagnostic, getInterceptorErrorDiagnostics } = await import('../../app/ts/background/storageVariables.js')

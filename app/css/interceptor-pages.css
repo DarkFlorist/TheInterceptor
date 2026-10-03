@@ -34,7 +34,7 @@ header:has(form[role='search']) h1 {
 
 .simulation-stack-page > .simulation-stack-page-header {
 	background-color: var(--bg-color);
-	position: sticky;
+	position: var(--simulation-stack-header-position, sticky);
 	top: 0;
 	z-index: 10;
 }
@@ -180,7 +180,7 @@ header:has(form[role='search']) h1 {
 	background: var(--bg-color);
 	overflow-y: scroll;
 	overscroll-behavior: contain;
-	z-index: 10;
+	z-index: 30;
 }
 
 .input::-webkit-outer-spin-button {
@@ -768,6 +768,8 @@ fieldset[disabled] .button.is-primary.is-danger {
 }
 
 .management-page {
+	--address-book-height: calc(100vh - 3.75rem);
+	--simulation-stack-header-position: static;
 	display: flex;
 	flex-direction: column;
 	min-width: 0;
@@ -932,10 +934,6 @@ fieldset[disabled] .button.is-primary.is-danger {
 	max-width: 64rem;
 	margin-inline: auto;
 	padding: 2rem 1rem;
-}
-
-.management-panel .address-book-content {
-	height: calc(100vh - 3.75rem);
 }
 
 .diagnostics-page {
@@ -1112,6 +1110,9 @@ fieldset[disabled] .button.is-primary.is-danger {
 
 
 @media screen and (max-width: 520px) {
+	.management-page {
+		--address-book-height: auto;
+	}
 
 	.management-header {
 		align-items: stretch;
@@ -1132,10 +1133,6 @@ fieldset[disabled] .button.is-primary.is-danger {
 		padding-inline: 0.5rem;
 	}
 
-	.management-panel .address-book-content {
-		height: auto;
-	}
-
 	.diagnostics-page {
 		padding: 0.75rem;
 	}
@@ -1152,12 +1149,4 @@ fieldset[disabled] .button.is-primary.is-danger {
 		align-items: flex-start;
 	}
 
-}
-
-.management-panel .simulation-stack-page > .simulation-stack-page-header {
-	position: static;
-}
-
-.management-panel .access-details {
-	z-index: 30;
 }

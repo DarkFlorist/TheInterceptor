@@ -23,7 +23,6 @@ import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
 import { getWebsiteOriginFromHash, getWebsiteOriginHash, WEBSITE_ORIGIN_RADIO_NAME } from '../../utils/websiteAccessHash.js'
-import { getManagementPageHash } from '../../utils/managementPages.js'
 
 type WebsiteAccessContext = {
 	searchQuery: Signal<string>
@@ -71,8 +70,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 			return false
 		}
 
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 	}
 
 	const listenForWindowHashChanges = () => {
@@ -100,12 +98,12 @@ export function useWebsiteAccess() {
 	return context
 }
 
-export function clearSelectedWebsite(windowObject: Pick<Window, 'location'>, selectedDomain: Signal<string | undefined>) {
+export function clearSelectedWebsite(windowObject: Pick<Window, 'location'>, selectedDomain: Signal<string | undefined>, listHash: string) {
 	selectedDomain.value = undefined
-	windowObject.location.hash = getManagementPageHash('websites')
+	windowObject.location.hash = listHash
 }
 
-export const WebsiteAccessView = () => {
+export const WebsiteAccessView = ({ listHash }: { listHash: string }) => {
 	return (
 		<WebsiteAccessProvider>
 			<main>
@@ -116,7 +114,7 @@ export const WebsiteAccessView = () => {
 					</header>
 					<article>
 						<WebsiteSettingsList />
-						<WebsiteSettingsDetail />
+						<WebsiteSettingsDetail listHash = { listHash } />
 					</article>
 				</div>
 			</main>
@@ -259,12 +257,12 @@ const FullFrameWindow = ({ children }: { children: ComponentChildren }) => {
 
 type Modals = { page: 'noModal' } | { page: 'ModifyAddress', state: Signal<ModifyAddressWindowState> }
 
-const WebsiteSettingsDetail = () => {
+const WebsiteSettingsDetail = ({ listHash }: { listHash: string }) => {
 	const { websiteAccessList, selectedDomain } = useWebsiteAccess()
 	const selectedWebsiteAccess = useOptionalComputed(() => websiteAccessList.value.find(access => access.website.websiteOrigin === selectedDomain.value))
 	const modalState = useSignal<Modals>({ page: 'noModal' })
 	const rpcEntries = useSignal<RpcEntries>([])
-	const closeDetails = () => { clearSelectedWebsite(window, selectedDomain) }
+	const closeDetails = () => { clearSelectedWebsite(window, selectedDomain, listHash) }
 
 	function renameAddressCallBack(entry: AddressBookEntry) {
 		modalState.value = { page: 'ModifyAddress', state: new Signal(addressEditEntry(entry)) }
@@ -285,8 +283,7 @@ const WebsiteSettingsDetail = () => {
 			}
 			return false
 		}
-		noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
-		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
+		return noReplyExpectingBrowserRuntimeOnMessageListener(popupMessageListener)
 	})
 
 	useEffect(() => { sendPopupMessageToBackgroundPage({ method: 'popup_requestSettings' }) }, [])

@@ -1,53 +1,23 @@
 import type { TransactionOrMessageIdentifier } from '../types/interceptor-messages.js'
-import { getSimulationStackTargetElementIdFromHash, getSimulationStackTargetHash } from './simulationStackTargets.js'
-import { isWebsiteOriginHash } from './websiteAccessHash.js'
+import { getSimulationStackTargetHash } from './simulationStackTargets.js'
 
 export type ManagementPage = 'home' | 'websites' | 'address-book' | 'simulation-stack' | 'diagnostics' | 'settings'
 export type ManagementOpenRequest = 'popup_openManagement' | 'popup_openWebsiteAccess' | 'popup_openAddressBook' | 'popup_openSettings'
-export type MountedManagementPages = Readonly<{
-	home: boolean
-	websites: boolean
-	'address-book': boolean
-	'simulation-stack': boolean
-	diagnostics: boolean
-	settings: boolean
-}>
-
 export const managementPages: readonly ManagementPage[] = ['home', 'websites', 'address-book', 'simulation-stack', 'diagnostics', 'settings']
 
 export function getManagementPageFromHash(hash: string): ManagementPage | undefined {
 	if (hash === '' || hash === '#') return 'home'
-	if (isWebsiteOriginHash(hash)) return 'websites'
-	if (getSimulationStackTargetElementIdFromHash(hash) !== undefined) return 'simulation-stack'
+	if (hash.startsWith('#websites?')) return 'websites'
+	if (hash.startsWith('#simulation-stack?')) return 'simulation-stack'
+	// Preserve deep links created by earlier releases without parsing page-owned data.
+	if (hash.startsWith('#origin:') && hash.length > '#origin:'.length) return 'websites'
+	if (hash.startsWith('#simulation-stack-target=')) return 'simulation-stack'
 	const hashPage = hash.startsWith('#') ? hash.slice(1) : hash
 	return managementPages.find((page) => page === hashPage)
 }
 
 export function getManagementPageHash(page: ManagementPage) {
 	return `#${ page }`
-}
-
-export function createMountedManagementPages(initialPage: ManagementPage | undefined): MountedManagementPages {
-	return {
-		home: initialPage === 'home',
-		websites: initialPage === 'websites',
-		'address-book': initialPage === 'address-book',
-		'simulation-stack': initialPage === 'simulation-stack',
-		diagnostics: initialPage === 'diagnostics',
-		settings: initialPage === 'settings',
-	}
-}
-
-export function mountManagementPage(mountedPages: MountedManagementPages, page: ManagementPage): MountedManagementPages {
-	if (mountedPages[page]) return mountedPages
-	switch (page) {
-		case 'home': return { ...mountedPages, home: true }
-		case 'websites': return { ...mountedPages, websites: true }
-		case 'address-book': return { ...mountedPages, 'address-book': true }
-		case 'simulation-stack': return { ...mountedPages, 'simulation-stack': true }
-		case 'diagnostics': return { ...mountedPages, diagnostics: true }
-		case 'settings': return { ...mountedPages, settings: true }
-	}
 }
 
 function getManagementPageFromOpenRequest(method: ManagementOpenRequest): ManagementPage {

@@ -13,7 +13,7 @@ function getRuleBody(selector: string) {
 describe('management view CSS', () => {
 	test('website details render above the sticky management navigation', () => {
 		const managementHeader = getRuleBody('.management-header')
-		const websiteDetails = getRuleBody('.management-panel .access-details')
+		const websiteDetails = getRuleBody('.access-details')
 		const managementHeaderZIndex = Number(managementHeader.match(/z-index:\s*(\d+)/)?.[1])
 		const websiteDetailsZIndex = Number(websiteDetails.match(/z-index:\s*(\d+)/)?.[1])
 

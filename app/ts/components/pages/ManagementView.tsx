@@ -1,5 +1,5 @@
 import { useEffect } from 'preact/hooks'
-import { batch, useSignal } from '@preact/signals'
+import { useSignal } from '@preact/signals'
 import type { JSX } from 'preact'
 import { AddressBook } from '../../AddressBook.js'
 import { WebsiteAccessView } from './WebsiteAccess.js'
@@ -7,7 +7,7 @@ import { SettingsView } from './SettingsView.js'
 import { SimulationStackPage } from './SimulationStackPage.js'
 import { DiagnosticsView } from './DiagnosticsView.js'
 import Hint from '../subcomponents/Hint.js'
-import { createMountedManagementPages, getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash, managementPages, mountManagementPage, type ManagementPage } from '../../utils/managementPages.js'
+import { getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash, managementPages, type ManagementPage } from '../../utils/managementPages.js'
 
 const managementSectionDetails: Readonly<Record<ManagementPage, { label: string, icon: string, description: string }>> = {
 	home: { label: 'Home', icon: '../img/management-home.svg', description: '' },
@@ -68,7 +68,6 @@ function ManagementHome({ selectPage }: { selectPage: (page: ManagementPage) => 
 export function ManagementView() {
 	const initialPage = getManagementPageFromHash(globalThis.location.hash)
 	const selectedPage = useSignal<ManagementPage | undefined>(initialPage)
-	const mountedPages = useSignal(createMountedManagementPages(initialPage))
 
 	useEffect(() => {
 		const updateSelectedPage = () => {
@@ -94,10 +93,7 @@ export function ManagementView() {
 	}, [selectedPage.value])
 
 	function activatePage(page: ManagementPage | undefined) {
-		batch(() => {
-			if (page !== undefined) mountedPages.value = mountManagementPage(mountedPages.peek(), page)
-			selectedPage.value = page
-		})
+		selectedPage.value = page
 	}
 
 	function selectPage(page: ManagementPage) {
@@ -135,7 +131,7 @@ export function ManagementView() {
 			tabIndex = { selectedPage.value === 'home' ? 0 : -1 }
 			hidden = { selectedPage.value !== 'home' }
 		>
-			{ mountedPages.value.home ? <ManagementHome selectPage = { selectPage } /> : <></> }
+			{ selectedPage.value === 'home' ? <ManagementHome selectPage = { selectPage } /> : <></> }
 		</section>
 		<section
 			id = 'management-panel-websites'
@@ -145,7 +141,7 @@ export function ManagementView() {
 			tabIndex = { selectedPage.value === 'websites' ? 0 : -1 }
 			hidden = { selectedPage.value !== 'websites' }
 		>
-			{ mountedPages.value.websites ? <WebsiteAccessView /> : <></> }
+			{ selectedPage.value === 'websites' ? <WebsiteAccessView listHash = { getManagementPageHash('websites') } /> : <></> }
 		</section>
 		<section
 			id = 'management-panel-address-book'
@@ -155,7 +151,7 @@ export function ManagementView() {
 			tabIndex = { selectedPage.value === 'address-book' ? 0 : -1 }
 			hidden = { selectedPage.value !== 'address-book' }
 		>
-			{ mountedPages.value['address-book'] ? <AddressBook /> : <></> }
+			{ selectedPage.value === 'address-book' ? <AddressBook /> : <></> }
 		</section>
 		<section
 			id = 'management-panel-simulation-stack'
@@ -165,7 +161,7 @@ export function ManagementView() {
 			tabIndex = { selectedPage.value === 'simulation-stack' ? 0 : -1 }
 			hidden = { selectedPage.value !== 'simulation-stack' }
 		>
-			{ mountedPages.value['simulation-stack'] ? <Hint><SimulationStackPage /></Hint> : <></> }
+			{ selectedPage.value === 'simulation-stack' ? <Hint><SimulationStackPage /></Hint> : <></> }
 		</section>
 		<section
 			id = 'management-panel-diagnostics'
@@ -175,7 +171,7 @@ export function ManagementView() {
 			tabIndex = { selectedPage.value === 'diagnostics' ? 0 : -1 }
 			hidden = { selectedPage.value !== 'diagnostics' }
 		>
-			{ mountedPages.value.diagnostics ? <DiagnosticsView /> : <></> }
+			{ selectedPage.value === 'diagnostics' ? <DiagnosticsView /> : <></> }
 		</section>
 		<section
 			id = 'management-panel-settings'
@@ -185,7 +181,7 @@ export function ManagementView() {
 			tabIndex = { selectedPage.value === 'settings' ? 0 : -1 }
 			hidden = { selectedPage.value !== 'settings' }
 		>
-			{ mountedPages.value.settings ? <SettingsView /> : <></> }
+			{ selectedPage.value === 'settings' ? <SettingsView /> : <></> }
 		</section>
 	</div>
 }

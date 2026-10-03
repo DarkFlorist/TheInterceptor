@@ -5,6 +5,7 @@ import { Signal } from '@preact/signals'
 import { act } from 'preact/test-utils'
 import { installDomMock } from './domMock.js'
 import type { WebsiteAccess } from '../../app/ts/types/websiteAccessTypes.js'
+import { getWebsiteOriginHash } from '../../app/ts/utils/websiteAccessHash.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 type RuntimeMessage = {
@@ -220,11 +221,11 @@ const modulesPromise = import('../../app/ts/components/pages/WebsiteAccess.js')
 
 describe('WebsiteAccessView selection', () => {
 	test('binds the checked radio to the selected domain from the URL hash', async () => {
-		const dom = installWindowHashMock('#origin:beta.example')
+		const dom = installWindowHashMock(getWebsiteOriginHash('beta.example'))
 		const { WebsiteAccessView } = await modulesPromise
 
 		await act(() => {
-			render(h(WebsiteAccessView, {}), dom.document.body)
+			render(h(WebsiteAccessView, { listHash: '#websites' }), dom.document.body)
 		})
 
 		await act(() => {
@@ -260,7 +261,7 @@ describe('WebsiteAccessView selection', () => {
 		const { WebsiteAccessView } = await modulesPromise
 
 		await act(() => {
-			render(h(WebsiteAccessView, {}), dom.document.body)
+			render(h(WebsiteAccessView, { listHash: '#websites' }), dom.document.body)
 		})
 
 		await act(() => {
@@ -297,7 +298,7 @@ describe('WebsiteAccessView selection', () => {
 		const { WebsiteAccessView } = await modulesPromise
 
 		await act(() => {
-			render(h(WebsiteAccessView, {}), dom.document.body)
+			render(h(WebsiteAccessView, { listHash: '#websites' }), dom.document.body)
 		})
 
 		await act(() => {
@@ -342,7 +343,7 @@ describe('WebsiteAccessView selection', () => {
 		const selectedDomain = new Signal<string | undefined>('app.sablier.com')
 		const location = { hash: '' }
 
-		clearSelectedWebsite({ location }, selectedDomain)
+		clearSelectedWebsite({ location }, selectedDomain, '#websites')
 
 		assert.equal(selectedDomain.value, undefined)
 		assert.equal(location.hash, '#websites')

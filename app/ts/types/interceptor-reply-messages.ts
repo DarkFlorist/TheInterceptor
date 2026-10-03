@@ -21,8 +21,7 @@ export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
 		source: funtypes.String,
 		code: funtypes.String,
 		debugId: funtypes.Union(funtypes.String, funtypes.Undefined),
-		rawError: funtypes.Union(funtypes.String, funtypes.Undefined),
-	})
+	}).And(funtypes.ReadonlyPartial({ rawError: funtypes.String }))
 })
 
 export type EnrichedRichListElement = funtypes.Static<typeof EnrichedRichListElement>
