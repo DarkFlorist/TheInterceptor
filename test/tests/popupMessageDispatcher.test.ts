@@ -9,6 +9,7 @@ import type { Settings } from '../../app/ts/types/interceptor-messages.js'
 const storageState: Record<string, unknown> = {}
 const sentMessages: unknown[] = []
 const dynamicRuleUpdates: unknown[] = []
+const contentScriptUpdateBatches: { readonly id: string, readonly excludeMatches?: readonly string[] }[][] = []
 const dispatcherEvents: ({ type: 'message', message: unknown } | { type: 'dynamicRuleUpdate' })[] = []
 let storageSetError: Error | undefined
 let dynamicRuleUpdateError: Error | undefined
@@ -80,6 +81,15 @@ Reflect.set(globalThis, 'browser', {
 		},
 		updateSessionRules: async () => undefined,
 	},
+	scripting: {
+		getRegisteredContentScripts: async () => [
+			{ id: 'inpage', excludeMatches: ['*://*.disabled.test/*'] },
+			{ id: 'inpage2', excludeMatches: ['*://*.disabled.test/*'] },
+		],
+		registerContentScripts: async () => undefined,
+		updateContentScripts: async (scripts: { readonly id: string, readonly excludeMatches?: readonly string[] }[]) => { contentScriptUpdateBatches.push(scripts) },
+		unregisterContentScripts: async () => undefined,
+	},
 })
 
 const [
@@ -114,6 +124,18 @@ const settings: Settings = {
 	simulationMode: true,
 }
 
+const disabledWebsiteAccess: Settings['websiteAccess'][number] = {
+	website: {
+		websiteOrigin: 'disabled.test',
+		icon: undefined,
+		title: 'Disabled website',
+	},
+	addressAccess: [],
+	access: false,
+	interceptorDisabled: true,
+	declarativeNetRequestBlockMode: 'disabled',
+}
+
 function createDispatcherContext(resetSimulationState: () => Promise<void>): PopupMessageDispatcherContext {
 	const ethereum: EthereumClientService = Object.create(EthereumClientServiceConstructor.prototype)
 	const tokenPriceService: TokenPriceService = Object.create(TokenPriceServiceConstructor.prototype)
@@ -135,10 +157,59 @@ beforeEach(() => {
 	for (const key of Object.keys(storageState)) delete storageState[key]
 	sentMessages.splice(0, sentMessages.length)
 	dynamicRuleUpdates.splice(0, dynamicRuleUpdates.length)
+	contentScriptUpdateBatches.splice(0, contentScriptUpdateBatches.length)
 	dispatcherEvents.splice(0, dispatcherEvents.length)
 })
 
 describe('popup message dispatcher seams', () => {
+	test('refreshes manifest v3 content script exclusions after removing a disabled website', async () => {
+		storageState.websiteAccess = [disabledWebsiteAccess]
+
+		await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_removeWebsiteAccess',
+			data: { websiteOrigin: 'disabled.test' },
+		})
+
+		assert.deepEqual(storageState.websiteAccess, [])
+		assert.equal(contentScriptUpdateBatches.length, 1)
+		assert.deepEqual(contentScriptUpdateBatches.at(-1)?.map(({ id, excludeMatches }) => ({ id, excludeMatches })), [
+			{ id: 'inpage2', excludeMatches: [] },
+			{ id: 'inpage', excludeMatches: [] },
+		])
+	})
+
+	test('does not refresh content script exclusions after removing an enabled website', async () => {
+		storageState.websiteAccess = [{ ...disabledWebsiteAccess, interceptorDisabled: false }]
+
+		await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_removeWebsiteAccess',
+			data: { websiteOrigin: 'disabled.test' },
+		})
+
+		assert.deepEqual(storageState.websiteAccess, [])
+		assert.equal(contentScriptUpdateBatches.length, 0)
+	})
+
+	test('refreshes manifest v3 content script exclusions after the access editor removes a disabled website', async () => {
+		storageState.websiteAccess = [disabledWebsiteAccess]
+
+		await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_changeInterceptorAccess',
+			data: [{
+				oldEntry: disabledWebsiteAccess,
+				newEntry: disabledWebsiteAccess,
+				removed: true,
+			}],
+		})
+
+		assert.deepEqual(storageState.websiteAccess, [])
+		assert.equal(contentScriptUpdateBatches.length, 1)
+		assert.deepEqual(contentScriptUpdateBatches.at(-1)?.map(({ id, excludeMatches }) => ({ id, excludeMatches })), [
+			{ id: 'inpage2', excludeMatches: [] },
+			{ id: 'inpage', excludeMatches: [] },
+		])
+	})
+
 	test('snapshot registration captures at invocation and keeps one pair across awaits', async () => {
 		const { popupSnapshotMessageHandler } = await import('../../app/ts/background/popupMessageHandlerRegistry.js')
 		const context = createDispatcherContext(async () => undefined)
