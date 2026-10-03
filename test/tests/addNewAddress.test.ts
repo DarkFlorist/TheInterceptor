@@ -296,7 +296,7 @@ describe('add new address save flow', () => {
 	})
 
 	test('renders editable addresses in a wrapping single-value control', () => {
-		assert.match(addNewAddressSource, /<textarea[^>]+class = 'input address-editor-address-input'/s)
+		assert.match(addNewAddressSource, /<textarea[^>]+class = \{ `input address-editor-address-input\$\{[^\n]*' address-editor-input--invalid' \}` \}/s)
 		assert.match(addNewAddressSource, /rows = \{ 1 \}/)
 		assert.match(addNewAddressSource, /replaceAll\('\\n', ''\)\.replaceAll\('\\r', ''\)/)
 		assert.doesNotMatch(addNewAddressSource, /What should we call this address/)

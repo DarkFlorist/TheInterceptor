@@ -16,7 +16,7 @@ type EditEnsNamedHashParams = {
 }
 
 const CellElement = (param: { element: ComponentChildren }) => {
-	return <div class = 'log-cell' style = 'justify-content: right;'>
+	return <div class = 'log-cell log-cell--right'>
 		{ param.element }
 	</div>
 }
@@ -27,7 +27,7 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 	const errorString = useSignal<string>('')
 
 	const Text = (param: { text: ComponentChildren }) => {
-		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color); text-overflow: ellipsis; overflow: hidden; width: 100%'>
+		return <p class = 'paragraph modal-field-label'>
 			{ param.text }
 		</p>
 	}
@@ -74,7 +74,6 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 			onInput = { e => setInput((e.target as HTMLInputElement).value) }
 			maxLength = { 42 }
 			ref = { ref }
-			style = { 'width: 100%' }
 			disabled = { disabled }
 		/>
 	}
@@ -96,10 +95,10 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 				</button>
 			</header>
 			<section class = 'modal-card-body'>
-				<div class = 'card' style = 'margin: 10px;'>
+				<div class = 'card ens-label-card'>
 					<div class = 'card-content'>
-						<div class = 'container' style = 'margin-bottom: 10px;'>
-							<span class = 'log-table' style = 'column-gap: 5px; row-gap: 5px; grid-template-columns: max-content auto;'>
+						<div class = 'container ens-label-form-container'>
+							<span class = 'log-table ens-label-table'>
 								<CellElement element = { <Text text = { 'Hash: ' }/> }/>
 								<CellElement element = { <TextInput value = { bytes32String(param.editEnsNamedHashWindowState.nameHash) } setInput = { () => undefined } disabled = { true } placeholder = {''}/> } />
 								<CellElement element = { <Text text = { 'Name: ' }/> }/>
@@ -108,11 +107,11 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 						</div>
 					</div>
 				</div>
-				<div style = 'padding-left: 10px; padding-right: 10px; margin-bottom: 10px; min-height: 80px'>
+				<div class = 'modal-notice-area'>
 					{ errorString.value === '' ? <></> : <Notice text = { errorString.value } /> }
 				</div>
 			</section>
-			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
+			<footer class = 'modal-card-foot window-footer'>
 				<button class = 'button is-primary'  onClick = { param.close }>Ok</button>
 			</footer>
 		</div>

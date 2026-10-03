@@ -67,7 +67,7 @@ form[role='search'] fieldset {
 	align-items: center;
 	border: 1px solid var(--line-color);
 	padding: 0.25rem;
-	border-radius: 2px;
+	border-radius: var(--radius-control);
 	min-width: 0;
 }
 
@@ -116,10 +116,12 @@ input[role=switch] {
 	--bg-color: var(--unchecked-switch-color);
 	--checked-bg-color: var(--checked-switch-color);
 	appearance: none;
+	box-sizing: content-box;
+	flex: 0 0 auto;
 	width: 1.75rem;
 	background: var(--bg-color);
 	display: block;
-	border-radius: 1rem;
+	border-radius: var(--radius-pill);
 	padding: 4px;
 	border: 0 none;
 	cursor: pointer;

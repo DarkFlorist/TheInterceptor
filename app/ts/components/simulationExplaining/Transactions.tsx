@@ -34,7 +34,10 @@ import { useEffect } from 'preact/hooks'
 import type { ComponentChildren } from 'preact'
 import type { SignalOrValue } from '../../utils/signals.js'
 import { TransactionInput } from '../subcomponents/ParsedInputData.js'
-import { normalizeSimulationStackRows, type SimulationStackMessageRow, type SimulationStackTransactionRow } from './simulationStackRows.js'
+import { getSimulationStackRowStatus, normalizeSimulationStackRows, type SimulationStackMessageRow, type SimulationStackTransactionRow } from './simulationStackRows.js'
+import { TransactionOutcomeChips } from './TransactionOutcomeChips.js'
+import { tokenEventGrantsSpendingRights } from '../../utils/approvals.js'
+import { isUnlimitedErc20Approval } from '../../utils/erc20.js'
 import type { OriginalSendRequestParameters } from '../../types/JsonRpc-types.js'
 import type { Website } from '../../types/websiteAccessTypes.js'
 import type { EthereumSendableSignedTransaction } from '../../types/wire-types.js'
@@ -42,20 +45,23 @@ import { Blockie } from '../subcomponents/SVGBlockie.js'
 import { getSimulationStackElementId } from '../../utils/simulationStackTargets.js'
 import { getSimulatedTransactionInsufficientBalanceMessage } from '../../simulation/insufficientBalance.js'
 
-function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
+// Whether a token event is good news for the given address; it picks the colour of the event's row.
+export function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
 		if (!visResult.isApproval) {
 			return visResult.amount >= 0 // simple transfer
 		}
-		return visResult.amount === 0n // zero is only positive approve event
+		return !tokenEventGrantsSpendingRights(visResult) // removing an allowance is the only positive approve event
 	}
 
 	// nfts
 	if (visResult.type === 'NFT All approval') { // all approval is only positive if someone all approves us, or all approval is removed from us
-		return (visResult.allApprovalAdded && visResult.to.address === ourAddressInReferenceFrame) || (!visResult.allApprovalAdded && visResult.from.address === ourAddressInReferenceFrame)
+		const operatorApproved = tokenEventGrantsSpendingRights(visResult)
+		return (operatorApproved && visResult.to.address === ourAddressInReferenceFrame) || (!operatorApproved && visResult.from.address === ourAddressInReferenceFrame)
 	}
 
 	if (visResult.isApproval) {
+		if (!tokenEventGrantsSpendingRights(visResult)) return visResult.from.address === ourAddressInReferenceFrame // removing an approval is positive for the owner
 		return visResult.to.address === ourAddressInReferenceFrame // approval is only positive if we are getting approved
 	}
 
@@ -170,7 +176,7 @@ function getDelegationNotice(
 
 function ConnectedDelegationStack({ delegationNotice, children }: { delegationNotice: ComponentChildren, children: ComponentChildren }) {
 	if (delegationNotice === undefined || delegationNotice === null) return <>{ children }</>
-	return <div style = 'display: grid; gap: 8px;'>
+	return <div class = 'transaction-delegation-stack'>
 		{ delegationNotice }
 		{ children }
 	</div>
@@ -214,11 +220,11 @@ export function TransactionImportanceBlock(param: TransactionImportanceBlockPara
 export function SenderReceiver({ from, to, renameAddressCallBack }: { from: AddressBookEntry, to: AddressBookEntry | undefined, renameAddressCallBack: (entry: AddressBookEntry) => void, }) {
 	const textColor = 'var(--text-color)'
 	if (to === undefined) {
-		return <span class = 'log-table' style = 'margin-top: 10px; column-gap: 5px; justify-content: space-between; grid-template-columns: auto auto'>
-			<div class = 'log-cell' style = ''>
-				<p style = { 'color: var(--subtitle-text-color);' }> Transaction sender: </p>
+		return <span class = 'log-table transaction-sender-row'>
+			<div class = 'log-cell'>
+				<p class = 'text-subtitle'> Transaction sender: </p>
 			</div>
-			<div class = 'log-cell' style = ''>
+			<div class = 'log-cell'>
 				<SmallAddress
 					addressBookEntry = { from }
 					textColor = { 'var(--subtitle-text-color)' }
@@ -227,18 +233,18 @@ export function SenderReceiver({ from, to, renameAddressCallBack }: { from: Addr
 			</div>
 		</span>
 	}
-	return <span class = 'log-table' style = 'justify-content: space-between; column-gap: 5px; grid-template-columns: auto auto auto;'>
-		<div class = 'log-cell' style = 'margin: 2px;'>
+	return <span class = 'log-table transaction-sender-receiver-row'>
+		<div class = 'log-cell transaction-party-cell'>
 			<SmallAddress
 				addressBookEntry = { from }
 				textColor = { textColor }
 				renameAddressCallBack = { renameAddressCallBack }
 			/>
 		</div>
-		<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em; justify-content: center;'>
+		<div class = 'log-cell transaction-arrow-cell transaction-arrow-cell--centered'>
 			<ArrowIcon color = { textColor } />
 		</div>
-		<div class = 'log-cell' style = 'margin: 2px; justify-content: end;'>
+		<div class = 'log-cell transaction-party-cell transaction-party-cell--end'>
 			<SmallAddress
 				addressBookEntry = { to }
 				textColor = { textColor }
@@ -272,9 +278,9 @@ export function Transaction(param: TransactionVisualizationParameters & Collapsi
 				headerActionLabel = { headerActionLabel }
 				ariaExpanded = { param.collapsed === undefined ? undefined : !param.collapsed }
 			/>
-			{ param.collapsed === true ? <></> : <div class = 'card-content' style = 'padding-bottom: 5px;'>
+			{ param.collapsed === true ? <></> : <div class = 'card-content transaction-card-content'>
 				{ param.simTx.safeTransaction === undefined ? <></> :
-					<div class = 'notification is-info' style = 'margin-bottom: 10px;'>
+					<div class = 'notification is-info transaction-safe-notice'>
 						<p class = 'paragraph'><strong>Optimistic Gnosis Safe transaction</strong></p>
 						<p class = 'paragraph'>Gnosis Safe nonce { param.simTx.safeTransaction.safeTx.message.nonce.toString() }; { param.simTx.safeTransaction.signatures.length } owner signature{ param.simTx.safeTransaction.signatures.length === 1 ? '' : 's' } collected. This optimistic preview simulates the Gnosis Safe calling the destination, but does not model Gnosis Safe guards, modules, events, nonce changes, executor-dependent behavior, or network gas. Nothing has necessarily been executed onchain.</p>
 					</div>
@@ -297,11 +303,11 @@ export function Transaction(param: TransactionVisualizationParameters & Collapsi
 				<RawTransactionDetailsCard isRawTransaction = { param.simTx.originalRequestParameters.method === 'eth_sendRawTransaction' } transaction = { param.simTx.transaction } transactionIdentifier = { param.simTx.transactionIdentifier } parsedInputData = { param.simTx.parsedInputData } renameAddressCallBack = { param.renameAddressCallBack } gasSpent = { 'gasSpent' in param.simTx ? param.simTx.gasSpent : undefined } addressMetaData = { param.addressMetaData } />
 				<SenderReceiver from = { param.simTx.transaction.from } to = { param.simTx.transaction.to } renameAddressCallBack = { param.renameAddressCallBack }/>
 
-				<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
+				<span class = 'log-table transaction-meta-row transaction-meta-row--pair'>
 					<div class = 'log-cell'>
 						<TransactionCreated created = { param.simTx.created } />
 					</div>
-					<div class = 'log-cell' style = { { display: 'inline-flex', justifyContent: 'right' } }>
+					<div class = 'log-cell transaction-meta-end-cell'>
 						{ param.simTx.transactionStatus === 'Failed To Simulate' ? <></> : <>
 							<GasFee tx = { param.simTx } rpcNetwork = { rpcNetwork } />
 						</> }
@@ -333,7 +339,7 @@ export function PendingStackHeader({ title, website, statusIcon, onHeaderClick, 
 				<img src = { statusIcon } width = '24' height = '24' />
 			</span>
 		</div>
-		<p class = 'card-header-title' style = 'white-space: nowrap;'>
+		<p class = 'card-header-title'>
 			<span class = 'card-header-title-text'>{ title }</span>
 		</p>
 		<WebsiteOriginText website = { website } class = 'card-header-website' />
@@ -380,7 +386,7 @@ function TransactionPreviewDetails({
 			openLabel = { headerActionLabel }
 			ariaExpanded = { collapsed === undefined ? undefined : !collapsed }
 		/>
-		{ collapsed === true ? <></> : <div class = 'card-content' style = 'padding-bottom: 5px;'>
+		{ collapsed === true ? <></> : <div class = 'card-content transaction-card-content'>
 			{ errorMessage === undefined ? <></> : <ErrorComponent text = { errorMessage } containerStyle = { { margin: '0px', marginBottom: '10px' } } /> }
 			<div class = 'container'>
 				<dl class = 'grid key-value-pair'>
@@ -398,22 +404,22 @@ function TransactionPreviewDetails({
 					<dd>{ 'chainId' in signedTransaction && signedTransaction.chainId !== undefined ? signedTransaction.chainId.toString(10) : 'Unknown' }</dd>
 				</dl>
 			</div>
-			<div class = 'textbox' style = 'margin-top: 10px;'>
-				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Original request</p>
-				<p class = 'paragraph' style = 'color: var(--subtitle-text-color); white-space: pre-wrap; word-break: break-word;'>{ stringifyJSONWithBigInts(originalRequestParameters, 2) }</p>
+			<div class = 'textbox transaction-detail-section'>
+				<p class = 'paragraph text-subtitle'>Original request</p>
+				<p class = 'paragraph transaction-raw-request'>{ stringifyJSONWithBigInts(originalRequestParameters, 2) }</p>
 			</div>
-			<div style = 'margin-top: 10px;'>
-				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Transaction Input</p>
+			<div class = 'transaction-detail-section'>
+				<p class = 'paragraph text-subtitle'>Transaction Input</p>
 				{ parsedInputData === undefined
 					? <div class = 'textbox'><pre>{ dataStringWith0xStart(signedTransaction.input) }</pre></div>
 					: <TransactionInput parsedInputData = { parsedInputData } input = { signedTransaction.input } to = { to } addressMetaData = { addressMetaData } renameAddressCallBack = { renameAddressCallBack } />
 				}
 			</div>
-			<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
+			<span class = 'log-table transaction-meta-row transaction-meta-row--pair'>
 				<div class = 'log-cell'>
 					<TransactionCreated created = { created } />
 				</div>
-				<div class = 'log-cell' style = { { display: 'inline-flex', justifyContent: 'right' } } />
+				<div class = 'log-cell transaction-meta-end-cell' />
 			</span>
 		</div> }
 	</div>
@@ -444,17 +450,17 @@ function MessagePreviewDetails({
 			openLabel = { headerActionLabel }
 			ariaExpanded = { collapsed === undefined ? undefined : !collapsed }
 		/>
-		{ collapsed === true ? <></> : <div class = 'card-content' style = 'padding-bottom: 5px;'>
+		{ collapsed === true ? <></> : <div class = 'card-content transaction-card-content'>
 			{ errorMessage === undefined ? <></> : <ErrorComponent text = { errorMessage } containerStyle = { { margin: '0px', marginBottom: '10px' } } /> }
 			<div class = 'textbox'>
-				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Signature request</p>
-				<p class = 'paragraph' style = 'color: var(--subtitle-text-color); white-space: pre-wrap; word-break: break-word;'>{ stringifyJSONWithBigInts(signedMessageTransaction.originalRequestParameters, 2) }</p>
+				<p class = 'paragraph text-subtitle'>Signature request</p>
+				<p class = 'paragraph transaction-raw-request'>{ stringifyJSONWithBigInts(signedMessageTransaction.originalRequestParameters, 2) }</p>
 			</div>
-			<div class = 'textbox' style = 'margin-top: 10px;'>
-				<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Raw request</p>
-				<p class = 'paragraph' style = 'color: var(--subtitle-text-color); white-space: pre-wrap; word-break: break-word;'>{ stringifyJSONWithBigInts(signedMessageTransaction.request, 2) }</p>
+			<div class = 'textbox transaction-detail-section'>
+				<p class = 'paragraph text-subtitle'>Raw request</p>
+				<p class = 'paragraph transaction-raw-request'>{ stringifyJSONWithBigInts(signedMessageTransaction.request, 2) }</p>
 			</div>
-			{ visualizedPersonalSignRequest === undefined ? <></> : <div style = 'margin-top: 10px;'>
+			{ visualizedPersonalSignRequest === undefined ? <></> : <div class = 'transaction-detail-section'>
 				<SignatureCard
 					visualizedPersonalSignRequest = { visualizedPersonalSignRequest }
 					renameAddressCallBack = { () => undefined }
@@ -463,11 +469,11 @@ function MessagePreviewDetails({
 					numberOfUnderTransactions = { 0 }
 				/>
 			</div> }
-			<span class = 'log-table' style = 'margin-top: 10px; grid-template-columns: auto auto;'>
+			<span class = 'log-table transaction-meta-row transaction-meta-row--pair'>
 				<div class = 'log-cell'>
 					<TransactionCreated created = { created } />
 				</div>
-				<div class = 'log-cell' style = { { display: 'inline-flex', justifyContent: 'right' } } />
+				<div class = 'log-cell transaction-meta-end-cell' />
 			</span>
 		</div> }
 	</div>
@@ -498,10 +504,16 @@ function TransactionOrMessageTitleOnlyCard({
 	stackRow,
 	removeTransactionOrSignedMessage,
 	openSimulationStackAt,
+	simulationAndVisualisationResults,
+	activeAddress,
+	addressMetaData,
 }: {
 	stackRow: SimulationStackTransactionRow | SimulationStackMessageRow
 	removeTransactionOrSignedMessage?: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
 	openSimulationStackAt?: (transactionOrMessageIdentifier: TransactionOrMessageIdentifier) => void
+	simulationAndVisualisationResults: SimulationAndVisualisationResults | undefined
+	activeAddress: bigint | undefined
+	addressMetaData: readonly AddressBookEntry[]
 }) {
 	const stackRowIdentifier = getStackRowIdentifier(stackRow)
 	const openHeader = openSimulationStackAt === undefined ? undefined : () => openSimulationStackAt(stackRowIdentifier)
@@ -532,6 +544,15 @@ function TransactionOrMessageTitleOnlyCard({
 		}
 		return <div class = 'card'>
 			<TransactionHeader simTx = { simulatedTransaction } removeTransactionOrSignedMessage = { remove } onHeaderClick = { openHeader } />
+			{ simulatedTransaction.transactionStatus === 'Failed To Simulate' ? <></> : <div class = 'stack-row-outcome'>
+				<TransactionOutcomeChips
+					simTx = { simulatedTransaction }
+					activeAddress = { activeAddress }
+					addressMetaData = { addressMetaData }
+					tokenPriceEstimates = { simulationAndVisualisationResults?.tokenPriceEstimates ?? [] }
+					namedTokenIds = { simulationAndVisualisationResults?.namedTokenIds ?? [] }
+				/>
+			</div> }
 		</div>
 	}
 	if (stackRow.status === 'failed') {
@@ -608,9 +629,12 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressC
 				stackRow = { stackRow }
 				removeTransactionOrSignedMessage = { removeTransactionOrSignedMessage }
 				openSimulationStackAt = { openSimulationStackAt }
+				simulationAndVisualisationResults = { currentSimulationAndVisualisationResults }
+				activeAddress = { activeAddress.value }
+				addressMetaData = { addressMetaData.value }
 			/>
 		</div>
-		{ showTimePicker ? <div style = 'display: flex; justify-content: center; padding-top: 10px;'>
+		{ showTimePicker ? <div class = 'simulation-stack-delay'>
 			<TimePicker
 				startText = { 'Simulate delay' }
 				mode = { timeSelectorMode }
@@ -672,7 +696,7 @@ const TransactionOrMessageWithBlockTimeManipulator = ({ stackRow, renameAddressC
 				/> }
 			</> }
 		</div>
-		{ showTimePicker ? <div style = 'display: flex; justify-content: center; padding-top: 10px;'>
+		{ showTimePicker ? <div class = 'simulation-stack-delay simulation-stack-delay--centered'>
 			<TimePicker
 				startText = { 'Simulate delay' }
 				mode = { timeSelectorMode }
@@ -720,13 +744,14 @@ export function SimulationStackRows(param: SimulationStackRowsParams) {
 			results.visualizedSimulationState,
 		)
 	})
-	return <ul class = 'simulation-stack-list'> {
+	return <ul class = { `simulation-stack-list${ param.displayMode === 'titleOnly' ? ' simulation-stack-list--timeline' : '' }` }> {
 		transactionsAndMessagesInBlock.value.flatMap((block, blockIndex) => {
 			const nextBlockManipulator = transactionsAndMessagesInBlock.value[blockIndex + 1]?.blockTimeManipulation || { type: 'No Delay' } as const
 			return block.rows.map((stackRow, transactionIndex) => {
 				const stackRowElementId = getSimulationStackElementId(getStackRowIdentifier(stackRow))
 				return <li
 					key = { stackRow.type === 'Message' ? `message-${ stackRow.signedMessageTransaction.messageIdentifier.toString() }` : `transaction-${ stackRow.preSimulationTransaction.transactionIdentifier.toString() }` }
+					data-stack-status = { getSimulationStackRowStatus(stackRow) }
 				>
 					<TransactionOrMessageWithBlockTimeManipulator
 						simulationAndVisualisationResults = { param.simulationAndVisualisationResults }
@@ -759,14 +784,14 @@ function TokenLogEvent(params: TokenLogEventParams ) {
 	const style = { color: isPositiveEvent(params.tokenVisualizerResult, params.ourAddressInReferenceFrame) ? 'var(--dim-text-color)' : 'var(--danger-dim-color)' }
 
 	return <>
-		<div class = 'log-cell' style = 'justify-content: right;'>
+		<div class = 'log-cell log-cell--right'>
 			{ params.tokenVisualizerResult.type === 'NFT All approval' ?
 				<AllApproval
 					{ ...params.tokenVisualizerResult }
 					style = { style }
 					fontSize = 'normal'
 				/>
-			: <> { 'amount' in params.tokenVisualizerResult && params.tokenVisualizerResult.amount >= (2n ** 96n - 1n ) && params.tokenVisualizerResult.isApproval ?
+			: <> { 'amount' in params.tokenVisualizerResult && isUnlimitedErc20Approval(params.tokenVisualizerResult.amount) && params.tokenVisualizerResult.isApproval ?
 					<p class = 'ellipsis' style = { `color: ${ style.color }` }><b>ALL</b></p>
 				:
 					'amount' in params.tokenVisualizerResult ?
@@ -780,7 +805,7 @@ function TokenLogEvent(params: TokenLogEventParams ) {
 				} </>
 			}
 		</div>
-		<div class = 'log-cell' style = 'padding-right: 0.2em'>
+		<div class = 'log-cell transaction-token-symbol-cell'>
 			<TokenSymbol
 				{ ...tokenEventToTokenSymbolParams(params.tokenVisualizerResult) }
 				style = { style }
@@ -789,17 +814,17 @@ function TokenLogEvent(params: TokenLogEventParams ) {
 				fontSize = 'normal'
 			/>
 		</div>
-		<div class = 'log-cell-flexless' style = 'margin: 2px;'>
+		<div class = 'log-cell-flexless transaction-party-cell'>
 			<SmallAddress
 				addressBookEntry = { params.tokenVisualizerResult.from }
 				textColor = { style.color }
 				renameAddressCallBack = { params.renameAddressCallBack }
 			/>
 		</div>
-		<div class = 'log-cell' style = 'padding-right: 0.2em; padding-left: 0.2em'>
+		<div class = 'log-cell transaction-arrow-cell'>
 			{ params.tokenVisualizerResult.isApproval ? <ApproveIcon color = { style.color } /> : <ArrowIcon color = { style.color } /> }
 		</div>
-		<div class = 'log-cell-flexless' style = 'margin: 2px;'>
+		<div class = 'log-cell-flexless transaction-party-cell'>
 			<SmallAddress
 				addressBookEntry = { params.tokenVisualizerResult.to }
 				textColor = { style.color }
@@ -814,7 +839,7 @@ export function TokenLogAnalysis(param: LogAnalysisParams) {
 
 	if (tokenEvents.length === 0) return <p class = 'paragraph'> No token events </p>
 	const routes = identifyRoutes(param.simulatedAndVisualizedTransaction, param.identifiedSwap)
-	return <span class = 'log-table' style = 'justify-content: center; column-gap: 5px;'> { routes ?
+	return <span class = 'log-table transaction-token-log-table'> { routes ?
 		routes.map((tokenVisualizerResult, index) => (
 			<TokenLogEvent
 				key = { index }
@@ -843,67 +868,65 @@ type NonTokenLogEventParams = {
 }
 
 function NonTokenLogEvent(params: NonTokenLogEventParams) {
-	const cellStyle = 'align-items: normal;'
-	const textStyle = 'text-overflow: ellipsis; overflow: hidden;'
 	if (params.nonTokenLog.isParsed === 'NonParsed') {
 		return <>
-			<div class = 'log-cell' style = { cellStyle }>
+			<div class = 'log-cell transaction-event-cell'>
 				<SmallAddress
 					addressBookEntry = { getAddressBookEntryOrAFiller(params.addressMetaData.value, params.nonTokenLog.address) }
 					renameAddressCallBack = { params.renameAddressCallBack }
 				/>
 			</div>
-			<div class = 'log-cell' style = { cellStyle }>
-				<p class = 'paragraph' style = { textStyle }> { dataStringWith0xStart(params.nonTokenLog.data) } </p>
+			<div class = 'log-cell transaction-event-cell'>
+				<p class = 'paragraph ellipsis'> { dataStringWith0xStart(params.nonTokenLog.data) } </p>
 			</div>
-			<div class = 'log-cell' style = { 'grid-column: 2 / 4; display: flex; flex-wrap: wrap;' } >
-				{ params.nonTokenLog.topics.map((topic, index) => <p key = { `${ bytes32String(topic) }-${ index }` } class = 'paragraph' style = { textStyle }> { bytes32String(topic) } </p>) }
+			<div class = 'log-cell transaction-event-arguments'>
+				{ params.nonTokenLog.topics.map((topic, index) => <p key = { `${ bytes32String(topic) }-${ index }` } class = 'paragraph ellipsis'> { bytes32String(topic) } </p>) }
 			</div>
 		</>
 	}
 	return <>
-			<div class = 'log-cell' style = { cellStyle }>
+			<div class = 'log-cell transaction-event-cell'>
 				<SmallAddress
 					addressBookEntry = { getAddressBookEntryOrAFiller(params.addressMetaData.value, params.nonTokenLog.address) }
 					renameAddressCallBack = { params.renameAddressCallBack }
 				/>
 		</div>
-		<div style = 'display: contents;'/>
-		<div class = 'log-cell' style = { { 'grid-column-start': 2, 'grid-column-end': 4, display: 'flex', 'flex-wrap': 'wrap' } }>
-			<p class = 'paragraph' style = { textStyle }> { `${ params.nonTokenLog.name }(` } </p>
+		<div class = 'transaction-event-placeholder'/>
+		<div class = 'log-cell transaction-event-arguments'>
+			<p class = 'paragraph ellipsis'> { `${ params.nonTokenLog.name }(` } </p>
 			{ insertBetweenElements(params.nonTokenLog.args.map((arg) => {
 				if (arg.paramName === 'node' && 'logInformation' in params.nonTokenLog && 'node' in params.nonTokenLog.logInformation) {
 					return <>
-						<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } =` }&nbsp;</p>
+						<p class = 'paragraph ellipsis'> { `${ arg.paramName } =` }&nbsp;</p>
 						<EnsNamedHashComponent type = 'nameHash' nameHash = { params.nonTokenLog.logInformation.node.nameHash } name = { params.nonTokenLog.logInformation.node.name } editEnsNamedHashCallBack = { params.editEnsNamedHashCallBack }/>
 					</>
 				}
 				if ((arg.paramName === 'id' || arg.paramName === 'label') && 'logInformation' in params.nonTokenLog && 'labelHash' in params.nonTokenLog.logInformation) {
 					return <>
-						<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } =` }&nbsp;</p>
+						<p class = 'paragraph ellipsis'> { `${ arg.paramName } =` }&nbsp;</p>
 						<EnsNamedHashComponent type = 'labelHash' nameHash = { params.nonTokenLog.logInformation.labelHash.labelHash } name = { params.nonTokenLog.logInformation.labelHash.label } editEnsNamedHashCallBack = { params.editEnsNamedHashCallBack }/>
 					</>
 				}
 				if (arg.paramName === 'fuses' && 'logInformation' in params.nonTokenLog && 'fuses' in params.nonTokenLog.logInformation) {
 					return <>
-						<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } = [` }</p>
+						<p class = 'paragraph ellipsis'> { `${ arg.paramName } = [` }</p>
 						<StringElement text = { params.nonTokenLog.logInformation.fuses.join(', ') } />
-						<p style = { textStyle } class = 'paragraph'>]</p>
+						<p class = 'paragraph ellipsis'>]</p>
 					</>
 				}
 				return <>
-					<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } =` }&nbsp;</p>
+					<p class = 'paragraph ellipsis'> { `${ arg.paramName } =` }&nbsp;</p>
 					<EnrichedSolidityTypeComponentWithAddressBook valueType = { arg.typeValue } addressMetaData = { params.addressMetaData } renameAddressCallBack = { params.renameAddressCallBack } />
 				</>
-			}), <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
-			<p class = 'paragraph' style = { textStyle }> { ')' } </p>
+			}), <p class = 'paragraph ellipsis'>,&nbsp;</p>) }
+			<p class = 'paragraph ellipsis'> { ')' } </p>
 		</div>
 	</>
 }
 
 export function NonTokenLogAnalysis(param: NonLogAnalysisParams) {
 	if (param.nonTokenLogs.length === 0) return <p class = 'paragraph'> No non-token events </p>
-	return <span class = 'nontoken-log-table' style = 'justify-content: center; column-gap: 5px; row-gap: 5px;'>
+	return <span class = 'nontoken-log-table transaction-event-log-table'>
 		{ param.nonTokenLogs.map((nonTokenLog, index) => <NonTokenLogEvent key = { index } nonTokenLog = { nonTokenLog } addressMetaData = { param.addressMetaData } renameAddressCallBack = { param.renameAddressCallBack } editEnsNamedHashCallBack = { param.editEnsNamedHashCallBack }/> ) }
 	</span>
 }
@@ -915,22 +938,21 @@ type ParsedInputDataParams = {
 }
 
 export function ParsedInputData(params: ParsedInputDataParams) {
-	const textStyle = 'text-overflow: ellipsis; overflow: hidden;'
 	if (params.inputData.type === 'NonParsed') {
 		return <div class = 'textbox'>
-			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ dataStringWith0xStart(params.inputData.input) }</p>
+			<p class = 'paragraph text-subtitle'>{ dataStringWith0xStart(params.inputData.input) }</p>
 		</div>
 	}
 	return <>
-		<div class = 'log-cell' style = { { 'grid-column-start': 2, 'grid-column-end': 4, display: 'flex', 'flex-wrap': 'wrap' } }>
-			<p class = 'paragraph' style = { textStyle }> { `${ params.inputData.name }(` } </p>
+		<div class = 'log-cell transaction-event-arguments'>
+			<p class = 'paragraph ellipsis'> { `${ params.inputData.name }(` } </p>
 			{ insertBetweenElements(params.inputData.args.map((arg) => {
 				return <>
-					<p style = { textStyle } class = 'paragraph'> { `${ arg.paramName } =` }&nbsp;</p>
+					<p class = 'paragraph ellipsis'> { `${ arg.paramName } =` }&nbsp;</p>
 					<EnrichedSolidityTypeComponentWithAddressBook valueType = { arg.typeValue } addressMetaData = { params.addressMetaData } renameAddressCallBack = { params.renameAddressCallBack } />
 				</>
-			}), <p style = { textStyle } class = 'paragraph'>,&nbsp;</p>) }
-			<p class = 'paragraph' style = { textStyle }> { ')' } </p>
+			}), <p class = 'paragraph ellipsis'>,&nbsp;</p>) }
+			<p class = 'paragraph ellipsis'> { ')' } </p>
 		</div>
 	</>
 }

@@ -4,7 +4,7 @@ import { ErrorComponent } from '../subcomponents/Error.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
-import { tryFocusingTabOrWindow } from '../ui-utils.js'
+import { getInterceptorModeClass, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { PendingChainChangeConfirmationPromise } from '../../types/user-interface-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
@@ -73,8 +73,8 @@ export function ChangeChain() {
 	const approvePending = approveChainChangeState.value.state === 'pending'
 	const websiteIcon = sanitizeStoredWebsiteIcon(chainChangeData.value.website.icon)
 	return (
-		<main>
-			<div class = 'block' style = 'margin-bottom: 0px; margin: 10px'>
+		<main class = { getInterceptorModeClass(chainChangeData.value.simulationMode) }>
+			<div class = 'block change-chain-window'>
 				<header class = 'card-header window-header'>
 					<div class = 'card-header-icon unset-cursor'>
 						<span class = 'icon'>
@@ -92,16 +92,16 @@ export function ChangeChain() {
 						{
 							websiteIcon === undefined
 								? <></>
-								: <figure class = 'media-left' style = 'margin: auto; display: block; padding: 20px'>
+								: <figure class = 'media-left request-website-icon'>
 									<div class = 'image is-64x64'>
 										<img src = { websiteIcon } width = '64' height = '64'/>
 									</div>
 								</figure>
 						}
 					</article>
-					<div class = 'media-content' style = 'padding-bottom: 10px'>
+					<div class = 'media-content change-chain-request'>
 						<div class = 'content'>
-							<p class = 'title' style = 'white-space: normal; text-align: center; padding: 10px;'>
+							<p class = 'title request-title'>
 								<b>	{ chainChangeData.value.website.websiteOrigin } </b>
 								would like to switch to
 								<b> { chainChangeData.value.rpcNetwork.name } </b>
@@ -109,9 +109,9 @@ export function ChangeChain() {
 							{ actionState.errorText === undefined ? <></> : <ErrorComponent text = { actionState.errorText }/> }
 						</div>
 					</div>
-					<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
+					<div class = 'request-actions'>
 						<AsyncActionButton
-							class = { 'button is-danger dialog-action-button' }
+							class = 'button button--secondary button-overflow dialog-action-button'
 							state = { rejectChainChangeState.value.state }
 							disabled = { approvePending }
 							text = { `Don't change` }
@@ -119,7 +119,7 @@ export function ChangeChain() {
 							onClick = { reject } >
 						</AsyncActionButton>
 						<AsyncActionButton
-							class = { 'button is-primary dialog-action-button' }
+							class = 'button is-primary button-overflow dialog-action-button dialog-action-button--confirm'
 							disabled = { actionState.approveDisabled || rejectPending }
 							state = { approveChainChangeState.value.state }
 							text = { actionState.approveButtonText }
@@ -130,7 +130,7 @@ export function ChangeChain() {
 				</div>
 			</div>
 
-			<div class = 'content' style = 'height: 0.1px'/>
+			<div class = 'content page-bottom-spacer'/>
 		</main>
 	)
 }

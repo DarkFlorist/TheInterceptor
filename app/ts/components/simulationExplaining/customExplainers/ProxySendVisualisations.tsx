@@ -22,26 +22,26 @@ type ProxyMultiSendParams = {
 function ProxyMultiSend({ transaction, asset, sender, receivers, renameAddressCallBack, viaProxypath } : ProxyMultiSendParams) {
 	const recipientLabel = receivers.length === 1 ? 'Final recipient' : 'Final recipients'
 	return <div class = 'notification transaction-importance-box'>
-		<span style = 'grid-template-columns: auto auto auto auto; justify-content: center; display: grid; align-items: baseline;'>
-			<p class = 'paragraph' style = 'font-size: 28px; font-weight: 500; justify-self: right;'> Send&nbsp;</p>
-			<TokenOrEth { ...asset } useFullTokenName = { false } style = { { 'font-weight': '500' } } fontSize = 'big' />
+		<span class = 'summary-heading'>
+			<p class = 'paragraph summary-heading-text'>Send&nbsp;</p>
+			<TokenOrEth { ...asset } useFullTokenName = { false } class = 'coin-text--strong' fontSize = 'big' />
 		</span>
 		{ viaProxypath === undefined ? <></> : <ExecutionRouteNotice viaProxypath = { viaProxypath } renameAddressCallBack = { renameAddressCallBack } /> }
-		<p class = 'paragraph'> From </p>
-		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
+		<p class = 'summary-label'>From</p>
+		<div class = 'box summary-leg'>
 			<AddressBeforeAfter { ...sender } renameAddressCallBack = { renameAddressCallBack } tokenOrEtherDefinition = { asset } />
 		</div>
-		<p class = 'paragraph'> { recipientLabel } </p>
+		<p class = 'summary-label'>{ recipientLabel }</p>
 		{ receivers.map((receiver) => <>
-			<span style = 'grid-template-columns: auto auto auto auto; justify-content: center; display: grid; align-items: baseline;'>
-				<p class = 'paragraph' style = 'justify-self: right;'> Receive&nbsp;</p>
+			<span class = 'summary-subheading'>
+				<p class = 'paragraph'>Receive&nbsp;</p>
 				<TokenOrEth { ...{ ...asset, ...('amount' in asset ? { amount: receiver.amount } : {}) } } useFullTokenName = { false } />
 			</span>
-			<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
+			<div class = 'box summary-leg'>
 				<AddressBeforeAfter { ...receiver } renameAddressCallBack = { renameAddressCallBack } tokenOrEtherDefinition = { { ...asset, ...('amount' in asset ? { amount: receiver.amount } : {}) } }/>
 			</div>
 		</>) }
-		<span class = 'log-table' style = { { display: 'inline-flex', marginTop: '5px' } }>
+		<span class = 'log-table transaction-meta-row summary-meta'>
 			<GasFee tx = { transaction } rpcNetwork = { transaction.rpcNetwork } />
 		</span>
 	</div>

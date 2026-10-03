@@ -6,6 +6,7 @@ import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBo
 import type { Website } from '../../types/websiteAccessTypes.js'
 import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
+import { withModifierClass } from '../ui-utils.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../../utils/addressBook.js'
 import { Blockie } from './SVGBlockie.js'
 import { InlineCard } from './InlineCard.js'
@@ -28,16 +29,15 @@ type AddressIconParams = {
 }
 
 const AddressIconFrame = ({ isBig, children }: { isBig: boolean, children?: ComponentChildren }) => {
-	const cssProperties: JSX.CSSProperties = { backgroundColor: 'var(--unimportant-text-color)', fontSize: isBig ? '2.5em' : '1.5em' }
-	const className = `address-icon-frame noselect nopointer${ children === undefined ? ' address-icon-frame--empty' : '' }`
-	return <div style = { cssProperties } class = { className } aria-hidden = 'true'>{ children }</div>
+	const sizedClass = withModifierClass('address-icon-frame noselect nopointer', isBig ? 'address-icon-frame--big' : undefined)
+	return <div class = { withModifierClass(sizedClass, children === undefined ? 'address-icon-frame--empty' : undefined) } aria-hidden = 'true'>{ children }</div>
 }
 
 export function AddressIcon(param: AddressIconParams) {
 	if (param.address !== undefined && param.logoUri === undefined) {
 		return (
 			<AddressIconFrame isBig = { param.isBig }>
-				<Blockie address = { param.address } style = { { display: 'block' } } />
+				<Blockie address = { param.address } />
 			</AddressIconFrame>
 		)
 	}
@@ -45,7 +45,7 @@ export function AddressIcon(param: AddressIconParams) {
 	if (param.logoUri !== undefined) {
 		return (
 			<AddressIconFrame isBig = { param.isBig }>
-				<img src = { param.logoUri } width = '16' height = '16' style = { { display: 'block', width: '1em', minWidth: '1em', height: '1em' } } />
+				<img src = { param.logoUri } width = '16' height = '16' class = 'address-icon-image' />
 			</AddressIconFrame>
 		)
 	}
@@ -60,6 +60,7 @@ type BigAddressParams = {
 	readonly noEditAddress?: boolean
 	readonly renameAddressCallBack: RenameAddressCallBack
 	readonly style?: JSX.CSSProperties
+	readonly class?: string
 }
 
 function getBigAddressText(addressBookEntry: AddressBookEntry | undefined) {
@@ -110,7 +111,7 @@ export function BigAddress(params: BigAddressParams) {
 		...(!params.noCopying && addressString) ? configPartialWithCopyOnClick : { onClick: undefined }
 	}
 
-	return <MultilineCard label = { labelConfig } note = { noteConfig } icon = { iconConfig } style = { params.style } />
+	return <MultilineCard label = { labelConfig } note = { noteConfig } icon = { iconConfig } style = { params.style } class = { params.class } />
 }
 
 type ActiveAddressParams = {
@@ -125,7 +126,7 @@ type ActiveAddressParams = {
 
 export function ActiveAddressComponent(params: ActiveAddressParams) {
 	return <div class = 'log-table active-address-row'>
-		<div class = 'log-cell' style = 'display: block;'>
+		<div class = 'log-cell address-active-cell'>
 			<BigAddress
 				addressBookEntry = { params.activeAddress }
 				renameAddressCallBack = { params.renameAddressCallBack }
@@ -135,7 +136,7 @@ export function ActiveAddressComponent(params: ActiveAddressParams) {
 		</div>
 		<div class = 'log-cell'>
 			<div class = 'media-right'>
-				<button class = 'button is-primary' disabled = { params.disableButton } onClick = { params.changeActiveAddress } >
+				<button class = 'button button--secondary' disabled = { params.disableButton } onClick = { params.changeActiveAddress } >
 					{ params.buttonText }
 				</button>
 			</div>
@@ -160,7 +161,7 @@ export function SmallAddress({ addressBookEntry, renameAddressCallBack, noCopyin
 	const addressString = checksummedAddress(currentAddressBookEntry.address)
 
 	const generateIcon = () => {
-		if (currentAddressBookEntry?.logoUri !== undefined) return <img src = { currentAddressBookEntry.logoUri } width = '16' height = '16' style = { { minWidth: '1em', minHeight: '1em' } } />
+		if (currentAddressBookEntry?.logoUri !== undefined) return <img src = { currentAddressBookEntry.logoUri } width = '16' height = '16' class = 'inline-card-logo' />
 		return <Blockie address = { currentAddressBookEntry.address } />
 	}
 
@@ -178,7 +179,7 @@ export function WebsiteOriginText({ website, class: cssClass, style }: {
 	const { websiteOrigin, title } = currentWebsite
 	return <div class = { `website-origin-text${ cssClass === undefined ? '' : ` ${ cssClass }` }` } style = { style }>
 		<span class = 'website-origin-text-icon'>
-			{ icon === undefined ? <></> : <img src = { icon } width = '24' height = '24' style = 'width: 24px; height: 24px;' /> }
+			{ icon === undefined ? <></> : <img src = { icon } width = '24' height = '24' class = 'website-origin-text-icon-image' /> }
 		</span>
 
 		<div class = 'media-content website-origin-text-body'>

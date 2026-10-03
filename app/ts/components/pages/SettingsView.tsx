@@ -28,12 +28,12 @@ type CheckBoxSettingParam = {
 function CheckBoxSetting(param: CheckBoxSettingParam) {
 	return (
 		<div class = 'container'>
-			<label class = 'form-control' style = { 'color: var(--text-color); font-size: 1em;' }>
+			<label class = 'form-control settings-checkbox'>
 				<input type = 'checkbox'
 					checked = { param.checked }
 					onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { param.onInput(e.target.checked) } } }
 				/>
-				<p class = 'paragraph checkbox-text' style = { 'color: var(--text-color);' }> { param.text } </p>
+				<p class = 'paragraph checkbox-text'> { param.text } </p>
 			</label>
 		</div>
 	)
@@ -127,9 +127,9 @@ function ImportExport() {
 			: <></> }
 		<div class = 'popup-button-row'>
 			<div class = 'settings-import-export-actions'>
-				<label class = { `button is-primary is-danger settings-import-export-button ${ importSettingsState.value.state === 'pending' ? 'is-loading' : '' }` }>
+				<label class = { `button button--secondary settings-import-export-button ${ importSettingsState.value.state === 'pending' ? 'is-loading' : '' }` }>
 					{ importSettingsState.value.state === 'pending' ? 'Importing settings...' : 'Import settings' }
-					<input type = 'file' accept = '.json' onInput = { importSettings } disabled = { importSettingsState.value.state === 'pending' } style = 'position: absolute; width: 100%; height: 100%; opacity: 0;' />
+					<input type = 'file' accept = '.json' onInput = { importSettings } disabled = { importSettingsState.value.state === 'pending' } class = 'settings-import-file-input' />
 				</label>
 				<AsyncActionButton
 					class = 'button is-primary settings-import-export-button'
@@ -188,8 +188,8 @@ export function SettingsView() {
 		})
 	}
 
-	return <main style = 'padding: 10px'>
-		<div class = 'card' style = 'height: 100%;'>
+	return <main class = 'settings-page'>
+		<div class = 'card settings-card'>
 			<header class = 'card-head card-header window-header'>
 				<div class = 'card-header-icon unset-cursor'>
 					<span class = 'icon'>
@@ -202,7 +202,7 @@ export function SettingsView() {
 					</p>
 				</div>
 			</header>
-			<section class = 'card-body' style = 'padding-bottom: 10px'>
+			<section class = 'card-body settings-body'>
 				<ul>
 					<li>
 						<p class = 'paragraph'>Misc</p>
@@ -228,7 +228,7 @@ export function SettingsView() {
 					</li>
 					<li>
 						<Collapsible summary = 'RPC Connections' defaultOpen = { true }>
-							<div class = 'grid' style = '--gap-y: 0.5rem; padding: 0.5rem 0'>
+							<div class = 'grid settings-rpc-section'>
 								<RpcListings />
 								<ConfigureRpcConnection />
 							</div>
@@ -247,11 +247,10 @@ const RpcListings = () => {
 
 	if (shouldOfferBundledRpcReset(rpcEntries.value)) {
 		return (
-			<aside class = 'report' style = { { display: 'grid', height: '9rem', textAlign: 'center', rowGap: '0.5rem'} }>
-				<p style = { { color: 'var(--disabled-text-color)' } }>Interceptor requires at least one RPC connection. Do you want to restore the bundled default RPC list?</p>
+			<aside class = 'report settings-rpc-reset-prompt'>
+				<p class = 'text-disabled'>Interceptor requires at least one RPC connection. Do you want to restore the bundled default RPC list?</p>
 				<AsyncActionButton
-					class = 'btn btn--outline'
-					style = 'font-weight: 600'
+					class = 'btn btn--outline settings-rpc-reset-button'
 					state = { resetRpcListState.value.state }
 					text = 'Yes, load the default RPC list'
 					pendingText = 'Loading default RPC list'
@@ -262,7 +261,7 @@ const RpcListings = () => {
 	}
 
 	return (
-		<ul class = 'grid' style = '--gap-y: 0.5rem'>
+		<ul class = 'grid settings-rpc-list'>
 			{ rpcEntries.value.map((entry) => <RpcSummary key = { JSON.stringify(serialize(RpcEntry, entry)) } info = { entry } />) }
 		</ul>
 	)

@@ -1,7 +1,7 @@
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { requestPopupCompleteVisualizedSimulation, requestPopupSimulationMetadata, sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
-import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
+import { addressEditEntry, getInterceptorModeClass, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { PendingFetchSimulationStackRequestPromise } from '../../types/user-interface-types.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
@@ -186,10 +186,10 @@ export function FetchSimulationStack() {
 	if (changeRequest.value === undefined || simulationMetadata.value === undefined) return <main> <CenterToPageTextSpinner text = { 'Getting simulation stack...'  }/></main>
 	const websiteIcon = sanitizeStoredWebsiteIcon(changeRequest.value.website.icon)
 	return (
-		<main>
+		<main class = { getInterceptorModeClass(changeRequest.value.simulationMode) }>
 			<Hint>
 				<FetchSimulationStackModal modalState = { modalState } rpcEntries = { rpcEntries } />
-				<div class = 'block' style = 'margin-bottom: 0px; margin: 10px'>
+				<div class = 'block fetch-stack-request'>
 					<header class = 'card-header window-header'>
 						<div class = 'card-header-icon unset-cursor'>
 							<span class = 'icon'>
@@ -207,30 +207,30 @@ export function FetchSimulationStack() {
 							{
 								websiteIcon === undefined
 									? <></>
-									: <figure class = 'media-left' style = 'margin: auto; display: block; padding: 20px'>
+									: <figure class = 'media-left request-website-icon'>
 										<div class = 'image is-64x64'>
 											<img src = { websiteIcon } width = '64' height = '64'/>
 										</div>
 									</figure>
 							}
 						</article>
-						<div class = 'media-content' style = 'padding-bottom: 10px'>
-							<div class = 'content'>
-								<p class = 'title' style = 'white-space: normal; text-align: center; padding: 10px;'>
+						<div class = 'media-content fetch-stack-request-body'>
+							<div>
+								<p class = 'title request-title'>
 									<b>	{ changeRequest.value.website.websiteOrigin } </b>
 									would like to retrieve your Simulation Stack
 								</p>
 								<div class = 'notification transaction-importance-box simulation-stack-view'>
-									<div style = 'width: 100%;'>
-										<p class = 'paragraph' style = { { minWidth: '400px' } }> Your simulation stack includes references to the following addresses. Sharing this information may allow the website to link these addresses together:</p>
+									<div class = 'fetch-stack-section'>
+										<p class = 'paragraph'> Your simulation stack includes references to the following addresses. Sharing this information may allow the website to link these addresses together:</p>
 										<div class = 'sub-importance-box'>
 											{ addressReferences.value.length === 0 ? <p class = 'paragraph'> No address references</p> : <></> }
-											<div style = { { display: 'flex', flexDirection: 'column', width: 'max-content', } } >
+											<div class = 'fetch-stack-address-list'>
 												{ addressReferences.value.map((addressBookEntry) => <SmallAddress key = { addressBookEntry.address.toString() } addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/> ) }
 											</div>
 										</div>
 									</div>
-									<div style = 'width: 100%;'>
+									<div class = 'fetch-stack-section'>
 										<p class = 'paragraph'> Simulation stack:</p>
 										<div class = 'sub-importance-box'>
 											{ !isThereSimulationStack.value ? <p class = 'paragraph'> No simulation stack</p> : <>
@@ -247,9 +247,9 @@ export function FetchSimulationStack() {
 								</div>
 							</div>
 						</div>
-						<div style = 'overflow: auto; display: flex; justify-content: space-around; width: 100%; height: 40px;'>
+						<div class = 'request-actions'>
 							<AsyncActionButton
-								class = { 'button is-danger dialog-action-button' }
+								class = 'button button--secondary button-overflow dialog-action-button'
 								state = { rejectRequestState.value.state }
 								disabled = { allowPending }
 								text = { 'Don' + '\u0027' + 't allow' }
@@ -257,7 +257,7 @@ export function FetchSimulationStack() {
 								onClick = { rejectRequest }
 							/>
 							<AsyncActionButton
-								class = { 'button is-primary dialog-action-button' }
+								class = 'button is-primary button-overflow dialog-action-button dialog-action-button--confirm'
 								state = { allowRequestState.value.state }
 								disabled = { rejectPending }
 								text = 'Allow'
@@ -268,7 +268,7 @@ export function FetchSimulationStack() {
 					</div>
 				</div>
 
-				<div class = 'content' style = 'height: 0.1px'/>
+				<div class = 'content page-bottom-spacer'/>
 			</Hint>
 		</main>
 	)

@@ -39,15 +39,15 @@ function getChainNameWithId(chainId: bigint) {
 // Values that must be compared digit by digit are wrapped instead of truncated, so they stay complete in narrow popups.
 function ExactValue({ label, value }: { label: string, value: string }) {
 	return <>
-		<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>{ label }</p>
-		<p class = 'paragraph text-legible' style = 'overflow-wrap: anywhere'>{ value }</p>
+		<p class = 'paragraph text-subtitle'>{ label }</p>
+		<p class = 'paragraph text-legible safe-signing-exact-value'>{ value }</p>
 	</>
 }
 
 // The EIP-712 SafeTx fields and hashes in the order a hardware signer lists them, so the user can compare the two side by side.
 export function SafeTxSigningDetails({ safeTx, hashes, addressBookEntries, rpcNetwork, renameAddressCallBack }: SafeTxSigningDetailsParams) {
 	return <>
-		<span class = 'log-table' style = 'justify-content: center; column-gap: 5px; grid-template-columns: auto auto'>
+		<span class = 'log-table safe-signing-fields'>
 			<CellElement text = 'Gnosis Safe: '/>
 			<CellElement text = { <SmallAddress addressBookEntry = { addressBookEntries.verifyingContract } renameAddressCallBack = { renameAddressCallBack } /> }/>
 			{ safeTx.domain.chainId !== undefined
@@ -86,7 +86,7 @@ export function SafeTxSigningDetails({ safeTx, hashes, addressBookEntries, rpcNe
 			<CellElement text = 'Nonce: '/>
 			<CellElement text = { safeTx.message.nonce.toString(10) }/>
 		</span>
-		<div class = 'textbox' style = 'margin-top: 10px'>
+		<div class = 'textbox safe-signing-exact-values'>
 			<ExactValue label = 'Value (attoeth)' value = { safeTx.message.value.toString(10) }/>
 			<ExactValue label = 'Domain Hash' value = { hashes.domainHash }/>
 			<ExactValue label = 'Message Hash' value = { hashes.messageHash }/>

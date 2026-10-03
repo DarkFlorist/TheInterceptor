@@ -12,7 +12,7 @@ type RenderTreeNode = {
 	readonly childNodes?: readonly RenderTreeNode[]
 	readonly l?: Record<string, (event: unknown) => unknown>
 	readonly tagName?: string
-	readonly style?: { readonly cssText?: string }
+	readonly getAttribute?: (name: string) => string | undefined
 	readonly textContent?: string
 }
 
@@ -23,10 +23,10 @@ const noopRename = () => undefined
 
 const normalizeRenderedText = (text: string | undefined) => (text ?? '').replace(/\s+/gu, ' ').trim()
 
-const collectNodesWithStyle = (node: RenderTreeNode, styleText: string): readonly RenderTreeNode[] => {
-	const matches = node.style?.cssText?.includes(styleText) === true ? [node] : []
+const collectNodesWithClass = (node: RenderTreeNode, className: string): readonly RenderTreeNode[] => {
+	const matches = node.getAttribute?.('class')?.split(/\s+/).includes(className) === true ? [node] : []
 	for (const child of node.childNodes ?? []) {
-		matches.push(...collectNodesWithStyle(child, styleText))
+		matches.push(...collectNodesWithClass(child, className))
 	}
 	return matches
 }
@@ -156,8 +156,8 @@ describe('Solidity type rendering', () => {
 
 			const renderedText = normalizeRenderedText(dom.document.body.textContent)
 			assert.equal(renderedText, '{ id = "foo-id", name = "Example Foo"}')
-			assert.equal(collectNodesWithStyle(dom.document.body, 'gap: 0 0.25em').length, 1)
-			assert.equal(collectNodesWithStyle(dom.document.body, 'gap: 0 0.125em').length, 2)
+			assert.equal(collectNodesWithClass(dom.document.body, 'solidity-tuple').length, 1)
+			assert.equal(collectNodesWithClass(dom.document.body, 'solidity-tuple-field').length, 2)
 		} finally {
 			dom.restore()
 		}
@@ -182,8 +182,8 @@ describe('Solidity type rendering', () => {
 			assert.equal(renderedText.includes('{ itemType = 0'), true)
 			assert.equal(renderedText.includes('amount = 100'), true)
 			assert.equal(renderedText.includes('recipient = Fee Recipient'), true)
-			assert.equal(collectNodesWithStyle(dom.document.body, 'gap: 0 0.25em').length, 2)
-			assert.equal(collectNodesWithStyle(dom.document.body, 'gap: 0 0.125em').length, 9)
+			assert.equal(collectNodesWithClass(dom.document.body, 'solidity-tuple').length, 2)
+			assert.equal(collectNodesWithClass(dom.document.body, 'solidity-tuple-field').length, 9)
 		} finally {
 			dom.restore()
 		}

@@ -28,16 +28,16 @@ type TransferAddressParams = BeforeAfterAddress & {
 
 export function AddressBeforeAfter({ address, beforeAndAfter, renameAddressCallBack, tokenOrEtherDefinition }: TransferAddressParams) {
 	return <>
-		<BigAddress addressBookEntry = { address } renameAddressCallBack = { renameAddressCallBack } style = { { '--bg-color' : 'var(--address-muted-bg-color)' } } />
+		<BigAddress addressBookEntry = { address } renameAddressCallBack = { renameAddressCallBack } class = 'multiline-card--muted' />
 		{ beforeAndAfter === undefined
 			? <></>
-			: <span style = 'grid-template-columns: auto auto; display: grid; justify-content: space-between; margin-top: 10px'>
-				<span style = 'grid-template-columns: auto; display: grid;'>
-					<p class = 'paragraph' style = 'color: var(--subtitle-text-color);'> Before:</p>
+			: <span class = 'send-balance-change'>
+				<span class = 'send-balance'>
+					<p class = 'paragraph text-subtitle'> Before:</p>
 					<TokenOrEth { ... { ...tokenOrEtherDefinition, amount: beforeAndAfter.before } }/>
 				</span>
-				<span style = 'grid-template-columns: auto; display: grid;'>
-					<p class = 'paragraph' style = 'color: var(--subtitle-text-color);'> After:</p>
+				<span class = 'send-balance'>
+					<p class = 'paragraph text-subtitle'> After:</p>
 					<TokenOrEth { ... { ...tokenOrEtherDefinition, amount: beforeAndAfter.after } }/>
 				</span>
 			</span>
@@ -61,49 +61,49 @@ export function getProxyRouteLabel(viaProxypath: readonly AddressBookEntry[]) {
 }
 
 export function ExecutionRouteNotice({ viaProxypath, renameAddressCallBack }: { viaProxypath: readonly AddressBookEntry[], renameAddressCallBack: RenameAddressCallBack }) {
-	return <div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 12px;'>
-		<div style = 'display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px;'>
-			<span class = 'tag' style = 'background-color: var(--alpha-005); color: var(--subtitle-text-color);'>Routed</span>
-			<p class = 'paragraph' style = 'color: var(--subtitle-text-color); margin: 0;'>
+	return <div class = 'box summary-leg'>
+		<div class = 'send-route-summary'>
+			<span class = 'tag send-route-tag'>Routed</span>
+			<p class = 'paragraph send-route-text'>
 				{ getProxyRouteLabel(viaProxypath) }
 			</p>
 		</div>
-		<div style = 'display: flex; flex-wrap: wrap; align-items: center; gap: 6px;'>
-			<p class = 'paragraph' style = 'color: var(--subtitle-text-color); margin: 0;'>Route:</p>
-			<> { interleave(viaProxypath.map((addressBookEntry) => <SmallAddress key = { addressBookEntry.address.toString() } addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/>), <p class = 'paragraph' style = { 'color: var(--subtitle-text-color)' }>{ '->' }</p>) } </>
+		<div class = 'send-route-path'>
+			<p class = 'paragraph send-route-text'>Route:</p>
+			<> { interleave(viaProxypath.map((addressBookEntry) => <SmallAddress key = { addressBookEntry.address.toString() } addressBookEntry = { addressBookEntry } renameAddressCallBack = { renameAddressCallBack }/>), <p class = 'paragraph text-subtitle'>{ '->' }</p>) } </>
 		</div>
 	</div>
 }
 
 export function SimpleSend({ transaction, asset, sender, receiver, renameAddressCallBack, viaProxypath, receiverLabel } : SimpleSendParams) {
 	return <div class = 'notification transaction-importance-box'>
-		<span style = 'grid-template-columns: auto auto auto auto; justify-content: center; display: grid; align-items: baseline;'>
-			<p class = 'paragraph' style = 'font-size: 28px; font-weight: 500; justify-self: right;'> Send&nbsp;</p>
+		<span class = 'summary-heading'>
+			<p class = 'paragraph summary-heading-text'>Send&nbsp;</p>
 			<TokenOrEth
 				{ ...asset }
 				useFullTokenName = { false }
-				style = { { 'font-weight': '500' } }
+				class = 'coin-text--strong'
 				fontSize = 'big'
 			/>
 		</span>
 		{ viaProxypath === undefined ? <></> : <ExecutionRouteNotice viaProxypath = { viaProxypath } renameAddressCallBack = { renameAddressCallBack } /> }
-		<p class = 'paragraph'> From </p>
-		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
+		<p class = 'summary-label'>From</p>
+		<div class = 'box summary-leg'>
 			<AddressBeforeAfter
 				{ ...sender }
 				renameAddressCallBack = { renameAddressCallBack }
 				tokenOrEtherDefinition = { asset }
 			/>
 		</div>
-		<p class = 'paragraph'>{ receiverLabel ?? (viaProxypath === undefined ? 'To' : 'Final recipient') } </p>
-		<div class = 'box' style = 'background-color: var(--alpha-005); box-shadow: unset; margin-bottom: 0px;'>
+		<p class = 'summary-label'>{ receiverLabel ?? (viaProxypath === undefined ? 'To' : 'Final recipient') }</p>
+		<div class = 'box summary-leg'>
 			<AddressBeforeAfter
 				{ ...receiver }
 				renameAddressCallBack = { renameAddressCallBack }
 				tokenOrEtherDefinition = { asset }
 			/>
 		</div>
-		<span class = 'log-table' style = { { display: 'inline-flex', marginTop: '5px' } }>
+		<span class = 'log-table transaction-meta-row summary-meta'>
 			<GasFee tx = { transaction } rpcNetwork = { transaction.rpcNetwork } />
 		</span>
 	</div>

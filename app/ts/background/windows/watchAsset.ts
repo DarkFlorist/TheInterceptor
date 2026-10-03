@@ -497,6 +497,7 @@ export async function handleWatchAssetRequest(
 	request: InterceptedRequest,
 	website: Website,
 	params: WalletWatchAsset,
+	simulationMode: boolean,
 	dependencies: {
 		identifyAddress?: typeof itentifyAddressViaOnChainInformation,
 		getAddressBookEntries?: () => Promise<AddressBookEntries>,
@@ -599,6 +600,7 @@ export async function handleWatchAssetRequest(
 			: currentToken
 	const requestBeforeSignerCheck: StoredWatchAssetRequest = {
 		website,
+		simulationMode,
 		popupOrTabId: undefined,
 		request,
 		requestedAsset,

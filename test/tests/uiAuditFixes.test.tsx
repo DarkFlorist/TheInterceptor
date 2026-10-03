@@ -5,7 +5,9 @@ import { act } from 'preact/test-utils'
 import { InlineCard } from '../../app/ts/components/subcomponents/InlineCard.js'
 import { MultilineCard } from '../../app/ts/components/subcomponents/MultilineCard.js'
 import { installDomMock } from './domMock.js'
-import { readInterceptorAppCss } from './cssTestUtils.js'
+import { interceptorAppStylesheetPaths, readInterceptorAppCss } from './cssTestUtils.js'
+import { getToneClass, toneClassFamilies } from '../../app/ts/components/ui-utils.js'
+import { pageDefinitions, stylesheetFilenames } from '../../scripts/generate-extension-pages.mts'
 
 type TestNode = {
 	readonly childNodes?: readonly TestNode[]
@@ -32,6 +34,87 @@ function contrastRatio(first: string, second: string) {
 	return (Math.max(firstLuminance, secondLuminance) + 0.05) / (Math.min(firstLuminance, secondLuminance) + 0.05)
 }
 
+function stripCssComments(css: string) {
+	return css.replace(/\/\*[\s\S]*?\*\//g, '')
+}
+
+// Every CSS named colour keyword, so none can stand in for a theme token.
+const namedColours = 'aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen mediumslateblue mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen steelblue tan teal thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen'.split(' ')
+const literalColourPattern = new RegExp(`#[0-9a-fA-F]{3,8}\\b|\\b(rgba?|hsla?|hwb|lab|lch|oklab|oklch)\\(|color\\(\\s*srgb|:.*\\b(${ namedColours.join('|') })\\b(?![-(])`)
+
+const colourPaletteScopes = [':root', '.interceptor-mode-signing']
+
+type CssLine = {
+	text: string
+	isSelectorLine: boolean
+	enclosingSelector: string
+}
+
+// Trimmed stylesheet lines, each with the selector of the multi-line rule that most recently opened above it.
+function getCssLines(css: string) {
+	const texts = css.split('\n').map((line) => line.trim())
+	// A comma-ended line belongs to a selector list only when the run of comma-ended lines leads to a line that opens a rule; otherwise it continues a multi-line value.
+	const leadsToRuleOpening = (index: number): boolean => {
+		const text = texts[index] ?? ''
+		if (text.endsWith('{')) return true
+		return text.endsWith(',') && leadsToRuleOpening(index + 1)
+	}
+	const lines: CssLine[] = []
+	let enclosingSelector = ''
+	for (const [index, text] of texts.entries()) {
+		if (text.endsWith('{')) enclosingSelector = text.slice(0, -1).trim()
+		lines.push({ text, isSelectorLine: leadsToRuleOpening(index), enclosingSelector })
+	}
+	return lines
+}
+
+// Properties that one multi-line rule declares more than once, where only the last declaration can apply. Font faces list fallback sources on purpose.
+function getOverwrittenDeclarations(lines: readonly CssLine[]) {
+	const overwritten: string[] = []
+	let declaredProperties = new Set<string>()
+	for (const line of lines) {
+		if (line.text.endsWith('{') || line.text.startsWith('}')) declaredProperties = new Set<string>()
+		const property = /^([a-z-]+):/.exec(line.text)?.[1]
+		if (property === undefined || line.isSelectorLine || line.enclosingSelector === '@font-face') continue
+		if (declaredProperties.has(property)) overwritten.push(`${ line.enclosingSelector } { ${ property } }`)
+		declaredProperties.add(property)
+	}
+	return overwritten
+}
+
+const layoutScopeOpening = ':root {'
+
+// The layout stylesheet nests all of its rules in one `:root` scope; this returns the rules inside it.
+function getLayoutScopeContent(layoutCss: string) {
+	const start = layoutCss.indexOf(layoutScopeOpening)
+	const end = layoutCss.lastIndexOf('}')
+	if (start === -1 || end === -1) throw new Error('the layout stylesheet is not wrapped in its :root scope')
+	return layoutCss.slice(start + layoutScopeOpening.length, end)
+}
+
+// Selector lists of the rules outside any at-rule, with whitespace normalised.
+function getTopLevelSelectors(css: string) {
+	const selectors: string[] = []
+	let depth = 0
+	let pending = ''
+	for (const character of css) {
+		if (character === '{') {
+			const selector = pending.trim().replace(/\s+/g, ' ')
+			if (depth === 0 && !selector.startsWith('@')) selectors.push(selector)
+			depth += 1
+			pending = ''
+		} else if (character === '}') {
+			depth -= 1
+			pending = ''
+		} else if (character === ';') {
+			pending = ''
+		} else {
+			pending += character
+		}
+	}
+	return selectors
+}
+
 describe('UI audit fixes', () => {
 	test('keeps action colors readable with white text in default and hover states', async () => {
 		const css = await Bun.file('app/css/interceptor-theme.css').text()
@@ -44,8 +127,9 @@ describe('UI audit fixes', () => {
 		const appCss = await readInterceptorAppCss()
 		const frameworkCss = await Bun.file('app/css/interceptor-framework.css').text()
 		const pageCss = await Bun.file('app/css/interceptor-pages.css').text()
-		assert.match(css, /--accent-color:\s*#[0-9a-fA-F]{6}/)
-		assert.match(css, /--danger-color:\s*#[0-9a-fA-F]{6}/)
+		// Text and outline colours are themed, so each one carries a light and a dark value.
+		assert.match(css, /--accent-color:\s*light-dark\(#[0-9a-fA-F]{6}, #[0-9a-fA-F]{6}\)/)
+		assert.match(css, /--danger-color:\s*light-dark\(#[0-9a-fA-F]{6}, #[0-9a-fA-F]{6}\)/)
 		const deprecatedTokens = [
 			'primary-color',
 			'highlighted-primary-color',
@@ -72,19 +156,21 @@ describe('UI audit fixes', () => {
 		assert.match(appCss, /\.btn\.is-primary\s*\{[\s\S]*?background-color:\s*var\(--primary-action-color\);/)
 		assert.match(appCss, /\.btn\.is-danger\s*\{[\s\S]*?background-color:\s*var\(--destructive-action-color\);/)
 		assert.match(appCss, /\.button\.is-primary\.is-danger\s*\{[\s\S]*?background-color:\s*var\(--destructive-action-color\);/)
-		assert.match(frameworkCss, /\.button\.is-primary:active,[\s\S]*?background-color:\s*var\(--highlighted-primary-action-color\);/)
+		assert.match(frameworkCss, /\.button\.is-primary:active\s*\{[\s\S]*?background-color:\s*var\(--highlighted-primary-action-color\);/)
 		assert.match(frameworkCss, /\.button\.is-primary\[disabled\],[\s\S]*?background-color:\s*var\(--primary-action-color\);/)
-		assert.match(frameworkCss, /\.button\.is-primary\.is-outlined:hover,[\s\S]*?background-color:\s*var\(--primary-action-color\);/)
-		assert.match(frameworkCss, /\.button\.is-danger:active,[\s\S]*?background-color:\s*var\(--highlighted-destructive-action-color\);/)
+		assert.match(frameworkCss, /\.button\.is-danger:active\s*\{[\s\S]*?background-color:\s*var\(--highlighted-destructive-action-color\);/)
 		assert.match(frameworkCss, /\.button\.is-danger\[disabled\],[\s\S]*?background-color:\s*var\(--destructive-action-color\);/)
-		assert.match(frameworkCss, /\.button\.is-danger\.is-outlined:hover,[\s\S]*?background-color:\s*var\(--destructive-action-color\);/)
+		// Variants no page uses were removed from the framework styles; they must not come back unnoticed.
+		assert.doesNotMatch(appCss, /\.is-outlined|\.is-link|\.is-light|\.is-success|\.breadcrumb/)
 		const addAddressSource = await Bun.file('app/ts/components/pages/AddNewAddress.tsx').text()
 		const accessListSource = await Bun.file('app/ts/components/pages/InterceptorAccessList.tsx').text()
 		const configureRpcSource = await Bun.file('app/ts/components/subcomponents/ConfigureRpcConnection.tsx').text()
 		assert.doesNotMatch(`${ addAddressSource }\n${ accessListSource }`, /background-color: var\(--danger-color\)/)
 		assert.match(configureRpcSource, /Remove<\/span><\/button>|<Trash \/> Remove<\/span><\/button>/)
 		assert.doesNotMatch(configureRpcSource, /--(?:btn-)?text-color: var\(--danger-color\)/)
-		assert.match(configureRpcSource, /--btn-text-color: var\(--destructive-action-color\)[\s\S]*?--text-color: var\(--destructive-action-color\)/)
+		assert.match(configureRpcSource, /class = 'btn btn--ghost rpc-form-remove'[^\n]*<span class = 'grid rpc-form-remove-label'><Trash \/> Remove<\/span>/)
+		assert.match(appCss, /\.rpc-form-remove\s*\{[^}]*--btn-text-color:\s*var\(--destructive-action-color\);/)
+		assert.match(appCss, /\.rpc-form-remove-label\s*\{[^}]*--text-color:\s*var\(--destructive-action-color\);/)
 	})
 
 	test('labels address editor text inputs and applies a single-column narrow layout', async () => {
@@ -155,18 +241,190 @@ describe('UI audit fixes', () => {
 
 	test('keeps secondary actions readable and visually lighter than the primary decisions', async () => {
 		const confirmSource = await Bun.file('app/ts/components/pages/ConfirmTransaction.tsx').text()
-		assert.match(confirmSource, /class = 'button button--secondary button-overflow dialog-action-button'[\s\S]*?text = 'Add unsigned'/)
+		assert.match(confirmSource, /class = 'button button--secondary button-overflow dialog-action-button dialog-action-button--unsigned'[\s\S]*?text = 'Add unsigned'/)
+		// Every approve/reject dialog uses the same hierarchy: a quiet reject and a single primary confirm.
+		for (const dialogPath of ['app/ts/components/pages/ChangeChain.tsx', 'app/ts/components/pages/FetchSimulationStack.tsx']) {
+			const dialogSource = await Bun.file(dialogPath).text()
+			assert.match(dialogSource, /class = 'button button--secondary button-overflow dialog-action-button'/, dialogPath)
+			assert.match(dialogSource, /class = 'button is-primary button-overflow dialog-action-button dialog-action-button--confirm'/, dialogPath)
+		}
+		for (const sourcePath of ['app/ts/components/pages/ChangeChain.tsx', 'app/ts/components/pages/FetchSimulationStack.tsx', 'app/ts/components/pages/WatchAsset.tsx', 'app/ts/components/pages/InterceptorAccessList.tsx', 'app/ts/AddressBook.tsx']) {
+			const source = await Bun.file(sourcePath).text()
+			assert.doesNotMatch(source, /'button is-danger|is-warning is-danger|'button is-link/, sourcePath)
+			assert.doesNotMatch(source, /is-danger[^']*'[^>]*>Cancel</, sourcePath)
+		}
 		const homeSource = await Bun.file('app/ts/components/pages/Home.tsx').text()
-		assert.match(homeSource, /class = \{ `button \$\{ param\.simulationMode\.value \? 'is-primary' : 'button--secondary' \}` \}/)
-		assert.match(homeSource, /class = \{ `button \$\{ param\.simulationMode\.value \? 'button--secondary' : 'is-primary' \}` \}/)
+		assert.match(homeSource, /class = \{ `button home-mode-button \$\{ param\.simulationMode\.value \? 'is-primary home-mode-button--active' : 'button--secondary' \}` \}/)
+		assert.match(homeSource, /class = \{ `button home-mode-button \$\{ param\.simulationMode\.value \? 'button--secondary' : 'is-primary home-mode-button--active' \}` \}/)
 
 		const css = await readInterceptorAppCss()
-		assert.match(css, /\.button\.button--secondary\s*\{[\s\S]*?border:\s*1px solid var\(--accent-color\);[\s\S]*?color:\s*var\(--text-color\);/)
-		assert.match(css, /\.button\.button--secondary:hover, \.button\.button--secondary:focus, \.button\.button--secondary:active\s*\{[\s\S]*?background-color:\s*var\(--primary-action-color\);/)
-		assert.match(css, /\.button\.button--secondary\[disabled\]\s*\{[\s\S]*?border-color:\s*var\(--disabled-action-color\);[\s\S]*?color:\s*var\(--text-color\);/)
+		// Secondary actions sit on a raised neutral surface with a hairline border, so only the primary decision carries the action colour.
+		assert.match(css, /\.button\.button--secondary\s*\{[\s\S]*?background-color:\s*var\(--surface-raised-color\);[\s\S]*?border:\s*1px solid var\(--strong-hairline-color\);[\s\S]*?color:\s*var\(--text-color\);/)
+		assert.match(css, /\.button\.button--secondary:hover, \.button\.button--secondary:focus, \.button\.button--secondary:active\s*\{[\s\S]*?background-color:\s*var\(--surface-highest-color\);[\s\S]*?color:\s*var\(--text-color\);/)
+		assert.match(css, /\.button\.button--secondary\[disabled\]\s*\{[\s\S]*?border-color:\s*var\(--strong-hairline-color\);[\s\S]*?color:\s*var\(--text-color\);/)
 		// The secondary Safe action wraps onto its own compact row below the two decisions in narrow popups.
-		assert.match(css, /@container \(max-width: 42rem\)[\s\S]*?\.confirmation-action-buttons--safe > \.button--secondary\s*\{[\s\S]*?flex:\s*1 1 100%;[\s\S]*?order:\s*1;/)
+		assert.match(css, /@container \(max-width: 42rem\)[\s\S]*?\.confirmation-action-buttons--safe > \.dialog-action-button--unsigned\s*\{[\s\S]*?flex:\s*1 1 100%;[\s\S]*?order:\s*1;/)
 		assert.match(css, /@container \(max-width: 24rem\)[\s\S]*?\.confirmation-action-buttons--safe\s*\{[\s\S]*?flex-direction:\s*column;/)
+	})
+
+	test('keeps colours in theme tokens and leaves out styles browsers ignore', async () => {
+		const stylesheets = await Promise.all(interceptorAppStylesheetPaths.map(async (stylesheetPath) => ({ stylesheetPath, css: stripCssComments(await Bun.file(stylesheetPath).text()) })))
+		for (const { stylesheetPath, css } of stylesheets) {
+			// A literal colour would not follow the light and dark themes, so colours live only in the token definitions of the theme's palette scopes.
+			const isPaletteDefinition = (line: CssLine) => stylesheetPath === 'app/css/interceptor-theme.css' && line.text.startsWith('--') && colourPaletteScopes.includes(line.enclosingSelector)
+			// Selector lines are skipped and the selector of a one-line rule is cut off, so an id selector can never be mistaken for a hex colour.
+			const literalColours = getCssLines(css).filter((line) => !line.isSelectorLine && !isPaletteDefinition(line) && literalColourPattern.test(line.text.slice(line.text.indexOf('{') + 1))).map((line) => line.text)
+			assert.deepEqual(literalColours, [], stylesheetPath)
+			// Scrollbar pseudo-elements are ignored once `scrollbar-color` is set, and the supported browsers need none of these prefixes. Firefox-only `-moz-appearance: textfield` is deliberate and stays.
+			const ignoredStyles = css.split('\n').map((line) => line.trim()).filter((line) => /::-webkit-scrollbar|(^|[\s{;])(-ms-|-moz-appearance:\s*none|-moz-user-select|-webkit-(appearance|user-select|box-align|align-items|animation|touch-callout|overflow-scrolling))|:-ms-input-placeholder|:-moz-placeholder|@-webkit-keyframes/.test(line))
+			assert.deepEqual(ignoredStyles, [], stylesheetPath)
+			// A prefixed property next to its standard form is redundant on the supported browsers.
+			const cssLines = getCssLines(css)
+			const standardDeclarations = new Set(cssLines.map((line) => `${ line.enclosingSelector }|${ /^([a-z-]+):/.exec(line.text)?.[1] ?? '' }`))
+			const redundantPrefixes = cssLines.filter((line) => {
+				const prefixedProperty = /^-(?:webkit|moz|ms)-([a-z-]+):/.exec(line.text)?.[1]
+				return prefixedProperty !== undefined && standardDeclarations.has(`${ line.enclosingSelector }|${ prefixedProperty }`)
+			}).map((line) => line.text)
+			assert.deepEqual(redundantPrefixes, [], stylesheetPath)
+			// Corner radii come from the theme's radius scale. Hairline rounding below 4px and the asymmetric address tag are the only literals.
+			const literalRadii = cssLines.filter((line) => /^border(-[a-z]+)*-radius:/.test(line.text) && /(?<![\w.])([4-9]|\d{2,})(\.\d+)?px|\d(\.\d+)?rem/.test(line.text) && !line.text.includes('10px 40px 40px 10px')).map((line) => line.text)
+			assert.deepEqual(literalRadii, [], stylesheetPath)
+			assert.deepEqual(getOverwrittenDeclarations(cssLines), [], stylesheetPath)
+			assert.doesNotMatch(css, /\{\s*\}/, `${ stylesheetPath } has an empty rule set`)
+			// Two top-level rules with the same selector list in one stylesheet hide which declaration wins; a shared group followed by a narrower rule is fine.
+			const topLevelSelectors = getTopLevelSelectors(stylesheetPath.endsWith('interceptor-layout.css') ? getLayoutScopeContent(css) : css)
+			const repeatedSelectors = topLevelSelectors.filter((selector, index) => topLevelSelectors.indexOf(selector) !== index)
+			assert.deepEqual(repeatedSelectors, [], stylesheetPath)
+		}
+		const appCss = await readInterceptorAppCss()
+		// Every custom property that the theme defines, in any scope, must be read somewhere, or it is dead weight.
+		const sources = [appCss]
+		for await (const file of new Bun.Glob('app/ts/**/*.{ts,tsx}').scan('.')) sources.push(await Bun.file(file).text())
+		const allSources = sources.join('\n')
+		const themeCss = await Bun.file('app/css/interceptor-theme.css').text()
+		const themeCustomProperties = [...themeCss.matchAll(/(?:^|[\s{;])(--[a-z0-9-]+):/gm)].map((match) => match[1] ?? '')
+		const unusedTokens = themeCustomProperties.filter((token) => !allSources.includes(`var(${ token })`) && !allSources.includes(`var(${ token },`))
+		assert.deepEqual([...new Set(unusedTokens)], [])
+	})
+
+	test('keeps static layout in stylesheets instead of inline style attributes', async () => {
+		// A style attribute written as a plain string cannot depend on runtime values, so it belongs in a class. Strings that only place a component in its parent grid through custom properties are the exception.
+		const staticInlineStyles: string[] = []
+		for await (const file of new Bun.Glob('app/ts/**/*.tsx').scan('.')) {
+			const source = await Bun.file(file).text()
+			// Covers `style = '...'`, `style = { '...' }`, string fallbacks such as `style = { props.style ?? '...' }`, and backtick strings without interpolation.
+			for (const match of source.matchAll(/style = (?:\{ (?:[\w.]+ \?\? )?)?['`]([^'`$]*)['`]/g)) {
+				const declarations = (match[1] ?? '').split(';').map((declaration) => declaration.trim()).filter((declaration) => declaration !== '')
+				if (declarations.length === 0 || declarations.some((declaration) => !declaration.startsWith('--'))) staticInlineStyles.push(`${ file }: ${ match[0] }`)
+			}
+		}
+		assert.deepEqual(staticInlineStyles, [])
+	})
+
+	test('lays out ENS events and signing field tables with the shared detail styles', async () => {
+		const css = await readInterceptorAppCss()
+		// An ENS event is a sentence whose parts wrap as whole pieces; squeezing the parts clipped names to a single letter.
+		assert.match(css, /\.ens-table\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/)
+		assert.match(css, /\.ens-table > \.log-cell\s*\{[^}]*flex:\s*0 0 auto;[^}]*max-width:\s*100%;/)
+		// The rows are list items, so their marker and list spacing are reset.
+		assert.match(css, /\.ens-event\s*\{[^}]*list-style:\s*none;[^}]*margin:\s*0;/)
+		const ensSource = await Bun.file('app/ts/components/simulationExplaining/customExplainers/EnsEventExplainer.tsx').text()
+		assert.match(ensSource, /<ul class = 'ens-events'>[\s\S]*?<li key = \{[^\n]*\} class = 'ens-event'>/)
+		assert.doesNotMatch(ensSource, /positive-box|textColor/)
+		// Typed-data, Safe and hash tables share one two-column layout with the values starting on a common line, like the raw transaction details.
+		assert.match(css, /\.eip-712-table, \.safe-signing-fields, \.signature-hash-table\s*\{[^}]*grid-template-columns:\s*max-content minmax\(0, 1fr\);/)
+		assert.match(css, /\.eip-712-table > \.log-cell:nth-child\(even\), \.safe-signing-fields > \.log-cell:nth-child\(even\), \.signature-hash-table > \.log-cell:nth-child\(even\) \{ justify-content: start \}/)
+		const personalSignSource = await Bun.file('app/ts/components/pages/PersonalSign.tsx').text()
+		assert.match(personalSignSource, /<p class = 'summary-label'>Domain<\/p>[\s\S]*?<p class = 'summary-label'>Message<\/p>/)
+	})
+
+	test('passes static tones to coin and card components as classes', async () => {
+		const css = await readInterceptorAppCss()
+		// The inline card colours its own label; a tone is in the scoped layout stylesheet, which gives it the weight to apply to the label as well.
+		const layoutCss = await Bun.file('app/css/interceptor-layout.css').text()
+		for (const tone of ['strong', 'subtitle', 'negative', 'positive']) assert.match(layoutCss, new RegExp(`\\n\\.coin-text--${ tone } \\{`))
+		// One selector keeps its extra weight on top of the scope, because the themed paragraph spacing rule is heavier than the scope plus a single class.
+		assert.match(layoutCss, /\np\.paragraph\.summary-transaction-input-label \{/)
+		const swapSource = await Bun.file('app/ts/components/simulationExplaining/SwapTransactions.tsx').text()
+		assert.match(swapSource, /const amountClass = `coin-text--strong \$\{ getToneClass\('coin-text', direction === 'pay' \? 'negative' : 'positive'\) \}`/)
+		assert.doesNotMatch(swapSource, /tokenStyle|balanceTextStyle|amountStyle/)
+		assert.match(css, /\.address-editor \.input\.address-editor-input--invalid \{ color: var\(--danger-color\) \}/)
+	})
+
+	test('keeps the stack request and website access dialogs readable and within narrow windows', async () => {
+		const css = await readInterceptorAppCss()
+		const fetchStackSource = await Bun.file('app/ts/components/pages/FetchSimulationStack.tsx').text()
+		// The framework's `.content` wrapper gave the stack bullets and indented every address card, so the dialog body is a plain container.
+		assert.doesNotMatch(fetchStackSource, /class = 'content'/)
+		// The panel follows the window width; a fixed minimum width pushed the cards off screen in narrow windows.
+		assert.match(css, /\.simulation-stack-view\s*\{[^}]*max-width:\s*40rem;/)
+		assert.doesNotMatch(css, /\.simulation-stack-view\s*\{[^}]*min-content/)
+		assert.match(css, /\.fetch-stack-section\s*\{[^}]*min-width:\s*0;/)
+		// Dates and long phrases in ENS sentences wrap instead of being clipped.
+		assert.match(css, /\.ens-table \.ens-event-text\s*\{[^}]*white-space:\s*normal;/)
+		// Confirmation text uses the readable muted colour, and focus starts on Cancel so it never lands on an address's copy button and hides its name.
+		assert.match(css, /\.website-access-dialog\s*\{[^}]*color:\s*var\(--subtitle-text-color\);/)
+		const websiteAccessSource = await Bun.file('app/ts/components/pages/WebsiteAccess.tsx').text()
+		const cancelButtons = websiteAccessSource.match(/<Modal\.Close [^>]*>Cancel<\/Modal\.Close>/g) ?? []
+		assert.equal(cancelButtons.length, 5)
+		for (const cancelButton of cancelButtons) assert.match(cancelButton, / autoFocus>/)
+	})
+
+	test('builds every status tone class in one place and applies the mode tint to every request window', async () => {
+		const css = await readInterceptorAppCss()
+		// Each tone a family accepts has a rule, so a tone added in TypeScript without its styling fails here.
+		for (const [family, tones] of Object.entries(toneClassFamilies)) {
+			for (const tone of tones) assert.match(css, new RegExp(`\\.${ family }--${ tone }[ ,{]`), `${ family }--${ tone }`)
+		}
+		assert.equal(getToneClass('outcome-chip', 'warning'), 'outcome-chip--warning')
+		// Components never spell a tone class themselves, and every window that shows a request tints its accent by mode.
+		const toneClassPattern = new RegExp(`(${ Object.keys(toneClassFamilies).join('|') })--(positive|neutral|warning|negative)`)
+		for await (const file of new Bun.Glob('app/ts/**/*.{ts,tsx}').scan('.')) {
+			assert.doesNotMatch(await Bun.file(file).text(), toneClassPattern, file)
+		}
+		for (const requestWindow of ['App.tsx', 'pages/ConfirmTransaction.tsx', 'pages/InterceptorAccess.tsx', 'pages/ChangeChain.tsx', 'pages/WatchAsset.tsx', 'pages/FetchSimulationStack.tsx']) {
+			assert.match(await Bun.file(`app/ts/components/${ requestWindow }`).text(), /<main class = \{[^\n]*(getInterceptorModeClass\(|modeClass)/, requestWindow)
+		}
+		// Every request carries the mode it was made in, set by the background; no window reads the mode from storage on its own.
+		assert.match(await Bun.file('app/ts/components/pages/WatchAsset.tsx').text(), /getInterceptorModeClass\(request\.value\.simulationMode\)/)
+		assert.match(await Bun.file('app/ts/components/pages/FetchSimulationStack.tsx').text(), /getInterceptorModeClass\(changeRequest\.value\.simulationMode\)/)
+		const backgroundSource = await Bun.file('app/ts/background/background.ts').text()
+		assert.match(backgroundSource, /handleWatchAssetRequest\(ethereum, websiteTabConnections, request, website, rpcRequest, settings\.simulationMode,/)
+		assert.match(backgroundSource, /requestInterceptorSimulatorStack\(await getUpdatedSimulationStackSnapshot\(ethereum, simulationOverlayEnabled\), settings\.simulationMode,/)
+	})
+
+	test('gives component layout its precedence through its own scope instead of load order', async () => {
+		// Every layout rule is nested in `:root`, which adds one class worth of specificity, so a layout class wins over a shared rule of the same weight whichever stylesheet loads last.
+		const layoutCss = stripCssComments(await Bun.file('app/css/interceptor-layout.css').text())
+		assert.equal(layoutCss.trimStart().startsWith(layoutScopeOpening), true)
+		assert.equal(layoutCss.trimEnd().endsWith('}'), true)
+		const scopedSelectors = getTopLevelSelectors(getLayoutScopeContent(layoutCss))
+		assert.equal(scopedSelectors.length > 300, true)
+		assert.deepEqual(getTopLevelSelectors(layoutCss), [':root'])
+		// Cascade layers are not used for this: browsers add their own extension-page defaults, which outrank every layered rule.
+		assert.doesNotMatch(await readInterceptorAppCss(), /@layer/)
+		// Every generated page links the whole stylesheet list, so no page is missing the layout rules.
+		for (const page of pageDefinitions) {
+			for (const file of [`app/html/${ page.name }.html`, `app/html3/${ page.name }V3.html`]) {
+				const linkedStylesheets = [...(await Bun.file(file).text()).matchAll(/href = '\.\.\/css\/([^']+\.css)'/g)].map((match) => match[1])
+				assert.deepEqual(linkedStylesheets, [...stylesheetFilenames], file)
+			}
+		}
+	})
+
+	test('keeps the warning tag readable in both themes', async () => {
+		const frameworkCss = await Bun.file('app/css/interceptor-framework.css').text()
+		assert.match(frameworkCss, /\.tag:not\(body\)\.is-warning\s*\{\s*background-color:\s*var\(--warning-box-color\);\s*color:\s*var\(--warning-box-text\);/)
+		const themeCss = await Bun.file('app/css/interceptor-theme.css').text()
+		const readThemedPair = (token: string) => new RegExp(`--${ token }:\\s*light-dark\\((#[0-9a-fA-F]{6}),\\s*(#[0-9a-fA-F]{6})\\)`).exec(themeCss)
+		const background = readThemedPair('warning-box-color')
+		const text = readThemedPair('warning-box-text')
+		for (const [themeName, themeIndex] of [['light', 1], ['dark', 2]] as const) {
+			const backgroundColour = background?.[themeIndex]
+			const textColour = text?.[themeIndex]
+			if (backgroundColour === undefined || textColour === undefined) throw new Error(`warning tag colours are missing for the ${ themeName } theme`)
+			assert.ok(contrastRatio(textColour, backgroundColour) >= 4.5, `warning tag needs at least 4.5:1 contrast in the ${ themeName } theme`)
+		}
 	})
 
 	test('does not use the dim outlined primary button style anywhere in the extension UI', async () => {
