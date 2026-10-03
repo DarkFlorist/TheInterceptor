@@ -248,7 +248,7 @@ export const getGovernanceExecutionSimulationInput = (
 	return [
 		...simulationInput,
 		{
-			...(previousBlock === undefined ? { stateOverrides: executionStateOverrides } : carryDelegateClearing(previousBlock, executionStateOverrides)),
+			...carryDelegateClearing(previousBlock ?? { delegateClearedAddress: undefined }, executionStateOverrides),
 			transactions: [executionTransaction],
 			signedMessages: [],
 			blockTimeManipulation: { type: 'SetTimetamp', timeToSet: dateToBigintSeconds(executionTimestamp) },

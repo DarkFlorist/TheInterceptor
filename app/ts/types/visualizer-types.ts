@@ -191,10 +191,9 @@ export const SimulationStateInputBlock = funtypes.ReadonlyObject({
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockTimeManipulation: BlockTimeManipulation,
 	simulateWithZeroBaseFee: funtypes.Boolean,
-}).And(funtypes.ReadonlyPartial({
-	// Optional for older stored inputs; derived blocks carry this choice until RPC state overrides are built.
-	delegateClearedAddress: EthereumAddress,
-}))
+	// Missing values in older stored inputs parse as undefined; new block builders must carry the choice explicitly.
+	delegateClearedAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+})
 
 export type SimulationStateInput = funtypes.Static<typeof SimulationStateInput>
 export const SimulationStateInput = funtypes.ReadonlyArray(SimulationStateInputBlock)
@@ -206,9 +205,8 @@ export const SimulationStateInputMinimalDataBlock = funtypes.ReadonlyObject({
 	signedMessages: funtypes.ReadonlyArray(SignedMessageTransaction),
 	blockTimeManipulation: BlockTimeManipulation,
 	simulateWithZeroBaseFee: funtypes.Boolean,
-}).And(funtypes.ReadonlyPartial({
-	delegateClearedAddress: EthereumAddress,
-}))
+	delegateClearedAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+})
 
 export type SimulationStateInputMinimalData = funtypes.Static<typeof SimulationStateInputMinimalData>
 export const SimulationStateInputMinimalData = funtypes.ReadonlyArray(SimulationStateInputMinimalDataBlock)

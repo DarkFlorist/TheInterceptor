@@ -16,7 +16,7 @@ import { MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
 import { EthSimulateV1Params } from '../../app/ts/types/ethSimulate-types.js'
 import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { EthereumBlockHeader, serialize } from '../../app/ts/types/wire-types.js'
-import { toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
+import { SimulationStateInputBlock, toResolvedSimulationInput } from '../../app/ts/types/visualizer-types.js'
 import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
 
 const activeAddress = 0x1234567890123456789012345678901234567890n
@@ -50,6 +50,17 @@ const transaction = (identifier: bigint) => ({
 })
 
 describe('delegate clearing in simulation', () => {
+	test('parses older simulation blocks without a delegate clearing marker', () => {
+		const parsed = SimulationStateInputBlock.parse({
+			stateOverrides: {},
+			transactions: [],
+			signedMessages: [],
+			blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: '0x0', deltaUnit: 'Seconds' },
+			simulateWithZeroBaseFee: false,
+		})
+		assert.equal(parsed.delegateClearedAddress, undefined)
+	})
+
 	test('keeps the choice scoped to the active address and chain and preserves balance overrides', async () => {
 		installBrowserMock()
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
