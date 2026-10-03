@@ -10,6 +10,7 @@ import { installBrowserMock } from './backgroundEthAccountsTestHarness.js'
 import { updateInterceptorTransactionStack } from '../../app/ts/background/storageVariables.js'
 import { appendTransactionsToInput, mockSignTransaction } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
+import { getSimulationInputHash } from '../../app/ts/utils/simulationFingerprint.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
 import { EthSimulateV1Params } from '../../app/ts/types/ethSimulate-types.js'
 import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
@@ -138,6 +139,8 @@ describe('delegate clearing in simulation', () => {
 		const currentInput = await getCurrentSimulationInput()
 		assert.equal(currentInput[0]?.delegateClearedAddress, undefined)
 		assert.equal(currentInput[1]?.delegateClearedAddress, undefined)
+		assert.deepEqual(currentInput.map((block) => block.stateOverrides), capturedInput.map((block) => block.stateOverrides))
+		assert.notEqual(getSimulationInputHash(currentInput), getSimulationInputHash(capturedInput))
 	})
 
 	test('returns a retryable reply when delegation confirmation fails', async () => {
