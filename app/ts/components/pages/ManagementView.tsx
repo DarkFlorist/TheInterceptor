@@ -4,9 +4,8 @@ import type { JSX } from 'preact'
 import { AddressBook } from '../../AddressBook.js'
 import { WebsiteAccessView } from './WebsiteAccess.js'
 import { SettingsView } from './SettingsView.js'
-import { SimulationStackPage } from './SimulationStackPage.js'
+import { SimulationStackView } from './SimulationStackPage.js'
 import { DiagnosticsView } from './DiagnosticsView.js'
-import Hint from '../subcomponents/Hint.js'
 import { getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash, managementPages, type ManagementPage } from '../../utils/managementPages.js'
 import { assertNever } from '../../utils/typescript.js'
 
@@ -70,8 +69,8 @@ function ManagementPanelContent({ page, selectPage }: { page: ManagementPage, se
 	switch (page) {
 		case 'home': return <ManagementHome selectPage = { selectPage } />
 		case 'websites': return <WebsiteAccessView />
-		case 'address-book': return <AddressBook />
-		case 'simulation-stack': return <Hint><SimulationStackPage /></Hint>
+		case 'address-book': return <AddressBook embedded = { true } />
+		case 'simulation-stack': return <SimulationStackView embedded = { true } />
 		case 'diagnostics': return <DiagnosticsView />
 		case 'settings': return <SettingsView />
 		default: return assertNever(page)

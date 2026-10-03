@@ -39,7 +39,7 @@ header:has(form[role='search']) h1 {
 	z-index: 10;
 }
 
-.management-page .simulation-stack-page > .simulation-stack-page-header {
+.simulation-stack-page--embedded > .simulation-stack-page-header {
 	position: static;
 }
 
@@ -788,13 +788,6 @@ fieldset[disabled] .button.is-primary.is-danger {
 	min-height: 0;
 }
 
-.management-page--address-book .address-book-page,
-.management-page--address-book .address-book-container,
-.management-page--address-book .address-book-layout,
-.management-page--address-book .address-book-content {
-	height: 100%;
-}
-
 .management-header {
 	position: sticky;
 	top: 0;
@@ -1131,13 +1124,6 @@ fieldset[disabled] .button.is-primary.is-danger {
 
 @media screen and (max-width: 520px) {
 	.management-page--address-book {
-		height: auto;
-	}
-
-	.management-page--address-book .address-book-page,
-	.management-page--address-book .address-book-container,
-	.management-page--address-book .address-book-layout,
-	.management-page--address-book .address-book-content {
 		height: auto;
 	}
 

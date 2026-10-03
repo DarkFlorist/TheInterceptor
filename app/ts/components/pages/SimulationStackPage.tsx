@@ -30,6 +30,7 @@ import { CopySafeTransactionsButton } from '../subcomponents/CopySafeTransaction
 import { Tooltip } from '../subcomponents/Tooltip.js'
 import { useCopyFeedback } from '../hooks/useCopyFeedback.js'
 import { useModeActiveAddress } from '../hooks/useModeActiveAddress.js'
+import Hint from '../subcomponents/Hint.js'
 
 type ModalState =
 	{ page: 'modifyAddress', state: Signal<ModifyAddressWindowState> } |
@@ -269,7 +270,7 @@ function scheduleStackTargetTimeout(callback: () => void, delayMs: number) {
 	callback()
 }
 
-export function SimulationStackPage() {
+export function SimulationStackPage({ embedded }: { embedded: boolean }) {
 	const {
 		activeSimulationAddress,
 		activeSigningSafeAddress,
@@ -402,7 +403,7 @@ export function SimulationStackPage() {
 		: undefined
 
 	return <main>
-		<div class = 'layout simulation-stack-page'>
+		<div class = { `layout simulation-stack-page${ embedded ? ' simulation-stack-page--embedded' : '' }` }>
 			{ !isFreshHomeDataLoaded.value ? <>
 				<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>
 				<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
@@ -499,4 +500,8 @@ export function SimulationStackPage() {
 			: <></> }
 		</div>
 	</main>
+}
+
+export function SimulationStackView({ embedded }: { embedded: boolean }) {
+	return <Hint><SimulationStackPage embedded = { embedded } /></Hint>
 }

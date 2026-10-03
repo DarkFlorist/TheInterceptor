@@ -1181,6 +1181,22 @@ html, body {
 	padding-top: 1rem;
 }
 
+.address-book-page--embedded,
+.address-book-page--embedded .address-book-container,
+.address-book-page--embedded .address-book-layout,
+.address-book-page--embedded .address-book-content {
+	height: 100%;
+}
+
+@media screen and (max-width: 520px) {
+	.address-book-page--embedded,
+	.address-book-page--embedded .address-book-container,
+	.address-book-page--embedded .address-book-layout,
+	.address-book-page--embedded .address-book-content {
+		height: auto;
+	}
+}
+
 .address-book-toolbar {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) max-content;

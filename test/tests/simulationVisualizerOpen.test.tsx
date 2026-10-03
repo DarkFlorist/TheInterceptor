@@ -538,11 +538,12 @@ function createFailedStackHomePageUpdate(tabId: number, popupRefreshGeneration: 
 }
 
 describe('simulation visualizer open replies', () => {
-	test('stack visualizer entrypoint wraps the page in Hint for toolbar feedback', async () => {
-		const source = await Bun.file('app/ts/simulationStack.ts').text()
+	test('stack visualizer view wraps the page in Hint for toolbar feedback', async () => {
+		const entrypointSource = await Bun.file('app/ts/simulationStack.ts').text()
+		const viewSource = await Bun.file('app/ts/components/pages/SimulationStackPage.tsx').text()
 
-		assert.match(source, /import Hint from '\.\/components\/subcomponents\/Hint\.js'/)
-		assert.match(source, /preact\.createElement\(Hint,\s*\{\s*children:\s*preact\.createElement\(SimulationStackPage,\s*\{\}\)\s*\}\)/)
+		assert.match(entrypointSource, /preact\.createElement\(SimulationStackView,\s*\{\s*embedded:\s*false\s*\}\)/)
+		assert.match(viewSource, /return <Hint><SimulationStackPage embedded = \{ embedded \} \/><\/Hint>/)
 	})
 
 	test('stack visualizer entrypoint clears the shell loading placeholder before rendering', async () => {

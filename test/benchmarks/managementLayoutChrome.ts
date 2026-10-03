@@ -93,8 +93,8 @@ try {
 		document.querySelector('.management-header').style.removeProperty('padding-block')
 		location.hash = '#simulation-stack'
 	})()`)
-	await waitForSelector(page, '.management-page .simulation-stack-page-header')
-	const embeddedHeaderPosition = await page.evaluate<string>(`getComputedStyle(document.querySelector('.management-page .simulation-stack-page-header')).position`)
+	await waitForSelector(page, '.simulation-stack-page--embedded > .simulation-stack-page-header')
+	const embeddedHeaderPosition = await page.evaluate<string>(`getComputedStyle(document.querySelector('.simulation-stack-page--embedded > .simulation-stack-page-header')).position`)
 	assert.equal(embeddedHeaderPosition, 'static')
 
 	console.info('Management layout geometry passed in Chromium')

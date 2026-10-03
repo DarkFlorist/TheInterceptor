@@ -224,7 +224,7 @@ describe('narrow text layout CSS', () => {
 		const simulationStackHeaderDirectChild = expectRule(css, '.simulation-stack-page > .simulation-stack-page-header')
 		assert.match(simulationStackHeaderDirectChild, /background-color\s*:\s*var\(--bg-color\)\s*;/)
 		assert.match(simulationStackHeaderDirectChild, /position\s*:\s*sticky\s*;/)
-		const embeddedSimulationStackHeader = expectRule(css, '.management-page .simulation-stack-page > .simulation-stack-page-header')
+		const embeddedSimulationStackHeader = expectRule(css, '.simulation-stack-page--embedded > .simulation-stack-page-header')
 		assert.match(embeddedSimulationStackHeader, /position\s*:\s*static\s*;/)
 		assert.match(simulationStackHeaderDirectChild, /top\s*:\s*0\s*;/)
 		assert.match(simulationStackHeaderDirectChild, /z-index\s*:\s*10\s*;/)

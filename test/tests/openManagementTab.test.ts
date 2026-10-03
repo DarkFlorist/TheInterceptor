@@ -39,14 +39,17 @@ type OpenedTabIds = {
 type StorageState = {
 	idsOfOpenedTabs?: OpenedTabIds
 	currentTabId?: number
+	useTabsInsteadOfPopup?: boolean
 }
 
-function installBrowserMock(tabs: readonly TabRecord[], openedTabs: OpenedTabIds | undefined, updateShouldFail = false, currentTabId?: number) {
+function installBrowserMock(tabs: readonly TabRecord[], openedTabs: OpenedTabIds | undefined, updateShouldFail = false, currentTabId?: number, useTabsInsteadOfPopup = false) {
 	const createdTabs: TabCreateDetails[] = []
+	const createdWindows: TabCreateDetails[] = []
 	const updatedTabs: TabUpdateDetails[] = []
 	const updatedWindows: WindowUpdateDetails[] = []
-	const storageState: StorageState = { idsOfOpenedTabs: openedTabs, currentTabId }
-	const getStorageValue = (key: string) => key === 'idsOfOpenedTabs' ? storageState.idsOfOpenedTabs : key === 'currentTabId' ? storageState.currentTabId : undefined
+	const browserTabs = [...tabs]
+	const storageState: StorageState = { idsOfOpenedTabs: openedTabs, currentTabId, useTabsInsteadOfPopup }
+	const getStorageValue = (key: string) => key === 'idsOfOpenedTabs' ? storageState.idsOfOpenedTabs : key === 'currentTabId' ? storageState.currentTabId : key === 'useTabsInsteadOfPopup' ? storageState.useTabsInsteadOfPopup : undefined
 	Object.defineProperty(globalThis, 'browser', {
 		configurable: true,
 		writable: true,
@@ -69,19 +72,24 @@ function installBrowserMock(tabs: readonly TabRecord[], openedTabs: OpenedTabIds
 			},
 			tabs: {
 				async query() {
-					return [...tabs]
+					return [...browserTabs]
 				},
 				async create(details: TabCreateDetails) {
 					createdTabs.push(details)
+					browserTabs.push({ id: 99, url: `chrome-extension://test-extension${ details.url }` })
 					return { id: 99, ...details }
 				},
 				async update(tabId: number, update: TabUpdateDetails['update']) {
 					if (updateShouldFail) return undefined
 					updatedTabs.push({ tabId, update })
-					return tabs.find((tab) => tab.id === tabId)
+					return browserTabs.find((tab) => tab.id === tabId)
 				},
 			},
 			windows: {
+				async create(details: TabCreateDetails) {
+					createdWindows.push(details)
+					return { id: 7, ...details }
+				},
 				async update(windowId: number, update: WindowUpdateDetails['update']) {
 					updatedWindows.push({ windowId, update })
 					return { id: windowId }
@@ -94,7 +102,7 @@ function installBrowserMock(tabs: readonly TabRecord[], openedTabs: OpenedTabIds
 		writable: true,
 		value: { runtime: { id: 'test-extension' } },
 	})
-	return { createdTabs, updatedTabs, updatedWindows, storageState }
+	return { createdTabs, createdWindows, updatedTabs, updatedWindows, storageState }
 }
 
 async function loadManagementNavigation() {
@@ -133,6 +141,30 @@ describe('open management tab', () => {
 })
 
 describe('management tab tracking', () => {
+	test('Safe proposal review reuses the tracked tab when tabs are preferred', async () => {
+		const { createdTabs, createdWindows, updatedTabs, storageState } = installBrowserMock([], emptyOpenedTabs(), false, undefined, true)
+		const { openManagementPage, openManagementSimulationStackReview } = await loadManagementNavigation()
+
+		await openManagementSimulationStackReview()
+		await openManagementPage('home')
+
+		assert.deepEqual(createdTabs, [{ url: '/html3/settingsViewV3.html#simulation-stack' }])
+		assert.deepEqual(updatedTabs, [{ tabId: 99, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#home' } }])
+		assert.deepEqual(createdWindows, [])
+		assert.deepEqual(storageState.idsOfOpenedTabs, { managementTabId: 99 })
+	})
+
+	test('Safe proposal review keeps popup mode when tabs are not preferred', async () => {
+		const { createdTabs, createdWindows, storageState } = installBrowserMock([], emptyOpenedTabs())
+		const { openManagementSimulationStackReview } = await loadManagementNavigation()
+
+		await openManagementSimulationStackReview()
+
+		assert.deepEqual(createdTabs, [])
+		assert.deepEqual(createdWindows, [{ url: '/html3/settingsViewV3.html#simulation-stack' }])
+		assert.deepEqual(storageState.idsOfOpenedTabs, {})
+	})
+
 	test('prefers the current management tab ID over a legacy settings tab ID', async () => {
 		const { createdTabs, updatedTabs } = installBrowserMock(
 			[

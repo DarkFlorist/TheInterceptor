@@ -1,9 +1,9 @@
 import type { TransactionOrMessageIdentifier } from '../types/interceptor-messages.js'
 import { getManagementPageHash, getSimulationStackManagementHash, type ManagementPage } from '../utils/managementPages.js'
-import { openPopupOrTab } from '../utils/popupOrTab.js'
 import { updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
 import { getHtmlFile } from './backgroundUtils.js'
 import { getManagementTabId, setManagementTabId } from './storageVariables.js'
+import { getUseTabsInsteadOfPopup } from './settings.js'
 
 function managementPagePath() {
 	return getHtmlFile('settingsView')
@@ -38,5 +38,9 @@ export async function openManagementSimulationStack(identifier?: TransactionOrMe
 }
 
 export async function openManagementSimulationStackReview() {
-	await openPopupOrTab({ url: `${ managementPagePath() }${ getManagementPageHash('simulation-stack') }` })
+	if (await getUseTabsInsteadOfPopup()) {
+		await openManagementSimulationStack()
+		return
+	}
+	await browser.windows.create({ url: `${ managementPagePath() }${ getManagementPageHash('simulation-stack') }` })
 }

@@ -71,7 +71,7 @@ describe('management view routing', () => {
 		assert.equal(getManagementPageFromNavigationKey(undefined, 'ArrowLeft'), 'settings')
 	})
 
-	test('keeps simulation copy feedback available in the embedded stack', () => {
-		assert.match(managementViewSource, /<Hint><SimulationStackPage\s*\/><\/Hint>/)
+	test('uses the embedded stack view with copy feedback', () => {
+		assert.match(managementViewSource, /<SimulationStackView embedded = \{ true \} \/>/)
 	})
 })

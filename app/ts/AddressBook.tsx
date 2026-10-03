@@ -205,7 +205,7 @@ export function doesReplyMatchViewFilter(viewFilter: ViewFilter, replyFilter: Ge
 	return viewFilter.searchString === replyFilter.searchString
 }
 
-export function AddressBook() {
+export function AddressBook({ embedded }: { embedded: boolean }) {
 	const addressBookEntriesWithFilter = useSignal<AddressBookEntriesWithFilter>({ addressBookEntries: [], activeFilter: 'My Active Addresses' })
 	const addressBookEntries = useComputed(() => addressBookEntriesWithFilter.value.addressBookEntries || [])
 	const activeChain = useSignal<ChainEntry | undefined>(undefined)
@@ -338,7 +338,7 @@ export function AddressBook() {
 		})
 	}
 	return (
-		<main class = 'address-book-page'>
+		<main class = { `address-book-page${ embedded ? ' address-book-page--embedded' : '' }` }>
 			<Hint containerClass = 'address-book-container'>
 				<div class = 'address-book-layout'>
 					<div class = 'address-book-sidebar'>
