@@ -29,73 +29,65 @@ test('page-world and isolated-world compatibility bootstraps share one generated
 	assert.equal(generatedPageWorldSource.includes(metamaskCompatibilityModeGlobalAssignmentMarker), false)
 })
 
-test('MV2 loads the configured external page-world scripts in both compatibility modes', async () => {
+test('MV2 synchronously injects the configured page-world source in both compatibility modes', async () => {
 	const documentStartTypeScript = await Bun.file(new URL('../../app/inpage/ts/document_start.ts', import.meta.url)).text()
+	const inpageTypeScript = await Bun.file(new URL('../../app/inpage/ts/inpage.ts', import.meta.url)).text()
+	const metamaskCompatibilityModeTypeScript = await Bun.file(new URL('../../app/inpage/ts/metamaskCompatibilityMode.ts', import.meta.url)).text()
 	const compiledDocumentStart = ts.transpileModule(documentStartTypeScript, {
 		compilerOptions: {
 			module: ts.ModuleKind.ESNext,
 			target: ts.ScriptTarget.ES2022,
 		},
 	}).outputText
-	const generatedDocumentStart = inlineDocumentStartInjectionConfiguration(compiledDocumentStart)
+	const compiledInpage = ts.transpileModule(inpageTypeScript, {
+		compilerOptions: {
+			module: ts.ModuleKind.ESNext,
+			target: ts.ScriptTarget.ES2022,
+		},
+	}).outputText
+	const compiledMetamaskCompatibilityMode = ts.transpileModule(metamaskCompatibilityModeTypeScript, {
+		compilerOptions: {
+			module: ts.ModuleKind.ESNext,
+			target: ts.ScriptTarget.ES2022,
+		},
+	}).outputText
+	const generatedInpage = inlineContentScriptInjectionConfiguration(compiledInpage, 'inpage.js')
+	const generatedMetamaskCompatibilityMode = inlineMetamaskCompatibilityModeGlobalAssignment(compiledMetamaskCompatibilityMode)
+	const generatedDocumentStart = inlineDocumentStartInjectionConfiguration(compiledDocumentStart, compiledInpage, compiledMetamaskCompatibilityMode)
 	for (const metamaskCompatibilityMode of [false, true]) {
-		type ScriptEvent = 'load' | 'error'
-		type FakeScript = { async: boolean, src: string, textContent: string, parentNode: ScriptContainer | undefined, addEventListener: (type: ScriptEvent, listener: () => void) => void }
-		type ScriptContainer = { readonly children: readonly object[], insertBefore: (script: FakeScript) => void, removeChild: (script: FakeScript) => void }
-		const injectedScripts: FakeScript[] = []
-		const removedScripts: FakeScript[] = []
-		const scriptListeners = new Map<FakeScript, Map<ScriptEvent, () => void>>()
+		type FakeScript = { textContent: string }
+		const injectionEvents: { readonly type: 'insert' | 'remove', readonly script: FakeScript }[] = []
 		const fakeGlobalThis = {
 			[Symbol.for('TheInterceptor.listenContentScript')]: () => undefined,
 			[Symbol.for('TheInterceptor.metamaskCompatibilityMode')]: metamaskCompatibilityMode,
 		}
-		const scriptContainer: ScriptContainer = {
+		const scriptContainer = {
 			children: [{}, {}],
 			insertBefore: (script: FakeScript) => {
-				script.parentNode = scriptContainer
-				injectedScripts.push(script)
+				injectionEvents.push({ type: 'insert', script })
 			},
 			removeChild: (script: FakeScript) => {
-				script.parentNode = undefined
-				removedScripts.push(script)
+				injectionEvents.push({ type: 'remove', script })
 			},
 		}
 		const fakeDocument = {
 			head: scriptContainer,
 			documentElement: scriptContainer,
-			createElement: () => {
-				const listeners = new Map<ScriptEvent, () => void>()
-				const script: FakeScript = {
-					async: true,
-					src: '',
-					textContent: '',
-					parentNode: undefined,
-					addEventListener: (type, listener) => { listeners.set(type, listener) },
-				}
-				scriptListeners.set(script, listeners)
-				return script
-			},
+			createElement: () => ({ textContent: '' }),
 		}
 		const fakeBrowser = {
 			runtime: {
-				getURL: (path: string) => `browser-extension://test/${ path }`,
 				lastError: undefined,
 			},
 		}
 
 		new Function('globalThis', 'browser', 'document', 'console', generatedDocumentStart)(fakeGlobalThis, fakeBrowser, fakeDocument, console)
 
-		const expectedScriptPaths = [
-			...(metamaskCompatibilityMode ? ['inpage/js/metamaskCompatibilityMode.js'] : []),
-			'inpage/js/inpage.js',
-		]
-		assert.deepEqual(injectedScripts.map(({ async, src, textContent }) => ({ async, src, textContent })), expectedScriptPaths.map((scriptPath) => ({
-			async: false,
-			src: `browser-extension://test/${ scriptPath }`,
-			textContent: '',
-		})))
-		assert.deepEqual(removedScripts, [])
-		for (const [index, script] of injectedScripts.entries()) scriptListeners.get(script)?.get(index % 2 === 0 ? 'load' : 'error')?.()
-		assert.deepEqual(removedScripts, injectedScripts)
+		const expectedSource = metamaskCompatibilityMode ? `${ generatedMetamaskCompatibilityMode }\n${ generatedInpage }` : generatedInpage
+		assert.equal(injectionEvents.length, 2)
+		assert.equal(injectionEvents[0]?.type, 'insert')
+		assert.equal(injectionEvents[0]?.script.textContent, expectedSource)
+		assert.equal(injectionEvents[1]?.type, 'remove')
+		assert.strictEqual(injectionEvents[1]?.script, injectionEvents[0]?.script)
 	}
 })

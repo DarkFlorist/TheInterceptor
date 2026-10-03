@@ -2219,7 +2219,7 @@ describe('inpage signer bridge', () => {
 			icon: 'data:image/svg+xml,<svg/>',
 			rdns: 'io.metamask',
 		}
-		const { fakeWindow, signerRequests } = createFakeWindow({ metamaskCompatibilityMode: false })
+		const { fakeWindow, signerRequests } = createFakeWindow({ metamaskCompatibilityMode: true })
 		const announcedMetaMaskProvider = fakeWindow.ethereum
 		const braveSigner = {
 			isBraveWallet: true,
@@ -2308,7 +2308,7 @@ describe('inpage signer bridge', () => {
 			icon: 'data:image/svg+xml,<svg/>',
 			rdns: 'io.metamask',
 		}
-		const { fakeWindow, signerRequests } = createFakeWindow({ metamaskCompatibilityMode: true })
+		const { fakeWindow, signerRequests } = createFakeWindow({ metamaskCompatibilityMode: false })
 		const announcedMetaMaskProvider = fakeWindow.ethereum
 		const braveSigner = {
 			isBraveWallet: true,
@@ -2349,6 +2349,68 @@ describe('inpage signer bridge', () => {
 				info: lateMetaMaskInfo,
 				provider: lateMetaMaskProvider,
 			}])
+		})
+	})
+
+	test('starts replacing MetaMask announcements when the background enables compatibility mode after page load', async () => {
+		const dappAnnouncements: unknown[] = []
+		const metaMaskInfo = {
+			uuid: '99999999-9999-4999-8999-999999999997',
+			name: 'MetaMask',
+			icon: 'data:image/svg+xml,<svg/>',
+			rdns: 'io.metamask',
+		}
+		const { fakeWindow } = createFakeWindow({ metamaskCompatibilityMode: true })
+		const announcedMetaMaskProvider = fakeWindow.ethereum
+		fakeWindow.addEventListener('eip6963:announceProvider', (event) => dappAnnouncements.push(event.detail))
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?live-eip6963-compatibility-mode', async () => {
+			const interceptorProvider = fakeWindow.ethereum
+			await waitFor(() => Reflect.get(interceptorProvider, 'isMetaMask') === true)
+			fakeWindow.dispatchEvent({
+				type: 'eip6963:announceProvider',
+				detail: { info: metaMaskInfo, provider: announcedMetaMaskProvider },
+			})
+			assert.deepEqual(dappAnnouncements.at(-1), {
+				info: metaMaskInfo,
+				provider: interceptorProvider,
+			})
+		})
+	})
+
+	test('stops replacing MetaMask announcements when the background disables compatibility mode after page load', async () => {
+		const dappAnnouncements: unknown[] = []
+		const metaMaskInfo = {
+			uuid: '99999999-9999-4999-8999-999999999996',
+			name: 'MetaMask',
+			icon: 'data:image/svg+xml,<svg/>',
+			rdns: 'io.metamask',
+		}
+		const { fakeWindow } = createFakeWindow({ metamaskCompatibilityMode: false })
+		const announcedMetaMaskProvider = fakeWindow.ethereum
+		Reflect.set(fakeWindow, Symbol.for(metamaskCompatibilityModeGlobalSymbolKey), true)
+		fakeWindow.addEventListener('eip6963:announceProvider', (event) => dappAnnouncements.push(event.detail))
+
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?disable-live-eip6963-compatibility-mode', async () => {
+			const interceptorProvider = fakeWindow.ethereum
+			const send = Reflect.get(interceptorProvider, 'send')
+			if (typeof send !== 'function') throw new Error('Interceptor provider is missing send')
+			await waitFor(() => {
+				try {
+					send.call(interceptorProvider, 'eth_chainId')
+					return false
+				} catch {
+					return true
+				}
+			})
+			fakeWindow.dispatchEvent({
+				type: 'eip6963:announceProvider',
+				detail: { info: metaMaskInfo, provider: announcedMetaMaskProvider },
+			})
+			assert.deepEqual(dappAnnouncements.at(-1), {
+				info: metaMaskInfo,
+				provider: announcedMetaMaskProvider,
+			})
 		})
 	})
 

@@ -12,25 +12,13 @@ function injectPageWorldScripts() {
 		if (typeof contentScriptListener !== 'function') throw new Error('Interceptor content script listener was not initialized')
 		contentScriptListener(undefined, 'document-start')
 		const container = document.head || document.documentElement
-		const injectScriptElement = (scriptTag: HTMLScriptElement) => {
-			const removeScriptElement = () => {
-				if (scriptTag.parentNode === container) container.removeChild(scriptTag)
-			}
-			scriptTag.addEventListener('load', removeScriptElement, { once: true })
-			scriptTag.addEventListener('error', removeScriptElement, { once: true })
-			container.insertBefore(scriptTag, container.children[1])
-		}
-		const injectExternalScript = (scriptPath: string) => {
-			const scriptTag = document.createElement('script')
-			scriptTag.async = false
-			scriptTag.src = browser.runtime.getURL(scriptPath)
-			injectScriptElement(scriptTag)
-		}
-		const pageWorldScriptPathsByCompatibilityMode: { readonly disabled: readonly string[], readonly enabled: readonly string[] } = JSON.parse('[[pageWorldScriptPaths]]')
+		const pageWorldScriptSourcesByCompatibilityMode: { readonly disabled: string, readonly enabled: string } = JSON.parse('[[pageWorldScriptSources]]')
 		const metamaskCompatibilityMode = Reflect.get(globalThis, Symbol.for('[[metamaskCompatibilityModeGlobalSymbolKey]]'))
 		if (typeof metamaskCompatibilityMode !== 'boolean') throw new Error('MetaMask compatibility mode was not initialized')
-		const pageWorldScriptPaths = metamaskCompatibilityMode ? pageWorldScriptPathsByCompatibilityMode.enabled : pageWorldScriptPathsByCompatibilityMode.disabled
-		for (const scriptPath of pageWorldScriptPaths) injectExternalScript(scriptPath)
+		const scriptTag = document.createElement('script')
+		scriptTag.textContent = metamaskCompatibilityMode ? pageWorldScriptSourcesByCompatibilityMode.enabled : pageWorldScriptSourcesByCompatibilityMode.disabled
+		container.insertBefore(scriptTag, container.children[1])
+		container.removeChild(scriptTag)
 		checkAndThrowRuntimeLastError()
 	} catch (error) {
 		console.error('Interceptor: Provider injection failed.', error)

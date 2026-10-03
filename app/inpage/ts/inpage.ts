@@ -719,7 +719,6 @@ class InterceptorMessageListener {
 	private connected = false
 	private requestId = 0
 	private metamaskCompatibilityMode = metamaskCompatibilityModeAtPageLoad
-	private readonly replaceMetaMaskEip6963AnnouncementsAtPageLoad = metamaskCompatibilityModeAtPageLoad
 	// The page owns SDK settings; every signing request carries its mode across background port recreation.
 	private readonly safeAppsBridge = createSafeAppsBridge(inpageWindow, createSafeAppsRequestHandler(
 		async (request) => await this.sendInternalMessageToBackgroundPage({ method: 'safe_apps_request', params: [request] }),
@@ -1192,7 +1191,7 @@ class InterceptorMessageListener {
 	}
 
 	private readonly replaceMetaMaskAnnouncementForCompatibilityMode = (event: Event) => {
-		if (!this.replaceMetaMaskEip6963AnnouncementsAtPageLoad || this.replacementMetaMaskAnnouncementEvents.has(event)) return
+		if (!this.metamaskCompatibilityMode || this.replacementMetaMaskAnnouncementEvents.has(event)) return
 		const announcement = this.readMetaMaskAnnouncement(event)
 		if (announcement === undefined) return
 		this.useMetaMaskAnnouncement(announcement)

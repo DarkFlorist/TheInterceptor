@@ -1,21 +1,16 @@
 import * as path from 'node:path'
 import * as url from 'node:url'
 import { promises as fs } from 'node:fs'
-import { getMetamaskCompatibilityModeGlobalAssignmentSource, getPageWorldScriptPaths, metamaskCompatibilityModeGlobalSymbolKey } from '../app/ts/config/contentScriptInjectionArtifacts.ts'
+import { getMetamaskCompatibilityModeGlobalAssignmentSource, metamaskCompatibilityModeGlobalSymbolKey } from '../app/ts/config/contentScriptInjectionArtifacts.ts'
 import { metamaskCompatibilityModeGlobalAssignmentMarker, metamaskCompatibilityModeGlobalSymbolKeyMarker } from './content-script-injection-markers.mts'
 
 const projectRoot = path.join(path.dirname(url.fileURLToPath(import.meta.url)), '..')
 const documentStartPath = path.join(projectRoot, 'app', 'inpage', 'js', 'document_start.js')
 const inpagePath = path.join(projectRoot, 'app', 'inpage', 'js', 'inpage.js')
-const pageWorldScriptPathsMarkerPattern = /(['"])\[\[pageWorldScriptPaths\]\]\1/
+const pageWorldScriptSourcesMarkerPattern = /(['"])\[\[pageWorldScriptSources\]\]\1/
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const metamaskCompatibilityModeGlobalSymbolKeyMarkerPattern = new RegExp(`(['"])${ escapeRegExp(metamaskCompatibilityModeGlobalSymbolKeyMarker) }\\1`)
 const metamaskCompatibilityModeGlobalAssignmentMarkerPattern = new RegExp(`(['"])${ escapeRegExp(metamaskCompatibilityModeGlobalAssignmentMarker) }\\1;?`)
-
-const pageWorldScriptPathsByCompatibilityMode = {
-	disabled: getPageWorldScriptPaths(false),
-	enabled: getPageWorldScriptPaths(true),
-}
 
 export function inlineContentScriptInjectionConfiguration(source: string, artifactName: string) {
 	if (!metamaskCompatibilityModeGlobalSymbolKeyMarkerPattern.test(source)) throw new Error(`Could not find MetaMask compatibility mode global symbol key marker in ${ artifactName }`)
@@ -27,10 +22,16 @@ export function inlineMetamaskCompatibilityModeGlobalAssignment(source: string) 
 	return source.replace(metamaskCompatibilityModeGlobalAssignmentMarkerPattern, getMetamaskCompatibilityModeGlobalAssignmentSource(true))
 }
 
-export function inlineDocumentStartInjectionConfiguration(documentStartSource: string) {
-	if (!pageWorldScriptPathsMarkerPattern.test(documentStartSource)) throw new Error('Could not find page-world script paths marker in document_start.js')
+export function inlineDocumentStartInjectionConfiguration(documentStartSource: string, inpageSource: string, metamaskCompatibilityModeSource: string) {
+	if (!pageWorldScriptSourcesMarkerPattern.test(documentStartSource)) throw new Error('Could not find page-world script sources marker in document_start.js')
+	const configuredInpageSource = inlineContentScriptInjectionConfiguration(inpageSource, 'inpage.js')
+	const configuredMetamaskCompatibilityModeSource = inlineMetamaskCompatibilityModeGlobalAssignment(metamaskCompatibilityModeSource)
+	const pageWorldScriptSourcesByCompatibilityMode = {
+		disabled: configuredInpageSource,
+		enabled: `${ configuredMetamaskCompatibilityModeSource }\n${ configuredInpageSource }`,
+	}
 	return inlineContentScriptInjectionConfiguration(documentStartSource, 'document_start.js')
-		.replace(pageWorldScriptPathsMarkerPattern, JSON.stringify(JSON.stringify(pageWorldScriptPathsByCompatibilityMode)))
+		.replace(pageWorldScriptSourcesMarkerPattern, JSON.stringify(JSON.stringify(pageWorldScriptSourcesByCompatibilityMode)))
 }
 
 async function inlineInpageScript() {
@@ -42,7 +43,7 @@ async function inlineInpageScript() {
 	])
 	const updatedInpageSource = inlineContentScriptInjectionConfiguration(inpageSource, 'inpage.js')
 	const updatedMetamaskCompatibilityModeSource = inlineMetamaskCompatibilityModeGlobalAssignment(metamaskCompatibilityModeSource)
-	const updatedDocumentStartSource = inlineDocumentStartInjectionConfiguration(documentStartSource)
+	const updatedDocumentStartSource = inlineDocumentStartInjectionConfiguration(documentStartSource, inpageSource, metamaskCompatibilityModeSource)
 	await Promise.all([
 		fs.writeFile(documentStartPath, updatedDocumentStartSource),
 		fs.writeFile(inpagePath, updatedInpageSource),

@@ -11,6 +11,10 @@ const extensionGalleryInjectionTargetErrorMessage = 'The extensions gallery cann
 const isInjectableSite = (url: string) => injectableSitesRegexp.some((regexpPattern) => regexpPattern.test(url)) && !extensionGallerySitesRegexp.some((regexpPattern) => regexpPattern.test(url))
 const isExpectedManifestV2InjectionTargetError = (error: unknown) => error instanceof Error && (error.message === otherExtensionInjectionTargetErrorMessage || error.message === extensionGalleryInjectionTargetErrorMessage)
 const asRootRelativePaths = (paths: readonly string[]) => paths.map((scriptPath) => `/${ scriptPath }`)
+const haveSameScriptFiles = (first: readonly string[] | undefined, second: readonly string[] | undefined) => {
+	if (first === undefined || second === undefined) return first === second
+	return first.length === second.length && first.every((scriptPath, index) => scriptPath === second[index])
+}
 
 function getManifestV3ExcludeMatchesForOrigin(origin: string) {
 	if (origin === '') return ['file:///*']
@@ -66,16 +70,36 @@ export const updateContentScriptInjectionStrategyManifestV3 = async () => {
 			matchOriginAsFallback: true
 		}]
 		const registeredContentScripts = await browser.scripting.getRegisteredContentScripts()
-		const registeredContentScriptIds = new Set(registeredContentScripts.map(({ id }) => id))
+		const registeredContentScriptsById = new Map(registeredContentScripts.map((registration) => [registration.id, registration]))
 		const desiredContentScriptIds = new Set(contentScripts.map(({ id }) => id))
-		const missingContentScripts = contentScripts.filter(({ id }) => !registeredContentScriptIds.has(id))
-		const existingContentScripts = contentScripts.filter(({ id }) => registeredContentScriptIds.has(id))
+		const replacementContentScripts = contentScripts.filter(({ id, js }) => {
+			const registered = registeredContentScriptsById.get(id)
+			return registered !== undefined && !haveSameScriptFiles(registered.js, js)
+		})
+		const replacementContentScriptIds = new Set(replacementContentScripts.map(({ id }) => id))
+		const previousReplacementContentScripts = registeredContentScripts.filter(({ id }) => replacementContentScriptIds.has(id))
+		const missingContentScripts = contentScripts.filter(({ id }) => !registeredContentScriptsById.has(id) || replacementContentScriptIds.has(id))
+		const existingContentScripts = contentScripts.filter(({ id }) => registeredContentScriptsById.has(id) && !replacementContentScriptIds.has(id))
 		const obsoleteContentScriptIds = registeredContentScripts.map(({ id }) => id).filter((id) => !desiredContentScriptIds.has(id))
-		if (missingContentScripts.length > 0) await browser.scripting.registerContentScripts(missingContentScripts)
+		if (replacementContentScriptIds.size > 0) await browser.scripting.unregisterContentScripts({ ids: [...replacementContentScriptIds] })
+		try {
+			if (missingContentScripts.length > 0) await browser.scripting.registerContentScripts(missingContentScripts)
+		} catch (error) {
+			if (previousReplacementContentScripts.length > 0) {
+				try {
+					await browser.scripting.registerContentScripts(previousReplacementContentScripts)
+				} catch (rollbackError) {
+					await reportUnexpectedError(rollbackError, { code: 'content_script_registration_rollback_failed' })
+				}
+			}
+			throw error
+		}
 		if (existingContentScripts.length > 0) await browser.scripting.updateContentScripts(existingContentScripts)
 		if (obsoleteContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
+		return true
 	} catch (error: unknown) {
 		await reportUnexpectedError(error, { code: 'content_script_registration_failed' })
+		return false
 	}
 }
 

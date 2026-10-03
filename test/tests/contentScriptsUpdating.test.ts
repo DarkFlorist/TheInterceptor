@@ -13,12 +13,14 @@ type BrowserMockOptions = {
 	readonly metamaskCompatibilityMode?: boolean
 	readonly manifestVersion?: 2 | 3
 	readonly registerError?: Error
+	readonly registerErrors?: readonly (Error | undefined)[]
 	readonly updateError?: Error
 	readonly executeScriptError?: Error
 	readonly tabUrl?: string
 	readonly hasVisibleTabUrl?: boolean
 	readonly tabUrlAfterStorageRead?: string
 	readonly registeredContentScriptIds?: readonly string[]
+	readonly registeredContentScripts?: readonly RegisteredContentScript[]
 }
 
 type RegisteredContentScript = {
@@ -27,7 +29,7 @@ type RegisteredContentScript = {
 	readonly excludeMatches?: readonly string[]
 }
 
-function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, registerError, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [] }: BrowserMockOptions = {}) {
+function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, registerError, registerErrors, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [], registeredContentScripts: initialRegisteredContentScripts }: BrowserMockOptions = {}) {
 	const storageState: Record<string, unknown> = {
 		...(metamaskCompatibilityMode === undefined ? {} : { metamaskCompatibilityMode }),
 	}
@@ -35,10 +37,15 @@ function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, re
 	const executedScriptFiles: string[] = []
 	const executedScriptCode: string[] = []
 	const reloadedTabs: number[] = []
-	const registeredContentScripts = new Map(registeredContentScriptIds.map((id) => [id, { id }]))
+	const defaultScriptFilesById = new Map<string, readonly string[]>([
+		['inpage', ['/inpage/js/inpage.js']],
+		['inpage2', ['/vendor/webextension-polyfill/dist/browser-polyfill.js', '/inpage/js/listenContentScript.js', '/inpage/js/listenContentScriptBootstrap.js']],
+	])
+	const registeredContentScripts = new Map((initialRegisteredContentScripts ?? registeredContentScriptIds.map((id) => ({ id, js: defaultScriptFilesById.get(id) }))).map((registration) => [registration.id, registration]))
 	let executeScriptCalls = 0
 	const scriptingOperations: string[] = []
 	const unregisteredContentScriptIdBatches: string[][] = []
+	const pendingRegisterErrors = [...registerErrors ?? (registerError === undefined ? [] : [registerError])]
 	let currentTabUrl = tabUrl
 	let committedListener: ((details: browser.webNavigation._OnCommittedDetails) => unknown) | undefined
 	const getStorageItems = (keys?: string | string[] | Record<string, unknown> | null) => {
@@ -85,7 +92,8 @@ function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, re
 				async getRegisteredContentScripts() { return [...registeredContentScripts.values()] },
 				async registerContentScripts(scripts: readonly RegisteredContentScript[]) {
 					scriptingOperations.push('register')
-					if (registerError !== undefined) throw registerError
+					const nextRegisterError = pendingRegisterErrors.shift()
+					if (nextRegisterError !== undefined) throw nextRegisterError
 					for (const script of scripts) registeredContentScripts.set(script.id, script)
 				},
 				async updateContentScripts(scripts: readonly RegisteredContentScript[]) {
@@ -167,6 +175,7 @@ const committedDetails: browser.webNavigation._OnCommittedDetails = {
 async function loadModules() {
 	return {
 		...await import('../../app/ts/utils/contentScriptsUpdating.js'),
+		...await import('../../app/ts/background/contentScriptInjectionStrategy.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
 	}
 }
@@ -287,6 +296,46 @@ describe('content script injection strategy', () => {
 				'/inpage/js/inpage.js',
 			])
 		}
+	})
+
+	test('replaces an existing main-world registration when compatibility mode changes its script files', async () => {
+		const isolatedWorldScriptFiles = ['/vendor/webextension-polyfill/dist/browser-polyfill.js', '/inpage/js/listenContentScript.js', '/inpage/js/listenContentScriptBootstrap.js']
+		const { getRegisteredContentScripts, getScriptingOperations, getUnregisteredContentScriptIdBatches } = installBrowserMock({
+			metamaskCompatibilityMode: true,
+			registeredContentScripts: [
+				{ id: 'inpage', js: ['/inpage/js/inpage.js'] },
+				{ id: 'inpage2', js: isolatedWorldScriptFiles },
+			],
+		})
+		const { updateContentScriptInjectionStrategyManifestV3 } = await loadModules()
+
+		await updateContentScriptInjectionStrategyManifestV3()
+
+		assert.deepEqual(getUnregisteredContentScriptIdBatches(), [['inpage']])
+		assert.deepEqual(getScriptingOperations(), ['unregister', 'register', 'update'])
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/metamaskCompatibilityMode.js', '/inpage/js/inpage.js'])
+	})
+
+	test('restores the previous main-world registration and skips tab reload when replacement fails', async () => {
+		const registrationError = new Error('replacement registration failed')
+		const previousMainWorldRegistration = { id: 'inpage', js: ['/inpage/js/inpage.js'] }
+		const { getRegisteredContentScripts, getReloadedTabs, getScriptingOperations, sentMessages } = installBrowserMock({
+			metamaskCompatibilityMode: true,
+			registerErrors: [registrationError],
+			registeredContentScripts: [
+				previousMainWorldRegistration,
+				{ id: 'inpage2', js: ['/vendor/webextension-polyfill/dist/browser-polyfill.js', '/inpage/js/listenContentScript.js', '/inpage/js/listenContentScriptBootstrap.js'] },
+			],
+		})
+		const { refreshContentScriptInjectionStrategyAndReloadConnectedTabs, getLatestUnexpectedError } = await loadModules()
+
+		await withSilencedConsole(async () => await refreshContentScriptInjectionStrategyAndReloadConnectedTabs(new Map()))
+
+		assert.deepEqual(getScriptingOperations(), ['unregister', 'register', 'register'])
+		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage'), previousMainWorldRegistration)
+		assert.deepEqual(getReloadedTabs(), [])
+		assert.equal((await getLatestUnexpectedError())?.data.message, registrationError.message)
+		assert.equal(sentMessages.at(-1)?.method, 'popup_UnexpectedErrorOccured')
 	})
 
 	test('injects the Firefox compatibility prelude only when MetaMask compatibility mode is active', async () => {

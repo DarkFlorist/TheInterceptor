@@ -4,8 +4,8 @@ import { getContentScriptInjectionConfiguration, hasSameContentScriptInjectionCo
 import { reloadConnectedTabs } from './reloadConnectedTabs.js'
 
 export async function refreshContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
-	if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3()
-	else await updateContentScriptInjectionStrategyManifestV2()
+	if (browser.runtime.getManifest().manifest_version === 3 && !await updateContentScriptInjectionStrategyManifestV3()) return
+	if (browser.runtime.getManifest().manifest_version === 2) await updateContentScriptInjectionStrategyManifestV2()
 	await reloadConnectedTabs(websiteTabConnections)
 }
 
