@@ -1,15 +1,18 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
+import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
+import { Future } from '../../app/ts/utils/future.js'
 import { SendTransactionParams } from '../../app/ts/types/JsonRpc-types.js'
-import { activeAddress, addressString, createWebsitePort, fakeRpcNetwork, isRecord, modules, recipientAddress, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
+import { activeAddress, addressString, createWebsitePort, fakeRequestHandler, fakeRpcNetwork, isRecord, modules, recipientAddress, simulator, uniqueRequestIdentifier } from './confirmTransactionTestHarness.js'
 
-for (const { explicitSender, switchAccount } of [
-	{ explicitSender: false, switchAccount: false },
-	{ explicitSender: true, switchAccount: false },
-	{ explicitSender: false, switchAccount: true },
-	{ explicitSender: true, switchAccount: true },
+for (const { explicitSender, switchAccount, refreshOutcome } of [
+	{ explicitSender: false, switchAccount: false, refreshOutcome: 'not-started' },
+	{ explicitSender: true, switchAccount: false, refreshOutcome: 'not-started' },
+	{ explicitSender: false, switchAccount: true, refreshOutcome: 'not-started' },
+	{ explicitSender: true, switchAccount: true, refreshOutcome: 'not-started' },
+	...[false, true].flatMap((explicitSender) => ['aborted', 'rpc-failed', 'in-flight'].map((refreshOutcome) => ({ explicitSender, switchAccount: false, refreshOutcome }))),
 ]) {
-	test(`gas edits forward immediately with ${ explicitSender ? 'explicit' : 'omitted' } sender, account change: ${ switchAccount }`, async () => {
+	test(`gas edits forward immediately with ${ explicitSender ? 'explicit' : 'omitted' } sender, account change: ${ switchAccount }, refresh: ${ refreshOutcome }`, async () => {
 		await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 		await modules.updateUserAddressBookEntries(() => [])
 		await modules.updateTabState(uniqueRequestIdentifier.requestSocket.tabId, (state) => ({ ...state, signerName: 'MetaMask', signerAccounts: [activeAddress], activeSigningAddress: activeAddress, signerChain: fakeRpcNetwork.chainId }))
@@ -42,17 +45,41 @@ for (const { explicitSender, switchAccount } of [
 		const reviewedSender = switchAccount ? recipientAddress : activeAddress
 		assert.equal(refreshed.transactionToSimulate.transaction.from, reviewedSender)
 		await modules.setGasLimitForTransaction(refreshed.transactionIdentifier, 45_000n)
-		const [edited] = await modules.getPendingTransactionsAndMessages()
-		if (edited?.type !== 'Transaction' || edited.transactionOrMessageCreationStatus !== 'Simulated' || edited.originalRequestParameters.method !== 'eth_sendTransaction') throw new Error('Missing edited review')
-		assert.equal(edited.transactionToSimulate.transaction.gas, 21_000n)
-		// No re-simulation has completed: forwarding must use the persisted edit, not this old snapshot.
-		assert.equal(edited.originalRequestParameters.params[0].gas, 45_000n)
-		await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connections,
-			{ method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })
-		const forwarded = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
-		assert.ok(isRecord(forwarded))
-		const parsed = SendTransactionParams.parse(forwarded)
-		assert.equal(parsed.params[0].from, reviewedSender)
-		assert.equal(parsed.params[0].gas, 45_000n)
+		const refreshStarted = new Future<void>()
+		const releaseRefresh = new Future<void>()
+		let refreshRpcCalls = 0
+		const refreshEthereum = new modules.EthereumClientService({
+			...fakeRequestHandler,
+			async jsonRpcRequest(request) {
+				if (request.method !== 'eth_simulateV1') return await fakeRequestHandler.jsonRpcRequest(request)
+				refreshRpcCalls += 1
+				refreshStarted.resolve()
+				if (refreshOutcome === 'in-flight') await releaseRefresh
+				if (refreshOutcome === 'rpc-failed') throw new TypeError('Failed to fetch')
+				throw new Error(NEW_BLOCK_ABORT)
+			},
+		}, async () => undefined, async () => undefined, fakeRpcNetwork)
+		const refresh = refreshOutcome === 'not-started' ? undefined : modules.refreshPopupConfirmTransactionSimulation(refreshEthereum, simulator.tokenPriceService)
+		try {
+			if (refreshOutcome === 'in-flight' && refresh !== undefined) {
+				await Promise.race([refreshStarted.asPromise, refresh.then(() => { throw new Error('Refresh ended before reaching the deferred RPC') })])
+			} else await refresh
+			if (refresh !== undefined) assert.ok(refreshRpcCalls > 0, 'Refresh must reach the failing/deferred simulation RPC')
+			const [edited] = await modules.getPendingTransactionsAndMessages()
+			if (edited?.type !== 'Transaction' || edited.transactionOrMessageCreationStatus !== 'Simulated' || edited.originalRequestParameters.method !== 'eth_sendTransaction') throw new Error('Missing edited review')
+			assert.equal(edited.transactionToSimulate.transaction.gas, 21_000n)
+			// A skipped, failed, or still-running refresh leaves this snapshot stale; the signer must receive the persisted edit.
+			assert.equal(edited.originalRequestParameters.params[0].gas, 45_000n)
+			await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connections,
+				{ method: 'popup_confirmDialog', data: { action: 'accept', uniqueRequestIdentifier } })
+			const forwarded = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
+			assert.ok(isRecord(forwarded))
+			const parsed = SendTransactionParams.parse(forwarded)
+			assert.equal(parsed.params[0].from, reviewedSender)
+			assert.equal(parsed.params[0].gas, 45_000n)
+		} finally {
+			releaseRefresh.resolve()
+			await refresh
+		}
 	})
 }
