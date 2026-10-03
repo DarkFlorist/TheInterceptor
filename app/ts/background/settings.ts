@@ -15,6 +15,7 @@ import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/webs
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
 import { hasOwnKey } from '../utils/typescript.js'
 import type { DelegateClearingPreferences } from '../types/delegationSimulation.js'
+import { hasDelegateClearingPreference } from '../utils/delegateClearingState.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -118,13 +119,13 @@ export async function getDelegateClearingPreferences() {
 }
 
 export async function isDelegateClearingEnabled(address: bigint, chainId: bigint) {
-	return (await getDelegateClearingPreferences()).some((entry) => entry.address === address && entry.chainId === chainId)
+	return hasDelegateClearingPreference(await getDelegateClearingPreferences(), address, chainId)
 }
 
 export async function setDelegateClearingEnabled(address: bigint, chainId: bigint, enabled: boolean) {
 	return await delegateClearingPreferencesSemaphore.execute(async () => {
 		const preferences = await getDelegateClearingPreferences()
-		const existing = preferences.some((entry) => entry.address === address && entry.chainId === chainId)
+		const existing = hasDelegateClearingPreference(preferences, address, chainId)
 		if (existing === enabled) return false
 		await browserStorageLocalSet({ delegateClearingPreferences: enabled
 			? [...preferences, { address, chainId }]

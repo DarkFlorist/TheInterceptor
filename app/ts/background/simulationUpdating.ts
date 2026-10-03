@@ -34,7 +34,7 @@ import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
-import { createDelegateClearingBlockState, getEffectiveStateOverrides, isDelegateClearedForBlock } from '../utils/delegateClearingState.js'
+import { createDelegateClearingBlockState, getEffectiveStateOverrides, hasDelegateClearingPreference, isDelegateClearedForBlock } from '../utils/delegateClearingState.js'
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -60,8 +60,7 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 		getPreSimulationBlockTimeManipulation()
 	])
 	const richListPromise = silenceChromeUnCaughtPromise(richAddresses === undefined ? getAddressesbeingMadeRich(settings) : Promise.resolve(richAddresses))
-	const delegateClearedAddress = settings.simulationMode && settings.activeSimulationAddress !== undefined
-		&& settings.delegateClearingPreferences?.some((entry) => entry.address === settings.activeSimulationAddress && entry.chainId === settings.activeRpcNetwork.chainId)
+	const delegateClearedAddress = settings.simulationMode && hasDelegateClearingPreference(settings.delegateClearingPreferences, settings.activeSimulationAddress, settings.activeRpcNetwork.chainId)
 		? settings.activeSimulationAddress : undefined
 	const stack = await getInterceptorTransactionStack()
 	const inputBlocks: SimulationStateInputBlock[] = []

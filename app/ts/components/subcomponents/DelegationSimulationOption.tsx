@@ -5,6 +5,7 @@ import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { DelegateClearingPreferences } from '../../types/delegationSimulation.js'
 import type { RpcNetwork } from '../../types/rpc.js'
 import { checksummedAddress } from '../../utils/bigint.js'
+import { hasDelegateClearingPreference } from '../../utils/delegateClearingState.js'
 
 type DelegationStatus = { type: 'delegated', delegate: bigint } | { type: 'none' } | { type: 'unknown' }
 type DelegationOption = { address: bigint, chainId: bigint, status: DelegationStatus }
@@ -35,7 +36,7 @@ export function DelegationSimulationOption({ activeAddress, rpcNetwork, simulati
 	}, [simulationMode.value, address, chainId, rpcNetwork.value?.httpsRpc])
 
 	const current = delegationOption.value
-	const enabled = address !== undefined && chainId !== undefined && preferences.value.some((entry) => entry.address === address && entry.chainId === chainId)
+	const enabled = hasDelegateClearingPreference(preferences.value, address, chainId)
 	if (current === undefined || !simulationMode.value || current.address !== address || current.chainId !== chainId || (current.status.type !== 'delegated' && !enabled)) return <></>
 
 	const change = async (enabled: boolean) => {
