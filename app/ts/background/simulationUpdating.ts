@@ -214,7 +214,7 @@ async function getDelegationAddressesForSimulation(
 		.map((transaction) => transaction.signedTransaction.from))))
 	const resolvedDelegations = await promiseAllMapAbortSafe(uniqueSenders, async (senderAddress) => {
 		try {
-			const delegationAddress = await ethereum.getCachedDelegation(senderAddress, requestAbortController)
+			const delegationAddress = await ethereum.getDelegation(senderAddress, 'latest', requestAbortController)
 			if (delegationAddress === undefined) return undefined
 			return {
 				senderAddress,
@@ -261,15 +261,14 @@ export const getGovernanceExecutionTokenBalancesAfter = async (
 	simulationInput: SimulationStateInput,
 	executionTransaction: PreSimulationTransaction,
 	executionTimestamp: Date,
-	executionStateOverrides: StateOverrides,
 	callResult: Parameters<typeof getTokenBalancesAfterForTransaction>[3],
-	simulationOverrides: StateOverrides,
+	overrides: { executionStateOverrides: StateOverrides, simulationOverrides: StateOverrides },
 ) => {
 	const simulationInputAfterExecution = getGovernanceExecutionSimulationInput(
 		simulationInput,
 		executionTransaction,
 		executionTimestamp,
-		executionStateOverrides,
+		overrides.executionStateOverrides,
 	)
 	return await getTokenBalancesAfterForTransaction(
 		ethereum,
@@ -277,7 +276,7 @@ export const getGovernanceExecutionTokenBalancesAfter = async (
 		simulationInputAfterExecution,
 		callResult,
 		executionTransaction.signedTransaction,
-		simulationOverrides,
+		overrides.simulationOverrides,
 	)
 }
 
@@ -332,9 +331,8 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			simulationInput,
 			executionTransaction,
 			contractExecutionResult.executionTimestamp,
-			contractExecutionResult.executionStateOverrides,
 			contractExecutionResult.ethSimulateV1CallResult,
-			simulationOverrides,
+			{ executionStateOverrides: contractExecutionResult.executionStateOverrides, simulationOverrides },
 		)
 
 		const governanceExecutionBlock = governanceExecutionSimulationInput[governanceExecutionSimulationInput.length - 1]
@@ -416,7 +414,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 		const gasLimit = gnosisSafeMessage.message.message.baseGas !== 0n ? {
 			gas: gnosisSafeMessage.message.message.baseGas
 		} : await (async () => {
-			const estimateGas = await simulateEstimateGasFromInput(ethereumClientService, undefined, toResolvedSimulationInput(simulationInput, resolvedSimulationState.simulationOverrides ?? {}), transactionWithoutGas, undefined, temporaryAccountOverrides)
+			const estimateGas = await simulateEstimateGasFromInput(ethereumClientService, undefined, toResolvedSimulationInput(simulationInput, resolvedSimulationState.simulationOverrides), transactionWithoutGas, undefined, temporaryAccountOverrides)
 			if ('error' in estimateGas) throw new Error(estimateGas.error.message)
 			return { gas: estimateGas.gas }
 		})()
@@ -428,7 +426,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] },
 			transactionIdentifier: gnosisSafeMessage.messageIdentifier,
 		}
-		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransactionToInputAndSimulate(ethereumClientService, undefined, simulationInput, [metaTransaction], undefined, temporaryAccountOverrides, resolvedSimulationState.simulationOverrides ?? {})
+		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransactionToInputAndSimulate(ethereumClientService, undefined, simulationInput, [metaTransaction], undefined, { stateOverrides: temporaryAccountOverrides, simulationOverrides: resolvedSimulationState.simulationOverrides })
 		return { success: true as const, result: await visualizeSimulatorState(simulationStateAfterGnosisSafeMetaTransaction, ethereumClientService, tokenPriceService, undefined) }
 	} catch(error) {
 		console.warn(error)
@@ -511,7 +509,7 @@ export async function visualizeSimulatorState(simulationState: SimulationState, 
 	}
 	const weth = await getWeth()
 	const settings = await getSettings()
-	const delegationAddressBySender = await getDelegationAddressesForSimulation(simulationState.simulationStateInput, simulationState.simulationOverrides ?? {}, ethereum, requestAbortController)
+	const delegationAddressBySender = await getDelegationAddressesForSimulation(simulationState.simulationStateInput, simulationState.simulationOverrides, ethereum, requestAbortController)
 
 	const parsedInputDataForEachBlockAndTransactionPromise = promiseAllMapAbortSafe(
 		simulationState.simulationStateInput, async (block) => {

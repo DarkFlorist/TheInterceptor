@@ -87,7 +87,7 @@ describe('delegate clearing in simulation', () => {
 				return parentBlockResponse.result
 			},
 		}, async () => undefined, async () => undefined, rpcEntry)
-		const rpcInput = serialize(EthSimulateV1Params, (await ethereum.prepareEthSimulateV1Input(input, 1n, undefined, simulationOverrides)).request)
+		const rpcInput = serialize(EthSimulateV1Params, (await ethereum.prepareEthSimulateV1Input({ value: input, simulationOverrides }, 1n, undefined)).request)
 		assert.equal(rpcInput.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
 		assert.equal(rpcInput.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(activeAddress)]?.balance, `0x${ MAKE_YOU_RICH_TRANSACTION.transaction.value.toString(16) }`)
 
@@ -147,7 +147,7 @@ describe('delegate clearing in simulation', () => {
 		assert.equal(ethSimulateRequests.length, 0)
 		const confirmationInput = appendTransactionsToInput(input, [transaction(1n)])
 		assert.equal(confirmationInput.length, 1)
-		const confirmationRequest = serialize(EthSimulateV1Params, (await ethereum.prepareEthSimulateV1Input(confirmationInput, 1n, undefined, simulationOverrides)).request)
+		const confirmationRequest = serialize(EthSimulateV1Params, (await ethereum.prepareEthSimulateV1Input({ value: confirmationInput, simulationOverrides }, 1n, undefined)).request)
 		assert.equal(confirmationRequest.params[0].blockStateCalls.length, 1)
 		assert.equal(confirmationRequest.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
 		await assert.rejects(simulatedCallFromInput(ethereum, undefined, toResolvedSimulationInput(input, simulationOverrides), {
@@ -224,7 +224,7 @@ describe('delegate clearing in simulation', () => {
 				return parentBlockResponse.result
 			},
 		}, async () => undefined, async () => undefined, rpcEntry)
-		const rpcInput = serialize(EthSimulateV1Params, (await ethereum.prepareEthSimulateV1Input(capturedInput, 1n, undefined, capturedOverrides)).request)
+		const rpcInput = serialize(EthSimulateV1Params, (await ethereum.prepareEthSimulateV1Input({ value: capturedInput, simulationOverrides: capturedOverrides }, 1n, undefined)).request)
 		assert.equal(rpcInput.params[0].blockStateCalls.length, 2)
 		assert.equal(rpcInput.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
 		assert.equal(rpcInput.params[0].blockStateCalls[1]?.stateOverrides?.[addressString(activeAddress)]?.code, undefined)
@@ -238,18 +238,18 @@ describe('delegate clearing in simulation', () => {
 			{ ...firstTransaction, signedTransaction: { ...firstTransaction.signedTransaction, gas: parentBlock.gasLimit } },
 			{ ...secondTransaction, signedTransaction: { ...secondTransaction.signedTransaction, gas: parentBlock.gasLimit } },
 		] }]
-		const splitRpcInput = serialize(EthSimulateV1Params, (await ethereum.prepareEthSimulateV1Input(overfullInput, 1n, undefined, capturedOverrides)).request)
+		const splitRpcInput = serialize(EthSimulateV1Params, (await ethereum.prepareEthSimulateV1Input({ value: overfullInput, simulationOverrides: capturedOverrides }, 1n, undefined)).request)
 		assert.equal(splitRpcInput.params[0].blockStateCalls.length, 2)
 		assert.equal(splitRpcInput.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
 		assert.equal(splitRpcInput.params[0].blockStateCalls[1]?.stateOverrides?.[addressString(activeAddress)]?.code, undefined)
 		const appended = appendTransactionsToInput(capturedInput, [transaction(3n)])
 		assert.equal(appended[2]?.stateOverrides[addressString(activeAddress)]?.code, undefined)
-		const appendedRpcInput = serialize(EthSimulateV1Params, (await ethereum.prepareEthSimulateV1Input(appended, 1n, undefined, capturedOverrides)).request)
+		const appendedRpcInput = serialize(EthSimulateV1Params, (await ethereum.prepareEthSimulateV1Input({ value: appended, simulationOverrides: capturedOverrides }, 1n, undefined)).request)
 		assert.equal(appendedRpcInput.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
 		assert.equal(appendedRpcInput.params[0].blockStateCalls[2]?.stateOverrides?.[addressString(activeAddress)]?.code, undefined)
 		const governanceInput = getGovernanceExecutionSimulationInput(capturedInput, transaction(4n), new Date('2026-01-01T00:01:00Z'), {})
 		assert.equal(governanceInput[2]?.stateOverrides[addressString(activeAddress)]?.code, undefined)
-		const governanceRpcInput = serialize(EthSimulateV1Params, (await ethereum.prepareEthSimulateV1Input(governanceInput, 1n, undefined, capturedOverrides)).request)
+		const governanceRpcInput = serialize(EthSimulateV1Params, (await ethereum.prepareEthSimulateV1Input({ value: governanceInput, simulationOverrides: capturedOverrides }, 1n, undefined)).request)
 		assert.equal(governanceRpcInput.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
 		assert.equal(governanceRpcInput.params[0].blockStateCalls[2]?.stateOverrides?.[addressString(activeAddress)]?.code, undefined)
 		const currentInput = await getCurrentSimulationInput()
@@ -316,12 +316,12 @@ describe('delegate clearing in simulation', () => {
 		}, async () => undefined, async () => undefined, rpcEntry)
 
 		assert.deepEqual(await Promise.all([
-			ethereum.getCachedDelegation(activeAddress),
-			ethereum.getCachedDelegation(activeAddress),
+			ethereum.getCachedDelegationHint(activeAddress),
+			ethereum.getCachedDelegationHint(activeAddress),
 		]), [delegate, delegate])
-		assert.equal(await ethereum.getCachedDelegation(activeAddress), delegate)
-		assert.equal(await ethereum.getCachedDelegation(activeAddress + 1n), undefined)
-		assert.equal(await ethereum.getCachedDelegation(activeAddress + 1n), undefined)
+		assert.equal(await ethereum.getCachedDelegationHint(activeAddress), delegate)
+		assert.equal(await ethereum.getCachedDelegationHint(activeAddress + 1n), undefined)
+		assert.equal(await ethereum.getCachedDelegationHint(activeAddress + 1n), undefined)
 		assert.equal(codeRequests, 2)
 		const replacementEthereum = new EthereumClientService({
 			rpcUrl: rpcEntry.httpsRpc,
@@ -331,7 +331,7 @@ describe('delegate clearing in simulation', () => {
 				return '0x'
 			},
 		}, async () => undefined, async () => undefined, rpcEntry)
-		assert.equal(await replacementEthereum.getCachedDelegation(activeAddress), undefined)
+		assert.equal(await replacementEthereum.getCachedDelegationHint(activeAddress), undefined)
 	})
 
 	test('refreshes popup checks on open while confirmation also refreshes before enabling', async () => {
@@ -350,7 +350,7 @@ describe('delegate clearing in simulation', () => {
 				return code
 			},
 		}, async () => undefined, async () => undefined, rpcEntry)
-		assert.equal(await ethereum.getCachedDelegation(activeAddress), undefined)
+		assert.equal(await ethereum.getCachedDelegationHint(activeAddress), undefined)
 		code = `0xef0100${ addressString(delegate).slice(2) }`
 		const requestReply = await requestDelegationSimulation(settings, ethereum, activeAddress, rpcEntry.chainId)
 		assert.deepEqual(requestReply.data.status, { type: 'delegated', delegate })
@@ -402,8 +402,8 @@ describe('delegate clearing in simulation', () => {
 			},
 		}, async () => undefined, async () => undefined, rpcEntry)
 
-		await assert.rejects(ethereum.getCachedDelegation(address), /RPC unavailable/)
-		assert.equal(await ethereum.getCachedDelegation(address), undefined)
+		await assert.rejects(ethereum.getCachedDelegationHint(address), /RPC unavailable/)
+		assert.equal(await ethereum.getCachedDelegationHint(address), undefined)
 		assert.equal(codeRequests, 2)
 	})
 
@@ -422,14 +422,14 @@ describe('delegate clearing in simulation', () => {
 			},
 		}, async () => undefined, async () => undefined, rpcEntry)
 		const abortController = new AbortController()
-		const abortedLookup = ethereum.getCachedDelegation(activeAddress, abortController)
+		const abortedLookup = ethereum.getCachedDelegationHint(activeAddress, abortController)
 		abortController.abort(new Error('Refresh replaced'))
 		await assert.rejects(abortedLookup, /Refresh replaced/u)
 		releaseFirst('0x')
-		assert.equal(await ethereum.getCachedDelegation(activeAddress), undefined)
+		assert.equal(await ethereum.getCachedDelegationHint(activeAddress), undefined)
 		assert.equal(codeRequests, 1)
-		ethereum.clearDelegationCache()
-		assert.equal(await ethereum.getCachedDelegation(activeAddress), delegate)
+		ethereum.clearDelegationHintCache()
+		assert.equal(await ethereum.getCachedDelegationHint(activeAddress), delegate)
 		assert.equal(codeRequests, 2)
 	})
 
@@ -449,13 +449,13 @@ describe('delegate clearing in simulation', () => {
 			},
 		}, async () => undefined, async () => undefined, rpcEntry)
 		const abortController = new AbortController()
-		const aborted = ethereum.getCachedDelegation(activeAddress, abortController)
-		const surviving = ethereum.getCachedDelegation(activeAddress)
+		const aborted = ethereum.getCachedDelegationHint(activeAddress, abortController)
+		const surviving = ethereum.getCachedDelegationHint(activeAddress)
 		abortController.abort(new Error('Refresh replaced'))
 		await assert.rejects(aborted, /Refresh replaced/u)
 		releaseLookup(`0xef0100${ addressString(delegate).slice(2) }`)
 		assert.equal(await surviving, delegate)
-		assert.equal(await ethereum.getCachedDelegation(activeAddress), delegate)
+		assert.equal(await ethereum.getCachedDelegationHint(activeAddress), delegate)
 		assert.equal(codeRequests, 1)
 	})
 
@@ -473,11 +473,11 @@ describe('delegate clearing in simulation', () => {
 				return codeRequests === 1 ? await oldBlockResponse : '0x'
 			},
 		}, async () => undefined, async () => undefined, rpcEntry)
-		const staleLookup = ethereum.getCachedDelegation(activeAddress)
-		ethereum.clearDelegationCache()
+		const staleLookup = ethereum.getCachedDelegationHint(activeAddress)
+		ethereum.clearDelegationHintCache()
 		assert.equal(await staleLookup, undefined)
 		releaseOldBlock(`0xef0100${ addressString(delegate).slice(2) }`)
-		assert.equal(await ethereum.getCachedDelegation(activeAddress), undefined)
+		assert.equal(await ethereum.getCachedDelegationHint(activeAddress), undefined)
 		assert.equal(codeRequests, 2)
 	})
 
@@ -499,7 +499,7 @@ describe('delegate clearing in simulation', () => {
 		}, async () => undefined, async () => undefined, rpcEntry)
 		const services = { ethereum, tokenPriceService: new TokenPriceService(ethereum, 60000) }
 		const enabling = setDelegationSimulation(await getSettings(), services, activeAddress, rpcEntry.chainId, true)
-		ethereum.clearDelegationCache()
+		ethereum.clearDelegationHintCache()
 		assert.deepEqual((await enabling).data, { ok: true, address: activeAddress, chainId: rpcEntry.chainId, enabled: true })
 		releaseOldBlock('0x')
 		assert.equal(codeRequests, 2)

@@ -8,12 +8,15 @@ import { InterceptorSimulationExport, InterceptorTransactionStack } from '../../
 import { NEW_BLOCK_ABORT } from '../../app/ts/utils/constants.js'
 import { createSafeTx } from '../../app/ts/safe/safeCore.js'
 import { getSafeTxHash } from '../../app/ts/utils/eip712.js'
+import { addressString } from '../../app/ts/utils/bigint.js'
+import type { SimulationInputWithOverrides } from '../../app/ts/types/visualizer-types.js'
 
 const storageState: Record<string, unknown> = {}
 let runtimeSendMessage = async (_message: unknown) => undefined
 let localSetBehavior = async (items: Record<string, unknown>) => {
 	Object.assign(storageState, items)
 }
+let afterLocalGet: ((keys: string | string[] | Record<string, unknown> | null | undefined) => void) | undefined
 
 function installBrowser() {
 	Object.defineProperty(globalThis, 'browser', {
@@ -26,12 +29,15 @@ function installBrowser() {
 				onConnect: { addListener: () => undefined, removeListener: () => undefined },
 			},
 			storage: {
-				local: {
-					async get(keys?: string | string[] | Record<string, unknown> | null) {
-						if (keys === undefined || keys === null) return { ...storageState }
-						if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-						if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-						return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+			local: {
+				async get(keys?: string | string[] | Record<string, unknown> | null) {
+					let result: Record<string, unknown>
+					if (keys === undefined || keys === null) result = { ...storageState }
+					else if (Array.isArray(keys)) result = Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
+					else if (typeof keys === 'string') result = keys in storageState ? { [keys]: storageState[keys] } : {}
+					else result = Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+					afterLocalGet?.(keys)
+					return result
 					},
 					async set(items: Record<string, unknown>) {
 						await localSetBehavior(items)
@@ -208,6 +214,7 @@ function createSafeSimulationExportPayload() {
 
 function resetEnvironment() {
 	for (const key of Object.keys(storageState)) delete storageState[key]
+	afterLocalGet = undefined
 	runtimeSendMessage = async () => undefined
 	localSetBehavior = async (items: Record<string, unknown>) => {
 		Object.assign(storageState, items)
@@ -295,10 +302,10 @@ describe('import simulation stack', () => {
 		const safeExport = createSafeSimulationExportPayload()
 		storageState.interceptorTransactionStack = InterceptorTransactionStack.serialize(safeExport.interceptorSimulateStack)
 		storageState.simulationMode = true
-		let exportedSimulationInput: unknown
+		let exportedSimulationInput: SimulationInputWithOverrides | undefined
 		const ethereum = {
 			async getBlockNumber() { return 1n },
-			async ethSimulateV1Input(simulationInput: unknown) {
+			async ethSimulateV1Input(simulationInput: SimulationInputWithOverrides) {
 				exportedSimulationInput = simulationInput
 				return { method: 'eth_simulateV1' as const, params: [{ blockStateCalls: [], traceTransfers: true, validation: true }, 'latest' as const] }
 			},
@@ -310,7 +317,48 @@ describe('import simulation stack', () => {
 		if (!reply.ok) throw new Error(reply.message)
 		const exported = InterceptorSimulationExport.parse(JSON.parse(reply.ethSimulateV1InputString))
 		assert.deepEqual(exported.interceptorSimulateStack.operations, [])
-		assert.deepEqual(exportedSimulationInput, [])
+		assert.deepEqual(exportedSimulationInput, { value: [], simulationOverrides: {} })
+
+		const { getSettings, setDelegateClearingEnabled } = await import('../../app/ts/background/settings.js')
+		const settings = await getSettings()
+		await setDelegateClearingEnabled(settings.activeSimulationAddress, settings.activeRpcNetwork.chainId, true)
+		await modules.requestInterceptorSimulationInput(ethereum as never)
+		assert.deepEqual(exportedSimulationInput, {
+			value: [],
+			simulationOverrides: { [addressString(settings.activeSimulationAddress)]: { code: new Uint8Array() } },
+		})
+	})
+
+	test('keeps exported simulation blocks and delegate clearing on one settings snapshot', async () => {
+		const modules = await modulesPromise
+		resetEnvironment()
+		storageState.simulationMode = true
+		storageState.interceptorTransactionStack = InterceptorTransactionStack.serialize(create7702ExportPayload().interceptorSimulateStack)
+		const { getSettings, setDelegateClearingEnabled } = await import('../../app/ts/background/settings.js')
+		const settings = await getSettings()
+		await setDelegateClearingEnabled(settings.activeSimulationAddress, settings.activeRpcNetwork.chainId, true)
+		let exportedSimulationInput: SimulationInputWithOverrides | undefined
+		const ethereum = {
+			async getBlockNumber() { return 1n },
+			async ethSimulateV1Input(simulationInput: SimulationInputWithOverrides) {
+				exportedSimulationInput = simulationInput
+				return { method: 'eth_simulateV1' as const, params: [{ blockStateCalls: [], traceTransfers: true, validation: true }, 'latest' as const] }
+			},
+		}
+		let changedModeDuringExport = false
+		afterLocalGet = (keys) => {
+			if (!Array.isArray(keys) || !keys.includes('delegateClearingPreferences') || changedModeDuringExport) return
+			changedModeDuringExport = true
+			storageState.simulationMode = false
+		}
+		const reply = await modules.requestInterceptorSimulationInput(ethereum as never)
+		assert.equal(reply.ok, true)
+		assert.equal(changedModeDuringExport, true)
+		assert.equal(exportedSimulationInput?.value.length, 1)
+		assert.equal(exportedSimulationInput?.value[0]?.transactions.length, 1)
+		assert.deepEqual(exportedSimulationInput?.simulationOverrides, {
+			[addressString(settings.activeSimulationAddress)]: { code: new Uint8Array() },
+		})
 	})
 
 	test('preserves EIP-7702 authorization signatures when importing an exported stack', async () => {

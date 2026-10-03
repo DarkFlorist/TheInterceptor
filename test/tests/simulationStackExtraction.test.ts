@@ -14,6 +14,7 @@ const simulationStateWithBalanceBelowBaseFee: ResolvedSimulationState = {
 	kind: 'simulated',
 	value: {
 		success: true,
+		simulationOverrides: {},
 		simulationStateInput: [],
 		simulatedBlocks: [{
 			stateOverrides: {},

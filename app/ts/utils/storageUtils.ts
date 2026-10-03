@@ -160,17 +160,49 @@ const LocalStorageKey2 = funtypes.Union(
 
 // these methods are split to 1 and 2 to make the funtypes types simpler
 export async function browserStorageLocalGet2(keys: LocalStorageKey2 | LocalStorageKey2[]): Promise<LocalStorageItems2> {
-	return LocalStorageItems2.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
+	return LocalStorageItems2.parse(normalizeLegacyPendingSimulationStates(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys])))
 }
 
 export async function browserStorageLocalGet2Result(keys: LocalStorageKey2 | LocalStorageKey2[]) {
 	const storedItems = await browser.storage.local.get(Array.isArray(keys) ? keys : [keys])
 	try {
-		return { success: true as const, value: LocalStorageItems2.parse(storedItems) }
+		return { success: true as const, value: LocalStorageItems2.parse(normalizeLegacyPendingSimulationStates(storedItems)) }
 	} catch (error) {
 		if (!(error instanceof funtypes.ValidationError)) throw error
 		return { success: false as const, error }
 	}
+}
+
+function isPlainObject(value: unknown): value is object {
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function hasField<Key extends string>(value: unknown, key: Key): value is Record<Key, unknown> {
+	return isPlainObject(value) && key in value
+}
+
+// Normalize legacy pending confirmations before validating the entire stored request list.
+function normalizeLegacyPendingSimulationStates(storedItems: unknown): unknown {
+	if (!hasField(storedItems, 'pendingTransactionsAndMessages') || !Array.isArray(storedItems.pendingTransactionsAndMessages)) return storedItems
+	let changed = false
+	const pendingTransactionsAndMessages = storedItems.pendingTransactionsAndMessages.map((pending) => {
+		if (!hasField(pending, 'type') || pending.type !== 'Transaction' || !hasField(pending, 'popupVisualisation')) return pending
+		const popupVisualisation = pending.popupVisualisation
+		if (!hasField(popupVisualisation, 'statusCode') || popupVisualisation.statusCode !== 'success' || !hasField(popupVisualisation, 'data')) return pending
+		const data = popupVisualisation.data
+		if (!hasField(data, 'simulationState') || !isPlainObject(data.simulationState)) return pending
+		const simulationState = data.simulationState
+		if ('simulationOverrides' in simulationState && simulationState.simulationOverrides !== undefined) return pending
+		changed = true
+		return {
+			...pending,
+			popupVisualisation: {
+				...popupVisualisation,
+				data: { ...data, simulationState: { ...simulationState, simulationOverrides: {} } },
+			},
+		}
+	})
+	return changed ? { ...storedItems, pendingTransactionsAndMessages } : storedItems
 }
 
 export async function browserStorageLocalSet2(items: LocalStorageItems2) {

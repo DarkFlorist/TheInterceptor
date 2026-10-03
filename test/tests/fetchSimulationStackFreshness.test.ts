@@ -85,6 +85,7 @@ function createSnapshot(balance: bigint): SimulationStackSnapshot {
 			kind: 'simulated',
 			value: {
 				success: true,
+				simulationOverrides: {},
 				simulationStateInput: simulationInput,
 				simulatedBlocks: [{
 					stateOverrides,

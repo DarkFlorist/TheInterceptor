@@ -233,10 +233,9 @@ const SimulationStateSuccess = funtypes.ReadonlyObject({
 	baseFeePerGas: EthereumQuantity,
 	simulationConductedTimestamp: EthereumTimestamp,
 	rpcNetwork: RpcNetwork,
-}).And(funtypes.ReadonlyPartial({
 	// Account state applied before the first simulated block; later transactions can change it.
 	simulationOverrides: StateOverrides,
-}))
+})
 
 export type SimulationState = funtypes.Static<typeof SimulationState>
 export const SimulationState = funtypes.Union(
@@ -254,7 +253,8 @@ export const SimulationState = funtypes.Union(
 		baseFeePerGas: EthereumQuantity,
 		simulationConductedTimestamp: EthereumTimestamp,
 		rpcNetwork: RpcNetwork,
-	}).And(funtypes.ReadonlyPartial({ simulationOverrides: StateOverrides }))
+		simulationOverrides: StateOverrides,
+	})
 )
 
 export type PassthroughState = funtypes.Static<typeof PassthroughState>
@@ -274,6 +274,10 @@ export const ResolvedSimulationState = funtypes.Union(
 )
 
 export type ResolvedSimulationInput = funtypes.Static<typeof ResolvedSimulationInput>
+export type SimulationInputWithOverrides<TInput extends SimulationStateInputMinimalData = SimulationStateInputMinimalData> = {
+	readonly value: TInput
+	readonly simulationOverrides: StateOverrides
+}
 export const ResolvedSimulationInput = funtypes.Union(
 	PassthroughState,
 	funtypes.ReadonlyObject({

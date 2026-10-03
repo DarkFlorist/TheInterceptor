@@ -214,6 +214,7 @@ function buildStalePopupVisualisationState(
 ) {
 	const simulationState = {
 		success: true as const,
+		simulationOverrides: {},
 		simulationStateInput: [{
 			stateOverrides: {},
 			transactions: [],

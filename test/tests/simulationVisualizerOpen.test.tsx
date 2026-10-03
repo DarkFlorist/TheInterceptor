@@ -384,6 +384,7 @@ function createSimulatedCompleteVisualizedSimulation(serializableSettings: Setti
 			kind: 'simulated',
 			value: {
 				success: true,
+				simulationOverrides: {},
 				simulationStateInput,
 				simulatedBlocks: [],
 				blockNumber: 100n,
@@ -502,6 +503,7 @@ function createFailedStackHomePageUpdate(tabId: number, popupRefreshGeneration: 
 					kind: 'simulated',
 					value: {
 						success: false,
+						simulationOverrides: {},
 						simulationStateInput: [{
 							stateOverrides: {},
 							transactions: [createPreSimulationTransaction(1n)],

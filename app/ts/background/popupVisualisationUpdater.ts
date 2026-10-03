@@ -81,7 +81,7 @@ export const updatePopupVisualisationIfNeeded = async (ethereum: EthereumClientS
 				popupVisualisation.simulationState.value.simulationStateInput,
 				popupVisualisation.simulationState.value.rpcNetwork,
 				popupVisualisation.simulationState.value.blockNumber,
-				popupVisualisation.simulationState.value.simulationOverrides ?? {},
+				popupVisualisation.simulationState.value.simulationOverrides,
 			)
 			if (currentFingerprint === cachedFingerprint && (capturedSnapshot.numberOfAddressesMadeRich === popupVisualisation.numberOfAddressesMadeRich)) return popupVisualisation
 		}

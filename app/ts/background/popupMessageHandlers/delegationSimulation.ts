@@ -15,7 +15,7 @@ export async function requestDelegationSimulation(settings: Settings, ethereum: 
 		return { method: 'popup_requestDelegationSimulation' as const, data: { address, chainId, status: { type: 'unknown' as const } } }
 	}
 	try {
-		const delegate = await ethereum.getCachedDelegation(address, undefined, { refresh: true })
+		const delegate = await ethereum.getCachedDelegationHint(address, undefined, { refresh: true })
 		return { method: 'popup_requestDelegationSimulation' as const, data: { address, chainId, status: delegate === undefined ? { type: 'none' as const } : { type: 'delegated' as const, delegate } } }
 	} catch (error) {
 		if (!isExpectedInfrastructureError(error)) await reportLocalRecovery(error, { code: 'active_delegation_lookup_failed' })
@@ -36,7 +36,7 @@ export async function setDelegationSimulation(settings: Settings, services: Simu
 		}
 		let delegate: bigint | undefined
 		try {
-			delegate = await services.ethereum.getCachedDelegation(address, undefined, { refresh: true })
+			delegate = await services.ethereum.getCachedDelegationHint(address, undefined, { refresh: true })
 		} catch (error) {
 			if (!isExpectedInfrastructureError(error)) await reportLocalRecovery(error, { code: 'delegate_clearing_confirmation_failed' })
 			return { method: 'popup_setDelegationSimulation' as const, data: { ok: false as const, message: 'Could not confirm the current delegate. Please try again.' } }

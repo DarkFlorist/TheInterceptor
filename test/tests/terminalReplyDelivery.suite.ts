@@ -1,6 +1,35 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { browserMock, createDisconnectedPort, createRecordingPort, isRecord, modules, pendingTransaction, signedTransaction, simulator, uniqueRequestIdentifier, waitForPendingTransactionsToClear, withSilencedConsole } from './confirmTransactionTestHarness.js'
+import { browserStorageLocalGet2 } from '../../app/ts/utils/storageUtils.js'
+
+test('restores legacy pending simulation overrides without dropping another request', async () => {
+	browserMock.reset()
+	const anotherPendingTransaction = {
+		...pendingTransaction,
+		uniqueRequestIdentifier: { ...pendingTransaction.uniqueRequestIdentifier, requestId: pendingTransaction.uniqueRequestIdentifier.requestId + 1 },
+		transactionIdentifier: pendingTransaction.transactionIdentifier + 1n,
+	}
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [pendingTransaction, anotherPendingTransaction] })
+	const serialized = browserMock.storageState.pendingTransactionsAndMessages
+	if (!Array.isArray(serialized) || !isRecord(serialized[0]) || !isRecord(serialized[0].popupVisualisation)) throw new Error('missing serialized pending transaction')
+	const legacyPopup = serialized[0].popupVisualisation
+	if (!isRecord(legacyPopup.data) || !isRecord(legacyPopup.data.simulationState)) throw new Error('missing serialized simulation state')
+	const legacyState = { ...legacyPopup.data.simulationState }
+	delete legacyState.simulationOverrides
+	browserMock.storageState.pendingTransactionsAndMessages = [
+		{ ...serialized[0], popupVisualisation: { ...legacyPopup, data: { ...legacyPopup.data, simulationState: legacyState } } },
+		serialized[1],
+	]
+
+	const restored = await modules.getPendingTransactionsAndMessages()
+	assert.deepEqual(restored.map((pending) => pending.uniqueRequestIdentifier.requestId), [pendingTransaction.uniqueRequestIdentifier.requestId, anotherPendingTransaction.uniqueRequestIdentifier.requestId])
+	const first = restored[0]
+	assert.equal(first?.type, 'Transaction')
+	if (first?.type !== 'Transaction' || first.transactionOrMessageCreationStatus !== 'Simulated' || first.popupVisualisation.statusCode !== 'success') throw new Error('missing restored visualization')
+	assert.deepEqual(first.popupVisualisation.data.simulationState.simulationOverrides, {})
+	assert.equal((await browserStorageLocalGet2('pendingTransactionsAndMessages')).pendingTransactionsAndMessages?.length, 2)
+})
 
 test('failed signer delivery keeps the request and replaces the waiting spinner with a wallet-neutral error', async () => {
 	await browser.storage.local.set({ simulationMode: false })

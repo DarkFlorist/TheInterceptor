@@ -442,7 +442,7 @@ describe('SimulationModeEthereumClientService', () => {
 	})
 
 		test('prepareEthSimulateV1Input strips the local transaction hash from RPC calls', async () => {
-			const prepared = await ethereum.prepareEthSimulateV1Input(createSimulationStateInput(), blockNumber, undefined, {})
+			const prepared = await ethereum.prepareEthSimulateV1Input({ value: createSimulationStateInput(), simulationOverrides: {} }, blockNumber, undefined)
 			const call = prepared.request.params[0].blockStateCalls[0]?.calls[0]
 			if (call === undefined) throw new Error('missing prepared eth_simulateV1 call')
 			assert.equal('hash' in call, false)
@@ -474,7 +474,7 @@ describe('SimulationModeEthereumClientService', () => {
 				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
 				simulateWithZeroBaseFee: false,
 			}] as const
-			const prepared = await ethereum.prepareEthSimulateV1Input(input, blockNumber, undefined, {})
+			const prepared = await ethereum.prepareEthSimulateV1Input({ value: input, simulationOverrides: {} }, blockNumber, undefined)
 			const call = prepared.request.params[0].blockStateCalls[0]?.calls[0]
 			if (call?.type !== '7702') throw new Error('missing prepared type-7702 call')
 			const [authorization] = call.authorizationList
@@ -990,7 +990,7 @@ describe('SimulationModeEthereumClientService', () => {
 				simulateWithZeroBaseFee: false,
 			}] as const
 
-			const { prepared, result } = await ethereum.simulatePrepared(splitSimulationStateInput, blockNumber, undefined, {})
+			const { prepared, result } = await ethereum.simulatePrepared({ value: splitSimulationStateInput, simulationOverrides: {} }, blockNumber, undefined)
 			assert.equal(result.length, 2)
 			const grouped = groupEthSimulateV1ResultByInputBlocks(prepared, result)
 			assert.equal(grouped.length, 1)
@@ -1426,6 +1426,7 @@ describe('SimulationModeEthereumClientService', () => {
 			await assert.rejects(
 				async () => await simulateEstimateGas(ethereum, undefined, toResolvedSimulationState({
 					success: true,
+					simulationOverrides: {},
 					simulationStateInput: [],
 					simulatedBlocks: [],
 					blockNumber,
