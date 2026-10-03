@@ -303,11 +303,13 @@ async function resolveRpcConfigurationStateWithoutLock(storedConfiguration: RpcC
 }
 
 async function getRpcConfigurationStateWithoutLock(): Promise<RpcConfigurationState> {
+	let storedConfiguration: Readonly<Record<string, unknown>>
 	try {
-		return await resolveRpcConfigurationStateWithoutLock(await browser.storage.local.get(['rpcEntries', 'activeRpcNetwork']))
+		storedConfiguration = await browser.storage.local.get(['rpcEntries', 'activeRpcNetwork'])
 	} catch (error: unknown) {
 		return unavailableRpcConfiguration('read-failed', undefined, error)
 	}
+	return await resolveRpcConfigurationStateWithoutLock(storedConfiguration)
 }
 
 export async function getRpcConfigurationState(): Promise<RpcConfigurationState> {
@@ -316,12 +318,13 @@ export async function getRpcConfigurationState(): Promise<RpcConfigurationState>
 
 export async function getRpcConfigurationStateWithStorageSnapshot(keys: readonly string[]): Promise<{ readonly storedItems: Readonly<Record<string, unknown>>, readonly rpcConfiguration: RpcConfigurationState }> {
 	return await rpcConfigurationSemaphore.execute(async () => {
+		let storedItems: Readonly<Record<string, unknown>>
 		try {
-			const storedItems = await browser.storage.local.get([...keys, 'rpcEntries', 'activeRpcNetwork'])
-			return { storedItems, rpcConfiguration: await resolveRpcConfigurationStateWithoutLock(storedItems) }
+			storedItems = await browser.storage.local.get([...keys, 'rpcEntries', 'activeRpcNetwork'])
 		} catch (error: unknown) {
 			return { storedItems: {}, rpcConfiguration: unavailableRpcConfiguration('read-failed', undefined, error) }
 		}
+		return { storedItems, rpcConfiguration: await resolveRpcConfigurationStateWithoutLock(storedItems) }
 	})
 }
 

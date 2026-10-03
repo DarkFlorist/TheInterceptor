@@ -499,12 +499,14 @@ const resolveAllPendingTransactionsAndMessageAsNoResponse = async (transactions:
 }
 
 async function resolvePendingTransactionAsNoResponse(transaction: PendingTransactionOrSignableMessage, services: ConfirmationServices | undefined, websiteTabConnections: WebsiteTabConnections) {
+	const currentTransaction = await getPendingTransactionOrMessageByidentifier(transaction.uniqueRequestIdentifier)
+	if (currentTransaction === undefined) return
 	const delivery = await queueTerminalReplyAndAttemptDelivery(websiteTabConnections, {
-		...transaction.originalRequestParameters,
+		...currentTransaction.originalRequestParameters,
 		...formRejectMessage(METAMASK_ERROR_USER_REJECTED_REQUEST, 'User denied transaction signature'),
-		uniqueRequestIdentifier: transaction.uniqueRequestIdentifier,
+		uniqueRequestIdentifier: currentTransaction.uniqueRequestIdentifier,
 	})
-	await removeSettledPendingRequest(transaction, services)
+	await removeSettledPendingRequest(currentTransaction, services)
 	return delivery
 }
 

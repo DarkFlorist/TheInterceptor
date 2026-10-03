@@ -49,7 +49,7 @@ Object.defineProperty(globalThis, 'browser', {
 Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true, value: { runtime: { id: 'test-extension' } } })
 
 const { browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
-const { getRpcConfigurationState, getRpcConnectionStatus, getRpcList, promoteRpcAsPrimary, setRpcConfiguration } = await import('../../app/ts/background/storageVariables.js')
+const { getRpcConfigurationState, getRpcConfigurationStateWithStorageSnapshot, getRpcConnectionStatus, getRpcList, promoteRpcAsPrimary, setRpcConfiguration } = await import('../../app/ts/background/storageVariables.js')
 const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
 const { captureRpcNetwork, getRequiredSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot } = await import('../../app/ts/background/settings.js')
 const { restoreDefaultRpcConfiguration, retryRpcConfiguration, setNewRpcList, settingsOpened } = await import('../../app/ts/background/popupMessageHandlers/settings.js')
@@ -155,6 +155,25 @@ describe('RPC storage recovery', () => {
 		assert.deepEqual(snapshot.rpcConfiguration, { status: 'unavailable', reason: 'read-failed', error: readError })
 		assert.equal(snapshot.settings, undefined)
 		assert.equal(writes.length, 0)
+	})
+
+	test('propagates unexpected RPC configuration resolver failures', async () => {
+		const resolverError = new Error('Unexpected RPC resolver failure')
+		const originalGet = browser.storage.local.get
+		Object.defineProperty(browser.storage.local, 'get', {
+			configurable: true,
+			value: async () => Object.defineProperty({}, 'rpcEntries', {
+				enumerable: true,
+				get() { throw resolverError },
+			}),
+		})
+
+		try {
+			await assert.rejects(getRpcConfigurationState(), (error: unknown) => error === resolverError)
+			await assert.rejects(getRpcConfigurationStateWithStorageSnapshot([]), (error: unknown) => error === resolverError)
+		} finally {
+			Object.defineProperty(browser.storage.local, 'get', { configurable: true, value: originalGet })
+		}
 	})
 
 	test('preserves the complete captured settings after a storage read failure', async () => {
