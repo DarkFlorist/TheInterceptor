@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { InterceptorErrorDiagnostic } from '../../app/ts/types/errorDiagnostics.js'
-import { formatDiagnosticsForClipboard, hasActionableDiagnostics, summarizeDiagnostics } from '../../app/ts/utils/diagnostics.js'
+import { formatDiagnosticsForClipboard, summarizeDiagnostics } from '../../app/ts/utils/diagnostics.js'
 
 const diagnostic = (severity: InterceptorErrorDiagnostic['severity'], index: number): InterceptorErrorDiagnostic => ({
 	timestamp: new Date(`2026-01-0${ index }T00:00:00.000Z`),
@@ -22,14 +22,6 @@ describe('diagnostics view data', () => {
 
 	test('summarizes diagnostics by severity', () => {
 		assert.deepEqual(summarizeDiagnostics(diagnostics), { total: 4, error: 2, warning: 1, info: 1 })
-	})
-
-	test('alerts only for user-visible errors', () => {
-		assert.equal(hasActionableDiagnostics([]), false)
-		assert.equal(hasActionableDiagnostics(diagnostics.slice(1, 3)), false)
-		assert.equal(hasActionableDiagnostics([{ ...diagnostics[0], userVisible: false }]), false)
-		assert.equal(hasActionableDiagnostics([{ ...diagnostics[1], userVisible: true }]), false)
-		assert.equal(hasActionableDiagnostics(diagnostics), true)
 	})
 
 	test('formats diagnostics with serialized timestamps for copying', () => {

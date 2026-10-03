@@ -7,9 +7,6 @@ import { SettingsView } from './SettingsView.js'
 import { SimulationStackPage } from './SimulationStackPage.js'
 import { DiagnosticsView } from './DiagnosticsView.js'
 import Hint from '../subcomponents/Hint.js'
-import { getMissingPopupReplyErrorMessage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
-import { hasActionableDiagnostics } from '../../utils/diagnostics.js'
-import { useAsyncState } from '../../utils/preact-utilities.js'
 import { createMountedManagementPages, getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash, mountManagementPage, type ManagementPage } from '../../utils/managementPages.js'
 
 type ManagementTabParams = {
@@ -17,12 +14,10 @@ type ManagementTabParams = {
 	selectedPage: ManagementPage | undefined
 	label: string
 	icon: string
-	attention?: boolean
-	statusUnavailable?: boolean
 	selectPage: (page: ManagementPage) => void
 }
 
-function ManagementTab({ page, selectedPage, label, icon, attention, statusUnavailable, selectPage }: ManagementTabParams) {
+function ManagementTab({ page, selectedPage, label, icon, selectPage }: ManagementTabParams) {
 	const selected = page === selectedPage
 	return <button
 		type = 'button'
@@ -32,8 +27,6 @@ function ManagementTab({ page, selectedPage, label, icon, attention, statusUnava
 		aria-controls = { `management-panel-${ page }` }
 		id = { `management-tab-${ page }` }
 		tabIndex = { selected || (selectedPage === undefined && page === 'websites') ? 0 : -1 }
-		aria-label = { attention ? `${ label }, needs attention` : undefined }
-		title = { statusUnavailable ? 'Could not load diagnostics status' : undefined }
 		onClick = { () => selectPage(page) }
 	>
 		<img src = { icon } width = '24' height = '24' alt = '' />
@@ -45,29 +38,6 @@ export function ManagementView() {
 	const initialPage = getManagementPageFromHash(globalThis.location.hash)
 	const selectedPage = useSignal<ManagementPage | undefined>(initialPage)
 	const mountedPages = useSignal(createMountedManagementPages(initialPage))
-	const diagnosticsNeedAttention = useSignal(false)
-	const { value: diagnosticsStatus, waitFor: waitForDiagnosticsStatus } = useAsyncState<void>()
-
-	useEffect(() => {
-		let active = true
-		let requestNumber = 0
-		async function loadDiagnosticsStatus() {
-			const currentRequest = ++requestNumber
-			const reply = await sendPopupMessageWithReply({ method: 'popup_requestDiagnostics' })
-			if (reply === undefined) throw new Error(getMissingPopupReplyErrorMessage('Loading diagnostics status'))
-			if (active && currentRequest === requestNumber) diagnosticsNeedAttention.value = hasActionableDiagnostics(reply.diagnostics)
-		}
-		const onStorageChanged = (changes: { readonly interceptorErrorDiagnostics?: browser.storage.StorageChange }, areaName: string) => {
-			if (areaName !== 'local' || !('interceptorErrorDiagnostics' in changes)) return
-			void waitForDiagnosticsStatus(loadDiagnosticsStatus)
-		}
-		browser.storage.onChanged.addListener(onStorageChanged)
-		void waitForDiagnosticsStatus(loadDiagnosticsStatus)
-		return () => {
-			active = false
-			browser.storage.onChanged.removeListener(onStorageChanged)
-		}
-	}, [])
 
 	useEffect(() => {
 		const updateSelectedPage = () => {
@@ -122,7 +92,7 @@ export function ManagementView() {
 				<ManagementTab page = 'websites' selectedPage = { selectedPage.value } label = 'Websites' icon = '../img/internet.svg' selectPage = { selectPage } />
 				<ManagementTab page = 'address-book' selectedPage = { selectedPage.value } label = 'Address Book' icon = '../img/address-book.svg' selectPage = { selectPage } />
 				<ManagementTab page = 'simulation-stack' selectedPage = { selectedPage.value } label = 'Simulation Stack' icon = '../img/simulation-stack.svg' selectPage = { selectPage } />
-				<ManagementTab page = 'diagnostics' selectedPage = { selectedPage.value } label = 'Diagnostics' icon = { diagnosticsNeedAttention.value ? '../img/warning-sign.svg' : '../img/diagnostics.svg' } attention = { diagnosticsNeedAttention.value } statusUnavailable = { diagnosticsStatus.value.state === 'rejected' } selectPage = { selectPage } />
+				<ManagementTab page = 'diagnostics' selectedPage = { selectedPage.value } label = 'Diagnostics' icon = '../img/diagnostics.svg' selectPage = { selectPage } />
 				<ManagementTab page = 'settings' selectedPage = { selectedPage.value } label = 'Settings' icon = '../img/settings.svg' selectPage = { selectPage } />
 			</nav>
 		</header>
