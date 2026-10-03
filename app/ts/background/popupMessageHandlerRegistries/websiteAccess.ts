@@ -1,7 +1,7 @@
 import { interceptorAccessMetadataRefresh } from '../windows/interceptorAccess.js'
 import { popupMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
-import { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, changeInterceptorAccess, confirmRequestAccess, disableInterceptor, interceptorAccessChangeAddressOrRefresh, openManagementTab, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from '../popupMessageHandlers.js'
-import { getManagementHashForOpenRequest } from '../../utils/managementPages.js'
+import { allowOrPreventAddressAccessForWebsite, blockOrAllowExternalRequests, changeInterceptorAccess, confirmRequestAccess, disableInterceptor, interceptorAccessChangeAddressOrRefresh, removeWebsiteAccess, removeWebsiteAddressAccess, retrieveWebsiteAccess } from '../popupMessageHandlers.js'
+import { openManagementPage } from '../managementNavigation.js'
 
 export const websiteAccessPopupMessageHandlers = {
 	popup_interceptorAccess: popupMessageHandler('popup_interceptorAccess', async (context, request) => await confirmRequestAccess(context.simulationServicesOwner, context.websiteTabConnections, request, context.publishRpcConnectionStatus)),
@@ -11,7 +11,7 @@ export const websiteAccessPopupMessageHandlers = {
 	popup_interceptorAccessRefresh: popupMessageHandler('popup_interceptorAccessRefresh', async (context, request) => await interceptorAccessChangeAddressOrRefresh(context.websiteTabConnections, request)),
 	popup_setDisableInterceptor: popupMessageHandler('popup_setDisableInterceptor', async (context, request) => await disableInterceptor(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_openWebsiteAccess: popupMessageHandler('popup_openWebsiteAccess', async () => {
-		return await openManagementTab(getManagementHashForOpenRequest('popup_openWebsiteAccess'))
+		return await openManagementPage('websites')
 	}),
 	popup_retrieveWebsiteAccess: popupMessageHandler('popup_retrieveWebsiteAccess', async (_context, request) => await retrieveWebsiteAccess(request)),
 	popup_blockOrAllowExternalRequests: popupMessageHandler('popup_blockOrAllowExternalRequests', async (context, request) => await blockOrAllowExternalRequests(context.simulationServicesOwner, context.websiteTabConnections, request)),

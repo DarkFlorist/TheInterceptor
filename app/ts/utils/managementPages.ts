@@ -1,18 +1,8 @@
 import type { TransactionOrMessageIdentifier } from '../types/interceptor-messages.js'
 import { getSimulationStackElementId } from './simulationStackTargets.js'
 
-export const managementSections = [
-	{ page: 'home', label: 'Home', icon: '../img/management-home.svg', description: '', openRequest: 'popup_openManagement' },
-	{ page: 'websites', label: 'Websites', icon: '../img/internet.svg', description: 'Review website access and permissions.', openRequest: 'popup_openWebsiteAccess' },
-	{ page: 'address-book', label: 'Address Book', icon: '../img/address-book.svg', description: 'Manage saved addresses and contacts.', openRequest: 'popup_openAddressBook' },
-	{ page: 'simulation-stack', label: 'Simulation Stack', icon: '../img/simulation-stack.svg', description: 'Inspect pending and simulated activity.', openRequest: undefined },
-	{ page: 'diagnostics', label: 'Diagnostics', icon: '../img/diagnostics.svg', description: 'Browse recorded errors and technical details.', openRequest: undefined },
-	{ page: 'settings', label: 'Settings', icon: '../img/settings.svg', description: 'Configure networks and extension preferences.', openRequest: 'popup_openSettings' },
-] as const
-
-export type ManagementPage = (typeof managementSections)[number]['page']
-export type ManagementOpenRequest = Exclude<(typeof managementSections)[number]['openRequest'], undefined>
-export const managementPages: readonly ManagementPage[] = managementSections.map((section) => section.page)
+export const managementPages = ['home', 'websites', 'address-book', 'simulation-stack', 'diagnostics', 'settings'] as const
+export type ManagementPage = (typeof managementPages)[number]
 
 const WEBSITE_ORIGIN_HASH_KEY = 'origin'
 const LEGACY_WEBSITE_ORIGIN_HASH_PREFIX = '#origin:'
@@ -36,7 +26,7 @@ export function getManagementPageFromHash(hash: string): ManagementPage | undefi
 	// Old detail links remain valid after the routes gained tab names.
 	if (hash.startsWith(LEGACY_WEBSITE_ORIGIN_HASH_PREFIX) && hash.length > LEGACY_WEBSITE_ORIGIN_HASH_PREFIX.length) return 'websites'
 	if (hash.startsWith(LEGACY_SIMULATION_STACK_TARGET_HASH_PREFIX)) return 'simulation-stack'
-	return managementSections.find(({ page }) => hash === getManagementPageHash(page) || hash.startsWith(`${ getManagementPageHash(page) }?`))?.page
+	return managementPages.find((page) => hash === getManagementPageHash(page) || hash.startsWith(`${ getManagementPageHash(page) }?`))
 }
 
 export function getWebsiteListHash() {
@@ -68,12 +58,6 @@ export function getSimulationStackTargetElementIdFromHash(hash: string) {
 	if (targetElementId === null || targetElementId === undefined) return undefined
 	if (!/^simulation-stack-(transaction|message)-0x[a-f0-9]+$/.test(targetElementId)) return undefined
 	return targetElementId
-}
-
-export function getManagementHashForOpenRequest(method: ManagementOpenRequest): string {
-	const page = managementSections.find((section) => section.openRequest === method)?.page
-	if (page === undefined) throw new Error(`Unknown management open request: ${ method }`)
-	return getManagementPageHash(page)
 }
 
 export function getSimulationStackManagementHash(identifier?: TransactionOrMessageIdentifier): string {

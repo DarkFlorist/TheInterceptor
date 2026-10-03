@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getManagementHashForOpenRequest, getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash, getSimulationStackManagementHash, getSimulationStackTargetElementIdFromHash, getSimulationStackTargetHash, getWebsiteOriginFromHash, getWebsiteOriginHash } from '../../app/ts/utils/managementPages.js'
+import { getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash, getSimulationStackManagementHash, getSimulationStackTargetElementIdFromHash, getSimulationStackTargetHash, getWebsiteOriginFromHash, getWebsiteOriginHash } from '../../app/ts/utils/managementPages.js'
 import type { TransactionOrMessageIdentifier } from '../../app/ts/types/interceptor-messages.js'
 
 const managementViewSource = await Bun.file(new URL('../../app/ts/components/pages/ManagementView.tsx', import.meta.url)).text()
@@ -23,13 +23,6 @@ describe('management view routing', () => {
 		assert.equal(getSimulationStackManagementHash(identifier).startsWith('#simulation-stack?'), true)
 		assert.equal(getManagementPageFromHash(targetHash), 'simulation-stack')
 		assert.equal(getSimulationStackTargetElementIdFromHash(targetHash), 'simulation-stack-transaction-0x1')
-	})
-
-	test('maps popup controls into the shared management navigation', () => {
-		assert.equal(getManagementHashForOpenRequest('popup_openManagement'), '#home')
-		assert.equal(getManagementHashForOpenRequest('popup_openWebsiteAccess'), '#websites')
-		assert.equal(getManagementHashForOpenRequest('popup_openAddressBook'), '#address-book')
-		assert.equal(getManagementHashForOpenRequest('popup_openSettings'), '#settings')
 	})
 
 	test('selects management tabs from their hashes', () => {

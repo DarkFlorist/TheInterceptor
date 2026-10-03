@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getManagementHashForOpenRequest, getSimulationStackManagementHash, getSimulationStackTargetHash, type ManagementOpenRequest } from '../../app/ts/utils/managementPages.js'
+import { getSimulationStackTargetElementIdFromHash, type ManagementPage } from '../../app/ts/utils/managementPages.js'
 
 type TabRecord = {
 	readonly id: number
@@ -97,8 +97,8 @@ function installBrowserMock(tabs: readonly TabRecord[], openedTabs: OpenedTabIds
 	return { createdTabs, updatedTabs, updatedWindows, storageState }
 }
 
-async function loadOpenManagementTab() {
-	return (await import('../../app/ts/background/popupMessageHandlers.js')).openManagementTab
+async function loadManagementNavigation() {
+	return await import('../../app/ts/background/managementNavigation.js')
 }
 
 async function loadGetLastKnownCurrentTabId() {
@@ -108,18 +108,18 @@ async function loadGetLastKnownCurrentTabId() {
 const emptyOpenedTabs = (): OpenedTabIds => ({})
 
 describe('open management tab', () => {
-	test('reuses the tracked management tab for its entry point and legacy popup controls', async () => {
+	test('reuses the tracked management tab across management sections', async () => {
 		const { createdTabs, updatedTabs } = installBrowserMock(
 			[{ id: 42, url: 'chrome-extension://test-extension/html3/settingsViewV3.html#websites' }],
 			{ ...emptyOpenedTabs(), settingsView: 42 },
 		)
-		const openManagementTab = await loadOpenManagementTab()
-		const requests: readonly ManagementOpenRequest[] = ['popup_openManagement', 'popup_openWebsiteAccess', 'popup_openAddressBook', 'popup_openSettings']
+		const { openManagementPage, openManagementSimulationStack } = await loadManagementNavigation()
+		const pages: readonly ManagementPage[] = ['home', 'websites', 'address-book', 'settings']
 
-		for (const request of requests) {
-			await openManagementTab(getManagementHashForOpenRequest(request))
+		for (const page of pages) {
+			await openManagementPage(page)
 		}
-		await openManagementTab(getSimulationStackManagementHash())
+		await openManagementSimulationStack()
 
 		assert.deepEqual(createdTabs, [])
 		assert.deepEqual(updatedTabs, [
@@ -141,9 +141,9 @@ describe('management tab tracking', () => {
 			],
 			{ settingsView: 42, managementTabId: 43 },
 		)
-		const openManagementTab = await loadOpenManagementTab()
+		const { openManagementPage } = await loadManagementNavigation()
 
-		await openManagementTab('#diagnostics')
+		await openManagementPage('diagnostics')
 
 		assert.deepEqual(createdTabs, [])
 		assert.deepEqual(updatedTabs, [{ tabId: 43, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#diagnostics' } }])
@@ -152,9 +152,9 @@ describe('management tab tracking', () => {
 	test('opens and tracks one management tab even when legacy page IDs were stored', async () => {
 		const legacyIds = { ...emptyOpenedTabs(), addressBook: 8, websiteAccess: 9, simulationStack: 10 }
 		const { createdTabs, storageState } = installBrowserMock([], legacyIds)
-		const openManagementTab = await loadOpenManagementTab()
+		const { openManagementPage } = await loadManagementNavigation()
 
-		await openManagementTab('#diagnostics')
+		await openManagementPage('diagnostics')
 
 		assert.deepEqual(createdTabs, [{ url: '/html3/settingsViewV3.html#diagnostics' }])
 		assert.deepEqual(storageState.idsOfOpenedTabs, { managementTabId: 99 })
@@ -165,21 +165,26 @@ describe('management tab tracking', () => {
 			[{ id: 42, url: 'chrome-extension://test-extension/html3/settingsViewV3.html#websites', windowId: 7 }],
 			{ ...emptyOpenedTabs(), settingsView: 42 },
 		)
-		const openManagementTab = await loadOpenManagementTab()
-		const hash = getSimulationStackTargetHash({ type: 'Transaction', transactionIdentifier: 1n }, 'test-focus')
+		const { openManagementSimulationStack } = await loadManagementNavigation()
 
-		await openManagementTab(hash)
+		await openManagementSimulationStack({ type: 'Transaction', transactionIdentifier: 1n })
 
 		assert.deepEqual(createdTabs, [])
-		assert.deepEqual(updatedTabs, [{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html' + hash } }])
+		assert.equal(updatedTabs.length, 1)
+		assert.equal(updatedTabs[0]?.tabId, 42)
+		assert.equal(updatedTabs[0]?.update.active, true)
+		assert.equal(updatedTabs[0]?.update.highlighted, true)
+		const targetUrl = updatedTabs[0]?.update.url
+		assert.ok(targetUrl?.startsWith('/html3/settingsViewV3.html#simulation-stack?'))
+		assert.equal(getSimulationStackTargetElementIdFromHash(targetUrl.slice(targetUrl.indexOf('#'))), 'simulation-stack-transaction-0x1')
 		assert.deepEqual(updatedWindows, [{ windowId: 7, update: { focused: true } }])
 	})
 
 	test('replaces a missing tracked management tab', async () => {
 		const { createdTabs, storageState } = installBrowserMock([], { settingsView: 42 })
-		const openManagementTab = await loadOpenManagementTab()
+		const { openManagementPage } = await loadManagementNavigation()
 
-		await openManagementTab('#settings')
+		await openManagementPage('settings')
 
 		assert.deepEqual(createdTabs, [{ url: '/html3/settingsViewV3.html#settings' }])
 		assert.deepEqual(storageState.idsOfOpenedTabs, { managementTabId: 99 })
@@ -190,9 +195,9 @@ describe('management tab tracking', () => {
 			[{ id: 42, url: 'https://example.com/' }],
 			{ settingsView: 42 },
 		)
-		const openManagementTab = await loadOpenManagementTab()
+		const { openManagementPage } = await loadManagementNavigation()
 
-		await openManagementTab('#settings')
+		await openManagementPage('settings')
 
 		assert.deepEqual(updatedTabs, [])
 		assert.deepEqual(createdTabs, [{ url: '/html3/settingsViewV3.html#settings' }])
@@ -201,9 +206,9 @@ describe('management tab tracking', () => {
 
 	test('replaces a management tab that cannot be focused', async () => {
 		const { createdTabs, storageState } = installBrowserMock([{ id: 42, url: 'chrome-extension://test-extension/html3/settingsViewV3.html#websites' }], { settingsView: 42 }, true)
-		const openManagementTab = await loadOpenManagementTab()
+		const { openManagementPage } = await loadManagementNavigation()
 
-		await openManagementTab('#settings')
+		await openManagementPage('settings')
 
 		assert.deepEqual(createdTabs, [{ url: '/html3/settingsViewV3.html#settings' }])
 		assert.deepEqual(storageState.idsOfOpenedTabs, { managementTabId: 99 })
