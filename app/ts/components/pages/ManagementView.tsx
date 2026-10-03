@@ -124,7 +124,7 @@ export function ManagementView() {
 		globalThis.document.getElementById(`management-tab-${ page }`)?.focus()
 	}
 
-	return <div class = 'management-page'>
+	return <div class = { `management-page${ selectedPage.value === 'address-book' ? ' management-page--address-book' : '' }` }>
 		<header class = 'management-header window-header'>
 			<div class = 'management-brand'>
 				<img src = '../img/LOGOA.svg' alt = 'The Interceptor' width = '32' height = '32' />

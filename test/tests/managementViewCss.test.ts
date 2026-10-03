@@ -11,14 +11,12 @@ function getRuleBody(selector: string) {
 }
 
 describe('management view CSS', () => {
-	test('website details render above the sticky management navigation', () => {
+	test('management navigation has a local stacking context beneath the body portal', () => {
+		const managementPage = getRuleBody('.management-page')
 		const managementHeader = getRuleBody('.management-header')
 		const websiteDetails = getRuleBody('.access-details')
-		const managementHeaderZIndex = Number(managementHeader.match(/z-index:\s*(\d+)/)?.[1])
-		const websiteDetailsZIndex = Number(websiteDetails.match(/z-index:\s*(\d+)/)?.[1])
-
-		assert.equal(Number.isFinite(managementHeaderZIndex), true)
-		assert.equal(Number.isFinite(websiteDetailsZIndex), true)
-		assert.equal(websiteDetailsZIndex > managementHeaderZIndex, true)
+		assert.match(managementPage, /isolation:\s*isolate;/)
+		assert.match(managementHeader, /z-index:\s*\d+;/)
+		assert.match(websiteDetails, /z-index:\s*\d+;/)
 	})
 })

@@ -339,7 +339,7 @@ export function AddressBook() {
 	}
 	return (
 		<main class = 'address-book-page'>
-			<Hint>
+			<Hint containerClass = 'address-book-container'>
 				<div class = 'address-book-layout'>
 					<div class = 'address-book-sidebar'>
 						<div class = 'address-book-chain-selector'>

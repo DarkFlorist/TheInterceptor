@@ -1176,7 +1176,7 @@ html, body {
 	display: grid;
 	grid-template-rows: min-content minmax(0, 1fr);
 	row-gap: 1rem;
-	height: var(--address-book-height, 100vh);
+	height: 100vh;
 	min-width: 0;
 	padding-top: 1rem;
 }

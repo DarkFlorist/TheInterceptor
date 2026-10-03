@@ -34,9 +34,13 @@ header:has(form[role='search']) h1 {
 
 .simulation-stack-page > .simulation-stack-page-header {
 	background-color: var(--bg-color);
-	position: var(--simulation-stack-header-position, sticky);
+	position: sticky;
 	top: 0;
 	z-index: 10;
+}
+
+.management-page .simulation-stack-page > .simulation-stack-page-header {
+	position: static;
 }
 
 .simulation-stack-page-body {
@@ -768,18 +772,34 @@ fieldset[disabled] .button.is-primary.is-danger {
 }
 
 .management-page {
-	--address-book-height: calc(100vh - 3.75rem);
-	--simulation-stack-header-position: static;
 	display: flex;
 	flex-direction: column;
 	min-width: 0;
 	min-height: 100vh;
+	isolation: isolate;
+}
+
+.management-page--address-book {
+	height: 100vh;
+	height: 100dvh;
+}
+
+.management-page--address-book .management-panel {
+	min-height: 0;
+}
+
+.management-page--address-book .address-book-page,
+.management-page--address-book .address-book-container,
+.management-page--address-book .address-book-layout,
+.management-page--address-book .address-book-content {
+	height: 100%;
 }
 
 .management-header {
 	position: sticky;
 	top: 0;
-	z-index: 20;
+	z-index: 1;
+	flex-shrink: 0;
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
@@ -1110,8 +1130,15 @@ fieldset[disabled] .button.is-primary.is-danger {
 
 
 @media screen and (max-width: 520px) {
-	.management-page {
-		--address-book-height: auto;
+	.management-page--address-book {
+		height: auto;
+	}
+
+	.management-page--address-book .address-book-page,
+	.management-page--address-book .address-book-container,
+	.management-page--address-book .address-book-layout,
+	.management-page--address-book .address-book-content {
+		height: auto;
 	}
 
 	.management-header {
