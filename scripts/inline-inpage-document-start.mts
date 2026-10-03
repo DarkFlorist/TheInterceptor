@@ -1,23 +1,56 @@
 import * as path from 'node:path'
 import * as url from 'node:url'
 import { promises as fs } from 'node:fs'
+import { metamaskCompatibilityModeGlobalSymbolKey } from '../app/ts/config/contentScriptInjectionArtifacts.ts'
+import { metamaskCompatibilityModeAtPageLoadMarker, metamaskCompatibilityModeGlobalSymbolKeyMarker } from './content-script-injection-markers.mts'
 
 const projectRoot = path.join(path.dirname(url.fileURLToPath(import.meta.url)), '..')
 const documentStartPath = path.join(projectRoot, 'app', 'inpage', 'js', 'document_start.js')
 const inpagePath = path.join(projectRoot, 'app', 'inpage', 'js', 'inpage.js')
-const injectedMarkerPattern = /injectScript\((['"])\[\[injected\.ts\]\]\1\)/
+const metamaskCompatibleInpagePath = path.join(projectRoot, 'app', 'inpage', 'js', 'inpage-metamask-compatibility.js')
+const pageWorldScriptSourcesMarkerPattern = /(['"])\[\[pageWorldScriptSources\]\]\1/
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const metamaskCompatibilityModeGlobalSymbolKeyMarkerPattern = new RegExp(`(['"])${ escapeRegExp(metamaskCompatibilityModeGlobalSymbolKeyMarker) }\\1`)
+const metamaskCompatibilityModeAtPageLoadMarkerPattern = new RegExp(`false;?\\s*//\\s*${ escapeRegExp(metamaskCompatibilityModeAtPageLoadMarker) }`)
+
+export function inlineContentScriptInjectionConfiguration(source: string, artifactName: string) {
+	if (!metamaskCompatibilityModeGlobalSymbolKeyMarkerPattern.test(source)) throw new Error(`Could not find MetaMask compatibility mode global symbol key marker in ${ artifactName }`)
+	return source.replace(metamaskCompatibilityModeGlobalSymbolKeyMarkerPattern, JSON.stringify(metamaskCompatibilityModeGlobalSymbolKey))
+}
+
+export function inlineMetamaskCompatibilityModeAtPageLoad(source: string, metamaskCompatibilityMode: boolean) {
+	if (!metamaskCompatibilityModeAtPageLoadMarkerPattern.test(source)) throw new Error('Could not find MetaMask compatibility mode at page load marker in inpage.js')
+	return source.replace(metamaskCompatibilityModeAtPageLoadMarkerPattern, JSON.stringify(metamaskCompatibilityMode))
+}
+
+export function inlineDocumentStartInjectionConfiguration(documentStartSource: string, inpageSource: string) {
+	if (!pageWorldScriptSourcesMarkerPattern.test(documentStartSource)) throw new Error('Could not find page-world script sources marker in document_start.js')
+	const pageWorldScriptSourcesByCompatibilityMode = {
+		disabled: inlineMetamaskCompatibilityModeAtPageLoad(inpageSource, false),
+		enabled: inlineMetamaskCompatibilityModeAtPageLoad(inpageSource, true),
+	}
+	return inlineContentScriptInjectionConfiguration(documentStartSource, 'document_start.js')
+		.replace(pageWorldScriptSourcesMarkerPattern, JSON.stringify(JSON.stringify(pageWorldScriptSourcesByCompatibilityMode)))
+}
 
 async function inlineInpageScript() {
 	const [documentStartSource, inpageSource] = await Promise.all([
 		fs.readFile(documentStartPath, 'utf8'),
 		fs.readFile(inpagePath, 'utf8'),
 	])
-	if (!injectedMarkerPattern.test(documentStartSource)) throw new Error('Could not find inpage injection marker in document_start.js')
-	const updatedDocumentStartSource = documentStartSource.replace(injectedMarkerPattern, `injectScript(${ JSON.stringify(inpageSource) })`)
-	await fs.writeFile(documentStartPath, updatedDocumentStartSource)
+	const updatedInpageSource = inlineMetamaskCompatibilityModeAtPageLoad(inpageSource, false)
+	const updatedMetamaskCompatibleInpageSource = inlineMetamaskCompatibilityModeAtPageLoad(inpageSource, true)
+	const updatedDocumentStartSource = inlineDocumentStartInjectionConfiguration(documentStartSource, inpageSource)
+	await Promise.all([
+		fs.writeFile(documentStartPath, updatedDocumentStartSource),
+		fs.writeFile(inpagePath, updatedInpageSource),
+		fs.writeFile(metamaskCompatibleInpagePath, updatedMetamaskCompatibleInpageSource),
+	])
 }
 
-inlineInpageScript().catch((error: unknown) => {
-	console.error(error)
-	process.exit(1)
-})
+if (import.meta.main) {
+	inlineInpageScript().catch((error: unknown) => {
+		console.error(error)
+		process.exit(1)
+	})
+}

@@ -1,4 +1,4 @@
-function injectScript(_content: string) {
+function injectPageWorldScripts() {
 	if ((globalThis as unknown as { interceptorInjected: true | undefined }).interceptorInjected) return
 	;(globalThis as unknown as { interceptorInjected?: boolean }).interceptorInjected = true
 
@@ -12,10 +12,11 @@ function injectScript(_content: string) {
 		if (typeof contentScriptListener !== 'function') throw new Error('Interceptor content script listener was not initialized')
 		contentScriptListener(undefined, 'document-start')
 		const container = document.head || document.documentElement
+		const pageWorldScriptSourcesByCompatibilityMode: { readonly disabled: string, readonly enabled: string } = JSON.parse('[[pageWorldScriptSources]]')
+		const metamaskCompatibilityMode = Reflect.get(globalThis, Symbol.for('[[metamaskCompatibilityModeGlobalSymbolKey]]'))
+		if (typeof metamaskCompatibilityMode !== 'boolean') throw new Error('MetaMask compatibility mode was not initialized')
 		const scriptTag = document.createElement('script')
-		scriptTag.setAttribute('async', 'false')
-		if (_content === '[[injected.ts]]') scriptTag.src = browser.runtime.getURL('inpage/js/inpage.js')
-		else scriptTag.textContent = _content
+		scriptTag.textContent = metamaskCompatibilityMode ? pageWorldScriptSourcesByCompatibilityMode.enabled : pageWorldScriptSourcesByCompatibilityMode.disabled
 		container.insertBefore(scriptTag, container.children[1])
 		container.removeChild(scriptTag)
 		checkAndThrowRuntimeLastError()
@@ -24,4 +25,4 @@ function injectScript(_content: string) {
 	}
 }
 
-injectScript('[[injected.ts]]')
+injectPageWorldScripts()
