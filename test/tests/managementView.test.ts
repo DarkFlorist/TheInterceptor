@@ -1,7 +1,8 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { createMountedManagementPages, getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash, getManagementTabTarget, getSimulationStackManagementTabTarget, mountManagementPage } from '../../app/ts/utils/managementPages.js'
+import { createMountedManagementPages, getManagementHashForOpenRequest, getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash, getSimulationStackManagementHash, mountManagementPage } from '../../app/ts/utils/managementPages.js'
 import { getSimulationStackTargetHash } from '../../app/ts/utils/simulationStackTargets.js'
+import { getWebsiteOriginFromHash, getWebsiteOriginHash } from '../../app/ts/utils/websiteAccessHash.js'
 import type { TransactionOrMessageIdentifier } from '../../app/ts/types/interceptor-messages.js'
 
 const managementViewSource = await Bun.file(new URL('../../app/ts/components/pages/ManagementView.tsx', import.meta.url)).text()
@@ -19,15 +20,15 @@ describe('management view routing', () => {
 		const identifier: TransactionOrMessageIdentifier = { type: 'Transaction', transactionIdentifier: 1n }
 		const targetHash = getSimulationStackTargetHash(identifier, 'test-focus')
 
-		assert.deepEqual(getSimulationStackManagementTabTarget(), { tabName: 'settingsView', targetHash: '#simulation-stack' })
-		assert.equal(getSimulationStackManagementTabTarget(identifier).tabName, 'settingsView')
+		assert.equal(getSimulationStackManagementHash(), '#simulation-stack')
+		assert.equal(getSimulationStackManagementHash(identifier).startsWith('#simulation-stack-target='), true)
 		assert.equal(getManagementPageFromHash(targetHash), 'simulation-stack')
 	})
 
 	test('maps all three popup controls into the shared management navigation', () => {
-		assert.deepEqual(getManagementTabTarget('popup_openWebsiteAccess'), { tabName: 'settingsView', targetHash: '#websites' })
-		assert.deepEqual(getManagementTabTarget('popup_openAddressBook'), { tabName: 'settingsView', targetHash: '#address-book' })
-		assert.deepEqual(getManagementTabTarget('popup_openSettings'), { tabName: 'settingsView', targetHash: '#settings' })
+		assert.equal(getManagementHashForOpenRequest('popup_openWebsiteAccess'), '#websites')
+		assert.equal(getManagementHashForOpenRequest('popup_openAddressBook'), '#address-book')
+		assert.equal(getManagementHashForOpenRequest('popup_openSettings'), '#settings')
 	})
 
 	test('selects management tabs from their hashes', () => {
@@ -38,10 +39,18 @@ describe('management view routing', () => {
 		assert.equal(getManagementPageFromHash('#settings'), 'settings')
 	})
 
-	test('keeps website details in the websites tab and safely defaults unknown hashes', () => {
-		assert.equal(getManagementPageFromHash('#origin:https://example.com'), 'websites')
-		assert.equal(getManagementPageFromHash('#unknown'), 'websites')
+	test('uses the website detail hash in both the website view and management router', () => {
+		const hash = getWebsiteOriginHash('https://example.com')
+		assert.equal(getWebsiteOriginFromHash(hash), 'https://example.com')
+		assert.equal(getManagementPageFromHash(hash), 'websites')
+	})
+
+	test('shows an unavailable route for unknown or malformed hashes', () => {
+		assert.equal(getManagementPageFromHash('#unknown'), undefined)
+		assert.equal(getManagementPageFromHash('#origin:'), undefined)
+		assert.equal(getManagementPageFromHash('#simulation-stack-target=invalid'), undefined)
 		assert.equal(getManagementPageFromHash(''), 'websites')
+		assert.equal(getManagementPageFromHash('#'), 'websites')
 	})
 
 	test('supports standard tablist keyboard navigation with wrapping', () => {
@@ -54,6 +63,8 @@ describe('management view routing', () => {
 		assert.equal(getManagementPageFromNavigationKey('settings', 'Home'), 'websites')
 		assert.equal(getManagementPageFromNavigationKey('websites', 'End'), 'settings')
 		assert.equal(getManagementPageFromNavigationKey('websites', 'Enter'), undefined)
+		assert.equal(getManagementPageFromNavigationKey(undefined, 'ArrowRight'), 'websites')
+		assert.equal(getManagementPageFromNavigationKey(undefined, 'ArrowLeft'), 'settings')
 	})
 
 	test('mounts only the initial data view and retains views after their first selection', () => {
@@ -69,6 +80,7 @@ describe('management view routing', () => {
 		const withSettings = mountManagementPage(withDiagnostics, 'settings')
 		assert.deepEqual(withSettings, { websites: true, 'address-book': true, 'simulation-stack': true, diagnostics: true, settings: true })
 		assert.equal(mountManagementPage(withSettings, 'websites'), withSettings)
+		assert.deepEqual(createMountedManagementPages(undefined), { websites: false, 'address-book': false, 'simulation-stack': false, diagnostics: false, settings: false })
 	})
 
 	test('keeps simulation copy feedback available in the embedded stack', () => {

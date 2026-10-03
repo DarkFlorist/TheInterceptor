@@ -9,6 +9,7 @@ import { getHtmlFile } from './backgroundUtils.js'
 import { getSafeTransactionStacks, updateTransactionState } from './storageVariables.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
 import { openPopupOrTab } from '../utils/popupOrTab.js'
+import { getSimulationStackManagementHash } from '../utils/managementPages.js'
 import { assertSafeContractStateUnchanged, createSafeContractValidationFailure, createSafeOwnerValidationFailure, createSafeOwnerValidator, getSafeContractSnapshot, isSafeContractValidationFailure, isSafeOwnerValidationFailure } from '../safe/safeCore.js'
 import { createSafeExecutionPreSimulationTransaction } from '../safe/safeSimulation.js'
 import { mapSafeTransactionMetadata, mergeSafeOwnerSignatures, reconcileSafeTransactionStack, reconcileSafeTransactionState } from '../safe/safeStack.js'
@@ -188,7 +189,7 @@ async function persistSafeTransaction(
 		return signerError(`Gnosis Safe proposal could not be persisted: ${ getErrorMessage(error) ?? 'The local Gnosis Safe proposal stack changed.' }`)
 	}
 	await updatePopupVisualisationIfNeeded(ethereum, tokenPriceService, { invalidateOldState: true })
-	await openPopupOrTab({ url: getHtmlFile('simulationStack') })
+	await openPopupOrTab({ url: `${ getHtmlFile('settingsView') }${ getSimulationStackManagementHash() }` })
 	return { status: 'success', result: funtypes.String.parse(EthereumBytes32.serialize(safeSigningRequest.safeTxHash)) }
 }
 

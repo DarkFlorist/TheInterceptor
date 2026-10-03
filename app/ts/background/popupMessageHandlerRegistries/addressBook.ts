@@ -1,14 +1,13 @@
 import { popupSnapshotMessageHandler, popupMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
-import { addOrModifyAddressBookEntry, changeAddOrModifyAddressWindowState, getAddressBookData, openNewTab, removeAddressBookEntry, requestAbiAndNameFromBlockExplorer, requestIdentifyAddress, setEnsNameForHash } from '../popupMessageHandlers.js'
-import { getManagementTabTarget } from '../../utils/managementPages.js'
+import { addOrModifyAddressBookEntry, changeAddOrModifyAddressWindowState, getAddressBookData, openManagementTab, removeAddressBookEntry, requestAbiAndNameFromBlockExplorer, requestIdentifyAddress, setEnsNameForHash } from '../popupMessageHandlers.js'
+import { getManagementHashForOpenRequest } from '../../utils/managementPages.js'
 
 export const addressBookPopupMessageHandlers = {
 	popup_addOrModifyAddressBookEntry: popupMessageHandler('popup_addOrModifyAddressBookEntry', async (context, request) => await addOrModifyAddressBookEntry(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_getAddressBookData: popupMessageHandler('popup_getAddressBookData', async (_context, request) => await getAddressBookData(request)),
 	popup_removeAddressBookEntry: popupMessageHandler('popup_removeAddressBookEntry', async (context, request) => await removeAddressBookEntry(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_openAddressBook: popupMessageHandler('popup_openAddressBook', async () => {
-		const target = getManagementTabTarget('popup_openAddressBook')
-		return await openNewTab(target.tabName, target.targetHash)
+		return await openManagementTab(getManagementHashForOpenRequest('popup_openAddressBook'))
 	}),
 	popup_changeAddOrModifyAddressWindowState: popupSnapshotMessageHandler('popup_changeAddOrModifyAddressWindowState', async (context, request) => {
 		const { ethereum } = context.services

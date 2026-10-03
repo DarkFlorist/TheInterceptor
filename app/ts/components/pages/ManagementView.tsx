@@ -14,7 +14,7 @@ import { createMountedManagementPages, getManagementPageFromHash, getManagementP
 
 type ManagementTabParams = {
 	page: ManagementPage
-	selectedPage: ManagementPage
+	selectedPage: ManagementPage | undefined
 	label: string
 	icon: string
 	attention?: boolean
@@ -31,7 +31,7 @@ function ManagementTab({ page, selectedPage, label, icon, attention, statusUnava
 		aria-selected = { selected }
 		aria-controls = { `management-panel-${ page }` }
 		id = { `management-tab-${ page }` }
-		tabIndex = { selected ? 0 : -1 }
+		tabIndex = { selected || (selectedPage === undefined && page === 'websites') ? 0 : -1 }
 		aria-label = { attention ? `${ label }, needs attention` : undefined }
 		title = { statusUnavailable ? 'Could not load diagnostics status' : undefined }
 		onClick = { () => selectPage(page) }
@@ -43,7 +43,7 @@ function ManagementTab({ page, selectedPage, label, icon, attention, statusUnava
 
 export function ManagementView() {
 	const initialPage = getManagementPageFromHash(globalThis.location.hash)
-	const selectedPage = useSignal<ManagementPage>(initialPage)
+	const selectedPage = useSignal<ManagementPage | undefined>(initialPage)
 	const mountedPages = useSignal(createMountedManagementPages(initialPage))
 	const diagnosticsNeedAttention = useSignal(false)
 	const { value: diagnosticsStatus, waitFor: waitForDiagnosticsStatus } = useAsyncState<void>()
@@ -92,9 +92,9 @@ export function ManagementView() {
 		return () => globalThis.removeEventListener('resize', revealSelectedTab)
 	}, [selectedPage.value])
 
-	function activatePage(page: ManagementPage) {
+	function activatePage(page: ManagementPage | undefined) {
 		batch(() => {
-			mountedPages.value = mountManagementPage(mountedPages.peek(), page)
+			if (page !== undefined) mountedPages.value = mountManagementPage(mountedPages.peek(), page)
 			selectedPage.value = page
 		})
 	}
@@ -126,6 +126,10 @@ export function ManagementView() {
 				<ManagementTab page = 'settings' selectedPage = { selectedPage.value } label = 'Settings' icon = '../img/settings.svg' selectPage = { selectPage } />
 			</nav>
 		</header>
+		{ selectedPage.value === undefined && <main class = 'management-panel management-unavailable'>
+			<h2>Management page unavailable</h2>
+			<p>Choose a tab above to continue.</p>
+		</main> }
 		<section
 			id = 'management-panel-websites'
 			class = 'management-panel'

@@ -1,12 +1,9 @@
 import type { TransactionOrMessageIdentifier } from '../types/interceptor-messages.js'
 import { getSimulationStackTargetElementIdFromHash, getSimulationStackTargetHash } from './simulationStackTargets.js'
+import { isWebsiteOriginHash } from './websiteAccessHash.js'
 
 export type ManagementPage = 'websites' | 'address-book' | 'simulation-stack' | 'diagnostics' | 'settings'
 export type ManagementOpenRequest = 'popup_openWebsiteAccess' | 'popup_openAddressBook' | 'popup_openSettings'
-type ManagementTabTarget = {
-	tabName: 'settingsView'
-	targetHash: string
-}
 export type MountedManagementPages = Readonly<{
 	websites: boolean
 	'address-book': boolean
@@ -17,18 +14,19 @@ export type MountedManagementPages = Readonly<{
 
 const managementPages: readonly ManagementPage[] = ['websites', 'address-book', 'simulation-stack', 'diagnostics', 'settings']
 
-export function getManagementPageFromHash(hash: string): ManagementPage {
-	if (hash.startsWith('#origin:')) return 'websites'
+export function getManagementPageFromHash(hash: string): ManagementPage | undefined {
+	if (hash === '' || hash === '#') return 'websites'
+	if (isWebsiteOriginHash(hash)) return 'websites'
 	if (getSimulationStackTargetElementIdFromHash(hash) !== undefined) return 'simulation-stack'
 	const hashPage = hash.startsWith('#') ? hash.slice(1) : hash
-	return managementPages.find((page) => page === hashPage) ?? 'websites'
+	return managementPages.find((page) => page === hashPage)
 }
 
 export function getManagementPageHash(page: ManagementPage) {
 	return `#${ page }`
 }
 
-export function createMountedManagementPages(initialPage: ManagementPage): MountedManagementPages {
+export function createMountedManagementPages(initialPage: ManagementPage | undefined): MountedManagementPages {
 	return {
 		websites: initialPage === 'websites',
 		'address-book': initialPage === 'address-book',
@@ -57,25 +55,20 @@ function getManagementPageFromOpenRequest(method: ManagementOpenRequest): Manage
 	}
 }
 
-export function getManagementTabTarget(method: ManagementOpenRequest): ManagementTabTarget {
+export function getManagementHashForOpenRequest(method: ManagementOpenRequest): string {
 	const page = getManagementPageFromOpenRequest(method)
-	return {
-		tabName: 'settingsView',
-		targetHash: getManagementPageHash(page),
-	}
+	return getManagementPageHash(page)
 }
 
-export function getSimulationStackManagementTabTarget(identifier?: TransactionOrMessageIdentifier): ManagementTabTarget {
-	return {
-		tabName: 'settingsView',
-		targetHash: identifier === undefined ? getManagementPageHash('simulation-stack') : getSimulationStackTargetHash(identifier),
-	}
+export function getSimulationStackManagementHash(identifier?: TransactionOrMessageIdentifier): string {
+	return identifier === undefined ? getManagementPageHash('simulation-stack') : getSimulationStackTargetHash(identifier)
 }
 
-export function getManagementPageFromNavigationKey(currentPage: ManagementPage, key: string): ManagementPage | undefined {
+export function getManagementPageFromNavigationKey(currentPage: ManagementPage | undefined, key: string): ManagementPage | undefined {
 	if (key === 'Home') return managementPages[0]
 	if (key === 'End') return managementPages[managementPages.length - 1]
 	if (key !== 'ArrowLeft' && key !== 'ArrowRight') return undefined
+	if (currentPage === undefined) return key === 'ArrowRight' ? managementPages[0] : managementPages[managementPages.length - 1]
 
 	const currentIndex = managementPages.indexOf(currentPage)
 	const offset = key === 'ArrowRight' ? 1 : -1

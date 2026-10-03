@@ -858,6 +858,13 @@ fieldset[disabled] .button.is-primary.is-danger {
 	min-height: 100%;
 }
 
+.management-unavailable {
+	width: 100%;
+	max-width: 64rem;
+	margin-inline: auto;
+	padding: 2rem 1rem;
+}
+
 .management-panel .address-book-content {
 	height: calc(100vh - 3.75rem);
 }

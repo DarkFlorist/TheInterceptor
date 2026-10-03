@@ -3,7 +3,7 @@ import { getErrorMessage } from '../utils/caughtErrors.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
@@ -29,14 +29,14 @@ const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
 	console.warn(error)
 }
 
-const idsOfOpenedTabsRepository = createStoredValueRepository({
-	read: async () => (await browserStorageLocalGet('idsOfOpenedTabs')).idsOfOpenedTabs,
-	write: async (idsOfOpenedTabs) => { await browserStorageLocalSet({ idsOfOpenedTabs }) },
-	getDefault: () => ({ settingsView: undefined, addressBook: undefined, websiteAccess: undefined, simulationStack: undefined }),
-})
+// Keep the stored key so existing settings tabs remain discoverable after upgrade.
+export async function getManagementTabId(): Promise<number | undefined> {
+	return (await browserStorageLocalGet('idsOfOpenedTabs')).idsOfOpenedTabs?.settingsView
+}
 
-export const getIdsOfOpenedTabs = idsOfOpenedTabsRepository.get
-export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => { await idsOfOpenedTabsRepository.update((previous) => ({ ...previous, ...ids })) }
+export async function setManagementTabId(tabId: number): Promise<void> {
+	await browserStorageLocalSet({ idsOfOpenedTabs: { settingsView: tabId } })
+}
 
 const pendingTransactionsSemaphore = new Semaphore(1)
 async function readPendingTransactionsAndMessages() {

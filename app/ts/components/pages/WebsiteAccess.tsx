@@ -22,9 +22,7 @@ import type { OptionalSignal } from '../../utils/OptionalSignal.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
-
-const URL_HASH_KEY = 'origin'
-const URL_HASH_PREFIX = `#${ URL_HASH_KEY }:`
+import { getWebsiteOriginFromHash, getWebsiteOriginHash, WEBSITE_ORIGIN_RADIO_NAME } from '../../utils/websiteAccessHash.js'
 
 type WebsiteAccessContext = {
 	searchQuery: Signal<string>
@@ -78,9 +76,7 @@ const WebsiteAccessProvider = ({ children }: { children: ComponentChildren }) =>
 
 	const listenForWindowHashChanges = () => {
 		const handleHashChange = () => {
-			const hash = window.location.hash
-			const domainInHash = hash.startsWith(URL_HASH_PREFIX) ? hash.slice(URL_HASH_PREFIX.length) : ''
-			selectedDomain.value = domainInHash || undefined
+			selectedDomain.value = getWebsiteOriginFromHash(window.location.hash)
 		}
 
 		// initially set selectedDomain when the page loads/reloads
@@ -213,7 +209,7 @@ type WebsiteAccessOverviewProps = {
 
 const WebsiteAccessOverview = ({ websiteAccess, checked }: WebsiteAccessOverviewProps) => {
 	const handleChange = () => {
-		window.location.hash = `${ URL_HASH_KEY }:${ websiteAccess.website.websiteOrigin }`
+		window.location.hash = getWebsiteOriginHash(websiteAccess.website.websiteOrigin)
 	}
 
 	const getWebsiteStatus = () => {
@@ -226,7 +222,7 @@ const WebsiteAccessOverview = ({ websiteAccess, checked }: WebsiteAccessOverview
 
 	return (
 		<li role = 'option'>
-			<input id = { websiteAccess.website.websiteOrigin } type = 'radio' name = { URL_HASH_KEY } value = { websiteAccess.website.websiteOrigin } checked = { checked } onChange = { handleChange } />
+			<input id = { websiteAccess.website.websiteOrigin } type = 'radio' name = { WEBSITE_ORIGIN_RADIO_NAME } value = { websiteAccess.website.websiteOrigin } checked = { checked } onChange = { handleChange } />
 			<label for = { websiteAccess.website.websiteOrigin } style = { { cursor: 'pointer' } }>
 				<div style = { { display: 'grid', gridTemplateColumns: 'min-content 1fr', alignItems: 'center', columnGap: '1rem', paddingBlock: '0.5rem' } }>
 					{ websiteIcon === undefined ? <span style = { { width: '1.5rem', aspectRatio: 1, display: 'block' } } /> : <img role = 'img' src = { websiteIcon } width = '24' height = '24' style = { { width: '1.5rem', aspectRatio: 1, maxWidth: 'none' } } title = 'Website Icon' /> }
