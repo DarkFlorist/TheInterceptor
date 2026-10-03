@@ -31,6 +31,7 @@ import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction
 import type { ComponentChildren, JSX } from 'preact'
 import { DropDownMenu, DropDownMenuButtonContent } from '../subcomponents/DropDownMenu.js'
 import { Switch } from '../subcomponents/Switch.js'
+import { EmptyState } from '../subcomponents/EmptyState.js'
 import type { SignerName } from '../../types/signerTypes.js'
 
 function scheduleAfterPaint(callback: () => void) {
@@ -841,19 +842,11 @@ function RichAddressesTitleCard({ numberOfAddressesMadeRich, openSimulationStack
 }
 
 function EmptySimulationStack() {
-	return <div class = 'empty-state'>
-		<img class = 'empty-state-image' src = '../img/LOGOA.svg' alt = '' width = '64' height = '64'/>
-		<p class = 'empty-state-title'>Give me some transactions to munch on!</p>
-		<p class = 'empty-state-text'>Use a dapp as usual. Each transaction it sends is simulated and stacked here instead of being sent.</p>
-	</div>
+	return <EmptyState title = 'Give me some transactions to munch on!' text = 'Use a dapp as usual. Each transaction it sends is simulated and stacked here instead of being sent.'/>
 }
 
 function SigningModeHint({ signerName }: { signerName: SignerName }) {
-	return <div class = 'empty-state'>
-		<img class = 'empty-state-image' src = '../img/LOGOA.svg' alt = '' width = '64' height = '64'/>
-		<p class = 'empty-state-title'>Nothing to review yet</p>
-		<p class = 'empty-state-text'>When a dapp asks for a transaction or a signature, the Interceptor shows what it does before { getSignerDisplayName(signerName) } signs it.</p>
-	</div>
+	return <EmptyState title = 'Nothing to review yet' text = { `When a dapp asks for a transaction or a signature, the Interceptor shows what it does before ${ getSignerDisplayName(signerName) } signs it.` }/>
 }
 
 function PopupVisualisation(param: SimulationStateParam) {

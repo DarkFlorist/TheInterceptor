@@ -102,8 +102,8 @@ export function ImportSimulationStack(param: ImportSimulationStackParam) {
 					{ errorString.value !== undefined ? <Notice text = { errorString.value } /> : importError.value !== undefined ? <Notice text = { importError.value } /> : <></> }
 				</div>
 			</section>
-			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
-				<AsyncActionButton class = 'button is-success is-primary' state = { importRequestState.value.state } text = 'Import' pendingText = 'Importing...' onClick = { importStack } disabled = { isSubmitButtonDisabled.value } />
+			<footer class = 'modal-card-foot window-footer'>
+				<AsyncActionButton class = 'button is-primary' state = { importRequestState.value.state } text = 'Import' pendingText = 'Importing...' onClick = { importStack } disabled = { isSubmitButtonDisabled.value } />
 			</footer>
 		</div>
 	</> )

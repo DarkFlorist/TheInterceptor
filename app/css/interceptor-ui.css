@@ -67,7 +67,7 @@ form[role='search'] fieldset {
 	align-items: center;
 	border: 1px solid var(--line-color);
 	padding: 0.25rem;
-	border-radius: 2px;
+	border-radius: 8px;
 	min-width: 0;
 }
 

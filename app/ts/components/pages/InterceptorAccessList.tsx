@@ -309,10 +309,10 @@ export function InterceptorAccessList(param: InterceptorAccessListParams) {
 				</ul>
 			</section>
 
-			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
+			<footer class = 'modal-card-foot window-footer'>
 				<button class = 'button button--secondary' onClick = { param.goHome }>Cancel</button>
 					<AsyncActionButton
-						class = 'button is-success is-primary'
+						class = 'button is-primary'
 						state = { saveChangesState.value.state }
 						onClick = { createAsyncActionRunner({ value: saveChangesState, waitFor: waitForSaveChangesState, reset: resetSaveChangesState }, saveChanges) }
 						text = { areThereChanges() ? 'Save Changes' : 'Close' }

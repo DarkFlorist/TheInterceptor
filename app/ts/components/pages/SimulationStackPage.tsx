@@ -9,7 +9,7 @@ import { ErrorBoundary, ErrorComponent, UnexpectedError } from '../subcomponents
 import { CenterToPageTextSpinner } from '../subcomponents/Spinner.js'
 import { BroomIcon, ChevronIcon, ExportIcon, ImportIcon } from '../subcomponents/icons.js'
 import { clipboardCopy } from '../subcomponents/clipboardcopy.js'
-import { DinoSays } from '../subcomponents/DinoSays.js'
+import { EmptyState } from '../subcomponents/EmptyState.js'
 import { TransactionsAndSignedMessages } from '../simulationExplaining/Transactions.js'
 import { SimulationSummary } from '../simulationExplaining/SimulationSummary.js'
 import { AddNewAddress } from './AddNewAddress.js'
@@ -428,9 +428,9 @@ export function SimulationStackPage() {
 					: <></> }
 					<ErrorBoundary key = { boundaryResetKey.value } onError = { onRenderError }>
 					{ !stackModeActive.value ?
-						<article class = 'simulation-stack-page-content'><DinoSays text = { 'Select simulation mode or a Gnosis Safe to view a transaction stack.' } /></article>
+						<article class = 'simulation-stack-page-content'><EmptyState title = 'Select simulation mode or a Gnosis Safe to view a transaction stack.'/></article>
 					: isEmpty.value ?
-						<article class = 'simulation-stack-page-content'><DinoSays text = { 'Give me some transactions to munch on!' } /></article>
+						<article class = 'simulation-stack-page-content'><EmptyState title = 'Give me some transactions to munch on!' text = 'Transactions and signatures requested by a dapp are stacked here.'/></article>
 					: currentResults.kind === 'passthrough' ?
 						<article class = 'simulation-stack-page-content'><RichAddressesTitleCard numberOfAddressesMadeRich = { numberOfAddressesMadeRich.value } madeRichAddressBookEntries = { madeRichAddressBookEntries.value } renameAddressCallBack = { renameAddressCallBack } /></article>
 					: <article class = 'simulation-stack-page-content'>

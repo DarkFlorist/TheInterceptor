@@ -87,7 +87,6 @@ body { font-family: "Inter", sans-serif; }
 	--alpha-005: light-dark(rgba(15, 30, 40, 0.05), rgba(255, 255, 255, 0.05));
 	--alpha-015: light-dark(rgba(15, 30, 40, 0.12), rgba(255, 255, 255, 0.15));
 	--white-color: #fff;
-	--black-color: #000000;
 	/* Despite their names these alpha tokens are contrast overlays: light tints on dark surfaces and dark tints on light ones. */
 	--white-alpha-20: light-dark(rgba(15, 30, 40, 0.16), #ffffff20);
 	--white-alpha-10: light-dark(rgba(15, 30, 40, 0.08), #ffffff10);
@@ -193,64 +192,6 @@ svg[role="img"] {
 
 .form-control .checkbox-text {
 	overflow-wrap: anywhere;
-}
-
-.safe-signer-option {
-	align-items: center;
-	gap: 0.5em;
-	padding-block: 0.2em;
-	width: 100%;
-}
-
-.safe-signer-option:has([type=radio]:not(:disabled)) {
-	cursor: pointer;
-}
-
-.safe-signer-option .inline-card,
-.safe-signer-option .inline-card data,
-.safe-signer-option [type=radio]:not(:disabled) {
-	cursor: pointer;
-}
-
-.safe-signer-option:before {
-	content: '';
-	background: transparent;
-	width: 0.3125rem;
-	height: 0.3125rem;
-	border-radius: 100%;
-	outline: 1px solid var(--text-color);
-	outline-offset: 0.1875rem;
-	margin: 0.1875rem;
-}
-
-.safe-signer-option:has([type=radio]:checked):before {
-	background: var(--text-color);
-}
-
-.safe-signer-option-address {
-	grid-column: 2;
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 0.4em;
-	min-width: 0;
-	overflow: hidden;
-}
-
-.safe-signer-option-address > .inline-card {
-	flex: 1 1 100%;
-	max-width: 100%;
-	min-width: 0;
-	width: 100%;
-}
-
-.safe-signer-option-address > code {
-	flex: 1 1 auto;
-	color: var(--text-color);
-	overflow: hidden;
-	padding: 0;
-	text-overflow: ellipsis;
-	white-space: nowrap;
 }
 
 .safe-signer-address {
@@ -837,14 +778,10 @@ svg[role="img"] {
 }
 
 .address-editor-modal {
-	border: 1px solid var(--layout-line-color);
-	border-radius: 10px;
-	box-shadow: var(--overlay-shadow);
 	max-width: min(468px, calc(100% - 32px));
 }
 
 .address-editor-modal .interceptor-modal-head {
-	border-bottom: 1px solid var(--layout-line-color);
 	min-height: 48px;
 	padding: 0 8px 0 16px;
 }
@@ -863,7 +800,6 @@ svg[role="img"] {
 
 .window-footer.address-editor-footer {
 	background: var(--card-bg-color);
-	border-top: 1px solid var(--layout-line-color) !important;
 	display: flex;
 	flex-wrap: wrap;
 	gap: 8px;
@@ -1382,7 +1318,7 @@ html, body {
 	border-bottom: unset
 }
 
-.button.is-focused:not(:active), .button:focus:not(:active) {
+.button:focus:not(:active) {
 	box-shadow: none;
 }
 .modal-background {
@@ -1392,13 +1328,20 @@ html, body {
 .interceptor-modal-head {
 	padding: 0px;
 	background-color: var(--card-bg-color);
-	border-top-left-radius: unset;
-	border-top-right-radius: unset;
-	border-bottom: unset;
+	border-radius: 0;
+	border-bottom: 1px solid var(--hairline-color);
 }
 
 .modal-card {
+	border: 1px solid var(--hairline-color);
+	border-radius: var(--radius-large);
+	box-shadow: var(--overlay-shadow);
 	max-width: 90%;
+}
+
+.modal-card-foot.window-footer {
+	border-radius: 0;
+	padding: 10px 12px;
 }
 
 .modal-card-body {

@@ -55,7 +55,7 @@ export function ImportSafeStack({ close, safeStackInput }: {
 			</section>
 			<footer class = 'modal-card-foot window-footer'>
 				<AsyncActionButton
-					class = 'button is-success is-primary'
+					class = 'button is-primary'
 					state = { importState.value.state }
 					text = 'Import signatures'
 					pendingText = 'Validating...'

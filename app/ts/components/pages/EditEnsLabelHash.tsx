@@ -112,7 +112,7 @@ export function EditEnsLabelHash(param: EditEnsNamedHashParams) {
 					{ errorString.value === '' ? <></> : <Notice text = { errorString.value } /> }
 				</div>
 			</section>
-			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
+			<footer class = 'modal-card-foot window-footer'>
 				<button class = 'button is-primary'  onClick = { param.close }>Ok</button>
 			</footer>
 		</div>

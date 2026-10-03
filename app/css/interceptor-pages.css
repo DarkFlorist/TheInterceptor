@@ -708,8 +708,7 @@ input[type="number"]:focus {
 	--btn-brightness: 1;
 }
 
-.btn.is-primary:not(:disabled):active,
-.btn.is-primary.is-active {
+.btn.is-primary:not(:disabled):active {
 	background-color: var(--highlighted-primary-action-color);
 	color: var(--white-color);
 }
@@ -722,9 +721,7 @@ input[type="number"]:focus {
 	background-color: var(--highlighted-destructive-action-color);
 }
 
-.button.is-primary.is-danger:not(:disabled):active,
-.button.is-primary.is-danger.is-active,
-.button.is-primary.is-danger.is-hovered {
+.button.is-primary.is-danger:not(:disabled):active {
 	background-color: var(--highlighted-destructive-action-color);
 	color: var(--white-color);
 }

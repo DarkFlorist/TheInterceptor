@@ -438,7 +438,7 @@ export function TokenLogAnalysisCard({ simTx, renameAddressCallBack }: TokenLogA
 	const tokenResults = extractTokenEvents(simTx.events)
 	return <>
 		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showLogs.value = !showLogs.value } }>
+			<header class = 'card-header noselect' style = 'cursor: pointer; min-height: 30px;' onClick = { () => { showLogs.value = !showLogs.value } }>
 				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
 					{ tokenResults.length === 0 ? `No ${ tokenEventsPlural }` : `${ tokenResults.length > 1 ? `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(tokenResults.length)) } ${ tokenEventsPlural }` : tokenEventsSingular }` }
 				</p>
@@ -473,7 +473,7 @@ export function NonTokenLogAnalysisCard({ simTx, addressMetaData, renameAddressC
 	const nonTokenLogs = simTx.events.filter((event) => event.type !== 'TokenEvent')
 	return <>
 		<div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-			<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showLogs.value = !showLogs.value } }>
+			<header class = 'card-header noselect' style = 'cursor: pointer; min-height: 30px;' onClick = { () => { showLogs.value = !showLogs.value } }>
 				<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
 					{ nonTokenLogs.length === 0 ? 'No non-token events' : `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(nonTokenLogs.length)) } non-token event${ nonTokenLogs.length > 1 ? 's' : '' }` }
 				</p>
@@ -519,7 +519,7 @@ export function TransactionsAccountChangesCard({ simTx, renameAddressCallBack, a
 	const numberOfChanges = notOwnAddresses.length + ownAddresses.length
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
+		<header class = 'card-header noselect' style = 'cursor: pointer; min-height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
 			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
 				{ numberOfChanges === 0 ? 'No changes in accounts' : `${  upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(numberOfChanges)) } account${ numberOfChanges > 1 ? 's' : '' } changing` }
 			</p>
@@ -886,7 +886,7 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 					}
 				</div>
 				<div class = 'card'>
-					<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showOtherAccountChanges.value = !showOtherAccountChanges.value } }>
+					<header class = 'card-header noselect' style = 'cursor: pointer; min-height: 30px;' onClick = { () => { showOtherAccountChanges.value = !showOtherAccountChanges.value } }>
 						<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
 							{ notOwnAddresses.length === 0 ? 'No changes in other accounts' : `${ upperCaseFirstCharacter(convertNumberToCharacterRepresentationIfSmallEnough(notOwnAddresses.length)) } other account${ notOwnAddresses.length > 1 ? 's' : '' } changing` }
 						</p>
@@ -982,7 +982,7 @@ export function RawTransactionDetailsCard({ isRawTransaction, transaction, renam
 	const showSummary = useSignal<boolean>(false)
 
 	return <div class = 'card' style = 'margin-top: 10px; margin-bottom: 10px'>
-		<header class = 'card-header noselect' style = 'cursor: pointer; height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
+		<header class = 'card-header noselect' style = 'cursor: pointer; min-height: 30px;' onClick = { () => { showSummary.value = !showSummary.value } }>
 			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em;'>
 				Raw transaction information
 			</p>

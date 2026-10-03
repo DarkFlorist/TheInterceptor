@@ -204,15 +204,6 @@
 	overflow: hidden;
 }
 
-.breadcrumb ul, .breadcrumb ol {
-	align-items: center;
-}
-
-.breadcrumb li + li::before {
-	margin-left: 0px;
-	margin-right: 0px;
-}
-
 .button.is-primary:focus:not(:active) {
 	box-shadow: unset
 }

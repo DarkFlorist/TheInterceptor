@@ -94,7 +94,7 @@ function ConfirmaddressBookEntryToBeRemoved(param: ConfirmaddressBookEntryToBeRe
 					</div>
 				</div>
 			</section>
-			<footer class = 'modal-card-foot window-footer' style = 'border-bottom-left-radius: unset; border-bottom-right-radius: unset; border-top: unset; padding: 10px;'>
+			<footer class = 'modal-card-foot window-footer'>
 				<AsyncActionButton
 					class = 'button is-primary is-danger'
 					state = { removeAddressState.value.state }
