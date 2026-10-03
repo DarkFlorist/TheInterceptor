@@ -270,7 +270,7 @@ function scheduleStackTargetTimeout(callback: () => void, delayMs: number) {
 	callback()
 }
 
-export function SimulationStackPage({ embedded }: { embedded: boolean }) {
+export function SimulationStackPage() {
 	const {
 		activeSimulationAddress,
 		activeSigningSafeAddress,
@@ -403,7 +403,7 @@ export function SimulationStackPage({ embedded }: { embedded: boolean }) {
 		: undefined
 
 	return <main>
-		<div class = { `layout simulation-stack-page${ embedded ? ' simulation-stack-page--embedded' : '' }` }>
+		<div class = 'layout simulation-stack-page'>
 			{ !isFreshHomeDataLoaded.value ? <>
 				<UnexpectedError close = { clearUnexpectedError } error = { unexpectedError.value === undefined ? undefined : unexpectedError.value.data }/>
 				<NetworkErrors rpcConnectionStatus = { rpcConnectionStatus }/>
@@ -502,6 +502,6 @@ export function SimulationStackPage({ embedded }: { embedded: boolean }) {
 	</main>
 }
 
-export function SimulationStackView({ embedded }: { embedded: boolean }) {
-	return <Hint><SimulationStackPage embedded = { embedded } /></Hint>
+export function SimulationStackView() {
+	return <Hint><SimulationStackPage /></Hint>
 }

@@ -1176,23 +1176,27 @@ html, body {
 	display: grid;
 	grid-template-rows: min-content minmax(0, 1fr);
 	row-gap: 1rem;
-	height: 100vh;
+	height: 100%;
 	min-width: 0;
 	padding-top: 1rem;
 }
 
-.address-book-page--embedded,
-.address-book-page--embedded .address-book-container,
-.address-book-page--embedded .address-book-layout,
-.address-book-page--embedded .address-book-content {
+.standalone-address-book-frame {
+	height: 100vh;
+}
+
+.address-book-page,
+.address-book-container,
+.address-book-layout {
 	height: 100%;
 }
 
 @media screen and (max-width: 520px) {
-	.address-book-page--embedded,
-	.address-book-page--embedded .address-book-container,
-	.address-book-page--embedded .address-book-layout,
-	.address-book-page--embedded .address-book-content {
+	.standalone-address-book-frame,
+	.address-book-page,
+	.address-book-container,
+	.address-book-layout,
+	.address-book-content {
 		height: auto;
 	}
 }

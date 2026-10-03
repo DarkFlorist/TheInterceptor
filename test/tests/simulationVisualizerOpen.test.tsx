@@ -542,8 +542,8 @@ describe('simulation visualizer open replies', () => {
 		const entrypointSource = await Bun.file('app/ts/simulationStack.ts').text()
 		const viewSource = await Bun.file('app/ts/components/pages/SimulationStackPage.tsx').text()
 
-		assert.match(entrypointSource, /preact\.createElement\(SimulationStackView,\s*\{\s*embedded:\s*false\s*\}\)/)
-		assert.match(viewSource, /return <Hint><SimulationStackPage embedded = \{ embedded \} \/><\/Hint>/)
+		assert.match(entrypointSource, /preact\.createElement\(SimulationStackView,\s*\{\}\)/)
+		assert.match(viewSource, /return <Hint><SimulationStackPage \/><\/Hint>/)
 	})
 
 	test('stack visualizer entrypoint clears the shell loading placeholder before rendering', async () => {

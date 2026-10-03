@@ -133,7 +133,7 @@ export default function Container(props: Props) {
 	}, [copyAttribute, toolTipAttribute])
 
 	return (
-		<div ref = { containerElementRef } class = { props.containerClass } style = 'position: relative; overflow-x: hidden;'>
+		<div ref = { containerElementRef } class = { props.containerClass } style = 'position: relative; overflow-x: clip;'>
 			{ content.value && clickPosition.value && (
 				<Hint
 					content = { content }

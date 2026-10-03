@@ -1,6 +1,6 @@
 import { useEffect } from 'preact/hooks'
 import { useSignal } from '@preact/signals'
-import type { JSX } from 'preact'
+import type { ComponentChildren, JSX } from 'preact'
 import { AddressBook } from '../../AddressBook.js'
 import { WebsiteAccessView } from './WebsiteAccess.js'
 import { SettingsView } from './SettingsView.js'
@@ -65,12 +65,16 @@ function ManagementHome({ selectPage }: { selectPage: (page: ManagementPage) => 
 	</main>
 }
 
+function EmbeddedPageFrame({ children, scrollable = false }: { children: ComponentChildren, scrollable?: boolean }) {
+	return <div class = { `management-embedded-frame${ scrollable ? ' management-embedded-frame--scrollable' : '' }` }>{ children }</div>
+}
+
 function ManagementPanelContent({ page, selectPage }: { page: ManagementPage, selectPage: (page: ManagementPage) => void }) {
 	switch (page) {
 		case 'home': return <ManagementHome selectPage = { selectPage } />
 		case 'websites': return <WebsiteAccessView />
-		case 'address-book': return <AddressBook embedded = { true } />
-		case 'simulation-stack': return <SimulationStackView embedded = { true } />
+		case 'address-book': return <EmbeddedPageFrame><AddressBook /></EmbeddedPageFrame>
+		case 'simulation-stack': return <EmbeddedPageFrame scrollable><SimulationStackView /></EmbeddedPageFrame>
 		case 'diagnostics': return <DiagnosticsView />
 		case 'settings': return <SettingsView />
 		default: return assertNever(page)
@@ -123,7 +127,10 @@ export function ManagementView() {
 		globalThis.document.getElementById(`management-tab-${ page }`)?.focus()
 	}
 
-	return <div class = { `management-page${ selectedPage.value === 'address-book' ? ' management-page--address-book' : '' }` }>
+	const pageLayoutClass = selectedPage.value === 'address-book'
+		? ' management-page--contained management-page--address-book'
+		: selectedPage.value === 'simulation-stack' ? ' management-page--contained' : ''
+	return <div class = { `management-page${ pageLayoutClass }` }>
 		<header class = 'management-header window-header'>
 			<div class = 'management-brand'>
 				<img src = '../img/LOGOA.svg' alt = 'The Interceptor' width = '32' height = '32' />

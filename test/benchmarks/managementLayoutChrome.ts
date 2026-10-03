@@ -93,9 +93,67 @@ try {
 		document.querySelector('.management-header').style.removeProperty('padding-block')
 		location.hash = '#simulation-stack'
 	})()`)
-	await waitForSelector(page, '.simulation-stack-page--embedded > .simulation-stack-page-header')
-	const embeddedHeaderPosition = await page.evaluate<string>(`getComputedStyle(document.querySelector('.simulation-stack-page--embedded > .simulation-stack-page-header')).position`)
-	assert.equal(embeddedHeaderPosition, 'static')
+	await waitForSelector(page, '.management-embedded-frame .simulation-stack-page-header')
+	const embeddedHeaderPosition = await page.evaluate<string>(`getComputedStyle(document.querySelector('.management-embedded-frame .simulation-stack-page-header')).position`)
+	assert.equal(embeddedHeaderPosition, 'sticky')
+	const stickyHeaderGeometry = await page.evaluate<{ frameTop: number, headerTop: number, scrollTop: number }>(`(() => {
+		const frame = document.querySelector('.management-embedded-frame--scrollable')
+		const page = document.querySelector('.simulation-stack-page')
+		const header = document.querySelector('.simulation-stack-page-header')
+		if (!(frame instanceof HTMLElement) || !(page instanceof HTMLElement) || !(header instanceof HTMLElement)) throw new Error('Simulation Stack frame is missing')
+		const filler = document.createElement('div')
+		filler.style.height = '1200px'
+		page.append(filler)
+		frame.scrollTop = 200
+		return { frameTop: frame.getBoundingClientRect().top, headerTop: header.getBoundingClientRect().top, scrollTop: frame.scrollTop }
+	})()`)
+	assert.ok(stickyHeaderGeometry)
+	assert.ok(stickyHeaderGeometry.scrollTop > 0, 'Simulation Stack frame must scroll')
+	assertNear(stickyHeaderGeometry.headerTop, stickyHeaderGeometry.frameTop, 'Simulation Stack header stays inside its frame while scrolling')
+	await page.send('Emulation.setDeviceMetricsOverride', { width: 480, height: 700, deviceScaleFactor: 1, mobile: false })
+	const narrowStackGeometry = await page.evaluate<{ frameTop: number, navigationBottom: number, headerTop: number, scrollTop: number, navigationIsOnTop: boolean }>(`(() => {
+		const navigation = document.querySelector('.management-header')
+		const frame = document.querySelector('.management-embedded-frame--scrollable')
+		const header = document.querySelector('.simulation-stack-page-header')
+		if (!(navigation instanceof HTMLElement) || !(frame instanceof HTMLElement) || !(header instanceof HTMLElement)) throw new Error('Narrow Simulation Stack frame is missing')
+		frame.scrollTop = 200
+		return {
+			frameTop: frame.getBoundingClientRect().top,
+			navigationBottom: navigation.getBoundingClientRect().bottom,
+			headerTop: header.getBoundingClientRect().top,
+			scrollTop: frame.scrollTop,
+			navigationIsOnTop: navigation.contains(document.elementFromPoint(100, 30)),
+		}
+	})()`)
+	assert.ok(narrowStackGeometry)
+	assert.ok(narrowStackGeometry.scrollTop > 0, 'Narrow Simulation Stack frame must scroll')
+	assertNear(narrowStackGeometry.frameTop, narrowStackGeometry.navigationBottom, 'Narrow stack frame begins below management navigation')
+	assertNear(narrowStackGeometry.headerTop, narrowStackGeometry.frameTop, 'Narrow stack header stays inside its frame while scrolling')
+	assert.equal(narrowStackGeometry.navigationIsOnTop, true, 'Narrow management navigation stays above the stack header')
+	await page.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 700, deviceScaleFactor: 1, mobile: false })
+
+	await page.send('Page.navigate', { url: `chrome-extension://${ extensionId }/html3/addressBookV3.html` })
+	await waitForSelector(page, '.address-book-list')
+	const standaloneAddressBookBottom = await page.evaluate<number>(`document.querySelector('.address-book-content').getBoundingClientRect().bottom`)
+	assert.ok(standaloneAddressBookBottom !== undefined)
+	assertNear(standaloneAddressBookBottom, 700, 'Standalone Address Book fills its page frame')
+
+	await page.send('Page.navigate', { url: `chrome-extension://${ extensionId }/html3/simulationStackV3.html` })
+	await waitForSelector(page, '.simulation-stack-page-header')
+	const standaloneHeaderPosition = await page.evaluate<string>(`getComputedStyle(document.querySelector('.simulation-stack-page-header')).position`)
+	assert.equal(standaloneHeaderPosition, 'sticky')
+	const standaloneStickyHeaderTop = await page.evaluate<number>(`(() => {
+		const page = document.querySelector('.simulation-stack-page')
+		const header = document.querySelector('.simulation-stack-page-header')
+		if (!(page instanceof HTMLElement) || !(header instanceof HTMLElement)) throw new Error('Standalone Simulation Stack is missing')
+		const filler = document.createElement('div')
+		filler.style.height = '1200px'
+		page.append(filler)
+		window.scrollTo(0, 200)
+		return header.getBoundingClientRect().top
+	})()`)
+	assert.ok(standaloneStickyHeaderTop !== undefined)
+	assertNear(standaloneStickyHeaderTop, 0, 'Standalone Simulation Stack header stays at the viewport top')
 
 	console.info('Management layout geometry passed in Chromium')
 } finally {

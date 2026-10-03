@@ -71,7 +71,7 @@ describe('management view routing', () => {
 		assert.equal(getManagementPageFromNavigationKey(undefined, 'ArrowLeft'), 'settings')
 	})
 
-	test('uses the embedded stack view with copy feedback', () => {
-		assert.match(managementViewSource, /<SimulationStackView embedded = \{ true \} \/>/)
+	test('hosts the stack view inside the management scroll frame', () => {
+		assert.match(managementViewSource, /<EmbeddedPageFrame scrollable><SimulationStackView \/><\/EmbeddedPageFrame>/)
 	})
 })
