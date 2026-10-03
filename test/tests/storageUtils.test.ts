@@ -48,7 +48,7 @@ Object.defineProperty(globalThis, 'browser', {
 })
 Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true, value: { runtime: { id: 'test-extension' } } })
 
-const { browserStorageLocalGet, browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+const { browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
 const { getRpcConfigurationState, getRpcConnectionStatus, getRpcList, promoteRpcAsPrimary, setRpcConfiguration } = await import('../../app/ts/background/storageVariables.js')
 const { createSimulationServicesOwner } = await import('../../app/ts/simulation/serviceLifecycle.js')
 const { captureRpcNetwork, getRequiredSettings, getSettingsForCapturedRpcNetwork, getSettingsSnapshot } = await import('../../app/ts/background/settings.js')
@@ -93,6 +93,15 @@ describe('local storage codecs', () => {
 
 		storedItems.activeSigningAddress = 'not-an-address'
 		await assert.rejects(browserStorageLocalGet('activeSigningAddress'))
+	})
+
+	test('reports pending-item validation failures without absorbing storage read failures', async () => {
+		storedItems.pendingTransactionsAndMessages = 'corrupt'
+		const invalidResult = await browserStorageLocalGet2Result('pendingTransactionsAndMessages')
+		assert.equal(invalidResult.success, false)
+
+		nextStorageReadError = new Error('Storage temporarily unavailable')
+		await assert.rejects(browserStorageLocalGet2Result('pendingTransactionsAndMessages'), /Storage temporarily unavailable/)
 	})
 })
 
