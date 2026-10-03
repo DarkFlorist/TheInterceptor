@@ -91,18 +91,16 @@ async function withContentScriptMock(source: ContentScriptSource, run: (state: C
 		contentScriptMockImportId += 1
 		await import(`../../app/inpage/ts/listenContentScript.js?shared-background-port-recovery-${ contentScriptMockImportId }`)
 		if (source === 'manifest-v2-document-start') {
-			const [documentStartTypeScript, inpageTypeScript, metamaskCompatibilityModeTypeScript] = await Promise.all([
+			const [documentStartTypeScript, inpageTypeScript] = await Promise.all([
 				Bun.file(new URL('../../app/inpage/ts/document_start.ts', import.meta.url)).text(),
 				Bun.file(new URL('../../app/inpage/ts/inpage.ts', import.meta.url)).text(),
-				Bun.file(new URL('../../app/inpage/ts/metamaskCompatibilityMode.ts', import.meta.url)).text(),
 			])
 			const compilerOptions = { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 }
 			const compiledDocumentStart = ts.transpileModule(documentStartTypeScript, {
 				compilerOptions,
 			}).outputText
 			const compiledInpage = ts.transpileModule(inpageTypeScript, { compilerOptions }).outputText
-			const compiledMetamaskCompatibilityMode = ts.transpileModule(metamaskCompatibilityModeTypeScript, { compilerOptions }).outputText
-			const generatedDocumentStart = inlineDocumentStartInjectionConfiguration(compiledDocumentStart, compiledInpage, compiledMetamaskCompatibilityMode)
+			const generatedDocumentStart = inlineDocumentStartInjectionConfiguration(compiledDocumentStart, compiledInpage)
 			Function(generatedDocumentStart)()
 		}
 		else await import(`../../app/inpage/ts/listenContentScriptBootstrap.js?background-port-recovery-${ contentScriptMockImportId }`)
@@ -453,11 +451,11 @@ if (process.env.INTERCEPTOR_CONTENT_SCRIPT_RECONNECT_TEST_CHILD === 'true') {
 		await verifyContentScriptReconnect('manifest-v2-document-start')
 	})
 
-	test('manifest v2 document-start synchronously injects the active compatibility prelude before inpage', async () => {
+	test('manifest v2 document-start synchronously injects the provider with active compatibility mode embedded', async () => {
 		await withContentScriptMock('manifest-v2-document-start', async ({ injectedScripts }) => {
 			assert.equal(injectedScripts.length, 1)
 			assert.equal(injectedScripts[0]?.src, '')
-			assert.match(injectedScripts[0]?.textContent ?? '', /TheInterceptor\.metamaskCompatibilityMode/u)
+			assert.match(injectedScripts[0]?.textContent ?? '', /const metamaskCompatibilityModeAtPageLoad = true/u)
 			assert.match(injectedScripts[0]?.textContent ?? '', /InterceptorMessageListener/u)
 		}, undefined, true)
 	})

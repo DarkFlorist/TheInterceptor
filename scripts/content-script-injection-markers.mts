@@ -1,2 +1,2 @@
 export const metamaskCompatibilityModeGlobalSymbolKeyMarker = '[[metamaskCompatibilityModeGlobalSymbolKey]]'
-export const metamaskCompatibilityModeGlobalAssignmentMarker = '[[metamaskCompatibilityModeGlobalAssignment]]'
+export const metamaskCompatibilityModeAtPageLoadMarker = '[[metamaskCompatibilityModeAtPageLoad]]'

@@ -1,7 +1,5 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { metamaskCompatibilityModeGlobalSymbolKey } from '../../app/ts/config/contentScriptInjectionArtifacts.js'
-import { metamaskCompatibilityModeGlobalSymbolKeyMarker } from '../../scripts/content-script-injection-markers.mts'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { getSafeAppsRequestCommand } from '../../app/ts/background/safeAppsRequestPolicy.js'
 
@@ -314,8 +312,6 @@ async function withFakeInpageWindow<T>(fakeWindow: ReturnType<typeof createFakeW
 	const previousWindow = (globalThis as { window?: unknown }).window
 	const previousCustomEvent = (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent
 	;(globalThis as unknown as { window: typeof fakeWindow }).window = fakeWindow
-	const metamaskCompatibilityMode = Reflect.get(fakeWindow, Symbol.for(metamaskCompatibilityModeGlobalSymbolKey))
-	if (typeof metamaskCompatibilityMode === 'boolean') Reflect.set(fakeWindow, Symbol.for(metamaskCompatibilityModeGlobalSymbolKeyMarker), metamaskCompatibilityMode)
 	if (typeof (globalThis as { CustomEvent?: typeof CustomEvent }).CustomEvent !== 'function') {
 		;(globalThis as { CustomEvent: typeof CustomEvent }).CustomEvent = class CustomEvent<TDetail = unknown> extends Event {
 			public detail: TDetail
@@ -2234,11 +2230,10 @@ describe('inpage signer bridge', () => {
 			type: 'eip6963:announceProvider',
 			detail: { info: metaMaskInfo, provider: announcedMetaMaskProvider },
 		}))
-		Reflect.set(fakeWindow, Symbol.for('TheInterceptor.metamaskCompatibilityMode'), true)
-
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?replace-eip6963-metamask-announcement', async () => {
 			const interceptorProvider = fakeWindow.ethereum
 			assert.equal((interceptorProvider as unknown as { isInterceptor?: unknown }).isInterceptor, true)
+			await waitFor(() => (interceptorProvider as unknown as { isMetaMask?: unknown }).isMetaMask === true)
 			assert.equal((interceptorProvider as unknown as { isMetaMask?: unknown }).isMetaMask, true)
 			assert.notEqual(interceptorProvider, announcedMetaMaskProvider)
 			const getMetaMaskAnnouncements = () => dappAnnouncements.filter((detail) => isRecord(detail) && isRecord(detail.info) && detail.info.rdns === 'io.metamask')
@@ -2314,7 +2309,6 @@ describe('inpage signer bridge', () => {
 		const dappAnnouncements: unknown[] = []
 		const { fakeWindow } = createFakeWindow({ metamaskCompatibilityMode: true })
 		Reflect.deleteProperty(fakeWindow, 'ethereum')
-		Reflect.set(fakeWindow, Symbol.for(metamaskCompatibilityModeGlobalSymbolKey), true)
 		fakeWindow.addEventListener('eip6963:announceProvider', (event) => dappAnnouncements.push(event.detail))
 
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?compatibility-mode-without-metamask', async () => {
@@ -2329,7 +2323,7 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
-	test('leaves MetaMask EIP-6963 announcements unchanged outside compatibility mode', async () => {
+	test('ignores a page-supplied compatibility flag and leaves MetaMask announcements unchanged outside compatibility mode', async () => {
 		const dappAnnouncements: unknown[] = []
 		const metaMaskInfo = {
 			uuid: '88888888-8888-4888-8888-888888888888',
@@ -2347,6 +2341,7 @@ describe('inpage signer bridge', () => {
 			removeListener: () => braveSigner,
 		}
 		Object.defineProperty(fakeWindow, 'ethereum', { configurable: true, writable: true, value: braveSigner })
+		Reflect.set(fakeWindow, Symbol.for('TheInterceptor.metamaskCompatibilityMode'), true)
 		fakeWindow.addEventListener('eip6963:announceProvider', (event) => dappAnnouncements.push(event.detail))
 		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({
 			type: 'eip6963:announceProvider',
@@ -2417,7 +2412,6 @@ describe('inpage signer bridge', () => {
 		}
 		const { fakeWindow } = createFakeWindow({ metamaskCompatibilityMode: false })
 		const announcedMetaMaskProvider = fakeWindow.ethereum
-		Reflect.set(fakeWindow, Symbol.for(metamaskCompatibilityModeGlobalSymbolKey), true)
 		fakeWindow.addEventListener('eip6963:announceProvider', (event) => dappAnnouncements.push(event.detail))
 
 		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?disable-live-eip6963-compatibility-mode', async () => {

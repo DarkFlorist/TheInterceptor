@@ -824,8 +824,7 @@ describe('refreshHomeData', () => {
 		assert.equal(homeUpdate?.data?.activeSigningAddressInThisTab, signerAddress)
 		assert.equal(homeUpdate?.data?.websiteAccessAddressMetadata?.length, 1)
 		assert.deepEqual(browserMock.registeredContentScripts.find((registration) => registration.id === 'inpage')?.js, [
-			'/inpage/js/metamaskCompatibilityMode.js',
-			'/inpage/js/inpage.js',
+			'/inpage/js/inpage-metamask-compatibility.js',
 		])
 		assert.deepEqual(browserMock.reloadedTabs, [1])
 		assert.equal(messages.some((message) => message.method === 'safe_apps_compatibility'), false)

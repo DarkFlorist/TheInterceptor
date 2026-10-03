@@ -1,15 +1,12 @@
 const inpageScriptDirectory = 'inpage/js'
 
 const pageWorldProviderScriptPath = `${ inpageScriptDirectory }/inpage.js`
-const metamaskCompatibilityModeScriptPath = `${ inpageScriptDirectory }/metamaskCompatibilityMode.js`
+const metamaskCompatiblePageWorldProviderScriptPath = `${ inpageScriptDirectory }/inpage-metamask-compatibility.js`
 export const metamaskCompatibilityModeGlobalSymbolKey = 'TheInterceptor.metamaskCompatibilityMode'
 
 // These paths drive runtime registration, MV2 document-start generation, and bundler entrypoints; static manifest copies are validated against this list in contentScriptsUpdating.test.ts.
 export function getPageWorldScriptPaths(metamaskCompatibilityMode: boolean): readonly string[] {
-	return [
-		...(metamaskCompatibilityMode ? [metamaskCompatibilityModeScriptPath] : []),
-		pageWorldProviderScriptPath,
-	]
+	return [metamaskCompatibilityMode ? metamaskCompatiblePageWorldProviderScriptPath : pageWorldProviderScriptPath]
 }
 
 export function getMetamaskCompatibilityModeGlobalAssignmentSource(metamaskCompatibilityMode: unknown) {

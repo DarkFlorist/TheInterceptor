@@ -14,17 +14,35 @@ async function runConfigurationUpdate<T>(update: () => Promise<T>) {
 	return await update()
 }
 
-export async function refreshContentScriptInjectionStrategy(configuration?: ContentScriptInjectionConfigurationSnapshot) {
+async function refreshContentScriptInjectionStrategyManifestV3(configuration: ContentScriptInjectionConfigurationSnapshot) {
 	await contentScriptInjectionStrategySemaphore.execute(async () => {
-		const currentConfiguration = configuration ?? await getContentScriptInjectionConfiguration()
-		if (browser.runtime.getManifest().manifest_version === 3) await updateContentScriptInjectionStrategyManifestV3(currentConfiguration)
-		else await updateContentScriptInjectionStrategyManifestV2(getContentScriptInjectionConfiguration)
+		await updateContentScriptInjectionStrategyManifestV3(configuration)
 	})
 }
 
-export async function refreshContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections: WebsiteTabConnections, configuration?: ContentScriptInjectionConfigurationSnapshot) {
+async function refreshContentScriptInjectionStrategyManifestV2() {
+	await contentScriptInjectionStrategySemaphore.execute(async () => {
+		await updateContentScriptInjectionStrategyManifestV2(getContentScriptInjectionConfiguration)
+	})
+}
+
+export async function refreshContentScriptInjectionStrategy() {
+	await contentScriptInjectionConfigurationSemaphore.execute(async () => {
+		if (browser.runtime.getManifest().manifest_version === 3) await refreshContentScriptInjectionStrategyManifestV3(await getContentScriptInjectionConfiguration())
+		else await refreshContentScriptInjectionStrategyManifestV2()
+	})
+}
+
+export async function refreshContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections: WebsiteTabConnections) {
 	const tabIdsToReload = await getConnectedTabIdsToReload(websiteTabConnections)
-	await refreshContentScriptInjectionStrategy(configuration)
+	await refreshContentScriptInjectionStrategy()
+	await reloadTabs(tabIdsToReload)
+}
+
+async function refreshUpdatedContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections: WebsiteTabConnections, configuration: ContentScriptInjectionConfigurationSnapshot) {
+	const tabIdsToReload = await getConnectedTabIdsToReload(websiteTabConnections)
+	if (browser.runtime.getManifest().manifest_version === 3) await refreshContentScriptInjectionStrategyManifestV3(configuration)
+	else await refreshContentScriptInjectionStrategyManifestV2()
 	await reloadTabs(tabIdsToReload)
 }
 
@@ -35,7 +53,7 @@ export async function updateContentScriptInjectionConfigurationAndReloadTabsIfCh
 			const result = await update()
 			const configurationAfterUpdate = await getContentScriptInjectionConfiguration()
 			if (hasSameContentScriptInjectionConfiguration(configurationBeforeUpdate, configurationAfterUpdate)) return result
-			await refreshContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections, configurationAfterUpdate)
+			await refreshUpdatedContentScriptInjectionStrategyAndReloadConnectedTabs(websiteTabConnections, configurationAfterUpdate)
 			return result
 		} catch (error: unknown) {
 			try {

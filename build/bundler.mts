@@ -372,6 +372,7 @@ const inpageRuntimeEntrypointPaths = [
 	path.join(appDirectory, 'inpage', 'js', 'document_start.js'),
 	path.join(appDirectory, 'inpage', 'js', 'listenContentScript.js'),
 	path.join(appDirectory, 'inpage', 'js', 'listenContentScriptBootstrap.js'),
+	...getPageWorldScriptPaths(false).map((scriptPath) => path.join(appDirectory, scriptPath)),
 	...getPageWorldScriptPaths(true).map((scriptPath) => path.join(appDirectory, scriptPath)),
 ]
 
