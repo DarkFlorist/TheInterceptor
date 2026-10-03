@@ -213,7 +213,7 @@ describe('delegate clearing in simulation', () => {
 			assert.equal(block.stateOverrides[addressString(activeAddress)]?.code, undefined)
 		}
 		assert.equal(isCodeClearedBySimulationOverrides(capturedOverrides, activeAddress), true)
-		assert.notEqual(getSimulationInputHash(capturedInput, capturedOverrides), getSimulationInputHash(capturedInput))
+		assert.notEqual(getSimulationInputHash(capturedInput, capturedOverrides), getSimulationInputHash(capturedInput, {}))
 		const parentBlockResponse = JsonRpcResponse.parse(JSON.parse(eth_getBlockByNumber_goerli_8443561_true))
 		if ('error' in parentBlockResponse) throw new Error(parentBlockResponse.error.message)
 		const ethereum = new EthereumClientService({
@@ -255,7 +255,7 @@ describe('delegate clearing in simulation', () => {
 		const currentInput = await getCurrentSimulationInput()
 		assert.equal(currentInput[0]?.stateOverrides[addressString(activeAddress)]?.code, undefined)
 		assert.equal(currentInput[1]?.stateOverrides[addressString(activeAddress)]?.code, undefined)
-		assert.equal(getSimulationInputHash(currentInput), getSimulationInputHash(capturedInput))
+		assert.equal(getSimulationInputHash(currentInput, {}), getSimulationInputHash(capturedInput, {}))
 	})
 
 	test('uses clearing during balance and nonce preparation simulations', async () => {
@@ -334,7 +334,7 @@ describe('delegate clearing in simulation', () => {
 		assert.equal(await replacementEthereum.getCachedDelegation(activeAddress), undefined)
 	})
 
-	test('reuses cached popup checks while confirmation refreshes delegation before enabling', async () => {
+	test('refreshes popup checks on open while confirmation also refreshes before enabling', async () => {
 		installBrowserMock()
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
 		const settings = await getSettings()
@@ -353,17 +353,39 @@ describe('delegate clearing in simulation', () => {
 		assert.equal(await ethereum.getCachedDelegation(activeAddress), undefined)
 		code = `0xef0100${ addressString(delegate).slice(2) }`
 		const requestReply = await requestDelegationSimulation(settings, ethereum, activeAddress, rpcEntry.chainId)
-		assert.deepEqual(requestReply.data.status, { type: 'none' })
-		assert.equal(codeRequests, 1)
+		assert.deepEqual(requestReply.data.status, { type: 'delegated', delegate })
+		assert.equal(codeRequests, 2)
 		await setDelegateClearingEnabled(activeAddress, rpcEntry.chainId, true)
 		const services = { ethereum, tokenPriceService: new TokenPriceService(ethereum, 60000) }
 		const toggleReply = await setDelegationSimulation(settings, services, activeAddress, rpcEntry.chainId, true)
 		assert.deepEqual(toggleReply.data, { ok: true, address: activeAddress, chainId: rpcEntry.chainId, enabled: true })
-		assert.equal(codeRequests, 2)
+		assert.equal(codeRequests, 3)
 		code = '0x'
 		const missingReply = await setDelegationSimulation(settings, services, activeAddress, rpcEntry.chainId, true)
 		assert.deepEqual(missingReply.data, { ok: false, message: 'This account no longer has an EIP-7702 delegate.' })
-		assert.equal(codeRequests, 3)
+		assert.equal(codeRequests, 4)
+	})
+
+	test('disables a saved choice after simulation mode or the active account changes', async () => {
+		installBrowserMock()
+		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
+		const ethereum = new EthereumClientService({
+			rpcUrl: rpcEntry.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest() { throw new Error('Disabling must not query RPC') },
+		}, async () => undefined, async () => undefined, rpcEntry)
+		const services = { ethereum, tokenPriceService: new TokenPriceService(ethereum, 60000) }
+		for (const switched of [
+			{ simulationMode: false, activeSimulationAddress: activeAddress },
+			{ simulationMode: true, activeSimulationAddress: activeAddress + 1n },
+			{ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: { ...rpcEntry, chainId: rpcEntry.chainId + 1n } },
+		]) {
+			await setDelegateClearingEnabled(activeAddress, rpcEntry.chainId, true)
+			await changeSimulationMode(switched)
+			const reply = await setDelegationSimulation(await getSettings(), services, activeAddress, rpcEntry.chainId, false)
+			assert.deepEqual(reply.data, { ok: true, address: activeAddress, chainId: rpcEntry.chainId, enabled: false })
+			assert.equal(await isDelegateClearingEnabled(activeAddress, rpcEntry.chainId), false)
+		}
 	})
 
 	test('does not cache a failed delegation lookup as no delegate', async () => {

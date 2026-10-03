@@ -21,6 +21,10 @@ export function applySimulationOverrides(blockOverrides: StateOverrides, simulat
 	return merged
 }
 
+export function applyInitialSimulationOverrides(blockOverrides: StateOverrides, initialOverrides: StateOverrides, blockIndex: number): StateOverrides {
+	return blockIndex === 0 ? applySimulationOverrides(blockOverrides, initialOverrides) : blockOverrides
+}
+
 export function isCodeClearedBySimulationOverrides(simulationOverrides: StateOverrides, address: bigint) {
 	return simulationOverrides[addressString(address)]?.code?.length === 0
 }

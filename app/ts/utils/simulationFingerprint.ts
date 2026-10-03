@@ -4,7 +4,7 @@ import { EthereumSignedTransactionToSignedTransaction, serializeSignedTransactio
 import type { SimulationStateInput, SimulationStateInputMinimalData } from '../types/visualizer-types.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 
-export function getSimulationInputHash(simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData, simulationOverrides: StateOverrides = {}) {
+export function getSimulationInputHash(simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData, simulationOverrides: StateOverrides) {
 	const messages = stringifyJSONWithBigInts(simulationStateInput.map((x) => x.signedMessages.map((signedMessage) => ({
 		fakeSignedFor: signedMessage.fakeSignedFor,
 		originalRequestParameters: signedMessage.originalRequestParameters,

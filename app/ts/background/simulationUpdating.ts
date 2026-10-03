@@ -263,7 +263,7 @@ export const getGovernanceExecutionTokenBalancesAfter = async (
 	executionTimestamp: Date,
 	executionStateOverrides: StateOverrides,
 	callResult: Parameters<typeof getTokenBalancesAfterForTransaction>[3],
-	simulationOverrides: StateOverrides = {},
+	simulationOverrides: StateOverrides,
 ) => {
 	const simulationInputAfterExecution = getGovernanceExecutionSimulationInput(
 		simulationInput,
@@ -470,7 +470,7 @@ export const updateSimulationMetadata = async (ethereum: EthereumClientService, 
 	})
 }
 
-export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService, simulationOverrides: StateOverrides = {}) => {
+export const prepareSimulationInputForRpc = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService, simulationOverrides: StateOverrides) => {
 	if (simulationInput.some((block) => block.transactions.some((transaction) => transaction.safeTransaction?.safeTx.message.operation === 1n))) simulationInput = await prepareSafeDelegateSimulationInput(simulationInput, ethereum, await ethereum.getBlockNumber(undefined))
 	// Base-fee and nonce repair only rewrite transactions. Signed-message and state-override blocks must still reach the RPC handler, but inspecting them here would run an extra eth_simulateV1 request without any transaction nonce to repair.
 	if (simulationInput.every((block) => block.transactions.length === 0)) return simulationInput
@@ -489,15 +489,15 @@ export const prepareSimulationInputForRpc = async (simulationInput: SimulationSt
 	return nonceFixed.nonceFixed ? nonceFixed.simulationStateInput : baseFeeFixedInputStateBlocks
 }
 
-export const buildSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationStateInput, ethereum: EthereumClientService, simulationOverrides: StateOverrides = {}) => {
+export const buildSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationStateInput, ethereum: EthereumClientService, simulationOverrides: StateOverrides) => {
 	return await createSimulationState(ethereum, undefined, preparedSimulationInput, simulationOverrides)
 }
 
-export const buildExecutionSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationStateInput, ethereum: EthereumClientService, simulationOverrides: StateOverrides = {}): Promise<ExecutionSimulationState> => {
+export const buildExecutionSimulationStateFromPreparedInput = async (preparedSimulationInput: SimulationStateInput, ethereum: EthereumClientService, simulationOverrides: StateOverrides): Promise<ExecutionSimulationState> => {
 	return await createExecutionSimulationState(ethereum, undefined, preparedSimulationInput, simulationOverrides)
 }
 
-export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService, simulationOverrides: StateOverrides = {}) => {
+export const createSimulationStateWithNonceAndBaseFeeFixing = async (simulationInput: SimulationStateInput, ethereum: EthereumClientService, simulationOverrides: StateOverrides) => {
 	return await buildSimulationStateFromPreparedInput(await prepareSimulationInputForRpc(simulationInput, ethereum, simulationOverrides), ethereum, simulationOverrides)
 }
 

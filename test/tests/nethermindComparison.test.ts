@@ -132,7 +132,7 @@ describe('Nethermind testing', () => {
 			created: new Date(),
 			originalRequestParameters: { method: 'eth_sendTransaction', params: [{}]},
 			transactionIdentifier: 1n,
-		}])
+		}], undefined, {}, {})
 		const nextBlock = await getSimulatedBlock(ethereum, undefined, toResolvedSimulationState(newState), blockNumber + 1n, true)
 		if (nextBlock === null) throw new Error('Block was null')
 		const serializedNextBlock = GetBlockReturn.serialize(nextBlock)

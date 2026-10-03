@@ -17,7 +17,7 @@ import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
 import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
-import { applySimulationOverrides } from '../../utils/delegateClearingState.js'
+import { applyInitialSimulationOverrides } from '../../utils/delegateClearingState.js'
 import { createDelegationCache } from './delegationCache.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
@@ -329,7 +329,7 @@ export class EthereumClientService {
 		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(request, requestAbortController))
 	}
 
-	public readonly prepareEthSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined, simulationOverrides: StateOverrides = {}): Promise<PreparedEthSimulateV1Input> => {
+	public readonly prepareEthSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined, simulationOverrides: StateOverrides): Promise<PreparedEthSimulateV1Input> => {
 		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
 		if (parentBlock === null) throw new Error(`The block ${ blockNumber } is null`)
 
@@ -392,7 +392,7 @@ export class EthereumClientService {
 			previousBlockOverride = newBlockOverride
 		}
 
-		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, blockOverrides: BlockOverrides, initialOverrides: StateOverrides) => {
+		const getBlockStateCall = async (block: SimulationStateInputMinimalDataBlock, blockOverrides: BlockOverrides, blockIndex: number) => {
 			const rpcCalls = block.transactions.map((transaction) => toEthSimulateCall(transaction.signedTransaction))
 			const ecRecoverMovedToAddress = 0x123456n
 			const ecRecoverAddress = 1n
@@ -426,7 +426,7 @@ export class EthereumClientService {
 							state: stateSets,
 						}
 					} : {},
-					...applySimulationOverrides(block.stateOverrides, initialOverrides),
+					...applyInitialSimulationOverrides(block.stateOverrides, simulationOverrides, blockIndex),
 				}
 			}
 		}
@@ -434,7 +434,7 @@ export class EthereumClientService {
 		const blockStateCalls = await Promise.all(rpcBlocks.map(async (block, index) => {
 			const blockOverrideForBlock = blockOverrides[index]
 			if (blockOverrideForBlock === undefined) throw new Error('Block Overridex index overflow')
-			return await getBlockStateCall(block, blockOverrideForBlock, index === 0 ? simulationOverrides : {})
+			return await getBlockStateCall(block, blockOverrideForBlock, index)
 		}))
 		if (parentBlock === null) throw new Error('The latest block is null')
 		return {
@@ -452,11 +452,11 @@ export class EthereumClientService {
 		}
 	}
 
-	public readonly ethSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined, simulationOverrides: StateOverrides = {}) => {
+	public readonly ethSimulateV1Input = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined, simulationOverrides: StateOverrides) => {
 		return (await this.prepareEthSimulateV1Input(simulationStateInput, blockNumber, requestAbortController, simulationOverrides)).request
 	}
 
-	public readonly simulatePrepared = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined, simulationOverrides: StateOverrides = {}) => {
+	public readonly simulatePrepared = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined, simulationOverrides: StateOverrides) => {
 		const prepared = await this.prepareEthSimulateV1Input(simulationStateInput, blockNumber, requestAbortController, simulationOverrides)
 		return {
 			prepared,
@@ -464,7 +464,7 @@ export class EthereumClientService {
 		}
 	}
 
-	public readonly simulate = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined, simulationOverrides: StateOverrides = {}): Promise<EthSimulateV1Result> => {
+	public readonly simulate = async (simulationStateInput: SimulationStateInputMinimalData, blockNumber: bigint, requestAbortController: AbortController | undefined, simulationOverrides: StateOverrides): Promise<EthSimulateV1Result> => {
 		const input = await this.ethSimulateV1Input(simulationStateInput, blockNumber, requestAbortController, simulationOverrides)
 		return EthSimulateV1Result.parse(await this.requestHandler.jsonRpcRequest(input))
 	}

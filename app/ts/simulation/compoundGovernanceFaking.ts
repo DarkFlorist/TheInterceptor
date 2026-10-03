@@ -12,7 +12,7 @@ import { decodeFunctionOutputLoose, decodeFunctionOutputObjectLoose, encodeFunct
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { applySimulationOverrides } from '../utils/delegateClearingState.js'
 
-export const simulateCompoundGovernanceExecution = async (ethereumClientService: EthereumClientService, governanceContract: AddressBookEntry, proposalId: EthereumQuantity, simulationOverrides: StateOverrides = {}) => {
+export const simulateCompoundGovernanceExecution = async (ethereumClientService: EthereumClientService, governanceContract: AddressBookEntry, proposalId: EthereumQuantity, simulationOverrides: StateOverrides) => {
 	if (!('abi' in governanceContract) || governanceContract.abi === undefined) throw new Error(`We need to have ABI for governance contract ${ checksummedAddress(governanceContract.address) } to be able to proceed :()`)
 	const requiredFunctions = ['timelock', 'proposals', 'getActions']
 

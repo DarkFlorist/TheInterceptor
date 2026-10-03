@@ -284,7 +284,7 @@ export const ResolvedSimulationInput = funtypes.Union(
 )
 
 export const toResolvedSimulationState = (value: SimulationState): ResolvedSimulationState => ({ kind: 'simulated', value })
-export const toResolvedSimulationInput = (value: SimulationStateInput, simulationOverrides: StateOverrides = {}): ResolvedSimulationInput => ({ kind: 'simulated', value, simulationOverrides })
+export const toResolvedSimulationInput = (value: SimulationStateInput, simulationOverrides: StateOverrides): ResolvedSimulationInput => ({ kind: 'simulated', value, simulationOverrides })
 
 type SuccessfulSimulationState = Extract<SimulationState, { success: true }>
 export type ExecutionSimulatedTransaction = Omit<SimulatedTransaction, 'tokenBalancesAfter'>

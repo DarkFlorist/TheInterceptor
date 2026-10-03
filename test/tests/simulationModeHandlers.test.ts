@@ -44,7 +44,7 @@ describe('simulation mode handlers', () => {
 
 		const reply = await getStorageAt(
 			ethereumClientService,
-			toResolvedSimulationInput([]),
+			toResolvedSimulationInput([], {}),
 			request,
 		)
 

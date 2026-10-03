@@ -202,7 +202,7 @@ describe('EthereumClientService eth_simulateV1 serialization', () => {
 				signedMessages: [],
 				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' },
 				simulateWithZeroBaseFee: false,
-			}], 1n, undefined)
+			}], 1n, undefined, {})
 
 			const serializedRequest = serialize(EthSimulateV1Params, prepared.request)
 			const serializedCall = getSerializedCall(serializedRequest)

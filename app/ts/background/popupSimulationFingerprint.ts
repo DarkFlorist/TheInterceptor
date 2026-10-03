@@ -5,7 +5,7 @@ import type { SimulationStateInput } from '../types/visualizer-types.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getSimulationInputHash } from '../utils/simulationFingerprint.js'
 
-export function getPopupVisualisationFingerprint(simulationStateInput: SimulationStateInput, rpcNetwork: RpcNetwork, blockNumber: bigint, simulationOverrides: StateOverrides = {}) {
+export function getPopupVisualisationFingerprint(simulationStateInput: SimulationStateInput, rpcNetwork: RpcNetwork, blockNumber: bigint, simulationOverrides: StateOverrides) {
 	return keccak256(stringToBytes(stringifyJSONWithBigInts([getSimulationInputHash(simulationStateInput, simulationOverrides), normalizeRpcNetworkForFingerprint(rpcNetwork), blockNumber])))
 }
 

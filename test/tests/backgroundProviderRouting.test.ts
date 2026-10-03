@@ -296,7 +296,7 @@ describe('background eth_accounts', () => {
 		const getBlockCalls = { count: 0 }
 		const { ethereum } = createEthereumWithGetBlockCounter(getBlockCalls)
 
-		const prepared = await prepareSimulationInputForRpc(simulationInput, ethereum)
+		const prepared = await prepareSimulationInputForRpc(simulationInput, ethereum, {})
 
 		assert.strictEqual(prepared, simulationInput)
 		assert.equal(getBlockCalls.count, 0)

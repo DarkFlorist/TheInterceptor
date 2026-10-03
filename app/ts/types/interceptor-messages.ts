@@ -812,12 +812,14 @@ export const SimulateGnosisSafeTransaction = SharedSimulateGnosisSafeTransaction
 type SettingsOpenedReply = funtypes.Static<typeof SettingsOpenedReply>
 const SettingsOpenedReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestSettingsReply'),
+	popupRefreshGeneration: PopupRefreshGeneration,
 	data: funtypes.ReadonlyObject({
 		useTabsInsteadOfPopup: funtypes.Boolean,
 		metamaskCompatibilityMode: funtypes.Boolean,
 		safeAppsCompatibilityMode: funtypes.Boolean,
 		activeRpcNetwork: RpcNetwork,
 		rpcEntries: RpcEntries,
+		delegateClearingPreferences: DelegateClearingPreferences,
 	})
 }).asReadonly()
 

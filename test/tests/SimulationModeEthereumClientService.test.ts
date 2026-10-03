@@ -274,10 +274,10 @@ const createEthereumWithThrowingSimulationPreparation = () => {
 	})
 	return { ethereum: throwingEthereum, getPrepareCallCount: () => prepareCallCount }
 }
-const getBlockNumberFromInput = async (simulationStateInput: Parameters<typeof toResolvedSimulationInput>[0]) => await getSimulatedBlockNumberFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput))
-const getBlockFromInput = async (simulationStateInput: Parameters<typeof toResolvedSimulationInput>[0], blockTag: Parameters<typeof getSimulatedBlockFromInput>[3], includeTransactions = false) => await getSimulatedBlockFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), blockTag, includeTransactions)
-const getBlockByHashFromInput = async (simulationStateInput: Parameters<typeof toResolvedSimulationInput>[0], blockHash: bigint, includeTransactions = false) => await getSimulatedBlockByHashFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), blockHash, includeTransactions)
-const getTransactionByHashFromInput = async (simulationStateInput: Parameters<typeof toResolvedSimulationInput>[0], hash: bigint) => await getSimulatedTransactionByHashFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), hash)
+const getBlockNumberFromInput = async (simulationStateInput: Parameters<typeof toResolvedSimulationInput>[0]) => await getSimulatedBlockNumberFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput, {}))
+const getBlockFromInput = async (simulationStateInput: Parameters<typeof toResolvedSimulationInput>[0], blockTag: Parameters<typeof getSimulatedBlockFromInput>[3], includeTransactions = false) => await getSimulatedBlockFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput, {}), blockTag, includeTransactions)
+const getBlockByHashFromInput = async (simulationStateInput: Parameters<typeof toResolvedSimulationInput>[0], blockHash: bigint, includeTransactions = false) => await getSimulatedBlockByHashFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput, {}), blockHash, includeTransactions)
+const getTransactionByHashFromInput = async (simulationStateInput: Parameters<typeof toResolvedSimulationInput>[0], hash: bigint) => await getSimulatedTransactionByHashFromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput, {}), hash)
 const getReceiptFromState = async (simulationState: Parameters<typeof toResolvedExecutionSimulationState>[0], hash: bigint) => await getSimulatedTransactionReceipt(ethereum, undefined, toResolvedExecutionSimulationState(simulationState), hash)
 const getLogsFromState = async (simulationState: Parameters<typeof toResolvedExecutionSimulationState>[0], filter: Parameters<typeof getSimulatedLogs>[3]) => await getSimulatedLogs(ethereum, undefined, toResolvedExecutionSimulationState(simulationState), filter)
 
@@ -383,7 +383,7 @@ describe('SimulationModeEthereumClientService', () => {
 	})
 
 	test('forwards safe and earliest block tags instead of applying the simulation overlay', async () => {
-		const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput())
+		const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput(), {})
 		if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 		const forwardedTags: { method: string, blockTag: unknown }[] = []
 		const forwardingEthereum = new Proxy(ethereum, {
@@ -429,7 +429,7 @@ describe('SimulationModeEthereumClientService', () => {
 			maxFeePerGas: exampleTransaction.maxFeePerGas,
 			maxPriorityFeePerGas: exampleTransaction.maxPriorityFeePerGas,
 		}
-		await simulatedCallFromInput(forwardingEthereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), callParams, 'safe')
+		await simulatedCallFromInput(forwardingEthereum, undefined, toResolvedSimulationInput(createSimulationStateInput(), {}), callParams, 'safe')
 		await simulatedCall(forwardingEthereum, undefined, resolvedState, callParams, 'earliest')
 
 		assert.deepEqual(forwardedTags, [
@@ -442,7 +442,7 @@ describe('SimulationModeEthereumClientService', () => {
 	})
 
 		test('prepareEthSimulateV1Input strips the local transaction hash from RPC calls', async () => {
-			const prepared = await ethereum.prepareEthSimulateV1Input(createSimulationStateInput(), blockNumber, undefined)
+			const prepared = await ethereum.prepareEthSimulateV1Input(createSimulationStateInput(), blockNumber, undefined, {})
 			const call = prepared.request.params[0].blockStateCalls[0]?.calls[0]
 			if (call === undefined) throw new Error('missing prepared eth_simulateV1 call')
 			assert.equal('hash' in call, false)
@@ -474,7 +474,7 @@ describe('SimulationModeEthereumClientService', () => {
 				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
 				simulateWithZeroBaseFee: false,
 			}] as const
-			const prepared = await ethereum.prepareEthSimulateV1Input(input, blockNumber, undefined)
+			const prepared = await ethereum.prepareEthSimulateV1Input(input, blockNumber, undefined, {})
 			const call = prepared.request.params[0].blockStateCalls[0]?.calls[0]
 			if (call?.type !== '7702') throw new Error('missing prepared type-7702 call')
 			const [authorization] = call.authorizationList
@@ -549,7 +549,7 @@ describe('SimulationModeEthereumClientService', () => {
 				signedMessages: [],
 				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
 				simulateWithZeroBaseFee: false,
-			}])
+			}], {})
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 			const resolvedState = toResolvedSimulationState(simulationState)
 			assert.equal(await getSimulatedTransactionCount(ethereum, undefined, resolvedState, example7702Transaction.from), 1n)
@@ -582,7 +582,7 @@ describe('SimulationModeEthereumClientService', () => {
 				blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 12n, deltaUnit: 'Seconds' },
 				simulateWithZeroBaseFee: false,
 			}] as const
-			const resolvedInput = toResolvedSimulationInput(simulationStateInput)
+			const resolvedInput = toResolvedSimulationInput(simulationStateInput, {})
 			assert.equal(await getSimulatedTransactionCountFromInput(ethereum, undefined, resolvedInput, example7702Transaction.from), 1n)
 			assert.equal(await getSimulatedTransactionCountFromInput(ethereum, undefined, resolvedInput, authority), 1n)
 
@@ -990,7 +990,7 @@ describe('SimulationModeEthereumClientService', () => {
 				simulateWithZeroBaseFee: false,
 			}] as const
 
-			const { prepared, result } = await ethereum.simulatePrepared(splitSimulationStateInput, blockNumber, undefined)
+			const { prepared, result } = await ethereum.simulatePrepared(splitSimulationStateInput, blockNumber, undefined, {})
 			assert.equal(result.length, 2)
 			const grouped = groupEthSimulateV1ResultByInputBlocks(prepared, result)
 			assert.equal(grouped.length, 1)
@@ -1028,7 +1028,7 @@ describe('SimulationModeEthereumClientService', () => {
 				simulateWithZeroBaseFee: false,
 			} as const
 
-			const { balances, transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock)
+			const { balances, transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock, {})
 			assert.deepEqual(adjusted, getBaseFeeAdjustedTransactions(parentBlock, currentBlock.transactions, balances))
 			const adjustedTransaction = adjusted[0]?.signedTransaction
 			if (adjustedTransaction === undefined || adjustedTransaction.type !== '1559') throw new Error('missing adjusted 1559 transaction')
@@ -1065,7 +1065,7 @@ describe('SimulationModeEthereumClientService', () => {
 				simulateWithZeroBaseFee: false,
 			} as const
 
-			const { balances, transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock)
+			const { balances, transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock, {})
 			assert.deepEqual(adjusted, getBaseFeeAdjustedTransactions(parentBlock, currentBlock.transactions, balances))
 			const adjustedTransaction = adjusted[0]?.signedTransaction
 			if (adjustedTransaction === undefined || adjustedTransaction.type !== '7702') throw new Error('missing adjusted 7702 transaction')
@@ -1102,7 +1102,7 @@ describe('SimulationModeEthereumClientService', () => {
 				simulateWithZeroBaseFee: false,
 			} as const
 
-			const { transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock)
+			const { transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock, {})
 			assert.equal(adjusted.length, 2)
 			for (const transaction of adjusted) {
 				if (transaction.signedTransaction.type !== '1559') throw new Error('wrong transaction type')
@@ -1144,7 +1144,7 @@ describe('SimulationModeEthereumClientService', () => {
 				simulateWithZeroBaseFee: false,
 			} as const
 
-			const { transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock)
+			const { transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock, {})
 			assert.equal(adjusted.length, 3)
 			assert.equal(requestHandler.ethGetBalanceCalls.length, 1)
 			assert.equal(requestHandler.ethSimulateV1Calls.length, 0)
@@ -1181,7 +1181,7 @@ describe('SimulationModeEthereumClientService', () => {
 				simulateWithZeroBaseFee: false,
 			} as const
 
-			const { transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock)
+			const { transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock, {})
 			assert.equal(adjusted.length, 3)
 			const firstAdjusted = adjusted[0]?.signedTransaction
 			const secondAdjusted = adjusted[1]?.signedTransaction
@@ -1226,7 +1226,7 @@ describe('SimulationModeEthereumClientService', () => {
 		})
 
 		test('simulateEstimateGas uses the node-reported peak gas', async () => {
-			const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput())
+			const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput(), {})
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 			requestHandler.simulatedCallGasUsed = 11_332n
 			requestHandler.simulatedCallMaxUsedGas = 61_000n
@@ -1270,7 +1270,7 @@ describe('SimulationModeEthereumClientService', () => {
 		})
 
 		test('simulateEstimateGas adaptively verifies gas when maxUsedGas is omitted', async () => {
-			const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput())
+			const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput(), {})
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 			requestHandler.ethSimulateV1Calls.length = 0
 			requestHandler.omitMaxUsedGas = true
@@ -1339,7 +1339,7 @@ describe('SimulationModeEthereumClientService', () => {
 			const fromInputRequest = requestHandler.ethSimulateV1Requests.at(-1)
 			assert.deepEqual(fromInputRequest?.params[0].blockStateCalls.at(-1)?.calls[0]?.accessList, accessList)
 
-			const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput())
+			const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput(), {})
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 			const fromStateEstimate = await simulateEstimateGas(ethereum, undefined, toResolvedSimulationState(simulationState), transaction)
 			if ('error' in fromStateEstimate) throw new Error(`estimate gas unexpectedly failed: ${ fromStateEstimate.message }`)
@@ -1484,7 +1484,7 @@ describe('SimulationModeEthereumClientService', () => {
 
 		test('getSimulatedCodeFromInput installs the helper override and omits gas', async () => {
 			requestHandler.ethSimulateV1Calls.length = 0
-			const simulatedCode = await getSimulatedCodeFromInput(ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), 0x1234n)
+			const simulatedCode = await getSimulatedCodeFromInput(ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput(), {}), 0x1234n)
 			assert.equal(simulatedCode.statusCode, 'success')
 			if (simulatedCode.statusCode !== 'success') throw new Error('simulated code unexpectedly failed')
 			assert.equal(dataStringWith0xStart(simulatedCode.getCodeReturn), '0x1234')
@@ -1520,14 +1520,14 @@ describe('SimulationModeEthereumClientService', () => {
 		test('getSimulatedCodeFromInput propagates malformed code lookup output', async () => {
 			requestHandler.malformedGetCodeReturn = true
 			try {
-				await assert.rejects(async () => await getSimulatedCodeFromInput(ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), 0x1234n), isAbiDataDecodeError)
+				await assert.rejects(async () => await getSimulatedCodeFromInput(ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput(), {}), 0x1234n), isAbiDataDecodeError)
 			} finally {
 				requestHandler.malformedGetCodeReturn = false
 			}
 		})
 
 		test('getSimulatedCode installs the helper override and propagates malformed output', async () => {
-			const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput())
+			const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput(), {})
 			if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 			requestHandler.malformedGetCodeReturn = true
 			try {
@@ -1556,7 +1556,7 @@ describe('SimulationModeEthereumClientService', () => {
 			const storage = await getSimulatedStorageAtFromInput(
 				ethereum,
 				undefined,
-				toResolvedSimulationInput(stateWithStorageOverride),
+				toResolvedSimulationInput(stateWithStorageOverride, {}),
 				address,
 				slot,
 			)
@@ -1597,7 +1597,7 @@ describe('SimulationModeEthereumClientService', () => {
 			const storage = await getSimulatedStorageAtFromInput(
 				ethereum,
 				undefined,
-				toResolvedSimulationInput(simulationStateInput),
+				toResolvedSimulationInput(simulationStateInput, {}),
 				SHA256_PRECOMPILE_ADDRESS,
 				slot,
 			)
@@ -1631,7 +1631,7 @@ describe('SimulationModeEthereumClientService', () => {
 					},
 				},
 			] as const
-			const resolvedInput = toResolvedSimulationInput(simulationStateInput)
+			const resolvedInput = toResolvedSimulationInput(simulationStateInput, {})
 
 			assert.equal(await getSimulatedStorageAtFromInput(ethereum, undefined, resolvedInput, address, slot, blockNumber + 1n), firstBlockStorageValue)
 			assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 2)
@@ -1647,7 +1647,7 @@ describe('SimulationModeEthereumClientService', () => {
 			const storage = await getSimulatedStorageAtFromInput(
 				ethereum,
 				undefined,
-				toResolvedSimulationInput(createSimulationStateInput()),
+				toResolvedSimulationInput(createSimulationStateInput(), {}),
 				address,
 				slot,
 				blockNumber,
@@ -1777,7 +1777,7 @@ describe('SimulationModeEthereumClientService', () => {
 				requestHandler.ethGetBalanceCalls.length = 0
 				const emptySimulationStateInput = [] as const
 
-				await getSimulatedBalanceFromInput(ethereum, undefined, toResolvedSimulationInput(emptySimulationStateInput), exampleTransaction.from, 'pending')
+				await getSimulatedBalanceFromInput(ethereum, undefined, toResolvedSimulationInput(emptySimulationStateInput, {}), exampleTransaction.from, 'pending')
 
 				assert.deepEqual(requestHandler.ethGetBalanceCalls[0]?.params, [exampleTransaction.from, 'pending'])
 			})
@@ -1788,7 +1788,7 @@ describe('SimulationModeEthereumClientService', () => {
 				const simulatedLatestBlock = await getBlockFromInput(simulationStateInput, 'latest')
 				if (simulatedLatestBlock === null) throw new Error('missing simulated latest block')
 
-				const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), createDappEthSimulateV1Request())
+				const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput, {}), createDappEthSimulateV1Request())
 
 				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 2)
 				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.traceTransfers, false)
@@ -1802,7 +1802,7 @@ describe('SimulationModeEthereumClientService', () => {
 				requestHandler.ethSimulateV1Calls.length = 0
 
 				await assert.rejects(
-					async () => await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), createDappEthSimulateV1Request('latest', true)),
+					async () => await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput(), {}), createDappEthSimulateV1Request('latest', true)),
 					(error: unknown) => {
 						assert.ok(error instanceof JsonRpcResponseError)
 						assert.equal(error.code, -32602)
@@ -1816,7 +1816,7 @@ describe('SimulationModeEthereumClientService', () => {
 			test('input-based eth_simulateV1 does not prepend simulated stack for explicit real parent block', async () => {
 				requestHandler.ethSimulateV1Calls.length = 0
 
-				const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), createDappEthSimulateV1Request(blockNumber))
+				const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput(), {}), createDappEthSimulateV1Request(blockNumber))
 
 				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 1)
 				assert.equal(result.length, 1)
@@ -1839,7 +1839,7 @@ describe('SimulationModeEthereumClientService', () => {
 			test('input-based eth_simulateV1 preserves validation true for explicit real parent block passthrough', async () => {
 				requestHandler.ethSimulateV1Calls.length = 0
 
-				const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), createDappEthSimulateV1Request(blockNumber, true))
+				const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput(), {}), createDappEthSimulateV1Request(blockNumber, true))
 
 				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 1)
 				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.validation, true)
@@ -1850,7 +1850,7 @@ describe('SimulationModeEthereumClientService', () => {
 				requestHandler.ethSimulateV1Calls.length = 0
 				const throwingClient = createEthereumWithThrowingSimulationPreparation()
 
-				const result = await ethSimulateV1FromInput(throwingClient.ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), createDappEthSimulateV1Request(blockNumber))
+				const result = await ethSimulateV1FromInput(throwingClient.ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput(), {}), createDappEthSimulateV1Request(blockNumber))
 
 				assert.equal(throwingClient.getPrepareCallCount(), 0)
 				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 1)
@@ -1863,7 +1863,7 @@ describe('SimulationModeEthereumClientService', () => {
 				const simulatedLatestBlock = await getBlockFromInput(simulationStateInput, 'latest')
 				if (simulatedLatestBlock === null) throw new Error('missing simulated latest block')
 
-				const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), createDappEthSimulateV1Request(blockNumber + 1n))
+				const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput, {}), createDappEthSimulateV1Request(blockNumber + 1n))
 
 				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 2)
 				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.parentBlockTag, blockNumber)
@@ -1880,7 +1880,7 @@ describe('SimulationModeEthereumClientService', () => {
 
 				assert.equal(await getBlockNumberFromInput(simulationStateInput), blockNumber + 2n)
 
-				const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), createDappEthSimulateV1Request(blockNumber + 1n))
+				const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput, {}), createDappEthSimulateV1Request(blockNumber + 1n))
 
 				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 2)
 				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.parentBlockTag, blockNumber)
@@ -1892,7 +1892,7 @@ describe('SimulationModeEthereumClientService', () => {
 				requestHandler.ethSimulateV1Calls.length = 0
 				const parentBlockHash = testBytes32('abcd')
 
-				const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), createDappEthSimulateV1Request(parentBlockHash))
+				const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput(), {}), createDappEthSimulateV1Request(parentBlockHash))
 
 				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 1)
 				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.parentBlockTag, parentBlockHash)
@@ -1904,7 +1904,7 @@ describe('SimulationModeEthereumClientService', () => {
 				const parentBlockHash = testBytes32('abcd')
 				const throwingClient = createEthereumWithThrowingSimulationPreparation()
 
-				const result = await ethSimulateV1FromInput(throwingClient.ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), createDappEthSimulateV1Request(parentBlockHash))
+				const result = await ethSimulateV1FromInput(throwingClient.ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput(), {}), createDappEthSimulateV1Request(parentBlockHash))
 
 				assert.equal(throwingClient.getPrepareCallCount(), 0)
 				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 1)
@@ -1918,7 +1918,7 @@ describe('SimulationModeEthereumClientService', () => {
 				requestHandler.ethGetBlockByHashErrorsByHash.set(BigInt(parentBlockHash), new Error('block hash lookup failed'))
 				const throwingClient = createEthereumWithThrowingSimulationPreparation()
 				try {
-					const result = await ethSimulateV1FromInput(throwingClient.ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), createDappEthSimulateV1Request(parentBlockHash))
+					const result = await ethSimulateV1FromInput(throwingClient.ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput(), {}), createDappEthSimulateV1Request(parentBlockHash))
 
 					assert.equal(throwingClient.getPrepareCallCount(), 0)
 					assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 1)
@@ -1934,7 +1934,7 @@ describe('SimulationModeEthereumClientService', () => {
 				const parentBlockHash = testBytes32('beef')
 				const throwingClient = createEthereumWithThrowingSimulationPreparation()
 
-				const result = await ethSimulateV1FromInput(throwingClient.ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput()), createDappEthSimulateV1Request(parentBlockHash))
+				const result = await ethSimulateV1FromInput(throwingClient.ethereum, undefined, toResolvedSimulationInput(createSimulationStateInput(), {}), createDappEthSimulateV1Request(parentBlockHash))
 
 				assert.equal(throwingClient.getPrepareCallCount(), 1)
 				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 1)
@@ -1948,7 +1948,7 @@ describe('SimulationModeEthereumClientService', () => {
 					const simulatedLatestBlock = await getBlockFromInput(simulationStateInput, 'latest')
 					if (simulatedLatestBlock === null) throw new Error('missing simulated latest block')
 
-					const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), createDappEthSimulateV1Request(bytes32String(simulatedLatestBlock.hash)))
+					const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput, {}), createDappEthSimulateV1Request(bytes32String(simulatedLatestBlock.hash)))
 
 					assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 2)
 					assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.parentBlockTag, blockNumber)
@@ -1963,7 +1963,7 @@ describe('SimulationModeEthereumClientService', () => {
 				const simulatedLatestBlock = await getBlockFromInput(simulationStateInput, 'latest')
 				if (simulatedLatestBlock === null) throw new Error('missing simulated latest block')
 
-				const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput), createDappEthSimulateV1Request(undefined))
+				const result = await ethSimulateV1FromInput(ethereum, undefined, toResolvedSimulationInput(simulationStateInput, {}), createDappEthSimulateV1Request(undefined))
 
 				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.blockStateCallCount, 2)
 				assert.equal(requestHandler.ethSimulateV1Calls.at(-1)?.parentBlockTag, blockNumber)
@@ -2016,7 +2016,7 @@ describe('SimulationModeEthereumClientService', () => {
 			})
 
 			test('state-based full blocks include transaction block data and realized gas price', async () => {
-				const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput())
+				const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput(), {})
 				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 				const latestBlock = await getSimulatedBlock(ethereum, undefined, toResolvedSimulationState(simulationState), 'latest', true)
 				if (latestBlock === null) throw new Error('latest simulated block missing')
@@ -2045,7 +2045,7 @@ describe('SimulationModeEthereumClientService', () => {
 						}),
 					})),
 				}))
-				const template = await createSimulationState(ethereum, undefined, createTwoBlockSimulationStateInput())
+				const template = await createSimulationState(ethereum, undefined, createTwoBlockSimulationStateInput(), {})
 				if (template.success === false) throw new Error('simulation unexpectedly failed')
 				// Exercise the state reader with two included transactions per block and a nonzero base fee.
 				const state = toResolvedSimulationState({
@@ -2073,7 +2073,7 @@ describe('SimulationModeEthereumClientService', () => {
 						for (const [transactionIndex, transaction] of block.transactions.entries()) {
 							if (!('blockHash' in transaction)) throw new Error('transaction block data missing')
 							const lookup = source === 'input'
-								? await getSimulatedTransactionByHashFromInput(ethereum, undefined, toResolvedSimulationInput(input), transaction.hash)
+								? await getSimulatedTransactionByHashFromInput(ethereum, undefined, toResolvedSimulationInput(input, {}), transaction.hash)
 								: await getSimulatedTransactionByHash(ethereum, undefined, state, transaction.hash)
 							assert.deepStrictEqual(transaction, lookup)
 							assert.equal(transaction.blockHash, block.hash)
@@ -2236,7 +2236,7 @@ describe('SimulationModeEthereumClientService', () => {
 					simulateWithZeroBaseFee: false,
 				}] as const
 
-				const simulationState = await createSimulationState(ethereum, undefined, splitSimulationStateInput)
+				const simulationState = await createSimulationState(ethereum, undefined, splitSimulationStateInput, {})
 				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 				const secondHash = splitSimulationStateInput[0].transactions[1]?.signedTransaction.hash
 				if (secondHash === undefined) throw new Error('second transaction hash missing')
@@ -2269,7 +2269,7 @@ describe('SimulationModeEthereumClientService', () => {
 					simulateWithZeroBaseFee: false,
 				}] as const
 
-				const simulationState = await createSimulationState(ethereum, undefined, simulationStateInput)
+				const simulationState = await createSimulationState(ethereum, undefined, simulationStateInput, {})
 				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 				const transactionHash = simulationStateInput[0].transactions[0]?.signedTransaction.hash
 				if (transactionHash === undefined) throw new Error('transaction hash missing')
@@ -2307,7 +2307,7 @@ describe('SimulationModeEthereumClientService', () => {
 					simulateWithZeroBaseFee: false,
 				}] as const
 
-				const simulationState = await createSimulationState(ethereum, undefined, simulationStateInput)
+				const simulationState = await createSimulationState(ethereum, undefined, simulationStateInput, {})
 				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 				const transactionHash = simulationStateInput[0].transactions[0]?.signedTransaction.hash
 				if (transactionHash === undefined) throw new Error('transaction hash missing')
@@ -2350,7 +2350,7 @@ describe('SimulationModeEthereumClientService', () => {
 					simulateWithZeroBaseFee: false,
 				}] as const
 
-				const simulationState = await createSimulationState(ethereum, undefined, splitSimulationStateInput)
+				const simulationState = await createSimulationState(ethereum, undefined, splitSimulationStateInput, {})
 				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 				const firstBlock = await getBlockFromInput(splitSimulationStateInput, blockNumber + 1n, true)
 				if (firstBlock === null) throw new Error('first simulated block missing')
@@ -2362,7 +2362,7 @@ describe('SimulationModeEthereumClientService', () => {
 			})
 
 			test('state-based logs merge simulated events into an earliest-to-latest range', async () => {
-				const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput())
+				const simulationState = await createSimulationState(ethereum, undefined, createSimulationStateInput(), {})
 				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 				const nodeLogFilters: Parameters<typeof ethereum.getLogs>[0][] = []
 				const overlayEthereum = new Proxy(ethereum, {
@@ -2406,13 +2406,13 @@ describe('SimulationModeEthereumClientService', () => {
 				}] as const
 
 				requestHandler.ethSimulateV1Calls.length = 0
-				const fullSimulationState = await createSimulationState(ethereum, undefined, simulationStateInput)
+				const fullSimulationState = await createSimulationState(ethereum, undefined, simulationStateInput, {})
 				if (fullSimulationState.success === false) throw new Error('simulation unexpectedly failed')
 				assert.equal(requestHandler.ethSimulateV1Calls.some((call) => call.aggregate3BalanceQueryCount !== undefined), true)
 				assert.equal(requestHandler.ethSimulateV1Calls.find((call) => call.aggregate3BalanceQueryCount !== undefined)?.lastCallGas, undefined)
 
 				requestHandler.ethSimulateV1Calls.length = 0
-				const executionSimulationState = await createExecutionSimulationState(ethereum, undefined, simulationStateInput)
+				const executionSimulationState = await createExecutionSimulationState(ethereum, undefined, simulationStateInput, {})
 				if (executionSimulationState.success === false) throw new Error('simulation unexpectedly failed')
 				assert.equal(requestHandler.ethSimulateV1Calls.length, 1)
 				assert.equal(requestHandler.ethSimulateV1Calls.some((call) => call.aggregate3BalanceQueryCount !== undefined), false)
@@ -2442,7 +2442,7 @@ describe('SimulationModeEthereumClientService', () => {
 					simulateWithZeroBaseFee: false,
 				}] as const
 
-				const simulationState = await createSimulationState(ethereum, undefined, simulationStateInput)
+				const simulationState = await createSimulationState(ethereum, undefined, simulationStateInput, {})
 				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 				const tokenBalancesAfter = simulationState.simulatedBlocks[0]?.simulatedTransactions[0]?.tokenBalancesAfter
 				assert.notEqual(tokenBalancesAfter, undefined)
@@ -2474,7 +2474,7 @@ describe('SimulationModeEthereumClientService', () => {
 					simulateWithZeroBaseFee: false,
 				}] as const
 
-				const simulationState = await createSimulationState(ethereum, undefined, simulationStateInput)
+				const simulationState = await createSimulationState(ethereum, undefined, simulationStateInput, {})
 				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 				const tokenBalancesAfter = simulationState.simulatedBlocks[0]?.simulatedTransactions[0]?.tokenBalancesAfter
 				assert.notEqual(tokenBalancesAfter, undefined)
@@ -2513,7 +2513,7 @@ describe('SimulationModeEthereumClientService', () => {
 					simulateWithZeroBaseFee: false,
 				}] as const
 
-				const simulationState = await createExecutionSimulationState(ethereum, undefined, splitSimulationStateInput)
+				const simulationState = await createExecutionSimulationState(ethereum, undefined, splitSimulationStateInput, {})
 				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 				const secondHash = splitSimulationStateInput[0].transactions[1]?.signedTransaction.hash
 				if (secondHash === undefined) throw new Error('second transaction hash missing')
@@ -2560,7 +2560,7 @@ describe('SimulationModeEthereumClientService', () => {
 					simulateWithZeroBaseFee: false,
 				}] as const
 
-				const simulationState = await createExecutionSimulationState(ethereum, undefined, splitSimulationStateInput)
+				const simulationState = await createExecutionSimulationState(ethereum, undefined, splitSimulationStateInput, {})
 				if (simulationState.success === false) throw new Error('simulation unexpectedly failed')
 				const firstBlock = await getBlockFromInput(splitSimulationStateInput, blockNumber + 1n, true)
 				if (firstBlock === null) throw new Error('first simulated block missing')

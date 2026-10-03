@@ -417,7 +417,7 @@ describe('Gnosis Safe stack simulation', () => {
 			executionTransaction,
 			executionTimestamp,
 			executionStateOverrides,
-			{ status: 'success', returnData: new Uint8Array(), gasUsed: 21_000n, logs: [] },
+			{ status: 'success', returnData: new Uint8Array(), gasUsed: 21_000n, logs: [] }, {}
 		)
 
 		assert.equal(governanceExecutionSimulationInput.length, 2)

@@ -15,7 +15,7 @@ export async function requestDelegationSimulation(settings: Settings, ethereum: 
 		return { method: 'popup_requestDelegationSimulation' as const, data: { address, chainId, status: { type: 'unknown' as const } } }
 	}
 	try {
-		const delegate = await ethereum.getCachedDelegation(address)
+		const delegate = await ethereum.getCachedDelegation(address, undefined, { refresh: true })
 		return { method: 'popup_requestDelegationSimulation' as const, data: { address, chainId, status: delegate === undefined ? { type: 'none' as const } : { type: 'delegated' as const, delegate } } }
 	} catch (error) {
 		if (!isExpectedInfrastructureError(error)) await reportLocalRecovery(error, { code: 'active_delegation_lookup_failed' })
@@ -25,7 +25,8 @@ export async function requestDelegationSimulation(settings: Settings, ethereum: 
 
 export async function setDelegationSimulation(settings: Settings, services: SimulationServices, address: bigint, chainId: bigint, enabled: boolean) {
 	const network = settings.activeRpcNetwork
-	if (!settings.simulationMode || settings.activeSimulationAddress !== address || network.chainId !== chainId) {
+	const affectsActiveSimulation = settings.simulationMode && settings.activeSimulationAddress === address && network.chainId === chainId
+	if (enabled && !affectsActiveSimulation) {
 		return { method: 'popup_setDelegationSimulation' as const, data: { ok: false as const, message: 'The active simulation account or network changed. Please try again.' } }
 	}
 	if (enabled) {
@@ -47,7 +48,7 @@ export async function setDelegationSimulation(settings: Settings, services: Simu
 	const changed = await setDelegateClearingEnabled(address, chainId, enabled)
 	if (changed) {
 		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: await getSettings(), popupRefreshGeneration: bumpPopupRefreshGeneration() })
-		await queuePopupSimulationRefresh({ ...services, invalidateOldState: true })
+		if (affectsActiveSimulation) await queuePopupSimulationRefresh({ ...services, invalidateOldState: true })
 	}
 	return { method: 'popup_setDelegationSimulation' as const, data: { ok: true as const, address, chainId, enabled } }
 }

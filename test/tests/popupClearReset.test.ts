@@ -502,8 +502,8 @@ describe('popup clear reset', () => {
 		const storedSimulationState = storedPopupVisualisation.simulationState
 		assert.equal(storedSimulationState.kind, 'simulated')
 		assert.equal(
-			modules.getPopupVisualisationFingerprint(currentSimulationInput, rpcNetwork, 123n),
-			modules.getPopupVisualisationFingerprint(storedSimulationState.value.simulationStateInput, storedSimulationState.value.rpcNetwork, storedSimulationState.value.blockNumber),
+			modules.getPopupVisualisationFingerprint(currentSimulationInput, rpcNetwork, 123n, {}),
+			modules.getPopupVisualisationFingerprint(storedSimulationState.value.simulationStateInput, storedSimulationState.value.rpcNetwork, storedSimulationState.value.blockNumber, {}),
 		)
 		const popupVisualisation = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, { skipIfUnchanged: true })
 		assert.equal(popupVisualisation.simulationId, matchingPopupVisualisation.simulationId)
