@@ -3,6 +3,10 @@ import { serialize } from '../types/wire-types.js'
 
 export type DiagnosticSummary = Readonly<Record<InterceptorErrorSeverity, number>> & { total: number }
 
+export function hasActionableDiagnostics(diagnostics: readonly InterceptorErrorDiagnostic[]) {
+	return diagnostics.some((diagnostic) => diagnostic.userVisible && diagnostic.severity === 'error')
+}
+
 export function summarizeDiagnostics(diagnostics: readonly InterceptorErrorDiagnostic[]): DiagnosticSummary {
 	let info = 0
 	let warning = 0
