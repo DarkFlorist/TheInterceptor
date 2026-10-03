@@ -189,3 +189,20 @@ test('direct signing admission rejects a structurally valid persisted key/addres
 	const request = { method: 'personal_sign', params: ['0x01', '0x0000000000000000000000000000000000000004'], interceptorRequest: true, usingInterceptorWithoutSigner: true, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket } }
 	await expect(resolveSigningRequest(new Map(), socket, request, undefined, { ...await getSettings(), simulationMode: false }, 4n, undefined, false, false, undefined)).rejects.toThrow('public key')
 })
+
+test('request admission with uncached browser accounts fails promptly without prompting the wallet', async () => {
+	installBrowserMock()
+	const { updateTabState, websiteSocketToString } = await loadModules()
+	const { resolveSigningRequest } = await import('../../app/ts/background/signingRequestResolver.js')
+	const { EthereumJsonRpcRequest } = await import('../../app/ts/types/JsonRpc-types.js')
+	await saveAddressSigningWallet(1n, { type: 'browser', address: 1n, label: 'Saved', signerName: 'MetaMask', providerId: 'eip6963:io.metamask' }, undefined, 'Saved')
+	const socket = { tabId: 1, connectionName: 0n }
+	await updateTabState(1, (tab) => ({ ...tab, signerConnected: true, signerName: 'MetaMask', signerProvider: { rdns: 'io.metamask', ambiguous: false }, signerAccounts: [] }))
+	const { port, messages } = createPort(1)
+	const connections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.test', approved: true, wantsToConnect: true } } }]])
+	const settings = await getSettings()
+	const request = { method: 'personal_sign', params: ['0x01', '0x0000000000000000000000000000000000000001'], interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket } }
+	const admission = await resolveSigningRequest(connections, socket, request, EthereumJsonRpcRequest.parse(request), { ...settings, simulationMode: false, activeRpcNetwork: { ...settings.activeRpcNetwork, httpsRpc: undefined } }, 1n, undefined, false, false, undefined)
+	expect(admission.admissionError).toMatchObject({ code: 4100 })
+	expect(messages).toEqual([])
+})

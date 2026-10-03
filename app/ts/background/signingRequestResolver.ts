@@ -43,7 +43,7 @@ export async function resolveSigningRequest(
 	let forwarding: { type: 'forwardToSigner', expectedProviderId?: string } = { type: 'forwardToSigner' }
 	let forwardingError: ErrorWithCodeAndOptionalData | undefined
 	if (safePolicyReply === undefined && forwardToSigner && walletForwardingRequested && binding?.wallet.type === 'browser') {
-		const fields = await prepareSavedBrowserWalletForwarding(websiteTabConnections, socket, binding, { requireSelectedAccount: isSigningOperation(request.method), requestedAddress: parsedRequest === undefined ? undefined : browserSigningRequestAccount(parsedRequest) })
+		const fields = await prepareSavedBrowserWalletForwarding(websiteTabConnections, socket, binding, { requestMissingAccounts: false, requireSelectedAccount: isSigningOperation(request.method), requestedAddress: parsedRequest === undefined ? undefined : browserSigningRequestAccount(parsedRequest) })
 		if (fields.error !== undefined) forwardingError = fields.error
 		else forwarding = { type: 'forwardToSigner', expectedProviderId: fields.expectedProviderId }
 	}

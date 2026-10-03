@@ -6,10 +6,10 @@ import { getSigningWalletBinding, getTabState } from './storageVariables.js'
 import { askForSignerAccountsFromSignerIfNotAvailable } from './windows/interceptorAccess.js'
 
 /** A saved address can serve eth_accounts without contacting its wallet. Fetch missing wallet accounts only when signing is requested. */
-export async function prepareSavedBrowserWalletForwarding(connections: WebsiteTabConnections, socket: WebsiteSocket, binding: SigningWalletBinding, options: Parameters<typeof prepareBrowserWalletForwarding>[2] = {}) {
+export async function prepareSavedBrowserWalletForwarding(connections: WebsiteTabConnections, socket: WebsiteSocket, binding: SigningWalletBinding, options: Parameters<typeof prepareBrowserWalletForwarding>[2] & { requestMissingAccounts?: boolean } = {}) {
 	if (binding.wallet.type !== 'browser') throw new Error('Expected a browser signing wallet')
 	let tab = await getTabState(socket.tabId)
-	if ((options.requireSelectedAccount ?? true) && tab.signerAccounts.length === 0 && matchesBrowserSigningWallet(binding.wallet, tab)) {
+	if ((options.requestMissingAccounts ?? true) && (options.requireSelectedAccount ?? true) && tab.signerAccounts.length === 0 && matchesBrowserSigningWallet(binding.wallet, tab)) {
 		const refreshed = await askForSignerAccountsFromSignerIfNotAvailable(connections, socket, true)
 		if (refreshed.error !== undefined) return { error: refreshed.error }
 		tab = await getTabState(socket.tabId)

@@ -134,7 +134,7 @@ export async function openDirectSigning(ethereum: EthereumClientService, prices:
 }
 
 /** Persist before every irreversible boundary; an interrupted submission can only reconcile or resend the same bytes. */
-export async function updateDirectSigning(request: DirectSigningRequest) {
+export async function updateDirectSigning(request: DirectSigningRequest, refreshReview?: (record: DirectSigningRecord) => Promise<void>) {
 	return await signingStateLock.execute(async () => {
 		const record = (await readDirectSigningRecords()).find((item) => item.id === request.id)
 		if (record === undefined) throw signingOperationError('Signing request not found')
@@ -147,7 +147,12 @@ export async function updateDirectSigning(request: DirectSigningRequest) {
 		if (request.method === 'signing_broadcast' && (record.phase === 'submitting' || record.phase === 'submitted' || record.phase === 'confirmed')) return await broadcast(record)
 		await assertCurrentBinding(record)
 		switch (request.method) {
-			case 'signing_editFees': return await editTransactionFees(record, request)
+			case 'signing_editFees': {
+				if (refreshReview === undefined) throw signingOperationError('Fee changes require a refreshed transaction explanation')
+				const edited = editTransactionFees(record, request)
+				await refreshReview(edited)
+				return await storeRecord(edited)
+			}
 			case 'signing_approve': return await approveSigningRequest(record)
 			case 'signing_result': return await acceptSigningResult(record, request.result)
 			case 'signing_broadcast': return await broadcast(record)
@@ -156,12 +161,12 @@ export async function updateDirectSigning(request: DirectSigningRequest) {
 	})
 }
 
-async function editTransactionFees(record: DirectSigningRecord, request: Extract<DirectSigningRequest, { method: 'signing_editFees' }>) {
+function editTransactionFees(record: DirectSigningRecord, request: Extract<DirectSigningRequest, { method: 'signing_editFees' }>): DirectSigningRecord {
 	if (record.phase !== 'review' && record.phase !== 'signed') throw signingOperationError('Cancel device approval before editing signed fields')
 	if (record.input.method !== 'eth_sendTransaction') throw signingOperationError('Messages do not have transaction fees')
 	if (request.gas < 21000n || request.maxPriorityFeePerGas > request.maxFeePerGas) throw signingOperationError('Invalid transaction gas or fees')
 	const data = serializeTransaction({ ...parseTransaction(ensureHex(record.input.data)), authorizationList: undefined, nonce: request.nonce, gas: request.gas, maxFeePerGas: request.maxFeePerGas, maxPriorityFeePerGas: request.maxPriorityFeePerGas })
-	return await storeRecord({ ...record, input: { ...record.input, data }, phase: 'review', revision: crypto.randomUUID(), result: undefined, transactionHash: undefined })
+	return { ...record, input: { ...record.input, data }, phase: 'review', revision: crypto.randomUUID(), result: undefined, transactionHash: undefined }
 }
 
 async function approveSigningRequest(record: DirectSigningRecord) {
@@ -223,6 +228,7 @@ export async function refreshDirectSigningReview(record: DirectSigningRecord, et
 	const transactionToSimulate = { ...pending.transactionToSimulate, transaction: { ...pending.transactionToSimulate.transaction, nonce: BigInt(final.nonce ?? 0), gas: BigInt(final.gas ?? 0), maxFeePerGas: final.maxFeePerGas ?? 0n, maxPriorityFeePerGas: final.maxPriorityFeePerGas ?? 0n } }
 	const popupVisualisation = await refreshConfirmTransactionSimulation(ethereum, prices, pending.activeAddress, false, pending.uniqueRequestIdentifier, transactionToSimulate, pending.safeTransaction)
 	if (popupVisualisation === undefined) throw signingOperationError('The refreshed explanation was interrupted; review again')
+	if (popupVisualisation.statusCode === 'failed') throw signingOperationError('Unable to refresh the transaction explanation. Retry the fee change when the RPC connection is available.')
 	await assertCurrentBinding(record)
 	await updatePendingTransactionOrMessage(record.request, async (current) => {
 		if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated') throw signingOperationError('The transaction changed during explanation refresh')

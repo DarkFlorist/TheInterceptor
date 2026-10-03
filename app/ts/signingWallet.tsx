@@ -5,7 +5,7 @@ import { render } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { SigningWallet, SigningWalletBindings, SigningWalletBinding } from './types/signingWallet.js'
 import type { TabState } from './types/user-interface-types.js'
-import { sendSigningPageRequest } from './signing/pageMessages.js'
+import { sendSigningPageRequest } from './utils/signingPageMessages.js'
 import { selectLedgerDevice, withLedgerDevice } from './signing/ledgerHid.js'
 import { checkLedgerEthereumApp, readLedgerAccount } from './signing/ledgerEthereum.js'
 import { createAirGapAccountImporter } from './signing/airgapAccountImport.js'
@@ -96,6 +96,7 @@ function SigningWalletPage() {
 		if (kind !== 'manual' && wallet === undefined) throw new Error('Select and review a wallet account first')
 		const address = wallet?.address ?? BigInt(addressText)
 		if (target !== null && address !== BigInt(target)) throw new Error('The wallet account does not match the address being edited')
+		if (wallet === undefined && bindings.some((item) => item.wallet.address === address)) throw new Error('This address already has a signing wallet. Use Remove signing wallet to remove it explicitly.')
 		await sendSigningPageRequest({ method: 'signing_saveWallet', address, wallet, revision: bindings.find((item) => item.wallet.address === address)?.revision, name: label })
 		setSaved(true)
 		setStatus('Address and signing wallet saved. Mode and website permissions are unchanged.')

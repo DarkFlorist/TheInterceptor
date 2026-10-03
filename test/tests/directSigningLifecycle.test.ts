@@ -1,9 +1,9 @@
-import { beforeEach, afterEach, expect, test } from 'bun:test'
+import { beforeEach, afterEach, expect, spyOn, test } from 'bun:test'
 import { secp256k1 } from '@noble/curves/secp256k1'
-import { createBrowserMock, pendingTransaction, resetConfirmTransactionTestState } from './confirmTransactionTestHarness.js'
+import { createBrowserMock, pendingTransaction, resetConfirmTransactionTestState, ethereum, simulator } from './confirmTransactionTestHarness.js'
 import { DirectSigningRecord, DirectSigningRecords } from '../../app/ts/types/directSigning.js'
-import { appendPendingTransactionOrMessage, saveAddressSigningWallet, clearPendingTransactions } from '../../app/ts/background/storageVariables.js'
-import { readDirectSigningRecords, updateDirectSigning } from '../../app/ts/background/directSigning.js'
+import { appendPendingTransactionOrMessage, saveAddressSigningWallet, clearPendingTransactions, getPendingTransactionsAndMessages } from '../../app/ts/background/storageVariables.js'
+import { readDirectSigningRecords, updateDirectSigning, refreshDirectSigningReview } from '../../app/ts/background/directSigning.js'
 import { bytesFromHex, bytesToHex, ensureHex, type Hex } from '../../app/ts/utils/ethereumBytes.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumSigning.js'
 import { parseTransaction, serializeTransaction } from '../../app/ts/utils/ethereumTransactions.js'
@@ -79,7 +79,7 @@ test('approval and verified signature persist separately and never broadcast imp
 test('editing fees invalidates the signed response and requires fresh review', async () => {
 	await sign()
 	const old = record
-	record = await updateDirectSigning({ method: 'signing_editFees', id: record.id, revision: record.revision, nonce: 0n, gas: 25000n, maxFeePerGas: 20n, maxPriorityFeePerGas: 2n })
+	record = await updateDirectSigning({ method: 'signing_editFees', id: record.id, revision: record.revision, nonce: 0n, gas: 25000n, maxFeePerGas: 20n, maxPriorityFeePerGas: 2n }, async () => undefined)
 	expect(record.phase).toBe('review')
 	expect(record.result).toBeUndefined()
 	expect(record.revision).not.toBe(old.revision)
@@ -137,4 +137,38 @@ for (const unrelatedChain of [false, true]) test(`nonce reservation ignores ${ u
 	const approved = await updateDirectSigning({ method: 'signing_approve', id: record.id, revision: record.revision })
 	expect(approved.phase).toBe('approved')
 	expect(broadcasts).toBe(0)
+})
+
+test('failed fee explanation preserves the old revision and permits retry', async () => {
+	const old = record
+	const request = { method: 'signing_editFees' as const, id: record.id, revision: record.revision, nonce: 0n, gas: 25000n, maxFeePerGas: 20n, maxPriorityFeePerGas: 2n }
+	await expect(updateDirectSigning(request, async () => { throw new Error('Explanation unavailable') })).rejects.toThrow('Explanation unavailable')
+	expect((await readDirectSigningRecords())[0]).toEqual(old)
+	const retried = await updateDirectSigning(request, async () => undefined)
+	expect(retried.revision).not.toBe(old.revision)
+})
+
+test('returned simulation failure preserves fees and pending explanation until a successful retry', async () => {
+	const simulation = await import('../../app/ts/background/confirmTransactionSimulation.js')
+	const before = await getPendingTransactionsAndMessages()
+	const old = record
+	const chain = spyOn(ethereum, 'getChainId').mockReturnValue(1n)
+	const refresh = spyOn(simulation, 'refreshConfirmTransactionSimulation').mockResolvedValue({
+		statusCode: 'failed',
+		data: { ...pendingTransaction.popupVisualisation.data, error: { code: -32603, message: 'RPC unavailable', decodedErrorMessage: 'RPC unavailable' }, simulationState: { blockNumber: 0n, simulationConductedTimestamp: new Date() } },
+	})
+	const request = { method: 'signing_editFees' as const, id: record.id, revision: record.revision, nonce: 0n, gas: 25000n, maxFeePerGas: 20n, maxPriorityFeePerGas: 2n }
+	const refreshReview = async (edited: DirectSigningRecord) => await refreshDirectSigningReview(edited, ethereum, simulator.tokenPriceService)
+	try {
+		await expect(updateDirectSigning(request, refreshReview)).rejects.toThrow('Retry the fee change')
+		expect((await readDirectSigningRecords())[0]).toEqual(old)
+		expect(await getPendingTransactionsAndMessages()).toEqual(before)
+		refresh.mockResolvedValue(pendingTransaction.popupVisualisation)
+		const retried = await updateDirectSigning(request, refreshReview)
+		expect(retried.revision).not.toBe(old.revision)
+		expect((await getPendingTransactionsAndMessages())[0]?.directSigningReviewRevision).toBe(retried.revision)
+	} finally {
+		refresh.mockRestore()
+		chain.mockRestore()
+	}
 })

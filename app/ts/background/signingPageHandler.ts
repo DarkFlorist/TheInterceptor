@@ -36,9 +36,8 @@ export async function signingPageHandler(request: SigningPageRequest, ethereum: 
 			await sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
 			return { ok: true }
 		}
-		const record = await updateDirectSigning(request)
+		const record = await updateDirectSigning(request, async (edited) => await refreshDirectSigningReview(edited, ethereum, prices))
 		if (request.method === 'signing_editFees') {
-			await refreshDirectSigningReview(record, ethereum, prices)
 			await updateConfirmTransactionView(ethereum, prices)
 		}
 		if (record.phase === 'cancelled') {

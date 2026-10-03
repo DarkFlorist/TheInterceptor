@@ -352,3 +352,15 @@ test('display signing address uses only eligible Safe and live account fallbacks
 	assert.equal(getActiveSigningAddress(configured, { safeAddress: SAFE_ADDRESS, signerAddress: EOA_ADDRESS }), SAFE_ADDRESS)
 	assert.equal(getActiveSigningAddress({ ...configured, selectedSigningAddress: EOA_ADDRESS }, { safeAddress: SAFE_ADDRESS, signerAddress: undefined }), EOA_ADDRESS)
 })
+
+test('signing selection excludes ordinary contacts scoped to other chains', () => {
+	const entries: AddressBookEntries = [
+		{ type: 'contact', address: EOA_ADDRESS, name: 'Current', entrySource: 'User', chainId: 1n },
+		{ type: 'contact', address: OTHER_EOA_ADDRESS, name: 'Other chain', entrySource: 'User', chainId: 5n },
+		{ type: 'contact', address: 3n, name: 'All chains', entrySource: 'User', chainId: 'AllChains' },
+		{ type: 'contact', address: 4n, name: 'Legacy mainnet', entrySource: 'User' },
+	]
+	assert.deepEqual(getSelectableActiveAddresses(entries, false, 1n, []).map((entry) => entry.address), [EOA_ADDRESS, 3n, 4n])
+	assert.equal(getActiveAddressSelection(OTHER_EOA_ADDRESS, entries, false, 1n, []), undefined)
+	assert.deepEqual(getSelectableActiveAddresses(entries, false, 5n, []).map((entry) => entry.address), [OTHER_EOA_ADDRESS, 3n])
+})

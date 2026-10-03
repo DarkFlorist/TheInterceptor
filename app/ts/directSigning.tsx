@@ -10,7 +10,7 @@ import { openSigningWalletSetup } from './components/subcomponents/SigningWallet
 import { render } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
 import type { DirectSigningRecord, DirectSigningRequest } from './types/directSigning.js'
-import { sendSigningPageRequest } from './signing/pageMessages.js'
+import { sendSigningPageRequest } from './utils/signingPageMessages.js'
 import { prepareDirectPayload, signingWalletDescription } from './signing/backend.js'
 import { selectLedgerDevice, withLedgerDevice } from './signing/ledgerHid.js'
 import { signWithLedger } from './signing/ledgerEthereum.js'

@@ -125,8 +125,8 @@ export function getSelectableActiveAddresses(activeAddresses: AddressBookEntries
 	if (simulationMode) return activeAddresses.filter((entry) => entry.type !== 'safe' || entry.chainId === activeChainId)
 
 	const selectedSignerAddress = signerAccounts[0]
-		return activeAddresses.filter((entry) =>
-		entry.type !== 'safe' || entry.type === 'safe'
+	return activeAddresses.filter((entry) =>
+		entry.type !== 'safe' ? entry.chainId === 'AllChains' || (entry.chainId ?? 1n) === activeChainId : entry.type === 'safe'
 		&& entry.chainId === activeChainId
 		&& (entry.safeSigningSignerAddress !== undefined && entry.safeSignerAddresses?.includes(entry.safeSigningSignerAddress) === true || selectedSignerAddress !== undefined && entry.safeSignerAddresses?.includes(selectedSignerAddress) === true)
 	)
