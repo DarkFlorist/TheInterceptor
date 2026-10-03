@@ -309,46 +309,31 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 	}
 }
 
-export async function importSettingsAndAddressBook(exportedSetings: ExportedSettings) {
+export async function importSettingsAndAddressBook(exportedSettings: ExportedSettings) {
 	// Pre-1.5 exports contain the legacy address shared by signing and simulation. Apply the same explicit default reset as startup rather than heuristically assigning ambiguous state to either independent mode.
 	const defaultActiveAddress = defaultActiveAddresses[0]?.address
 	if (defaultActiveAddress === undefined) throw new Error('Default active address was missing')
-	if (exportedSetings.version === '1.3' || exportedSetings.version === '1.4' || exportedSetings.version === '1.5' || exportedSetings.version === '1.6' || exportedSetings.version === '1.7') {
-		await setPage(exportedSetings.settings.openedPage)
-	}
+	const imported = exportedSettings.settings
+	if ('openedPage' in imported) await setPage(imported.openedPage)
 	// Safe selection and per-signer preferences resolve through the address book. Make imported entries available before publishing that dependent signing state.
-	if (exportedSetings.version === '1.4' || exportedSetings.version === '1.5' || exportedSetings.version === '1.6' || exportedSetings.version === '1.7') {
-		await updateUserAddressBookEntries(() => exportedSetings.settings.addressBookEntries)
-	}
-	if (exportedSetings.version === '1.0') {
-		await replaceModeAndSigningPreferencesForImport({
-			simulationMode: exportedSetings.settings.simulationMode,
-			rpcNetwork: defaultRpcs[0],
-			activeSimulationAddress: defaultActiveAddress,
-			activeSigningAddress: undefined,
-			activeSigningSafeAddress: undefined,
-		}, [])
-	} else {
-		await replaceModeAndSigningPreferencesForImport({
-			simulationMode: exportedSetings.settings.simulationMode,
-			rpcNetwork: exportedSetings.settings.rpcNetwork,
-			activeSimulationAddress: exportedSetings.version === '1.5' || exportedSetings.version === '1.6' || exportedSetings.version === '1.7' ? exportedSetings.settings.activeSimulationAddress : defaultActiveAddress,
-			activeSigningAddress: undefined,
-			activeSigningSafeAddress: exportedSetings.version === '1.5' || exportedSetings.version === '1.6' || exportedSetings.version === '1.7' ? exportedSetings.settings.activeSigningSafeAddress : undefined,
-		}, exportedSetings.version === '1.5' || exportedSetings.version === '1.6' || exportedSetings.version === '1.7' ? exportedSetings.settings.signingAddressPreferences : [])
-	}
-	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
-	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
-	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup)
-	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') {
-		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)
-	}
-	await setSafeAppsCompatibilityMode(exportedSetings.version === '1.6' || exportedSetings.version === '1.7' ? exportedSetings.settings.safeAppsCompatibilityMode : false)
-	await delegateClearingPreferencesSemaphore.execute(async () => await browserStorageLocalSet({ delegateClearingPreferences: exportedSetings.version === '1.7' ? exportedSetings.settings.delegateClearingPreferences : [] }))
-	if (exportedSetings.version !== '1.4' && exportedSetings.version !== '1.5' && exportedSetings.version !== '1.6' && exportedSetings.version !== '1.7') {
+	if ('addressBookEntries' in imported) await updateUserAddressBookEntries(() => imported.addressBookEntries)
+	await replaceModeAndSigningPreferencesForImport({
+		simulationMode: imported.simulationMode,
+		rpcNetwork: 'rpcNetwork' in imported ? imported.rpcNetwork : defaultRpcs[0],
+		activeSimulationAddress: 'signingAddressPreferences' in imported ? imported.activeSimulationAddress : defaultActiveAddress,
+		activeSigningAddress: undefined,
+		activeSigningSafeAddress: 'activeSigningSafeAddress' in imported ? imported.activeSigningSafeAddress : undefined,
+	}, 'signingAddressPreferences' in imported ? imported.signingAddressPreferences : [])
+	await setUseSignersAddressAsActiveAddress(imported.useSignersAddressAsActiveAddress)
+	await updateWebsiteAccess(() => imported.websiteAccess)
+	await setUseTabsInsteadOfPopup(imported.useTabsInsteadOfPopup)
+	if ('metamaskCompatibilityMode' in imported) await setMetamaskCompatibilityMode(imported.metamaskCompatibilityMode)
+	await setSafeAppsCompatibilityMode('safeAppsCompatibilityMode' in imported ? imported.safeAppsCompatibilityMode : false)
+	await delegateClearingPreferencesSemaphore.execute(async () => await browserStorageLocalSet({ delegateClearingPreferences: 'delegateClearingPreferences' in imported ? imported.delegateClearingPreferences : [] }))
+	if ('addressInfos' in imported) {
 		await updateUserAddressBookEntries((previousEntries) => {
 			const convertActiveAddressToAddressBookEntry = (info: ActiveAddress): AddressBookEntry => ({ ...info, type: 'contact' as const, useAsActiveAddress: true, entrySource: 'User' as const })
-			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])
+			return getUniqueItemsByProperties(previousEntries.concat(imported.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(imported.contacts ?? []), ['address'])
 		})
 	}
 }

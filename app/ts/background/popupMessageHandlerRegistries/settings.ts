@@ -1,9 +1,8 @@
 import { updateWebsiteApprovalAccesses } from '../accessManagement.js'
 import { sendPopupMessageToOpenWindows } from '../backgroundUtils.js'
 import { popupMessageHandler, popupSnapshotMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
-import { changeSettings, exportSettings, importSettings, openNewTab, setNewRpcList, settingsOpened } from '../popupMessageHandlers.js'
+import { changeSettings, exportSettings, importSettings, openNewTab, requestDelegationSimulation, setDelegationSimulation, setNewRpcList, settingsOpened } from '../popupMessageHandlers.js'
 import { getSettings } from '../settings.js'
-import { requestDelegationSimulation, setDelegationSimulation } from '../popupMessageHandlers/delegationSimulation.js'
 
 export const settingsPopupMessageHandlers = {
 	popup_requestSettings: popupMessageHandler('popup_requestSettings', async () => await settingsOpened()),

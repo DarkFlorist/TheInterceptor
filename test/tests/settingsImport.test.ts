@@ -251,6 +251,16 @@ describe('settings import', () => {
 		assert.equal((await getSettings()).activeSigningSafeAddress, signingSafeAddress)
 	})
 
+	test('clears a saved delegate simulation choice when importing an older export', async () => {
+		const address = 0x5656565656565656565656565656565656565656n
+		const { importSettingsAndAddressBook, isDelegateClearingEnabled, setDelegateClearingEnabled } = await settingsModulePromise
+		await setDelegateClearingEnabled(address, testRpcNetwork.chainId, true)
+		assert.equal(await isDelegateClearingEnabled(address, testRpcNetwork.chainId), true)
+
+		await importSettingsAndAddressBook(buildVersion14Import(false, false))
+		assert.equal(await isDelegateClearingEnabled(address, testRpcNetwork.chainId), false)
+	})
+
 	test('publishes imported Safe preferences only after their address book entry', async () => {
 		const signingSafeAddress = 0x4646464646464646464646464646464646464646n
 		const signerAddress = 0x4747474747474747474747474747474747474747n
