@@ -180,7 +180,7 @@ export function isSignerStateTokenCurrent(websiteTabConnections: WebsiteTabConne
 
 export async function getActiveAddressForCurrentSignerState<T>(
 	websiteTabConnections: WebsiteTabConnections,
-	settings: Pick<Settings, 'simulationMode' | 'useSignersAddressAsActiveAddress' | 'selectedSigningAddress' | 'activeSigningSafeAddress'>,
+	settings: Pick<Settings, 'simulationMode' | 'useSignersAddressAsActiveAddress' | 'selectedSigningAddress' | 'activeSigningSafeAddress' | 'activeRpcNetwork'>,
 	tabId: number,
 	getAddress: () => Promise<T | undefined>,
 ): Promise<T | undefined> {

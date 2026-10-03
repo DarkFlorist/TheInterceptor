@@ -143,3 +143,35 @@ for (const signerName of ['MetaMask', 'Rabby'] as const) test(`Safe policy rejec
 	expect(admission.safePolicyReply).toMatchObject({ type: 'result', error: { message: 'Gnosis Safe transaction proposals require an Interceptor RPC connection for live Gnosis Safe validation.' } })
 	expect(messages).toEqual([])
 })
+
+for (const scenario of [
+	{ method: 'wallet_addEthereumChain', params: [{ chainId: '0x1', chainName: 'Test', nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, rpcUrls: ['https://rpc.example'] }], overlay: false, forwards: true },
+	{ method: 'eth_getStorageAt', params: ['0x0000000000000000000000000000000000000001', '0x0', 'latest'], overlay: false, forwards: true },
+	{ method: 'eth_getStorageAt', params: ['0x0000000000000000000000000000000000000001', '0x0', 'latest'], overlay: true, forwards: false },
+	{ method: 'wallet_getCapabilities', params: ['0x0000000000000000000000000000000000000001'], overlay: false, forwards: true },
+	{ method: 'wallet_getCapabilities', params: ['0x0000000000000000000000000000000000000002'], overlay: false, forwards: false },
+	{ method: 'wallet_unknownMethod', params: [], overlay: false, forwards: true },
+]) test(`admission owns pinned forwarding for ${ scenario.method } (forward=${ scenario.forwards })`, async () => {
+	installBrowserMock()
+	const { updateTabState } = await loadModules()
+	const { resolveSigningRequest } = await import('../../app/ts/background/signingRequestResolver.js')
+	const { EthereumJsonRpcRequest } = await import('../../app/ts/types/JsonRpc-types.js')
+	await saveAddressSigningWallet(1n, { type: 'browser', address: 1n, label: 'Saved', signerName: 'MetaMask', providerId: 'eip6963:io.metamask' }, undefined, 'Saved')
+	const settings = { ...await getSettings(), simulationMode: false }
+	const socket = { tabId: 1, connectionName: 0n }
+	const request = { method: scenario.method, params: scenario.params, interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId: 1, requestSocket: socket } }
+	const parsed = EthereumJsonRpcRequest.safeParse(request)
+	for (const rdns of ['io.metamask', 'com.other.wallet']) {
+		await updateTabState(1, (tab) => ({ ...tab, signerConnected: true, signerName: 'MetaMask', signerProvider: { rdns, ambiguous: false }, signerAccounts: [1n] }))
+		const result = await resolveSigningRequest(new Map(), socket, request, parsed.success ? parsed.value : undefined, settings, 1n, undefined, false, scenario.overlay, undefined)
+		if (!scenario.forwards) {
+			expect(result.forwardingReply).toBeUndefined()
+			expect(result.admissionError).toBeUndefined()
+		} else if (rdns === 'io.metamask') {
+			expect(result.forwardingReply).toMatchObject({ type: 'forwardToSigner', method: scenario.method, expectedProviderId: 'eip6963:io.metamask' })
+		} else {
+			expect(result.forwardingReply).toBeUndefined()
+			expect(result.admissionError).toMatchObject({ code: 4100 })
+		}
+	}
+})

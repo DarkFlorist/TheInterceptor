@@ -50,5 +50,12 @@ export async function resolveSigningRequest(
 	const admissionError = !settings.simulationMode && capabilityError !== undefined ? { code: 4200, message: capabilityError }
 		: !settings.simulationMode && parsedRequest !== undefined && isSigningOperation(parsedRequest.method) && binding === undefined && !safeSigningMode && (settings.selectedSigningAddress !== undefined || request.usingInterceptorWithoutSigner)
 			? { code: 4100, message: 'No signing wallet for this address. Set up signing wallet or switch to simulation.' } : forwardingError
-	return { forwardToSigner, forwarding, admissionError, safePolicyReply }
+	// Return the actual forwarding reply so the router cannot independently choose an unpinned forwarding path.
+	const forwardingRequest = settings.activeRpcNetwork.httpsRpc !== undefined && (parsedRequest?.method === 'wallet_addEthereumChain' || parsedRequest?.method === 'eth_getStorageAt') ? parsedRequest : request
+	const forwardingReply = safePolicyReply === undefined && admissionError === undefined && forwardToSigner && walletForwardingRequested
+		? parsedRequest?.method === 'wallet_addEthereumChain' && settings.activeRpcNetwork.httpsRpc !== undefined
+			? { ...parsedRequest, ...forwarding }
+			: { ...forwardingRequest, ...forwarding, replyWithSignersReply: true as const }
+		: undefined
+	return { forwardingReply, admissionError, safePolicyReply }
 }

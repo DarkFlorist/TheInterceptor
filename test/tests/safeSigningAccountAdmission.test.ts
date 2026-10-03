@@ -69,3 +69,15 @@ test('signing handler keeps stale binding revisions actionable', async () => {
 	expect(reply).toMatchObject({ ok: false, message: 'Signing wallet changed. Review the current wallet before saving again.' })
 	expect(await getSigningWalletBinding(1n)).toEqual(binding)
 })
+
+test('Safe pin lookup uses the caller chain even when persisted settings have changed', async () => {
+	const { hasPinnedSigningAddress } = await import('../../app/ts/background/safeSigningAccount.js')
+	const { getSettings } = await import('../../app/ts/background/settings.js')
+	expect(await select(undefined)).toEqual({ ok: true })
+	const settings = await getSettings()
+	const snapshot = { ...settings, activeRpcNetwork: { ...settings.activeRpcNetwork, chainId: ethereum.getChainId() }, selectedSigningAddress: undefined, activeSigningSafeAddress: activeAddress }
+	const changedNetwork = { ...snapshot.activeRpcNetwork, chainId: 999n }
+	await browserStorageLocalSet({ activeRpcNetwork: changedNetwork })
+	expect(await hasPinnedSigningAddress(snapshot)).toBe(true)
+	expect(await hasPinnedSigningAddress({ ...snapshot, activeRpcNetwork: changedNetwork })).toBe(false)
+})

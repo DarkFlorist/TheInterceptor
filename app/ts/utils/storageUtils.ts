@@ -165,6 +165,16 @@ export async function browserStorageLocalGet2(keys: LocalStorageKey2 | LocalStor
 	return LocalStorageItems2.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }
 
+export async function browserStorageLocalGet2Result(keys: LocalStorageKey2 | LocalStorageKey2[]) {
+	const storedItems = await browser.storage.local.get(Array.isArray(keys) ? keys : [keys])
+	try {
+		return { success: true as const, value: LocalStorageItems2.parse(storedItems) }
+	} catch (error) {
+		if (!(error instanceof funtypes.ValidationError)) throw error
+		return { success: false as const, error }
+	}
+}
+
 export async function browserStorageLocalSet2(items: LocalStorageItems2) {
 	return await browser.storage.local.set(serialize(LocalStorageItems2, items))
 }
