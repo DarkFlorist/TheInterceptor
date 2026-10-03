@@ -6,7 +6,7 @@ import { isSigningOperation } from '../types/signingMethods.js'
 import { prepareSavedBrowserWalletForwarding } from './browserWalletForwarding.js'
 import { browserSigningRequestAccount } from '../signing/browserWallet.js'
 import { parseDirectSigningTypedData } from '../signing/exactPayload.js'
-import { getSigningWalletBinding } from './storageVariables.js'
+import { getStoredSigningWalletBinding } from './storageVariables.js'
 import { SupportedEthereumJsonRpcRequestMethods, type EthereumJsonRpcRequest } from '../types/JsonRpc-types.js'
 import type { Settings } from '../types/interceptor-messages.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
@@ -45,7 +45,7 @@ export async function resolveSigningRequest(
 ) {
 	const route = getWalletForwardingRoute(request, parsedRequest, settings.activeRpcNetwork.httpsRpc !== undefined, activeAddress, activeSafeSigner, safeSigningMode, simulationOverlayEnabled)
 	const needsBinding = !settings.simulationMode && (isSigningOperation(request.method) || route !== undefined)
-	const binding = !needsBinding || activeAddress === undefined ? undefined : await getSigningWalletBinding(activeSafeSigner ?? activeAddress)
+	const binding = !needsBinding || activeAddress === undefined ? undefined : await getStoredSigningWalletBinding(activeSafeSigner ?? activeAddress)
 	if (binding !== undefined) assertSigningWalletIdentity(binding.wallet)
 	const directWallet = binding !== undefined && binding.wallet.type !== 'browser'
 	if (directWallet && request.method === 'eth_signTypedData_v4' && 'params' in request && Array.isArray(request.params) && typeof request.params[1] === 'string') parseDirectSigningTypedData(request.params[1])

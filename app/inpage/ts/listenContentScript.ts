@@ -271,6 +271,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 		}
 	}
 
+	// The first accepted bootstrap owns this document's bridge for its lifetime; later window messages cannot replace it.
 	globalThis.addEventListener('message', (messageEvent: MessageEvent<unknown>) => {
 		if (
 			inpagePort !== undefined

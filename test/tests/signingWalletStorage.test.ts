@@ -1,4 +1,4 @@
-import { beforeEach, expect, test } from 'bun:test'
+import { beforeEach, expect, spyOn, test } from 'bun:test'
 import { secp256k1 } from '@noble/curves/secp256k1'
 import { bytesFromHex, bytesToHex } from '../../app/ts/utils/ethereumBytes.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumSigning.js'
@@ -190,4 +190,30 @@ test('codecs parse public identity structurally while import and admission verif
 	await browserStorageLocalSet({ userAddressBookEntriesV3: [entry], signingWalletBindings: bindings })
 	expect(await getSigningWalletBindings()).toEqual(bindings)
 	expect(() => assertSigningWalletIdentity(wallet)).toThrow('public key')
+})
+
+test('routing binding reads neither wait for address-book mutations nor load address-book data', async () => {
+	const { getStoredSigningWalletBinding } = await import('../../app/ts/background/storageVariables.js')
+	const saved = await saveAddressSigningWallet(address, ledger, undefined, 'Savings')
+	let release: () => void = () => undefined
+	let entered: () => void = () => undefined
+	const gate = new Promise<void>((resolve) => { release = resolve })
+	const ready = new Promise<void>((resolve) => { entered = resolve })
+	const set = spyOn(browser.storage.local, 'set').mockImplementation(async (items) => {
+		entered()
+		await gate
+		Object.assign(stored, items)
+	})
+	const mutation = updateAddressBookAndSigningWalletBindings((entries) => entries.map((entry) => ({ ...entry, name: 'Renamed' })))
+	await ready
+	const entries = stored.userAddressBookEntriesV3
+	stored.userAddressBookEntriesV3 = 'unreadable address book must not affect routing'
+	try {
+		expect(await getStoredSigningWalletBinding(address)).toEqual(saved)
+	} finally {
+		stored.userAddressBookEntriesV3 = entries
+		release()
+		await mutation
+		set.mockRestore()
+	}
 })

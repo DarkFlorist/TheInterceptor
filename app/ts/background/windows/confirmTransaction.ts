@@ -1,4 +1,4 @@
-import { resolveSigningConfirmationAdmission } from '../signingConfirmationAdmission.js'
+import { resolveSigningConfirmationAdmission } from '../signingRequestLifecycle.js'
 import { getSavedSafeSigningAccount } from '../safeSigningAccount.js'
 import { getSigningWalletBinding } from '../storageVariables.js'
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'

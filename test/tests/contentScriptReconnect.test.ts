@@ -551,3 +551,27 @@ test('the endpoint exposed to page scripts cannot forge extension replies', asyn
 		channel.port1.close()
 	})
 })
+
+test('both content-script entrypoints establish the bridge only once', async () => {
+	for (const source of ['manifest-v2-document-start', 'standalone-listener'] as const) {
+		await withContentScriptMock(source, async ({ eventListeners, postedMessages }) => {
+			const legitimate = await connectBridge(eventListeners)
+			const replacement = new MessageChannel()
+			let replacementAccepted = false
+			replacement.port1.onmessage = () => { replacementAccepted = true }
+			try {
+				dispatchWindowMessage(eventListeners, new MessageEvent('message', { data: { type: 'interceptor_bridge_port' }, ports: [replacement.port2] }))
+				replacement.port1.postMessage({ type: 'interceptor_bridge_request', method: 'eth_accounts', requestId: 99, usingInterceptorWithoutSigner: false })
+				legitimate.port1.postMessage({ type: 'interceptor_bridge_request', method: 'eth_accounts', requestId: 1, usingInterceptorWithoutSigner: false })
+				await new Promise((resolve) => setTimeout(resolve, 10))
+				assert.equal(replacementAccepted, false)
+				assert.equal(postedMessages.some((message) => getPostedBridgeRequestId(message) === 99), false)
+				assert.equal(postedMessages.some((message) => getPostedBridgeRequestId(message) === 1), true)
+			} finally {
+				legitimate.port1.close()
+				replacement.port1.close()
+				replacement.port2.close()
+			}
+		})
+	}
+})

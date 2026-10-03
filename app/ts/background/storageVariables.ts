@@ -400,6 +400,11 @@ export async function getSigningWalletBindings(): Promise<SigningWalletBindings>
 	return (await getAddressBookAndSigningWalletBindings()).signingWalletBindings
 }
 
+/** Routing reads persisted public bindings without taking the address-book mutation lock; approval revalidates eligibility. */
+export async function getStoredSigningWalletBinding(address: bigint): Promise<SigningWalletBinding | undefined> {
+	return (await readSigningWalletBindings()).find((binding) => binding.wallet.address === address)
+}
+
 export async function getSigningWalletBinding(address: bigint): Promise<SigningWalletBinding | undefined> {
 	return (await getSigningWalletBindings()).find((binding) => binding.wallet.address === address)
 }

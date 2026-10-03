@@ -22,7 +22,7 @@ export const DirectSigningRecord = funtypes.ReadonlyObject({
 	revision: funtypes.String,
 	created: funtypes.Number,
 	phase: funtypes.Union(funtypes.Literal('review'), funtypes.Literal('approved'), funtypes.Literal('signed'), funtypes.Literal('submitting'), funtypes.Literal('submitted'), funtypes.Literal('confirmed'), funtypes.Literal('cancelled')),
-}).And(funtypes.ReadonlyPartial({ result: funtypes.String, transactionHash: funtypes.String, executionSucceeded: funtypes.Boolean }))
+}).And(funtypes.ReadonlyPartial({ reviewReady: funtypes.Boolean, result: funtypes.String, transactionHash: funtypes.String, executionSucceeded: funtypes.Boolean }))
 export const DirectSigningRecords = funtypes.ReadonlyArray(DirectSigningRecord).withConstraint((records) => records.length <= 100)
 
 export const SigningPageRequest = funtypes.Union(

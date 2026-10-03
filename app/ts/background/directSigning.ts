@@ -106,7 +106,11 @@ export async function openDirectSigning(ethereum: EthereumClientService, prices:
 			await assertCurrentBinding(record)
 			await records.store(record)
 		}
-		if (record.phase === 'review') await refreshDirectSigningReview(record, ethereum, prices)
+		if (record.phase === 'review') {
+			record = await records.store({ ...record, reviewReady: false })
+			await refreshDirectSigningReview(record, ethereum, prices)
+			record = await records.store({ ...record, reviewReady: true })
+		}
 		await browser.tabs.create({ url: `${ browser.runtime.getURL(getHtmlFile('directSigning')) }?id=${ encodeURIComponent(record.id) }` })
 		return record
 	})
@@ -129,8 +133,10 @@ export async function updateDirectSigning(request: DirectSigningRequest, refresh
 			case 'signing_editFees': {
 				if (refreshReview === undefined) throw signingOperationError('Fee changes require a refreshed transaction explanation')
 				const edited = editTransactionFees(record, request)
+				// Invalidate approval before changing the derived explanation, even if a later storage write fails.
+				await records.store({ ...record, reviewReady: false })
 				await refreshReview(edited)
-				return await records.store(edited)
+				return await records.store({ ...edited, reviewReady: true })
 			}
 			case 'signing_approve': return await approveSigningRequest(record, records)
 			case 'signing_result': return await acceptSigningResult(record, request.result, records)
@@ -145,13 +151,12 @@ function editTransactionFees(record: DirectSigningRecord, request: Extract<Direc
 	if (record.input.method !== 'eth_sendTransaction') throw signingOperationError('Messages do not have transaction fees')
 	if (request.gas < 21000n || request.maxPriorityFeePerGas > request.maxFeePerGas) throw signingOperationError('Invalid transaction gas or fees')
 	const data = serializeTransaction({ ...parseTransaction(ensureHex(record.input.data)), authorizationList: undefined, nonce: request.nonce, gas: request.gas, maxFeePerGas: request.maxFeePerGas, maxPriorityFeePerGas: request.maxPriorityFeePerGas })
-	return { ...record, input: { ...record.input, data }, phase: 'review', revision: crypto.randomUUID(), result: undefined, transactionHash: undefined }
+	return { ...record, input: { ...record.input, data }, phase: 'review', reviewReady: false, revision: crypto.randomUUID(), result: undefined, transactionHash: undefined }
 }
 
 async function approveSigningRequest(record: DirectSigningRecord, records: DirectSigningRecordsTransaction) {
 	if (record.phase !== 'review') throw signingOperationError('Request has already been approved; resume or cancel its current signing operation')
-	const reviewedRequest = await findPendingSigningRequest(record)
-	if (record.input.method === 'eth_sendTransaction' && reviewedRequest?.directSigningReviewRevision !== record.revision) throw signingOperationError('Wait for the refreshed transaction explanation before approving')
+	if (record.input.method === 'eth_sendTransaction' && record.reviewReady !== true) throw signingOperationError('Wait for the refreshed transaction explanation before approving')
 	const pending = await getPendingTransactionsAndMessages()
 	const conflictingTransaction = (await records.read()).find((candidate) => {
 		if (candidate.id === record.id || candidate.input.method !== 'eth_sendTransaction') return false
@@ -211,6 +216,6 @@ export async function refreshDirectSigningReview(record: DirectSigningRecord, et
 	await assertCurrentBinding(record)
 	await updatePendingTransactionOrMessage(record.request, async (current) => {
 		if (current.type !== 'Transaction' || current.transactionOrMessageCreationStatus !== 'Simulated') throw signingOperationError('The transaction changed during explanation refresh')
-		return { ...current, transactionToSimulate, popupVisualisation, directSigningReviewRevision: record.revision }
+		return { ...current, transactionToSimulate, popupVisualisation }
 	})
 }

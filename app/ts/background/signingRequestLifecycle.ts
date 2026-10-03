@@ -1,3 +1,6 @@
+import { isSigningOperationError } from '../signing/signingOperationError.js'
+import type { SigningPageReply } from '../types/signingPageReply.js'
+import type { DirectSigningRequest } from '../types/directSigning.js'
 import * as funtypes from 'funtypes'
 import { getSafePendingFlow } from '../safe/safePendingFlow.js'
 import { verifyDirectResult } from '../signing/backend.js'
@@ -13,7 +16,7 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { getErrorMessage } from '../utils/errors.js'
 import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { prepareSavedBrowserWalletForwarding } from './browserWalletForwarding.js'
-import { openDirectSigning } from './directSigning.js'
+import { openDirectSigning, updateDirectSigning, refreshDirectSigningReview } from './directSigning.js'
 import { getSigningWalletBinding, readDirectSigningRecords } from './storageVariables.js'
 
 type SigningAdmission =
@@ -62,4 +65,26 @@ export async function resolveSigningConfirmationAdmission(
 		}
 	}
 	return { status: 'continue', forwarding: {} }
+}
+
+type DirectSigningOutcome = {
+	readonly reply: SigningPageReply
+	readonly confirmation?: TransactionConfirmation
+	readonly refreshConfirmation?: boolean
+}
+
+/** Both confirmation admission and signing-page transitions enter this coordinator; callers apply its window effects. */
+export async function advanceDirectSigning(request: DirectSigningRequest, ethereum: EthereumClientService, prices: TokenPriceService): Promise<DirectSigningOutcome> {
+	try {
+		const record = await updateDirectSigning(request, async (edited) => await refreshDirectSigningReview(edited, ethereum, prices))
+		const confirmation: TransactionConfirmation | undefined = record.phase === 'cancelled'
+			? { method: 'popup_confirmDialog', data: { action: 'reject', errorString: undefined, uniqueRequestIdentifier: record.request } }
+			: (record.input.method === 'eth_sendTransaction' ? ['submitted', 'confirmed'].includes(record.phase) : record.phase === 'signed')
+				? { method: 'popup_confirmDialog', data: { action: 'signerIncluded', uniqueRequestIdentifier: record.request, signerReply: record.input.method === 'eth_sendTransaction' ? record.transactionHash : record.result } }
+				: undefined
+		return { reply: { ok: true, record }, confirmation, refreshConfirmation: request.method === 'signing_editFees' }
+	} catch (error) {
+		if (!isSigningOperationError(error) && !isInvalidSigningResponse(error)) throw error
+		return { reply: { ok: false, message: error.message } }
+	}
 }

@@ -48,8 +48,8 @@ beforeEach(async () => {
 	const binding = await saveAddressSigningWallet(address, { type: 'ledger', label: 'Main Ledger', address, publicKey: bytesToHex(secp256k1.getPublicKey(bytesFromHex(privateKey), false)), derivationPath: 'm/44\'/60\'/0\'/0/0' }, undefined, 'Savings')
 	if (binding === undefined) throw new Error('Missing binding')
 	const input = { method: 'eth_sendTransaction' as const, address: account.address, chainId: 1n, data: serializeTransaction({ type: 'eip1559', chainId: 1n, nonce: 0n, gas: 21000n, maxFeePerGas: 10n, maxPriorityFeePerGas: 1n, to: account.address, value: 0n }) }
-	record = { id: crypto.randomUUID(), request: pendingTransaction.uniqueRequestIdentifier, binding, websiteOrigin: pendingTransaction.website.websiteOrigin, rpcUrl: 'https://rpc.example.test', input, revision: crypto.randomUUID(), created: Date.now(), phase: 'review' }
-	await appendPendingTransactionOrMessage({ ...pendingTransaction, simulationMode: false, activeAddress: address, signingWalletBinding: binding, signingChainId: 1n, directSigningReviewRevision: record.revision })
+	record = { id: crypto.randomUUID(), request: pendingTransaction.uniqueRequestIdentifier, binding, websiteOrigin: pendingTransaction.website.websiteOrigin, rpcUrl: 'https://rpc.example.test', input, revision: crypto.randomUUID(), created: Date.now(), phase: 'review', reviewReady: true }
+	await appendPendingTransactionOrMessage({ ...pendingTransaction, simulationMode: false, activeAddress: address, signingWalletBinding: binding, signingChainId: 1n })
 	await browser.storage.local.set({ directSigningRequestsV1: DirectSigningRecords.serialize([record]) })
 })
 afterEach(() => { globalThis.fetch = originalFetch })
@@ -115,7 +115,7 @@ test('ambiguous submission survives a reload and reconciles its exact hash witho
 
 test('concurrent approvals for the same account reserve one transaction at a time', async () => {
 	const second = { ...record, id: crypto.randomUUID(), request: { ...record.request, requestId: 99 }, revision: crypto.randomUUID() }
-	await appendPendingTransactionOrMessage({ ...pendingTransaction, uniqueRequestIdentifier: second.request, simulationMode: false, activeAddress: address, signingWalletBinding: record.binding, signingChainId: 1n, directSigningReviewRevision: second.revision })
+	await appendPendingTransactionOrMessage({ ...pendingTransaction, uniqueRequestIdentifier: second.request, simulationMode: false, activeAddress: address, signingWalletBinding: record.binding, signingChainId: 1n })
 	await browser.storage.local.set({ directSigningRequestsV1: DirectSigningRecords.serialize([record, second]) })
 	const results = await Promise.allSettled([record, second].map((item) => updateDirectSigning({ method: 'signing_approve', id: item.id, revision: item.revision })))
 	expect(results.map((item) => item.status)).toEqual(['fulfilled', 'rejected'])
@@ -143,7 +143,7 @@ test('failed fee explanation preserves the old revision and permits retry', asyn
 	const old = record
 	const request = { method: 'signing_editFees' as const, id: record.id, revision: record.revision, nonce: 0n, gas: 25000n, maxFeePerGas: 20n, maxPriorityFeePerGas: 2n }
 	await expect(updateDirectSigning(request, async () => { throw new Error('Explanation unavailable') })).rejects.toThrow('Explanation unavailable')
-	expect((await readDirectSigningRecords())[0]).toEqual(old)
+	expect((await readDirectSigningRecords())[0]).toEqual({ ...old, reviewReady: false })
 	const retried = await updateDirectSigning(request, async () => undefined)
 	expect(retried.revision).not.toBe(old.revision)
 })
@@ -161,12 +161,12 @@ test('returned simulation failure preserves fees and pending explanation until a
 	const refreshReview = async (edited: DirectSigningRecord) => await refreshDirectSigningReview(edited, ethereum, simulator.tokenPriceService)
 	try {
 		await expect(updateDirectSigning(request, refreshReview)).rejects.toThrow('Retry the fee change')
-		expect((await readDirectSigningRecords())[0]).toEqual(old)
+		expect((await readDirectSigningRecords())[0]).toEqual({ ...old, reviewReady: false })
 		expect(await getPendingTransactionsAndMessages()).toEqual(before)
 		refresh.mockResolvedValue(pendingTransaction.popupVisualisation)
 		const retried = await updateDirectSigning(request, refreshReview)
 		expect(retried.revision).not.toBe(old.revision)
-		expect((await getPendingTransactionsAndMessages())[0]?.directSigningReviewRevision).toBe(retried.revision)
+		expect((await readDirectSigningRecords())[0]?.reviewReady).toBe(true)
 	} finally {
 		refresh.mockRestore()
 		chain.mockRestore()
@@ -235,4 +235,14 @@ test('concurrent storage writes enforce the aggregate limit and preserve ambiguo
 	expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(16)
 	expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1)
 	expect(await readDirectSigningRecords()).toHaveLength(16)
+})
+
+test('missing authoritative review readiness blocks approval even for legacy pending explanations', async () => {
+	await browser.storage.local.set({ directSigningRequestsV1: DirectSigningRecords.serialize([{ ...record, reviewReady: undefined }]) })
+	await expect(updateDirectSigning({ method: 'signing_approve', id: record.id, revision: record.revision })).rejects.toThrow('refreshed transaction explanation')
+})
+
+test('a failed review refresh invalidates approval without changing the payload revision', async () => {
+	await expect(updateDirectSigning({ method: 'signing_editFees', id: record.id, revision: record.revision, nonce: 0n, gas: 25000n, maxFeePerGas: 20n, maxPriorityFeePerGas: 2n }, async () => { throw new Error('Refresh interrupted') })).rejects.toThrow('Refresh interrupted')
+	await expect(updateDirectSigning({ method: 'signing_approve', id: record.id, revision: record.revision })).rejects.toThrow('refreshed transaction explanation')
 })
