@@ -2,6 +2,7 @@ import SafeAppsSDK from '@safe-global/safe-apps-sdk'
 import { safe } from '@wagmi/connectors/safe'
 import gnosis from '@web3-onboard/gnosis'
 
+// Gnosis still declares an SDK 8 peer. It is a negative iframe-detection fixture only; real transport uses the pinned SDK 9 and Wagmi.
 const state: { phase: string, accounts: string[], error?: string } = { phase: 'requesting-safe-only', accounts: [] }
 Reflect.set(globalThis, '__interceptorChromeCommunicationState', state)
 

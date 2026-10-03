@@ -213,7 +213,7 @@ describe('settings import', () => {
 		await setSafeAppsHostOrigins(['https://old-selection.example'])
 		await importSettingsAndAddressBook(ExportedSettings.parse(JSON.parse(originalJson)))
 		assert.equal(await getSafeAppsCompatibilityMode(), true)
-		assert.deepEqual(await getSafeAppsHostOrigins(), [])
+		assert.deepEqual(await getSafeAppsHostOrigins(), ['https://old-selection.example'])
 		assert.equal(ExportedSettings.safeParse({ ...legacy, version: '1.7' }).success, false)
 	})
 
@@ -367,7 +367,7 @@ describe('settings import', () => {
 		await importSettingsAndAddressBook(buildVersion14Import(false, false))
 
 		assert.equal(await getSafeAppsCompatibilityMode(), false)
-		assert.deepEqual(await getSafeAppsHostOrigins(), [])
+		assert.deepEqual(await getSafeAppsHostOrigins(), ['https://legacy.example'])
 	})
 
 	test('serializes legacy preference clearing after an in-flight preference write', async () => {
@@ -556,6 +556,6 @@ test('all historical schemas normalize through their own fields and round-trip w
 		assert.deepEqual(await getPage(), { page: page ? 'Settings' : 'Home' })
 		assert.equal(await getMetamaskCompatibilityMode(), version === '1.0' || version === '1.1')
 		assert.equal(await getSafeAppsCompatibilityMode(), compatibility)
-		assert.deepEqual(await getSafeAppsHostOrigins(), hosting ? ['https://selected.example'] : [])
+		assert.deepEqual(await getSafeAppsHostOrigins(), hosting ? ['https://selected.example'] : ['https://previous.example'])
 	}
 })

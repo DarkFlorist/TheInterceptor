@@ -66,6 +66,7 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 	let accessFailure: string | undefined
 	const activeDiscoveries = new Set<{ readonly id: string, cancelled: boolean }>()
 	const pendingRequests = createSafeAppsRequestQueue<{ readonly id: string, readonly method: string, readonly parsedRequest: ParsedSafeAppsRequest, readonly origin: string }>({
+		timers: { setTimeout: window.setTimeout.bind(window), clearTimeout: window.clearTimeout.bind(window) },
 		onRejected: (pending, error, reason) => {
 			// Startup discovery stays silent until the background determines access eligibility.
 			if (reason === 'capacity' && !canRequestAccess) return

@@ -31,6 +31,7 @@ type BrowserMockOptions = {
 
 type RegisteredContentScript = {
 	readonly id: string
+	readonly world?: 'MAIN' | 'ISOLATED'
 	readonly excludeMatches?: readonly string[]
 	readonly matches?: readonly string[]
 	readonly allFrames?: boolean
@@ -43,7 +44,7 @@ function installBrowserMock({ afterStorageRead, emitStorageEvents = false, regis
 	const sentMessages: RuntimeMessage[] = []
 	const executedScriptFiles: string[] = []
 	const reloadedTabs: number[] = []
-	const registeredContentScripts = new Map(registeredContentScriptIds.map((id) => [id, { id }]))
+	const registeredContentScripts = new Map<string, RegisteredContentScript>(registeredContentScriptIds.map((id) => [id, { id }]))
 	let executeScriptCalls = 0
 	const scriptingOperations: string[] = []
 	const unregisteredContentScriptIdBatches: string[][] = []
@@ -162,6 +163,20 @@ function installBrowserMock({ afterStorageRead, emitStorageEvents = false, regis
 		recordAccessRefresh: () => { scriptingOperations.push('access-refresh') },
 		emitStorageChange(changes: Record<string, browser.storage.StorageChange>, area: string) { for (const listener of storageListeners) listener(changes, area) },
 		getRegisteredContentScripts() { return [...registeredContentScripts.values()] },
+		normalizeRegisteredContentScripts() {
+			for (const [id, script] of registeredContentScripts) registeredContentScripts.set(id, {
+				...script,
+				js: script.js?.map((file) => file.replace(/^\//, '')),
+				matches: script.matches?.map((pattern) => pattern === 'file://*/*' ? 'file:///*' : pattern),
+				excludeMatches: script.excludeMatches?.map((pattern) => pattern === 'file://*/*' ? 'file:///*' : pattern),
+			})
+		},
+		removeRegisteredContentScript(id: string) { registeredContentScripts.delete(id) },
+		changeRegisteredContentScriptWorld(id: string, world: 'MAIN' | 'ISOLATED') {
+			const script = registeredContentScripts.get(id)
+			if (script === undefined) throw new Error(`Missing script ${ id }`)
+			registeredContentScripts.set(id, { ...script, world })
+		},
 		getScriptingOperations() { return [...scriptingOperations] },
 		getUnregisteredContentScriptIdBatches() { return unregisteredContentScriptIdBatches.map((ids) => [...ids]) },
 		getExecuteScriptCalls() { return executeScriptCalls },
@@ -699,6 +714,28 @@ test('explicit hosting retries coalesce the observed recovery and can retry agai
 		assert.equal(await service.ensureSafeAppsHostRegistered(origin), true)
 		assert.equal(hostAttempts, 3)
 	})
+})
+
+test('explicit hosting preparation repairs registrations removed after a cached successful update', async () => {
+	const origin = 'https://restored.example'
+	const { getRegisteredContentScripts, normalizeRegisteredContentScripts, removeRegisteredContentScript, changeRegisteredContentScriptWorld, getScriptingOperations } = installBrowserMock({ safeAppsCompatibilityMode: true, safeAppsHostOrigins: [origin] })
+	const { createContentScriptRegistrationService } = await loadModules()
+	const service = createContentScriptRegistrationService()
+	assert.equal(await service.update(), 'configuration-applied')
+	normalizeRegisteredContentScripts()
+	const operationsBeforeCheck = getScriptingOperations()
+	assert.equal(await service.ensureSafeAppsHostRegistered(origin), true)
+	assert.deepEqual(getScriptingOperations(), operationsBeforeCheck)
+	for (const id of ['safe-apps-host', 'inpage', 'inpage2']) {
+		removeRegisteredContentScript(id)
+		assert.equal(await service.ensureSafeAppsHostRegistered(origin), true)
+		assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2', 'safe-apps-host'])
+	}
+	for (const [id, driftedWorld, expectedWorld] of [['inpage2', 'MAIN', 'ISOLATED'], ['inpage', 'ISOLATED', 'MAIN'], ['safe-apps-host', 'ISOLATED', 'MAIN']] as const) {
+		changeRegisteredContentScriptWorld(id, driftedWorld)
+		assert.equal(await service.ensureSafeAppsHostRegistered(origin), true)
+		assert.equal(getRegisteredContentScripts().find((script) => script.id === id)?.world, expectedWorld)
+	}
 })
 
 test('explicit registration update returns its hosting outcome and retries a cached failure', async () => {

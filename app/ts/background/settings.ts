@@ -310,7 +310,7 @@ export async function importSettingsAndAddressBook(exportedSettings: ExportedSet
 	await updateWebsiteAccess(() => settings.websiteAccess)
 	await setUseTabsInsteadOfPopup(settings.useTabsInsteadOfPopup)
 	if (settings.metamaskCompatibilityMode !== undefined) await setMetamaskCompatibilityMode(settings.metamaskCompatibilityMode)
-	await setSafeAppsHostOrigins(settings.safeAppsHostOrigins)
+	if (settings.safeAppsHostOrigins !== undefined) await setSafeAppsHostOrigins(settings.safeAppsHostOrigins)
 	await setSafeAppsCompatibilityMode(settings.safeAppsCompatibilityMode)
 	const legacyEntries = settings.legacyAddressBookEntries
 	if (legacyEntries !== undefined) await updateUserAddressBookEntries((previousEntries) => getUniqueItemsByProperties(previousEntries.concat(legacyEntries), ['address']))

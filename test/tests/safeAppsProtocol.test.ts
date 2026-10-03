@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
+import { getSDKVersion } from '@safe-global/safe-apps-sdk'
 import { createSafeAppsRequest, isSafeAppsRequest, parseSafeAppsRequest, SAFE_APPS_RESPONSE_VERSION } from '../../app/inpage/ts/safeAppsProtocol.js'
 
 test('the host and provider use one SDK version validator and preserve request parameters', () => {
@@ -14,4 +15,5 @@ test('the host and provider use one SDK version validator and preserve request p
 		assert.deepEqual(parseSafeAppsRequest(request), { id: request.id, error: 'Safe Apps env.sdkVersion must be a supported semantic version.' })
 	}
 	assert.equal(createSafeAppsRequest('prepare', 'getSafeInfo').env.sdkVersion, SAFE_APPS_RESPONSE_VERSION)
+	assert.equal(SAFE_APPS_RESPONSE_VERSION, getSDKVersion())
 })

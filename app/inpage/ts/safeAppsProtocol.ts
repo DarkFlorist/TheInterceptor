@@ -1,7 +1,8 @@
+import { getSDKVersion } from '@safe-global/safe-apps-sdk'
 import safeAppsPreparationMessages from '../../shared/safeAppsPreparationMessages.json'
 
 // Canonical SDK envelope used by the provider, parent host and Settings preparation.
-export const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
+export const SAFE_APPS_RESPONSE_VERSION = getSDKVersion()
 export const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
 export const SAFE_APPS_REQUEST_TIMEOUT_MS = 5 * 60_000
 export const SAFE_APPS_PREPARATION_TIMEOUT_MS = 30_000

@@ -1,5 +1,5 @@
 import * as funtypes from 'funtypes'
-import { DEFAULT_SAFE_APPS_HOST_ORIGINS, SafeAppsHostOrigins } from './safeAppsHosting.js'
+import { SafeAppsHostOrigins } from './safeAppsHosting.js'
 import { RpcNetwork } from './rpc.js'
 import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory, OptionalEthereumAddress } from './wire-types.js'
 import { AddressBookEntries, ContactEntries, type AddressBookEntry } from './addressBookTypes.js'
@@ -126,6 +126,7 @@ export function normalizeImportedSettings(exported: ExportedSettings, defaults: 
 		useTabsInsteadOfPopup: settings.useTabsInsteadOfPopup,
 		metamaskCompatibilityMode: 'metamaskCompatibilityMode' in settings ? settings.metamaskCompatibilityMode : undefined,
 		safeAppsCompatibilityMode: 'safeAppsCompatibilityMode' in settings ? settings.safeAppsCompatibilityMode : false,
-		safeAppsHostOrigins: 'safeAppsHostOrigins' in settings ? settings.safeAppsHostOrigins : DEFAULT_SAFE_APPS_HOST_ORIGINS,
+		// Older backups have no hosting selection; preserve the current selection during import.
+		safeAppsHostOrigins: 'safeAppsHostOrigins' in settings ? settings.safeAppsHostOrigins : undefined,
 	}
 }

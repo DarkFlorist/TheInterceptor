@@ -11,5 +11,6 @@ export const INPAGE_SCRIPTS = {
 	readDocumentOrigin: '/inpage/js/readDocumentOrigin.js',
 } as const
 
+export const PROVIDER_SCRIPTS = [INPAGE_SCRIPTS.provider] as const
 // Chrome executes these files in order at document_start on selected host origins.
-export const SAFE_APPS_HOST_SCRIPTS = [INPAGE_SCRIPTS.safeAppsHost, INPAGE_SCRIPTS.provider] as const
+export const SAFE_APPS_HOST_SCRIPTS = [INPAGE_SCRIPTS.safeAppsHost, ...PROVIDER_SCRIPTS] as const

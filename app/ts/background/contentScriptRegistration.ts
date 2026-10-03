@@ -4,7 +4,7 @@ import { ContentScriptHostingSettings, contentScriptRegistrationSettingsKeys } f
 import { getSafeAppsHostMatchPatterns } from '../utils/safeAppsHosting.js'
 import { getChromeSiteMatchPatterns } from '../utils/chromeMatchPatterns.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from '../utils/errors.js'
-import { INPAGE_SCRIPTS, SAFE_APPS_HOST_SCRIPTS } from '../config/injectedScripts.js'
+import { INPAGE_SCRIPTS, PROVIDER_SCRIPTS, SAFE_APPS_HOST_SCRIPTS } from '../config/injectedScripts.js'
 import { DEFAULT_SAFE_APPS_HOST_ORIGINS } from '../types/safeAppsHosting.js'
 import { getInterceptorDisabledSites } from './websiteAccessPolicy.js'
 
@@ -48,6 +48,18 @@ function getHostingConfiguration(storedItems: unknown): ContentScriptConfigurati
 type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 // The browser polyfill types do not expose Chrome's MAIN world or matchOriginAsFallback options.
 type FixedContentScript = RegisteredContentScript & { world?: 'MAIN' | 'ISOLATED', matchOriginAsFallback: boolean }
+const normalizeMatchPattern = (pattern: string) => pattern === 'file://*/*' ? 'file:///*' : pattern
+const sameValues = (left: readonly string[] | undefined, right: readonly string[] | undefined) => (left ?? []).length === (right ?? []).length && (right ?? []).every((value) => left?.some((registered) => normalizeMatchPattern(registered) === normalizeMatchPattern(value)) === true)
+function sameScript(registered: RegisteredContentScript, desired: FixedContentScript) {
+	if (registered.id !== desired.id || !sameValues(registered.matches, desired.matches) || !sameValues(registered.excludeMatches, desired.excludeMatches)) return false
+	// Chrome reports extension-relative file paths without the leading slash used at registration.
+	if ((registered.js ?? []).length !== desired.js?.length || desired.js?.some((file, index) => registered.js?.[index]?.replace(/^\//, '') !== file.replace(/^\//, ''))) return false
+	if (registered.runAt !== desired.runAt || registered.allFrames !== desired.allFrames) return false
+	if ('matchOriginAsFallback' in registered && registered.matchOriginAsFallback !== desired.matchOriginAsFallback) return false
+	const registeredWorld = 'world' in registered ? registered.world : 'ISOLATED'
+	if (registeredWorld !== desired.world) return false
+	return true
+}
 
 function getBaseContentScripts(excludeMatches: string[], hostMatches: string[] = []): [FixedContentScript, FixedContentScript] {
 	return [{
@@ -57,26 +69,27 @@ function getBaseContentScripts(excludeMatches: string[], hostMatches: string[] =
 		excludeMatches,
 		js: ['/vendor/webextension-polyfill/dist/browser-polyfill.js', INPAGE_SCRIPTS.contentListener, INPAGE_SCRIPTS.contentListenerBootstrap],
 		runAt: 'document_start',
+		world: 'ISOLATED',
 		matchOriginAsFallback: true,
 	}, {
 		id: 'inpage',
 		allFrames: true,
 		matches: injectableSitesWildcard,
 		excludeMatches: [...excludeMatches, ...hostMatches],
-		js: [INPAGE_SCRIPTS.provider],
+		js: [...PROVIDER_SCRIPTS],
 		runAt: 'document_start',
 		world: 'MAIN',
 		matchOriginAsFallback: true,
 	}]
 }
 
-async function reconcileBaseContentScripts(contentScripts: FixedContentScript[]) {
+async function reconcileBaseContentScripts(contentScripts: FixedContentScript[], overlayScript?: FixedContentScript) {
 	const registeredContentScripts = await browser.scripting.getRegisteredContentScripts()
 	const registeredContentScriptIds = new Set(registeredContentScripts.map(({ id }) => id))
-	const desiredContentScriptIds = new Set(contentScripts.map(({ id }) => id))
+	const desiredContentScriptIds = new Set([...contentScripts, ...(overlayScript === undefined ? [] : [overlayScript])].map(({ id }) => id))
 	const missingContentScripts = contentScripts.filter(({ id }) => !registeredContentScriptIds.has(id))
 	const existingContentScripts = contentScripts.filter(({ id }) => registeredContentScriptIds.has(id))
-	const obsoleteContentScriptIds = registeredContentScripts.map(({ id }) => id).filter((id) => id !== 'safe-apps-host' && !desiredContentScriptIds.has(id))
+	const obsoleteContentScriptIds = registeredContentScripts.map(({ id }) => id).filter((id) => !desiredContentScriptIds.has(id))
 	if (missingContentScripts.length > 0) await browser.scripting.registerContentScripts(missingContentScripts)
 	if (existingContentScripts.length > 0) await browser.scripting.updateContentScripts(existingContentScripts)
 	if (obsoleteContentScriptIds.length > 0) await browser.scripting.unregisterContentScripts({ ids: obsoleteContentScriptIds })
@@ -87,18 +100,12 @@ async function removeSafeAppsHostScript() {
 	if (scripts.some(({ id }) => id === 'safe-apps-host')) await browser.scripting.unregisterContentScripts({ ids: ['safe-apps-host'] })
 }
 
-async function reconcileSafeAppsHost(configuration: ContentScriptConfiguration, baseInpageScript: FixedContentScript, baseWasReconciled: boolean) {
-	if ('error' in configuration.hosting) throw configuration.hosting.error
-	const safeAppsHostMatches = configuration.hosting.matches
-	if (safeAppsHostMatches.length === 0) {
-		await removeSafeAppsHostScript()
-		if (!baseWasReconciled) await browser.scripting.updateContentScripts([baseInpageScript])
-		return
-	}
-	const hostScript: FixedContentScript = {
+function getSafeAppsHostScript(configuration: ContentScriptConfiguration): FixedContentScript | undefined {
+	if ('error' in configuration.hosting || configuration.hosting.matches.length === 0) return undefined
+	return {
 		id: 'safe-apps-host',
 		allFrames: true,
-		matches: safeAppsHostMatches,
+		matches: configuration.hosting.matches,
 		excludeMatches: configuration.excludeMatches,
 		// Keep provider injection in embedded app frames, but the host itself only changes top-level pages.
 		js: [...SAFE_APPS_HOST_SCRIPTS],
@@ -106,16 +113,25 @@ async function reconcileSafeAppsHost(configuration: ContentScriptConfiguration, 
 		world: 'MAIN',
 		matchOriginAsFallback: true,
 	}
+}
+
+async function reconcileSafeAppsHost(configuration: ContentScriptConfiguration, hostScript: FixedContentScript | undefined, baseInpageScript: FixedContentScript, baseWasReconciled: boolean) {
+	if ('error' in configuration.hosting) throw configuration.hosting.error
+	if (hostScript === undefined) {
+		await removeSafeAppsHostScript()
+		if (!baseWasReconciled) await browser.scripting.updateContentScripts([baseInpageScript])
+		return
+	}
 	const scripts = await browser.scripting.getRegisteredContentScripts()
 	if (scripts.some(({ id }) => id === hostScript.id)) await browser.scripting.updateContentScripts([hostScript])
 	else await browser.scripting.registerContentScripts([hostScript])
-	const hostedInpageScript = getBaseContentScripts(configuration.excludeMatches, safeAppsHostMatches)[1]
+	const hostedInpageScript = getBaseContentScripts(configuration.excludeMatches, configuration.hosting.matches)[1]
 	await browser.scripting.updateContentScripts([hostedInpageScript])
 }
 
-const applySafeAppsHostOverlay = async (configuration: ContentScriptConfiguration, baseInpageScript: FixedContentScript, baseWasReconciled: boolean): Promise<ContentScriptRegistrationOutcome> => {
+const applySafeAppsHostOverlay = async (configuration: ContentScriptConfiguration, hostScript: FixedContentScript | undefined, baseInpageScript: FixedContentScript, baseWasReconciled: boolean): Promise<ContentScriptRegistrationOutcome> => {
 	try {
-		await reconcileSafeAppsHost(configuration, baseInpageScript, baseWasReconciled)
+		await reconcileSafeAppsHost(configuration, hostScript, baseInpageScript, baseWasReconciled)
 		return 'configuration-applied'
 	} catch (error: unknown) {
 		// A partially installed host must not leave the ordinary provider excluded on that site.
@@ -137,35 +153,39 @@ export function createContentScriptRegistrationService() {
 	let appliedBaseKey: string | undefined
 	let appliedOutcome: ContentScriptRegistrationOutcome = 'configuration-applied'
 	let appliedHosting: Extract<ContentScriptConfiguration['hosting'], { readonly matches: string[] }> | undefined
+	let appliedScripts: readonly FixedContentScript[] | undefined
 	let appliedAttempt = 0
-	const queueUpdate = (failedAttemptToRetry?: number) => {
+	const queueUpdate = (failedAttemptToRetry?: number, forceReconcile = false) => {
 		const nextUpdate = previousUpdate.then(async () => {
 			// Read inside the queue so subsequent writes cannot leave the last requested update applying stale state.
 			const configuration = await getContentScriptConfiguration()
 			const settingsKey = configuration.cacheKey
 			// Concurrent callers may retry the failure they observed once; a newer queued attempt owns subsequent retries.
 			const retryObservedFailure = appliedOutcome === 'hosting-failed' && failedAttemptToRetry === appliedAttempt
-			if (settingsKey === appliedSettingsKey && !retryObservedFailure) return appliedOutcome
+			if (settingsKey === appliedSettingsKey && !retryObservedFailure && !forceReconcile) return appliedOutcome
 			try {
 				const baseKey = JSON.stringify(configuration.excludeMatches)
 				const baseContentScripts = getBaseContentScripts(configuration.excludeMatches)
-				const baseWasReconciled = baseKey !== appliedBaseKey
+				const hostScript = getSafeAppsHostScript(configuration)
+				const baseWasReconciled = forceReconcile || baseKey !== appliedBaseKey
 				// Only website-access exclusions require a core provider update. Hosting is a separate overlay.
 				if (baseWasReconciled) {
-					await reconcileBaseContentScripts(baseContentScripts)
+					await reconcileBaseContentScripts(baseContentScripts, hostScript)
 					appliedBaseKey = baseKey
 				}
-				const outcome = await applySafeAppsHostOverlay(configuration, baseContentScripts[1], baseWasReconciled)
+				const outcome = await applySafeAppsHostOverlay(configuration, hostScript, baseContentScripts[1], baseWasReconciled)
 				appliedAttempt += 1
 				appliedSettingsKey = settingsKey
 				appliedOutcome = outcome
 				appliedHosting = outcome === 'configuration-applied' && 'matches' in configuration.hosting ? configuration.hosting : undefined
+				appliedScripts = outcome === 'configuration-applied' && 'matches' in configuration.hosting ? [...getBaseContentScripts(configuration.excludeMatches, configuration.hosting.matches), ...(hostScript === undefined ? [] : [hostScript])] : undefined
 				return outcome
 			} catch (error: unknown) {
 				// A failed mutation can leave any script definition unknown, including a previously cached configuration.
 				appliedSettingsKey = undefined
 				appliedBaseKey = undefined
 				appliedHosting = undefined
+				appliedScripts = undefined
 				throw error
 			}
 		})
@@ -206,8 +226,15 @@ export function createContentScriptRegistrationService() {
 		if (await update() !== 'configuration-applied') return false
 		const hosting = appliedHosting
 		if (hosting === undefined || !hosting.origins.includes(origin)) return false
-		const scripts = await browser.scripting.getRegisteredContentScripts()
-		return scripts.some((script) => script.id === 'safe-apps-host' && script.matches?.length === hosting.matches.length && hosting.matches.every((pattern) => script.matches?.includes(pattern) === true))
+		const hasAppliedRegistrations = async () => {
+			if (appliedScripts === undefined) return false
+			const scripts = await browser.scripting.getRegisteredContentScripts()
+			return appliedScripts.every((desired) => scripts.some((script) => sameScript(script, desired)))
+		}
+		if (await hasAppliedRegistrations()) return true
+		// Chrome registrations can change without a settings event; repair the cached configuration before reload.
+		if (await queueUpdate(undefined, true) !== 'configuration-applied') return false
+		return appliedHosting?.origins.includes(origin) === true && await hasAppliedRegistrations()
 	}
 	return { update, start, stop, ensureSafeAppsHostRegistered }
 }

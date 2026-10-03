@@ -53,6 +53,8 @@ function parseInpageRequest(value: unknown): InpageRequest | undefined {
 
 function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSignerRequest, signerChainIdReply = '0x1', signerInitialSelectedAddress }: FakeWindowOptions = {}) {
 	const listeners = new Map<string, Set<Listener>>()
+	const timeouts = new Map<number, { readonly callback: () => void, readonly delay: number }>()
+	let nextTimeoutId = 0
 	const signerRequests: string[] = []
 	const backgroundEthAccountsReplies: unknown[] = []
 	const backgroundSignerChainChanges: unknown[] = []
@@ -108,6 +110,12 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 	const fakeWindow = {
 		ethereum: fakeSigner,
 		location: { origin: 'https://safe-app.example' },
+		setTimeout: (callback: () => void, delay: number) => {
+			const id = ++nextTimeoutId
+			timeouts.set(id, { callback, delay })
+			return id
+		},
+		clearTimeout: (id: number) => { timeouts.delete(id) },
 		...(signerInitialSelectedAddress === undefined ? {} : { web3: { accounts: [signerInitialSelectedAddress], currentProvider: fakeSigner } }),
 		addEventListener: (type: string, listener: Listener) => {
 			const existing = listeners.get(type)
@@ -194,6 +202,14 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 
 	return {
 		fakeWindow,
+		fireTimeouts: (delay: number) => {
+			for (const [id, timeout] of timeouts) {
+				if (timeout.delay !== delay) continue
+				timeouts.delete(id)
+				timeout.callback()
+			}
+		},
+		activeTimeouts: () => timeouts.size,
 		signerRequests,
 		backgroundEthAccountsReplies,
 		backgroundSignerChainChanges,
@@ -4223,6 +4239,36 @@ test('expired and cancelled provider discovery probes release slots before eligi
 			assert.deepEqual(forwarded, ['getChainInfo'])
 		})
 	} finally { Date.now = realNow }
+})
+
+test('provider discovery expires on its own timer before a later eligibility change', async () => {
+	let enable: (() => void) | undefined
+	let forwarded = 0
+	const { fakeWindow, fireTimeouts, activeTimeouts } = createFakeWindow({ handleRequest: (request, sendBackgroundMessage) => {
+		if (request.method === 'connected_to_signer') {
+			enable = () => {
+				sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
+				sendSafeAppsCompatibility(sendBackgroundMessage, true)
+			}
+			return true
+		}
+		if (request.method === 'safe_apps_request') { forwarded++; return true }
+		return false
+	} })
+	await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?safe-scheduled-discovery-expiry', async () => {
+		const replies: Record<string, unknown>[] = []
+		fakeWindow.addEventListener('message', (event) => { if (isRecord(event.data) && typeof event.data.success === 'boolean') replies.push(event.data) })
+		fakeWindow.postMessage({ id: 'scheduled-expiry', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(activeTimeouts(), 1)
+		fireTimeouts(5 * 60_000)
+		await waitFor(() => replies.some((reply) => reply.id === 'scheduled-expiry'))
+		assert.equal(replies.find((reply) => reply.id === 'scheduled-expiry')?.error, 'Safe Apps request timed out.')
+		assert.equal(activeTimeouts(), 0)
+		enable?.()
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(forwarded, 0)
+	})
 })
 
 for (const settleWhileDisabled of [true, false]) {
