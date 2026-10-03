@@ -1021,6 +1021,7 @@ fieldset[disabled] .button.is-primary.is-danger {
 }
 
 .diagnostics-details pre {
+	display: block;
 	margin-top: 0.25rem;
 	padding: 0.5rem;
 	background: var(--surface-dark-color);

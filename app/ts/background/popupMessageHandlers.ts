@@ -1194,6 +1194,7 @@ export async function reportUnexpectedErrorInWindow(parsedRequest: UnexpectedErr
 		source: parsedRequest.data.source,
 		code: parsedRequest.data.code,
 		debugId: parsedRequest.data.debugId,
+		rawError: parsedRequest.data.rawError,
 		details: parsedRequest.data,
 		suppressExpectedHandledErrors: false,
 	})

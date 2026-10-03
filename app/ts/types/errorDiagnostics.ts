@@ -25,6 +25,7 @@ export const InterceptorErrorDiagnostic = funtypes.ReadonlyObject({
 	severity: InterceptorErrorSeverity,
 	message: funtypes.String,
 	cause: funtypes.Union(funtypes.String, funtypes.Undefined),
+	rawError: funtypes.Union(funtypes.String, funtypes.Undefined),
 	userVisible: funtypes.Boolean,
 	debugId: funtypes.Union(funtypes.String, funtypes.Undefined),
 	details: funtypes.Union(funtypes.String, funtypes.Undefined),

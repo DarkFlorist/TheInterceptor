@@ -21,10 +21,11 @@ function DiagnosticCard({ diagnostic }: { diagnostic: InterceptorErrorDiagnostic
 				<time dateTime = { diagnostic.timestamp.toISOString() }>{ diagnostic.timestamp.toLocaleString() }</time>
 			</div>
 		</header>
-		{ diagnostic.cause === undefined && diagnostic.details === undefined && diagnostic.debugId === undefined ? <></> :
+		{ diagnostic.cause === undefined && diagnostic.rawError === undefined && diagnostic.details === undefined && diagnostic.debugId === undefined ? <></> :
 			<details class = 'diagnostics-details'>
 				<summary>Technical details</summary>
 				{ diagnostic.cause === undefined ? <></> : <div><strong>Cause</strong><pre>{ diagnostic.cause }</pre></div> }
+				{ diagnostic.rawError === undefined ? <></> : <div><strong>Raw error</strong><pre>{ diagnostic.rawError }</pre></div> }
 				{ diagnostic.details === undefined ? <></> : <div><strong>Context</strong><pre>{ diagnostic.details }</pre></div> }
 				{ diagnostic.debugId === undefined ? <></> : <p><strong>Debug ID:</strong> <code>{ diagnostic.debugId }</code></p> }
 			</details>
@@ -67,7 +68,7 @@ export function DiagnosticsView() {
 		<header class = 'diagnostics-header'>
 			<div>
 				<h1>Diagnostics</h1>
-				<p>The latest internal errors and recovered failures. The Interceptor retains up to 50 records.</p>
+				<p>The latest internal errors and recovered failures. Open Technical details for raw error data and context when available. The Interceptor retains up to 50 records.</p>
 			</div>
 			<div class = 'diagnostics-actions'>
 				<AsyncActionButton class = 'btn btn--outline' state = { loadState.value.state } onClick = { () => { void waitForLoad(loadDiagnostics) } } text = 'Refresh' pendingText = 'Refreshing...' />

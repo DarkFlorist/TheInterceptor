@@ -11,6 +11,7 @@ const diagnostic = (severity: InterceptorErrorDiagnostic['severity'], index: num
 	severity,
 	message: `Diagnostic ${ index }`,
 	cause: index === 1 ? 'root failure' : undefined,
+	rawError: index === 1 ? 'Error: root failure\n    at render' : undefined,
 	userVisible: severity === 'error',
 	debugId: `debug-${ index }`,
 	details: undefined,
@@ -38,5 +39,6 @@ describe('diagnostics view data', () => {
 		assert.equal(parsed.length, 4)
 		assert.match(parsed[0].timestamp, /^0x[0-9a-f]+$/)
 		assert.equal(parsed[0].cause, 'root failure')
+		assert.equal(parsed[0].rawError, 'Error: root failure\n    at render')
 	})
 })
