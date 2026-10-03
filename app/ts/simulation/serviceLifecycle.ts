@@ -3,6 +3,7 @@ import type { RpcEntry } from '../types/rpc.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { EthereumJSONRpcRequestHandler, type RpcRequestLifecycleCallbacks } from './services/EthereumJSONRpcRequestHandler.js'
 import { TokenPriceService } from './services/priceEstimator.js'
+import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 
 export type NewBlockAttemptCallback = (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
 export type OnErrorBlockCallback = (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
@@ -87,11 +88,11 @@ export function createSimulationServicesOwner(
 	return {
 		getCurrent: () => current,
 		requireCurrent: () => {
-			if (current === undefined) throw new Error('RPC configuration is unavailable. Network requests are paused.')
+			if (current === undefined) throw createRpcConfigurationUnavailableError()
 			return current
 		},
 		reset: (nextRpc: RpcEntry): SimulationServices => {
-			if (current === undefined) throw new Error('RPC configuration is unavailable. Network requests are paused.')
+			if (current === undefined) throw createRpcConfigurationUnavailableError()
 			current = resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
 			return current
 		},

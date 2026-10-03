@@ -15,7 +15,7 @@ import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/webs
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
 import type { RpcConfigurationState } from './storageVariables.js'
 import { hasOwnKey } from '../utils/typescript.js'
-import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../types/interceptor-reply-messages.js'
+import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
 
@@ -108,7 +108,7 @@ export async function getRequiredSettings() : Promise<Settings> {
 }
 
 export function requireSettings(snapshot: { readonly settings: Settings | undefined }): Settings {
-	if (snapshot.settings === undefined) throw new Error(RPC_CONFIGURATION_UNAVAILABLE_ERROR.message)
+	if (snapshot.settings === undefined) throw createRpcConfigurationUnavailableError()
 	return snapshot.settings
 }
 
@@ -345,8 +345,7 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 		}, exportedSetings.version === '1.5' || exportedSetings.version === '1.6' ? exportedSetings.settings.signingAddressPreferences : [])
 	}
 	await setUseSignersAddressAsActiveAddress(exportedSetings.settings.useSignersAddressAsActiveAddress)
-	const { updateWebsiteAccessAndContentScriptInjectionStrategy } = await import('./websiteAccessUpdating.js')
-	await updateWebsiteAccessAndContentScriptInjectionStrategy(() => exportedSetings.settings.websiteAccess)
+	await updateWebsiteAccess(() => exportedSetings.settings.websiteAccess)
 	await setUseTabsInsteadOfPopup(exportedSetings.settings.useTabsInsteadOfPopup)
 	if (exportedSetings.version !== '1.0' && exportedSetings.version !== '1.1') {
 		await setMetamaskCompatibilityMode(exportedSetings.settings.metamaskCompatibilityMode)

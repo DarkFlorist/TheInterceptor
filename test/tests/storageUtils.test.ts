@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
+import { isRpcConfigurationUnavailableError } from '../../app/ts/utils/rpcConfigurationError.js'
 
 const storedItems: Record<string, unknown> = {}
 const writes: Record<string, unknown>[] = []
@@ -208,7 +209,7 @@ describe('RPC storage recovery', () => {
 		const originalWarn = console.warn
 		console.warn = (...parameters: unknown[]) => { warnings.push(parameters) }
 		try {
-			await assert.rejects(getRpcList(), /RPC configuration is unavailable/)
+			await assert.rejects(getRpcList(), isRpcConfigurationUnavailableError)
 			const connectionStatus = await getRpcConnectionStatus()
 
 			assert.equal(connectionStatus, undefined)
@@ -260,7 +261,7 @@ describe('RPC storage recovery', () => {
 			const snapshot = await getSettingsSnapshot()
 			assert.equal(snapshot.rpcConfiguration.status, 'unavailable')
 			assert.equal(snapshot.settings, undefined)
-			await assert.rejects(getRequiredSettings(), /RPC configuration is unavailable/)
+			await assert.rejects(getRequiredSettings(), isRpcConfigurationUnavailableError)
 		} finally {
 			console.warn = originalWarn
 		}
@@ -510,7 +511,7 @@ describe('RPC storage recovery', () => {
 				useSignersAddressAsActiveAddress: false,
 				websiteAccess: [],
 				simulationMode: true,
-			}, ignoreRecoveryPublication), /RPC configuration became unavailable/)
+			}, ignoreRecoveryPublication), isRpcConfigurationUnavailableError)
 			assert.equal(owner.getCurrent() !== undefined, false)
 			assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_update_rpc_list'), false)
 		} finally {
@@ -535,7 +536,7 @@ describe('RPC storage recovery', () => {
 				useSignersAddressAsActiveAddress: false,
 				websiteAccess: [],
 				simulationMode: true,
-			}, ignoreRecoveryPublication), /RPC configuration is unavailable/)
+			}, ignoreRecoveryPublication), isRpcConfigurationUnavailableError)
 			assert.deepEqual(writes, [])
 			assert.equal(owner.getCurrent() !== undefined, false)
 			assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_update_rpc_list'), false)

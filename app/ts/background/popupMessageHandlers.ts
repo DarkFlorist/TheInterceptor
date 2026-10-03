@@ -44,6 +44,7 @@ import { updateInterceptorAccessViewWithPendingRequests } from './windows/interc
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { updateFetchSimulationStackRequestWithPendingRequest } from './windows/fetchSimulationStack.js'
 import { rpcConfigurationIsReady, rpcServicesAreAvailable } from './rpcConfigurationAvailability.js'
+import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 import { estimateSerializedStateBytes, formatEstimatedBytes } from '../utils/largeStateStore.js'
 import { POPUP_PERFORMANCE_MARKS, markPerformance } from '../utils/popupPerformance.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
@@ -880,7 +881,7 @@ export async function changeSettings(simulationServicesOwner: SimulationServices
 		const snapshot = await getSettingsSnapshot()
 		if (snapshot.settings === undefined) {
 			const error = 'error' in snapshot.rpcConfiguration ? snapshot.rpcConfiguration.error : undefined
-			throw error ?? new Error('RPC configuration became unavailable while refreshing the popup.')
+			throw error ?? createRpcConfigurationUnavailableError()
 		}
 		const services = rpcServicesAreAvailable(snapshot.rpcConfiguration, simulationServicesOwner) ? simulationServicesOwner.getCurrent() : undefined
 		if (services === undefined) return await requestHomePageBootstrap(websiteTabConnections, popupRefreshGeneration)

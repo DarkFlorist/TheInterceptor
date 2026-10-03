@@ -527,6 +527,7 @@ describe('popup message dispatcher seams', () => {
 					website: { websiteOrigin: 'success-refresh.test', title: 'Imported blocked website' },
 					addressAccess: [],
 					access: true,
+					interceptorDisabled: true,
 					declarativeNetRequestBlockMode: 'block-all',
 				}],
 				simulationMode: false,
@@ -552,6 +553,10 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(messages[1].data.activeSimulationAddress, 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n)
 		assert.equal(messages[1].data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
 		assert.equal(messages[1].data.simulationMode, false)
+		assert.deepEqual(contentScriptUpdateBatches.at(-1)?.map(({ id, excludeMatches }) => ({ id, excludeMatches })), [
+			{ id: 'inpage2', excludeMatches: ['*://*.success-refresh.test/*'] },
+			{ id: 'inpage', excludeMatches: ['*://*.success-refresh.test/*'] },
+		])
 		assert.deepEqual(dynamicRuleUpdates, [{
 			removeRuleIds: [],
 			addRules: [{

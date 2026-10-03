@@ -22,6 +22,7 @@ import { createStoredValueRepository } from '../utils/storedValue.js'
 import { isValidErc20Decimals } from '../utils/erc20.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 import { hasOwnKey } from '../utils/typescript.js'
+import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 
 const reportCorruptStoredValue = (label: string) => (failure: unknown) => {
 	console.warn(`${ label } was corrupt:`)
@@ -337,7 +338,7 @@ export async function getRpcList(): Promise<RpcEntries> {
 	const state = await getRpcConfigurationState()
 	if (state.status === 'ready') return state.rpcEntries
 	if ('error' in state && state.error !== undefined) throw state.error
-	throw new Error(`RPC configuration is unavailable (${ state.reason }).`)
+	throw createRpcConfigurationUnavailableError()
 }
 
 export const setInterceptorStartSleepingTimestamp = async(interceptorStartSleepingTimestamp: number) => await browserStorageLocalSet({ interceptorStartSleepingTimestamp })
@@ -349,7 +350,7 @@ export const promoteRpcAsPrimary = async (rpcNetwork: RpcNetwork) => {
 		const state = await getRpcConfigurationStateWithoutLock()
 		if (state.status !== 'ready') {
 			if ('error' in state && state.error !== undefined) throw state.error
-			throw new Error(`RPC configuration is unavailable (${ state.reason }).`)
+			throw createRpcConfigurationUnavailableError()
 		}
 		const selectedIndex = state.rpcEntries.findIndex((rpc) => getRpcEntryIdentityKey(rpc) === getRpcEntryIdentityKey(rpcNetwork))
 		if (selectedIndex === -1) return

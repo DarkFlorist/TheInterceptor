@@ -4,6 +4,7 @@ import { popupMessageHandler, popupRecoveryMessageHandler, type PopupMessageHand
 import { changeSettings, exportSettings, importSettings, openNewTab, restoreDefaultRpcConfiguration, retryRpcConfiguration, setNewRpcList, settingsOpened } from '../popupMessageHandlers.js'
 import { getRequiredSettings } from '../settings.js'
 import { publishRpcConfigurationRecovery } from '../activeSettings.js'
+import { updateContentScriptInjectionStrategy } from '../../utils/contentScriptsUpdating.js'
 
 export const settingsPopupMessageHandlers = {
 	popup_requestSettings: popupRecoveryMessageHandler('popup_requestSettings', async (context) => await settingsOpened(context.simulationServicesOwner)),
@@ -14,6 +15,7 @@ export const settingsPopupMessageHandlers = {
 		await sendPopupMessageToOpenWindows(importSettingsReply)
 		if (!importSettingsReply.data.success) return
 		const importedSettings = await getRequiredSettings()
+		await updateContentScriptInjectionStrategy()
 		const popupRefreshGeneration = await updateWebsiteApprovalAccesses(context.simulationServicesOwner, context.websiteTabConnections, importedSettings, true)
 		await sendPopupMessageToOpenWindows({ method: 'popup_settingsUpdated', data: importedSettings, popupRefreshGeneration })
 	}),

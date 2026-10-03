@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { createSimulationServicesOwner, isCurrentSimulationService } from '../../app/ts/simulation/serviceLifecycle.js'
+import { isRpcConfigurationUnavailableError } from '../../app/ts/utils/rpcConfigurationError.js'
 
 test('the service owner stays paused until an RPC is explicitly installed', () => {
 	const rpc = { name: 'Restored', chainId: 1n, httpsRpc: 'https://restored.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
@@ -8,9 +9,9 @@ test('the service owner stays paused until an RPC is explicitly installed', () =
 	const owner = createSimulationServicesOwner(undefined, async () => undefined, async (_ethereum, error) => { throw error }, {}, () => { resumedCount += 1 })
 	assert.equal(owner.getCurrent() !== undefined, false)
 	assert.equal(owner.getCurrent(), undefined)
-	assert.throws(owner.requireCurrent, /Network requests are paused/)
+	assert.throws(owner.requireCurrent, isRpcConfigurationUnavailableError)
 
-	assert.throws(() => owner.reset(rpc), /Network requests are paused/)
+	assert.throws(() => owner.reset(rpc), isRpcConfigurationUnavailableError)
 	const restored = owner.recover(rpc)
 	assert.equal(owner.getCurrent() !== undefined, true)
 	assert.equal(owner.requireCurrent(), restored)
@@ -21,7 +22,7 @@ test('the service owner stays paused until an RPC is explicitly installed', () =
 	owner.clear()
 	assert.equal(owner.getCurrent() !== undefined, false)
 	assert.equal(isCurrentSimulationService(owner, restored.ethereum), false)
-	assert.throws(() => owner.reset(rpc), /Network requests are paused/)
+	assert.throws(() => owner.reset(rpc), isRpcConfigurationUnavailableError)
 	owner.recover(rpc)
 	assert.equal(resumedCount, 2)
 	owner.clear()

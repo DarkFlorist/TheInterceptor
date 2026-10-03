@@ -2,6 +2,7 @@ import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import type { RpcConfigurationState } from './storageVariables.js'
 import { getRpcConfigurationState, setRpcConfiguration, setRpcList } from './storageVariables.js'
 import type { RpcEntry, RpcNetwork } from '../types/rpc.js'
+import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 
 type RpcListTransitionMode = 'edit' | 'restore-defaults'
 
@@ -48,7 +49,7 @@ export async function transitionRpcList(
 	if (previousConfiguration.status === 'unavailable') {
 		simulationServicesOwner.clear()
 		const activeRpcNetwork = rpcEntries.find((rpc) => rpc.primary) ?? rpcEntries[0]
-		if (previousConfiguration.reason !== 'empty' || activeRpcNetwork === undefined) throw new Error('RPC configuration is unavailable. Restore it before editing RPC connections.')
+		if (previousConfiguration.reason !== 'empty' || activeRpcNetwork === undefined) throw createRpcConfigurationUnavailableError()
 		await setRpcConfiguration(rpcEntries, activeRpcNetwork)
 		simulationServicesOwner.recover(activeRpcNetwork)
 		return { activeRpcNetwork, rpcConfigurationAvailable: true, publishRecovery: true, forceChainChanged: false }
@@ -59,13 +60,13 @@ export async function transitionRpcList(
 		await setRpcList(rpcEntries)
 		return { activeRpcNetwork, rpcConfigurationAvailable: true, publishRecovery: false, forceChainChanged: false }
 	}
-	if (simulationServicesOwner.getCurrent() === undefined) throw new Error('RPC configuration is unavailable. Restore it before editing RPC connections.')
+	if (simulationServicesOwner.getCurrent() === undefined) throw createRpcConfigurationUnavailableError()
 	await setRpcList(rpcEntries)
 	if (rpcEntries.length === 0) {
 		simulationServicesOwner.clear()
 		return { activeRpcNetwork, rpcConfigurationAvailable: activeRpcNetwork.httpsRpc === undefined, publishRecovery: false, forceChainChanged: false }
 	}
-	if (simulationServicesOwner.getCurrent() === undefined) throw new Error('RPC configuration became unavailable while saving RPC connections.')
+	if (simulationServicesOwner.getCurrent() === undefined) throw createRpcConfigurationUnavailableError()
 	const primary = rpcEntries.find((rpc) => rpc.chainId === activeRpcNetwork.chainId && rpc.primary)
 	if (primary !== undefined) simulationServicesOwner.reset(primary)
 	return { activeRpcNetwork, rpcConfigurationAvailable: true, publishRecovery: false, forceChainChanged: false }

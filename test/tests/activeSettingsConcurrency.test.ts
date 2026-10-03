@@ -5,6 +5,7 @@ import type { TabConnection, WebsiteTabConnections } from '../../app/ts/types/us
 import { ICON_NOT_ACTIVE } from '../../app/ts/utils/constants.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
 import { createTestSimulationServicesOwner, createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
+import { isRpcConfigurationUnavailableError } from '../../app/ts/utils/rpcConfigurationError.js'
 
 const firstAddress: ContactEntry = { type: 'contact', name: 'First address', address: 1n, chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false }
 const secondAddress: ContactEntry = { ...firstAddress, name: 'Second address', address: 2n }
@@ -39,7 +40,7 @@ describe('active settings concurrency', () => {
 
 		await assert.rejects(
 			changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: requestedNetwork }),
-			/RPC configuration is unavailable/,
+			isRpcConfigurationUnavailableError,
 		)
 		assert.equal(owner.getCurrent() !== undefined, true)
 		assert.equal(resetCount, 0)
@@ -94,7 +95,7 @@ describe('active settings concurrency', () => {
 
 		await assert.rejects(
 			changeActiveAddressAndChain(owner, new Map(), { simulationMode: true, rpcNetwork: requestedNetwork }),
-			/RPC configuration became unavailable/,
+			isRpcConfigurationUnavailableError,
 		)
 		assert.equal(owner.getCurrent() !== undefined, false)
 		assert.equal(resetCount, 0)

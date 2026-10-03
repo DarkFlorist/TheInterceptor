@@ -125,6 +125,79 @@ test('settles a direct signing reply while RPC services are unavailable', async 
 	assert.equal(dappReply.result, modules.EthereumBytes32.serialize(signedTransaction.hash))
 })
 
+test('settles an already-signed Safe proposal with its reviewed hash while RPC services are unavailable', async () => {
+	const socket = { tabId: 1, connectionName: 45n }
+	const requestIdentifier = { requestId: 84, requestSocket: socket }
+	const messages: unknown[] = []
+	const port = createWebsitePort(socket, 0, messages)
+	const websiteTabConnections = new Map([[socket.tabId, {
+		signerStateOwner: {
+			connectionName: socket.connectionName,
+			confirmed: true,
+			generation: 3,
+			providerGeneration: 8,
+		},
+		connections: {
+			[modules.websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://example.com', approved: true, wantsToConnect: true },
+		},
+	}]])
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, {
+		to: recipientAddress,
+		value: 0n,
+		input: new Uint8Array(),
+	}, 0n)
+	const safeTxHash = BigInt(getSafeTxHash(safeTx))
+	await modules.browserStorageLocalSet2({
+		pendingTransactionsAndMessages: [{
+			...pendingTransaction,
+			uniqueRequestIdentifier: requestIdentifier,
+			simulationMode: false,
+			approvalStatus: { status: 'WaitingForSigner' },
+			safeTransaction: {
+				safeAddress: activeAddress,
+				safeSignerAddress: recipientAddress,
+				safeVersion: '1.4.1',
+				threshold: 2n,
+				reviewedSafeState: {
+					version: '1.4.1',
+					nonce: 0n,
+					owners: [recipientAddress],
+					threshold: 2n,
+				},
+				safeTxHash,
+				safeTx,
+			},
+		}],
+	})
+	const owner = createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService })
+	owner.clear()
+
+	await modules.signerReply(owner, websiteTabConnections, port, {
+		method: 'signer_reply',
+		params: [{
+			success: true,
+			signerProviderGeneration: 8,
+			forwardRequest: {
+				type: 'forwardToSigner',
+				replyWithSignersReply: true,
+				method: 'eth_signTypedData_v4',
+				params: [recipientAddress, EIP712Message.parse(safeTxToTypedDataJson(safeTx))],
+				requestId: requestIdentifier.requestId,
+			},
+			reply: '0xalready-signed-safe-proposal',
+		}],
+		interceptorRequest: true,
+		interceptorInternalRequest: true,
+		usingInterceptorWithoutSigner: false,
+		uniqueRequestIdentifier: { requestId: 85, requestSocket: socket },
+	}, 'hasAccess', activeAddress)
+
+	assert.deepEqual(await modules.getPendingTransactionsAndMessages(), [])
+	const dappReply = messages.find((message) => isRecord(message) && message.method === 'eth_sendTransaction' && message.requestId === requestIdentifier.requestId)
+	if (!isRecord(dappReply)) throw new Error('Missing Safe proposal reply while services were unavailable')
+	assert.equal(dappReply.result, modules.EthereumBytes32.serialize(safeTxHash))
+})
+
 test('persists a replaced-connection signer error without refreshing over corrupt RPC configuration', async () => {
 	const socket = { tabId: 1, connectionName: 44n }
 	const requestIdentifier = { requestId: 82, requestSocket: socket }

@@ -217,8 +217,8 @@ describe('settings import', () => {
 		assert.deepEqual(await getPage(), { page: 'Settings' })
 	})
 
-	test('reconciles registered script exclusions when imported disabled sites are added and removed', async () => {
-		const { importSettingsAndAddressBook } = await settingsModulePromise
+	test('stores imported disabled sites without orchestrating content scripts from the settings layer', async () => {
+		const { getRequiredSettings, importSettingsAndAddressBook } = await settingsModulePromise
 		const disabledWebsite = {
 			website: { websiteOrigin: 'https://import-disabled.example', icon: undefined, title: undefined },
 			addressAccess: [],
@@ -226,10 +226,8 @@ describe('settings import', () => {
 		}
 
 		await importSettingsAndAddressBook(buildVersion14Import(false, false, [disabledWebsite]))
-		assert.equal(browserMock.getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.includes('https://*.import-disabled.example/*') === true), true)
-
-		await importSettingsAndAddressBook(buildVersion14Import(false, false))
-		assert.equal(browserMock.getRegisteredContentScripts().every(({ excludeMatches }) => excludeMatches?.length === 0), true)
+		assert.deepEqual((await getRequiredSettings()).websiteAccess, [disabledWebsite])
+		assert.deepEqual(browserMock.getRegisteredContentScripts(), [])
 	})
 
 	test('round-trips Safe settings in version 1.6 exports', async () => {

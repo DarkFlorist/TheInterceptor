@@ -16,6 +16,7 @@ import type { ActiveAddressSelection } from '../utils/activeAddressSelection.js'
 import { rememberSigningAddressSelection } from './signingAddressSelection.js'
 import { activeStackContextsEqual, getActiveStackContext, operationBelongsToActiveStackContext } from '../utils/activeStackContext.js'
 import { rpcConfigurationIsUsable, rpcServicesAreOptional } from './rpcConfigurationAvailability.js'
+import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 
 async function clearSimulationStateFromConfig(settingsSnapshot?: Awaited<ReturnType<typeof getRequiredSettings>>) {
 	const settings = settingsSnapshot ?? await getRequiredSettings()
@@ -143,7 +144,7 @@ async function runActiveSettingsChange(
 			const previousSettings = requireSettings(previousSnapshot)
 			const rpcServicesOptional = rpcServicesAreOptional(previousSnapshot.rpcConfiguration)
 			const recoverServicesOnRpcSelection = simulationServicesOwner.getCurrent() === undefined && rpcServicesOptional
-			if (!rpcConfigurationIsUsable(previousSnapshot.rpcConfiguration, simulationServicesOwner)) throw new Error('RPC configuration is unavailable. Settings changes are paused until it is restored.')
+			if (!rpcConfigurationIsUsable(previousSnapshot.rpcConfiguration, simulationServicesOwner)) throw createRpcConfigurationUnavailableError()
 			if (transition.simulationSignerSelection !== undefined) {
 				const { useSignerAddress, signerAddress } = transition.simulationSignerSelection
 				await setUseSignersAddressAsActiveAddress(useSignerAddress, signerAddress)
@@ -177,7 +178,7 @@ async function runActiveSettingsChange(
 					try {
 						if (simulationServicesOwner.getCurrent() !== undefined) simulationServicesOwner.reset(change.rpcNetwork)
 						else if (recoverServicesOnRpcSelection) simulationServicesOwner.recover(change.rpcNetwork)
-						else throw new Error('RPC configuration became unavailable while changing settings.')
+						else throw createRpcConfigurationUnavailableError()
 					} catch (error) {
 						// Only failed provider installation invalidates simulation output here.
 						await publishFailedPopupVisualisation()

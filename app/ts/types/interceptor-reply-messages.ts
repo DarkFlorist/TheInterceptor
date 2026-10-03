@@ -11,10 +11,11 @@ import { SimulateExecutionReply as PopupSimulateExecutionReply } from './simulat
 import { SimulateGnosisSafeTransaction as RequestSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as RequestSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
 import { SafeStackExport } from './safeTypes.js'
 import { METAMASK_ERROR_PROVIDER_DISCONNECTED } from '../utils/constants.js'
+import { RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } from '../utils/rpcConfigurationError.js'
 
 export const RPC_CONFIGURATION_UNAVAILABLE_ERROR = {
 	code: METAMASK_ERROR_PROVIDER_DISCONNECTED,
-	message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
+	message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE,
 }
 
 export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>

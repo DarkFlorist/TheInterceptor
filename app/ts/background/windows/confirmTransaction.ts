@@ -312,11 +312,13 @@ export async function resolvePendingSignerReply(services: ConfirmationServices |
 	}
 	const pending = await getPendingTransactionOrMessageByidentifier(uniqueRequestIdentifier)
 	if (pending === undefined) return
-	if (pending.simulationMode || getSafePendingFlow(pending) !== undefined) {
+	if (pending.simulationMode) {
 		await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (current) => modifyObject(current, { approvalStatus: { status: 'SignerError', ...RPC_CONFIGURATION_UNAVAILABLE_ERROR } }))
 		return
 	}
-	return await settlePendingTerminalReply(websiteTabConnections, pending, { type: 'result', result: params.reply }, undefined)
+	const safeFlow = getSafePendingFlow(pending)
+	const result = safeFlow?.kind === 'proposal' ? EthereumBytes32.serialize(safeFlow.pending.safeTransaction.safeTxHash) : params.reply
+	return await settlePendingTerminalReply(websiteTabConnections, pending, { type: 'result', result }, undefined)
 }
 
 export async function resolvePendingTransactionOrMessage(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, websiteTabConnections: WebsiteTabConnections, confirmation: TransactionConfirmation, refreshedSafeSignerSelection?: RefreshedSafeSignerSelection) {
