@@ -5,7 +5,7 @@ import { getActiveAddress, sendPopupMessageToOpenWindows, setExtensionBadgeBackg
 import { createScopedKeyedSerialExecutor } from '../utils/semaphore.js'
 import { Future } from '../utils/future.js'
 import type { TabIcon, TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
-import { getSettings, getWebsiteAccess } from './settings.js'
+import { getRequiredSettings, getWebsiteAccess } from './settings.js'
 import { getRpcConnectionStatus, getTabState, removeTabState, updateTabState } from './storageVariables.js'
 import { getLastKnownCurrentTabId } from './currentTab.js'
 import { checkAndPrintRuntimeLastError, doesTabExist, getTabIfExists, isMissingBrowserTargetError, silenceChromeUnCaughtPromise } from '../utils/requests.js'
@@ -122,7 +122,7 @@ export async function updateExtensionIcon(websiteTabConnections: WebsiteTabConne
 		const addShieldIfNeeded = async (icon: TabIcon): Promise<TabIcon> => await blockingWebsitePromise ? addBlockingShieldToIcon(icon) : icon
 		const setIcon = async (icon: TabIcon, iconReason: string) => setInterceptorIcon(tabId, await addShieldIfNeeded(icon), await blockingWebsitePromise ? `${ iconReason } The Interceptor is blocking external requests made by the website.` : iconReason, popupRefreshGeneration)
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		if (hasAccess(settings.websiteAccess, websiteOrigin) === 'interceptorDisabled') return setIcon(ICON_INTERCEPTOR_DISABLED, `The Interceptor is disabled for ${ websiteOrigin } by user request.`)
 		const activeAddress = await getActiveAddress(settings, tabId)
 		if (activeAddress === undefined) return setIcon(ICON_NOT_ACTIVE, 'No active address selected.')

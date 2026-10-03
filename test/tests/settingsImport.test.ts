@@ -3,11 +3,13 @@ import { beforeEach, describe, test } from 'bun:test'
 import type { ExportedSettings } from '../../app/ts/types/exportedSettingsTypes.js'
 import type { RpcNetwork } from '../../app/ts/types/rpc.js'
 import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
+import { DEFAULT_RPCS } from '../../app/ts/config/defaults.js'
 
 type StorageKeyInput = string | string[] | Record<string, unknown> | undefined | null
 
 function createBrowserStorageMock() {
 	const storageState: Record<string, unknown> = {}
+	const registeredContentScripts = new Map<string, { readonly id: string, readonly excludeMatches?: readonly string[] }>()
 	let signingPreferenceWriteGate: { started: () => void, waitForRelease: Promise<void> } | undefined
 	let addressBookWriteGate: { started: () => void, waitForRelease: Promise<void> } | undefined
 
@@ -57,6 +59,18 @@ function createBrowserStorageMock() {
 				},
 			},
 		},
+		scripting: {
+			async getRegisteredContentScripts() { return [...registeredContentScripts.values()] },
+			async registerContentScripts(scripts: readonly { readonly id: string, readonly excludeMatches?: readonly string[] }[]) {
+				for (const script of scripts) registeredContentScripts.set(script.id, script)
+			},
+			async updateContentScripts(scripts: readonly { readonly id: string, readonly excludeMatches?: readonly string[] }[]) {
+				for (const script of scripts) registeredContentScripts.set(script.id, script)
+			},
+			async unregisterContentScripts(filter?: { readonly ids?: readonly string[] }) {
+				for (const id of filter?.ids ?? registeredContentScripts.keys()) registeredContentScripts.delete(id)
+			},
+		},
 	}
 
 	const installGlobals = () => {
@@ -85,10 +99,12 @@ function createBrowserStorageMock() {
 		},
 		reset() {
 			for (const key of Object.keys(storageState)) delete storageState[key]
+			registeredContentScripts.clear()
 			addressBookWriteGate = undefined
 			signingPreferenceWriteGate = undefined
 			installGlobals()
 		},
+		getRegisteredContentScripts() { return [...registeredContentScripts.values()] },
 	}
 }
 
@@ -181,11 +197,11 @@ describe('settings import', () => {
 	})
 
 	test('resets the simulation address and restores the opened page from version 1.3 exports', async () => {
-		const { defaultActiveAddresses, getPage, getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		const { defaultActiveAddresses, getPage, getRequiredSettings, importSettingsAndAddressBook } = await settingsModulePromise
 
 		await importSettingsAndAddressBook(buildVersion13Import())
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		assert.equal(settings.simulationMode, false)
 		assert.equal(settings.activeSimulationAddress, defaultActiveAddresses[0]?.address)
 		assert.equal(settings.activeSigningSafeAddress, undefined)
@@ -201,10 +217,23 @@ describe('settings import', () => {
 		assert.deepEqual(await getPage(), { page: 'Settings' })
 	})
 
+	test('stores imported disabled sites without orchestrating content scripts from the settings layer', async () => {
+		const { getRequiredSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		const disabledWebsite = {
+			website: { websiteOrigin: 'https://import-disabled.example', icon: undefined, title: undefined },
+			addressAccess: [],
+			interceptorDisabled: true,
+		}
+
+		await importSettingsAndAddressBook(buildVersion14Import(false, false, [disabledWebsite]))
+		assert.deepEqual((await getRequiredSettings()).websiteAccess, [disabledWebsite])
+		assert.deepEqual(browserMock.getRegisteredContentScripts(), [])
+	})
+
 	test('round-trips Safe settings in version 1.6 exports', async () => {
 		const signingSafeAddress = 0x4444444444444444444444444444444444444444n
 		const signerAddress = 0x4545454545454545454545454545454545454545n
-		const { changeSimulationMode, exportSettingsAndAddressBook, getSafeAppsCompatibilityMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference, setSafeAppsCompatibilityMode } = await settingsModulePromise
+		const { changeSimulationMode, exportSettingsAndAddressBook, getSafeAppsCompatibilityMode, getRequiredSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference, setSafeAppsCompatibilityMode } = await settingsModulePromise
 		const { updateUserAddressBookEntries, getTabState } = await storageVariablesModulePromise
 		const { getSigningAddressSelectionTransition } = await signingAddressSelectionModulePromise
 		await updateUserAddressBookEntries(() => [{
@@ -233,7 +262,7 @@ describe('settings import', () => {
 
 		browserMock.reset()
 		await importSettingsAndAddressBook(exportedSettings)
-		const importedSettings = await getSettings()
+		const importedSettings = await getRequiredSettings()
 		assert.equal(importedSettings.activeSigningSafeAddress, signingSafeAddress)
 		assert.equal(await getSafeAppsCompatibilityMode(), true)
 		assert.deepEqual(await getSigningAddressPreferences(), exportedSettings.settings.signingAddressPreferences)
@@ -244,13 +273,13 @@ describe('settings import', () => {
 			activeSigningAddress: signerAddress,
 		})
 		assert.equal(transition.shouldActivate, false)
-		assert.equal((await getSettings()).activeSigningSafeAddress, signingSafeAddress)
+		assert.equal((await getRequiredSettings()).activeSigningSafeAddress, signingSafeAddress)
 	})
 
 	test('publishes imported Safe preferences only after their address book entry', async () => {
 		const signingSafeAddress = 0x4646464646464646464646464646464646464646n
 		const signerAddress = 0x4747474747474747474747474747474747474747n
-		const { changeSimulationMode, exportSettingsAndAddressBook, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
+		const { changeSimulationMode, exportSettingsAndAddressBook, getRequiredSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
 		const { updateUserAddressBookEntries } = await storageVariablesModulePromise
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
@@ -270,18 +299,18 @@ describe('settings import', () => {
 		const importPromise = importSettingsAndAddressBook(exportedSettings)
 		await addressBookWriteGate.started
 
-		assert.equal((await getSettings()).activeSigningSafeAddress, undefined)
+		assert.equal((await getRequiredSettings()).activeSigningSafeAddress, undefined)
 		assert.deepEqual(await getSigningAddressPreferences(), [])
 		addressBookWriteGate.release()
 		await importPromise
-		assert.equal((await getSettings()).activeSigningSafeAddress, signingSafeAddress)
+		assert.equal((await getRequiredSettings()).activeSigningSafeAddress, signingSafeAddress)
 		assert.deepEqual(await getSigningAddressPreferences(), [{ signerAddress, selection: 'safe', safeAddress: signingSafeAddress, chainId: testRpcNetwork.chainId }])
 	})
 
 	test('clears a pre-existing signing Safe when importing a legacy export', async () => {
 		const signingSafeAddress = 0x6666666666666666666666666666666666666666n
 		const signerAddress = 0x6767676767676767676767676767676767676767n
-		const { changeSimulationMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
+		const { changeSimulationMode, getRequiredSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
 		const { getTabState } = await storageVariablesModulePromise
 		const { getSigningAddressSelectionTransition } = await signingAddressSelectionModulePromise
 		await changeSimulationMode({
@@ -310,7 +339,7 @@ describe('settings import', () => {
 
 		await importSettingsAndAddressBook(legacyExport)
 
-		const importedSettings = await getSettings()
+		const importedSettings = await getRequiredSettings()
 		assert.equal(importedSettings.activeSigningSafeAddress, undefined)
 		assert.deepEqual(await getSigningAddressPreferences(), [])
 		const previousTabState = await getTabState(1)
@@ -351,7 +380,7 @@ describe('settings import', () => {
 	test('clears stale signing preferences when importing version 1.0', async () => {
 		const signingSafeAddress = 0x7070707070707070707070707070707070707070n
 		const signerAddress = 0x7171717171717171717171717171717171717171n
-		const { getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
+		const { getRequiredSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
 		const { getTabState, updateUserAddressBookEntries } = await storageVariablesModulePromise
 		const { getSigningAddressSelectionTransition } = await signingAddressSelectionModulePromise
 		await updateUserAddressBookEntries(() => [{
@@ -367,7 +396,7 @@ describe('settings import', () => {
 
 		await importSettingsAndAddressBook(buildVersion10Import())
 
-		const importedSettings = await getSettings()
+		const importedSettings = await getRequiredSettings()
 		assert.equal(importedSettings.activeSigningSafeAddress, undefined)
 		assert.deepEqual(await getSigningAddressPreferences(), [])
 		const previousTabState = await getTabState(1)
@@ -393,26 +422,28 @@ describe('settings import', () => {
 				addressBookEntries: [{ type: 'safe', name: 'Legacy Safe', address: safeAddress, chainId: 1n, entrySource: 'User', useAsActiveAddress: true }],
 			},
 		}
-		const { defaultActiveAddresses, getSettings, importSettingsAndAddressBook } = await settingsModulePromise
+		const { defaultActiveAddresses, getRequiredSettings, importSettingsAndAddressBook } = await settingsModulePromise
 
 		await importSettingsAndAddressBook(signingSafeExport)
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		assert.equal(settings.activeSimulationAddress, defaultActiveAddresses[0]?.address)
 		assert.equal(settings.activeSigningSafeAddress, undefined)
 	})
 
 	test('ignores the legacy shared address and defaults independent simulation state without storage migration', async () => {
 		const safeAddress = 0x8888888888888888888888888888888888888888n
-		await browser.storage.local.set({
+		await browserStorageLocalSet({
 			activeSimulationAddress: safeAddress,
 			simulationMode: false,
 			useSignersAddressAsActiveAddress: false,
+			rpcEntries: DEFAULT_RPCS,
+			activeRpcNetwork: DEFAULT_RPCS[0],
 		})
-		const { defaultActiveAddresses, getSettings } = await settingsModulePromise
+		const { defaultActiveAddresses, getRequiredSettings } = await settingsModulePromise
 		const storageBeforeRead = await browser.storage.local.get()
-		const firstSettings = await getSettings()
-		const secondSettings = await getSettings()
+		const firstSettings = await getRequiredSettings()
+		const secondSettings = await getRequiredSettings()
 
 		assert.equal(firstSettings.activeSimulationAddress, defaultActiveAddresses[0]?.address)
 		assert.equal(secondSettings.activeSimulationAddress, defaultActiveAddresses[0]?.address)
@@ -423,10 +454,10 @@ describe('settings import', () => {
 	test('reads an explicitly stored independent simulation address without a schema marker', async () => {
 		const activeSimulationAddress = 0x7777777777777777777777777777777777777777n
 		await browserStorageLocalSet({ independentActiveSimulationAddress: activeSimulationAddress })
-		const { getSettings } = await settingsModulePromise
+		const { getRequiredSettings } = await settingsModulePromise
 
-		const firstSettings = await getSettings()
-		const secondSettings = await getSettings()
+		const firstSettings = await getRequiredSettings()
+		const secondSettings = await getRequiredSettings()
 
 		assert.equal(firstSettings.activeSimulationAddress, activeSimulationAddress)
 		assert.equal(secondSettings.activeSimulationAddress, activeSimulationAddress)

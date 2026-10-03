@@ -13,7 +13,7 @@ import { assertNever, modifyObject } from '../../utils/typescript.js'
 import type { EthSimulateV1BlockHeader, EthSimulateV1BlockTag, EthSimulateV1CallResult, EthSimulateV1Params, EthSimulateV1Result, StateOverrides } from '../../types/ethSimulate-types.js'
 import type { BlockCalls as SimulateBlockCalls } from '../../types/ethSimulate-types.js'
 import { stripLeadingZeros } from '../../utils/typed-arrays.js'
-import { getMakeCurrentAddressRich, getSettings } from '../../background/settings.js'
+import { getMakeCurrentAddressRich, getRequiredSettings } from '../../background/settings.js'
 import { JsonRpcResponseError } from '../../utils/errors.js'
 import { deduplicateByFunction, last } from '../../utils/array.js'
 import { promiseAllMapAbortSafe } from '../../utils/requests.js'
@@ -423,7 +423,7 @@ export const simulateEstimateGas = async (ethereumClientService: EthereumClientS
 }
 
 export const getAddressToMakeRich = async (settingsSnapshot?: Settings) => {
-	const settings = settingsSnapshot ?? await getSettings()
+	const settings = settingsSnapshot ?? await getRequiredSettings()
 	if (!settings.simulationMode) return undefined
 	return await getMakeCurrentAddressRich() ? settings.activeSimulationAddress : undefined
 }

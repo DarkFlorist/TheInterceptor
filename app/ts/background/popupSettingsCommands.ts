@@ -4,17 +4,22 @@ import { popupSettingsOperations } from '../types/popupSettingsProtocol.js'
 import type { PopupSettingsRequest } from '../types/popupSettingsRequests.js'
 import type { PopupMessage } from '../types/interceptor-messages.js'
 import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
-import { popupMessageHandler, type PopupMessageDispatcherContext, type PopupMessageHandlerMap } from './popupMessageHandlerRegistry.js'
-import { getSettings } from './settings.js'
+import { popupMessageHandler, type PopupMessageHandlerMap, type PopupReadyMessageDispatcherContext } from './popupMessageHandlerRegistry.js'
+import { getSettingsSnapshot, requireSettings } from './settings.js'
 import { changeActiveAddress, enableSimulationMode, modifyMakeMeRich, popupChangeActiveRpc } from './popupMessageHandlers.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
+import { getRpcServicesAtAdmission } from './rpcConfigurationAvailability.js'
+import { reportUnexpectedError } from '../utils/errors.js'
 
 const settingsCoordinator = createPopupSettingsCoordinator(async (data) => await sendPopupMessageToOpenWindows({ method: 'popup_settingsChangeStatus', data }))
 
-function settingsCommand<Method extends PopupSettingsRequest['method']>(method: Method, action: (context: PopupMessageDispatcherContext, request: Extract<PopupMessage, { method: Method }>) => Promise<PopupReplyOption | void>) {
+function settingsCommand<Method extends PopupSettingsRequest['method']>(method: Method, action: (context: PopupReadyMessageDispatcherContext, request: Extract<PopupMessage, { method: Method }>) => Promise<PopupReplyOption | void>) {
 	return popupMessageHandler(method, async (context, request) => {
 		const descriptor = popupSettingsOperations[method]
-		const admission = await settingsCoordinator.run(descriptor.operation, async () => await action({ ...context, settings: await getSettings() }, request))
+		const admission = await settingsCoordinator.run(descriptor.operation, async () => {
+			const snapshot = await getSettingsSnapshot()
+			return await action({ ...context, settings: requireSettings(snapshot), rpcConfiguration: snapshot.rpcConfiguration }, request)
+		})
 		return admission.accepted ? admission.result : {
 			type: descriptor.replyType,
 			ok: false,
@@ -34,9 +39,18 @@ export const popupSettingsCommandHandlers = {
 	}),
 	popup_modifyMakeMeRich: settingsCommand('popup_modifyMakeMeRich', async (context, request) => {
 		if (await modifyMakeMeRich(request)) {
-			const outcome = await queuePopupSimulationRefresh({ ...context.simulationServicesOwner.getCurrent(), invalidateOldState: true })
-			if (outcome.status === 'observed' && !outcome.available) {
-				return { type: 'PopupSettingsChangeReply', ok: false, message: 'The rich setting was saved, but the latest simulation is unavailable. Please refresh the simulation to retry.' }
+			const services = getRpcServicesAtAdmission(context.rpcConfiguration, context.simulationServicesOwner)
+			if (services !== undefined) {
+				try {
+					await queuePopupSimulationRefresh({ ...services, invalidateOldState: true })
+				} catch (error: unknown) {
+					await reportUnexpectedError(error, {
+						source: 'make_me_rich_simulation_refresh',
+						code: 'make_me_rich_saved_refresh_failed',
+						displayMessage: 'The rich setting was saved, but the simulation could not be refreshed. Refresh it to retry.',
+						suppressExpectedHandledErrors: false,
+					})
+				}
 			}
 		}
 		return { type: 'PopupSettingsChangeReply', ok: true }

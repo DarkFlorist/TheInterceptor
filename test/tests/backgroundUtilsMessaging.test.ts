@@ -160,6 +160,27 @@ describe('backgroundUtils messaging', () => {
 		})
 	})
 
+	test('preserves a typed RPC-unavailable Safe signer reply for the popup caller', async () => {
+		installBrowserMock('unused')
+		const { sendPopupMessageWithReply, PopupRequestsReplies } = await loadModules()
+		globalThis.browser.runtime.sendMessage = async () => PopupRequestsReplies.popup_setSafeSimulationSigner.serialize({
+			type: 'SetSafeSimulationSignerReply',
+			ok: false,
+			message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
+		})
+
+		const reply = await sendPopupMessageWithReply({
+			method: 'popup_setSafeSimulationSigner',
+			data: { chainId: 1n, safeAddress: 2n, safeSimulationSignerAddress: 3n },
+		})
+
+		assert.deepEqual(reply, {
+			type: 'SetSafeSimulationSignerReply',
+			ok: false,
+			message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
+		})
+	})
+
 	test('parses latest unexpected error replies with the requested reply parser', async () => {
 		installBrowserMock('unused')
 		const { sendPopupMessageWithReply, PopupRequestsReplies } = await loadModules()
@@ -206,6 +227,16 @@ describe('backgroundUtils messaging', () => {
 		const { popupMessageHandler, PopupRequestsReplies } = await loadModules()
 
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const activeRpcNetwork = {
+			name: 'Ethereum Mainnet',
+			chainId: 1n,
+			httpsRpc: 'https://ethereum.dark.florist',
+			currencyName: 'Ether' as const,
+			currencyTicker: 'ETH' as const,
+			currencyLogoUri: '../img/ethereum.svg',
+			primary: true as const,
+			minimized: true as const,
+		}
 		const reply = await popupMessageHandler(
 			new Map(),
 			simulationServicesOwner,
@@ -215,18 +246,10 @@ describe('backgroundUtils messaging', () => {
 				openedPage: { page: 'Home' },
 				useSignersAddressAsActiveAddress: false,
 				websiteAccess: [],
-				activeRpcNetwork: {
-					name: 'Ethereum Mainnet',
-					chainId: 1n,
-					httpsRpc: 'https://ethereum.dark.florist',
-					currencyName: 'Ether',
-					currencyTicker: 'ETH',
-					currencyLogoUri: '../img/ethereum.svg',
-					primary: true,
-					minimized: true,
-				},
+				activeRpcNetwork,
 				simulationMode: true,
 			},
+			{ status: 'ready', rpcEntries: [activeRpcNetwork], activeRpcNetwork },
 			async () => undefined,
 		)
 
@@ -243,6 +266,16 @@ describe('backgroundUtils messaging', () => {
 		])
 		const ethereum: import('../../app/ts/simulation/services/EthereumClientService.js').EthereumClientService = Object.create(EthereumClientService.prototype)
 		const tokenPriceService: import('../../app/ts/simulation/services/priceEstimator.js').TokenPriceService = Object.create(TokenPriceService.prototype)
+		const activeRpcNetwork = {
+			name: 'Ethereum Mainnet',
+			chainId: 1n,
+			httpsRpc: 'https://ethereum.dark.florist',
+			currencyName: 'Ether' as const,
+			currencyTicker: 'ETH' as const,
+			currencyLogoUri: '../img/ethereum.svg',
+			primary: true as const,
+			minimized: true as const,
+		}
 		const reply = await withSilencedConsole(async () => await popupMessageHandler(
 			new Map(),
 			createTestSimulationServicesOwner({ ethereum, tokenPriceService }),
@@ -252,18 +285,10 @@ describe('backgroundUtils messaging', () => {
 				openedPage: { page: 'Home' },
 				useSignersAddressAsActiveAddress: false,
 				websiteAccess: [],
-				activeRpcNetwork: {
-					name: 'Ethereum Mainnet',
-					chainId: 1n,
-					httpsRpc: 'https://ethereum.dark.florist',
-					currencyName: 'Ether',
-					currencyTicker: 'ETH',
-					currencyLogoUri: '../img/ethereum.svg',
-					primary: true,
-					minimized: true,
-				},
+				activeRpcNetwork,
 				simulationMode: true,
 			},
+			{ status: 'ready', rpcEntries: [activeRpcNetwork], activeRpcNetwork },
 			async () => undefined,
 		))
 		assert.equal(reply.error.code, -32700)

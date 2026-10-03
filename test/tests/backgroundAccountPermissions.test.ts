@@ -14,7 +14,7 @@ async function refreshSafeAppsPorts(connections: WebsiteTabConnections) {
 describe('background eth_accounts', () => {
 	test('confirms a persisted popup address before slow permission work completes', async () => {
 		const { runtimeMessages } = installBrowserMock()
-		const { changeActiveAddress, changeSimulationMode, getSettings, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()
+		const { changeActiveAddress, changeSimulationMode, getRequiredSettings, updateUserAddressBookEntries, updateWebsiteAccess } = await loadModules()
 		const { MessageToPopup } = await import('../../app/ts/types/interceptor-messages.js')
 		const previousAddress = 1n
 		const nextAddress = 2n
@@ -40,7 +40,7 @@ describe('background eth_accounts', () => {
 		try {
 			await permissionWorkStarted.promise
 			assert.equal(completed, false)
-			assert.equal((await getSettings()).activeSimulationAddress, nextAddress)
+			assert.equal((await getRequiredSettings()).activeSimulationAddress, nextAddress)
 			const committed = runtimeMessages.map((message) => MessageToPopup.safeParse(message)).find((parsed) => parsed.success && parsed.value.method === 'popup_settingsUpdated')
 			assert.ok(committed?.success && committed.value.method === 'popup_settingsUpdated')
 			if (committed?.success && committed.value.method === 'popup_settingsUpdated') {
@@ -115,22 +115,22 @@ describe('background eth_accounts', () => {
 
 	test('optional lifecycle observers do not block or fail strict access reconciliation', async () => {
 		const { runtimeMessages } = installBrowserMock()
-		const { updateWebsiteApprovalAccesses, getSettings } = await loadModules()
+		const { updateWebsiteApprovalAccesses, getRequiredSettings } = await loadModules()
 		const connections = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { throw new Error('Observer failed') } } })
-		assert.equal(typeof await updateWebsiteApprovalAccesses(undefined, connections, await getSettings(), false, true), 'number')
+		assert.equal(typeof await updateWebsiteApprovalAccesses(undefined, connections, await getRequiredSettings(), false, true), 'number')
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_UnexpectedErrorOccured'), true)
 	})
 
 	test('async lifecycle callback rejection is reported without delaying access reconciliation', async () => {
 		const { runtimeMessages } = installBrowserMock()
-		const { updateWebsiteApprovalAccesses, getSettings } = await loadModules()
+		const { updateWebsiteApprovalAccesses, getRequiredSettings } = await loadModules()
 		const releaseCallback = createDeferredValue<undefined>()
 		const connections = Object.assign(new Map(), { lifecycle: { accessReconciled: async () => {
 			await releaseCallback.promise
 			throw new Error('Async observer failed')
 		} } })
-		assert.equal(typeof await updateWebsiteApprovalAccesses(undefined, connections, await getSettings(), false, true), 'number')
+		assert.equal(typeof await updateWebsiteApprovalAccesses(undefined, connections, await getRequiredSettings(), false, true), 'number')
 		releaseCallback.resolve(undefined)
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		assert.equal(runtimeMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_UnexpectedErrorOccured'), true)
@@ -138,11 +138,11 @@ describe('background eth_accounts', () => {
 
 	test('access reconciliation invokes only the explicitly supplied connection callbacks', async () => {
 		installBrowserMock()
-		const { updateWebsiteApprovalAccesses, getSettings } = await loadModules()
+		const { updateWebsiteApprovalAccesses, getRequiredSettings } = await loadModules()
 		const calls: string[] = []
 		const first = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { calls.push('first') } } })
 		const second = Object.assign(new Map(), { lifecycle: { accessReconciled: () => { calls.push('second') } } })
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		await updateWebsiteApprovalAccesses(undefined, first, settings, false, true)
 		assert.deepEqual(calls, ['first'])
 		await updateWebsiteApprovalAccesses(undefined, new Map(), settings, false, true)
@@ -164,7 +164,7 @@ describe('background eth_accounts', () => {
 				return undefined
 			},
 		})
-		const { changeActiveAddressAndChain, changeSimulationMode, getSettings } = await loadModules()
+		const { changeActiveAddressAndChain, changeSimulationMode, getRequiredSettings } = await loadModules()
 		const firstSafe = 0x1010101010101010101010101010101010101010n
 		const secondSafe = 0x2020202020202020202020202020202020202020n
 		await changeSimulationMode({ simulationMode: false, activeSigningSafeAddress: firstSafe })
@@ -177,7 +177,7 @@ describe('background eth_accounts', () => {
 			promptForAccessesIfNeeded: false,
 		})
 
-		assert.equal((await getSettings()).activeSigningSafeAddress, secondSafe)
+		assert.equal((await getRequiredSettings()).activeSigningSafeAddress, secondSafe)
 		assert.equal(messages.some((message) =>
 			typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen'
 		), true)
@@ -196,10 +196,10 @@ describe('background eth_accounts', () => {
 				return undefined
 			},
 		})
-		const { changeActiveAddressAndChain, changeSimulationMode, getSettings } = await loadModules()
+		const { changeActiveAddressAndChain, changeSimulationMode, getRequiredSettings } = await loadModules()
 		const safeAddress = 0x3030303030303030303030303030303030303030n
 		await changeSimulationMode({ simulationMode: false, activeSigningSafeAddress: safeAddress })
-		const previousNetwork = (await getSettings()).activeRpcNetwork
+		const previousNetwork = (await getRequiredSettings()).activeRpcNetwork
 		const nextNetwork = {
 			...previousNetwork,
 			name: 'Other chain',
@@ -215,7 +215,7 @@ describe('background eth_accounts', () => {
 			promptForAccessesIfNeeded: false,
 		})
 
-		assert.equal((await getSettings()).activeSigningSafeAddress, safeAddress)
+		assert.equal((await getRequiredSettings()).activeSigningSafeAddress, safeAddress)
 		assert.equal(messages.some((message) =>
 			typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_isSimulationVisualizerOpen'
 		), true)
@@ -226,7 +226,7 @@ describe('background eth_accounts', () => {
 		const {
 			changeActiveAddress,
 			changeSimulationMode,
-			getSettings,
+			getRequiredSettings,
 			saveCurrentTabId,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
@@ -283,7 +283,7 @@ describe('background eth_accounts', () => {
 			data: { activeAddress: unverifiedSafe, simulationMode: false },
 		})
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		assert.equal(readStoredValue('activeSigningAddress'), signerAddress)
 		assert.equal(settings.useSignersAddressAsActiveAddress, true)
 	})
@@ -293,7 +293,7 @@ describe('background eth_accounts', () => {
 		const {
 			changeActiveAddress,
 			changeSimulationMode,
-			getSettings,
+			getRequiredSettings,
 			updateUserAddressBookEntries,
 		} = await loadModules()
 		const originalAddress = 0x3131313131313131313131313131313131313131n
@@ -321,7 +321,7 @@ describe('background eth_accounts', () => {
 				message: 'The selected Gnosis Safe is configured for another chain.',
 			},
 		)
-		assert.equal((await getSettings()).activeSimulationAddress, originalAddress)
+		assert.equal((await getRequiredSettings()).activeSimulationAddress, originalAddress)
 	})
 
 	test('does not classify a signer EOA as a Safe from another chain', async () => {
@@ -330,12 +330,12 @@ describe('background eth_accounts', () => {
 			changeActiveAddressAndChain,
 			activateAddressSelection,
 			changeSimulationMode,
-			getSettings,
+			getRequiredSettings,
 			updateUserAddressBookEntries,
 		} = await loadModules()
 		const signerAddress = 0x4141414141414141414141414141414141414141n
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined, activeSigningSafeAddress: undefined })
-		const activeChainId = (await getSettings()).activeRpcNetwork.chainId
+		const activeChainId = (await getRequiredSettings()).activeRpcNetwork.chainId
 		await updateUserAddressBookEntries(() => [{
 			type: 'safe',
 			name: 'Other-chain Safe with signer address',
@@ -354,7 +354,7 @@ describe('background eth_accounts', () => {
 			promptForAccessesIfNeeded: false,
 		})
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		assert.equal(readStoredValue('activeSigningAddress'), signerAddress)
 		assert.equal(settings.activeSigningSafeAddress, undefined)
 
@@ -373,7 +373,7 @@ describe('background eth_accounts', () => {
 			promptForAccessesIfNeeded: false,
 		})
 		assert.equal(readStoredValue('activeSigningAddress'), signerAddress)
-		assert.equal((await getSettings()).activeSigningSafeAddress, undefined)
+		assert.equal((await getRequiredSettings()).activeSigningSafeAddress, undefined)
 	})
 
 	test('keeps a newly selected self-owned Safe distinct from its signer EOA in the access dialog', async () => {
@@ -430,7 +430,7 @@ describe('background eth_accounts', () => {
 		const {
 			changeSimulationMode,
 			getPendingAccessRequests,
-			getSettings,
+			getRequiredSettings,
 			requestAddressChange,
 			resolveInterceptorAccess,
 			updatePendingAccessRequests,
@@ -481,7 +481,7 @@ describe('background eth_accounts', () => {
 			accessRequestId: 'same-address-safe-selection',
 		}, noopPublishRpcConnectionStatus)
 
-		assert.equal((await getSettings()).activeSigningSafeAddress, address)
+		assert.equal((await getRequiredSettings()).activeSigningSafeAddress, address)
 	})
 
 	test('does not inherit wrong-chain address access policy during requests or access-dialog changes', async () => {
@@ -491,7 +491,7 @@ describe('background eth_accounts', () => {
 			getActiveAddress,
 			getPendingAccessRequests,
 			getAddressMetadataForAccess,
-			getSettings,
+			getRequiredSettings,
 			hasAddressAccess,
 			handleInterceptedRequest,
 			requestAddressChange,
@@ -507,7 +507,7 @@ describe('background eth_accounts', () => {
 			{ type: 'contact', name: 'Wrong-chain address', address: activeAddress, chainId: 10n, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false },
 		])
 
-		const activeAddressEntry = await getActiveAddress(await getSettings(), 198)
+		const activeAddressEntry = await getActiveAddress(await getRequiredSettings(), 198)
 		if (activeAddressEntry === undefined) throw new Error('Missing active simulation address metadata')
 		assert.notEqual(activeAddressEntry.name, 'Wrong-chain address')
 		assert.equal(activeAddressEntry.askForAddressAccess, true)
@@ -536,7 +536,7 @@ describe('background eth_accounts', () => {
 		assert.notEqual(pendingRequest.requestAccessToAddress?.name, 'Wrong-chain address')
 		assert.equal(pendingRequest.associatedAddresses.some((entry) => entry.name === 'Wrong-chain address'), false)
 		assert.equal(messages.some((message) => message.method === 'eth_requestAccounts' && message.requestId === 42), false)
-		assert.equal((await getAddressMetadataForAccess((await getSettings()).websiteAccess, 1n))[0]?.name === 'Wrong-chain address', false)
+		assert.equal((await getAddressMetadataForAccess((await getRequiredSettings()).websiteAccess, 1n))[0]?.name === 'Wrong-chain address', false)
 
 		await updateUserAddressBookEntries(() => [
 			{ type: 'contact', name: 'Wrong-chain address', address: activeAddress, chainId: 10n, entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false },
@@ -561,7 +561,7 @@ describe('background eth_accounts', () => {
 			changeActiveAddress,
 			changeSimulationMode,
 			getActiveAddress,
-			getSettings,
+			getRequiredSettings,
 			saveCurrentTabId,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
@@ -590,7 +590,7 @@ describe('background eth_accounts', () => {
 			data: { activeAddress: 'signer', simulationMode: false },
 		})
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		assert.equal(settings.activeSigningSafeAddress, undefined)
 		assert.equal(await getActiveAddress(settings, tabId), undefined)
 	})
@@ -600,7 +600,7 @@ describe('background eth_accounts', () => {
 		const {
 			changeSimulationMode,
 			getActiveAddress,
-			getSettings,
+			getRequiredSettings,
 			handleInterceptedRequest,
 			updateTabState,
 			updateUserAddressBookEntries,
@@ -631,7 +631,7 @@ describe('background eth_accounts', () => {
 			signerChain: 1n,
 		}))
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		const activeAddress = await getActiveAddress(settings, socket.tabId)
 		assert.equal(activeAddress?.address, signerAddress)
 		assert.notEqual(activeAddress?.type, 'safe')
@@ -696,7 +696,7 @@ describe('background eth_accounts', () => {
 		const {
 			changeSimulationMode,
 			getPendingAccessRequests,
-			getSettings,
+			getRequiredSettings,
 			resolveInterceptorAccess,
 			setUseSignersAddressAsActiveAddress,
 			updatePendingAccessRequests,
@@ -747,12 +747,12 @@ describe('background eth_accounts', () => {
 		}, noopPublishRpcConnectionStatus)
 
 		await assert.rejects(approve, /not available for the current signing wallet/)
-		assert.equal((await getSettings()).websiteAccess.some((entry) => entry.website.websiteOrigin === website.websiteOrigin), false)
+		assert.equal((await getRequiredSettings()).websiteAccess.some((entry) => entry.website.websiteOrigin === website.websiteOrigin), false)
 		assert.equal((await getPendingAccessRequests()).length, 1)
 
 		await updateTabState(tabId, (previousState) => ({ ...previousState, signerAccounts: [ownerAtPrompt], activeSigningAddress: ownerAtPrompt }))
 		await approve()
-		const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === website.websiteOrigin)
+		const access = (await getRequiredSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === website.websiteOrigin)
 		assert.deepEqual(access?.addressAccess, [{ address: safeAddress, access: true }])
 	})
 
@@ -839,6 +839,7 @@ describe('background eth_accounts', () => {
 			[connectionKey]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		simulationServicesOwner.clear()
 		const request = {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -856,6 +857,50 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.result), [[accountString]])
 		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.requestId), [16])
 		assert.deepEqual(messages.map((message) => message.method), ['accountsChanged', 'eth_accounts'])
+	})
+
+	test('rejects corrupt RPC configuration instead of treating its synthetic network as signer-only', async () => {
+		installBrowserMock()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode } = await loadModules()
+		await changeSimulationMode({
+			simulationMode: false,
+			rpcNetwork: {
+				name: 'Signer only',
+				chainId: 1n,
+				httpsRpc: undefined,
+				currencyName: 'Ether?',
+				currencyTicker: 'ETH?',
+				primary: false,
+				minimized: true,
+			},
+		})
+		await browser.storage.local.set({ rpcEntries: 'not-an-rpc-list' })
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const request = {
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: false,
+			uniqueRequestIdentifier: { requestId: 17, requestSocket: socket },
+			method: 'eth_accounts',
+		}
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, request, websiteTabConnections, noopPublishRpcConnectionStatus)
+		} finally {
+			console.warn = originalWarn
+		}
+
+		assert.equal(simulationServicesOwner.getCurrent() !== undefined, true)
+		const reply = messages.find((message) => message.requestId === request.uniqueRequestIdentifier.requestId)
+		assert.equal(reply?.error?.code, 4900)
+		assert.match(reply?.error?.message ?? '', /RPC configuration is unavailable/)
 	})
 
 	test('does not enable Safe compatibility or expose an active address to an unapproved connected_to_signer request', async () => {
@@ -909,7 +954,7 @@ describe('background eth_accounts', () => {
 
 	test('ordinary signer reload restores EOA consent and requests accounts without a lifecycle observer', async () => {
 		installBrowserMock()
-		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, updateTabState, getSettings } = await loadModules()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, updateTabState, getRequiredSettings } = await loadModules()
 		const account = 0x5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5bn
 		const websiteOrigin = 'https://ordinary.example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -922,7 +967,7 @@ describe('background eth_accounts', () => {
 		const connection = { port, socket, websiteOrigin, approved: false, wantsToConnect: false }
 		const connections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: { [websiteSocketToString(socket)]: connection } }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
-		assert.equal((await getSettings()).activeSigningSafeAddress, undefined)
+		assert.equal((await getRequiredSettings()).activeSigningSafeAddress, undefined)
 		assert.equal('lifecycle' in connections, false)
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true, interceptorInternalRequest: true, usingInterceptorWithoutSigner: false,
@@ -946,7 +991,7 @@ describe('background eth_accounts', () => {
 			updateWebsiteAccess,
 			updateWebsiteApprovalAccesses,
 			updateTabState,
-			getSettings,
+			getRequiredSettings,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -997,7 +1042,7 @@ describe('background eth_accounts', () => {
 		assert.equal(childConnection.approved, false)
 		assert.equal(childResult?.metamaskCompatibilityMode, false)
 
-		await updateWebsiteApprovalAccesses(simulationServicesOwner, childConnections, await getSettings(), false)
+		await updateWebsiteApprovalAccesses(simulationServicesOwner, childConnections, await getRequiredSettings(), false)
 		await waitForPortMessageCount(childMessages, 'safe_apps_compatibility', 1)
 		assert.equal(childConnection.approved, true)
 		assert.equal(childMessages.filter((message) => message.method === 'safe_apps_compatibility').every((message) => message.result?.enabled === false), true)
@@ -1017,7 +1062,7 @@ describe('background eth_accounts', () => {
 			updateWebsiteAccess,
 			updateWebsiteApprovalAccesses,
 			updateTabState,
-			getSettings,
+			getRequiredSettings,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -1050,7 +1095,7 @@ describe('background eth_accounts', () => {
 		assert.equal(messages.filter((message) => message.method === 'safe_apps_compatibility').every((message) => message.result?.enabled === false), true)
 
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
-		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), false)
+		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getRequiredSettings(), false)
 		assert.equal(messages.filter((message) => message.method === 'safe_apps_compatibility').every((message) => message.result?.enabled === false), true)
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			...connectedRequest,
@@ -1299,7 +1344,7 @@ describe('background eth_accounts', () => {
 			setUseSignersAddressAsActiveAddress,
 			updateWebsiteAccess,
 			getPendingAccessRequests,
-			getSettings,
+			getRequiredSettings,
 			resolveInterceptorAccess,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
@@ -1344,7 +1389,7 @@ describe('background eth_accounts', () => {
 		if (pendingRequest === undefined) throw new Error('Missing address access request')
 		assert.equal(pendingRequest.requestAccessToAddress?.address, account)
 		assert.deepEqual(pendingRequest.signerAccounts, [account])
-		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, undefined)
+		assert.deepEqual((await getRequiredSettings()).websiteAccess[0]?.addressAccess, undefined)
 
 		await resolveInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
 			userReply: 'Approved',
@@ -1356,7 +1401,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.result), [[accountString]])
 		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 10).map((message) => message.result), [[accountString]])
 		assert.equal((await getPendingAccessRequests()).length, 0)
-		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: true }])
+		assert.deepEqual((await getRequiredSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: true }])
 	})
 
 	test('does not override an explicitly denied address for site-approved eth_requestAccounts', async () => {
@@ -1409,7 +1454,7 @@ describe('background eth_accounts', () => {
 			updateWebsiteAccess,
 			updateTabState,
 			getPendingAccessRequests,
-			getSettings,
+			getRequiredSettings,
 			resolveInterceptorAccess,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
@@ -1446,7 +1491,7 @@ describe('background eth_accounts', () => {
 
 		assert.equal(connection.approved, false)
 		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 24).map((message) => message.result), [[]])
-		assert.equal((await getSettings()).websiteAccess[0]?.addressAccess, undefined)
+		assert.equal((await getRequiredSettings()).websiteAccess[0]?.addressAccess, undefined)
 
 		pendingWebsite.resolve(website)
 		await requestAccountsPromise
@@ -1456,7 +1501,7 @@ describe('background eth_accounts', () => {
 		assert.equal(pendingRequest.requestAccessToAddress?.address, account)
 		assert.equal(connection.approved, false)
 		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 23), [])
-		assert.equal((await getSettings()).websiteAccess[0]?.addressAccess, undefined)
+		assert.equal((await getRequiredSettings()).websiteAccess[0]?.addressAccess, undefined)
 
 		await resolveInterceptorAccess(simulationServicesOwner, websiteTabConnections, {
 			userReply: 'Approved',
@@ -1467,7 +1512,7 @@ describe('background eth_accounts', () => {
 
 		assert.equal(connection.approved, true)
 		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 23).map((message) => message.result), [[accountString]])
-		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: true }])
+		assert.deepEqual((await getRequiredSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: true }])
 	})
 
 	test('does not overwrite an address denial made while site-approved eth_requestAccounts is pending', async () => {
@@ -1479,7 +1524,7 @@ describe('background eth_accounts', () => {
 			setUseSignersAddressAsActiveAddress,
 			updateWebsiteAccess,
 			updateTabState,
-			getSettings,
+			getRequiredSettings,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -1511,7 +1556,7 @@ describe('background eth_accounts', () => {
 
 		assert.equal(connection.approved, false)
 		assert.equal(messages.filter((message) => message.method === 'eth_requestAccounts' && message.requestId === 25).at(-1)?.error?.code, 4100)
-		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: false }])
+		assert.deepEqual((await getRequiredSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: false }])
 	})
 
 	test('uses wallet metadata for cached signer address consent when a same-address Safe exists', async () => {
@@ -1525,7 +1570,7 @@ describe('background eth_accounts', () => {
 			updateTabState,
 			updateUserAddressBookEntries,
 			getPendingAccessRequests,
-			getSettings,
+			getRequiredSettings,
 			resolveInterceptorAccess,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
@@ -1584,7 +1629,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(messages.filter((message) => message.method === 'accountsChanged').map((message) => message.result), [['0x6666666666666666666666666666666666666666']])
 		assert.deepEqual(messages.filter((message) => message.method === 'eth_accounts' && message.requestId === 11).at(-1)?.result, ['0x6666666666666666666666666666666666666666'])
 		assert.equal((await getPendingAccessRequests()).length, 0)
-		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: true }])
+		assert.deepEqual((await getRequiredSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: true }])
 	})
 
 	test('reuses a persisted access dialog when the same eth_requestAccounts is replayed after restart', async () => {
@@ -1595,7 +1640,7 @@ describe('background eth_accounts', () => {
 			setUseSignersAddressAsActiveAddress,
 			updateWebsiteAccess,
 			getPendingAccessRequests,
-			getSettings,
+			getRequiredSettings,
 		} = await loadModules()
 		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
 		const firstWorkerAccess = await import('../../app/ts/background/windows/interceptorAccess.js?access-dialog-worker-before-restart')
@@ -1622,7 +1667,7 @@ describe('background eth_accounts', () => {
 			method: 'eth_requestAccounts',
 		} as const
 		const requestAccessToAddress = await getActiveAddressEntryForChain(account, 1n)
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 
 		await firstWorkerAccess.requestAccessFromUser(
 			simulationServicesOwner,
@@ -2023,7 +2068,7 @@ describe('background eth_accounts', () => {
 			updateWebsiteAccess,
 			updateTabState,
 			getPendingAccessRequests,
-			getSettings,
+			getRequiredSettings,
 			resolveInterceptorAccess,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
@@ -2077,7 +2122,7 @@ describe('background eth_accounts', () => {
 		assert.deepEqual(siblingLifecycleMessages.map((message) => message.method), ['connect', 'accountsChanged', 'chainChanged'])
 		assert.deepEqual(siblingLifecycleMessages.map((message) => message.requestId), [undefined, undefined, undefined])
 		assert.deepEqual(siblingLifecycleMessages.map((message) => message.result), [['0x1'], [accountString], '0x1'])
-		const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+		const access = (await getRequiredSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
 		assert.equal(access?.access, true)
 		assert.deepEqual(access?.addressAccess, [{ address: account, access: true }])
 	})
@@ -2093,7 +2138,7 @@ describe('background eth_accounts', () => {
 			updateTabState,
 			getPendingAccessRequests,
 			resolveInterceptorAccess,
-			getSettings,
+			getRequiredSettings,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -2135,7 +2180,7 @@ describe('background eth_accounts', () => {
 		)
 		await siteApprovalResolution
 
-		const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+		const access = (await getRequiredSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
 		assert.equal(access?.access, true)
 		assert.deepEqual(access?.addressAccess, [{ address: account, access: true }])
 	})
@@ -2151,7 +2196,7 @@ describe('background eth_accounts', () => {
 			updateTabState,
 			getPendingAccessRequests,
 			resolveInterceptorAccess,
-			getSettings,
+			getRequiredSettings,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -2203,7 +2248,7 @@ describe('background eth_accounts', () => {
 			}],
 			invoker: websiteOrigin,
 		}])
-		const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+		const access = (await getRequiredSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
 		assert.equal(access?.access, true)
 		assert.deepEqual(access?.addressAccess, [{ address: account, access: true }])
 	})
@@ -2217,7 +2262,7 @@ describe('background eth_accounts', () => {
 			setUseSignersAddressAsActiveAddress,
 			updateWebsiteAccess,
 			getPendingAccessRequests,
-			getSettings,
+			getRequiredSettings,
 			resolveInterceptorAccess,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
@@ -2268,7 +2313,7 @@ describe('background eth_accounts', () => {
 			invoker: websiteOrigin,
 		}])
 		assert.equal((await getPendingAccessRequests()).length, 0)
-		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: true }])
+		assert.deepEqual((await getRequiredSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: true }])
 	})
 
 	test('does not bypass access for wallet_requestPermissions with unsupported permission keys', async () => {
@@ -2280,7 +2325,7 @@ describe('background eth_accounts', () => {
 			setUseSignersAddressAsActiveAddress,
 			updateWebsiteAccess,
 			getPendingAccessRequests,
-			getSettings,
+			getRequiredSettings,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -2309,7 +2354,7 @@ describe('background eth_accounts', () => {
 
 		assert.equal(connection.approved, false)
 		assert.equal((await getPendingAccessRequests()).length, 1)
-		assert.equal((await getSettings()).websiteAccess[0]?.addressAccess, undefined)
+		assert.equal((await getRequiredSettings()).websiteAccess[0]?.addressAccess, undefined)
 	})
 
 	test('first-time wallet_requestPermissions uses one dialog that identifies the address', async () => {
@@ -2321,7 +2366,7 @@ describe('background eth_accounts', () => {
 			setUseSignersAddressAsActiveAddress,
 			getPendingAccessRequests,
 			resolveInterceptorAccess,
-			getSettings,
+			getRequiredSettings,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
@@ -2387,7 +2432,7 @@ describe('background eth_accounts', () => {
 			}],
 			invoker: websiteOrigin,
 		}])
-		const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+		const access = (await getRequiredSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
 		assert.equal(access?.access, true)
 		assert.deepEqual(access?.addressAccess, [{ address: account, access: true }])
 	})
@@ -2402,7 +2447,7 @@ describe('background eth_accounts', () => {
 			setUseSignersAddressAsActiveAddress,
 			updateWebsiteAccess,
 			getPendingAccessRequests,
-			getSettings,
+			getRequiredSettings,
 			resolveInterceptorAccess,
 		} = await loadModules()
 		const websiteOrigin = 'https://example.test'
@@ -2448,7 +2493,7 @@ describe('background eth_accounts', () => {
 				website,
 				request,
 				undefined,
-				await getSettings(),
+				await getRequiredSettings(),
 				undefined,
 				noopPublishRpcConnectionStatus,
 			),
@@ -2478,7 +2523,7 @@ describe('background eth_accounts', () => {
 			}],
 			invoker: websiteOrigin,
 		}])
-		assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: true }])
+		assert.deepEqual((await getRequiredSettings()).websiteAccess[0]?.addressAccess, [{ address: account, access: true }])
 	})
 
 	test('delivers accountsChanged before an approved active-address switch resolves', async () => {
@@ -2519,7 +2564,7 @@ describe('background eth_accounts', () => {
 			changeActiveAddress,
 			changeSimulationMode,
 			getActiveAddress,
-			getSettings,
+			getRequiredSettings,
 			handleInterceptedRequest,
 			saveCurrentTabId,
 			setUseSignersAddressAsActiveAddress,
@@ -2585,7 +2630,7 @@ describe('background eth_accounts', () => {
 		const accountChanges = messages.filter((message) => message.method === 'accountsChanged')
 		assert.equal(accountChanges.length > 0, true)
 		assert.deepEqual(accountChanges.at(-1)?.result, [addressString(signerAddress)])
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		assert.equal(settings.activeSimulationAddress, safeAddress)
 		assert.equal(settings.activeSigningSafeAddress, undefined)
 		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, signerAddress)
@@ -2650,7 +2695,7 @@ describe('background eth_accounts', () => {
 
 	test('wallet_revokePermissions clears website account access and keeps the website entry', async () => {
 		installBrowserMock()
-		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getSettings } = await loadModules()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getRequiredSettings } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const account = 0x1111111111111111111111111111111111111111n
@@ -2681,7 +2726,7 @@ describe('background eth_accounts', () => {
 		const revokeReplies = messages.filter((message) => message.method === 'wallet_revokePermissions' && message.requestId === 10)
 		assert.equal(revokeReplies.at(-1)?.result, null)
 		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.approved, false)
-		const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+		const access = (await getRequiredSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
 		assert.notEqual(access, undefined)
 		assert.equal(access?.website.websiteOrigin, websiteOrigin)
 		assert.equal(access?.access, undefined)
@@ -2690,7 +2735,7 @@ describe('background eth_accounts', () => {
 
 	test('wallet_revokePermissions succeeds when the website is already unauthorized', async () => {
 		installBrowserMock()
-		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getSettings, getPendingAccessRequests } = await loadModules()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getRequiredSettings, getPendingAccessRequests } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const account = 0x1111111111111111111111111111111111111111n
@@ -2716,7 +2761,7 @@ describe('background eth_accounts', () => {
 
 		const revokeReplies = messages.filter((message) => message.method === 'wallet_revokePermissions' && message.requestId === 11)
 		assert.equal(revokeReplies.at(-1)?.result, null)
-		const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+		const access = (await getRequiredSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
 		assert.notEqual(access, undefined)
 		assert.equal(access?.website.websiteOrigin, websiteOrigin)
 		assert.equal(access?.access, false)
@@ -2735,7 +2780,7 @@ describe('background eth_accounts', () => {
 
 	test('wallet_revokePermissions succeeds when the Interceptor is disabled for the website', async () => {
 		installBrowserMock()
-		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getSettings } = await loadModules()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getRequiredSettings } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const account = 0x1111111111111111111111111111111111111111n
@@ -2761,7 +2806,7 @@ describe('background eth_accounts', () => {
 
 		const revokeReplies = messages.filter((message) => message.method === 'wallet_revokePermissions' && message.requestId === 12)
 		assert.equal(revokeReplies.at(-1)?.result, null)
-		const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+		const access = (await getRequiredSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
 		assert.notEqual(access, undefined)
 		assert.equal(access?.website.websiteOrigin, websiteOrigin)
 		assert.equal(access?.access, undefined)
@@ -2771,7 +2816,7 @@ describe('background eth_accounts', () => {
 
 	test('wallet_revokePermissions causes later account requests to prompt again instead of auto-denying', async () => {
 		installBrowserMock()
-		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getPendingAccessRequests, updateWebsiteApprovalAccesses, getSettings } = await loadModules()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getPendingAccessRequests, updateWebsiteApprovalAccesses, getRequiredSettings } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const account = 0x1111111111111111111111111111111111111111n
@@ -2797,7 +2842,7 @@ describe('background eth_accounts', () => {
 
 		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.approved, false)
 		assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.wantsToConnect, false)
-		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
+		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getRequiredSettings(), true)
 		assert.equal((await getPendingAccessRequests()).length, 0)
 
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
@@ -2814,7 +2859,7 @@ describe('background eth_accounts', () => {
 
 	test('wallet_revokePermissions rejects unsupported permission params without revoking access', async () => {
 		installBrowserMock()
-		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getSettings } = await loadModules()
+		const { handleInterceptedRequest, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateWebsiteAccess, getRequiredSettings } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const account = 0x1111111111111111111111111111111111111111n
@@ -2849,7 +2894,7 @@ describe('background eth_accounts', () => {
 			const revokeReplies = messages.filter((message) => message.method === 'wallet_revokePermissions' && message.requestId === requestId)
 			assert.equal(revokeReplies.at(-1)?.error?.code, -32700)
 			assert.equal(websiteTabConnections.get(socket.tabId)?.connections[connectionKey]?.approved, true)
-			const access = (await getSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
+			const access = (await getRequiredSettings()).websiteAccess.find((entry) => entry.website.websiteOrigin === websiteOrigin)
 			assert.equal(access?.access, true)
 			assert.deepEqual(access?.addressAccess, [{ address: account, access: true }])
 		}
@@ -2872,7 +2917,7 @@ describe('background eth_accounts', () => {
 		const {
 			changeSimulationMode,
 			enableSimulationMode,
-			getSettings,
+			getRequiredSettings,
 			saveCurrentTabId,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
@@ -2895,7 +2940,7 @@ describe('background eth_accounts', () => {
 			method: 'popup_enableSimulationMode',
 			data: false,
 		})
-		const signingSettings = await getSettings()
+		const signingSettings = await getRequiredSettings()
 		assert.equal(signingSettings.simulationMode, false)
 		assert.equal(signingSettings.activeSimulationAddress, simulationAddress)
 		assert.equal(signingSettings.activeSigningSafeAddress, undefined)
@@ -2905,7 +2950,7 @@ describe('background eth_accounts', () => {
 			data: true,
 		})
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		assert.equal(settings.simulationMode, true)
 		assert.equal(settings.activeSimulationAddress, simulationAddress)
 		assert.equal(settings.useSignersAddressAsActiveAddress, false)
@@ -2917,7 +2962,7 @@ describe('background eth_accounts', () => {
 			changeActiveAddress,
 			changeSimulationMode,
 			enableSimulationMode,
-			getSettings,
+			getRequiredSettings,
 			saveCurrentTabId,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
@@ -2954,7 +2999,7 @@ describe('background eth_accounts', () => {
 			method: 'popup_changeActiveAddress',
 			data: { activeAddress: safeAddress, simulationMode: false },
 		})
-		let settings = await getSettings()
+		let settings = await getRequiredSettings()
 		assert.equal(settings.activeSigningSafeAddress, safeAddress)
 		assert.equal(settings.activeSimulationAddress, signerAddress)
 
@@ -2962,7 +3007,7 @@ describe('background eth_accounts', () => {
 			method: 'popup_enableSimulationMode',
 			data: true,
 		}, { passiveReplyTimeoutMs: 10 })
-		settings = await getSettings()
+		settings = await getRequiredSettings()
 		assert.equal(settings.activeSimulationAddress, signerAddress)
 		assert.equal(settings.activeSigningSafeAddress, safeAddress)
 	})
@@ -2973,7 +3018,7 @@ describe('background eth_accounts', () => {
 			changeSimulationMode,
 			enableSimulationMode,
 			getActiveAddress,
-			getSettings,
+			getRequiredSettings,
 			getTabState,
 			saveCurrentTabId,
 			setUseSignersAddressAsActiveAddress,
@@ -3019,7 +3064,7 @@ describe('background eth_accounts', () => {
 			data: false,
 		}, { passiveReplyTimeoutMs: 10 })
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		assert.equal(settings.simulationMode, false)
 		assert.equal(settings.activeSimulationAddress, simulationAddress)
 		assert.equal(settings.activeSigningSafeAddress, undefined)
@@ -3034,7 +3079,7 @@ describe('background eth_accounts', () => {
 			data: false,
 		}, { passiveReplyTimeoutMs: 10 })
 
-		const ownedSafeSettings = await getSettings()
+		const ownedSafeSettings = await getRequiredSettings()
 		assert.equal(ownedSafeSettings.simulationMode, false)
 		assert.equal(ownedSafeSettings.activeSimulationAddress, simulationAddress)
 		assert.equal(ownedSafeSettings.activeSigningSafeAddress, safeAddress)
@@ -3044,14 +3089,14 @@ describe('background eth_accounts', () => {
 			method: 'popup_enableSimulationMode',
 			data: true,
 		})
-		const restoredSimulationSettings = await getSettings()
+		const restoredSimulationSettings = await getRequiredSettings()
 		assert.equal(restoredSimulationSettings.activeSimulationAddress, simulationAddress)
 		assert.equal(restoredSimulationSettings.activeSigningSafeAddress, safeAddress)
 		await enableSimulationMode(simulationServicesOwner, websiteTabConnections, {
 			method: 'popup_enableSimulationMode',
 			data: false,
 		})
-		assert.equal((await getActiveAddress(await getSettings(), socket.tabId))?.address, safeAddress)
+		assert.equal((await getActiveAddress(await getRequiredSettings(), socket.tabId))?.address, safeAddress)
 
 		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [], activeSigningAddress: undefined }))
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: simulationAddress, activeSigningAddress: undefined })
@@ -3061,7 +3106,7 @@ describe('background eth_accounts', () => {
 			data: false,
 		})
 
-		const noSignerSettings = await getSettings()
+		const noSignerSettings = await getRequiredSettings()
 		assert.equal(noSignerSettings.simulationMode, false)
 		assert.equal(noSignerSettings.activeSimulationAddress, simulationAddress)
 		assert.equal((await getTabState(socket.tabId)).activeSigningAddress, undefined)
@@ -3121,7 +3166,7 @@ describe('background eth_accounts', () => {
 			changeSimulationMode,
 			enableSimulationMode,
 			getActiveAddress,
-			getSettings,
+			getRequiredSettings,
 			getSigningAddressPreferences,
 			handleInterceptedRequest,
 			saveCurrentTabId,
@@ -3190,7 +3235,7 @@ describe('background eth_accounts', () => {
 		})
 		await accountReply
 
-		const signingSettings = await getSettings()
+		const signingSettings = await getRequiredSettings()
 		assert.equal(signingSettings.simulationMode, false)
 		assert.equal((await getActiveAddress(signingSettings, currentSocket.tabId))?.address, safeAddress)
 		assert.deepEqual(await getSigningAddressPreferences(), [{
@@ -3205,18 +3250,18 @@ describe('background eth_accounts', () => {
 
 	test('verifyAccess requires an address decision despite website approval', async () => {
 		installBrowserMock()
-		const { getSettings, updateWebsiteAccess, verifyAccess } = await loadModules()
+		const { getRequiredSettings, updateWebsiteAccess, verifyAccess } = await loadModules()
 		const websiteOrigin = 'https://example.test'
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const address = { address: 0x1111111111111111111111111111111111111111n, askForAddressAccess: true, type: 'contact', name: 'Test Address' } as const
 		const socket = { tabId: 1, connectionName: 0n }
 		const websiteTabConnections: WebsiteTabConnections = new Map()
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [] }])
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 
 		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, settings), 'askAccess')
 
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: address.address, access: false }] }])
-		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, await getSettings()), 'noAccess')
+		assert.equal(verifyAccess(websiteTabConnections, socket, true, websiteOrigin, address, await getRequiredSettings()), 'noAccess')
 	})
 })

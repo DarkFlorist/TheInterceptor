@@ -8,7 +8,7 @@ import { isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { getWebsiteSocketConnection, isTopFramePort, websiteSocketToString } from './backgroundUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { getSafeAppsCompatibilityMode, getSettings } from './settings.js'
+import { getSafeAppsCompatibilityMode, getRequiredSettings } from './settings.js'
 import { getConfirmedSignerStateToken } from './signerStateOwnership.js'
 import { getTabState, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
 import { hasAccess, hasAddressAccess } from './websiteAccessPolicy.js'
@@ -52,7 +52,7 @@ function createSafeAppsCompatibilityCoordinator() {
 	const refreshPort = async (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, signerAccountsKnown: boolean) => {
 		const { socketIdentifier, token } = beginPublication(socket)
 		if (!active) return
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		const connection = getWebsiteSocketConnection(websiteTabConnections, socket)
 		const tabState = await getTabState(socket.tabId)
 		const safe = await getConfiguredSigningSafe(settings, tabState.signerAccounts)
@@ -74,7 +74,7 @@ function createSafeAppsCompatibilityCoordinator() {
 		const eligible = await isSafeAppsConnectionEligible(websiteTabConnections, socket, settings)
 		if (!isCurrentPublication(socketIdentifier, token)) return
 		// Re-read persisted state after async eligibility work; a newer publication invalidates this token while state transitions are being applied.
-		const latestSettings = await getSettings()
+		const latestSettings = await getRequiredSettings()
 		const latestEnabled = active
 		const latestEligible = latestEnabled && await isSafeAppsConnectionEligible(websiteTabConnections, socket, latestSettings)
 		if (!isCurrentPublication(socketIdentifier, token)) return

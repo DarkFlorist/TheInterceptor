@@ -208,7 +208,7 @@ describe('extension icon deduping', () => {
 
 	test('access refresh collapses duplicate icon recomputations for the same tab and origin', async () => {
 		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
-		const { changeSimulationMode, getSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
+		const { changeSimulationMode, getRequiredSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
 
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined })
 		await updateTabState(1, (previousState) => ({
@@ -232,7 +232,7 @@ describe('extension icon deduping', () => {
 		await updateWebsiteApprovalAccesses(
 			undefined,
 			websiteTabConnections,
-			await getSettings(),
+			await getRequiredSettings(),
 			true,
 			0,
 		)
@@ -244,7 +244,7 @@ describe('extension icon deduping', () => {
 
 	test('access refresh updates stale icons for tabs without active connections', async () => {
 		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
-		const { changeSimulationMode, getSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
+		const { changeSimulationMode, getRequiredSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
 
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: undefined })
 		await updateTabState(1, (previousState) => ({
@@ -259,7 +259,7 @@ describe('extension icon deduping', () => {
 		await updateWebsiteApprovalAccesses(
 			undefined,
 			new Map(),
-			await getSettings(),
+			await getRequiredSettings(),
 			true,
 			0,
 		)
@@ -272,7 +272,7 @@ describe('extension icon deduping', () => {
 	})
 
 	test('imported mode change updates tabs without active connections', async () => {
-		const { changeSimulationMode, getSettings, importSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
+		const { changeSimulationMode, getRequiredSettings, importSettings, updateTabState, updateWebsiteApprovalAccesses } = await loadModules()
 		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
 		const importedSettingsReply = JSON.stringify({
 			name: 'InterceptorSettingsAndAddressBook',
@@ -314,13 +314,13 @@ describe('extension icon deduping', () => {
 		await updateWebsiteApprovalAccesses(
 			undefined,
 			new Map(),
-			await getSettings(),
+			await getRequiredSettings(),
 			true,
 			0,
 		)
 		await flushAsyncWork()
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		assert.equal(settings.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
 		assert.equal(settings.simulationMode, false)
 
