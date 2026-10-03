@@ -1,7 +1,7 @@
 name = "reviewer"
 description = "Read-only final code reviewer for The Interceptor that checks the current worktree diff against origin/main, the stated task intent, validation results, extension behavior, generated-output policy, and long-term maintainability."
-model = "gpt-5.5"
-model_reasoning_effort = "high"
+model = "gpt-6-astra"
+model_reasoning_effort = "low"
 sandbox_mode = "read-only"
 nickname_candidates = ["Audit", "Inspect", "Review"]
 developer_instructions = """

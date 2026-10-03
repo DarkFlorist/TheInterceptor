@@ -51,7 +51,7 @@ test('rejects EIP-7702 authorization lists before creating a Safe proposal', asy
 			method: transactionParams.method,
 			params: transactionParams.params,
 		},
-		transactionParams,
+		{ kind: 'transaction', parameters: transactionParams },
 		false,
 		activeAddress,
 		{ websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
@@ -116,7 +116,7 @@ test('shows stale local Safe stack failures in the transaction confirmation', as
 			method: transactionParams.method,
 			params: transactionParams.params,
 		},
-		transactionParams,
+		{ kind: 'transaction', parameters: transactionParams },
 		false,
 		activeAddress,
 		{ websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
@@ -245,7 +245,7 @@ test('reconciles executed Safe operations before simulating the next proposal', 
 			method: transactionParams.method,
 			params: transactionParams.params,
 		},
-		transactionParams,
+		{ kind: 'transaction', parameters: transactionParams },
 		false,
 		activeAddress,
 		{ websiteOrigin: 'https://example.com', icon: undefined, title: undefined },
@@ -553,7 +553,7 @@ test('propagates unexpected Safe proposal RPC and reconciliation storage failure
 
 	fakeSafeContract.safeOwnerLookupFailure = 'expected'
 	try {
-		const expectedFailure = await prepareSafeTransactionConfirmation(simulator.ethereum, transactionParams, false, activeAddress, recipientAddress)
+		const expectedFailure = await prepareSafeTransactionConfirmation(simulator.ethereum, { kind: 'transaction', parameters: transactionParams }, false, activeAddress, recipientAddress)
 		assert.match(expectedFailure.preparationMessage ?? '', /Safe owner lookup unavailable/u)
 	} finally {
 		fakeSafeContract.safeOwnerLookupFailure = undefined
@@ -561,7 +561,7 @@ test('propagates unexpected Safe proposal RPC and reconciliation storage failure
 	fakeSafeContract.safeOwnerLookupFailure = 'unexpected'
 	try {
 		await assert.rejects(
-			prepareSafeTransactionConfirmation(simulator.ethereum, transactionParams, false, activeAddress, recipientAddress),
+			prepareSafeTransactionConfirmation(simulator.ethereum, { kind: 'transaction', parameters: transactionParams }, false, activeAddress, recipientAddress),
 			/Unexpected Safe owner decoder failure/u,
 		)
 	} finally {
@@ -572,7 +572,7 @@ test('propagates unexpected Safe proposal RPC and reconciliation storage failure
 	})
 	try {
 		await assert.rejects(
-			prepareSafeTransactionConfirmation(simulator.ethereum, transactionParams, false, activeAddress, recipientAddress),
+			prepareSafeTransactionConfirmation(simulator.ethereum, { kind: 'transaction', parameters: transactionParams }, false, activeAddress, recipientAddress),
 			/Safe reconciliation storage unavailable/u,
 		)
 	} finally {
@@ -630,7 +630,7 @@ test('reserves proposal nonces without counting overlapping direct Safe executio
 	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(overlappingDirectSafeTx))
 	const preparation = await (await import('../../app/ts/background/safeTransactionConfirmation.js')).prepareSafeTransactionConfirmation(
 		simulator.ethereum,
-		transactionParams,
+		{ kind: 'transaction', parameters: transactionParams },
 		false,
 		activeAddress,
 		recipientAddress,
@@ -765,4 +765,64 @@ test('refreshes direct Safe execution without charging gas to the signer', async
 	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_getBalance'), false)
 	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_estimateGas'), false)
 	assert.equal(fakeSafeContract.requestedRpcMethods.includes('eth_simulateV1'), true)
+})
+
+test('atomic Safe batch preparation and simulation preserve one nonce and delegate execution as the Safe', async () => {
+	const { encodeSafeBatch, SAFE_MULTI_SEND_CALL_ONLY } = await import('../../app/ts/safe/safeDelegateCalls.js')
+	const { prepareSafeDelegateSimulationInput, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } = await import('../../app/ts/safe/safeSimulation.js')
+	const { encodeFunctionCall } = await import('../../app/ts/utils/abiRuntime.js')
+	const { dataStringWith0xStart } = await import('../../app/ts/utils/bigint.js')
+	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	fakeSafeContract.owners = [recipientAddress]
+	const input = encodeSafeBatch([{ to: recipientAddress, value: 0n, data: new Uint8Array([1]) }, { to: recipientAddress, value: 5n, data: new Uint8Array([2]) }])
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: SAFE_MULTI_SEND_CALL_ONLY, operation: 1n, value: 0n, input }, 0n)
+	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
+	const params = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ from: addressString(activeAddress), to: addressString(SAFE_MULTI_SEND_CALL_ONLY), value: '0x0', data: dataStringWith0xStart(input), gas: '0x989680' }] })
+	const websiteTransaction = { ...pendingTransaction.transactionToSimulate, originalRequestParameters: params, transaction: { ...pendingTransaction.transactionToSimulate.transaction, to: SAFE_MULTI_SEND_CALL_ONLY, input, value: 0n, gas: 10_000_000n } }
+	const preparation = await (await import('../../app/ts/background/safeTransactionConfirmation.js')).prepareSafeTransactionConfirmation(simulator.ethereum, { kind: 'transaction', parameters: params, safeTransaction: { operation: 1 } }, false, activeAddress, recipientAddress)
+	const finalized = await preparation.finalize(websiteTransaction, uniqueRequestIdentifier.requestSocket.tabId)
+	assert.deepEqual(finalized.safeTransaction?.safeTx, safeTx)
+	if (finalized.safeTransaction === undefined) throw new Error('Missing batch proposal')
+	const simulated = modules.createSafeExecutionPreSimulationTransaction(websiteTransaction, finalized.safeTransaction)
+	assert.equal(simulated.signedTransaction.from, activeAddress)
+	assert.equal(simulated.signedTransaction.to, activeAddress)
+	assert.equal(dataStringWith0xStart(simulated.signedTransaction.input), encodeFunctionCall(SAFE_DELEGATE_EXECUTE_ABI, 'delegateCallExecute', [addressString(SAFE_MULTI_SEND_CALL_ONLY), dataStringWith0xStart(input)]))
+	const block = { transactions: [simulated], signedMessages: [], stateOverrides: {}, blockTimeManipulation: { type: 'AddToTimestamp' as const, deltaToAdd: 12n, deltaUnit: 'Seconds' as const }, simulateWithZeroBaseFee: true }
+	const prepared = await prepareSafeDelegateSimulationInput([block], simulator.ethereum, 123n)
+	assert.equal(prepared[0]?.transactions.length, 1)
+	assert.deepEqual(prepared[0]?.stateOverrides[addressString(ORIGINAL_GNOSIS_SAFE)]?.code, new Uint8Array([1]))
+	assert.ok(prepared[0]?.stateOverrides[addressString(activeAddress)]?.code)
+	await assert.rejects(prepareSafeDelegateSimulationInput([{ ...block, transactions: [{ ...simulated, signedTransaction: { ...simulated.signedTransaction, to: recipientAddress } }] }], simulator.ethereum, 123n), /does not match its proposal/)
+})
+
+test('on-chain Safe message review context is bound to calldata and stays outside RPC transaction params', async () => {
+	const { SAFE_SIGN_MESSAGE_LIB, SAFE_SIGN_MESSAGE_ABI } = await import('../../app/ts/safe/safeDelegateCalls.js')
+	const { getSafeMessageDigest } = await import('../../app/ts/safe/safeMessage.js')
+	const { encodeFunctionCall } = await import('../../app/ts/utils/abiRuntime.js')
+	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	const { prepareSafeTransactionConfirmation } = await import('../../app/ts/background/safeTransactionConfirmation.js')
+	await modules.updateSafeTransactionStacks(() => [])
+	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	await modules.updateUserAddressBookEntries(() => [createSafeAddressBookEntry({ safeVersion: '1.4.1' })])
+	fakeSafeContract.owners = [recipientAddress]
+	const review = { text: 'Approve this Safe message', isTypedData: false }
+	const data = encodeFunctionCall(SAFE_SIGN_MESSAGE_ABI, 'signMessage', [getSafeMessageDigest(review.text)])
+	const input = hexToBytes(data)
+	const safeTx = createSafeTx(fakeRpcNetwork.chainId, activeAddress, { to: SAFE_SIGN_MESSAGE_LIB, operation: 1n, value: 0n, input }, 0n)
+	fakeSafeContract.transactionHash = BigInt(getSafeTxHash(safeTx))
+	const params = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ from: addressString(activeAddress), to: addressString(SAFE_SIGN_MESSAGE_LIB), value: '0x0', data, gas: '0x989680' }] })
+	const websiteTransaction = { ...pendingTransaction.transactionToSimulate, originalRequestParameters: params, transaction: { ...pendingTransaction.transactionToSimulate.transaction, to: SAFE_SIGN_MESSAGE_LIB, input, value: 0n, gas: 10_000_000n } }
+	const preparation = await prepareSafeTransactionConfirmation(simulator.ethereum, { kind: 'transaction', parameters: params, safeTransaction: { operation: 1, messageReview: review } }, false, activeAddress, recipientAddress)
+	const finalized = await preparation.finalize(websiteTransaction, uniqueRequestIdentifier.requestSocket.tabId)
+	assert.deepEqual(finalized.safeTransaction?.messageReview, review)
+	assert.deepEqual(finalized.safeTransaction?.safeTx, safeTx)
+	assert.equal('safeMessageText' in params.params[0], false)
+	assert.equal('safeOperation' in params.params[0], false)
+	const mismatched = await prepareSafeTransactionConfirmation(simulator.ethereum, { kind: 'transaction', parameters: params, safeTransaction: { operation: 1, messageReview: { ...review, text: 'Different message' } } }, false, activeAddress, recipientAddress)
+	const rejected = await withSilencedConsole(async () => await mismatched.finalize(websiteTransaction, uniqueRequestIdentifier.requestSocket.tabId))
+	assert.equal(rejected.transactionToSimulate.success, false)
+	assert.equal(rejected.safeTransaction, undefined)
 })

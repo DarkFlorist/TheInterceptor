@@ -94,6 +94,7 @@ In the final response to the user, summarize the reviewer feedback received, rep
 - Keep error reporting explicit. Await unexpected-error reporting helpers when the surrounding code expects durable reporting before continuing.
 - Do not leave comment-only `catch` blocks or console-error-only catches; handle, propagate, or report the error according to the local pattern.
 - All dependency versions in `package.json` must be exact, with no `^` or `~` ranges.
+- Express ether amounts with SI prefixes (`ether`, `nanoeth`, `attoeth`) in UI text, comments, and identifiers; never use `wei` or `gwei`. `bun run lint:units` enforces this through `bun run lint`.
 
 ## Generated Output
 

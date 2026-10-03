@@ -5,6 +5,7 @@ import { createSafeTx } from '../app/ts/safe/safeCore.js'
 import { PendingTransactionOrSignableMessage } from '../app/ts/types/accessRequest.js'
 import { serialize } from '../app/ts/types/wire-types.js'
 import { getSafeTxHash } from '../app/ts/utils/eip712.js'
+import { getNativeTokenErc20 } from '../app/ts/background/metadataUtils.js'
 import { privateKeyToAccount } from '../app/ts/utils/ethereumPrimitives.js'
 import { launchSafeUiScreenshotBrowser, SafeUiScreenshotPage } from '../test/benchmarks/safeUiScreenshotHarness.js'
 
@@ -26,7 +27,8 @@ async function waitForSelector(connection: SafeUiScreenshotPage, selector: strin
 		if (found) return
 		await Bun.sleep(50)
 	}
-	throw new Error(`Timed out waiting for ${ selector }`)
+	const bodyText = await connection.evaluate<string>('document.body.textContent ?? ""')
+	throw new Error(`Timed out waiting for ${ selector }. Page text: ${ bodyText ?? '' }`)
 }
 
 async function waitForText(connection: SafeUiScreenshotPage, expectedText: string) {
@@ -52,9 +54,11 @@ async function prepareForDeterministicCapture(connection: SafeUiScreenshotPage) 
 	})()`)
 }
 
-async function capture(connection: SafeUiScreenshotPage, filename: string, width: number, height: number) {
+// Capturing beyond the viewport resets inner scroll positions, so scrolling must be re-applied for every viewport right before the capture.
+async function capture(connection: SafeUiScreenshotPage, filename: string, width: number, height: number, scrollExpression: string | undefined) {
 	await connection.setViewport(width, height)
 	await prepareForDeterministicCapture(connection)
+	if (scrollExpression !== undefined) await connection.evaluate(scrollExpression)
 	await Bun.sleep(250)
 	const clippedAddress = await connection.evaluate<string>(`(() => {
 		const addresses = document.querySelectorAll('.modal.is-active .address-editor-address-input, .modal.is-active .address-editor-readonly-address')
@@ -72,11 +76,11 @@ async function capture(connection: SafeUiScreenshotPage, filename: string, width
 	await writeFile(path.join(outputDirectory, filename), Buffer.from(screenshot, 'base64'))
 }
 
-async function captureScenario(connection: SafeUiScreenshotPage, scenarioName: string) {
+async function captureScenario(connection: SafeUiScreenshotPage, scenarioName: string, scrollExpression?: string) {
 	capturedScenarioCount += 1
 	const scenarioNumber = capturedScenarioCount.toString().padStart(2, '0')
 	for (const viewport of viewports) {
-		await capture(connection, `${ scenarioNumber }-${ scenarioName}--${ viewport.name }.png`, viewport.width, viewport.height)
+		await capture(connection, `${ scenarioNumber }-${ scenarioName}--${ viewport.name }.png`, viewport.width, viewport.height, scrollExpression)
 	}
 }
 
@@ -301,9 +305,9 @@ try {
 		error: { code: -32000, message: 'Screenshot fixture intentionally skips RPC simulation.' },
 	}
 	const safeTx = createSafeTx(1n, safeAddress, {
-		to: destinationAddress,
-		value: 500000000000000000n,
-		input: new Uint8Array(),
+		to: originalRequestParameters.params[0].to,
+		value: originalRequestParameters.params[0].value,
+		input: originalRequestParameters.params[0].input,
 	}, 7n)
 	const pendingSafeTransaction: PendingTransactionOrSignableMessage = {
 		type: 'Transaction',
@@ -362,6 +366,103 @@ try {
 	await captureScenario(confirm, 'safe-confirm-transaction')
 	await confirm.close()
 
+	// The signing request card is captured on a successfully simulated proposal, so the real "Sign & add" and "Add unsigned" actions are visible.
+	console.info('Opening simulated Gnosis Safe proposal with the EIP-712 signing request')
+	const mainnet = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const safeEntry = { type: 'contact' as const, name: 'Treasury Safe', address: safeAddress, entrySource: 'User' as const, chainId: 1n }
+	const destinationEntry = { type: 'contact' as const, name: 'Uniswap Router', address: destinationAddress, entrySource: 'User' as const, chainId: 1n }
+	const unsignedTransaction = { type: '1559' as const, nonce: 0n, chainId: 1n, accessList: [], ...originalRequestParameters.params[0] }
+	const simulatedTransactionToSimulate = {
+		website: failedTransaction.website,
+		created,
+		originalRequestParameters,
+		transactionIdentifier: 42n,
+		success: true as const,
+		transaction: unsignedTransaction,
+	}
+	const simulatedProposal: PendingTransactionOrSignableMessage = {
+		...pendingSafeTransaction,
+		transactionOrMessageCreationStatus: 'Simulated',
+		transactionToSimulate: simulatedTransactionToSimulate,
+		popupVisualisation: {
+			statusCode: 'success',
+			data: {
+				activeAddress: safeAddress,
+				simulationMode: false,
+				simulationStartedTimestamp: created,
+				uniqueRequestIdentifier,
+				transactionToSimulate: simulatedTransactionToSimulate,
+				signerName: 'MetaMask',
+				addressBookEntries: [safeEntry, destinationEntry, getNativeTokenErc20(mainnet)],
+				tokenPriceEstimates: [],
+				namedTokenIds: [],
+				simulationState: {
+					success: true,
+					simulationStateInput: [],
+					simulatedBlocks: [],
+					blockNumber: 21_000_000n,
+					blockTimestamp: created,
+					baseFeePerGas: 1_000_000_000n,
+					simulationConductedTimestamp: created,
+					rpcNetwork: mainnet,
+				},
+				visualizedSimulationState: {
+					success: true,
+					visualizedBlocks: [{
+						simulatedAndVisualizedTransactions: [{
+							website: failedTransaction.website,
+							created,
+							parsedInputData: { type: 'NonParsed', input: new Uint8Array() },
+							transactionIdentifier: 42n,
+							originalRequestParameters,
+							tokenBalancesAfter: [],
+							tokenPriceEstimates: [],
+							tokenPriceQuoteToken: undefined,
+							gasSpent: 21_000n,
+							realizedGasPrice: 1_000_000_000n,
+							quarantine: false,
+							quarantineReasons: [],
+							transactionStatus: 'Transaction Succeeded',
+							transaction: { ...unsignedTransaction, from: safeEntry, to: destinationEntry, rpcNetwork: mainnet, hash: 1n },
+							events: [],
+						}],
+						visualizedPersonalSignRequests: [],
+						blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' },
+					}],
+				},
+			},
+		},
+	}
+	const setSimulatedProposalFixture = `browser.storage.local.set({
+			pendingTransactionsAndMessages: [${ JSON.stringify(serialize(PendingTransactionOrSignableMessage, simulatedProposal)) }],
+		})`
+	const simulatedConfirm = await browser.openPage('confirmTransaction', `(async () => {
+		await ${ setSafeAddressFixture }
+		await ${ setSimulatedProposalFixture }
+	})()`)
+	await waitForText(simulatedConfirm, 'wrapped as Gnosis Safe transaction nonce 7')
+	// The Safe notice always mentions "Sign & add", so wait for the action buttons themselves.
+	await waitForSelector(simulatedConfirm, 'button[aria-label="Sign and add to Safe stack"]')
+	await waitForSelector(simulatedConfirm, 'button[aria-label="Add unsigned to Safe stack"]')
+	const findSigningRequestHeader = `[...document.querySelectorAll('header')].find((element) => element.textContent?.includes('Gnosis Safe signing request (EIP-712)'))`
+	await simulatedConfirm.evaluate(`(() => {
+		const signingRequestHeader = ${ findSigningRequestHeader }
+		if (!(signingRequestHeader instanceof HTMLElement)) throw new Error('Gnosis Safe signing request card was not found')
+		signingRequestHeader.click()
+	})()`)
+	await waitForText(simulatedConfirm, 'Gnosis Safe Transaction Hash')
+	await captureScenario(simulatedConfirm, 'safe-confirm-transaction-signing-request', `(() => {
+		const signingRequestHeader = ${ findSigningRequestHeader }
+		if (!(signingRequestHeader instanceof HTMLElement)) throw new Error('Gnosis Safe signing request card was not found')
+		signingRequestHeader.scrollIntoView({ block: 'start' })
+	})()`)
+	await captureScenario(simulatedConfirm, 'safe-confirm-transaction-signing-request-hashes', `(() => {
+		const scrollContainer = document.querySelector('.popup-block-scroll')
+		if (!(scrollContainer instanceof HTMLElement)) throw new Error('Confirmation scroll container was not found')
+		scrollContainer.scrollTop = scrollContainer.scrollHeight
+	})()`)
+	await simulatedConfirm.close()
+
 	console.info('Opening simulation stack')
 	const stack = await browser.openPage('simulationStack')
 	await waitForSelector(stack, '.simulation-stack-page-header')
@@ -388,7 +489,7 @@ try {
 	await captureScenario(settings, 'settings-import-export')
 	await settings.close()
 
-	const expectedScreenshotCount = 85
+	const expectedScreenshotCount = 95
 	const screenshotCount = capturedScenarioCount * viewports.length
 	if (screenshotCount !== expectedScreenshotCount) throw new Error(`Expected ${ expectedScreenshotCount } screenshots, captured ${ screenshotCount }`)
 	console.info(`Captured ${ screenshotCount } deterministic screenshots`)

@@ -350,7 +350,7 @@ type SummarizeAddressParams = {
 
 function SummarizeAddress(param: SummarizeAddressParams) {
 	const isOwnAddress = useComputed(() => param.balanceSummary.summaryFor.useAsActiveAddress || param.balanceSummary.summaryFor.address === param.activeAddress.value)
-	const positiveNegativeColors = isOwnAddress
+	const positiveNegativeColors = isOwnAddress.value
 		? {
 			textColor: 'var(--text-color)',
 			negativeColor: 'var(--text-color)'
@@ -361,7 +361,7 @@ function SummarizeAddress(param: SummarizeAddressParams) {
 		}
 
 	return <div>
-		{ isOwnAddress ?
+		{ isOwnAddress.value ?
 			<BigAddress
 				addressBookEntry = { param.balanceSummary.summaryFor }
 				renameAddressCallBack = { param.renameAddressCallBack }
@@ -824,6 +824,7 @@ function EnsChangesSummary({ ensEvents, editEnsNamedHashCallBack, renameAddressC
 }
 
 export function SimulationSummary(param: SimulationSummaryParams) {
+	const showOtherAccountChanges = useSignal<boolean>(false)
 	const currentResults = param.simulationAndVisualisationResults.value
 	if (currentResults.kind === 'passthrough') return <></>
 	const visualizedSimulationState = currentResults.value.visualizedSimulationState
@@ -833,7 +834,6 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 	const addressMetaData = new Map(simulationAndVisualisationResults.addressBookEntries.map((x) => [addressString(x.address), x]))
 	const originalSummary = summarizeLogs(simulatedTransactions, addressMetaData, simulationAndVisualisationResults.tokenPriceEstimates, simulationAndVisualisationResults.namedTokenIds)
 	const [ownAddresses, notOwnAddresses] = splitToOwnAndNotOwnAndCleanSummary(originalSummary, param.activeAddress.value)
-	const showOtherAccountChanges = useSignal<boolean>(false)
 
 	if (ownAddresses === undefined || notOwnAddresses === undefined) throw new Error('addresses were undefined')
 

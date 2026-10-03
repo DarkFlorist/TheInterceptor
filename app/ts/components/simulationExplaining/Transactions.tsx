@@ -15,7 +15,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { CatchAllVisualizer, tokenEventToTokenSymbolParams } from './customExplainers/CatchAllVisualizer.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SignatureCard, SignatureHeader } from '../pages/PersonalSign.js'
-import { bigintSecondsToDate, bytes32String, checksummedAddress, dataStringWith0xStart, stringifyJSONWithBigInts } from '../../utils/bigint.js'
+import { bigintSecondsToDate, bigintToDecimalString, bytes32String, checksummedAddress, dataStringWith0xStart, stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { GovernanceVoteVisualizer } from './customExplainers/GovernanceVoteVisualizer.js'
 import { EnrichedSolidityTypeComponentWithAddressBook, StringElement } from '../subcomponents/solidityType.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
@@ -391,7 +391,7 @@ function TransactionPreviewDetails({
 					<dt>To</dt>
 					<dd>{ to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { to } renameAddressCallBack = { renameAddressCallBack } /> }</dd>
 					<dt>Value</dt>
-					<dd>{ `${ signedTransaction.value.toString(10) } wei` }</dd>
+					<dd>{ `${ bigintToDecimalString(signedTransaction.value, 18n) } ether` }</dd>
 					<dt>Nonce</dt>
 					<dd>{ signedTransaction.nonce.toString(10) }</dd>
 					<dt>Chain ID</dt>

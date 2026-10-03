@@ -1,3 +1,4 @@
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { test } from 'bun:test'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
@@ -44,7 +45,7 @@ test('accepts a signer reply from the current approved child-frame port', async 
 		}],
 	})
 
-	await modules.signerReply(simulator.ethereum, simulator.tokenPriceService, () => undefined, websiteTabConnections, childPort, {
+	await modules.signerReply(createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }), websiteTabConnections, childPort, {
 		method: 'signer_reply',
 		params: [{
 			success: true,
@@ -115,7 +116,7 @@ test('preserves a MetaMask keyring scan error on a retryable Safe signature', as
 		}],
 	})
 
-	await modules.signerReply(simulator.ethereum, simulator.tokenPriceService, () => undefined, websiteTabConnections, port, {
+	await modules.signerReply(createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }), websiteTabConnections, port, {
 		method: 'signer_reply',
 		params: [{
 			success: false,
@@ -276,9 +277,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 	port = createWebsitePort(socket, 0, postedMessages, (message) => {
 		if (!isRecord(message) || message.method !== 'request_signer_to_eth_accounts') return
 		accountReply = modules.ethAccountsReply(
-			simulator.ethereum,
-			simulator.tokenPriceService,
-			() => undefined,
+			createTestSimulationServicesOwner({ ethereum: simulator.ethereum, tokenPriceService: simulator.tokenPriceService }),
 			websiteTabConnections,
 			port,
 			{
@@ -327,7 +326,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		request,
-		signRequest,
+		{ kind: 'message', parameters: signRequest },
 		false,
 		activeAddress,
 		website,
@@ -461,7 +460,7 @@ test('returns a Safe signer error when the wallet-selected co-signer is not a cu
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		request,
-		signRequest,
+		{ kind: 'message', parameters: signRequest },
 		false,
 		activeAddress,
 		{ websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' },
@@ -524,7 +523,7 @@ test('rejects non-v4 Safe co-signing as a handled signer-selection failure', asy
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		request,
-		signRequest,
+		{ kind: 'message', parameters: signRequest },
 		false,
 		activeAddress,
 		{ websiteOrigin: 'https://safe-v3.example', icon: undefined, title: 'Safe v3' },
@@ -569,7 +568,7 @@ test('shows Safe transaction context failures in the co-signing dialog without r
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		request,
-		signRequest,
+		{ kind: 'message', parameters: signRequest },
 		false,
 		activeAddress,
 		{ websiteOrigin: 'https://safe-context.example', icon: undefined, title: 'Safe context' },
@@ -639,7 +638,7 @@ test('shows a Safe signing-account mismatch in the confirmation dialog without r
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		request,
-		signRequest,
+		{ kind: 'message', parameters: signRequest },
 		false,
 		activeAddress,
 		{ websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' },
@@ -671,7 +670,7 @@ test('shows a Safe signing-account mismatch in the confirmation dialog without r
 			simulator.ethereum,
 			simulator.tokenPriceService,
 			request,
-			signRequest,
+			{ kind: 'message', parameters: signRequest },
 			false,
 			activeAddress,
 			{ websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' },
@@ -757,7 +756,7 @@ test('signs Safe transaction typed data normally when the active signing address
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		request,
-		signRequest,
+		{ kind: 'message', parameters: signRequest },
 		false,
 		eoaAddress,
 		{ websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' },
@@ -819,7 +818,7 @@ test('uses the configured Safe simulation signer without changing the active Saf
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		request,
-		signRequest,
+		{ kind: 'message', parameters: signRequest },
 		true,
 		activeAddress,
 		{ websiteOrigin: 'https://simulation-signer.example', icon: undefined, title: 'Simulation signer' },
@@ -857,7 +856,7 @@ test('requires an explicit Safe simulation signer instead of using the first cac
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		request,
-		signRequest,
+		{ kind: 'message', parameters: signRequest },
 		true,
 		activeAddress,
 		{ websiteOrigin: 'https://simulation-signer.example', icon: undefined, title: 'Simulation signer' },
@@ -966,9 +965,7 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	})])
 
 	const reply = await modules.setSafeSimulationSigner(
-		ethereum,
-		simulator.tokenPriceService,
-		() => undefined,
+		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
 		new Map(),
 		{
 			method: 'popup_setSafeSimulationSigner',
@@ -989,9 +986,7 @@ test('changes the Safe simulation signer only after validating current on-chain 
 
 	fakeSafeContract.version = 'invalid-version'
 	const unsupportedVersionFailure = await withSilencedConsole(async () => modules.setSafeSimulationSigner(
-		ethereum,
-		simulator.tokenPriceService,
-		() => undefined,
+		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
 		new Map(),
 		{
 			method: 'popup_setSafeSimulationSigner',
@@ -1010,9 +1005,7 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	fakeSafeContract.version = 'invalid-version'
 	const { addOrModifyAddressBookEntry } = await import('../../app/ts/background/popupMessageHandlers.js')
 	const unsupportedVersionSaveFailure = await withSilencedConsole(async () => addOrModifyAddressBookEntry(
-		ethereum,
-		simulator.tokenPriceService,
-		() => undefined,
+		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
 		new Map(),
 		{
 			method: 'popup_addOrModifyAddressBookEntry',
@@ -1039,9 +1032,7 @@ test('refreshes Safe owner metadata and clears a stale simulation signer without
 	})])
 
 	const reply = await modules.setSafeSimulationSigner(
-		ethereum,
-		simulator.tokenPriceService,
-		() => undefined,
+		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
 		new Map(),
 		{
 			method: 'popup_setSafeSimulationSigner',
@@ -1130,7 +1121,7 @@ test('routes a completed active Safe execution through its configured signer and
 		simulator.ethereum,
 		simulator.tokenPriceService,
 		request,
-		transactionParams,
+		{ kind: 'transaction', parameters: transactionParams },
 		false,
 		activeAddress,
 		{ websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' },
@@ -1418,7 +1409,7 @@ test('blocks direct Safe execution when the configured signer cannot satisfy the
 			uniqueRequestIdentifier,
 			...transactionParams,
 		},
-		transactionParams,
+		{ kind: 'transaction', parameters: transactionParams },
 		false,
 		activeAddress,
 		{ websiteOrigin: 'https://sealwort.example', icon: undefined, title: 'Sealwort' },
@@ -1432,4 +1423,42 @@ test('blocks direct Safe execution when the configured signer cannot satisfy the
 	if (pendingFailure.transactionToSimulate.success) throw new Error('Expected Safe execution preparation failure')
 	assert.match(pendingFailure.transactionToSimulate.error.message, /cannot satisfy its 3-signature threshold/u)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
+})
+
+test('direct Safe execution checks delegate library bytecode before completing or forwarding owner signatures', async () => {
+	const { spyOn } = await import('bun:test')
+	const { encodeSafeBatch, SAFE_MULTI_SEND_CALL_ONLY, SAFE_SIGN_MESSAGE_LIB, SAFE_SIGN_MESSAGE_ABI } = await import('../../app/ts/safe/safeDelegateCalls.js')
+	const { stringToUint8Array, dataStringWith0xStart } = await import('../../app/ts/utils/bigint.js')
+	const { SendTransactionParams } = await import('../../app/ts/types/JsonRpc-types.js')
+	const multiSend = await import('../fixtures/safe-libraries/MultiSendCallOnly.json')
+	const signMessage = await import('../fixtures/safe-libraries/SignMessageLib.json')
+	fakeSafeContract.owners = [safeTestOwnerAddress]
+	fakeSafeContract.threshold = 1n
+	const safeEntry = createSafeAddressBookEntry({ safeVersion: '1.4.1' })
+	const originalGetCode = simulator.ethereum.getCode.bind(simulator.ethereum)
+	let libraryCode = new Uint8Array()
+	const blocks: bigint[] = []
+	const getCode = spyOn(simulator.ethereum, 'getCode').mockImplementation(async (address, block, abortController) => {
+		if (address !== SAFE_MULTI_SEND_CALL_ONLY && address !== SAFE_SIGN_MESSAGE_LIB) return await originalGetCode(address, block, abortController)
+		blocks.push(block)
+		return libraryCode
+	})
+	try {
+		for (const { to, data, bytecode } of [
+			{ to: SAFE_MULTI_SEND_CALL_ONLY, data: dataStringWith0xStart(encodeSafeBatch([{ to: recipientAddress, value: 0n, data: new Uint8Array() }, { to: recipientAddress, value: 1n, data: new Uint8Array() }])), bytecode: multiSend.default.deployedBytecode },
+			{ to: SAFE_SIGN_MESSAGE_LIB, data: encodeFunctionCall(SAFE_SIGN_MESSAGE_ABI, 'signMessage', ['0x' + '12'.repeat(32)]), bytecode: signMessage.default.deployedBytecode },
+		]) for (const signatures of ['0x', '0x' + '00'.repeat(65)]) {
+			const request = SendTransactionParams.parse({ method: 'eth_sendTransaction', params: [{ from: addressString(activeAddress), to: addressString(activeAddress), data: encodeFunctionCall(SAFE_EXECUTION_ABI, 'execTransaction', [addressString(to), 0n, data, 1n, 0n, 0n, 0n, addressString(0n), addressString(0n), signatures]) }] })
+			for (const invalidCode of [new Uint8Array(), new Uint8Array([1])]) {
+				libraryCode = invalidCode
+				await assert.rejects(modules.prepareSafeExecutionSignerRoute(simulator.ethereum, request, safeEntry, safeTestOwnerAddress), /missing or has unexpected bytecode/)
+			}
+			libraryCode = stringToUint8Array(bytecode)
+			const route = await modules.prepareSafeExecutionSignerRoute(simulator.ethereum, request, safeEntry, safeTestOwnerAddress)
+			assert.equal(route?.executor, safeTestOwnerAddress)
+			assert.equal(route?.transactionParams.params[0].from, safeTestOwnerAddress)
+		}
+		assert.equal(blocks.length, 12)
+		assert.ok(blocks.every((block) => block === 123n))
+	} finally { getCode.mockRestore() }
 })

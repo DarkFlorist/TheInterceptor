@@ -1,3 +1,5 @@
+import type { TransactionConfirmationRequest } from '../types/confirmationRequest.js'
+import { matchesSafeMessageApproval } from '../safe/safeMessageApproval.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../types/JsonRpc-types.js'
 import type { SafeEntry } from '../types/addressBookTypes.js'
@@ -41,11 +43,12 @@ export type SafeTransactionConfirmationPreparation = {
 
 export async function prepareSafeTransactionConfirmation(
 	ethereum: EthereumClientService,
-	transactionParams: SendTransactionParams | SendRawTransactionParams,
+	confirmation: TransactionConfirmationRequest,
 	simulationMode: boolean,
 	activeAddress: bigint,
 	walletSignerAddress: bigint | undefined,
 ): Promise<SafeTransactionConfirmationPreparation> {
+	const transactionParams = confirmation.parameters
 	const configuredSafeEntry = simulationMode
 		? undefined
 		: (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId()))
@@ -139,6 +142,7 @@ export async function prepareSafeTransactionConfirmation(
 						safeEntry,
 						walletSignerAddress,
 						reconciledStoredSafeState,
+						confirmation.safeTransaction,
 					)
 				} catch (error) {
 					if (isSafeOwnerValidationFailure(error)) {
@@ -154,6 +158,7 @@ export async function prepareSafeTransactionConfirmation(
 								safeEntry,
 								walletSignerAddress,
 								reconciledStoredSafeState,
+								confirmation.safeTransaction,
 								false,
 							)
 						} catch (reviewError) {
@@ -237,6 +242,7 @@ async function createSafeSigningRequestForTransaction(
 	safeEntry: SafeEntry | undefined,
 	walletSignerAddress: bigint | undefined,
 	reconciledStoredSafeState: ReconciledStoredSafeState | undefined,
+	safeTransaction: TransactionConfirmationRequest['safeTransaction'],
 	validateOwner = true,
 ): Promise<SafeTransactionSigningRequest | undefined> {
 	if (safeEntry === undefined) return undefined
@@ -259,13 +265,17 @@ async function createSafeSigningRequestForTransaction(
 	}))
 	let nonce = firstUncommittedNonce
 	while (pendingSafeTransactionNonces.has(nonce)) nonce += 1n
+	const review = safeTransaction?.messageReview
 	const transaction = {
 		to: transactionToSimulate.transaction.to,
 		value: transactionToSimulate.transaction.value,
 		input: transactionToSimulate.transaction.input,
 		gas: transactionToSimulate.transaction.gas,
+		operation: BigInt(safeTransaction?.operation ?? 0),
 	}
-	return validateOwner && walletSignerAddress !== undefined
+	if (review !== undefined && !matchesSafeMessageApproval({ ...transaction, data: transaction.input }, review)) throw createSafeContractValidationFailure('The Safe message review text does not match the on-chain approval.')
+	const signingRequest = validateOwner && walletSignerAddress !== undefined
 		? await createSafeTransactionSigningRequest(ethereum, safeEntry.address, walletSignerAddress, transaction, nonce)
 		: await createSafeTransactionReviewRequest(ethereum, safeEntry.address, walletSignerAddress, transaction, nonce)
+	return { ...signingRequest, ...(review !== undefined ? { messageReview: review } : {}) }
 }

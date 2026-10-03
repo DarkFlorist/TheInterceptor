@@ -317,7 +317,7 @@ describe('active address selection', () => {
 		assert.match(backgroundUtilsSource, /resolveActiveAddressForMode\(/u)
 		assert.doesNotMatch(backgroundUtilsSource, /resolveSigningSafe\(/u)
 		assert.doesNotMatch(backgroundSource, /resolveActiveAddressForMode\(/u)
-		assert.match(backgroundSource, /activeAddress\.type === 'safe'[\s\S]*?resolveSigningSafe\(/u)
+		assert.match(backgroundSource, /isActiveSigningSafe\(/u)
 		assert.doesNotMatch(backgroundSource, /getSafeSigningEntry/u)
 		assert.doesNotMatch(backgroundUtilsSource, /getActiveAddressSelection\(/u)
 		assert.doesNotMatch(providerSigningSelectionSource, /resolveConfiguredSigningSafe/u)
