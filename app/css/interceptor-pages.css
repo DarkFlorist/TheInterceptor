@@ -756,29 +756,3 @@ fieldset[disabled] .button.is-primary.is-danger {
 		margin-top: 0.5rem;
 	}
 }
-
-/* Website access details */
-.website-setting-card {
-	background-color: var(--card-bg-color);
-	border: 1px solid var(--hairline-color);
-	border-radius: var(--radius-large);
-	box-shadow: var(--card-shadow);
-	margin-bottom: 8px;
-	padding-inline: 16px;
-}
-
-.address-access-card {
-	align-items: center;
-	background-color: var(--card-bg-color);
-	border: 1px solid var(--hairline-color);
-	border-radius: var(--radius-medium);
-	column-gap: 1rem;
-	display: grid;
-	grid-template-columns: minmax(0, 1fr) min-content min-content;
-	padding: 8px 12px;
-}
-
-.dashed-prompt {
-	border: 1px dashed var(--strong-hairline-color);
-	border-radius: var(--radius-large);
-}

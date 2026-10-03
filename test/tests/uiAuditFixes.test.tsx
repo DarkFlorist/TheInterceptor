@@ -82,6 +82,16 @@ function getOverwrittenDeclarations(lines: readonly CssLine[]) {
 	return overwritten
 }
 
+const layoutScopeOpening = ':root {'
+
+// The layout stylesheet nests all of its rules in one `:root` scope; this returns the rules inside it.
+function getLayoutScopeContent(layoutCss: string) {
+	const start = layoutCss.indexOf(layoutScopeOpening)
+	const end = layoutCss.lastIndexOf('}')
+	if (start === -1 || end === -1) throw new Error('the layout stylesheet is not wrapped in its :root scope')
+	return layoutCss.slice(start + layoutScopeOpening.length, end)
+}
+
 // Selector lists of the rules outside any at-rule, with whitespace normalised.
 function getTopLevelSelectors(css: string) {
 	const selectors: string[] = []
@@ -282,7 +292,7 @@ describe('UI audit fixes', () => {
 			assert.deepEqual(getOverwrittenDeclarations(cssLines), [], stylesheetPath)
 			assert.doesNotMatch(css, /\{\s*\}/, `${ stylesheetPath } has an empty rule set`)
 			// Two top-level rules with the same selector list in one stylesheet hide which declaration wins; a shared group followed by a narrower rule is fine.
-			const topLevelSelectors = getTopLevelSelectors(css)
+			const topLevelSelectors = getTopLevelSelectors(stylesheetPath.endsWith('interceptor-layout.css') ? getLayoutScopeContent(css) : css)
 			const repeatedSelectors = topLevelSelectors.filter((selector, index) => topLevelSelectors.indexOf(selector) !== index)
 			assert.deepEqual(repeatedSelectors, [], stylesheetPath)
 		}
@@ -316,8 +326,8 @@ describe('UI audit fixes', () => {
 		// An ENS event is a sentence whose parts wrap as whole pieces; squeezing the parts clipped names to a single letter.
 		assert.match(css, /\.ens-table\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/)
 		assert.match(css, /\.ens-table > \.log-cell\s*\{[^}]*flex:\s*0 0 auto;[^}]*max-width:\s*100%;/)
-		// The rows are list items, so they must stay unmarked and unspaced even under a framework `.content` wrapper, whose list rules are more specific than a single class.
-		assert.match(css, /\.ens-events > \.ens-event\s*\{[^}]*list-style:\s*none;[^}]*margin:\s*0;/)
+		// The rows are list items, so their marker and list spacing are reset.
+		assert.match(css, /\.ens-event\s*\{[^}]*list-style:\s*none;[^}]*margin:\s*0;/)
 		const ensSource = await Bun.file('app/ts/components/simulationExplaining/customExplainers/EnsEventExplainer.tsx').text()
 		assert.match(ensSource, /<ul class = 'ens-events'>[\s\S]*?<li key = \{[^\n]*\} class = 'ens-event'>/)
 		assert.doesNotMatch(ensSource, /positive-box|textColor/)
@@ -330,8 +340,11 @@ describe('UI audit fixes', () => {
 
 	test('passes static tones to coin and card components as classes', async () => {
 		const css = await readInterceptorAppCss()
-		// The inline card colours its own label, so a tone has to outrank that rule to apply to the label as well.
-		for (const tone of ['strong', 'subtitle', 'negative', 'positive']) assert.match(css, new RegExp(`\\.coin-text--${ tone }, \\.inline-card data\\.coin-text--${ tone } \\{`))
+		// The inline card colours its own label; a tone is in the scoped layout stylesheet, which gives it the weight to apply to the label as well.
+		const layoutCss = await Bun.file('app/css/interceptor-layout.css').text()
+		for (const tone of ['strong', 'subtitle', 'negative', 'positive']) assert.match(layoutCss, new RegExp(`\\n\\.coin-text--${ tone } \\{`))
+		// One selector keeps its extra weight on top of the scope, because the themed paragraph spacing rule is heavier than the scope plus a single class.
+		assert.match(layoutCss, /\np\.paragraph\.summary-transaction-input-label \{/)
 		const swapSource = await Bun.file('app/ts/components/simulationExplaining/SwapTransactions.tsx').text()
 		assert.match(swapSource, /const amountClass = `coin-text--strong \$\{ getToneClass\('coin-text', direction === 'pay' \? 'negative' : 'positive'\) \}`/)
 		assert.doesNotMatch(swapSource, /tokenStyle|balanceTextStyle|amountStyle/)
@@ -380,10 +393,17 @@ describe('UI audit fixes', () => {
 		assert.match(backgroundSource, /requestInterceptorSimulatorStack\(await getUpdatedSimulationStackSnapshot\(ethereum, simulationOverlayEnabled\), settings\.simulationMode,/)
 	})
 
-	test('loads the layout stylesheet last on every extension page', async () => {
-		// The rules that replaced inline styles win ties only by being loaded last, so the order is a contract: one list, and every page links exactly that list in that order.
-		assert.equal(stylesheetFilenames.at(-1), 'interceptor-layout.css')
-		assert.match(await Bun.file('app/css/interceptor-layout.css').text(), /^\/\* Component layout that used to be inline style attributes\./)
+	test('gives component layout its precedence through its own scope instead of load order', async () => {
+		// Every layout rule is nested in `:root`, which adds one class worth of specificity, so a layout class wins over a shared rule of the same weight whichever stylesheet loads last.
+		const layoutCss = stripCssComments(await Bun.file('app/css/interceptor-layout.css').text())
+		assert.equal(layoutCss.trimStart().startsWith(layoutScopeOpening), true)
+		assert.equal(layoutCss.trimEnd().endsWith('}'), true)
+		const scopedSelectors = getTopLevelSelectors(getLayoutScopeContent(layoutCss))
+		assert.equal(scopedSelectors.length > 300, true)
+		assert.deepEqual(getTopLevelSelectors(layoutCss), [':root'])
+		// Cascade layers are not used for this: browsers add their own extension-page defaults, which outrank every layered rule.
+		assert.doesNotMatch(await readInterceptorAppCss(), /@layer/)
+		// Every generated page links the whole stylesheet list, so no page is missing the layout rules.
 		for (const page of pageDefinitions) {
 			for (const file of [`app/html/${ page.name }.html`, `app/html3/${ page.name }V3.html`]) {
 				const linkedStylesheets = [...(await Bun.file(file).text()).matchAll(/href = '\.\.\/css\/([^']+\.css)'/g)].map((match) => match[1])

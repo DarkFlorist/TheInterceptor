@@ -5,6 +5,7 @@ import type { SimulatedAndVisualizedTransaction } from '../../types/visualizer-t
 import { tokenEventGrantsSpendingRights } from '../../utils/approvals.js'
 import { CheckMarkIcon, WarningSignIcon, XMarkIcon } from '../subcomponents/icons.js'
 import { getToneClass, type StatusTone } from '../ui-utils.js'
+import { getAddressTrust, getTransactionVerdict } from '../../utils/simulationVerdict.js'
 
 export type TransactionCheck = {
 	tone: StatusTone
@@ -13,13 +14,17 @@ export type TransactionCheck = {
 
 function getDestinationCheck(destination: AddressBookEntry | undefined): TransactionCheck {
 	if (destination === undefined) return { tone: 'neutral', text: 'Deploys a new contract' }
-	switch (destination.entrySource) {
-		case 'User': return { tone: 'positive', text: `Sent to ${ destination.name }, which is in your address book` }
-		case 'DarkFloristMetadata':
-		case 'Interceptor': return { tone: 'positive', text: `Sent to ${ destination.name }, a known address` }
-		case 'OnChain': return { tone: 'warning', text: `Sent to ${ destination.name }, whose name is self-reported and unverified` }
-		case 'FilledIn': return { tone: 'neutral', text: 'Sent to an address that is not in your address book' }
+	switch (getAddressTrust(destination)) {
+		case 'addressBook': return { tone: 'positive', text: `Sent to ${ destination.name }, which is in your address book` }
+		case 'known': return { tone: 'positive', text: `Sent to ${ destination.name }, a known address` }
+		case 'selfReported': return { tone: 'warning', text: `Sent to ${ destination.name }, whose name is self-reported and unverified` }
+		case 'unknown': return { tone: 'neutral', text: 'Sent to an address that is not in your address book' }
 	}
+}
+
+function getFlaggedCheckText(flaggedReasonCount: number) {
+	if (flaggedReasonCount === 0) return 'The Interceptor flagged this transaction'
+	return flaggedReasonCount === 1 ? 'The Interceptor flagged one issue' : `The Interceptor flagged ${ flaggedReasonCount } issues`
 }
 
 function getApprovalCheck(approvals: readonly TokenVisualizerResultWithMetadata[]): TransactionCheck {
@@ -31,14 +36,13 @@ function getApprovalCheck(approvals: readonly TokenVisualizerResultWithMetadata[
 
 // Plain-language facts about a simulated transaction, derived only from its simulation result, shown before the raw details.
 export function getTransactionChecks(simTx: SimulatedAndVisualizedTransaction): readonly TransactionCheck[] {
-	const statusCheck: TransactionCheck = simTx.transactionStatus === 'Transaction Succeeded'
-		? { tone: 'positive', text: 'The simulation succeeded' }
-		: { tone: 'negative', text: 'The transaction fails in the simulation' }
+	const verdict = getTransactionVerdict(simTx)
 	const destinationCheck = getDestinationCheck(simTx.transaction.to)
-	if (simTx.transactionStatus !== 'Transaction Succeeded') return [statusCheck, destinationCheck]
+	if (verdict === 'failed') return [{ tone: 'negative', text: 'The transaction fails in the simulation' }, destinationCheck]
+	const statusCheck: TransactionCheck = { tone: 'positive', text: 'The simulation succeeded' }
 	const approvalCheck = getApprovalCheck(extractTokenEvents(simTx.events).filter((tokenEvent) => tokenEvent.isApproval))
-	const flaggedCount = simTx.quarantineReasons.length
-	const flaggedChecks: readonly TransactionCheck[] = flaggedCount === 0 ? [] : [{ tone: 'negative', text: flaggedCount === 1 ? 'The Interceptor flagged one issue' : `The Interceptor flagged ${ flaggedCount } issues` }]
+	// The flagged check appears exactly when the shared verdict says the transaction is flagged, so it always matches the stack row and the confirmation buttons.
+	const flaggedChecks: readonly TransactionCheck[] = verdict === 'flagged' ? [{ tone: 'negative', text: getFlaggedCheckText(simTx.quarantineReasons.length) }] : []
 	return [statusCheck, destinationCheck, approvalCheck, ...flaggedChecks]
 }
 

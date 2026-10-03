@@ -15,7 +15,7 @@ export type PageDefinition = {
 }
 
 const projectRoot = path.join(path.dirname(url.fileURLToPath(import.meta.url)), '..')
-// The cascade order of the stylesheets, and the only place it is defined. Later files override earlier ones at equal specificity; `interceptor-layout.css` holds the rules that replaced inline styles and must stay last.
+// The stylesheets every page loads; a later file overrides an earlier one at equal specificity. `interceptor-layout.css` scopes its rules under `:root`, so its classes outrank shared rules of the same weight without relying on being last.
 export const stylesheetFilenames = [
 	'interceptor-framework.css',
 	'interceptor-controls.css',

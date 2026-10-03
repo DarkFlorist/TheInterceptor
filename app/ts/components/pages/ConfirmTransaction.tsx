@@ -46,6 +46,7 @@ import { AsyncActionButton, AsyncStatusIcon } from '../subcomponents/AsyncAction
 import type { SignerName } from '../../types/signerTypes.js'
 import { assertNever } from '../../utils/typescript.js'
 import { getSafeTransactionPendingFlow } from '../../safe/safePendingFlow.js'
+import { getSignatureVerdict, getTransactionVerdict } from '../../utils/simulationVerdict.js'
 
 type UnderTransactionsParams = {
 	pendingTransactionsAndSignableMessages: ReadonlySignal<PendingTransactionOrSignableMessage[]>
@@ -589,7 +590,7 @@ export const CheckBoxes = (params: CheckBoxesParams) => {
 	if (current?.type === 'SignableMessage') {
 		const visualizedPersonalSignRequest = current.visualizedPersonalSignRequest
 		return  <>
-			{ isPossibleToSignMessage(visualizedPersonalSignRequest, visualizedPersonalSignRequest.activeAddress.address) && visualizedPersonalSignRequest.quarantine
+			{ isPossibleToSignMessage(visualizedPersonalSignRequest, visualizedPersonalSignRequest.activeAddress.address) && getSignatureVerdict(visualizedPersonalSignRequest) === 'flagged'
 				? <div class = 'confirm-checkboxes'>
 					<div class = 'confirm-checkbox'>
 						<ErrorCheckBox text = { 'I understand that there are issues with this signature request but I want to send it anyway against Interceptors recommendations.' } checked = { params.forceSend } />
@@ -603,12 +604,13 @@ export const CheckBoxes = (params: CheckBoxesParams) => {
 	const currentResults = getResultsForTransaction(current.popupVisualisation.data.visualizedSimulationState, current.transactionIdentifier)
 
 	if (currentResults === undefined) return <></>
-	if (currentResults.transactionStatus !== 'Transaction Succeeded') return <div class = 'confirm-checkboxes'>
+	const verdict = getTransactionVerdict(currentResults)
+	if (verdict === 'failed') return <div class = 'confirm-checkboxes'>
 		<div class = 'confirm-checkbox'>
 			<ErrorCheckBox text = { 'I understand that the transaction will fail but I want to send it anyway.' } checked = { params.forceSend } />
 		</div>
 	</div>
-	if (currentResults.quarantine === true) return <div class = 'confirm-checkboxes'>
+	if (verdict === 'flagged') return <div class = 'confirm-checkboxes'>
 		<div class = 'confirm-checkbox'>
 			<ErrorCheckBox text = { 'I understand that there are issues with this transaction but I want to send it anyway against Interceptors recommendations.' } checked = { params.forceSend } />
 		</div>
@@ -769,9 +771,9 @@ export function ConfirmationActionButtons({ identified, signerName, simulationMo
 }
 
 // The Interceptor advises against a request when it fails in the simulation or was flagged; the dialog then emphasises rejecting it.
-export const isTransactionAdvisedAgainst = (simulatedTransaction: MaybeSimulatedTransaction) => simulatedTransaction.transactionStatus !== 'Transaction Succeeded' || simulatedTransaction.quarantine
+export const isTransactionAdvisedAgainst = (simulatedTransaction: MaybeSimulatedTransaction) => getTransactionVerdict(simulatedTransaction) !== 'succeeded'
 
-export const isSignatureAdvisedAgainst = (signRequest: VisualizedPersonalSignRequest) => signRequest.quarantine || signRequest.isValidMessage === false
+export const isSignatureAdvisedAgainst = (signRequest: VisualizedPersonalSignRequest) => getSignatureVerdict(signRequest) !== 'succeeded'
 
 export const shouldDisableConfirmForApprovalStatus = (approvalStatus: PendingTransactionOrSignableMessage['approvalStatus']) => approvalStatus.status === 'WaitingForSigner'
 
@@ -1027,6 +1029,7 @@ export function ConfirmTransaction() {
 		if (shouldDisableConfirmForApprovalStatus(currentPendingTransactionOrSignableMessage.value.approvalStatus)) return true
 		if (currentPendingTransactionOrSignableMessage.value.type !== 'Transaction') {
 			return shouldDisableSignableMessageConfirm({
+				// Deliberately stricter than the shared verdict: a message whose validity was never established cannot be confirmed either.
 				isValidMessage: currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.isValidMessage === true,
 				canSignMessage: isPossibleToSignMessage(currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest, currentPendingTransactionOrSignableMessage.value.activeAddress),
 				forceSendEnabled: forceSend.value,
@@ -1039,9 +1042,7 @@ export function ConfirmTransaction() {
 		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation.data.visualizedSimulationState.success === false) return true
 		const lastTx = getResultsForTransaction(currentPendingTransactionOrSignableMessage.value.popupVisualisation.data.visualizedSimulationState, currentPendingTransactionOrSignableMessage.value.transactionIdentifier)
 		if (lastTx === undefined) return true
-		if (lastTx.transactionStatus !== 'Transaction Succeeded') return true
-		if (lastTx.quarantine) return true
-		return false
+		return isTransactionAdvisedAgainst(lastTx)
 	})
 	const isAddToSafeStackDisabled = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value
@@ -1050,7 +1051,7 @@ export function ConfirmTransaction() {
 		if (pending.transactionOrMessageCreationStatus !== 'Simulated' || pending.popupVisualisation.statusCode !== 'success') return true
 		if (pending.popupVisualisation.data.visualizedSimulationState.success === false) return true
 		const lastTx = getResultsForTransaction(pending.popupVisualisation.data.visualizedSimulationState, pending.transactionIdentifier)
-		return lastTx === undefined || lastTx.transactionStatus !== 'Transaction Succeeded' || lastTx.quarantine
+		return lastTx === undefined || isTransactionAdvisedAgainst(lastTx)
 	})
 
 	function getCurrentAddressBookEntries() {

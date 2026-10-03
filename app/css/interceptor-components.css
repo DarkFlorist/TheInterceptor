@@ -531,21 +531,6 @@
 	line-height: 24px;
 }
 
-.eip-712-table {
-	display: grid;
-	background-color: var(--alpha-005);
-	border-radius: var(--radius-medium);
-	padding: 8px 10px;
-}
-
-/* A nested record sits inside its parent's value cell, marked by a rule instead of a second panel. */
-.eip-712-table--nested {
-	background-color: transparent;
-	border-left: 2px solid var(--hairline-color);
-	border-radius: 0;
-	padding: 0 0 0 8px;
-}
-
 .popup-block {
 	display: flex;
 	flex-direction: column;

@@ -28,6 +28,7 @@ import { signal } from '@preact/signals'
 import { SimpleTokenApprovalVisualisation } from '../../app/ts/components/simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
 import { Erc721TokenIdApprovalChanges } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
 import { isPositiveEvent } from '../../app/ts/components/simulationExplaining/Transactions.js'
+import { getAddressTrust, getSignatureVerdict, getTransactionVerdict } from '../../app/ts/utils/simulationVerdict.js'
 
 const website: Website = { websiteOrigin: 'https://example.com', title: 'Example', icon: undefined }
 const rpcNetwork: RpcNetwork = { name: 'Ethereum', chainId: 1n, httpsRpc: 'https://example.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
@@ -312,6 +313,42 @@ describe('transaction outcome UI', () => {
 		assert.match(homeSource, /class = \{ `popup-home-connection-status popup-data-reveal-inline connection-chip \$\{ getToneClass\('connection-chip', 'negative'\) \}` \}>NOT CONNECTED/)
 	})
 
+	test('derives one verdict for a request and keeps every view of it in agreement', () => {
+		assert.equal(getTransactionVerdict({ transactionStatus: 'Transaction Succeeded', quarantine: false }), 'succeeded')
+		assert.equal(getTransactionVerdict({ transactionStatus: 'Transaction Succeeded', quarantine: true }), 'flagged')
+		// A failure outranks a flag.
+		assert.equal(getTransactionVerdict({ transactionStatus: 'Transaction Failed', quarantine: true }), 'failed')
+		assert.equal(getTransactionVerdict({ transactionStatus: 'Failed To Simulate', quarantine: false }), 'failed')
+		assert.equal(getSignatureVerdict({ isValidMessage: true, quarantine: false }), 'succeeded')
+		assert.equal(getSignatureVerdict({ isValidMessage: true, quarantine: true }), 'flagged')
+		assert.equal(getSignatureVerdict({ isValidMessage: false, quarantine: true }), 'failed')
+		assert.equal(getAddressTrust(sender), 'addressBook')
+		assert.equal(getAddressTrust(knownContract), 'known')
+		assert.equal(getAddressTrust(selfNamedToken), 'selfReported')
+		assert.equal(getAddressTrust(unknownAddress), 'unknown')
+		// The signature views follow the signature verdict the same way: an invalid message is a failure even when it is also flagged.
+		for (const [signRequest, verdict, rowStatus, advisedAgainst] of [[createSignRequest({}), 'succeeded', 'success', false], [createSignRequest({ quarantine: true }), 'flagged', 'warning', true], [createSignRequest({ quarantine: true, isValidMessage: false }), 'failed', 'failed', true]] as const) {
+			assert.equal(getSignatureVerdict(signRequest), verdict)
+			assert.equal(getSimulationStackRowStatus(createMessageRow(signRequest)), rowStatus)
+			assert.equal(isSignatureAdvisedAgainst(signRequest), advisedAgainst)
+		}
+
+		// The confirmation checks, the stack row status and the advice against confirming all follow the verdict, also for a transaction flagged without a listed reason.
+		const expectations = [
+			{ transaction: createSimulatedTransaction({}), verdict: 'succeeded', rowStatus: 'success', advisedAgainst: false, negativeChecks: 0 },
+			{ transaction: createSimulatedTransaction({ quarantine: true, quarantineReasons: [] }), verdict: 'flagged', rowStatus: 'warning', advisedAgainst: true, negativeChecks: 1 },
+			{ transaction: createSimulatedTransaction({ quarantine: true, quarantineReasons: ['one', 'two'] }), verdict: 'flagged', rowStatus: 'warning', advisedAgainst: true, negativeChecks: 1 },
+			{ transaction: createSimulatedTransaction({ failed: true, quarantine: true }), verdict: 'failed', rowStatus: 'failed', advisedAgainst: true, negativeChecks: 1 },
+		] as const
+		for (const { transaction, verdict, rowStatus, advisedAgainst, negativeChecks } of expectations) {
+			assert.equal(getTransactionVerdict(transaction), verdict)
+			assert.equal(getSimulationStackRowStatus(createStackRow('simulated', transaction)), rowStatus)
+			assert.equal(isTransactionAdvisedAgainst(transaction), advisedAgainst)
+			assert.equal(getTransactionChecks(transaction).filter((check) => check.tone === 'negative').length, negativeChecks)
+		}
+		assert.equal(getTransactionChecks(createSimulatedTransaction({ quarantine: true, quarantineReasons: [] })).at(-1)?.text, 'The Interceptor flagged this transaction')
+	})
+
 	test('classifies granted and removed approvals with one shared rule', async () => {
 		assert.equal(grantsSpendingRights({ kind: 'erc20Allowance', allowance: 1n }), true)
 		assert.equal(grantsSpendingRights({ kind: 'erc20Allowance', allowance: 0n }), false)
@@ -412,8 +449,8 @@ describe('transaction outcome UI', () => {
 			assert.equal(amountClasses.filter((className) => className.includes('coin-text--negative')).length, 1)
 			assert.equal(amountClasses.filter((className) => className.includes('coin-text--positive')).length, 1)
 			const css = await readInterceptorAppCss()
-			assert.match(css, /\.coin-text--negative, \.inline-card data\.coin-text--negative \{ color: var\(--danger-color\) \}/)
-			assert.match(css, /\.coin-text--positive, \.inline-card data\.coin-text--positive \{ color: var\(--positive-color\) \}/)
+			assert.match(css, /\.coin-text--negative \{ color: var\(--danger-color\) \}/)
+			assert.match(css, /\.coin-text--positive \{ color: var\(--positive-color\) \}/)
 		} finally {
 			render(null, dom.document.body)
 			dom.restore()

@@ -33,6 +33,7 @@ import { Collapsible } from '../subcomponents/Collapsible.js'
 import { EnsEventsExplainer, getVisibleEnsEvents } from './customExplainers/EnsEventExplainer.js'
 import { grantsSpendingRights } from '../../utils/approvals.js'
 import { isUnlimitedErc20Approval } from '../../utils/erc20.js'
+import { getSignatureVerdict, getTransactionVerdict, type SimulationVerdict } from '../../utils/simulationVerdict.js'
 
 type Erc20BalanceChangeParams = {
 	erc20TokenBalanceChanges: Erc20TokenBalanceChange[]
@@ -621,11 +622,11 @@ type TransactionHeaderParams = {
 	ariaExpanded?: boolean
 }
 
+const verdictIcons = { succeeded: '../img/success-icon.svg', flagged: '../img/warning-sign.svg', failed: '../img/error-icon.svg' } as const satisfies Record<SimulationVerdict, string>
+
 export function TransactionHeader({ simTx, removeTransactionOrSignedMessage, onHeaderClick, headerActionLabel, ariaExpanded } : TransactionHeaderParams) {
 	const icon = useComputed(() => {
-		if (simTx.transactionStatus === 'Failed To Simulate' || simTx.transactionStatus === 'Transaction Failed') return '../img/error-icon.svg'
-		if (simTx.quarantine) return '../img/warning-sign.svg'
-		return '../img/success-icon.svg'
+		return verdictIcons[getTransactionVerdict(simTx)]
 	})
 	const actionLabel = headerActionLabel ?? 'Open this transaction in the full simulation stack'
 	return <header
@@ -761,14 +762,15 @@ function getSuccessfulSimulationSummaryEntries(visualizedSimulationState: Extrac
 }
 
 function getSimulatedSignatureSummaryStatus(signature: VisualizedPersonalSignRequest) {
-	if (signature.isValidMessage === false) {
+	const verdict = getSignatureVerdict(signature)
+	if (verdict === 'failed') {
 		return {
 			icon: '../img/error-icon.svg',
 			label: 'Invalid message format',
 			modifier: 'invalid',
 		}
 	}
-	if (signature.quarantine) {
+	if (verdict === 'flagged') {
 		return {
 			icon: '../img/warning-sign.svg',
 			label: signature.quarantineReasons.length === 0 ? 'Flagged for review' : `Flagged: ${ signature.quarantineReasons.join('; ') }`,
@@ -861,13 +863,9 @@ export function SimulationSummary(param: SimulationSummaryParams) {
 
 	if (ownAddresses === undefined || notOwnAddresses === undefined) throw new Error('addresses were undefined')
 
-	const icon = simulatedTransactions.some((transaction) => transaction.transactionStatus !== 'Transaction Succeeded')
-		|| simulatedSignatures.some((signature) => signature.isValidMessage === false)
-		? '../img/error-icon.svg'
-		: simulatedTransactions.some((transaction) => transaction.quarantine)
-			|| simulatedSignatures.some((signature) => signature.quarantine)
-			? '../img/warning-sign.svg'
-			: '../img/success-icon.svg'
+	// The summary shows the worst verdict among everything it summarises.
+	const verdicts = [...simulatedTransactions.map(getTransactionVerdict), ...simulatedSignatures.map(getSignatureVerdict)]
+	const icon = verdictIcons[verdicts.includes('failed') ? 'failed' : verdicts.includes('flagged') ? 'flagged' : 'succeeded']
 
 	return (
 		<div class = 'card simulation-summary-card'>

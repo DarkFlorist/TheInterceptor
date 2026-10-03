@@ -1,6 +1,32 @@
-/* Component layout that used to be inline style attributes. An inline style outranked every stylesheet rule; these classes keep that by being the last stylesheet every page loads. The order is fixed in one place, `stylesheetFilenames` in scripts/generate-extension-pages.mts, and tests fail if this file is not last or a page links the stylesheets differently. */
+/* Component layout: the rules that replaced inline style attributes, and other rules that belong to one component. An inline style outranked every stylesheet rule. To keep that without depending on which stylesheet loads last, every rule here is nested in `:root`, which adds one class worth of specificity: a layout class always wins over a shared rule of the same weight, in any load order. The block is left unindented so the rules read like the other stylesheets. */
+:root {
 
 /* Website access page */
+.website-setting-card {
+	background-color: var(--card-bg-color);
+	border: 1px solid var(--hairline-color);
+	border-radius: var(--radius-large);
+	box-shadow: var(--card-shadow);
+	margin-bottom: 8px;
+	padding-inline: 16px;
+}
+
+.address-access-card {
+	align-items: center;
+	background-color: var(--card-bg-color);
+	border: 1px solid var(--hairline-color);
+	border-radius: var(--radius-medium);
+	column-gap: 1rem;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) min-content min-content;
+	padding: 8px 12px;
+}
+
+.dashed-prompt {
+	border: 1px dashed var(--strong-hairline-color);
+	border-radius: var(--radius-large);
+}
+
 .website-access-implicit-submit { display: none }
 
 .website-access-list { padding-block: 1rem }
@@ -436,7 +462,7 @@
 	justify-content: center;
 }
 
-/* Carries the element and both classes so its spacing would still outrank the framework's `.content p:not(:last-child)` if a transaction is ever placed under a `.content` wrapper again. */
+/* Carries the element and both classes so its spacing also wins over the themed `.content p:not(:last-child)` rule, which the scope alone does not outrank. */
 p.paragraph.summary-transaction-input-label {
 	color: var(--subtitle-text-color);
 	margin-bottom: 0.25rem;
@@ -464,8 +490,7 @@ p.paragraph.summary-transaction-input-label {
 }
 
 /* Ether and token amounts */
-/* The ether amount is a table element; the extra class keeps it above the framework's full-width `.content table` rule wherever it is placed. */
-.log-table.coin-ether { width: fit-content }
+.coin-ether { width: fit-content }
 
 .coin-ether-amount {
 	display: inline-flex;
@@ -490,11 +515,11 @@ p.paragraph.summary-transaction-input-label {
 
 .token-all-approval { color: var(--text-color) }
 
-/* Tones that callers pass to the coin and inline-card components through their class prop. The data selectors outrank the inline card's own label colour. */
-.coin-text--strong, .inline-card data.coin-text--strong { font-weight: 500 }
-.coin-text--subtitle, .inline-card data.coin-text--subtitle { color: var(--subtitle-text-color) }
-.coin-text--negative, .inline-card data.coin-text--negative { color: var(--danger-color) }
-.coin-text--positive, .inline-card data.coin-text--positive { color: var(--positive-color) }
+/* Tones that callers pass to the coin and inline-card components through their class prop. */
+.coin-text--strong { font-weight: 500 }
+.coin-text--subtitle { color: var(--subtitle-text-color) }
+.coin-text--negative { color: var(--danger-color) }
+.coin-text--positive { color: var(--positive-color) }
 
 /* Backgrounds for the big address card, set by the views that place it on a tinted panel. */
 .multiline-card--importance { --bg-color: var(--importance-box-color) }
@@ -666,6 +691,21 @@ p.paragraph.summary-transaction-input-label {
 }
 
 /* Gnosis Safe signing details */
+.eip-712-table {
+	display: grid;
+	background-color: var(--alpha-005);
+	border-radius: var(--radius-medium);
+	padding: 8px 10px;
+}
+
+/* A nested record sits inside its parent's value cell, marked by a rule instead of a second panel. */
+.eip-712-table--nested {
+	background-color: transparent;
+	border-left: 2px solid var(--hairline-color);
+	border-radius: 0;
+	padding: 0 0 0 8px;
+}
+
 /* Field tables of signing requests read like the raw transaction details: muted labels ending on one line, values starting on the next. */
 .eip-712-table, .safe-signing-fields, .signature-hash-table {
 	column-gap: 0.75rem;
@@ -742,8 +782,8 @@ p.paragraph.summary-transaction-input-label {
 	width: 100%;
 }
 
-/* The two-class selector and the marker reset keep the rows plain even under a framework `.content` wrapper, whose list rules would add bullets and spacing. */
-.ens-events > .ens-event {
+/* The rows are list items, so the marker and the spacing of list styles are reset. */
+.ens-event {
 	background-color: var(--alpha-005);
 	border-radius: var(--radius-medium);
 	list-style: none;
@@ -1407,7 +1447,7 @@ p.paragraph.summary-transaction-input-label {
 	font-size: 0.8em;
 }
 
-/* Matches the specificity of the card corner-radius inheritance rule so the explicit bottom radii keep winning. */
+/* Carries the card selectors so its bottom corners also win over the themed last-child rule, which has three classes. */
 .card > .card-content.collapsible-card-content {
 	border-bottom-left-radius: var(--radius-tiny);
 	border-bottom-right-radius: var(--radius-tiny);
@@ -1424,3 +1464,5 @@ p.paragraph.summary-transaction-input-label {
 
 /* Icons */
 .icon-arrow { vertical-align: middle }
+
+}

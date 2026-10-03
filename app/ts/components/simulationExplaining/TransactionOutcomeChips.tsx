@@ -7,6 +7,7 @@ import { grantsSpendingRights } from '../../utils/approvals.js'
 import { isUnlimitedErc20Approval } from '../../utils/erc20.js'
 import { AbbreviatedValue } from '../subcomponents/AbbreviatedValue.js'
 import { getToneClass, type StatusTone } from '../ui-utils.js'
+import { getTransactionVerdict } from '../../utils/simulationVerdict.js'
 
 const MAX_VISIBLE_OUTCOME_CHIPS = 4
 
@@ -85,7 +86,7 @@ type TransactionOutcomeChipsParams = {
 
 // Summarises what one transaction does to the active account, so a stack row can be read without opening it.
 export function TransactionOutcomeChips({ simTx, activeAddress, addressMetaData, tokenPriceEstimates, namedTokenIds }: TransactionOutcomeChipsParams) {
-	if (simTx.transactionStatus !== 'Transaction Succeeded') return <ul class = 'outcome-chips' aria-label = 'Transaction result'>
+	if (getTransactionVerdict(simTx) === 'failed') return <ul class = 'outcome-chips' aria-label = 'Transaction result'>
 		<li class = { `outcome-chip ${ getToneClass('outcome-chip', 'negative') }` }>Transaction fails</li>
 	</ul>
 	if (activeAddress === undefined) return <></>
