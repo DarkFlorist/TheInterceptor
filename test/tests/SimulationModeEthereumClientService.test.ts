@@ -1028,7 +1028,7 @@ describe('SimulationModeEthereumClientService', () => {
 				simulateWithZeroBaseFee: false,
 			} as const
 
-			const { balances, transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock, {})
+			const { balances, transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, createSimulatedInput([], {}), currentBlock)
 			assert.deepEqual(adjusted, getBaseFeeAdjustedTransactions(parentBlock, currentBlock.transactions, balances))
 			const adjustedTransaction = adjusted[0]?.signedTransaction
 			if (adjustedTransaction === undefined || adjustedTransaction.type !== '1559') throw new Error('missing adjusted 1559 transaction')
@@ -1065,7 +1065,7 @@ describe('SimulationModeEthereumClientService', () => {
 				simulateWithZeroBaseFee: false,
 			} as const
 
-			const { balances, transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock, {})
+			const { balances, transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, createSimulatedInput([], {}), currentBlock)
 			assert.deepEqual(adjusted, getBaseFeeAdjustedTransactions(parentBlock, currentBlock.transactions, balances))
 			const adjustedTransaction = adjusted[0]?.signedTransaction
 			if (adjustedTransaction === undefined || adjustedTransaction.type !== '7702') throw new Error('missing adjusted 7702 transaction')
@@ -1102,7 +1102,7 @@ describe('SimulationModeEthereumClientService', () => {
 				simulateWithZeroBaseFee: false,
 			} as const
 
-			const { transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock, {})
+			const { transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, createSimulatedInput([], {}), currentBlock)
 			assert.equal(adjusted.length, 2)
 			for (const transaction of adjusted) {
 				if (transaction.signedTransaction.type !== '1559') throw new Error('wrong transaction type')
@@ -1144,7 +1144,7 @@ describe('SimulationModeEthereumClientService', () => {
 				simulateWithZeroBaseFee: false,
 			} as const
 
-			const { transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock, {})
+			const { transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, createSimulatedInput([], {}), currentBlock)
 			assert.equal(adjusted.length, 3)
 			assert.equal(requestHandler.ethGetBalanceCalls.length, 1)
 			assert.equal(requestHandler.ethSimulateV1Calls.length, 0)
@@ -1181,7 +1181,7 @@ describe('SimulationModeEthereumClientService', () => {
 				simulateWithZeroBaseFee: false,
 			} as const
 
-			const { transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, [], currentBlock, {})
+			const { transactions: adjusted } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, createSimulatedInput([], {}), currentBlock)
 			assert.equal(adjusted.length, 3)
 			const firstAdjusted = adjusted[0]?.signedTransaction
 			const secondAdjusted = adjusted[1]?.signedTransaction

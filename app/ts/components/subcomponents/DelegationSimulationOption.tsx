@@ -65,7 +65,7 @@ export function DelegationSimulationOption({ activeAddress, rpcNetwork, simulati
 				} } />
 				<span>Simulate with delegate cleared</span>
 			</label>
-			<p class = 'paragraph'>This changes what-if simulations only. Transaction approval previews use the delegate on chain.</p>
+			<p class = 'paragraph'>Connected websites see simulations without the delegate while simulation mode is on. Signing and transaction approval previews use the delegate on chain.</p>
 			{ errorText.value === undefined ? <></> : <p class = 'paragraph' role = 'alert'>{ errorText.value }</p> }
 		</div>
 	</details>

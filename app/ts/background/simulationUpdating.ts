@@ -263,25 +263,24 @@ export const getGovernanceExecutionSimulationInput = (
 
 export const getGovernanceExecutionTokenBalancesAfter = async (
 	ethereum: EthereumClientService,
-	simulationInput: SimulationStateInput,
+	simulationInput: SimulationInput,
 	executionTransaction: PreSimulationTransaction,
 	executionTimestamp: Date,
 	callResult: Parameters<typeof getTokenBalancesAfterForTransaction>[3],
-	overrides: { executionStateOverrides: StateOverrides, simulationOverrides: StateOverrides },
+	executionStateOverrides: StateOverrides,
 ) => {
 	const simulationInputAfterExecution = getGovernanceExecutionSimulationInput(
-		simulationInput,
+		simulationInput.value,
 		executionTransaction,
 		executionTimestamp,
-		overrides.executionStateOverrides,
+		executionStateOverrides,
 	)
 	return await getTokenBalancesAfterForTransaction(
 		ethereum,
 		undefined,
-		simulationInputAfterExecution,
+		{ ...simulationInput, value: simulationInputAfterExecution },
 		callResult,
 		executionTransaction.signedTransaction,
-		overrides.simulationOverrides,
 	)
 }
 
@@ -316,7 +315,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const parentBlock = await ethereum.getBlock(undefined)
 		if (parentBlock === null) throw new Error('The latest block is null')
 		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
-		const simulationInput = await getCurrentSimulationInput(undefined, settingsSnapshot)
+		const simulationInput = await getCurrentSimulationInputWithOverrides(settingsSnapshot, 'what-if')
 		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.ethSimulateV1CallResult.gasUsed })
 		const executionTransaction: PreSimulationTransaction = {
 			signedTransaction: signedExecutionTransaction,
@@ -326,7 +325,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			transactionIdentifier: pendingTransaction.transactionIdentifier,
 		}
 		const governanceExecutionSimulationInput = getGovernanceExecutionSimulationInput(
-			simulationInput,
+			simulationInput.value,
 			executionTransaction,
 			contractExecutionResult.executionTimestamp,
 			contractExecutionResult.executionStateOverrides,
@@ -337,7 +336,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			executionTransaction,
 			contractExecutionResult.executionTimestamp,
 			contractExecutionResult.ethSimulateV1CallResult,
-			{ executionStateOverrides: contractExecutionResult.executionStateOverrides, simulationOverrides },
+			contractExecutionResult.executionStateOverrides,
 		)
 
 		const governanceExecutionBlock = governanceExecutionSimulationInput[governanceExecutionSimulationInput.length - 1]
@@ -374,9 +373,11 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 	}
 }
 
-export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, simulationInput: SimulationStateInput, ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
+export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
+		const signingSnapshot = await captureSimulationSnapshot('signing')
+		const simulationInput = signingSnapshot.simulationInput
 		// Call: 0x0, DelegateCall: 0x1
 		// https://github.com/safe-global/safe-smart-account/blob/main/contracts/libraries/Enum.sol
 		const isDelegateCall = gnosisSafeMessage.message.message.operation === 0x1n
@@ -405,7 +406,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			to: gnosisSafeMessage.to.address,
 			input: gnosisSafeMessage.parsedMessageData.input
 		} }
-		const simulationState = await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot('what-if'))
+		const simulationState = await getUpdatedSimulationState(ethereumClientService, signingSnapshot)
 		if (simulationState.kind === 'passthrough') throw new Error('Failed to fetch simulation state for Gnosis Safe transaction.')
 		if (simulationState.value.success === false) throw new JsonRpcResponseError(simulationState.value.jsonRpcError)
 		const resolvedSimulationState = simulationState.value
@@ -420,7 +421,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 		const gasLimit = gnosisSafeMessage.message.message.baseGas !== 0n ? {
 			gas: gnosisSafeMessage.message.message.baseGas
 		} : await (async () => {
-			const estimateGas = await simulateEstimateGasFromInput(ethereumClientService, undefined, createSimulatedInput(simulationInput, resolvedSimulationState.simulationOverrides ?? {}), transactionWithoutGas, undefined, temporaryAccountOverrides)
+			const estimateGas = await simulateEstimateGasFromInput(ethereumClientService, undefined, simulationInput, transactionWithoutGas, undefined, temporaryAccountOverrides)
 			if ('error' in estimateGas) throw new Error(estimateGas.error.message)
 			return { gas: estimateGas.gas }
 		})()
@@ -432,7 +433,7 @@ export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: Visua
 			originalRequestParameters: { method: 'eth_sendTransaction', params: [transaction] },
 			transactionIdentifier: gnosisSafeMessage.messageIdentifier,
 		}
-		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransactionToInputAndSimulate(ethereumClientService, undefined, createSimulatedInput(simulationInput, resolvedSimulationState.simulationOverrides ?? {}), [metaTransaction], undefined, temporaryAccountOverrides)
+		const simulationStateAfterGnosisSafeMetaTransaction = await appendTransactionToInputAndSimulate(ethereumClientService, undefined, simulationInput, [metaTransaction], undefined, temporaryAccountOverrides)
 		return { success: true as const, result: await visualizeSimulatorState(simulationStateAfterGnosisSafeMetaTransaction, ethereumClientService, tokenPriceService, undefined) }
 	} catch(error) {
 		console.warn(error)
@@ -485,7 +486,7 @@ export const prepareSimulationInputForRpc = async (input: SimulationInput, ether
 		if (parentBlock === undefined) return simulationInput
 		const baseFeeFixedInputStateBlocks: SimulationStateInputBlock[] = []
 		for (const block of simulationInput) {
-			const { transactions } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, baseFeeFixedInputStateBlocks, block, simulationOverrides)
+			const { transactions } = await getBaseFeeAdjustmentBalances(ethereum, undefined, parentBlock, createSimulatedInput(baseFeeFixedInputStateBlocks, simulationOverrides), block)
 			baseFeeFixedInputStateBlocks.push(modifyObject(block, { transactions }))
 		}
 		return baseFeeFixedInputStateBlocks

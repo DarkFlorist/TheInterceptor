@@ -413,11 +413,11 @@ describe('Gnosis Safe stack simulation', () => {
 
 		const tokenBalancesAfter = await modules.getGovernanceExecutionTokenBalancesAfter(
 			ethereum,
-			simulationInput,
+			{ kind: 'simulated', value: simulationInput, simulationOverrides: {} },
 			executionTransaction,
 			executionTimestamp,
 			{ status: 'success', returnData: new Uint8Array(), gasUsed: 21_000n, logs: [] },
-			{ executionStateOverrides, simulationOverrides: {} },
+			executionStateOverrides,
 		)
 
 		assert.equal(governanceExecutionSimulationInput.length, 2)
@@ -429,12 +429,13 @@ describe('Gnosis Safe stack simulation', () => {
 	})
 
 	const safeSimulationCases = [
-		{ name: 'simulates a normal Safe call on top of the existing stack without temporary overrides', operation: 0n, seedStack: true },
-		{ name: 'applies Safe delegatecall overrides during estimation and final simulation on top of the existing stack', operation: 1n, seedStack: true },
-		{ name: 'applies Safe delegatecall overrides during estimation and final simulation with an empty stack', operation: 1n, seedStack: false },
+		{ name: 'simulates a normal Safe call on top of the existing stack without temporary overrides', operation: 0n, seedStack: true, delegateClearingEnabled: false },
+		{ name: 'applies Safe delegatecall overrides during estimation and final simulation on top of the existing stack', operation: 1n, seedStack: true, delegateClearingEnabled: false },
+		{ name: 'applies Safe delegatecall overrides during estimation and final simulation with an empty stack', operation: 1n, seedStack: false, delegateClearingEnabled: false },
+		{ name: 'keeps delegate clearing out of a Safe co-signing preview', operation: 0n, seedStack: true, delegateClearingEnabled: true },
 	] as const
 
-	for (const { name, operation, seedStack } of safeSimulationCases) test(name, async () => {
+	for (const { name, operation, seedStack, delegateClearingEnabled } of safeSimulationCases) test(name, async () => {
 		await browserMock.reset()
 		const modules = await modulesPromise
 		const activeAddress = modules.defaultActiveAddresses[0]
@@ -572,6 +573,7 @@ describe('Gnosis Safe stack simulation', () => {
 			simulationMode: true,
 			independentActiveSimulationAddress: activeAddress.address,
 			activeRpcNetwork: fakeRpcNetwork,
+			delegateClearingPreferences: delegateClearingEnabled ? [{ address: activeAddress.address, chainId: fakeRpcNetwork.chainId }] : [],
 			interceptorTransactionStack: {
 				operations: stackOperations,
 			},
@@ -582,9 +584,10 @@ describe('Gnosis Safe stack simulation', () => {
 		assert.equal(simulationInput.length, seedStack ? 1 : 0)
 		assert.equal(simulationInput[0]?.transactions.length, seedStack ? 1 : undefined)
 
-		const reply = await modules.simulateGnosisSafeMetaTransaction(safeMessage, simulationInput, ethereum, tokenPriceService)
+		const reply = await modules.simulateGnosisSafeMetaTransaction(safeMessage, ethereum, tokenPriceService)
 		assert.equal(reply.success, true)
 		if (!reply.success) throw new Error(reply.errorMessage)
+		assert.deepEqual(reply.result.simulationState.simulationOverrides, {})
 
 		assert.equal(reply.result.simulationState.rpcNetwork.chainId, fakeRpcNetwork.chainId)
 		assert.equal(reply.result.simulationState.simulationStateInput.length, seedStack ? 2 : 1)
