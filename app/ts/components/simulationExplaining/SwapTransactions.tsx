@@ -8,6 +8,7 @@ import { assertNever } from '../../utils/typescript.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { extractTokenEvents } from '../../background/metadataUtils.js'
 import type { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthereumData.js'
+import { getToneClass } from '../ui-utils.js'
 
 type BeforeAfterBalance = funtypes.Static<typeof SwapAsset>
 const BeforeAfterBalance = funtypes.ReadonlyObject({
@@ -231,7 +232,7 @@ export function getSwapName(identifiedSwap: IdentifiedSwapWithMetadata) {
 
 // The paid leg is shown as a loss and the received leg as a gain, matching the outcome chips and the simulation summary.
 function VisualizeSwapAsset({ swapAsset, direction, renameAddressCallBack }: { swapAsset: SwapAsset, direction: 'pay' | 'receive', renameAddressCallBack: RenameAddressCallBack }) {
-	const amountClass = `coin-text--strong ${ direction === 'pay' ? 'coin-text--negative' : 'coin-text--positive' }`
+	const amountClass = `coin-text--strong ${ getToneClass('coin-text', direction === 'pay' ? 'negative' : 'positive') }`
 
 	switch (swapAsset.type) {
 		case 'ERC721': {

@@ -32,6 +32,25 @@ export function clickOutsideAlerter(ref: RefObject<HTMLDivElement>, callback: ()
 	}, [ref, callback]);
 }
 
+// The four meanings a status colour can carry anywhere in the UI.
+export type StatusTone = 'positive' | 'neutral' | 'warning' | 'negative'
+
+// The styled families and the tones each one has a `family--tone` rule for. Adding a tone here without its rule, or the other way round, fails the stylesheet test.
+export const toneClassFamilies = {
+	'transaction-check': ['positive', 'neutral', 'warning', 'negative'],
+	'outcome-chip': ['positive', 'neutral', 'warning', 'negative'],
+	'result-notice': ['positive', 'warning', 'negative'],
+	'connection-chip': ['positive', 'negative'],
+	'coin-text': ['positive', 'negative'],
+} as const satisfies Record<string, readonly StatusTone[]>
+
+type ToneClassFamily = keyof typeof toneClassFamilies
+
+// The only place a tone is turned into a class name, so a family can only be given a tone it has a rule for.
+export function getToneClass<Family extends ToneClassFamily>(family: Family, tone: (typeof toneClassFamilies)[Family][number]) {
+	return `${ family }--${ tone }`
+}
+
 // Pages add this class to their root so the stylesheet can tint the accent by mode: calm teal while simulating, amber while signing for real.
 export function getInterceptorModeClass(simulationMode: boolean) {
 	return simulationMode ? 'interceptor-mode-simulating' : 'interceptor-mode-signing'

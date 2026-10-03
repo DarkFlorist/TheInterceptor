@@ -6,14 +6,13 @@ import { abs, addressString } from '../../utils/bigint.js'
 import { grantsSpendingRights } from '../../utils/approvals.js'
 import { isUnlimitedErc20Approval } from '../../utils/erc20.js'
 import { AbbreviatedValue } from '../subcomponents/AbbreviatedValue.js'
+import { getToneClass, type StatusTone } from '../ui-utils.js'
 
 const MAX_VISIBLE_OUTCOME_CHIPS = 4
 
-type OutcomeTone = 'positive' | 'negative' | 'warning' | 'neutral'
-
 type OutcomeChip = {
 	key: string
-	tone: OutcomeTone
+	tone: StatusTone
 	content: ComponentChildren
 }
 
@@ -63,11 +62,14 @@ export function getAddressOutcomeChips(outcome: AddressOutcome, namedTokenIds: r
 		if (token.operator === undefined) return { key, tone: 'positive', content: <><TokenLogo tokenEntry = { token }/><span>{ token.symbol } approval removed</span></> }
 		return { key, tone: 'warning', content: <><span>All</span><TokenLogo tokenEntry = { token }/><span>{ token.symbol } approved</span></> }
 	})
-	const tokenIdApprovalChips = outcome.erc721TokenIdApprovalChanges.map((approval): OutcomeChip => ({
-		key: `erc721-approval-${ approval.tokenEntry.address.toString() }-${ approval.tokenId.toString() }`,
-		tone: 'warning',
-		content: <><span>{ getTokenIdLabel(approval.tokenEntry.address, approval.tokenId, namedTokenIds) }</span><TokenLogo tokenEntry = { approval.tokenEntry }/><span>{ approval.tokenEntry.symbol } approved</span></>,
-	}))
+	const tokenIdApprovalChips = outcome.erc721TokenIdApprovalChanges.map((approval): OutcomeChip => {
+		const granted = grantsSpendingRights({ kind: 'tokenId', approvedAddress: approval.approvedEntry.address })
+		return {
+			key: `erc721-approval-${ approval.tokenEntry.address.toString() }-${ approval.tokenId.toString() }`,
+			tone: granted ? 'warning' : 'positive',
+			content: <><span>{ getTokenIdLabel(approval.tokenEntry.address, approval.tokenId, namedTokenIds) }</span><TokenLogo tokenEntry = { approval.tokenEntry }/><span>{ approval.tokenEntry.symbol } { granted ? 'approved' : 'approval removed' }</span></>,
+		}
+	})
 	const chips = [...balanceChips, ...erc721Chips, ...erc1155Chips, ...erc20ApprovalChips, ...operatorChips, ...tokenIdApprovalChips]
 	// Newly granted approvals come first so they are never the chips hidden behind "+N more".
 	return [...chips.filter((chip) => chip.tone === 'warning'), ...chips.filter((chip) => chip.tone !== 'warning')]
@@ -84,19 +86,19 @@ type TransactionOutcomeChipsParams = {
 // Summarises what one transaction does to the active account, so a stack row can be read without opening it.
 export function TransactionOutcomeChips({ simTx, activeAddress, addressMetaData, tokenPriceEstimates, namedTokenIds }: TransactionOutcomeChipsParams) {
 	if (simTx.transactionStatus !== 'Transaction Succeeded') return <ul class = 'outcome-chips' aria-label = 'Transaction result'>
-		<li class = 'outcome-chip outcome-chip--negative'>Transaction fails</li>
+		<li class = { `outcome-chip ${ getToneClass('outcome-chip', 'negative') }` }>Transaction fails</li>
 	</ul>
 	if (activeAddress === undefined) return <></>
 	const addressMetaDataMap = new Map(addressMetaData.map((entry) => [addressString(entry.address), entry]))
 	const outcome = summarizeLogsForAddress([simTx], addressString(activeAddress), addressMetaDataMap, tokenPriceEstimates, namedTokenIds)
 	const chips = outcome === undefined ? [] : getAddressOutcomeChips(outcome, namedTokenIds)
 	if (chips.length === 0) return <ul class = 'outcome-chips' aria-label = 'Changes to your account'>
-		<li class = 'outcome-chip outcome-chip--neutral'>No changes to your account</li>
+		<li class = { `outcome-chip ${ getToneClass('outcome-chip', 'neutral') }` }>No changes to your account</li>
 	</ul>
 	const visibleChips = chips.slice(0, MAX_VISIBLE_OUTCOME_CHIPS)
 	const hiddenChipCount = chips.length - visibleChips.length
 	return <ul class = 'outcome-chips' aria-label = 'Changes to your account'>
-		{ visibleChips.map((chip) => <li key = { chip.key } class = { `outcome-chip outcome-chip--${ chip.tone }` }>{ chip.content }</li>) }
-		{ hiddenChipCount === 0 ? <></> : <li class = 'outcome-chip outcome-chip--neutral'>+{ hiddenChipCount } more</li> }
+		{ visibleChips.map((chip) => <li key = { chip.key } class = { `outcome-chip ${ getToneClass('outcome-chip', chip.tone) }` }>{ chip.content }</li>) }
+		{ hiddenChipCount === 0 ? <></> : <li class = { `outcome-chip ${ getToneClass('outcome-chip', 'neutral') }` }>+{ hiddenChipCount } more</li> }
 	</ul>
 }

@@ -6,6 +6,8 @@ import { tokenEventToTokenSymbolParams } from './CatchAllVisualizer.js'
 import type { RpcNetwork } from '../../../types/rpc.js'
 import type { TokenVisualizerResultWithMetadata } from '../../../types/EnrichedEthereumData.js'
 import { isUnlimitedErc20Approval } from '../../../utils/erc20.js'
+import { tokenEventGrantsSpendingRights } from '../../../utils/approvals.js'
+import { getToneClass } from '../../ui-utils.js'
 
 type SimpleTokenApprovalVisualisation = {
 	approval: TokenVisualizerResultWithMetadata
@@ -15,22 +17,29 @@ type SimpleTokenApprovalVisualisation = {
 }
 
 export function SimpleTokenApprovalVisualisation(param: SimpleTokenApprovalVisualisation) {
+	const granted = tokenEventGrantsSpendingRights(param.approval)
+	// A single token's approval is removed by approving the zero address, so there is no spender to show for it.
+	const removesTokenIdApproval = !granted && param.approval.type === 'ERC721'
+	const toneClass = `coin-text--strong ${ getToneClass('coin-text', granted ? 'negative' : 'positive') }`
 	return <div class = 'notification transaction-importance-box'>
-		<p class = 'summary-label'>Allow</p>
+		{ removesTokenIdApproval ? <></> : <>
+			<p class = 'summary-label'>{ granted ? 'Allow' : 'Stop allowing' }</p>
 			<div class = 'box summary-leg'>
 				<BigAddress
 					addressBookEntry = { param.approval.to }
 					renameAddressCallBack = { param.renameAddressCallBack }
 				/>
 			</div>
-		<p class = 'summary-label'>To spend</p>
+		</> }
+		<p class = 'summary-label'>{ removesTokenIdApproval ? 'Remove the approval for' : granted ? 'To spend' : 'From spending' }</p>
 		<div class = 'box summary-leg'>
 			<span class = 'log-table approval-amount-table'>
 				<div class = 'log-cell log-cell--right'>
-					{ param.approval.type === 'NFT All approval' ?
+					{ /* A removal names the token only: a zero allowance or "NONE" next to "Stop allowing" would read as a contradiction. */ }
+					{ !granted ? <></> : param.approval.type === 'NFT All approval' ?
 						<AllApproval
 							{ ...param.approval }
-							class = 'coin-text--strong coin-text--negative'
+							class = { toneClass }
 							fontSize = 'big'
 						/>
 					: <> { 'amount' in param.approval && isUnlimitedErc20Approval(param.approval.amount) ?
@@ -40,7 +49,7 @@ export function SimpleTokenApprovalVisualisation(param: SimpleTokenApprovalVisua
 								<TokenAmount
 									amount = { param.approval.amount }
 									tokenEntry = { param.approval.token }
-									class = 'coin-text--strong coin-text--negative'
+									class = { toneClass }
 									fontSize = 'big'
 								/>
 							: <></>
@@ -51,7 +60,7 @@ export function SimpleTokenApprovalVisualisation(param: SimpleTokenApprovalVisua
 						<TokenSymbol
 							{ ...tokenEventToTokenSymbolParams(param.approval) }
 							useFullTokenName = { false }
-							class = 'coin-text--strong coin-text--negative'
+							class = { toneClass }
 							renameAddressCallBack = { param.renameAddressCallBack }
 							fontSize = 'big'
 						/>

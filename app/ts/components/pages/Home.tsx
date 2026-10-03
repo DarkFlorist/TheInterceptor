@@ -33,6 +33,7 @@ import { DropDownMenu, DropDownMenuButtonContent } from '../subcomponents/DropDo
 import { Switch } from '../subcomponents/Switch.js'
 import { EmptyState } from '../subcomponents/EmptyState.js'
 import type { SignerName } from '../../types/signerTypes.js'
+import { getToneClass } from '../ui-utils.js'
 
 function scheduleAfterPaint(callback: () => void) {
 	if (typeof globalThis.requestAnimationFrame === 'function' && typeof globalThis.cancelAnimationFrame === 'function') {
@@ -652,8 +653,8 @@ function FirstCard(param: FirstCardParams) {
 						{ isActiveAddressLoading
 							? <InlineLoadingSkeleton ariaLabel = 'Loading signer connection state'/>
 							: signerAvailable.value
-								? <span class = 'popup-home-connection-status popup-data-reveal-inline connection-chip connection-chip--positive'>CONNECTED</span>
-								: <span class = 'popup-home-connection-status popup-data-reveal-inline connection-chip connection-chip--negative'>NOT CONNECTED</span>
+								? <span class = { `popup-home-connection-status popup-data-reveal-inline connection-chip ${ getToneClass('connection-chip', 'positive') }` }>CONNECTED</span>
+								: <span class = { `popup-home-connection-status popup-data-reveal-inline connection-chip ${ getToneClass('connection-chip', 'negative') }` }>NOT CONNECTED</span>
 						}
 					</p>
 					: <></>

@@ -45,7 +45,8 @@ import { Blockie } from '../subcomponents/SVGBlockie.js'
 import { getSimulationStackElementId } from '../../utils/simulationStackTargets.js'
 import { getSimulatedTransactionInsufficientBalanceMessage } from '../../simulation/insufficientBalance.js'
 
-function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
+// Whether a token event is good news for the given address; it picks the colour of the event's row.
+export function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddressInReferenceFrame: bigint) {
 	if (visResult.type === 'ERC20') {
 		if (!visResult.isApproval) {
 			return visResult.amount >= 0 // simple transfer
@@ -60,6 +61,7 @@ function isPositiveEvent(visResult: TokenVisualizerResultWithMetadata, ourAddres
 	}
 
 	if (visResult.isApproval) {
+		if (!tokenEventGrantsSpendingRights(visResult)) return visResult.from.address === ourAddressInReferenceFrame // removing an approval is positive for the owner
 		return visResult.to.address === ourAddressInReferenceFrame // approval is only positive if we are getting approved
 	}
 

@@ -4,7 +4,7 @@ import { ErrorComponent } from '../subcomponents/Error.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
-import { tryFocusingTabOrWindow } from '../ui-utils.js'
+import { getInterceptorModeClass, tryFocusingTabOrWindow } from '../ui-utils.js'
 import type { PendingChainChangeConfirmationPromise } from '../../types/user-interface-types.js'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
@@ -73,7 +73,7 @@ export function ChangeChain() {
 	const approvePending = approveChainChangeState.value.state === 'pending'
 	const websiteIcon = sanitizeStoredWebsiteIcon(chainChangeData.value.website.icon)
 	return (
-		<main>
+		<main class = { getInterceptorModeClass(chainChangeData.value.simulationMode) }>
 			<div class = 'block change-chain-window'>
 				<header class = 'card-header window-header'>
 					<div class = 'card-header-icon unset-cursor'>

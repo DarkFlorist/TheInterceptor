@@ -2,6 +2,7 @@ import { useEffect } from 'preact/hooks'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { requestPopupCompleteVisualizedSimulation, requestPopupSimulationMetadata, sendPopupMessageToBackgroundPage, sendPopupReadyAndListening } from '../../background/backgroundUtils.js'
 import { addressEditEntry, tryFocusingTabOrWindow } from '../ui-utils.js'
+import { useInterceptorModeClass } from '../useInterceptorModeClass.js'
 import type { PendingFetchSimulationStackRequestPromise } from '../../types/user-interface-types.js'
 import { type ReadonlySignal, Signal, useComputed, useSignal } from '@preact/signals'
 import { noReplyExpectingBrowserRuntimeOnMessageListener } from '../../utils/browser.js'
@@ -183,10 +184,11 @@ export function FetchSimulationStack() {
 	const activeAddress = useSignal<bigint | undefined>(undefined)
 	const addressMetaData = useComputed(() => simulationMetadata.value?.addressBookEntries ?? [])
 
+	const modeClass = useInterceptorModeClass()
 	if (changeRequest.value === undefined || simulationMetadata.value === undefined) return <main> <CenterToPageTextSpinner text = { 'Getting simulation stack...'  }/></main>
 	const websiteIcon = sanitizeStoredWebsiteIcon(changeRequest.value.website.icon)
 	return (
-		<main>
+		<main class = { modeClass }>
 			<Hint>
 				<FetchSimulationStackModal modalState = { modalState } rpcEntries = { rpcEntries } />
 				<div class = 'block fetch-stack-request'>

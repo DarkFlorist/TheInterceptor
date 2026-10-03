@@ -24,6 +24,10 @@ import type { NonSimulatedAndVisualizedTransaction, PreSimulationTransaction, Si
 import type { Website } from '../../app/ts/types/websiteAccessTypes.js'
 import { installDomMock } from './domMock.js'
 import { readInterceptorAppCss } from './cssTestUtils.js'
+import { signal } from '@preact/signals'
+import { SimpleTokenApprovalVisualisation } from '../../app/ts/components/simulationExplaining/customExplainers/SimpleTokenApprovalVisualisation.js'
+import { Erc721TokenIdApprovalChanges } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
+import { isPositiveEvent } from '../../app/ts/components/simulationExplaining/Transactions.js'
 
 const website: Website = { websiteOrigin: 'https://example.com', title: 'Example', icon: undefined }
 const rpcNetwork: RpcNetwork = { name: 'Ethereum', chainId: 1n, httpsRpc: 'https://example.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
@@ -304,16 +308,17 @@ describe('transaction outcome UI', () => {
 
 	test('keeps both layout classes on the signer connection chip', async () => {
 		const homeSource = await Bun.file('app/ts/components/pages/Home.tsx').text()
-		assert.match(homeSource, /class = 'popup-home-connection-status popup-data-reveal-inline connection-chip connection-chip--positive'>CONNECTED/)
-		assert.match(homeSource, /class = 'popup-home-connection-status popup-data-reveal-inline connection-chip connection-chip--negative'>NOT CONNECTED/)
+		assert.match(homeSource, /class = \{ `popup-home-connection-status popup-data-reveal-inline connection-chip \$\{ getToneClass\('connection-chip', 'positive'\) \}` \}>CONNECTED/)
+		assert.match(homeSource, /class = \{ `popup-home-connection-status popup-data-reveal-inline connection-chip \$\{ getToneClass\('connection-chip', 'negative'\) \}` \}>NOT CONNECTED/)
 	})
 
-	test('classifies granted and removed approvals with one shared rule', () => {
+	test('classifies granted and removed approvals with one shared rule', async () => {
 		assert.equal(grantsSpendingRights({ kind: 'erc20Allowance', allowance: 1n }), true)
 		assert.equal(grantsSpendingRights({ kind: 'erc20Allowance', allowance: 0n }), false)
 		assert.equal(grantsSpendingRights({ kind: 'operator', operatorApproved: true }), true)
 		assert.equal(grantsSpendingRights({ kind: 'operator', operatorApproved: false }), false)
-		assert.equal(grantsSpendingRights({ kind: 'tokenId' }), true)
+		assert.equal(grantsSpendingRights({ kind: 'tokenId', approvedAddress: unknownAddress.address }), true)
+		assert.equal(grantsSpendingRights({ kind: 'tokenId', approvedAddress: 0n }), false)
 		const collection: Erc721Entry = { type: 'ERC721', name: 'Collection', symbol: 'NFT', address: 0x6000000000000000000000000000000000000006n, entrySource: 'DarkFloristMetadata' }
 		const createNftEvent = (logInformation: TokenEvent['logInformation']): TokenEvent => ({ ...createTokenEvent(usdc, sender, unknownAddress, 0n, true), address: collection.address, loggersAddressBookEntry: collection, logInformation })
 		const erc20Grant = createTokenEvent(usdc, sender, unknownAddress, 5n, true)
@@ -321,15 +326,18 @@ describe('transaction outcome UI', () => {
 		const operatorGrant = createNftEvent({ logObject: undefined, type: 'NFT All approval', from: sender, to: unknownAddress, token: collection, allApprovalAdded: true, isApproval: true })
 		const operatorRevocation = createNftEvent({ logObject: undefined, type: 'NFT All approval', from: sender, to: unknownAddress, token: collection, allApprovalAdded: false, isApproval: true })
 		const tokenIdGrant = createNftEvent({ logObject: undefined, type: 'ERC721', from: sender, to: unknownAddress, token: collection, tokenId: 7n, isApproval: true })
+		// ERC721 removes a single token's approval by approving the zero address.
+		const zeroAddress: AddressBookEntry = { type: 'contact', name: '0x0000000000000000000000000000000000000000', address: 0n, entrySource: 'FilledIn' }
+		const tokenIdRevocation = createNftEvent({ logObject: undefined, type: 'ERC721', from: sender, to: zeroAddress, token: collection, tokenId: 7n, isApproval: true })
 		assert.deepEqual(getApprovalChangeOfTokenEvent(erc20Grant.logInformation), { kind: 'erc20Allowance', allowance: 5n })
 		assert.deepEqual(getApprovalChangeOfTokenEvent(operatorRevocation.logInformation), { kind: 'operator', operatorApproved: false })
-		assert.deepEqual(getApprovalChangeOfTokenEvent(tokenIdGrant.logInformation), { kind: 'tokenId' })
+		assert.deepEqual(getApprovalChangeOfTokenEvent(tokenIdGrant.logInformation), { kind: 'tokenId', approvedAddress: unknownAddress.address })
 		// A transfer is not an approval, so it can never be read as a grant.
 		assert.equal(getApprovalChangeOfTokenEvent(createTokenEvent(usdc, sender, unknownAddress, 5n, false).logInformation), undefined)
 		assert.equal(tokenEventGrantsSpendingRights(createTokenEvent(usdc, sender, unknownAddress, 5n, false).logInformation), false)
 		// The confirmation checks, the transaction title and the stack row chips must agree on the same transaction, for every kind of grant and revocation.
-		const addressMetaData = new Map([sender, unknownAddress, usdc, collection].map((entry) => [addressString(entry.address), entry]))
-		for (const [approvalEvent, granted] of [[erc20Grant, true], [erc20Revocation, false], [operatorGrant, true], [operatorRevocation, false], [tokenIdGrant, true]] as const) {
+		const addressMetaData = new Map([sender, unknownAddress, zeroAddress, usdc, collection].map((entry) => [addressString(entry.address), entry]))
+		for (const [approvalEvent, granted] of [[erc20Grant, true], [erc20Revocation, false], [operatorGrant, true], [operatorRevocation, false], [tokenIdGrant, true], [tokenIdRevocation, false]] as const) {
 			const expectedTone = granted ? 'warning' : 'positive'
 			const transaction = createSimulatedTransaction({ events: [approvalEvent] })
 			assert.equal(tokenEventGrantsSpendingRights(approvalEvent.logInformation), granted)
@@ -340,6 +348,55 @@ describe('transaction outcome UI', () => {
 		}
 		assert.equal(identifyTransaction(createSimulatedTransaction({ to: collection, events: [operatorGrant] })).title, 'NFT ALL Approval')
 		assert.equal(identifyTransaction(createSimulatedTransaction({ to: collection, events: [operatorRevocation] })).title, 'Remove NFT All Approval')
+		assert.equal(identifyTransaction(createSimulatedTransaction({ to: collection, events: [tokenIdGrant] })).title, '#7 NFT Approval')
+		assert.equal(identifyTransaction(createSimulatedTransaction({ to: collection, events: [tokenIdRevocation] })).title, 'Remove #7 NFT Approval')
+		// The token event rows colour a removal as good news for the owner and a grant as bad news.
+		for (const [approvalEvent, granted] of [[erc20Grant, true], [erc20Revocation, false], [operatorGrant, true], [operatorRevocation, false], [tokenIdGrant, true], [tokenIdRevocation, false]] as const) {
+			assert.equal(isPositiveEvent(approvalEvent.logInformation, sender.address), !granted)
+		}
+
+		const renderApprovalPanel = async (approvalEvent: TokenEvent) => {
+			const dom = installDomMock()
+			try {
+				await act(() => render(<SimpleTokenApprovalVisualisation approval = { approvalEvent.logInformation } renameAddressCallBack = { () => undefined } transactionGasses = { { gasSpent: 21_000n, realizedGasPrice: 1n } } rpcNetwork = { rpcNetwork }/>, dom.document.body))
+				const labels = collectByTag(dom.document.body, 'P').filter((paragraph) => (paragraph.getAttribute?.('class') ?? '').split(' ').includes('summary-label')).map((paragraph) => paragraph.textContent)
+				const toneClasses = collectByTag(dom.document.body, 'SPAN').map((span) => span.getAttribute?.('class') ?? '').filter((className) => className.includes('coin-text--strong'))
+				return { labels, toneClasses, text: (dom.document.body.textContent ?? '').replace(/\s+/g, ' ') }
+			} finally {
+				render(null, dom.document.body)
+				dom.restore()
+			}
+		}
+		const grantPanel = await renderApprovalPanel(erc20Grant)
+		assert.deepEqual(grantPanel.labels, ['Allow', 'To spend'])
+		assert.equal(grantPanel.toneClasses.every((className) => className.includes('coin-text--negative')), true)
+		// A removal never shows an amount or "NONE" next to "Stop allowing", and a single token's removal has no spender at all.
+		const allowanceRemovalPanel = await renderApprovalPanel(erc20Revocation)
+		assert.deepEqual(allowanceRemovalPanel.labels, ['Stop allowing', 'From spending'])
+		assert.equal(allowanceRemovalPanel.toneClasses.every((className) => className.includes('coin-text--positive')), true)
+		const operatorRemovalPanel = await renderApprovalPanel(operatorRevocation)
+		assert.deepEqual(operatorRemovalPanel.labels, ['Stop allowing', 'From spending'])
+		assert.doesNotMatch(operatorRemovalPanel.text, /NONE/)
+		const tokenIdRemovalPanel = await renderApprovalPanel(tokenIdRevocation)
+		assert.deepEqual(tokenIdRemovalPanel.labels, ['Remove the approval for'])
+		assert.doesNotMatch(tokenIdRemovalPanel.text, /0x0000000000000000000000000000000000000000/)
+		assert.match(tokenIdRemovalPanel.text, /#7/)
+
+		// The account summary shows a removed single-token approval as a positive row without a spender.
+		const dom = installDomMock()
+		try {
+			const approvalChange = (approvedEntry: AddressBookEntry) => ({ tokenEntry: collection, tokenId: 7n, approvedEntry })
+			await act(() => render(<Erc721TokenIdApprovalChanges Erc721TokenIdApprovalChanges = { [approvalChange(zeroAddress), approvalChange(unknownAddress)] } positiveColor = 'positive' negativeColor = 'negative' isImportant = { signal(true) } renameAddressCallBack = { () => undefined }/>, dom.document.body))
+			const rows = collectByTag(dom.document.body, 'DIV').filter((row) => (row.getAttribute?.('class') ?? '').includes('token-box'))
+			assert.equal(rows.length, 2)
+			assert.match(rows[0]?.getAttribute?.('class') ?? '', /positive-box/)
+			assert.match((rows[0]?.textContent ?? '').replace(/\s+/g, ' '), /Remove approval for/)
+			assert.match(rows[1]?.getAttribute?.('class') ?? '', /negative-box/)
+			assert.match((rows[1]?.textContent ?? '').replace(/\s+/g, ' '), /Approve/)
+		} finally {
+			render(null, dom.document.body)
+			dom.restore()
+		}
 	})
 
 	test('shows a swap as a paid leg and a received leg from the sender\'s point of view', async () => {

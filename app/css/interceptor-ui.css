@@ -67,7 +67,7 @@ form[role='search'] fieldset {
 	align-items: center;
 	border: 1px solid var(--line-color);
 	padding: 0.25rem;
-	border-radius: 8px;
+	border-radius: var(--radius-control);
 	min-width: 0;
 }
 
@@ -121,7 +121,7 @@ input[role=switch] {
 	width: 1.75rem;
 	background: var(--bg-color);
 	display: block;
-	border-radius: 1rem;
+	border-radius: var(--radius-pill);
 	padding: 4px;
 	border: 0 none;
 	cursor: pointer;

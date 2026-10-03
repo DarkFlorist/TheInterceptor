@@ -4,14 +4,15 @@ import type { TokenVisualizerResultWithMetadata } from '../types/EnrichedEthereu
 export type ApprovalChange =
 	| { kind: 'erc20Allowance', allowance: bigint }
 	| { kind: 'operator', operatorApproved: boolean }
-	| { kind: 'tokenId' }
+	| { kind: 'tokenId', approvedAddress: bigint }
 
 // The rule for whether an approval grants spending rights. The confirmation checks, the transaction title, the token event rows, the stack row chips and the account summary all decide through it, so they cannot disagree about the same transaction. The log summary stores an operator only when this rule says it was granted.
 export function grantsSpendingRights(change: ApprovalChange) {
 	switch (change.kind) {
 		case 'erc20Allowance': return change.allowance > 0n
 		case 'operator': return change.operatorApproved
-		case 'tokenId': return true
+		// ERC721 clears the approval of a single token by approving the zero address.
+		case 'tokenId': return change.approvedAddress !== 0n
 	}
 }
 
@@ -21,7 +22,7 @@ export function getApprovalChangeOfTokenEvent(tokenEvent: TokenVisualizerResultW
 	switch (tokenEvent.type) {
 		case 'ERC20': return { kind: 'erc20Allowance', allowance: tokenEvent.amount }
 		case 'NFT All approval': return { kind: 'operator', operatorApproved: tokenEvent.allApprovalAdded }
-		case 'ERC721': return { kind: 'tokenId' }
+		case 'ERC721': return { kind: 'tokenId', approvedAddress: tokenEvent.to.address }
 	}
 }
 

@@ -23,13 +23,13 @@ fieldset[disabled] .input {
 }
 
 .card-header:first-child, .card-content:first-child {
-  border-top-left-radius: 0.25rem;
-  border-top-right-radius: 0.25rem;
+  border-top-left-radius: var(--radius-tiny);
+  border-top-right-radius: var(--radius-tiny);
 }
 
 .card-header:last-child, .card-content:last-child {
-  border-bottom-left-radius: 0.25rem;
-  border-bottom-right-radius: 0.25rem;
+  border-bottom-left-radius: var(--radius-tiny);
+  border-bottom-right-radius: var(--radius-tiny);
 }
 
 .card-header {
@@ -162,7 +162,7 @@ button.dropdown-item {
 }
 
 .menu-list a {
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--text-color);
   display: block;
   padding: 0.5em 0.75em;
@@ -230,13 +230,13 @@ button.dropdown-item {
 
 .modal-card-head {
   border-bottom: 1px solid var(--hairline-color);
-  border-top-left-radius: 6px;
-  border-top-right-radius: 6px;
+  border-top-left-radius: var(--radius-small);
+  border-top-right-radius: var(--radius-small);
 }
 
 .modal-card-foot {
-  border-bottom-left-radius: 6px;
-  border-bottom-right-radius: 6px;
+  border-bottom-left-radius: var(--radius-small);
+  border-bottom-right-radius: var(--radius-small);
   border-top: 1px solid var(--hairline-color);
 }
 

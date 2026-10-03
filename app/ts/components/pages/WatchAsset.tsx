@@ -9,6 +9,8 @@ import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { SignerLogoText, getPrettySignerName } from '../subcomponents/signers.js'
 import { SmallAddress } from '../subcomponents/address.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
+import { getToneClass } from '../ui-utils.js'
+import { useInterceptorModeClass } from '../useInterceptorModeClass.js'
 
 export const WATCH_ASSET_TITLE = 'Add to Address Book Edit Request'
 
@@ -86,8 +88,8 @@ export function WalletForwardingResult({ pendingRequest }: { pendingRequest: Pen
 	const status = pendingRequest.forwardingStatus
 	if (status === undefined || status.status === 'pending') return <></>
 	const walletName = pendingRequest.forwardToSigner === undefined ? 'The wallet' : getPrettySignerName(pendingRequest.forwardToSigner.signerName)
-	if (status.status === 'error') return <div class = 'notification result-notice result-notice--negative' role = 'alert'>{ status.message }</div>
-	return <div class = { `notification result-notice ${ status.accepted ? 'result-notice--positive' : 'result-notice--warning' }` } role = 'status'>
+	if (status.status === 'error') return <div class = { `notification result-notice ${ getToneClass('result-notice', 'negative') }` } role = 'alert'>{ status.message }</div>
+	return <div class = { `notification result-notice ${ getToneClass('result-notice', status.accepted ? 'positive' : 'warning') }` } role = 'status'>
 		{ status.accepted ? `${ walletName } added the asset.` : `${ walletName } did not add the asset.` }
 	</div>
 }
@@ -148,10 +150,11 @@ export function WatchAsset() {
 		}
 	}
 
+	const modeClass = useInterceptorModeClass()
 	if (request.value === undefined) return <main></main>
 	const { website, forwardToSigner } = request.value
 	const websiteIcon = sanitizeStoredWebsiteIcon(website.icon)
-	return <main>
+	return <main class = { modeClass }>
 		<div class = 'block watch-asset-window'>
 			<header class = 'card-header window-header'>
 				<div class = 'card-header-title'><p class = 'paragraph'>{ WATCH_ASSET_TITLE }</p></div>

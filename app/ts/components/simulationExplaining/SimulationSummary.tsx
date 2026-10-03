@@ -274,7 +274,27 @@ type Erc721TokenIdApprovalChangesParams = {
 export function Erc721TokenIdApprovalChanges(param: Erc721TokenIdApprovalChangesParams ) {
 	return <> { param.Erc721TokenIdApprovalChanges.length > 0 ?
 		<>
-			{ param.Erc721TokenIdApprovalChanges.map( (approvalsChange) => (
+			{ param.Erc721TokenIdApprovalChanges.map( (approvalsChange) => !grantsSpendingRights({ kind: 'tokenId', approvedAddress: approvalsChange.approvedEntry.address }) ? (
+				<div key = { `${ approvalsChange.tokenEntry.address.toString() }-${ approvalsChange.tokenId.toString() }-removed` } class = 'vertical-center summary-token-change'>
+					<div class = { param.isImportant.value ? 'summary-token-change-box box token-box positive-box': 'summary-token-change-box' }>
+						<table class = 'log-table'>
+							<div class = 'log-cell'>
+								<p class = 'ellipsis' style = { `color: ${ param.positiveColor }` }> Remove approval for</p>
+							</div>
+							<div class = 'log-cell'>
+								<TokenOrEth
+									tokenEntry = { approvalsChange.tokenEntry }
+									tokenId = { approvalsChange.tokenId }
+									style = { { color: param.positiveColor } }
+									useFullTokenName = { true }
+									renameAddressCallBack = { param.renameAddressCallBack }
+									fontSize = 'normal'
+								/>
+							</div>
+						</table>
+					</div>
+				</div>
+			) : (
 				<div key = { `${ approvalsChange.tokenEntry.address.toString() }-${ approvalsChange.tokenId.toString() }-${ approvalsChange.approvedEntry.address.toString() }` } class = 'vertical-center summary-token-change'>
 					<div class = { param.isImportant.value ? 'summary-token-change-box box token-box negative-box': 'summary-token-change-box' }>
 						<table class = 'log-table'>
@@ -776,6 +796,7 @@ function SimulatedSignaturesSummary({ simulatedSignatures, renameAddressCallBack
 			<ul class = 'simulation-summary-signature-list'>
 				{ simulatedSignatures.map((signature) => {
 					const status = getSimulatedSignatureSummaryStatus(signature)
+					// The modifier is the signature's simulation state (simulated, warning or invalid), not one of the shared status tones.
 					return <li
 						key = { signature.messageIdentifier.toString() }
 						class = { `simulation-summary-signature simulation-summary-signature--${ status.modifier }` }

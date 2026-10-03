@@ -106,7 +106,7 @@ describe('narrow text layout CSS', () => {
 		assert.match(addressEditorDisclosureChevron, /height\s*:\s*16px\s*;/)
 		assert.doesNotMatch(css, /summary::?after\s*\{/)
 		const addressEditorSection = expectRule(css, '.address-editor-section')
-		assert.match(addressEditorSection, /border-radius\s*:\s*8px\s*;/)
+		assert.match(addressEditorSection, /border-radius\s*:\s*var\(--radius-control\)\s*;/)
 		const addressEditorSectionHeading = expectRule(css, '.address-editor-section-heading')
 		assert.match(addressEditorSectionHeading, /align-items\s*:\s*center\s*;/)
 		const safeSignerOwnerAddress = expectRule(css, '.safe-signer-owner-option > .inline-card')

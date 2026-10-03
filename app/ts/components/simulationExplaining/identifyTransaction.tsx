@@ -67,13 +67,25 @@ function identifySimpleApproval(simTx: SimulatedAndVisualizedTransaction) {
 					identifiedTransaction: simTx,
 				}
 			}
-			case 'ERC721': return {
-				type: 'SimpleTokenApproval' as const,
-				title: `#${ tokenResult.tokenId } ${ symbol } Approval`,
-				signingAction: `Approve #${ tokenResult.tokenId } ${ symbol }`,
-				simulationAction: `Simulate #${ tokenResult.tokenId } ${ symbol } Approval`,
-				rejectAction: `Reject #${ tokenResult.tokenId } ${ symbol } Approval`,
-				identifiedTransaction: simTx,
+			case 'ERC721': {
+				if (!tokenEventGrantsSpendingRights(tokenResult)) {
+					return {
+						type: 'SimpleTokenApproval' as const,
+						title: `Remove #${ tokenResult.tokenId } ${ symbol } Approval`,
+						signingAction: `Remove Approval for #${ tokenResult.tokenId } ${ symbol }`,
+						simulationAction: `Simulate Removal of #${ tokenResult.tokenId } ${ symbol } Approval`,
+						rejectAction: `Reject #${ tokenResult.tokenId } ${ symbol } Approval Removal`,
+						identifiedTransaction: simTx,
+					}
+				}
+				return {
+					type: 'SimpleTokenApproval' as const,
+					title: `#${ tokenResult.tokenId } ${ symbol } Approval`,
+					signingAction: `Approve #${ tokenResult.tokenId } ${ symbol }`,
+					simulationAction: `Simulate #${ tokenResult.tokenId } ${ symbol } Approval`,
+					rejectAction: `Reject #${ tokenResult.tokenId } ${ symbol } Approval`,
+					identifiedTransaction: simTx,
+				}
 			}
 			case 'ERC1155': return {
 				type: 'SimpleTokenApproval' as const,

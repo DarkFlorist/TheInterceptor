@@ -6,7 +6,7 @@ import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
 import { sendPopupMessageToBackgroundPage } from '../../background/backgroundUtils.js'
 import Hint from '../subcomponents/Hint.js'
-import { addressEditEntry, convertNumberToCharacterRepresentationIfSmallEnough, getInterceptorModeClass } from '../ui-utils.js'
+import { addressEditEntry, convertNumberToCharacterRepresentationIfSmallEnough, getInterceptorModeClass, getToneClass } from '../ui-utils.js'
 import { ChangeActiveAddress } from './ChangeActiveAddress.js'
 import { DinoSays } from '../subcomponents/DinoSays.js'
 import { getPrettySignerName } from '../subcomponents/signers.js'
@@ -39,13 +39,13 @@ function AccessCapabilities() {
 	return <div class = 'access-capabilities'>
 		<p class = 'access-capabilities-heading'>This site will be able to</p>
 		<ul class = 'transaction-checks access-capabilities-list'>
-			<li class = 'transaction-check transaction-check--positive'><span class = 'transaction-check-icon'><CheckMarkIcon/></span><span class = 'transaction-check-text'>See this address and its public balances and activity</span></li>
-			<li class = 'transaction-check transaction-check--positive'><span class = 'transaction-check-icon'><CheckMarkIcon/></span><span class = 'transaction-check-text'>Ask you to review transactions and signatures</span></li>
+			<li class = { `transaction-check ${ getToneClass('transaction-check', 'positive') }` }><span class = 'transaction-check-icon'><CheckMarkIcon/></span><span class = 'transaction-check-text'>See this address and its public balances and activity</span></li>
+			<li class = { `transaction-check ${ getToneClass('transaction-check', 'positive') }` }><span class = 'transaction-check-icon'><CheckMarkIcon/></span><span class = 'transaction-check-text'>Ask you to review transactions and signatures</span></li>
 		</ul>
 		<p class = 'access-capabilities-heading'>It will not be able to</p>
 		<ul class = 'transaction-checks access-capabilities-list'>
-			<li class = 'transaction-check transaction-check--negative'><span class = 'transaction-check-icon'><XMarkIcon/></span><span class = 'transaction-check-text'>Send transactions or sign anything without your confirmation</span></li>
-			<li class = 'transaction-check transaction-check--negative'><span class = 'transaction-check-icon'><XMarkIcon/></span><span class = 'transaction-check-text'>See your other addresses unless you grant access to them</span></li>
+			<li class = { `transaction-check ${ getToneClass('transaction-check', 'negative') }` }><span class = 'transaction-check-icon'><XMarkIcon/></span><span class = 'transaction-check-text'>Send transactions or sign anything without your confirmation</span></li>
+			<li class = { `transaction-check ${ getToneClass('transaction-check', 'negative') }` }><span class = 'transaction-check-icon'><XMarkIcon/></span><span class = 'transaction-check-text'>See your other addresses unless you grant access to them</span></li>
 		</ul>
 	</div>
 }

@@ -4,11 +4,10 @@ import type { TokenVisualizerResultWithMetadata } from '../../types/EnrichedEthe
 import type { SimulatedAndVisualizedTransaction } from '../../types/visualizer-types.js'
 import { tokenEventGrantsSpendingRights } from '../../utils/approvals.js'
 import { CheckMarkIcon, WarningSignIcon, XMarkIcon } from '../subcomponents/icons.js'
-
-type TransactionCheckTone = 'positive' | 'neutral' | 'warning' | 'negative'
+import { getToneClass, type StatusTone } from '../ui-utils.js'
 
 export type TransactionCheck = {
-	tone: TransactionCheckTone
+	tone: StatusTone
 	text: string
 }
 
@@ -43,7 +42,7 @@ export function getTransactionChecks(simTx: SimulatedAndVisualizedTransaction): 
 	return [statusCheck, destinationCheck, approvalCheck, ...flaggedChecks]
 }
 
-function TransactionCheckIcon({ tone }: { tone: TransactionCheckTone }) {
+function TransactionCheckIcon({ tone }: { tone: StatusTone }) {
 	switch (tone) {
 		case 'positive': return <CheckMarkIcon/>
 		case 'neutral': return <span class = 'transaction-check-dot'/>
@@ -54,7 +53,7 @@ function TransactionCheckIcon({ tone }: { tone: TransactionCheckTone }) {
 
 export function TransactionChecks({ simTx }: { simTx: SimulatedAndVisualizedTransaction }) {
 	return <ul class = 'transaction-checks' aria-label = 'Transaction checks'>
-		{ getTransactionChecks(simTx).map((check) => <li key = { check.text } class = { `transaction-check transaction-check--${ check.tone }` }>
+		{ getTransactionChecks(simTx).map((check) => <li key = { check.text } class = { `transaction-check ${ getToneClass('transaction-check', check.tone) }` }>
 			<span class = 'transaction-check-icon'><TransactionCheckIcon tone = { check.tone }/></span>
 			<span class = 'transaction-check-text'>{ check.text }</span>
 		</li>) }

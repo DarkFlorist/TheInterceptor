@@ -576,7 +576,7 @@ header:has(form[role='search']) h1 {
 	color: var(--tooltip-text-color);
 	padding: 0.3125rem 0.6875rem;
 	border: 0 none;
-	border-radius: 4px;
+	border-radius: var(--radius-tiny);
 	font-size: 0.8125rem;
 	white-space: nowrap;
 	pointer-events: none;
@@ -587,7 +587,7 @@ header:has(form[role='search']) h1 {
 	background: unset;
 	color: var(--text-color);
 	border: 1px solid var(--white-alpha-20);
-	border-radius: 4px;
+	border-radius: var(--radius-tiny);
 }
 
 .chainSelector {
@@ -676,8 +676,8 @@ header:has(form[role='search']) h1 {
 .card-content-header {
 	padding-left: 10px;
 	background-color: var(--card-content-bg-color);
-	border-bottom-left-radius: 0.25rem;
-	border-bottom-right-radius: 0.25rem;
+	border-bottom-left-radius: var(--radius-tiny);
+	border-bottom-right-radius: var(--radius-tiny);
 	border-left: 1px solid var(--white-alpha-20);
 	border-right: 1px solid var(--white-alpha-20);
 	border-bottom: 1px solid var(--white-alpha-20);
@@ -1850,7 +1850,7 @@ p.paragraph.summary-transaction-input-label {
 
 .watch-asset-proposal {
 	background-color: var(--alpha-005);
-	border-radius: 4px;
+	border-radius: var(--radius-tiny);
 	padding: 10px;
 	margin-bottom: 12px;
 }
@@ -2194,8 +2194,8 @@ p.paragraph.summary-transaction-input-label {
 
 /* Matches the specificity of the card corner-radius inheritance rule so the explicit bottom radii keep winning. */
 .card > .card-content.collapsible-card-content {
-	border-bottom-left-radius: 0.25rem;
-	border-bottom-right-radius: 0.25rem;
+	border-bottom-left-radius: var(--radius-tiny);
+	border-bottom-right-radius: var(--radius-tiny);
 	border-left: 2px solid var(--card-bg-color);
 	border-right: 2px solid var(--card-bg-color);
 	border-bottom: 2px solid var(--card-bg-color);

@@ -6,6 +6,7 @@ import { InlineCard } from '../../app/ts/components/subcomponents/InlineCard.js'
 import { MultilineCard } from '../../app/ts/components/subcomponents/MultilineCard.js'
 import { installDomMock } from './domMock.js'
 import { interceptorAppStylesheetPaths, readInterceptorAppCss } from './cssTestUtils.js'
+import { getToneClass, toneClassFamilies } from '../../app/ts/components/ui-utils.js'
 
 type TestNode = {
 	readonly childNodes?: readonly TestNode[]
@@ -274,6 +275,9 @@ describe('UI audit fixes', () => {
 				return prefixedProperty !== undefined && standardDeclarations.has(`${ line.enclosingSelector }|${ prefixedProperty }`)
 			}).map((line) => line.text)
 			assert.deepEqual(redundantPrefixes, [], stylesheetPath)
+			// Corner radii come from the theme's radius scale. Hairline rounding below 4px and the asymmetric address tag are the only literals.
+			const literalRadii = cssLines.filter((line) => /^border(-[a-z]+)*-radius:/.test(line.text) && /(?<![\w.])([4-9]|\d{2,})(\.\d+)?px|\d(\.\d+)?rem/.test(line.text) && !line.text.includes('10px 40px 40px 10px')).map((line) => line.text)
+			assert.deepEqual(literalRadii, [], stylesheetPath)
 			assert.deepEqual(getOverwrittenDeclarations(cssLines), [], stylesheetPath)
 			assert.doesNotMatch(css, /\{\s*\}/, `${ stylesheetPath } has an empty rule set`)
 			// Two top-level rules with the same selector list in one stylesheet hide which declaration wins; a shared group followed by a narrower rule is fine.
@@ -328,7 +332,7 @@ describe('UI audit fixes', () => {
 		// The inline card colours its own label, so a tone has to outrank that rule to apply to the label as well.
 		for (const tone of ['strong', 'subtitle', 'negative', 'positive']) assert.match(css, new RegExp(`\\.coin-text--${ tone }, \\.inline-card data\\.coin-text--${ tone } \\{`))
 		const swapSource = await Bun.file('app/ts/components/simulationExplaining/SwapTransactions.tsx').text()
-		assert.match(swapSource, /const amountClass = `coin-text--strong \$\{ direction === 'pay' \? 'coin-text--negative' : 'coin-text--positive' \}`/)
+		assert.match(swapSource, /const amountClass = `coin-text--strong \$\{ getToneClass\('coin-text', direction === 'pay' \? 'negative' : 'positive'\) \}`/)
 		assert.doesNotMatch(swapSource, /tokenStyle|balanceTextStyle|amountStyle/)
 		assert.match(css, /\.address-editor \.input\.address-editor-input--invalid \{ color: var\(--danger-color\) \}/)
 	})
@@ -350,6 +354,28 @@ describe('UI audit fixes', () => {
 		const cancelButtons = websiteAccessSource.match(/<Modal\.Close [^>]*>Cancel<\/Modal\.Close>/g) ?? []
 		assert.equal(cancelButtons.length, 5)
 		for (const cancelButton of cancelButtons) assert.match(cancelButton, / autoFocus>/)
+	})
+
+	test('builds every status tone class in one place and applies the mode tint to every request window', async () => {
+		const css = await readInterceptorAppCss()
+		// Each tone a family accepts has a rule, so a tone added in TypeScript without its styling fails here.
+		for (const [family, tones] of Object.entries(toneClassFamilies)) {
+			for (const tone of tones) assert.match(css, new RegExp(`\\.${ family }--${ tone }[ ,{]`), `${ family }--${ tone }`)
+		}
+		assert.equal(getToneClass('outcome-chip', 'warning'), 'outcome-chip--warning')
+		// Components never spell a tone class themselves, and every window that shows a request tints its accent by mode.
+		const toneClassPattern = new RegExp(`(${ Object.keys(toneClassFamilies).join('|') })--(positive|neutral|warning|negative)`)
+		for await (const file of new Bun.Glob('app/ts/**/*.{ts,tsx}').scan('.')) {
+			assert.doesNotMatch(await Bun.file(file).text(), toneClassPattern, file)
+		}
+		for (const requestWindow of ['App.tsx', 'pages/ConfirmTransaction.tsx', 'pages/InterceptorAccess.tsx', 'pages/ChangeChain.tsx', 'pages/WatchAsset.tsx', 'pages/FetchSimulationStack.tsx']) {
+			assert.match(await Bun.file(`app/ts/components/${ requestWindow }`).text(), /<main class = \{[^\n]*(getInterceptorModeClass\(|modeClass)/, requestWindow)
+		}
+		// A watch-asset or stack request does not carry the mode, so those windows read it from the settings instead of guessing it from the request.
+		for (const requestWindow of ['pages/WatchAsset.tsx', 'pages/FetchSimulationStack.tsx']) {
+			assert.match(await Bun.file(`app/ts/components/${ requestWindow }`).text(), /const modeClass = useInterceptorModeClass\(\)/, requestWindow)
+		}
+		assert.match(await Bun.file('app/ts/components/useInterceptorModeClass.ts').text(), /\(await getSettings\(\)\)\.simulationMode/)
 	})
 
 	test('keeps the warning tag readable in both themes', async () => {
