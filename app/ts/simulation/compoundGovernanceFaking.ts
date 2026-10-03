@@ -10,7 +10,7 @@ import { mockSignTransaction } from './services/simulationTransactionSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
 import { decodeFunctionOutputLoose, decodeFunctionOutputObjectLoose, encodeFunctionCallLoose, hasFunctionLoose } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
-import { applySimulationOverrides } from '../utils/delegateClearingState.js'
+import { getEffectiveStateOverrides } from '../utils/delegateClearingState.js'
 
 export const simulateCompoundGovernanceExecution = async (ethereumClientService: EthereumClientService, governanceContract: AddressBookEntry, proposalId: EthereumQuantity, simulationOverrides: StateOverrides) => {
 	if (!('abi' in governanceContract) || governanceContract.abi === undefined) throw new Error(`We need to have ABI for governance contract ${ checksummedAddress(governanceContract.address) } to be able to proceed :()`)
@@ -96,7 +96,8 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 			feeRecipient: parentBlock.miner,
 			baseFeePerGas: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
 		},
-		stateOverrides: applySimulationOverrides(simulationOverrides, timeLockOverrides),
+		// This standalone RPC call executes in its own first block. The time lock shim wins if addresses overlap.
+		stateOverrides: getEffectiveStateOverrides(simulationOverrides, timeLockOverrides, 0),
 	}]
 	const ethSimulateV1CallResult = (await ethereumClientService.ethSimulateV1(query, parentBlock.number, undefined))[0]?.calls[0]
 	if (ethSimulateV1CallResult === undefined) throw new Error('ethSimulateV1 result was undefined')

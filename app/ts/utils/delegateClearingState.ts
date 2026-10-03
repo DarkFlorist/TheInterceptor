@@ -13,16 +13,14 @@ export function withDelegateCleared(stateOverrides: StateOverrides, address: big
 	return { ...stateOverrides, [key]: { ...stateOverrides[key], code: new Uint8Array() } }
 }
 
-export function applySimulationOverrides(blockOverrides: StateOverrides, simulationOverrides: StateOverrides): StateOverrides {
+/** Initial overrides describe the state before the first simulated block. Later blocks inherit its result. */
+export function getEffectiveStateOverrides(blockOverrides: StateOverrides, initialOverrides: StateOverrides, blockIndex: number): StateOverrides {
+	if (blockIndex !== 0 || Object.keys(initialOverrides).length === 0) return blockOverrides
 	const merged: Record<string, StateOverrides[string]> = { ...blockOverrides }
-	for (const [address, accountOverride] of Object.entries(simulationOverrides)) {
+	for (const [address, accountOverride] of Object.entries(initialOverrides)) {
 		merged[address] = { ...merged[address], ...accountOverride }
 	}
 	return merged
-}
-
-export function applyInitialSimulationOverrides(blockOverrides: StateOverrides, initialOverrides: StateOverrides, blockIndex: number): StateOverrides {
-	return blockIndex === 0 ? applySimulationOverrides(blockOverrides, initialOverrides) : blockOverrides
 }
 
 export function isCodeClearedBySimulationOverrides(simulationOverrides: StateOverrides, address: bigint) {

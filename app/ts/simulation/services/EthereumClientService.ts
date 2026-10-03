@@ -17,7 +17,7 @@ import type { MessageHashAndSignature } from '../../utils/eip712.js'
 import { encodeAbiValues } from '../../utils/abiRuntime.js'
 import { getCurrentTimestampString } from '../../utils/time.js'
 import { projectEip7702AuthorizationForRpc } from '../../utils/eip7702Authorization.js'
-import { applyInitialSimulationOverrides } from '../../utils/delegateClearingState.js'
+import { getEffectiveStateOverrides } from '../../utils/delegateClearingState.js'
 import { createDelegationCache } from './delegationCache.js'
 
 const parseSignatureHex = (signature: `0x${ string }`) => {
@@ -429,7 +429,7 @@ export class EthereumClientService {
 							state: stateSets,
 						}
 					} : {},
-					...applyInitialSimulationOverrides(block.stateOverrides, simulationOverrides, blockIndex),
+					...getEffectiveStateOverrides(block.stateOverrides, simulationOverrides, blockIndex),
 				}
 			}
 		}

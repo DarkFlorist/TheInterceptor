@@ -65,7 +65,7 @@ export function DelegationSimulationOption({ activeAddress, rpcNetwork, simulati
 				} } />
 				<span>Simulate with delegate cleared</span>
 			</label>
-			<p class = 'paragraph'>This changes Interceptor simulations only. It does not clear the delegate on chain.</p>
+			<p class = 'paragraph'>This changes what-if simulations only. Transaction approval previews use the delegate on chain.</p>
 			{ errorText.value === undefined ? <></> : <p class = 'paragraph' role = 'alert'>{ errorText.value }</p> }
 		</div>
 	</details>

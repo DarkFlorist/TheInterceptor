@@ -535,7 +535,7 @@ export type TransactionGasPayment = 'transaction-sender' | 'external-executor'
 
 export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true, gasPayment: TransactionGasPayment = 'transaction-sender'): Promise<WebsiteCreatedEthereumTransactionOrFailed> => {
 	const simulationState = simulationMode || gasPayment === 'external-executor'
-		? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot())
+		? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot('signing'))
 		: PASSTHROUGH_STATE
 	const transactionDetails = sendTransactionParams.params[0]
 	if (activeAddress === undefined) throw new Error('Access to active address is denied')

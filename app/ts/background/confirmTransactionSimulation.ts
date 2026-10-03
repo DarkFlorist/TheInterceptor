@@ -47,7 +47,8 @@ export async function refreshConfirmTransactionSimulation(
 	const simulationInput = safeSigningRequest === undefined
 		? await getCurrentSimulationInput(undefined, settings)
 		: createSafeSigningSimulationInput(await getInterceptorTransactionStack(), safeSigningRequest)
-	const simulationOverrides = safeSigningRequest === undefined ? getCurrentSimulationOverrides(settings) : {}
+	// A signing confirmation must show execution with the delegate that exists on chain.
+	const simulationOverrides = getCurrentSimulationOverrides(settings, 'signing')
 	try {
 		const getNewVisualizedSimulationState = async () => {
 			const preSimulationTransaction = transactionToSimulate.success

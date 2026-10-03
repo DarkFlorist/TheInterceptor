@@ -31,7 +31,7 @@ import { calculateRealizedEffectiveGasPrice, getBlockTimeManipulationSeconds, ge
 import { getSignedTransactionForSimulation, mockSignTransaction } from './simulationTransactionSigning.js'
 import { getMessageHashForPersonalSign, simulatePersonalSign } from './simulationPersonalSigning.js'
 import { type BalanceQuery, getTokenBalanceQueriesForTransaction } from './simulationTokenBalanceQueries.js'
-import { applyInitialSimulationOverrides, applySimulationOverrides } from '../../utils/delegateClearingState.js'
+import { getEffectiveStateOverrides } from '../../utils/delegateClearingState.js'
 
 export { getSignedTransactionForSimulation, mockSignTransaction }
 export { getMessageHashForPersonalSign, simulatePersonalSign }
@@ -367,7 +367,7 @@ const simulateBlockCallWithPreparedInputContext = async (
 				baseFeePerGas: simulateWithZeroBaseFee ? 0n : baseFeePerGas,
 				time: getNextBlockTimeStampOverride(previousBlockTime, DEFAULT_BLOCK_MANIPULATION),
 			},
-			stateOverrides: applyInitialSimulationOverrides(extraOverrides, context?.simulationOverrides ?? {}, simulationPrefixBlockCount),
+			stateOverrides: getEffectiveStateOverrides(extraOverrides, context?.simulationOverrides ?? {}, simulationPrefixBlockCount),
 		},
 	]
 	const simulationResult = await ethereumClientService.ethSimulateV1(blockStateCalls, parentBlock.number, requestAbortController)
@@ -507,7 +507,7 @@ const inspectSimulationInput = async (
 
 const getExecutionSimulationStateBlockBase = (callResult: GroupedEthSimulateV1BlockResult, initialOverrides: StateOverrides, blockIndex: number) => ({
 	signedMessages: callResult.inputBlock.signedMessages || [],
-	stateOverrides: applyInitialSimulationOverrides(callResult.inputBlock.stateOverrides, initialOverrides, blockIndex),
+	stateOverrides: getEffectiveStateOverrides(callResult.inputBlock.stateOverrides, initialOverrides, blockIndex),
 	blockTimestamp: bigintSecondsToDate(callResult.timestamp),
 	blockTimeManipulation: callResult.inputBlock.blockTimeManipulation || DEFAULT_BLOCK_MANIPULATION,
 	blockBaseFeePerGas: callResult.baseFeePerGas,
@@ -750,7 +750,7 @@ const getBalanceBeforeSimulationInputTransaction = async (
 	address: bigint,
 	simulationOverrides: StateOverrides,
 ) => {
-	const overrideBalance = applySimulationOverrides(currentBlock.stateOverrides, simulationOverrides)[addressString(address)]?.balance
+	const overrideBalance = getEffectiveStateOverrides(currentBlock.stateOverrides, simulationOverrides, simulationInputBeforeBlock.length)[addressString(address)]?.balance
 	if (transactionsBefore.length === 0 && overrideBalance !== undefined) return overrideBalance
 	if (simulationInputBeforeBlock.length === 0 && transactionsBefore.length === 0) return await ethereumClientService.getBalance(address, parentBlock.number, requestAbortController)
 	const simulationInputBeforeTransaction = [
@@ -942,7 +942,8 @@ export const getSimulatedBalance = async (ethereumClientService: EthereumClientS
 const getIdleSimulationCodeOverride = (simulationStateInput: SimulationStateInput | SimulationStateInputMinimalData, simulationOverrides: StateOverrides, address: bigint, blockTag: EthereumBlockTag, baseBlockNumber: bigint) => {
 	if (hasSimulationBlocks(simulationStateInput)) return undefined
 	if (blockTag !== 'latest' && blockTag !== 'pending' && (typeof blockTag !== 'bigint' || blockTag <= baseBlockNumber)) return undefined
-	return simulationOverrides[addressString(address)]?.code
+	// With no simulated block, the next pending block is the first block that sees initial overrides.
+	return getEffectiveStateOverrides({}, simulationOverrides, 0)[addressString(address)]?.code
 }
 
 export const getSimulatedCode = async (ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, simulationState: ResolvedSimulationState, address: bigint, blockTag: EthereumBlockTag = 'latest') => {
@@ -1147,7 +1148,7 @@ const withInitialSimulationOverrides = (request: EthSimulateV1Params, simulation
 		...request.params[0],
 		blockStateCalls: request.params[0].blockStateCalls.map((block, blockIndex) => {
 			const originalOverrides = block.stateOverrides ?? {}
-			const stateOverrides = applyInitialSimulationOverrides(originalOverrides, simulationOverrides, blockOffset + blockIndex)
+			const stateOverrides = getEffectiveStateOverrides(originalOverrides, simulationOverrides, blockOffset + blockIndex)
 			return stateOverrides === originalOverrides ? block : { ...block, stateOverrides }
 		}),
 	}

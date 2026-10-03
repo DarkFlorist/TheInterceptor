@@ -34,7 +34,7 @@ import * as funtypes from 'funtypes'
 import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
-import { applySimulationOverrides, hasDelegateClearingPreference, isCodeClearedBySimulationOverrides, withDelegateCleared } from '../utils/delegateClearingState.js'
+import { getEffectiveStateOverrides, hasDelegateClearingPreference, isCodeClearedBySimulationOverrides, withDelegateCleared } from '../utils/delegateClearingState.js'
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -130,7 +130,9 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 	return inputBlocks
 }
 
-export function getCurrentSimulationOverrides(settings: Settings): StateOverrides {
+export function getCurrentSimulationOverrides(settings: Settings, purpose: 'what-if' | 'signing' = 'what-if'): StateOverrides {
+	// Delegate clearing is a hypothetical overlay. Signing projections must use the code on chain.
+	if (purpose === 'signing') return {}
 	const address = settings.simulationMode && hasDelegateClearingPreference(settings.delegateClearingPreferences, settings.activeSimulationAddress, settings.activeRpcNetwork.chainId)
 		? settings.activeSimulationAddress : undefined
 	return withDelegateCleared({}, address)
@@ -145,14 +147,14 @@ export type SimulationSnapshot = {
 }
 
 // Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
-export async function captureSimulationSnapshot(): Promise<SimulationSnapshot> {
+export async function captureSimulationSnapshot(purpose: 'what-if' | 'signing' = 'what-if'): Promise<SimulationSnapshot> {
 	const settings = await getSettings()
 	const richAddresses = await getAddressesbeingMadeRich(settings)
 	return {
 		activeRpcNetwork: settings.activeRpcNetwork,
 		activeStackContext: getActiveStackContext(settings),
 		simulationStateInput: await getCurrentSimulationInput(richAddresses, settings),
-		simulationOverrides: getCurrentSimulationOverrides(settings),
+		simulationOverrides: getCurrentSimulationOverrides(settings, purpose),
 		numberOfAddressesMadeRich: richAddresses.length,
 	}
 }
@@ -342,7 +344,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 				simulationStateInput: [governanceExecutionBlock],
 			simulatedBlocks: [{
 				signedMessages: [],
-				stateOverrides: applySimulationOverrides(governanceExecutionBlock.stateOverrides, simulationOverrides),
+				stateOverrides: getEffectiveStateOverrides(governanceExecutionBlock.stateOverrides, simulationOverrides, governanceExecutionSimulationInput.length - 1),
 				blockTimestamp: contractExecutionResult.executionTimestamp,
 				blockTimeManipulation: { type: 'SetTimetamp', timeToSet: dateToBigintSeconds(contractExecutionResult.executionTimestamp) },
 				simulatedTransactions: [{

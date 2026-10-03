@@ -1,7 +1,7 @@
 import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { EthereumClientService, getNextBlockTimeStampOverride } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { getCurrentSimulationInput, getCurrentSimulationOverrides, getGovernanceExecutionSimulationInput, prepareSimulationInputForRpc } from '../../app/ts/background/simulationUpdating.js'
+import { captureSimulationSnapshot, getCurrentSimulationInput, getCurrentSimulationOverrides, getGovernanceExecutionSimulationInput, prepareSimulationInputForRpc } from '../../app/ts/background/simulationUpdating.js'
 import { requestDelegationSimulation, setDelegationSimulation } from '../../app/ts/background/popupMessageHandlers/delegationSimulation.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import { changeSimulationMode, isDelegateClearingEnabled, setDelegateClearingEnabled, setMakeCurrentAddressRich } from '../../app/ts/background/settings.js'
@@ -11,7 +11,7 @@ import { updateInterceptorTransactionStack } from '../../app/ts/background/stora
 import { appendTransactionsToInput, createSimulationState, ethSimulateV1FromInput, getSimulatedCode, getSimulatedCodeFromInput, mockSignTransaction, simulatedCallFromInput, simulateEstimateGasFromInput } from '../../app/ts/simulation/services/SimulationModeEthereumClientService.js'
 import { addressString } from '../../app/ts/utils/bigint.js'
 import { getSimulationInputHash } from '../../app/ts/utils/simulationFingerprint.js'
-import { isCodeClearedBySimulationOverrides } from '../../app/ts/utils/delegateClearingState.js'
+import { getEffectiveStateOverrides, isCodeClearedBySimulationOverrides } from '../../app/ts/utils/delegateClearingState.js'
 import { MAKE_YOU_RICH_TRANSACTION } from '../../app/ts/utils/constants.js'
 import { EthSimulateV1Params } from '../../app/ts/types/ethSimulate-types.js'
 import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
@@ -76,6 +76,11 @@ describe('delegate clearing in simulation', () => {
 		const simulationOverrides = getCurrentSimulationOverrides(await getSettings())
 		assert.deepEqual(input[0]?.stateOverrides[addressString(activeAddress)], { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value })
 		assert.equal(isCodeClearedBySimulationOverrides(simulationOverrides, activeAddress), true)
+		assert.deepEqual(getCurrentSimulationOverrides(await getSettings(), 'signing'), {})
+		const signingSnapshot = await captureSimulationSnapshot('signing')
+		assert.deepEqual(signingSnapshot.simulationOverrides, {})
+		assert.deepEqual(signingSnapshot.simulationStateInput[0]?.stateOverrides[addressString(activeAddress)], { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value })
+		assert.equal(isCodeClearedBySimulationOverrides((await captureSimulationSnapshot()).simulationOverrides, activeAddress), true)
 		assert.equal(input[0]?.transactions.length, 0)
 		const parentBlockResponse = JsonRpcResponse.parse(JSON.parse(eth_getBlockByNumber_goerli_8443561_true))
 		if ('error' in parentBlockResponse) throw new Error(parentBlockResponse.error.message)
@@ -100,7 +105,14 @@ describe('delegate clearing in simulation', () => {
 		assert.equal(await isDelegateClearingEnabled(activeAddress, rpcEntry.chainId), false)
 	})
 
-	test('keeps the idle stack empty and clears the first confirmation and RPC call', async () => {
+	test('applies initial state only to the first block and preserves per-block state later', () => {
+		const initial = { [addressString(activeAddress)]: { code: new Uint8Array() } }
+		const block = { [addressString(activeAddress)]: { balance: 5n } }
+		assert.deepEqual(getEffectiveStateOverrides(block, initial, 0), { [addressString(activeAddress)]: { balance: 5n, code: new Uint8Array() } })
+		assert.equal(getEffectiveStateOverrides(block, initial, 1), block)
+	})
+
+	test('keeps the idle stack empty and clears the first appended transaction and RPC call', async () => {
 		installBrowserMock()
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
 		await setDelegateClearingEnabled(activeAddress, rpcEntry.chainId, true)
