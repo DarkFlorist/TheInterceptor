@@ -1,3 +1,4 @@
+import { getConfirmationSignerRequest } from '../confirmationSignerRequest.js'
 import type { MessageConfirmationRequest, TransactionConfirmationRequest } from '../../types/confirmationRequest.js'
 import { SafeMessage } from '../../safe/safeMessage.js'
 import { isSafeMessageCoSignRequest } from '../../safe/safeRequestPolicy.js'
@@ -23,7 +24,6 @@ import { EthereumBytes32, EthereumQuantity, serialize } from '../../types/wire-t
 import type { PopupOrTabId, Website } from '../../types/websiteAccessTypes.js'
 import { getErrorMessage, JsonRpcResponseError, reportUnexpectedError, isExpectedInfrastructureError, isNewBlockAbort, reportLocalRecovery } from '../../utils/errors.js'
 import type { PendingTransactionOrSignableMessage, PopupPendingTransactionOrSignableMessage } from '../../types/accessRequest.js'
-import type { SignMessageParams } from '../../types/jsonRpc-signing-types.js'
 import type { SafeSignerErrorDetails } from '../../types/safeTypes.js'
 import { craftPersonalSignPopupMessage } from './personalSign.js'
 import { getSettings } from '../settings.js'
@@ -311,13 +311,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	if (safeResolution.pendingChanged) {
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async () => pendingTransactionOrMessage)
 	}
-	// Re-simulation uses the untouched request; forwarding uses the sender bound to the latest successful review.
-	const reviewedRequest = pendingTransactionOrMessage.type === 'Transaction'
-		&& pendingTransactionOrMessage.transactionOrMessageCreationStatus === 'Simulated'
-		&& getSafePendingFlow(pendingTransactionOrMessage) === undefined
-		? pendingTransactionOrMessage.transactionToSimulate.originalRequestParameters
-		: pendingTransactionOrMessage.originalRequestParameters
-	const signerFacingRequest: SendTransactionParams | SendRawTransactionParams | SignMessageParams = safeResolution.signerFacingRequest ?? reviewedRequest
+	const signerFacingRequest = safeResolution.signerFacingRequest ?? getConfirmationSignerRequest(pendingTransactionOrMessage)
 	const removePendingRequestAndUpdateView = async () => {
 		await removePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier)
 		if ((await getPendingTransactionsAndMessages()).length === 0) await tryFocusingTabOrWindow({ type: 'tab', id: pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket.tabId })
@@ -541,10 +535,7 @@ export type TransactionGasPayment = 'transaction-sender' | 'external-executor'
 export const formEthSendTransaction = async(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined, activeAddress: bigint | undefined, website: Website, sendTransactionParams: SendTransactionParams, created: Date, transactionIdentifier: EthereumQuantity, simulationMode = true, gasPayment: TransactionGasPayment = 'transaction-sender'): Promise<WebsiteCreatedEthereumTransactionOrFailed> => {
 	const transactionDetails = sendTransactionParams.params[0]
 	if (activeAddress === undefined) throw new Error('Access to active address is denied')
-	const originalRequestParameters: SendTransactionParams = !simulationMode && gasPayment === 'transaction-sender' && transactionDetails.from === undefined
-		? { ...sendTransactionParams, params: [{ ...transactionDetails, from: activeAddress }] }
-		: sendTransactionParams
-	const extraParams = { website, created, originalRequestParameters, transactionIdentifier, error: undefined }
+	const extraParams = { website, created, originalRequestParameters: sendTransactionParams, transactionIdentifier, error: undefined }
 	// Safe proposals intentionally simulate the Safe while an owner signs. Ordinary wallet transactions must use the sender the user is reviewing.
 	if (!simulationMode && gasPayment === 'transaction-sender' && transactionDetails.from !== undefined && transactionDetails.from !== activeAddress) {
 		return { ...extraParams, success: false, error: { code: METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, message: 'The transaction sender does not match the active signing account.' } }
@@ -810,7 +801,7 @@ export async function openConfirmTransactionDialogForTransaction(
 				type: 'Transaction' as const,
 				popupOrTabId: openedDialog,
 				// Preserve an omitted sender so changing accounts can craft a fresh review for the new account.
-				originalRequestParameters: gasPayment === 'transaction-sender' ? effectiveTransactionParams : transactionToSimulate.originalRequestParameters,
+				originalRequestParameters: transactionToSimulate.originalRequestParameters,
 				uniqueRequestIdentifier: request.uniqueRequestIdentifier,
 				simulationMode,
 				activeAddress: transactionExecutor,

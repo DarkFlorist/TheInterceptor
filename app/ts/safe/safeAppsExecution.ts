@@ -1,3 +1,4 @@
+import { SAFE_APPS_REQUEST_METHOD, SAFE_EXECUTION_METHOD, SAFE_SIGNATURE_METHOD } from './safeSignerMethods.js'
 import type { ConfirmationRequest } from '../types/confirmationRequest.js'
 import * as funtypes from 'funtypes'
 import type { InterceptedRequest } from '../utils/requests.js'
@@ -8,11 +9,11 @@ import { SignTypedDataParams } from '../types/jsonRpc-signing-types.js'
 import { createSafeContractValidationFailure } from './safeCore.js'
 
 const ExecutionEnvelope = funtypes.ReadonlyObject({ method: funtypes.Literal('execute'), params: funtypes.Unknown })
-const ExecutionPayload = funtypes.Union(SendTransactionParams, SignTypedDataParams.And(funtypes.ReadonlyObject({ method: funtypes.Literal('eth_signTypedData_v4') })))
+const ExecutionPayload = funtypes.Union(SendTransactionParams, SignTypedDataParams.And(funtypes.ReadonlyObject({ method: funtypes.Literal(SAFE_SIGNATURE_METHOD) })))
 	.And(funtypes.ReadonlyObject({ safeRequestContext: SafeReviewInput }))
 
 export function getSafeAppsExecution(request: InterceptedRequest) {
-	if (request.method !== 'safe_apps_request' || !('params' in request)) return undefined
+	if (request.method !== SAFE_APPS_REQUEST_METHOD || !('params' in request)) return undefined
 	const envelope = ExecutionEnvelope.safeParse(request.params?.[0])
 	if (!envelope.success) return undefined
 	const execution = ExecutionPayload.safeParse(envelope.value.params)
@@ -20,7 +21,7 @@ export function getSafeAppsExecution(request: InterceptedRequest) {
 	const { method, params } = serialize(ExecutionPayload, execution.value)
 	// Normalize frontend admission data into the same operation model used by ordinary confirmations.
 	const input = execution.value
-	const confirmation: ConfirmationRequest = input.method === 'eth_sendTransaction'
+	const confirmation: ConfirmationRequest = input.method === SAFE_EXECUTION_METHOD
 		? { kind: 'transaction', parameters: { method: input.method, params: input.params }, safeTransaction: { operation: input.safeRequestContext.operation ?? 0, ...(input.safeRequestContext.message === undefined ? {} : { messageReview: input.safeRequestContext.message }) } }
 		: { kind: 'message', parameters: { method: input.method, params: input.params }, ...(input.safeRequestContext.message === undefined ? {} : { review: input.safeRequestContext.message }) }
 	return { request: { ...request, method, params }, confirmation }

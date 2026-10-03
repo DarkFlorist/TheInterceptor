@@ -441,7 +441,7 @@ describe('EIP-7702 rescue transaction parsing', () => {
 				assert.equal(result.transaction.maxFeePerGas, gasPrice)
 				assert.equal(result.transaction.maxPriorityFeePerGas, gasPrice)
 				assert.equal(result.originalRequestParameters.params[0].gasPrice, gasPrice)
-				assert.equal(result.originalRequestParameters.params[0].from, EthereumAddress.parse(recipientAddress))
+				assert.equal(result.originalRequestParameters.params[0].from, request.params[0].from)
 				const warning = await feeOops(getFeeProtectionInput(result.transaction, getRequestedTransactionFees(request.params[0])), ethereum, undefined)
 				if (gasPrice >= 310n * 10n ** 9n) assert.match(warning ?? '', /outrageous fee/)
 				else assert.equal(warning, undefined)

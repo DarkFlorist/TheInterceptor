@@ -1,3 +1,5 @@
+import { isSafeSignerMethodTranslation } from '../../ts/safe/safeSignerMethods.js'
+
 const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
 const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
 
@@ -1727,10 +1729,7 @@ class InterceptorMessageListener {
 			if (forwardRequest.requestId === undefined) throw new Error('requestId missing')
 			const pendingRequest = this.outstandingRequests.get(forwardRequest.requestId)
 			if (pendingRequest === undefined) throw new Error('Request did not exist anymore')
-			// Safe confirmations translate an application transaction/message into an owner signature. Read-only requests never authorize signing.
-			const isSafeSigningTranslation = forwardRequest.method === 'eth_signTypedData_v4' && (pendingRequest.method === 'eth_sendTransaction' || pendingRequest.method === 'personal_sign' || pendingRequest.method === 'safe_apps_request')
-			const isSafeExecution = pendingRequest.method === 'safe_apps_request' && forwardRequest.method === 'eth_sendTransaction'
-			if (forwardRequest.method !== pendingRequest.method && !isSafeSigningTranslation && !isSafeExecution) {
+			if (forwardRequest.method !== pendingRequest.method && !isSafeSignerMethodTranslation(pendingRequest.method, forwardRequest.method)) {
 				return pendingRequest.future.reject(new EthereumJsonRpcError(-32600, 'Signer instruction does not match the pending request.'))
 			}
 			if (this.signerWindowEthereumRequest === undefined) throw new Error('Interceptor is in wallet mode and should not forward to an external wallet')

@@ -1,3 +1,4 @@
+import { SAFE_SIGNATURE_METHOD } from '../safe/safeSignerMethods.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { EIP712Message } from '../types/eip721.js'
@@ -293,7 +294,7 @@ function getSafeSignerFacingRequest(
 	if (coSignContext !== undefined) {
 		const { types, primaryType, domain, message } = coSignContext.typedData
 		return {
-			method: 'eth_signTypedData_v4',
+			method: SAFE_SIGNATURE_METHOD,
 			params: [
 				coSignContext.safeSignerAddress,
 				EIP712Message.parse(JSON.stringify({ types, primaryType, domain, message })),
@@ -302,7 +303,7 @@ function getSafeSignerFacingRequest(
 	}
 	if (flow.kind !== 'proposal' || flow.pending.safeTransaction.safeSignerAddress === undefined) return undefined
 	return {
-		method: 'eth_signTypedData_v4',
+		method: SAFE_SIGNATURE_METHOD,
 		params: [
 			flow.pending.safeTransaction.safeSignerAddress,
 			getSafeTxSignerFacingTypedData(flow.pending.safeTransaction.safeTx),
