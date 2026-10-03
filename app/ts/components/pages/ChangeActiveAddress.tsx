@@ -1,3 +1,4 @@
+import { useSigningWalletBindings } from '../hooks/useSigningWalletBindings.js'
 import { SigningWalletSummary, openSigningWalletSetup } from '../subcomponents/SigningWalletSummary.js'
 import { useState } from 'preact/hooks'
 
@@ -7,6 +8,7 @@ import { XMarkIcon } from '../subcomponents/icons.js'
 import { getSignerLogo, getPrettySignerName, SignerLogoText } from '../subcomponents/signers.js'
 
 export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
+	const wallets = useSigningWalletBindings()
 	const [error, setError] = useState<string>()
 	function changeAndStoreActiveAddress(activeAddress: bigint | 'signer') {
 		param.close()
@@ -83,7 +85,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 										noEditAddress = { true }
 										renameAddressCallBack = { param.renameAddressCallBack }
 									/>
-									{ activeAddress.type === 'safe' ? undefined : <SigningWalletSummary address = { activeAddress.address } showSimulationShortcut = { false }/> }
+									{ activeAddress.type === 'safe' ? undefined : <SigningWalletSummary wallets = { wallets } address = { activeAddress.address } showSimulationShortcut = { false }/> }
 									{ isSignerConnected(activeAddress.address) ?
 										<div class = 'content' style = 'color: var(--text-color)'>
 											<SignerLogoText signerName = { param.signerName } text = { ` ${ getPrettySignerName(param.signerName) } connected` }/>

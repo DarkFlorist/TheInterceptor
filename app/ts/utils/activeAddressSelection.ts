@@ -124,6 +124,7 @@ export function includePersistedAddressBookEntry(activeAddresses: AddressBookEnt
 export function getSelectableActiveAddresses(activeAddresses: AddressBookEntries, simulationMode: boolean, activeChainId: bigint | undefined, signerAccounts: readonly bigint[]) {
 	if (simulationMode) return activeAddresses.filter((entry) => entry.type !== 'safe' || entry.chainId === activeChainId)
 
+	// Selection is a display preference, not signing authority; admission rejects unbound contacts and revalidates wallet revisions.
 	const selectedSignerAddress = signerAccounts[0]
 	return activeAddresses.filter((entry) =>
 		entry.type !== 'safe' ? entry.chainId === 'AllChains' || (entry.chainId ?? 1n) === activeChainId : entry.type === 'safe'

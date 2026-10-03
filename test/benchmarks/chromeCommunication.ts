@@ -125,6 +125,20 @@ async function main() {
 		pageTargetId = await createTargetPage(chrome.browserConnection, `${ server.baseUrl }?flow=wallet-request-permissions&safe-probe=early`)
 		const pageConnection = await connectTarget(chrome.browserDebugPort, pageTargetId)
 		try {
+			const portEventTrust = await pageConnection.evaluate<{ native: boolean, synthetic: boolean }>(`new Promise((resolve) => {
+				const channel = new MessageChannel()
+				let synthetic
+				channel.port1.onmessage = (event) => {
+					if (event.data === 'synthetic') { synthetic = event.isTrusted; return }
+					channel.port1.close()
+					channel.port2.close()
+					resolve({ native: event.isTrusted, synthetic })
+				}
+				channel.port1.dispatchEvent(new MessageEvent('message', { data: 'synthetic' }))
+				channel.port2.postMessage('native')
+			})`)
+			if (!portEventTrust.native || portEventTrust.synthetic) throw new Error('Unexpected MessagePort event trust semantics')
+			console.warn('MessagePort native delivery is trusted; synthetic dispatch is untrusted')
 			await waitForCommunicationPagePhase(pageConnection, 'requesting-access', 30_000)
 			const preApprovalSafeProbeStatus = await pageConnection.evaluate<string | undefined>('globalThis.__earlySafeAppsInfoResult?.status')
 			if (preApprovalSafeProbeStatus !== 'pending') throw new Error(`Safe Apps advertised before website approval with status ${ preApprovalSafeProbeStatus ?? 'missing' }`)

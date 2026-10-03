@@ -1,3 +1,4 @@
+import { useSigningWalletBindings } from '../hooks/useSigningWalletBindings.js'
 import { SafeSigningAccounts } from '../subcomponents/SafeSigningAccounts.js'
 import { SigningWalletSummary } from '../subcomponents/SigningWalletSummary.js'
 import { getRpcNetworkChange } from '../../utils/rpcNetworkChange.js'
@@ -443,6 +444,7 @@ function RichList({ makeCurrentAddressRich, activeAddress, richList, renameAddre
 }
 
 function FirstCard(param: FirstCardParams) {
+	const wallets = useSigningWalletBindings()
 	const timeSelectorMode = useSignal<TimePickerMode>('For')
 	const timeSelectorAbsoluteTime = useSignal<Date | undefined>(undefined)
 	const timeSelectorDeltaValue = useSignal<bigint>(12n)
@@ -654,8 +656,8 @@ function FirstCard(param: FirstCardParams) {
 						/>
 					</div>
 				}
-				{ param.activeAddress.value?.type === 'safe' ? <SafeSigningAccounts safe = { param.activeAddress.value }/> : undefined }
-				{ param.activeAddress.value === undefined || param.activeAddress.value.type === 'safe' ? undefined : <SigningWalletSummary address = { param.activeAddress.value.address }/> }
+				{ param.activeAddress.value?.type === 'safe' ? <SafeSigningAccounts wallets = { wallets } safe = { param.activeAddress.value }/> : undefined }
+				{ param.activeAddress.value === undefined || param.activeAddress.value.type === 'safe' ? undefined : <SigningWalletSummary wallets = { wallets } address = { param.activeAddress.value.address }/> }
 				{ isActiveAddressLoading || safeSimulationSignerAddressBookEntries.value === undefined ? <></> :
 					<div class = 'safe-signer-address popup-data-reveal'>
 						<div class = 'safe-signer-home-heading'>

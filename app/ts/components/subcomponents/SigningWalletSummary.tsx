@@ -1,29 +1,17 @@
 import { sendPopupMessageToBackgroundPage, getHtmlFile } from '../../background/backgroundUtils.js'
-import { useEffect, useState } from 'preact/hooks'
-import type { SigningWalletBindings } from '../../types/signingWallet.js'
+import { useState } from 'preact/hooks'
+import type { SigningWalletBindingsState } from '../hooks/useSigningWalletBindings.js'
 import { signingWalletDescription } from '../../signing/backend.js'
-import { sendSigningPageRequest } from '../../utils/signingPageMessages.js'
 
 export function openSigningWalletSetup(address?: bigint) {
 	const page = getHtmlFile('signingWallet')
 	return browser.tabs.create({ url: `${ browser.runtime.getURL(page) }${ address === undefined ? '' : `?address=0x${ address.toString(16).padStart(40, '0') }` }` })
 }
 
-export function SigningWalletSummary({ address, showSimulationShortcut = true }: { address: bigint, showSimulationShortcut?: boolean }) {
-	const [bindings, setBindings] = useState<SigningWalletBindings>()
+export function SigningWalletSummary({ address, wallets, showSimulationShortcut = true }: { address: bigint, wallets: SigningWalletBindingsState, showSimulationShortcut?: boolean }) {
 	const [error, setError] = useState<string>()
-	useEffect(() => {
-		let active = true
-		const refresh = async () => {
-			try { const reply = await sendSigningPageRequest({ method: 'signing_wallets' }); if (active) { setBindings(reply.bindings); setError(undefined) } }
-			catch (failure) { if (active) setError(failure instanceof Error ? failure.message : 'Could not load signing wallet') }
-		}
-		const changed = (changes: Record<string, unknown>) => { if ('signingWalletBindings' in changes) void refresh() }
-		void refresh()
-		browser.storage?.onChanged?.addListener(changed)
-		return () => { active = false; browser.storage?.onChanged?.removeListener(changed) }
-	}, [address])
-	if (bindings === undefined) return <p class = 'signing-muted' aria-busy = { error === undefined } role = { error === undefined ? 'status' : 'alert' }>{ error ?? 'Loading signing wallet…' }</p>
+	const { bindings, error: loadError } = wallets
+	if (bindings === undefined) return <p class = 'signing-muted' aria-busy = { loadError === undefined } role = { loadError === undefined ? 'status' : 'alert' }>{ loadError ?? 'Loading signing wallet…' }</p>
 	const binding = bindings.find((item) => item.wallet.address === address)
 	return <div class = 'signing-wallet-summary'>
 		<p>{ signingWalletDescription(binding) }</p>

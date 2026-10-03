@@ -13,9 +13,11 @@ test('browser binding uses persistent RDNS and rejects same-name providers and a
 	expect(browserWalletProviderId({ signerName: 'MetaMask', signerProvider: { ambiguous: true } })).toBeUndefined()
 })
 
-test('legacy bindings remain usable without treating their display names as EIP-6963 identities', () => {
+test('legacy bindings require explicit namespace and bare display names never authorize providers', () => {
 	expect(browserWalletProviderId({ signerName: 'MetaMask' })).toBe('legacy:MetaMask')
-	expect(matchesBrowserSigningWallet({ ...wallet, providerId: 'MetaMask' }, { signerName: 'MetaMask' })).toBe(true)
+	expect(matchesBrowserSigningWallet({ ...wallet, providerId: 'legacy:MetaMask' }, { signerName: 'MetaMask' })).toBe(true)
+	expect(matchesBrowserSigningWallet({ ...wallet, providerId: 'MetaMask' }, { signerName: 'MetaMask', signerProvider: { rdns: 'io.metamask', ambiguous: false } })).toBe(false)
+	expect(matchesBrowserSigningWallet({ ...wallet, providerId: 'MetaMask' }, { signerName: 'MetaMask' })).toBe(false)
 	expect(matchesBrowserSigningWallet({ ...wallet, providerId: 'legacy:MetaMask' }, { signerName: 'MetaMask', signerProvider: { rdns: 'io.metamask', ambiguous: false } })).toBe(false)
 })
 

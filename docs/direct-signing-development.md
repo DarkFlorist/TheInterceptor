@@ -6,7 +6,7 @@ Interceptor includes local Ledger WebHID and AirGap ERC-4527 signing adapters, a
 
 Open **Change** beside the active address, then **Add address / signing wallet**. The setup page offers browser wallet, Ledger, AirGap Vault, and manual address options. Adding or changing a wallet does not switch modes or authorize a website.
 
-- **Browser wallet:** open an approved website, click **Connect browser wallet** in setup, and select an exposed account after approving the connection in the wallet. Interceptor continues to use its existing browser-provider bridge and browser-wallet-owned transaction submission. New bindings retain the announced EIP-6963 reverse-DNS provider identity and account. UUIDs identify providers only within a page session. Conflicting identities are rejected, including immediately before forwarding a signing request. EIP-6963 metadata is self-reported, not authenticated. Legacy providers and existing name-only bindings retain their prior name-based behavior; relink after discovery to save the stronger identity.
+- **Browser wallet:** open an approved website, click **Connect browser wallet** in setup, and select an exposed account after approving the connection in the wallet. Interceptor continues to use its existing browser-provider bridge and browser-wallet-owned transaction submission. New bindings retain the announced EIP-6963 reverse-DNS provider identity and account. UUIDs identify providers only within a page session. Conflicting identities are rejected, including immediately before forwarding a signing request. EIP-6963 metadata is self-reported, not authenticated. Legacy providers use an explicit `legacy:` identity. Bare display-name bindings do not authorize forwarding; relink them in wallet setup. Announced provider identities never match legacy bindings.
 - **Ledger:** use desktop Chrome/Chromium with WebHID and Web Locks, unlock the device, and open Ethereum. Discover the first five Ledger Live accounts, or enter a concrete derivation path. Select an account and verify its address on the device before saving. Ledger Live account N uses `m/44'/60'/N'/0/0`; legacy address index N uses `m/44'/60'/0'/0/N`. Reconnection verifies the saved public key and address before signing. The adapter checks for Ethereum app 1.9.19 or newer and streams full EIP-712 definitions and values; it has no hash-only fallback.
 - **AirGap Vault:** export an Ethereum `crypto-account` or `crypto-hdkey` public-account UR and scan it with the camera. The scanner recognizes either format automatically and locks that format for the scan. Review and name the imported accounts. Account-root exports derive change 0, index 0; concrete address exports retain their supplied path. An imported account is awaiting offline signing, not continuously connected. Public-account import does not establish possession of a private key; every returned signature is independently verified.
 - **Manual:** enter an address and name. It remains available for chain reads and simulation. Real signing requires a wallet binding.
@@ -40,6 +40,18 @@ The CBOR codec is a registry-oriented subset: definite-length integers, byte/tex
 Limits: CBOR 65,536 bytes, 4,096 nodes and 16 levels; UR 512 fragments, 1,024 bytes per fragment, 4,096 received frames, and 64 MiB XOR work; typed JSON 65,536 bytes with duplicate-key and complexity checks; HID response allocation at most 65,535 bytes. Camera frames are scaled to 640 × 480 and decoded sequentially. Signing request storage is capped at 16 records and 4 MiB, with bounded recent terminal history. Device access is serialized with an extension-wide Web Lock, and background request mutations and nonce reservations are serialized.
 
 The only added runtime dependency is **`qr@0.7.0`**, for QR pixel generation and decoding. Its published manifest has no runtime dependencies. Its encoder and decoder are local ES modules; Interceptor uses native `getUserMedia` and controls frame size, scan scheduling, UR input limits, and camera lifetime itself. License: [qr.txt](../app/licenses/qr.txt). No Ledger SDK, transport package, AirGap SDK, or wallet framework is used.
+
+### QR dependency verification (2026-10-03)
+
+Verified the [published 0.7.0 metadata](https://registry.npmjs.org/qr/0.7.0) and [tarball](https://registry.npmjs.org/qr/-/qr-0.7.0.tgz). The tarball SHA-512 equals both the registry integrity and `bun.lock`:
+
+```text
+sha512-/VrrACmOAwZVipuRITwfEwOL5oAMEHH5PTmBWaGtlTom2Thxaa+rhmna4zU9PRN2uLw2wdccbkHOLGZb1Q9SdA==
+```
+
+The registry publication date is 2026-08-31; the package points to Paul Miller's QR project at commit `be475cca488635b8a71e158ac6190a5c78a201a8`. Its published manifest has no runtime dependencies or installation hooks. Installed `index.js`, `decode.js`, `dom.js`, manifest, and both license files match the tarball byte-for-byte. The package offers MIT or Apache-2.0; the existing bundled license retains the Apache-2.0 license.
+
+Source review focused on the imported encoder and decoder, their local-only module imports, output generation, image bounds and decode entrypoints. No network calls, dynamic code execution or dependency loading were found in those runtime paths. Interceptor imports neither the package's camera helpers nor its DOM module: our scanner bounds frames to 640×480 and validates decoded UR/CBOR and signatures separately. This is a scoped dependency review, not a complete independent QR algorithm audit. Recheck provenance, integrity, imports and scanner bounds when upgrading.
 
 ## Verification record and limitations
 

@@ -217,3 +217,12 @@ test('routing binding reads neither wait for address-book mutations nor load add
 		set.mockRestore()
 	}
 })
+
+test('address-book-only additions do not depend on signing-wallet storage', async () => {
+	const { updateUserAddressBookEntries } = await import('../../app/ts/background/storageVariables.js')
+	stored.signingWalletBindings = 'corrupt signing configuration'
+	await updateUserAddressBookEntries((entries) => [...entries, { type: 'contact', address: 5n, name: 'Unrelated contact', entrySource: 'User' }])
+	expect((await getUserAddressBookEntries()).some((entry) => entry.address === 5n)).toBe(true)
+	expect(stored.signingWalletBindings).toBe('corrupt signing configuration')
+	expect(Object.keys(writes.at(-1) ?? {})).toEqual(['userAddressBookEntriesV3'])
+})

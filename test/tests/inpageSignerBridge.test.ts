@@ -402,6 +402,9 @@ describe('inpage signer bridge', () => {
 			await waitFor(() => identities.some((identity) => isRecord(identity) && identity.rdns === 'io.metamask'))
 			const request = () => fakeWindow.ethereum.request({ method: 'personal_sign', params: ['0x12', '0x1111111111111111111111111111111111111111'] })
 			assert.equal(await request(), 'test-signature')
+			expectedProviderId = 'MetaMask'
+			await assert.rejects(request(), (error: unknown) => isRecord(error) && error.code === 4100)
+			assert.equal(signingCalls, 1)
 			expectedProviderId = 'eip6963:com.example.other'
 			await assert.rejects(request(), (error: unknown) => isRecord(error) && error.code === 4100)
 			assert.equal(signingCalls, 1)

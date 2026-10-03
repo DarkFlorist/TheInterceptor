@@ -20,9 +20,9 @@ for (const changeChain of [false, true]) test(`Safe drafts reset when ${ changeC
 	const first: SafeEntry = { type: 'safe', name: 'Safe A', address: 10n, chainId: 1n, entrySource: 'User', useAsActiveAddress: true, safeSigningSignerAddress: 1n, safeExecutionAddress: 2n, safeSignerAddresses: [1n] }
 	const second: SafeEntry = { ...first, name: 'Safe B', address: changeChain ? first.address : 11n, chainId: changeChain ? 2n : first.chainId, safeExecutionAddress: 3n }
 	try {
-		await act(async () => { render(h(SafeSigningAccounts, { safe: first }), dom.document.body) })
+		await act(async () => { render(h(SafeSigningAccounts, { safe: first, wallets: { bindings: SigningWalletBindings.parse(bindings) } }), dom.document.body) })
 		await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
-		await act(async () => { render(h(SafeSigningAccounts, { safe: second }), dom.document.body) })
+		await act(async () => { render(h(SafeSigningAccounts, { safe: second, wallets: { bindings: SigningWalletBindings.parse(bindings) } }), dom.document.body) })
 		await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
 		const executor = findRenderedElement(dom.document.body, (node) => node.tagName === 'LABEL' && node.textContent.startsWith('Execution'))
 		const select = executor === undefined ? undefined : findRenderedElement(executor, (node) => node.tagName === 'SELECT')

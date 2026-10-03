@@ -14,8 +14,8 @@ export function browserWalletProviderId(state: BrowserSignerState) {
 export function matchesBrowserSigningWallet(wallet: BrowserWallet, state: BrowserSignerState) {
 	const providerId = browserWalletProviderId(state)
 	if (providerId === undefined || wallet.signerName !== state.signerName) return false
-	// Keep old name-only bindings readable; newly saved accounts use the discovered provider ID.
-	return wallet.providerId === providerId || wallet.providerId === wallet.signerName
+	// Bare display-name bindings must be explicitly relinked; they never authorize a provider.
+	return wallet.providerId === providerId
 }
 
 /** Shared admission for reviewed requests and browser-owned forwarding on networks without an RPC. */

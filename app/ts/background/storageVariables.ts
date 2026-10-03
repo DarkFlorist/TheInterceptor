@@ -448,6 +448,13 @@ export async function saveSafeSigningAccounts(chainId: bigint, address: bigint, 
 	})
 }
 
+/** Address-book-only writes. Callers removing addresses or introducing Safe classifications must use the signing-aware wrapper below. */
+export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
+	await userAddressBookEntriesSemaphore.execute(async () => {
+		await browserStorageLocalSet({ userAddressBookEntriesV3: updateFunc(await getUserAddressBookEntries()) })
+	})
+}
+
 /** Address edits atomically prune invalid signing bindings; unchanged eligibility skips signing-storage access. */
 export async function updateAddressBookAndSigningWalletBindings(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
 	await userAddressBookEntriesSemaphore.execute(async () => {

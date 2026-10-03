@@ -880,6 +880,7 @@ class InterceptorMessageListener {
 			this.bridgeReady.resolve(false)
 		}, 3000)
 		bootstrap.port1.addEventListener('message', (event: MessageEvent<unknown>) => {
+			// Native MessagePort delivery is trusted; dispatchEvent(new MessageEvent(...)) is not. The browser harness verifies both.
 			if (!event.isTrusted || handshakeFinished || event.data !== 'interceptor_bridge_ready') return
 			const port = event.ports[0]
 			if (port === undefined) return
@@ -1808,7 +1809,7 @@ class InterceptorMessageListener {
 			const sendToSignerWithCatchError = async () => {
 				const identity = this.getSignerProviderIdentity()
 				const providerId = getBrowserProviderId(this.signerName, identity)
-				if (forwardRequest.expectedProviderId !== undefined && (providerId === undefined || (forwardRequest.expectedProviderId !== providerId && forwardRequest.expectedProviderId !== this.signerName))) {
+				if (forwardRequest.expectedProviderId !== undefined && (providerId === undefined || forwardRequest.expectedProviderId !== providerId)) {
 					return { success: false as const, forwardRequest, error: { code: 4100, message: 'Select the expected saved browser wallet before continuing. Provider identity is different or ambiguous.' }, signerProviderGeneration: this.signerProviderGeneration }
 				}
 				const outcome = await this.requestFromCurrentSigner({ method: forwardRequest.method, params: 'params' in forwardRequest ? forwardRequest.params : [] })
