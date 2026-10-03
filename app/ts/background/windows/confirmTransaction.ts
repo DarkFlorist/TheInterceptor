@@ -370,21 +370,27 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 	if (!pendingTransactionOrMessage.simulationMode && pendingTransactionOrMessage.signingWalletBinding !== undefined) {
 		const binding = pendingTransactionOrMessage.signingWalletBinding
 		if (confirmation.data.action === 'accept') {
+			let expectedSigningFailure: Error | undefined
+			const signingSelectionFailure = (message: string) => {
+				expectedSigningFailure = new Error(message)
+				return expectedSigningFailure
+			}
 			try {
-				if ((await getSigningWalletBinding(binding.wallet.address))?.revision !== binding.revision) throw new Error('Signing wallet changed. Reject this request and review a new request.')
+				if ((await getSigningWalletBinding(binding.wallet.address))?.revision !== binding.revision) throw signingSelectionFailure('Signing wallet changed. Reject this request and review a new request.')
 				if (binding.wallet.type !== 'browser') {
-					if (signerFacingRequest.method === 'eth_sendRawTransaction') throw new Error('Direct wallets do not sign raw transactions')
+					if (signerFacingRequest.method === 'eth_sendRawTransaction') throw signingSelectionFailure('Direct wallets do not sign raw transactions')
 					await openDirectSigning(ethereum, tokenPriceService, pendingTransactionOrMessage, signerFacingRequest)
 					await updateConfirmTransactionView(ethereum, tokenPriceService)
 					return true
 				}
 				const forwarding = await prepareSavedBrowserWalletForwarding(websiteTabConnections, pendingTransactionOrMessage.uniqueRequestIdentifier.requestSocket, binding)
 				if (await getPendingTransactionOrMessageByidentifier(confirmation.data.uniqueRequestIdentifier) === undefined) return false
-				if (forwarding.error !== undefined) throw new Error(forwarding.error.message)
+				if (forwarding.error !== undefined) throw signingSelectionFailure(forwarding.error.message)
 				browserForwardingFields = { expectedProviderId: forwarding.expectedProviderId }
 			} catch (error) {
 				await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (pending) => ({ ...pending, approvalStatus: { status: 'SignerError', code: 4100, message: getErrorMessage(error) ?? 'Unable to start signing' } }))
 				await updateConfirmTransactionView(ethereum, tokenPriceService)
+				if (expectedSigningFailure === undefined || error !== expectedSigningFailure) throw error
 				return false
 			}
 		}

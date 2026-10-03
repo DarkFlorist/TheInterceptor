@@ -766,7 +766,6 @@ class InterceptorMessageListener {
 	private pendingSignerAddressRequest: Promise<SignerAccountsResolution> | undefined = undefined
 
 	public constructor() {
-		window.addEventListener('eip6963:announceProvider', this.observeProviderIdentity)
 		this.connectToContentScript()
 		this.injectEthereumIntoWindow()
 		this.onPageLoad()
@@ -867,21 +866,31 @@ class InterceptorMessageListener {
 
 	private readonly pendingBridgeDiagnostics: string[] = []
 
-	private readonly bridgeReady = new InterceptorFuture<void>()
+	private readonly bridgeReady = new InterceptorFuture<boolean>()
 
 	private readonly connectToContentScript = () => {
 		const bootstrap = new MessageChannel()
+		let handshakeFinished = false
+		// Fail closed rather than re-exposing bootstrap ports after page scripts have started.
+		const handshakeTimeout = setTimeout(() => {
+			handshakeFinished = true
+			bootstrap.port1.close()
+			this.pendingBridgeDiagnostics.length = 0
+			this.bridgeReady.resolve(false)
+		}, 3000)
 		bootstrap.port1.addEventListener('message', (event: MessageEvent<unknown>) => {
-			if (!event.isTrusted || this.extensionMessagePort !== undefined || event.data !== 'interceptor_bridge_ready') return
+			if (!event.isTrusted || handshakeFinished || event.data !== 'interceptor_bridge_ready') return
 			const port = event.ports[0]
 			if (port === undefined) return
+			handshakeFinished = true
+			clearTimeout(handshakeTimeout)
 			this.extensionMessagePort = port
 			port.addEventListener('message', (messageEvent: MessageEvent<unknown>) => {
 				if (messageEvent.isTrusted) void this.onMessage(messageEvent)
 			})
 			port.start()
 			bootstrap.port1.close()
-			this.bridgeReady.resolve(undefined)
+			this.bridgeReady.resolve(true)
 			for (const diagnostics of this.pendingBridgeDiagnostics.splice(0)) this.reportInterceptorError(diagnostics)
 		})
 		bootstrap.port1.start()
@@ -900,8 +909,7 @@ class InterceptorMessageListener {
 			requestScopedProviderEventCallbacks: [],
 		})
 		try {
-			await this.bridgeReady
-			if (this.extensionMessagePort === undefined) throw new Error('Interceptor content script bridge is not connected')
+			if (!await this.bridgeReady || this.extensionMessagePort === undefined) throw new EthereumJsonRpcError(METAMASK_ERROR_PROVIDER_DISCONNECTED, 'Interceptor content script bridge did not connect. Reload the page and try again.')
 			const message: BridgeRequest = {
 				type: INTERCEPTOR_BRIDGE_REQUEST_MESSAGE,
 				method: messageMethodAndParams.method,
@@ -1082,7 +1090,7 @@ class InterceptorMessageListener {
 
 	private readonly observeProviderIdentity = (event: Event) => {
 		try {
-			if (this.ownProviderAnnouncements.has(event) || !('detail' in event) || !isEip6963AnnouncementDetail(event.detail)) return
+			if (!this.acceptingAnnouncedMetaMaskProviders || this.ownProviderAnnouncements.has(event) || !('detail' in event) || !isEip6963AnnouncementDetail(event.detail)) return
 			const { provider, info } = event.detail
 			if (!InterceptorMessageListener.hasUsableSignerInterface(provider) || provider.isInterceptor && provider !== this.signerWindowEthereumProvider) return
 			if (typeof info !== 'object' || info === null || !('rdns' in info) || !('uuid' in info)) return
@@ -1091,7 +1099,6 @@ class InterceptorMessageListener {
 			const uuid = typeof announcedUuid === 'string' ? announcedUuid.toLowerCase() : announcedUuid
 			if (typeof rdns !== 'string' || rdns.length > 253 || !/^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/u.test(rdns)) return
 			if (typeof uuid !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(uuid)) return
-			const previous = JSON.stringify(this.getSignerProviderIdentity())
 			const existing = this.providerIdentities.get(provider)
 			if (existing === undefined && this.providerIdentities.size >= 64) this.providerIdentityLimitExceeded = true
 			else {
@@ -1107,7 +1114,6 @@ class InterceptorMessageListener {
 				}
 				this.providerIdentities.set(provider, identity)
 			}
-			if (previous !== JSON.stringify(this.getSignerProviderIdentity())) void this.connectToSigner(this.signerName)
 		} catch (error: unknown) {
 			this.reportSignerDiscoveryError('read provider identity', error)
 		}
@@ -1129,6 +1135,10 @@ class InterceptorMessageListener {
 
 	private readonly discoverAnnouncedMetaMaskProvider = () => {
 		if (this.acceptingAnnouncedMetaMaskProviders) return
+		const previousProvider = this.signerWindowEthereumProvider
+		const previousIdentity = JSON.stringify(this.getSignerProviderIdentity())
+		// EIP-6963 metadata is self-reported; accept it only during our synchronous discovery, never as page authentication.
+		window.addEventListener('eip6963:announceProvider', this.observeProviderIdentity)
 		window.addEventListener('eip6963:announceProvider', this.useAnnouncedMetaMaskProvider)
 		this.acceptingAnnouncedMetaMaskProviders = true
 		try {
@@ -1138,7 +1148,9 @@ class InterceptorMessageListener {
 		} finally {
 			this.acceptingAnnouncedMetaMaskProviders = false
 			window.removeEventListener('eip6963:announceProvider', this.useAnnouncedMetaMaskProvider)
+			window.removeEventListener('eip6963:announceProvider', this.observeProviderIdentity)
 		}
+		if (previousProvider !== this.signerWindowEthereumProvider || previousIdentity !== JSON.stringify(this.getSignerProviderIdentity())) void this.connectToSigner(this.signerName)
 	}
 
 	private readonly stopSignerDiscoveryRetries = () => {
@@ -1236,7 +1248,7 @@ class InterceptorMessageListener {
 		this.announcedMetaMaskUuid = info.uuid
 		this.setSignerProvider(preparedSigner.provider, preparedSigner.request)
 		this.connected = preparedSigner.connected
-		this.connectToSigner('MetaMask')
+		this.signerName = 'MetaMask'
 	}
 
 	private readonly WindowEthereumSend = (payload: { readonly id: string | number | null, readonly method: string, readonly params: readonly unknown[] } | string, maybeCallBack: undefined | LegacyJsonRpcCallback) => {

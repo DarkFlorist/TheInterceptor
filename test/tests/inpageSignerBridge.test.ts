@@ -8,6 +8,7 @@ type Listener = (event: WindowEvent) => void
 type InpageRequest = { readonly method: string, readonly requestId: number, readonly params?: readonly unknown[], readonly internal?: true, readonly replayOnDisconnect?: true }
 type SignerRequest = { readonly method: string, readonly params?: readonly unknown[] | Readonly<Record<string, unknown>> }
 type FakeWindowOptions = {
+	readonly skipBridgeHandshake?: boolean
 	readonly onConnectedToSignerRequest?: () => void
 	readonly handleRequest?: (request: InpageRequest, sendBackgroundMessage: (data: unknown) => void) => boolean
 	readonly handleSignerRequest?: (request: SignerRequest) => unknown | Promise<unknown>
@@ -51,7 +52,7 @@ function parseInpageRequest(value: unknown): InpageRequest | undefined {
 	}
 }
 
-function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSignerRequest, signerChainIdReply = '0x1', signerInitialSelectedAddress }: FakeWindowOptions = {}) {
+function createFakeWindow({ skipBridgeHandshake = false, onConnectedToSignerRequest, handleRequest, handleSignerRequest, signerChainIdReply = '0x1', signerInitialSelectedAddress }: FakeWindowOptions = {}) {
 	const listeners = new Map<string, Set<Listener>>()
 	const signerRequests: string[] = []
 	const backgroundEthAccountsReplies: unknown[] = []
@@ -126,6 +127,7 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 		},
 		postMessage: (data: unknown, _targetOrigin?: string, transfer?: readonly Transferable[]) => {
 			if (isRecord(data) && data.type === 'interceptor_bridge_port') {
+				if (skipBridgeHandshake) return
 				const bootstrap = transfer?.find((item): item is MessagePort => item instanceof MessagePort)
 				if (bootstrap === undefined) throw new Error('Missing bootstrap port')
 				const channel = new MessageChannel()
@@ -343,7 +345,37 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
-	test('pins forwarded signing to the announced provider and rejects later identity collisions', async () => {
+	test('rejects pending and subsequent provider requests when the bridge handshake is missing', async () => {
+		const { fakeWindow } = createFakeWindow({ skipBridgeHandshake: true })
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?missing-bridge-handshake', async () => {
+			const request = () => fakeWindow.ethereum.request({ method: 'eth_accounts' })
+			const isDisconnected = (error: unknown) => isRecord(error) && error.code === 4900 && typeof error.message === 'string' && error.message.includes('Reload the page')
+			await Promise.all([assert.rejects(request(), isDisconnected), assert.rejects(request(), isDisconnected)])
+			await assert.rejects(request(), isDisconnected)
+		})
+	})
+
+	test('marks conflicting identities ambiguous during its own discovery round', async () => {
+		const identities: unknown[] = []
+		const { fakeWindow } = createFakeWindow({
+			handleRequest: (request) => {
+				if (request.method === 'connected_to_signer') identities.push(request.params?.[3])
+				return false
+			},
+		})
+		const provider = fakeWindow.ethereum
+		const duplicate = { request: async () => undefined, on: () => duplicate }
+		const info = { uuid: '11111111-1111-4111-8111-111111111111', name: 'MetaMask', icon: 'data:image/png;base64,dGVzdA', rdns: 'io.metamask' }
+		fakeWindow.addEventListener('eip6963:requestProvider', () => {
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info, provider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...info, uuid: '22222222-2222-4222-8222-222222222222' }, provider: duplicate } })
+		})
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?discovery-identity-collision', async () => {
+			await waitFor(() => identities.some((identity) => isRecord(identity) && identity.ambiguous === true))
+		})
+	})
+
+	test('pins forwarded signing to discovered identity and ignores unsolicited identity poisoning', async () => {
 		let expectedProviderId = 'eip6963:io.metamask'
 		const identities: unknown[] = []
 		let signingCalls = 0
@@ -362,8 +394,11 @@ describe('inpage signer bridge', () => {
 		})
 		const originalProvider = fakeWindow.ethereum
 		const info = { uuid: '11111111-1111-4111-8111-111111111111', name: 'MetaMask', icon: 'data:image/png;base64,dGVzdA', rdns: 'io.metamask' }
-		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?persistent-provider-identity', async () => {
+		fakeWindow.addEventListener('eip6963:requestProvider', () => {
 			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info, provider: originalProvider } })
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...info, uuid: '33333333-3333-4333-8333-333333333333' }, provider: originalProvider } })
+		})
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?persistent-provider-identity', async () => {
 			await waitFor(() => identities.some((identity) => isRecord(identity) && identity.rdns === 'io.metamask'))
 			const request = () => fakeWindow.ethereum.request({ method: 'personal_sign', params: ['0x12', '0x1111111111111111111111111111111111111111'] })
 			assert.equal(await request(), 'test-signature')
@@ -371,13 +406,15 @@ describe('inpage signer bridge', () => {
 			await assert.rejects(request(), (error: unknown) => isRecord(error) && error.code === 4100)
 			assert.equal(signingCalls, 1)
 			expectedProviderId = 'eip6963:io.metamask'
+			const connectionsBeforePoisoning = identities.length
 			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...info, uuid: '33333333-3333-4333-8333-333333333333' }, provider: originalProvider } })
 			assert.equal(await request(), 'test-signature')
 			const duplicate = { request: async () => undefined, on: () => duplicate }
 			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...info, uuid: '22222222-2222-4222-8222-222222222222', rdns: 'IO.METAMASK' }, provider: duplicate } })
-			await waitFor(() => identities.some((identity) => isRecord(identity) && identity.ambiguous === true))
-			await assert.rejects(request(), (error: unknown) => isRecord(error) && error.code === 4100)
-			assert.equal(signingCalls, 2)
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info: { ...info, rdns: 'com.attacker.wallet' }, provider: originalProvider } })
+			assert.equal(await request(), 'test-signature')
+			assert.equal(identities.length, connectionsBeforePoisoning)
+			assert.equal(signingCalls, 3)
 		})
 	})
 
