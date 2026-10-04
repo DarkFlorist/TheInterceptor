@@ -110,8 +110,7 @@ try {
 	await popup.evaluate(`(async () => {
 		await chrome.storage.local.set({
 			simulationMode: true,
-			makeCurrentAddressRich: true,
-			richNativeAmount: '0xad78ebc5ac620000',
+			richModeState: { makeCurrentAddressRich: true, defaultNativeAmount: '0xad78ebc5ac620000', fixedAddressRichList: [], tokenLayouts: [], accountBalances: [] },
 			independentActiveSimulationAddress: '0x1111111111111111111111111111111111111111',
 			userAddressBookEntriesV3: [
 				{
@@ -132,8 +131,7 @@ try {
 					chainId: '0x1',
 					watchedTokenIds: ['0x2a']
 				}
-			],
-			richTokens: []
+			]
 		})
 		return true
 	})()`)
@@ -231,20 +229,22 @@ try {
 			name: token.name,
 			symbol: token.symbol,
 			decimals: token.decimals,
-			amount: '0x3635c9adc5dea00000',
 			balanceSlot: '0x' + BigInt(index).toString(16),
 		}))
 		await chrome.storage.local.set({
 			userAddressBookEntriesV3: [...contacts, ...tokenEntries],
-			fixedAddressRichList: contacts.map((contact) => ({ address: contact.address, makingRich: true, type: 'UserAdded' })),
-			richTokens,
-			makeCurrentAddressRich: false,
-			richAccountBalances: contacts.map((contact, index) => ({
-				chainId: '0x1',
-				address: contact.address,
-				nativeAmount: '0x' + ((1000n + BigInt(index)) * 10n ** 18n).toString(16),
-				tokenBalances: (index === 0 ? [] : index === 1 ? richTokens : richTokens.slice(0, index % 4 + 1)).map((token) => ({ tokenAddress: token.tokenAddress, amount: '0x' + (BigInt(index + 1) * 1000n * 10n ** 18n).toString(16) }))
-			})),
+			richModeState: {
+				defaultNativeAmount: '0xad78ebc5ac620000',
+				fixedAddressRichList: contacts.map((contact) => ({ address: contact.address, makingRich: true, type: 'UserAdded' })),
+				tokenLayouts: richTokens,
+				makeCurrentAddressRich: false,
+				accountBalances: contacts.map((contact, index) => ({
+					chainId: '0x1',
+					address: contact.address,
+					nativeAmount: '0x' + ((1000n + BigInt(index)) * 10n ** 18n).toString(16),
+					tokenBalances: (index === 0 ? [] : index === 1 ? richTokens : richTokens.slice(0, index % 4 + 1)).map((token) => ({ tokenAddress: token.tokenAddress, amount: '0x' + (BigInt(index + 1) * 1000n * 10n ** 18n).toString(16) }))
+				})),
+			},
 		})
 		return true
 	})()`)
@@ -306,10 +306,13 @@ try {
 		})
 		await chrome.storage.local.set({
 			userAddressBookEntriesV3: tokenEntries,
-			fixedAddressRichList: [],
-			richTokens: [],
-			makeCurrentAddressRich: true,
-			richAccountBalances: [{ chainId: '0x1', address: '0x1111111111111111111111111111111111111111', nativeAmount: '0xad78ebc5ac620000', tokenBalances: [] }]
+			richModeState: {
+				defaultNativeAmount: '0xad78ebc5ac620000',
+				fixedAddressRichList: [],
+				tokenLayouts: [],
+				makeCurrentAddressRich: true,
+				accountBalances: [{ chainId: '0x1', address: '0x1111111111111111111111111111111111111111', nativeAmount: '0xad78ebc5ac620000', tokenBalances: [] }]
+			},
 		})
 		return true
 	})()`)

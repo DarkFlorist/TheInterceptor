@@ -1,9 +1,10 @@
+import type { RichToken } from '../types/richMode.js'
+import { addressesBeingMadeRich, getRichModeState, profilesForAddresses, richTokensForPresentation } from './richModeSettings.js'
 import { discoverErc1155BalanceStorage, discoverErc20BalanceStorageSlot, getDefaultRichTokenAmount, getRichTokenOptions, isSupportedRichTokenDecimals, MAX_RICH_TOKEN_AMOUNT, MAX_SUPPORTED_RICH_TOKEN_DECIMALS, sameRichTokenIdentity, verifyErc1155BalanceStorageSlot } from '../utils/richTokens.js'
-import { Semaphore } from '../utils/semaphore.js'
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { captureSimulationSnapshot, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
-import { ensureRichAccountBalances, getRichTokens, updateRichAccountBalances, updateRichTokens, reconcileRichTokensWithAddressBook, getRichNativeAmount, getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
+import { mutateRichMode, getSettings, setUseTabsInsteadOfPopup, setPage, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
 import { type ChangeActiveAddress, type ModifyMakeMeRich, type ChangePage, type RemoveTransaction, type RequestAccountsFromSigner, type TransactionConfirmation, type InterceptorAccess, type ChangeInterceptorAccess, type ChainChangeConfirmation, type WatchAssetConfirmation, type EnableSimulationMode, type ChangeActiveChain, type AddOrEditAddressBookEntry, type GetAddressBookData, type RemoveAddressBookEntry, type InterceptorAccessRefresh, type InterceptorAccessChangeAddress, type Settings, type ChangeSettings, type UpdateHomePage, type SimulateGovernanceContractExecution, type ChangeAddOrModifyAddressWindowState, type OpenWebPage, type SetEnsNameForHash, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions, type ForceSetGasLimitForTransaction, type ChangePreSimulationBlockTimeManipulation, type SetTransactionOrMessageBlockTimeManipulator, type FetchSimulationStackRequestConfirmation, type ImportSimulationStack, type PopupReadyAndListeningPage } from '../types/interceptor-messages.js'
@@ -34,7 +35,7 @@ import { checkAndThrowRuntimeLastError, doesUniqueRequestIdentifiersMatch, silen
 import { assertNever, modifyObject } from '../utils/typescript.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
-import { getAddressesbeingMadeRich, getCurrentSimulationInput, getMetadataForSimulation, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
+import { getCurrentSimulationInput, getMetadataForSimulation, simulateGnosisSafeMetaTransaction, simulateGovernanceContractExecution, updateSimulationMetadata, visualizeSimulatorState } from './simulationUpdating.js'
 import { getErrorMessage, reportUnexpectedError, isExpectedInfrastructureError } from '../utils/errors.js'
 import type { ImportSimulationStackReply, ModifyRichTokenRequest, RequestAbiAndNameFromBlockExplorer, RequestIdentifyAddress, SetSafeSimulationSigner, UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getWebsiteCreatedEthereumTransactions } from '../simulation/services/SimulationModeEthereumClientService.js'
@@ -75,7 +76,6 @@ type TimestampedPopupVisualisation = {
 const getSimulationConductedTimestamp = (popupVisualisation: TimestampedPopupVisualisation) => popupVisualisation.data.simulationState.simulationConductedTimestamp
 
 const formatCaughtErrorMessage = (error: unknown) => getErrorMessage(error) ?? 'Unknown error'
-const richTokenAddressBookSemaphore = new Semaphore(1)
 
 const importSimulationStackSuccess = (): ImportSimulationStackReply => ({ type: 'ImportSimulationStackReply', ok: true })
 const importSimulationStackFailure = (message: string): ImportSimulationStackReply => ({ type: 'ImportSimulationStackReply', ok: false, message })
@@ -269,14 +269,16 @@ export async function modifyMakeMeRich(makeMeRichChange: ModifyMakeMeRich) {
 		}
 		const { nativeAmount, address } = makeMeRichChange.data
 		const chainId = (await getSettings()).activeRpcNetwork.chainId
-		await ensureRichAccountBalances(chainId, [address])
-		let changed = false
-		await updateRichAccountBalances((profiles) => profiles.map((profile) => {
-			if (profile.chainId !== chainId || profile.address !== address || profile.nativeAmount === nativeAmount) return profile
-			changed = true
-			return { ...profile, nativeAmount }
-		}))
-		return changed
+		return await mutateRichMode(async (store) => {
+			await store.ensureRichAccountBalances(chainId, [address])
+			let changed = false
+			await store.updateRichAccountBalances((profiles) => profiles.map((profile) => {
+				if (profile.chainId !== chainId || profile.address !== address || profile.nativeAmount === nativeAmount) return profile
+				changed = true
+				return { ...profile, nativeAmount }
+			}))
+			return changed
+		}, chainId, [address])
 	}
 	const { add, address } = makeMeRichChange.data
 	if (address === 'CurrentAddress') return await updateMakeCurrentAddressRich(() => add)
@@ -297,34 +299,33 @@ export async function modifyRichToken(
 	const chainId = ethereum.getChainId()
 	const identity = { tokenAddress: request.data.tokenAddress, tokenId: request.data.tokenId }
 	try {
-		if (request.data.action === 'Remove') {
-			return await richTokenAddressBookSemaphore.execute(async () => {
-				await updateRichAccountBalances((profiles) => profiles.map((profile) => profile.chainId === chainId && profile.address === request.data.address
+		return await mutateRichMode(async (store) => {
+			if (request.data.action === 'Remove') {
+				await store.updateRichAccountBalances((profiles) => profiles.map((profile) => profile.chainId === chainId && profile.address === request.data.address
 					? { ...profile, tokenBalances: profile.tokenBalances.filter((balance) => !sameRichTokenIdentity(balance, identity)) }
 					: profile))
 				return { method: 'popup_modifyRichToken' as const, result: { success: true as const, richToken: undefined } }
-			})
-		}
-		if (request.data.action === 'SetAmount') {
-			if (request.data.amount <= 0n) return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: 'Token amount must be greater than zero.' } }
-			if (request.data.amount > MAX_RICH_TOKEN_AMOUNT) return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: 'Token amount cannot exceed the maximum uint256 value.' } }
-			const amount = request.data.amount
-			const richToken = (await getRichTokens()).find((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity))
-			if (richToken === undefined) return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: 'Add the token before changing its amount.' } }
-			const profiles = await ensureRichAccountBalances(chainId, [request.data.address])
-			const profile = profiles.find((candidate) => candidate.chainId === chainId && candidate.address === request.data.address)
-			if (profile?.tokenBalances.some((balance) => sameRichTokenIdentity(balance, identity)) !== true) {
-				return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: 'Add the token to this account before changing its amount.' } }
 			}
-			await updateRichAccountBalances((profiles) => profiles.map((profile) => profile.chainId === chainId && profile.address === request.data.address
-				? { ...profile, tokenBalances: profile.tokenBalances.map((balance) => sameRichTokenIdentity(balance, identity) ? { ...balance, amount } : balance) }
-				: profile))
-			return { method: 'popup_modifyRichToken' as const, result: { success: true as const, richToken } }
-		}
-		return await richTokenAddressBookSemaphore.execute(async () => {
-			const addTokenToAccount = async (richToken: Awaited<ReturnType<typeof getRichTokens>>[number]) => {
-				await ensureRichAccountBalances(chainId, [request.data.address])
-				await updateRichAccountBalances((profiles) => profiles.map((profile) => {
+			if (request.data.action === 'SetAmount') {
+				if (request.data.amount <= 0n) return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: 'Token amount must be greater than zero.' } }
+				if (request.data.amount > MAX_RICH_TOKEN_AMOUNT) return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: 'Token amount cannot exceed the maximum uint256 value.' } }
+				const amount = request.data.amount
+				const richToken = (await store.getRichTokens()).find((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity))
+				if (richToken === undefined) return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: 'Add the token before changing its amount.' } }
+				const profiles = await store.ensureRichAccountBalances(chainId, [request.data.address])
+				const profile = profiles.find((candidate) => candidate.chainId === chainId && candidate.address === request.data.address)
+				if (profile?.tokenBalances.some((balance) => sameRichTokenIdentity(balance, identity)) !== true) {
+				return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: 'Add the token to this account before changing its amount.' } }
+				}
+				await store.updateRichAccountBalances((profiles) => profiles.map((profile) => profile.chainId === chainId && profile.address === request.data.address
+					? { ...profile, tokenBalances: profile.tokenBalances.map((balance) => sameRichTokenIdentity(balance, identity) ? { ...balance, amount } : balance) }
+					: profile))
+				return { method: 'popup_modifyRichToken' as const, result: { success: true as const, richToken } }
+			}
+
+			const addTokenToAccount = async (richToken: RichToken) => {
+				await store.ensureRichAccountBalances(chainId, [request.data.address])
+				await store.updateRichAccountBalances((profiles) => profiles.map((profile) => {
 					if (profile.chainId !== chainId || profile.address !== request.data.address) return profile
 					if (profile.tokenBalances.some((balance) => sameRichTokenIdentity(balance, identity))) return profile
 					return { ...profile, tokenBalances: [...profile.tokenBalances, { ...identity, amount: richToken.amount }] }
@@ -342,13 +343,13 @@ export async function modifyRichToken(
 			}
 			const addressBookToken = await getAddressBookToken()
 			if (addressBookToken === undefined) {
-				await updateRichTokens((tokens) => tokens.filter((token) => token.chainId !== chainId || !sameRichTokenIdentity(token, identity)))
+				await store.updateRichTokens((tokens) => tokens.filter((token) => token.chainId !== chainId || !sameRichTokenIdentity(token, identity)))
 				return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: 'Choose an ERC-20 token or watched ERC-1155 token ID from the address book for the active chain.' } }
 			}
 			if (addressBookToken.type === 'ERC20' && !isSupportedRichTokenDecimals(addressBookToken.decimals)) {
 				return { method: 'popup_modifyRichToken' as const, result: { success: false as const, error: `ERC-20 decimals cannot exceed ${ MAX_SUPPORTED_RICH_TOKEN_DECIMALS.toString() } in rich mode.` } }
 			}
-			const current = await getRichTokens()
+			const current = await store.getRichTokens()
 			const existing = current.find((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity))
 			if (existing !== undefined) {
 				await addTokenToAccount(existing)
@@ -403,10 +404,10 @@ export async function modifyRichToken(
 				balanceSlot: discoveredStorage.balanceSlot,
 				erc1155StorageOrder: discoveredStorage.erc1155StorageOrder,
 			}
-			await updateRichTokens((tokens) => tokens.some((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity)) ? tokens : [...tokens, richToken])
+			await store.updateRichTokens((tokens) => tokens.some((token) => token.chainId === chainId && sameRichTokenIdentity(token, identity)) ? tokens : [...tokens, richToken])
 			await addTokenToAccount(richToken)
 			return { method: 'popup_modifyRichToken' as const, result: { success: true as const, richToken } }
-		})
+		}, chainId, [request.data.address])
 	} catch (error: unknown) {
 		const errorMessage = formatCaughtErrorMessage(error)
 		if (!isExpectedInfrastructureError(error)) {
@@ -421,14 +422,11 @@ export async function modifyRichToken(
 }
 
 export async function removeAddressBookEntry(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, removeAddressBookEntry: RemoveAddressBookEntry) {
-	await richTokenAddressBookSemaphore.execute(async () => {
-		await updateUserAddressBookEntries((previousContacts) => previousContacts.filter((contact) =>
+	await mutateRichMode(async (store) => {
+		await store.updateAddressBook((previousContacts) => previousContacts.filter((contact) =>
 			!(contact.address === removeAddressBookEntry.data.address
 			&& (contact.chainId === removeAddressBookEntry.data.chainId || (contact.chainId === undefined && removeAddressBookEntry.data.chainId === 1n))))
 		)
-		if (removeAddressBookEntry.data.addressBookCategory === 'ERC20 Tokens' || removeAddressBookEntry.data.addressBookCategory === 'ERC1155 Tokens') {
-			await reconcileRichTokensWithAddressBook()
-		}
 	})
 	if (removeAddressBookEntry.data.addressBookCategory === 'My Active Addresses' || removeAddressBookEntry.data.addressBookCategory === 'My Safes') {
 		await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true)
@@ -473,14 +471,13 @@ export async function addOrModifyAddressBookEntry(simulationServicesOwner: Simul
 				}
 			}
 		}
-		await richTokenAddressBookSemaphore.execute(async () => {
-			await updateUserAddressBookEntries((previousContacts) => {
+		await mutateRichMode(async (store) => {
+			await store.updateAddressBook((previousContacts) => {
 				if (previousContacts.find((previous) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId)) ) {
 					return previousContacts.map((previous) => previous.address === entryToStore.address && doAddressBookChainIdsMatch(previous.chainId, entryToStore.chainId) ? entryToStore : previous)
 				}
 				return previousContacts.concat([entryToStore])
 			})
-			await reconcileRichTokensWithAddressBook()
 		})
 		if (entryToStore.useAsActiveAddress) await updateWebsiteApprovalAccesses(simulationServicesOwner, websiteTabConnections, await getSettings(), true, true)
 		void sendPopupMessageToOpenWindows({ method: 'popup_addressBookEntriesChanged' })
@@ -1197,14 +1194,11 @@ export async function setTransactionOrMessageBlockTimeManipulator(ethereum: Ethe
 }
 
 export async function requestMakeMeRichList(ethereumClientService: EthereumClientService, requestAbortController: AbortController | undefined) {
-	const makeMeRichPromise = silenceChromeUnCaughtPromise(getMakeCurrentAddressRich())
-	const richNativeAmountPromise = silenceChromeUnCaughtPromise(getRichNativeAmount())
-	const richTokensPromise = silenceChromeUnCaughtPromise(getRichTokens())
-	const settingsPromise = silenceChromeUnCaughtPromise(getSettings())
-	const addressBookTokensPromise = settingsPromise.then(async (settings) => await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId))
-	const fixedAddressRichList = await getFixedAddressRichList()
-	const richAddresses = await getAddressesbeingMadeRich(await settingsPromise)
-	const richAccountBalancesPromise = settingsPromise.then(async (settings) => await ensureRichAccountBalances(settings.activeRpcNetwork.chainId, richAddresses))
+	const settings = await getSettings()
+	const state = await getRichModeState(settings.activeRpcNetwork.chainId)
+	const addressBookTokensPromise = silenceChromeUnCaughtPromise(getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId))
+	const fixedAddressRichList = state.fixedAddressRichList
+	const richAccountBalances = profilesForAddresses(state, settings.activeRpcNetwork.chainId, addressesBeingMadeRich(settings, state))
 	const fixedRichListPromises = Array.from(fixedAddressRichList.values()).map(async(element) => {
 		try {
 			return { ...element, addressBookEntry: await identifyAddress(ethereumClientService, requestAbortController, element.address) }
@@ -1231,12 +1225,12 @@ export async function requestMakeMeRichList(ethereumClientService: EthereumClien
 	return {
 		method: 'popup_requestMakeMeRichData' as const,
 		richList: await Promise.all(fixedRichListPromises),
-		makeCurrentAddressRich: await makeMeRichPromise,
-		richNativeAmount: await richNativeAmountPromise,
-		richAccountBalances: await richAccountBalancesPromise,
+		makeCurrentAddressRich: state.makeCurrentAddressRich,
+		richNativeAmount: state.defaultNativeAmount,
+		richAccountBalances,
 		richTokenOptions: getRichTokenOptions(
-			(await settingsPromise).activeRpcNetwork.chainId,
-			await richTokensPromise,
+			settings.activeRpcNetwork.chainId,
+			richTokensForPresentation(state),
 			await addressBookTokensPromise,
 		),
 	}
@@ -1250,23 +1244,18 @@ export const requestLatestUnexpectedError = async () => ({ method: 'popup_reques
 
 async function getCachedRichData(settings: Settings) {
 	const chainId = settings.activeRpcNetwork.chainId
-	const [makeCurrentAddressRich, richNativeAmount, fixedAddressRichList, richTokens] = await Promise.all([
-		getMakeCurrentAddressRich(),
-		getRichNativeAmount(),
-		getFixedAddressRichList(),
-		getRichTokens(),
-	])
-	const addressBookEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
-	const richAccountBalances = await ensureRichAccountBalances(settings.activeRpcNetwork.chainId, await getAddressesbeingMadeRich(settings))
+	const state = await getRichModeState(chainId)
+	const addressBookEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(chainId)
+	const richAccountBalances = profilesForAddresses(state, chainId, addressesBeingMadeRich(settings, state))
 	return {
 		method: 'popup_requestMakeMeRichData' as const,
-		richList: await Promise.all(fixedAddressRichList.map(async(element) => (
+		richList: await Promise.all(state.fixedAddressRichList.map(async(element) => (
 			{ ...element, addressBookEntry: await getActiveAddressEntryForChain(element.address, chainId) }
 		))),
-		makeCurrentAddressRich,
-		richNativeAmount,
+		makeCurrentAddressRich: state.makeCurrentAddressRich,
+		richNativeAmount: state.defaultNativeAmount,
 		richAccountBalances,
-		richTokenOptions: getRichTokenOptions(settings.activeRpcNetwork.chainId, richTokens, addressBookEntries),
+		richTokenOptions: getRichTokenOptions(settings.activeRpcNetwork.chainId, richTokensForPresentation(state), addressBookEntries),
 	}
 }
 

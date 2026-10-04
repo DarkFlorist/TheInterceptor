@@ -59,7 +59,7 @@ export function InterceptorDialogSurface({ ariaLabel, children, class: className
 					return
 				}
 				const activeElement = document.activeElement
-				if (event.shiftKey && (activeElement === first || !event.currentTarget.contains(activeElement))) {
+				if (event.shiftKey && (activeElement === first || activeElement === event.currentTarget || !event.currentTarget.contains(activeElement))) {
 					event.preventDefault()
 					last.focus()
 				} else if (!event.shiftKey && (activeElement === last || !event.currentTarget.contains(activeElement) || activeElement === event.currentTarget)) {

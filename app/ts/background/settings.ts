@@ -5,7 +5,7 @@ import { Semaphore } from '../utils/semaphore.js'
 import type { EthereumAddress } from '../types/wire-types.js'
 import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { BlockExplorer, RpcNetwork } from '../types/rpc.js'
-import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSafeParseGet, browserStorageLocalSet } from '../utils/storageUtils.js'
+import { type RichListElement, browserStorageLocalGet, browserStorageLocalSafeParse, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getUserAddressBookEntries, updateUserAddressBookEntries } from './storageVariables.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
@@ -13,9 +13,11 @@ import type { BlockTimeManipulation } from '../types/visualizer-types.js'
 import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_BLOCK_MANIPULATION, DEFAULT_RPCS } from '../config/defaults.js'
 import { silenceChromeUnCaughtPromise } from '../utils/requests.js'
 import { mergeStoredWebsiteMetadata, sanitizeWebsiteAccess } from '../utils/websiteIcons.js'
-import type { RichAccountBalance, RichToken, RichTokenBalance } from '../types/richMode.js'
-import { filterRichTokensSupportedByAddressBook, normalizeRichAccountBalances, sameRichTokenIdentity } from '../utils/richTokens.js'
+import type { RichAccountBalance, RichToken } from '../types/richMode.js'
+import { normalizeRichAccountBalances } from '../utils/richTokens.js'
 import type { SigningAddressPreference, SigningAddressPreferences } from '../types/signerTypes.js'
+import { getRichModeState, mutateRichMode, replaceRichModeState, richTokensForPresentation } from './richModeSettings.js'
+export { getRichAccountBalancesForAddresses, getRichModeState, mutateRichMode } from './richModeSettings.js'
 import { hasOwnKey } from '../utils/typescript.js'
 
 export const defaultActiveAddresses = DEFAULT_ACTIVE_ADDRESSES
@@ -53,11 +55,6 @@ type StartupStorageDefaults = {
 	websiteAccess: WebsiteAccessArray
 	simulationMode: boolean
 	activeRpcNetwork: RpcNetwork
-	makeCurrentAddressRich: boolean
-	richNativeAmount: bigint
-	fixedAddressRichList: readonly RichListElement[]
-	richTokens: readonly RichToken[]
-	richAccountBalances: readonly RichAccountBalance[]
 	signingAddressPreferences: SigningAddressPreferences
 }
 
@@ -129,68 +126,29 @@ export async function rememberSigningAddressPreference(preference: SigningAddres
 	})
 }
 
-export const setMakeCurrentAddressRich = async (makeCurrentAddressRich: boolean) => await browserStorageLocalSet({ makeCurrentAddressRich })
-export const getMakeCurrentAddressRich = async() => await getParsedStorageValueOrDefault('makeCurrentAddressRich', false)
-export const setRichNativeAmount = async (richNativeAmount: bigint) => await browserStorageLocalSet({ richNativeAmount })
-export const getRichNativeAmount = async() => await getParsedStorageValueOrDefault('richNativeAmount', MAKE_YOU_RICH_TRANSACTION.transaction.value)
+export const getMakeCurrentAddressRich = async () => (await getRichModeState()).makeCurrentAddressRich
+export const getRichNativeAmount = async () => (await getRichModeState()).defaultNativeAmount
+export const getFixedAddressRichList = async () => (await getRichModeState()).fixedAddressRichList
+export const getRichTokens = async () => richTokensForPresentation(await getRichModeState())
+export const getRichAccountBalances = async () => (await getRichModeState()).accountBalances
 
-const makeMeRichSettingsSemaphore = new Semaphore(1)
+export const setMakeCurrentAddressRich = async (makeCurrentAddressRich: boolean) => { await updateMakeCurrentAddressRich(() => makeCurrentAddressRich) }
+export const setRichNativeAmount = async (defaultNativeAmount: bigint) => { await mutateRichMode(async (store) => { store.replace({ ...store.getState(), defaultNativeAmount }) }) }
+export const setFixedMakeMeRichList = async (fixedAddressRichList: readonly RichListElement[]) => { await updateFixedMakeMeRichList(() => fixedAddressRichList) }
 
-export async function updateMakeCurrentAddressRich(update: (makeCurrentAddressRich: boolean) => boolean) {
-	return await makeMeRichSettingsSemaphore.execute(async () => {
-		const previous = await getMakeCurrentAddressRich()
-		const next = update(previous)
-		if (next === previous) return false
-		await setMakeCurrentAddressRich(next)
+export async function updateMakeCurrentAddressRich(update: (enabled: boolean) => boolean) {
+	return await mutateRichMode(async (store) => {
+		const previous = store.getState()
+		const makeCurrentAddressRich = update(previous.makeCurrentAddressRich)
+		if (makeCurrentAddressRich === previous.makeCurrentAddressRich) return false
+		store.replace({ ...previous, makeCurrentAddressRich })
 		return true
 	})
 }
 
-export const setFixedMakeMeRichList = async (fixedAddressRichList: readonly RichListElement[]) => await browserStorageLocalSet({ fixedAddressRichList })
-export async function getFixedAddressRichList() { return await getParsedStorageValueOrDefault('fixedAddressRichList', []) }
-export async function getRichTokens() { return await getParsedStorageValueOrDefault('richTokens', []) }
-export async function getRichAccountBalances() { return await getParsedStorageValueOrDefault('richAccountBalances', []) }
-
-export async function updateRichAccountBalances(update: (balances: readonly RichAccountBalance[]) => readonly RichAccountBalance[]) {
-	return await makeMeRichSettingsSemaphore.execute(async () => {
-		const previous = await getRichAccountBalances()
-		const next = update(previous)
-		await browserStorageLocalSet({ richAccountBalances: next })
-		return next
-	})
-}
-
-export async function ensureRichAccountBalances(chainId: bigint, addresses: readonly bigint[]) {
-	return await makeMeRichSettingsSemaphore.execute(async () => {
-		const { richAccountBalances: rawStored } = await browser.storage.local.get('richAccountBalances')
-		const parsedStored = await browserStorageLocalSafeParseGet('richAccountBalances')
-		const storedProfilesWereCorrupt = rawStored !== undefined && parsedStored?.richAccountBalances === undefined
-		if (storedProfilesWereCorrupt) console.warn('richAccountBalances was corrupt; resetting account-specific rich balances.')
-		const existing = parsedStored?.richAccountBalances ?? []
-		const legacyTokens = rawStored === undefined ? await getRichTokens() : []
-		const profileChainIds = rawStored === undefined
-			? [...new Set([chainId, ...legacyTokens.map((token) => token.chainId)])]
-			: [chainId]
-		const missing = [...new Set(addresses)].flatMap((address) => profileChainIds
-			.filter((profileChainId) => !existing.some((profile) => profile.chainId === profileChainId && profile.address === address))
-			.map((profileChainId) => ({ chainId: profileChainId, address })))
-		if (missing.length === 0 && !storedProfilesWereCorrupt) return existing
-		const legacyNativeAmount = await getRichNativeAmount()
-		const next = [
-			...existing,
-			...missing.map((profile): RichAccountBalance => ({
-				chainId: profile.chainId,
-				address: profile.address,
-				nativeAmount: legacyNativeAmount,
-				tokenBalances: legacyTokens
-					.filter((token) => token.chainId === profile.chainId)
-					.map((token): RichTokenBalance => ({ tokenAddress: token.tokenAddress, tokenId: token.tokenId, amount: token.amount })),
-			})),
-		]
-		await browserStorageLocalSet({ richAccountBalances: next })
-		return next
-	})
-}
+export const updateRichAccountBalances = async (update: (balances: readonly RichAccountBalance[]) => readonly RichAccountBalance[]) => await mutateRichMode(async (store) => await store.updateRichAccountBalances(update))
+export const ensureRichAccountBalances = async (chainId: bigint, addresses: readonly bigint[]) => await mutateRichMode(async (store) => await store.ensureRichAccountBalances(chainId, addresses), chainId, addresses)
+export const updateRichTokens = async (update: (tokens: readonly RichToken[]) => readonly RichToken[]) => await mutateRichMode(async (store) => await store.updateRichTokens(update))
 
 function toComparableRichListElement(element: RichListElement): RichListElement {
 	return {
@@ -207,49 +165,22 @@ function richListElementsEqual(first: RichListElement, second: RichListElement) 
 }
 
 export async function updateFixedMakeMeRichList(update: (fixedAddressRichList: readonly RichListElement[]) => readonly RichListElement[]) {
-	return await makeMeRichSettingsSemaphore.execute(async () => {
-		const previous = await getFixedAddressRichList()
+	return await mutateRichMode(async (store) => {
+		const previous = store.getState().fixedAddressRichList
 		const next = update(previous)
 		if (previous.length === next.length && previous.every((element, index) => {
 			const nextElement = next[index]
 			return nextElement !== undefined && richListElementsEqual(element, nextElement)
 		})) return false
-		await setFixedMakeMeRichList(next)
+		store.replace({ ...store.getState(), fixedAddressRichList: next })
 		return true
 	})
 }
 
-export async function updateRichTokens(update: (richTokens: readonly RichToken[]) => readonly RichToken[]) {
-	return await makeMeRichSettingsSemaphore.execute(async () => {
-		const previous = await getRichTokens()
-		const next = update(previous)
-		await browserStorageLocalSet({ richTokens: next })
-		return next
-	})
-}
-
-export async function reconcileRichTokensWithAddressBook() {
-	return await makeMeRichSettingsSemaphore.execute(async () => {
-		const previous = await getRichTokens()
-		const supported = filterRichTokensSupportedByAddressBook(previous, await getUserAddressBookEntries())
-		if (supported.length !== previous.length) {
-			const { richAccountBalances: rawProfiles } = await browser.storage.local.get('richAccountBalances')
-			if (rawProfiles === undefined) {
-				await browserStorageLocalSet({ richTokens: supported })
-				return supported
-			}
-			const parsedProfiles = await browserStorageLocalSafeParseGet('richAccountBalances')
-			await browserStorageLocalSet({
-				richTokens: supported,
-				richAccountBalances: (parsedProfiles?.richAccountBalances ?? []).map((profile) => ({
-					...profile,
-					tokenBalances: profile.tokenBalances.filter((balance) => supported.some((token) => token.chainId === profile.chainId && sameRichTokenIdentity(token, balance))),
-				})),
-			})
-		}
-		return supported
-	})
-}
+export const reconcileRichTokensWithAddressBook = async () => await mutateRichMode(async (store) => {
+	await store.reconcileAddressBook(await getUserAddressBookEntries())
+	return await store.getRichTokens()
+})
 
 export async function trackPreviousActiveAddressForMakeMeRichList(previousActiveAddress: EthereumAddress | undefined) {
 	return await updateFixedMakeMeRichList((currentList) => {
@@ -343,9 +274,10 @@ export const setSafeAppsCompatibilityMode = async(safeAppsCompatibilityMode: boo
 export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> {
 	const exportDate = (new Date).toISOString().split('T')[0]
 	if (exportDate === undefined) throw new Error('Datestring did not contain Date')
-	const [settings, signingAddressPreferences] = await Promise.all([getSettings(), getSigningAddressPreferences()])
+	const [settings, signingAddressPreferences, richModeState] = await Promise.all([getSettings(), getSigningAddressPreferences(), getRichModeState()])
 	return {
 		name: 'InterceptorSettingsAndAddressBook' as const,
+		// Keep the 1.7 backup format as a computed compatibility projection.
 		version: '1.7' as const,
 		exportedDate: exportDate,
 		settings: {
@@ -360,11 +292,11 @@ export async function exportSettingsAndAddressBook(): Promise<ExportedSettings> 
 			addressBookEntries: await getUserAddressBookEntries(),
 			useTabsInsteadOfPopup: await getUseTabsInsteadOfPopup(),
 			metamaskCompatibilityMode: await getMetamaskCompatibilityMode(),
-			makeCurrentAddressRich: await getMakeCurrentAddressRich(),
-			richNativeAmount: await getRichNativeAmount(),
-			fixedAddressRichList: await getFixedAddressRichList(),
-			richTokens: await getRichTokens(),
-			richAccountBalances: await getRichAccountBalances(),
+			makeCurrentAddressRich: richModeState.makeCurrentAddressRich,
+			richNativeAmount: richModeState.defaultNativeAmount,
+			fixedAddressRichList: richModeState.fixedAddressRichList,
+			richTokens: richTokensForPresentation(richModeState),
+			richAccountBalances: richModeState.accountBalances,
 			safeAppsCompatibilityMode: await getSafeAppsCompatibilityMode(),
 		}
 	}
@@ -377,10 +309,19 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 	if (exportedSetings.version === '1.3' || exportedSetings.version === '1.4' || exportedSetings.version === '1.5' || (exportedSetings.version === '1.6' || exportedSetings.version === '1.7')) {
 		await setPage(exportedSetings.settings.openedPage)
 	}
-	// Safe selection and per-signer preferences resolve through the address book. Make imported entries available before publishing that dependent signing state.
-	if (exportedSetings.version === '1.4' || exportedSetings.version === '1.5' || (exportedSetings.version === '1.6' || exportedSetings.version === '1.7')) {
-		await updateUserAddressBookEntries(() => exportedSetings.settings.addressBookEntries)
-	}
+	// Imported entries and funding are published together before resolving dependent Safe preferences.
+	const imported = exportedSetings.settings
+	await replaceRichModeState('richTokens' in imported ? {
+		makeCurrentAddressRich: imported.makeCurrentAddressRich,
+		defaultNativeAmount: imported.richNativeAmount,
+		fixedAddressRichList: imported.fixedAddressRichList,
+		tokenLayouts: imported.richTokens.map(({ amount: _amount, ...layout }) => layout),
+		accountBalances: normalizeRichAccountBalances(imported.richAccountBalances),
+	} : {
+		makeCurrentAddressRich: false,
+		defaultNativeAmount: MAKE_YOU_RICH_TRANSACTION.transaction.value,
+		fixedAddressRichList: [], tokenLayouts: [], accountBalances: [],
+	}, 'addressBookEntries' in imported ? imported.addressBookEntries : undefined)
 	if (exportedSetings.version === '1.0') {
 		await replaceModeAndSigningPreferencesForImport({
 			simulationMode: exportedSetings.settings.simulationMode,
@@ -411,22 +352,6 @@ export async function importSettingsAndAddressBook(exportedSetings: ExportedSett
 			return getUniqueItemsByProperties(previousEntries.concat(exportedSetings.settings.addressInfos.map((x) => convertActiveAddressToAddressBookEntry(x))).concat(exportedSetings.settings.contacts ?? []), ['address'])
 		})
 	}
-	await browserStorageLocalSet('richTokens' in exportedSetings.settings
-		? {
-			makeCurrentAddressRich: exportedSetings.settings.makeCurrentAddressRich,
-			richNativeAmount: exportedSetings.settings.richNativeAmount,
-			fixedAddressRichList: exportedSetings.settings.fixedAddressRichList,
-			richTokens: exportedSetings.settings.richTokens,
-			richAccountBalances: normalizeRichAccountBalances(exportedSetings.settings.richAccountBalances),
-		}
-		: {
-			makeCurrentAddressRich: false,
-			richNativeAmount: MAKE_YOU_RICH_TRANSACTION.transaction.value,
-			fixedAddressRichList: [],
-			richTokens: [],
-			richAccountBalances: [],
-		})
-	await reconcileRichTokensWithAddressBook()
 }
 
 export const setPreSimulationBlockTimeManipulation = async (preSimulationBlockTimeManipulation: BlockTimeManipulation) => await browserStorageLocalSet({ preSimulationBlockTimeManipulation })

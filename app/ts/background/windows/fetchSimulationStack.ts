@@ -14,7 +14,7 @@ import { getSimulatedStackV1, getSimulatedStackV2 } from '../../simulation/Simul
 import { getAddressToMakeRich } from '../../simulation/services/SimulationModeEthereumClientService.js'
 import { assertNever } from '../../utils/typescript.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners } from '../../utils/popupOrTab.js'
-import { ensureRichAccountBalances, getRichNativeAmount, getSettings } from '../settings.js'
+import { getRichAccountBalancesForAddresses, getRichNativeAmount, getSettings } from '../settings.js'
 
 export type SimulationStackSnapshot = {
 	simulationInput: ResolvedSimulationInput
@@ -47,7 +47,7 @@ export async function getSimulationStack(simulationState: ResolvedSimulationStat
 			const legacyNativeAmount = await getRichNativeAmount()
 			if (addressToMakeRich === undefined) return { version, payload: getSimulatedStackV1(simulationState, addressToMakeRich, legacyNativeAmount, version) } as const
 			const chainId = (await getSettings()).activeRpcNetwork.chainId
-			const profiles = await ensureRichAccountBalances(chainId, [addressToMakeRich])
+			const profiles = await getRichAccountBalancesForAddresses(chainId, [addressToMakeRich])
 			const nativeAmount = profiles.find((profile) => profile.chainId === chainId && profile.address === addressToMakeRich)?.nativeAmount ?? legacyNativeAmount
 			return { version, payload: getSimulatedStackV1(simulationState, addressToMakeRich, nativeAmount, version) } as const
 		}
