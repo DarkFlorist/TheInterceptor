@@ -232,7 +232,7 @@ async function renderAndOpenEnsEditor(event: EnsEvent) {
 }
 
 async function closeEnsEditor(dom: ReturnType<typeof installDomMock>, modalState: Signal<FetchSimulationStackModalState>) {
-	const closeEditorButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.trim() === 'Ok')
+	const closeEditorButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.trim() === 'Done')
 	if (closeEditorButton === undefined) throw new Error('Expected ENS editor close button')
 
 	await act(async () => {
@@ -258,9 +258,9 @@ describe('FetchSimulationStack editing', () => {
 				name: 'example.eth',
 			},
 		})
-		assert.equal(dom.document.body.textContent.includes('What is the correct ENS name for this hash?'), true)
+		assert.equal(dom.document.body.textContent.includes('Resolve ENS name'), true)
 		await closeEnsEditor(dom, modalState)
-		assert.equal(dom.document.body.textContent.includes('What is the correct ENS name for this hash?'), false)
+		assert.equal(dom.document.body.textContent.includes('Resolve ENS name'), false)
 	})
 
 	test('opens the ENS label editor from a simulation stack event', async () => {
@@ -274,8 +274,8 @@ describe('FetchSimulationStack editing', () => {
 				name: 'example',
 			},
 		})
-		assert.equal(dom.document.body.textContent.includes('What is the correct ENS label for this hash?'), true)
+		assert.equal(dom.document.body.textContent.includes('Resolve ENS label'), true)
 		await closeEnsEditor(dom, modalState)
-		assert.equal(dom.document.body.textContent.includes('What is the correct ENS label for this hash?'), false)
+		assert.equal(dom.document.body.textContent.includes('Resolve ENS label'), false)
 	})
 })

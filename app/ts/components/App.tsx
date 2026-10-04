@@ -52,6 +52,9 @@ export function App() {
 		popupRefreshAppliedGeneration,
 		fixedAddressRichList,
 		makeCurrentAddressRich,
+		richNativeAmount,
+		richTokenOptions,
+		richAccountBalances,
 		simulationMode,
 		numberOfAddressesMadeRich,
 		hasSafeTransactionsToExport,
@@ -240,6 +243,9 @@ export function App() {
 						activeSimulationAddress = { activeSimulationAddress }
 						changeActiveAddress = { changeActiveAddress }
 						makeCurrentAddressRich = { makeCurrentAddressRich }
+						richNativeAmount = { richNativeAmount }
+						richTokenOptions = { richTokenOptions }
+						richAccountBalances = { richAccountBalances }
 						activeAddresses = { activeAddresses }
 						walletSelectedAddressBookEntry = { walletSelectedAddressBookEntry }
 						simulationMode = { simulationMode }

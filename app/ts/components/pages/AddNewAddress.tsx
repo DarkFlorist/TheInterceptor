@@ -11,7 +11,7 @@ import type { AddressBookEntries, AddressBookEntry, AddressBookEntryType, ChainI
 import { isBlockExplorerAvailableForChain, isValidAbi } from '../../simulation/services/EtherScanAbiFetcher.js'
 import type { ModifyAddressWindowState } from '../../types/visualizer-types.js'
 import { MessageToPopup } from '../../types/interceptor-messages.js'
-import { ChevronIcon, XMarkIcon } from '../subcomponents/icons.js'
+import { ChevronIcon } from '../subcomponents/icons.js'
 import { ChainSelector } from '../subcomponents/ChainSelector.js'
 import type { ChainEntry, RpcEntries } from '../../types/rpc.js'
 import { type Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
@@ -21,6 +21,7 @@ import { NonHexBigInt } from '../../types/wire-types.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { type AsyncStates, useAsyncState } from '../../utils/preact-utilities.js'
 import { isValidAddressBookEntryName, MAX_ADDRESS_BOOK_ENTRY_NAME_LENGTH } from '../../utils/addressBookValidation.js'
+import { InterceptorDialogBody, InterceptorDialogFooter, InterceptorDialogHeader, InterceptorDialogSection, InterceptorDialogSurface } from '../subcomponents/InterceptorDialog.js'
 import { isValidErc20Decimals } from '../../utils/erc20.js'
 
 export function mergeAddressWindowErrorState(
@@ -679,46 +680,33 @@ export function AddNewAddress(param: AddAddressParam) {
 		return incompleteAddressBookEntry.addingAddress ? 'Add address' : 'Edit address'
 	}
 	const incompleteAddressBookEntry = useComputed(() => param.modifyAddressWindowState.value.incompleteAddressBookEntry )
-	return ( <>
-		<div class = 'modal-background'> </div>
-			<div class = 'modal-card address-editor-modal'>
-				<header class = 'modal-card-head card-header interceptor-modal-head window-header'>
-					<div class = 'card-header-title'>
-						<p class = 'paragraph'> { getCardTitle() } </p>
-				</div>
-				<button class = 'card-header-icon' aria-label = 'close' onClick = { param.close } disabled = { isBlockExplorerLookupPending.value }>
-					<XMarkIcon />
-				</button>
-				</header>
-				<section class = 'modal-card-body'>
-					<RenderIncompleteAddressBookEntry
-								modifyAddressWindowState = { param.modifyAddressWindowState }
-							rpcEntries = { param.rpcEntries }
-							canFetchFromEtherScan = { canFetchFromEtherScan }
-							blockExplorerLookupState = { blockExplorerLookup.value.state }
-							safeSignerLookupState = { safeSignerLookup.value.state }
-							safeSimulationSignerAddressBookEntries = { safeSimulationSignerAddressBookEntries }
-							fetchAbiAndNameFromBlockExplorer = { fetchAbiAndNameFromBlockExplorer }
-								refreshSafeSigners = { refreshSafeSigners }
-						/>
-					<div class = 'address-editor-errors'>
-					{ completeAddressBookEntryOrError.value.type !== 'error' || !isCurrentSafeLookupComplete.value ? <></> : <ErrorText text = { completeAddressBookEntryOrError.value.error } /> }
-
-					{ param.modifyAddressWindowState.value.errorState === undefined ? <></> : <ErrorText text = { param.modifyAddressWindowState.value.errorState.message } /> }
-					{ saveEntryState.value.state === 'rejected' ? <ErrorText text = { saveEntryState.value.error.message } /> : <></> }
-					{ !showOnChainVerificationErrorBox.value ? <></> :
-						<ErrorCheckBox
-							text = { `The name and symbol for this token was provided by the token itself and we have not validated its legitimacy. A token may claim to have a name/symbol that is the same as another popular token (e.g., USDC or DAI) in an attempt to trick you. If you recognize this token's name, please verify elsewhere that this is the correct address for it.` }
-							checked = { onChainInformationVerifiedByUser }
-						/>
-					}
-				</div>
-			</section>
-				<footer class = 'modal-card-foot window-footer address-editor-footer'>
-					<button class = 'btn btn--outline' onClick = { param.close } disabled = { isBlockExplorerLookupPending.value }>Cancel</button>
-					{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value.incompleteAddressBookEntry === undefined || activeAddress.value === stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) ? <></> : <AsyncActionButton class = 'btn btn--outline' state = { saveEntryState.value.state } onClick = { createAndSwitch } disabled = { isSubmitButtonDisabled.value } text = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } pendingText = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Creating and switching...' : 'Modifying and switching...' } /> }
-					<AsyncActionButton class = 'btn btn--primary' state = { saveEntryState.value.state } onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled.value } text = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create address' : 'Save changes' } pendingText = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Creating...' : 'Saving...' } />
-				</footer>
-		</div>
-	</> )
+	const title = getCardTitle()
+	return <InterceptorDialogSurface ariaLabel = { title } closeDisabled = { isBlockExplorerLookupPending.value } onClose = { param.close } size = 'regular'>
+		<InterceptorDialogHeader close = { param.close } closeDisabled = { isBlockExplorerLookupPending.value } closeLabel = 'Close address editor' icon = '../img/address-book.svg' title = { title } subtitle = 'Address book details and contract metadata'/>
+		<InterceptorDialogBody>
+			<InterceptorDialogSection>
+				<RenderIncompleteAddressBookEntry
+					modifyAddressWindowState = { param.modifyAddressWindowState }
+					rpcEntries = { param.rpcEntries }
+					canFetchFromEtherScan = { canFetchFromEtherScan }
+					blockExplorerLookupState = { blockExplorerLookup.value.state }
+					safeSignerLookupState = { safeSignerLookup.value.state }
+					safeSimulationSignerAddressBookEntries = { safeSimulationSignerAddressBookEntries }
+					refreshSafeSigners = { refreshSafeSigners }
+					fetchAbiAndNameFromBlockExplorer = { fetchAbiAndNameFromBlockExplorer }
+				/>
+			</InterceptorDialogSection>
+			<div class = 'interceptor-dialog-feedback'>
+				{ completeAddressBookEntryOrError.value.type !== 'error' || !isCurrentSafeLookupComplete.value ? <></> : <ErrorText text = { completeAddressBookEntryOrError.value.error } /> }
+				{ param.modifyAddressWindowState.value.errorState === undefined ? <></> : <ErrorText text = { param.modifyAddressWindowState.value.errorState.message } /> }
+				{ saveEntryState.value.state === 'rejected' ? <ErrorText text = { saveEntryState.value.error.message } /> : <></> }
+				{ !showOnChainVerificationErrorBox.value ? <></> : <ErrorCheckBox text = { `The name and symbol for this token was provided by the token itself and we have not validated its legitimacy. A token may claim to have a name/symbol that is the same as another popular token (e.g., USDC or DAI) in an attempt to trick you. If you recognize this token's name, please verify elsewhere that this is the correct address for it.` } checked = { onChainInformationVerifiedByUser }/> }
+			</div>
+		</InterceptorDialogBody>
+		<InterceptorDialogFooter>
+			<button type = 'button' class = 'btn btn--ghost' onClick = { param.close } disabled = { isBlockExplorerLookupPending.value }>Cancel</button>
+			{ param.setActiveAddressAndInformAboutIt === undefined || param.modifyAddressWindowState.value.incompleteAddressBookEntry === undefined || activeAddress.value === stringToAddress(param.modifyAddressWindowState.value.incompleteAddressBookEntry.address) ? <></> : <AsyncActionButton class = 'btn btn--outline' state = { saveEntryState.value.state } onClick = { createAndSwitch } disabled = { isSubmitButtonDisabled.value } text = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create and switch' : 'Modify and switch' } pendingText = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Creating and switching...' : 'Modifying and switching...' } /> }
+			<AsyncActionButton class = 'btn btn--primary' state = { saveEntryState.value.state } onClick = { modifyOrAddEntry } disabled = { isSubmitButtonDisabled.value } text = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Create address' : 'Save changes' } pendingText = { param.modifyAddressWindowState.value.incompleteAddressBookEntry.addingAddress ? 'Creating...' : 'Saving...' } />
+		</InterceptorDialogFooter>
+	</InterceptorDialogSurface>
 }
