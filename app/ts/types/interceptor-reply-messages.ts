@@ -244,6 +244,40 @@ const RequestSafeContractStateReply = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
+export const RequestDelegateClearing = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_requestDelegateClearing'),
+	data: funtypes.ReadonlyObject({ address: EthereumAddress, chainId: EthereumQuantity }),
+}).asReadonly()
+
+export const SetDelegateClearing = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_setDelegateClearing'),
+	data: funtypes.ReadonlyObject({ address: EthereumAddress, chainId: EthereumQuantity, enabled: funtypes.Boolean }),
+}).asReadonly()
+
+const RequestDelegateClearingReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_requestDelegateClearing'),
+	data: funtypes.ReadonlyObject({
+		address: EthereumAddress,
+		chainId: EthereumQuantity,
+		status: funtypes.Union(
+			funtypes.ReadonlyObject({ type: funtypes.Literal('delegated'), delegate: EthereumAddress }),
+			funtypes.ReadonlyObject({ type: funtypes.Literal('none') }),
+			funtypes.ReadonlyObject({ type: funtypes.Literal('unknown') }),
+		),
+	}),
+}).asReadonly()
+
+const SetDelegateClearingReply = funtypes.Union(
+	funtypes.ReadonlyObject({
+		method: funtypes.Literal('popup_setDelegateClearing'),
+		data: funtypes.ReadonlyObject({ ok: funtypes.Literal(true), address: EthereumAddress, chainId: EthereumQuantity, enabled: funtypes.Boolean }),
+	}),
+	funtypes.ReadonlyObject({
+		method: funtypes.Literal('popup_setDelegateClearing'),
+		data: funtypes.ReadonlyObject({ ok: funtypes.Literal(false), message: funtypes.String }),
+	}),
+)
+
 type RequestIsMainWindowOpen = funtypes.Static<typeof RequestIsMainWindowOpen>
 const RequestIsMainWindowOpen = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_isMainPopupWindowOpen'),
@@ -303,6 +337,8 @@ type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
 	popup_requestAbiAndNameFromBlockExplorer: typeof RequestAbiAndNameFromBlockExplorerReply
 	popup_requestIdentifyAddress: typeof RequestIdentifyAddressReply
 	popup_requestSafeContractState: typeof RequestSafeContractStateReply
+	popup_requestDelegateClearing: typeof RequestDelegateClearingReply
+	popup_setDelegateClearing: typeof SetDelegateClearingReply
 	popup_simulateGovernanceContractExecution: typeof PopupSimulateExecutionReply
 	popup_simulateGnosisSafeTransaction: typeof PopupSimulateExecutionReply
 	popup_isMainPopupWindowOpen: typeof RequestIsMainWindowOpen
@@ -330,6 +366,8 @@ export const PopupRequestsReplies: PopupRequestsRepliesMap = {
 	popup_requestAbiAndNameFromBlockExplorer: RequestAbiAndNameFromBlockExplorerReply,
 	popup_requestIdentifyAddress: RequestIdentifyAddressReply,
 	popup_requestSafeContractState: RequestSafeContractStateReply,
+	popup_requestDelegateClearing: RequestDelegateClearingReply,
+	popup_setDelegateClearing: SetDelegateClearingReply,
 	popup_simulateGovernanceContractExecution: PopupSimulateExecutionReply,
 	popup_simulateGnosisSafeTransaction: PopupSimulateExecutionReply,
 	popup_isMainPopupWindowOpen: RequestIsMainWindowOpen,
@@ -351,6 +389,8 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	RequestAbiAndNameFromBlockExplorer,
 	RequestIdentifyAddress,
 	RequestSafeContractState,
+	RequestDelegateClearing,
+	SetDelegateClearing,
 	RequestSimulateGovernanceContractExecution,
 	RequestSimulateGnosisSafeTransaction,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestMakeMeRichData') }),
@@ -406,6 +446,8 @@ export type PopupReplyOption =
 	| RequestAbiAndNameFromBlockExplorerReply
 	| RequestIdentifyAddressReply
 	| RequestSafeContractStateReply
+	| funtypes.Static<typeof RequestDelegateClearingReply>
+	| funtypes.Static<typeof SetDelegateClearingReply>
 	| funtypes.Static<typeof PopupSimulateExecutionReply>
 	| RequestIsMainWindowOpen
 	| RequestIsSimulationVisualizerOpen
@@ -430,6 +472,8 @@ export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union
 	RequestAbiAndNameFromBlockExplorerReply,
 	RequestIdentifyAddressReply,
 	RequestSafeContractStateReply,
+	RequestDelegateClearingReply,
+	SetDelegateClearingReply,
 	PopupSimulateExecutionReply,
 	RequestIsMainWindowOpen,
 	RequestIsSimulationVisualizerOpen,

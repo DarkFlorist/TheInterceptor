@@ -1,7 +1,7 @@
 // Coalesce interactive requests only; popupVisualisationUpdater owns execution, cancellation and stored state. See docs/popup-simulation-refresh.md.
 import { Future } from '../utils/future.js'
 import type { SimulationServices } from '../simulation/serviceLifecycle.js'
-import { captureSimulationSnapshot, getSimulationProviderForSnapshot, type SimulationSnapshot } from './simulationUpdating.js'
+import { captureWhatIfSimulationSnapshot, getSimulationProviderForSnapshot, type SimulationSnapshot } from './simulationUpdating.js'
 import { getPopupVisualisationFingerprint } from './popupSimulationFingerprint.js'
 import { stringifyJSONWithBigInts } from '../utils/bigint.js'
 import { updatePopupVisualisationIfNeeded } from './popupVisualisationUpdater.js'
@@ -62,12 +62,12 @@ const refreshRevision = createPopupSimulationRefresher<RevisionedPopupSimulation
 })
 
 export async function queuePopupSimulationRefresh(services: PopupSimulationRefresh) {
-	const snapshot = await captureSimulationSnapshot()
+	const snapshot = await captureWhatIfSimulationSnapshot()
 	const provider = getSimulationProviderForSnapshot(services.ethereum, snapshot)
 	const block = provider?.getCachedBlock()
 	// Without a cached head we cannot prove that two requests cover the same block; keep the follow-up refresh.
 	const revision = block === undefined ? Symbol('uncached block') : stringifyJSONWithBigInts([
-		getPopupVisualisationFingerprint(snapshot.simulationStateInput, services.ethereum.getRpcEntry(), block.number),
+		getPopupVisualisationFingerprint(snapshot.simulationInput, services.ethereum.getRpcEntry(), block.number),
 		block.hash,
 		snapshot.numberOfAddressesMadeRich,
 		snapshot.activeStackContext,

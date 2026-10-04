@@ -368,6 +368,7 @@ export const fakeSafeContract = {
 	requestedCodeAddresses: [] as bigint[],
 	beforeVersionResponse: undefined as (() => Promise<void>) | undefined,
 	requestedRpcMethods: [] as string[],
+	simulatedRequests: [] as { method: string, params?: readonly unknown[] }[],
 	failEthSimulate: false,
 	safeOwnerLookupFailure: undefined as 'expected' | 'unexpected' | undefined,
 }
@@ -384,6 +385,7 @@ export function resetFakeSafeContractState() {
 	fakeSafeContract.requestedCodeAddresses.length = 0
 	fakeSafeContract.beforeVersionResponse = undefined
 	fakeSafeContract.requestedRpcMethods.length = 0
+	fakeSafeContract.simulatedRequests.length = 0
 	fakeSafeContract.failEthSimulate = false
 	fakeSafeContract.safeOwnerLookupFailure = undefined
 }
@@ -435,6 +437,7 @@ export const fakeRequestHandler = {
 			}
 			case 'eth_simulateV1':
 				if (fakeSafeContract.failEthSimulate) throw new Error('eth_simulateV1 unavailable')
+				fakeSafeContract.simulatedRequests.push(rpcRequest)
 				return modules.serialize(
 					modules.EthSimulateV1Result,
 					(Array.isArray(rpcRequest.params?.[0]?.blockStateCalls) ? rpcRequest.params[0].blockStateCalls : [{}]).map((blockStateCall) =>
@@ -541,6 +544,7 @@ export const popupVisualisation = {
 		namedTokenIds: [],
 		simulationState: {
 			success: true as const,
+			simulationOverrides: {},
 			simulationStateInput: [],
 			simulatedBlocks: [],
 			blockNumber: 123n,

@@ -1690,6 +1690,56 @@ svg.spinner > circle {
 	margin: 10px;
 }
 
+.delegate-clearing-option {
+	color: var(--text-color);
+	font-size: 0.8rem;
+	margin: 6px 0 8px 12px;
+}
+
+.delegate-clearing-option summary {
+	color: var(--accent-color);
+	cursor: pointer;
+	font-weight: 600;
+}
+
+.delegate-clearing-option-content {
+	display: grid;
+	gap: 6px;
+	padding: 8px 12px 4px;
+	overflow-wrap: anywhere;
+}
+
+.delegate-clearing-option-content .paragraph {
+	margin: 0;
+}
+
+.settings-delegate-clearing {
+	color: var(--text-color);
+}
+
+.settings-delegate-clearing > summary {
+	color: var(--accent-color);
+	cursor: pointer;
+}
+
+.settings-delegate-clearing-list {
+	list-style: none;
+	padding: 0;
+}
+
+.settings-delegate-clearing-list > li {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	margin: 0.5rem 0;
+}
+
+.settings-delegate-clearing-list span {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
 .popup-home-header-layout {
 	align-items: center;
 	column-gap: 1rem;
