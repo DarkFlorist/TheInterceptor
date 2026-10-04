@@ -222,12 +222,17 @@ async function getSignerAccount() {
 	return signerAccounts !== undefined && signerAccounts.length > 0 ? signerAccounts[0] : undefined
 }
 
-export async function changeActiveAddress(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, addressChange: ChangeActiveAddress) {
+export async function changeActiveAddress(
+	simulationServicesOwner: SimulationServicesOwner,
+	websiteTabConnections: WebsiteTabConnections,
+	addressChange: ChangeActiveAddress,
+	admittedSnapshot?: { readonly settings: Settings, readonly rpcConfiguration: RpcConfigurationState },
+) {
 	if (addressChange.data.activeAddress === 'signer') {
 		await refreshSignerAccountsFromApprovedWebsitePorts(websiteTabConnections, false)
 		sendCallbackToAllConfirmedSignerOwners(websiteTabConnections, { method: 'request_signer_chainId', result: [] })
 	}
-	const settings = await getRequiredSettings()
+	const settings = admittedSnapshot?.settings ?? await getRequiredSettings()
 	const signerAccount = await getSignerAccount()
 	const activeAddresses = await getActiveAddresses()
 	const signerAccounts = signerAccount === undefined ? [] : [signerAccount]
@@ -238,7 +243,7 @@ export async function changeActiveAddress(simulationServicesOwner: SimulationSer
 				await activateAddressSelection(simulationServicesOwner, websiteTabConnections, undefined, {
 					simulationMode: false,
 					signerAddress: undefined,
-				})
+				}, admittedSnapshot)
 				return { type: 'ChangeActiveAddressReply', ok: true } as const
 			}
 		}
@@ -256,7 +261,7 @@ export async function changeActiveAddress(simulationServicesOwner: SimulationSer
 	await activateAddressSelection(simulationServicesOwner, websiteTabConnections, selection, {
 		simulationMode: addressChange.data.simulationMode,
 		signerAddress: signerAccount,
-	})
+	}, admittedSnapshot)
 	return { type: 'ChangeActiveAddressReply', ok: true } as const
 }
 

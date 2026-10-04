@@ -236,6 +236,70 @@ describe('popup settings changes', () => {
 		}
 	})
 
+	for (const unavailableState of ['corrupt configuration', 'paused services'] as const) test(`returns a typed unavailable reply when changing active address with ${ unavailableState }`, async () => {
+		installBrowserMock()
+		const { getRequiredSettings } = await loadModules()
+		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+		const settings = await getRequiredSettings()
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		if (unavailableState === 'corrupt configuration') await browser.storage.local.set({ rpcEntries: 'not-an-rpc-list' })
+		else services.simulationServicesOwner.clear()
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			const result = await dispatchPopupMessage({
+				...services,
+				settings,
+				rpcConfiguration: { status: 'ready', rpcEntries: [settings.activeRpcNetwork], activeRpcNetwork: settings.activeRpcNetwork },
+				websiteTabConnections: new Map(),
+				publishRpcConnectionStatus: async () => undefined,
+				simulationAbortController: new AbortController(),
+				confirmTransactionAbortController: new AbortController(),
+				resetSimulationState: async () => undefined,
+			}, { method: 'popup_changeActiveAddress', data: { simulationMode: true, activeAddress: settings.activeSimulationAddress } })
+			assert.deepEqual(result, {
+				type: 'ChangeActiveAddressReply',
+				ok: false,
+				message: 'Interceptor RPC configuration is unavailable. Network requests are paused until the user restores it.',
+			})
+		} finally {
+			console.warn = originalWarn
+		}
+	})
+
+	test('changes to the signer address without RPC services on a signer-only network', async () => {
+		installBrowserMock()
+		const { changeSimulationMode, getRequiredSettings, saveCurrentTabId, updateTabState } = await loadModules()
+		const { dispatchPopupMessage } = await import('../../app/ts/background/popupMessageDispatcher.js')
+		const signerOnlyNetwork = {
+			name: 'Signer only',
+			chainId: 1n,
+			httpsRpc: undefined,
+			currencyName: 'Ether?' as const,
+			currencyTicker: 'ETH?' as const,
+			primary: false as const,
+			minimized: true as const,
+		}
+		await changeSimulationMode({ simulationMode: false, rpcNetwork: signerOnlyNetwork })
+		await browser.storage.local.set({ rpcEntries: [] })
+		await updateTabState(1, previous => ({ ...previous, signerAccounts: [1n], activeSigningAddress: 1n, signerChain: signerOnlyNetwork.chainId }))
+		await saveCurrentTabId(1)
+		const settings = await getRequiredSettings()
+		const services = createEthereumWithGetBlockCounter({ count: 0 })
+		services.simulationServicesOwner.clear()
+		const result = await dispatchPopupMessage({
+			...services,
+			settings,
+			rpcConfiguration: { status: 'ready', rpcEntries: [], activeRpcNetwork: signerOnlyNetwork },
+			websiteTabConnections: new Map(),
+			publishRpcConnectionStatus: async () => undefined,
+			simulationAbortController: new AbortController(),
+			confirmTransactionAbortController: new AbortController(),
+			resetSimulationState: async () => undefined,
+		}, { method: 'popup_changeActiveAddress', data: { simulationMode: false, activeAddress: 'signer' } })
+		assert.deepEqual(result, { type: 'ChangeActiveAddressReply', ok: true })
+	})
+
 	for (const enabled of [true, false] as const) for (const failure of ['corrupt', 'unreadable'] as const) test(`completes an ${ enabled ? 'enabling' : 'disabling' } transition when RPC storage becomes ${ failure } after admission`, async () => {
 		installBrowserMock()
 		const { changeSimulationMode, getRequiredSettings } = await loadModules()

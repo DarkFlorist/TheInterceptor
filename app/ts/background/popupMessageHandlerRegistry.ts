@@ -5,7 +5,7 @@ import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import { createMethodHandlerFor } from '../utils/methodHandlers.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import type { RpcConfigurationState } from './storageVariables.js'
-import { getRpcServicesAtAdmission, rpcConfigurationIsReady } from './rpcConfigurationAvailability.js'
+import { getRpcServicesAtAdmission, rpcConfigurationIsReady, rpcConfigurationIsUsable } from './rpcConfigurationAvailability.js'
 import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../types/interceptor-reply-messages.js'
 import { RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } from '../utils/rpcConfigurationError.js'
 
@@ -36,7 +36,7 @@ export type PopupMessageHandler = (context: PopupMessageDispatcherContext, reque
 export type PopupMessageHandlerMap = Record<PopupMessage['method'], PopupMessageHandler>
 export type PopupReadyMessageDispatcherContext = Omit<PopupMessageDispatcherContext, 'settings'> & { readonly settings: Settings }
 
-type PopupAdmissionMode = 'settings' | 'recovery' | 'rpc-configuration' | 'rpc-lifecycle' | 'rpc-snapshot' | 'optional-rpc-snapshot'
+type PopupAdmissionMode = 'settings' | 'recovery' | 'rpc-configuration' | 'rpc-usable' | 'rpc-lifecycle' | 'rpc-snapshot' | 'optional-rpc-snapshot'
 
 // This exhaustive table is the single source of truth for popup admission. Adding a protocol method requires choosing its availability and snapshot semantics here.
 const POPUP_ADMISSION_MODE = {
@@ -45,7 +45,7 @@ const POPUP_ADMISSION_MODE = {
 	popup_addOrModifyAddressBookEntry: 'optional-rpc-snapshot',
 	popup_allowOrPreventAddressAccessForWebsite: 'settings',
 	popup_blockOrAllowExternalRequests: 'settings',
-	popup_changeActiveAddress: 'settings',
+	popup_changeActiveAddress: 'rpc-usable',
 	popup_changeActiveRpc: 'settings',
 	popup_changeAddOrModifyAddressWindowState: 'rpc-snapshot',
 	popup_changeChainDialog: 'settings',
@@ -119,7 +119,7 @@ type PopupMethodForAdmission<Mode extends PopupAdmissionMode> = {
 type PopupRecoveryMethod = PopupMethodForAdmission<'recovery'>
 type PopupOptionalSnapshotMethod = PopupMethodForAdmission<'optional-rpc-snapshot'>
 type PopupSnapshotMethod = PopupMethodForAdmission<'rpc-snapshot'>
-export type PopupReadyAdmissionMethod = PopupMethodForAdmission<'settings' | 'rpc-configuration' | 'rpc-lifecycle'>
+export type PopupReadyAdmissionMethod = PopupMethodForAdmission<'settings' | 'rpc-configuration' | 'rpc-usable' | 'rpc-lifecycle'>
 
 const popupMethodHandler = createMethodHandlerFor<PopupMessage, PopupMessageDispatcherContext, Promise<PopupReplyOption | void>>()
 
@@ -130,13 +130,15 @@ export type PopupAdmission =
 // All static availability policy is resolved from POPUP_ADMISSION_MODE here. Optional handlers supply only their request-variant requirements.
 export function admitPopupRequest(context: PopupMessageDispatcherContext, request: PopupMessage, optionalRequirements?: { readonly requiresSettings: boolean, readonly requiresRpc: boolean }): PopupAdmission {
 	const mode = POPUP_ADMISSION_MODE[request.method]
-	const requiresSettings = mode === 'settings' || mode === 'rpc-configuration' || mode === 'rpc-lifecycle' || mode === 'rpc-snapshot'
+	const requiresSettings = mode === 'settings' || mode === 'rpc-configuration' || mode === 'rpc-usable' || mode === 'rpc-lifecycle' || mode === 'rpc-snapshot'
 		|| (mode === 'optional-rpc-snapshot' && optionalRequirements?.requiresSettings === true)
-	const requiresRpcConfiguration = mode === 'rpc-configuration'
+	const requiresRpcConfiguration = mode === 'rpc-configuration' || mode === 'rpc-usable'
+	const requiresUsableRpcConfiguration = mode === 'rpc-usable'
 	const requiresRpcServices = mode === 'rpc-lifecycle' || mode === 'rpc-snapshot'
 		|| (mode === 'optional-rpc-snapshot' && optionalRequirements?.requiresRpc === true)
 	if (requiresSettings && context.settings === undefined) return { kind: 'rejected', reply: rpcConfigurationUnavailableReply(request) }
 	if (requiresRpcConfiguration && !rpcConfigurationIsReady(context.rpcConfiguration)) return { kind: 'rejected', reply: rpcConfigurationUnavailableReply(request) }
+	if (requiresUsableRpcConfiguration && !rpcConfigurationIsUsable(context.rpcConfiguration, context.simulationServicesOwner)) return { kind: 'rejected', reply: rpcConfigurationUnavailableReply(request) }
 	if (!requiresRpcServices) return { kind: 'admitted', settings: context.settings, services: undefined }
 	const services = getRpcServicesAtAdmission(context.rpcConfiguration, context.simulationServicesOwner)
 	if (context.settings === undefined || services === undefined) return { kind: 'rejected', reply: rpcConfigurationUnavailableReply(request) }

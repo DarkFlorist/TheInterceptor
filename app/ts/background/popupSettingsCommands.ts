@@ -34,7 +34,10 @@ function settingsCommand<Method extends PopupSettingsRequest['method'] & PopupRe
 // The protocol descriptor is the exhaustive operation/reply source; this boundary owns admission and command completion.
 export const popupSettingsCommandHandlers = {
 	popup_requestSettingsChangeStatus: popupMessageHandler('popup_requestSettingsChangeStatus', async () => await settingsCoordinator.publish()),
-	popup_changeActiveAddress: settingsCommand('popup_changeActiveAddress', async (context, request) => await changeActiveAddress(context.simulationServicesOwner, context.websiteTabConnections, request)),
+	popup_changeActiveAddress: settingsCommand('popup_changeActiveAddress', async (context, request) => {
+		if (!rpcConfigurationIsReady(context.rpcConfiguration)) throw new Error('Popup RPC configuration admission invariant failed.')
+		return await changeActiveAddress(context.simulationServicesOwner, context.websiteTabConnections, request, { settings: context.settings, rpcConfiguration: context.rpcConfiguration })
+	}),
 	popup_changeActiveRpc: settingsCommand('popup_changeActiveRpc', async (context, request) => await popupChangeActiveRpc(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_enableSimulationMode: settingsCommand('popup_enableSimulationMode', async (context, request) => {
 		if (!rpcConfigurationIsReady(context.rpcConfiguration)) throw new Error('Popup RPC configuration admission invariant failed.')
