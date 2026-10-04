@@ -288,6 +288,14 @@ try {
 	await wait(nested.page, '900719925474099312345')
 	await capture(nested.page, '25-nested-typed-data')
 	await closeTarget(chrome.browserConnection, nested.id)
+	for (const phase of ['submitted', 'confirmed', 'cancelled'] as const) {
+		await background.evaluate(`browser.storage.local.set({directSigningRequestsV1:${JSON.stringify(DirectSigningRecords.serialize([{ ...record, phase, result: signed, transactionHash: keccak256(bytesFromHex(signed)), ...(phase === 'confirmed' ? { executionSucceeded: true } : {}) }]))}})`)
+		const terminal = await open(`directSigningV3.html?id=${record.id}`, phase === 'cancelled' ? 'Request cancelled' : phase === 'confirmed' ? 'Transaction confirmed' : 'Transaction submitted')
+		const progress = await terminal.page.evaluate<{ current: number, completed: number }>(`({ current: document.querySelectorAll('.signing-steps [aria-current]').length, completed: document.querySelectorAll('.signing-steps .is-complete').length })`)
+		if (progress.current !== 0 || progress.completed !== (phase === 'cancelled' ? 0 : 3)) throw new Error(`Incorrect terminal progress for ${phase}`)
+		await capture(terminal.page, `28-${phase}`)
+		await closeTarget(chrome.browserConnection, terminal.id)
+	}
 	for (const method of ['personal_sign', 'eth_signTypedData_v4'] as const) {
 		const input = {
 			...record.input,
@@ -309,6 +317,7 @@ try {
 		const buttons = await message.page.evaluate(`([...document.querySelectorAll('button')].map(button => button.textContent))`)
 		if (buttons.some((text: string) => text.includes('Broadcast') || text.includes('Reconcile transaction')))
 			throw new Error('Message shows transaction submission action')
+		if (method === 'personal_sign') await capture(message.page, '28-message-complete')
 		console.info(`Recovered ${method}: message status, no broadcast action`)
 		await closeTarget(chrome.browserConnection, message.id)
 	}

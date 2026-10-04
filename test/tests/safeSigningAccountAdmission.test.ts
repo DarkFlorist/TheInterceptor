@@ -83,3 +83,17 @@ test('Safe pin lookup uses the caller chain even when persisted settings have ch
 	expect(await hasPinnedSigningAddress(snapshot)).toBe(true)
 	expect(await hasPinnedSigningAddress({ ...snapshot, activeRpcNetwork: changedNetwork })).toBe(false)
 })
+
+test('a contact resolved before a duplicate Safe does not substitute its saved owner', async () => {
+	const { getSavedSafeSigningAccount } = await import('../../app/ts/background/safeSigningAccount.js')
+	const safe = { ...createSafeAddressBookEntry(), chainId: ethereum.getChainId(), safeSigningSignerAddress: 1n }
+	await browserStorageLocalSet({ userAddressBookEntriesV3: [{ type: 'contact', address: activeAddress, name: 'Ordinary account on this chain', chainId: ethereum.getChainId(), entrySource: 'User', useAsActiveAddress: true }, safe] })
+	expect(await getSavedSafeSigningAccount(activeAddress, ethereum.getChainId())).toBeUndefined()
+	expect(await getSavedSafeSigningAccount(activeAddress, 999n)).toBeUndefined()
+	const { prepareSafeTransactionConfirmation } = await import('../../app/ts/background/safeTransactionConfirmation.js')
+	const preparation = await prepareSafeTransactionConfirmation(ethereum, { kind: 'transaction', parameters: { method: 'eth_sendTransaction', params: [{ from: activeAddress, to: 2n, value: 0n }] } }, false, activeAddress, 3n)
+	expect(preparation.rejection).toBeUndefined()
+	expect(preparation.transactionExecutor).toBe(activeAddress)
+	await browserStorageLocalSet({ userAddressBookEntriesV3: [safe] })
+	expect(await getSavedSafeSigningAccount(activeAddress, ethereum.getChainId())).toBe(1n)
+})

@@ -1,8 +1,8 @@
+import type { SafeEntry } from '../types/addressBookTypes.js'
 import type { TransactionConfirmationRequest } from '../types/confirmationRequest.js'
 import { matchesSafeMessageApproval } from '../safe/safeMessageApproval.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { SendRawTransactionParams, SendTransactionParams } from '../types/JsonRpc-types.js'
-import type { SafeEntry } from '../types/addressBookTypes.js'
 import type { SafeTransactionSigningRequest } from '../types/safeTypes.js'
 import type { WebsiteCreatedEthereumTransaction, WebsiteCreatedEthereumTransactionOrFailed } from '../types/visualizer-types.js'
 import { METAMASK_ERROR_FAILED_TO_PARSE_REQUEST, METAMASK_ERROR_METHOD_NOT_SUPPORTED_BY_PROVIDER } from '../utils/constants.js'
@@ -50,10 +50,11 @@ export async function prepareSafeTransactionConfirmation(
 	walletSignerAddress: bigint | undefined,
 ): Promise<SafeTransactionConfirmationPreparation> {
 	const transactionParams = confirmation.parameters
-	const configuredSafeEntry = simulationMode
+	const activeEntry = simulationMode
 		? undefined
 		: (await getUserAddressBookEntriesForChainIdMorePreciseFirst(ethereum.getChainId()))
-			.find((entry): entry is SafeEntry => entry.type === 'safe' && entry.address === activeAddress)
+			.find((entry) => entry.address === activeAddress)
+	const configuredSafeEntry = activeEntry?.type === 'safe' ? activeEntry : undefined
 	if (configuredSafeEntry !== undefined) {
 		if (transactionParams.method === 'eth_sendRawTransaction') {
 			return createRejectedPreparation(activeAddress, transactionParams, 'Gnosis Safe wallets do not support eth_sendRawTransaction.')

@@ -1,5 +1,5 @@
-// Static display metadata from Ledger Ethereum 1.22.3 src/network.c (Apache-2.0); see app/licenses/ledger-network.txt.
-const networks: ReadonlyMap<bigint, Readonly<{ name: string, ticker: string }>> = new Map([
+// Static display metadata from Ledger Ethereum 1.22.3 src/network.c (Apache-2.0); see app/licenses/ledger-network.txt. Firmware fixture only: never use this for Interceptor or AirGap network labels. RPC/chainNames metadata can differ from what this specific device firmware displays.
+const ledgerEthereum1223Networks: ReadonlyMap<bigint, Readonly<{ name: string, ticker: string }>> = new Map([
 	[1n, { name: 'Ethereum', ticker: 'ETH' }],
 	[3n, { name: 'Ropsten', ticker: 'ETH' }],
 	[4n, { name: 'Rinkeby', ticker: 'ETH' }],
@@ -114,6 +114,6 @@ const networks: ReadonlyMap<bigint, Readonly<{ name: string, ticker: string }>> 
 	[11297108109n, { name: 'Palm Network', ticker: 'PALM' }],
 ])
 
-export function ledgerNetworkDisplay(chainId: bigint) {
-	return networks.get(chainId) ?? { name: chainId.toString(), ticker: '???' }
+export function ledgerEthereum1223NetworkDisplay(chainId: bigint) {
+	return ledgerEthereum1223Networks.get(chainId) ?? { name: chainId.toString(), ticker: '???' }
 }

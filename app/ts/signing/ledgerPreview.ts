@@ -1,4 +1,4 @@
-import { ledgerNetworkDisplay } from './ledgerNetworks.js'
+import { ledgerEthereum1223NetworkDisplay } from './ledgerNetworks.js'
 import { bytesFromHex, getAddress } from '../utils/ethereumBytes.js'
 import { hashStruct } from '../utils/ethereumSigning.js'
 import { parseTransaction } from '../utils/ethereumTransactions.js'
@@ -17,7 +17,7 @@ export function ledgerNanoXPreview(payload: TransactionSigningPayload | Personal
 	const add = (title: string, value = '') => screens.push({ title, value })
 	if (payload.method === 'eth_sendTransaction') {
 		const tx = parseTransaction(payload.unsignedTransaction)
-		const network = ledgerNetworkDisplay(payload.chainId)
+		const network = ledgerEthereum1223NetworkDisplay(payload.chainId)
 		const hasData = tx.data !== undefined && tx.data !== '0x'
 		if (hasData) {
 			add('Blind signing ahead', 'To accept risk, press both buttons')
