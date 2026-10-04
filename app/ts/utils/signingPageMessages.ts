@@ -1,13 +1,13 @@
-import type { SigningPageRequest } from '../types/directSigning.js'
-import { sendPopupMessageWithReply } from '../background/backgroundUtils.js'
+import { SigningPageRequest, type DirectSigningRequest } from '../types/directSigning.js'
+import { signingPageReplyCodecs, type SigningWalletsSuccess, type SigningMutationSuccess, type SigningRecordSuccess } from '../types/signingPageReply.js'
 
-function isSuccessfulReply<Reply extends { ok: boolean }>(reply: Reply): reply is Extract<Reply, { ok: true }> {
-	return reply.ok
-}
-
-export async function sendSigningPageRequest<Request extends SigningPageRequest>(request: Request) {
-	const reply = await sendPopupMessageWithReply(request)
-	if (reply === undefined) throw new Error('Interceptor did not answer the signing request')
-	if (!isSuccessfulReply(reply)) throw new Error('message' in reply ? String(reply.message) : 'Signing request failed')
+export function sendSigningPageRequest(request: Extract<SigningPageRequest, { method: 'signing_wallets' }>): Promise<SigningWalletsSuccess>
+export function sendSigningPageRequest(request: Extract<SigningPageRequest, { method: 'signing_saveWallet' | 'signing_setSafeAccounts' }>): Promise<SigningMutationSuccess>
+export function sendSigningPageRequest(request: DirectSigningRequest): Promise<SigningRecordSuccess>
+export async function sendSigningPageRequest(request: SigningPageRequest) {
+	const response: unknown = await browser.runtime.sendMessage(SigningPageRequest.serialize(request))
+	if (response === undefined || response === null) throw new Error('Interceptor did not answer the signing request')
+	const reply = signingPageReplyCodecs[request.method].parse(response)
+	if (!reply.ok) throw new Error(reply.message)
 	return reply
 }

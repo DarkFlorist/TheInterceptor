@@ -3,7 +3,7 @@ import type { SigningPageReply } from '../types/signingPageReply.js'
 import type { SigningPageRequest } from '../types/directSigning.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { getSafeContractState } from '../safe/safeCore.js'
-import { saveSafeSigningAccounts } from './storageVariables.js'
+import { saveSafeSigningAccounts } from './signingAddressBookCoordinator.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 
 export async function setSafeSigningAccounts(request: Extract<SigningPageRequest, { method: 'signing_setSafeAccounts' }>, ethereum: EthereumClientService): Promise<SigningPageReply> {

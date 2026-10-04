@@ -17,7 +17,8 @@ import { getErrorMessage } from '../utils/errors.js'
 import { doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
 import { prepareSavedBrowserWalletForwarding } from './browserWalletForwarding.js'
 import { openDirectSigning, updateDirectSigning, refreshDirectSigningReview } from './directSigning.js'
-import { getSigningWalletBinding, readDirectSigningRecords } from './storageVariables.js'
+import { getSigningWalletBinding } from './signingAddressBookCoordinator.js'
+import { readDirectSigningRecords } from '../signing/directSigningStore.js'
 
 type SigningAdmission =
 	| { readonly status: 'continue', readonly forwarding: { readonly expectedProviderId?: string } }

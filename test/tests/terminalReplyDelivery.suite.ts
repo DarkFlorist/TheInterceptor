@@ -747,7 +747,7 @@ test('startup pruning removes terminal replies for missing tabs and preserves li
 await modules.updateInterceptorTransactionStack(() => ({ operations: [] }))
 
 for (const signerReply of ['0x1234', 42, new Error('Unexpected verifier failure')]) test(`invalid browser message signature becomes an actionable signer error (${ typeof signerReply })`, async () => {
-	const { saveAddressSigningWallet } = await import('../../app/ts/background/storageVariables.js')
+	const { saveAddressSigningWallet } = await import('../../app/ts/background/signingAddressBookCoordinator.js')
 	await saveAddressSigningWallet(activeAddress, { type: 'browser', address: activeAddress, label: 'Browser account', signerName: 'MetaMask', providerId: 'legacy:MetaMask' }, undefined, 'Browser account')
 	const parameters = { method: 'personal_sign' as const, params: ['0x01', activeAddress] as const }
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })

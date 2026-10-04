@@ -4,7 +4,7 @@ import { privateKeyToAccount } from '../../app/ts/utils/ethereumSigning.js'
 import { expect, test } from 'bun:test'
 import { installBrowserMock, loadModules, createPort, createEthereumWithGetBlockCounter, noopPublishRpcConnectionStatus, confirmedSignerOwnership } from './backgroundEthAccountsTestHarness.js'
 import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
-import { saveAddressSigningWallet } from '../../app/ts/background/storageVariables.js'
+import { saveAddressSigningWallet } from '../../app/ts/background/signingAddressBookCoordinator.js'
 import { getSigningAddressSelectionTransition } from '../../app/ts/background/signingAddressSelection.js'
 import { getSettings } from '../../app/ts/background/settings.js'
 

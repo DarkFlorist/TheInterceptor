@@ -1,3 +1,4 @@
+import { isSigningPageMessage, signingPageMessageHandler } from './signingRequestService.js'
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import 'webextension-polyfill'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
@@ -352,8 +353,9 @@ browser.runtime.onConnect.addListener((port) => catchAllErrorsAndCall(async () =
 }))
 browser.runtime.onMessage.addListener((message: unknown, sender) => Promise.resolve(catchAllErrorsAndCall(async () => {
 	const { simulationServicesOwner } = await waitForBackgroundStartup()
-	// The entire popup registry is extension-page-only, including signing controls.
+	// Popup and signing services share only this extension-page sender boundary.
 	if (sender.id !== browser.runtime.id || sender.url === undefined || !sender.url.startsWith(browser.runtime.getURL(''))) return { ok: false, message: 'Controls are available only inside Interceptor' }
+	if (isSigningPageMessage(message)) return await signingPageMessageHandler(message, simulationServicesOwner.getCurrent(), websiteTabConnections)
 	return await popupMessageHandler(websiteTabConnections, simulationServicesOwner, message, await getSettings(), rpcConnectionStatusPublisher.publishRpcConnectionStatus)
 })))
 addWindowTabListeners(onCloseWindow, onCloseTab)

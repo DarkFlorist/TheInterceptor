@@ -21,3 +21,7 @@ export const signingPageReplyCodecs = {
 }
 export const SigningPageReply = funtypes.Union(WalletsReply, RecordReply, MutationReply)
 export type SigningPageReply = funtypes.Static<typeof SigningPageReply>
+
+export type SigningWalletsSuccess = Extract<funtypes.Static<typeof WalletsReply>, { ok: true }>
+export type SigningMutationSuccess = Extract<funtypes.Static<typeof MutationReply>, { ok: true }>
+export type SigningRecordSuccess = Extract<funtypes.Static<typeof RecordReply>, { ok: true }>

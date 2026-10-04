@@ -96,6 +96,7 @@ const browserMock = createBrowserStorageMock()
 const settingsModulePromise = import('../../app/ts/background/settings.js')
 const signingAddressSelectionModulePromise = import('../../app/ts/background/signingAddressSelection.js')
 const storageVariablesModulePromise = import('../../app/ts/background/storageVariables.js')
+const addressBookCoordinatorPromise = import('../../app/ts/background/signingAddressBookCoordinator.js')
 
 const testRpcNetwork: RpcNetwork = {
 	name: 'Test Mainnet',
@@ -205,7 +206,8 @@ describe('settings import', () => {
 		const signingSafeAddress = 0x4444444444444444444444444444444444444444n
 		const signerAddress = 0x4545454545454545454545454545454545454545n
 		const { changeSimulationMode, exportSettingsAndAddressBook, getSafeAppsCompatibilityMode, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference, setSafeAppsCompatibilityMode } = await settingsModulePromise
-		const { updateAddressBookAndSigningWalletBindings, getTabState } = await storageVariablesModulePromise
+		const { updateAddressBookAndSigningWalletBindings } = await addressBookCoordinatorPromise
+		const { getTabState } = await storageVariablesModulePromise
 		const { getSigningAddressSelectionTransition } = await signingAddressSelectionModulePromise
 		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
@@ -251,7 +253,7 @@ describe('settings import', () => {
 		const signingSafeAddress = 0x4646464646464646464646464646464646464646n
 		const signerAddress = 0x4747474747474747474747474747474747474747n
 		const { changeSimulationMode, exportSettingsAndAddressBook, getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
-		const { updateAddressBookAndSigningWalletBindings } = await storageVariablesModulePromise
+		const { updateAddressBookAndSigningWalletBindings } = await addressBookCoordinatorPromise
 		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',
 			name: 'Ordered import Safe',
@@ -352,7 +354,8 @@ describe('settings import', () => {
 		const signingSafeAddress = 0x7070707070707070707070707070707070707070n
 		const signerAddress = 0x7171717171717171717171717171717171717171n
 		const { getSettings, getSigningAddressPreferences, importSettingsAndAddressBook, rememberSigningAddressPreference } = await settingsModulePromise
-		const { getTabState, updateAddressBookAndSigningWalletBindings } = await storageVariablesModulePromise
+		const { updateAddressBookAndSigningWalletBindings } = await addressBookCoordinatorPromise
+		const { getTabState } = await storageVariablesModulePromise
 		const { getSigningAddressSelectionTransition } = await signingAddressSelectionModulePromise
 		await updateAddressBookAndSigningWalletBindings(() => [{
 			type: 'safe',

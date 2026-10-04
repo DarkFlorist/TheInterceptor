@@ -84,6 +84,8 @@ async function loadModules() {
 	return {
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/storageVariables.js'),
+		...await import('../../app/ts/background/addressBookStore.js'),
+		...await import('../../app/ts/background/signingAddressBookCoordinator.js'),
 	}
 }
 

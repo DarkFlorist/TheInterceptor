@@ -1,7 +1,3 @@
-import { advanceDirectSigning } from './signingRequestLifecycle.js'
-import { resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
-import type { DirectSigningRequest } from '../types/directSigning.js'
-import type { PopupSnapshotContext } from './popupMessageHandlerRegistry.js'
 import { popupSettingsCommandHandlers } from './popupSettingsCommands.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { PopupMessage } from '../types/interceptor-messages.js'
@@ -18,21 +14,7 @@ import { websiteAccessPopupMessageHandlers } from './popupMessageHandlerRegistri
 
 export type { PopupMessageDispatcherContext } from './popupMessageHandlerRegistry.js'
 
-async function applyDirectSigningCommand(context: PopupSnapshotContext, request: DirectSigningRequest) {
-	const { ethereum, tokenPriceService } = context.services
-	const outcome = await advanceDirectSigning(request, ethereum, tokenPriceService)
-	if (outcome.refreshConfirmation) await updateConfirmTransactionView(ethereum, tokenPriceService)
-	if (outcome.confirmation !== undefined) await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, context.websiteTabConnections, outcome.confirmation)
-	return outcome.reply
-}
-
 const popupMessageHandlers = {
-	signing_get: popupSnapshotMessageHandler('signing_get', async (context, request) => await applyDirectSigningCommand(context, request)),
-	signing_approve: popupSnapshotMessageHandler('signing_approve', async (context, request) => await applyDirectSigningCommand(context, request)),
-	signing_result: popupSnapshotMessageHandler('signing_result', async (context, request) => await applyDirectSigningCommand(context, request)),
-	signing_broadcast: popupSnapshotMessageHandler('signing_broadcast', async (context, request) => await applyDirectSigningCommand(context, request)),
-	signing_cancel: popupSnapshotMessageHandler('signing_cancel', async (context, request) => await applyDirectSigningCommand(context, request)),
-	signing_editFees: popupSnapshotMessageHandler('signing_editFees', async (context, request) => await applyDirectSigningCommand(context, request)),
 	popup_confirmDialog: popupMessageHandler('popup_confirmDialog', async (context, request) => await confirmDialog(context.simulationServicesOwner, context.websiteTabConnections, request)),
 	popup_changePage: popupMessageHandler('popup_changePage', async (_context, request) => await changePage(request)),
 	popup_requestAccountsFromSigner: popupMessageHandler('popup_requestAccountsFromSigner', async (context, request) => await requestAccountsFromSigner(context.websiteTabConnections, request)),

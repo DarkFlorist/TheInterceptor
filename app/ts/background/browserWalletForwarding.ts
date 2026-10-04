@@ -2,7 +2,9 @@ import { matchesBrowserSigningWallet, prepareBrowserWalletForwarding } from '../
 import type { SigningWalletBinding } from '../types/signingWallet.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { WebsiteSocket } from '../utils/requests.js'
-import { getSigningWalletBinding, getStoredSigningWalletBinding, getTabState } from './storageVariables.js'
+import { getSigningWalletBinding } from './signingAddressBookCoordinator.js'
+import { getStoredSigningWalletBinding } from '../signing/signingWalletStore.js'
+import { getTabState } from './storageVariables.js'
 import { askForSignerAccountsFromSignerIfNotAvailable } from './windows/interceptorAccess.js'
 
 /** A saved address can serve eth_accounts without contacting its wallet. Fetch missing wallet accounts only when signing is requested. */

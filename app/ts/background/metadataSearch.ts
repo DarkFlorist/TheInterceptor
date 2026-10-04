@@ -4,7 +4,7 @@ import { tokenMetadata, contractMetadata, type ContractDefinition, type TokenDef
 import type { AddressBookCategory, GetAddressBookDataFilter } from '../types/interceptor-messages.js'
 import { getFullLogoUri } from './metadataUtils.js'
 import { assertNever } from '../utils/typescript.js'
-import { getUserAddressBookEntriesForChainId, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
+import { getUserAddressBookEntriesForChainId, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBookStore.js'
 import { createFuzzySearchPattern } from '../utils/fuzzySearch.js'
 
 type PartialResult = {

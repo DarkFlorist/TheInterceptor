@@ -33,6 +33,17 @@ Changing the saved wallet invalidates an outstanding request; cancel it and requ
 
 Settings backups use version 1.7 to include wallet bindings and Safe Apps compatibility together. Existing version 1.6 backups retain their Safe Apps setting when imported and clear local wallet bindings, since that format did not store them.
 
+### Storage and transport ownership
+
+- `background/addressBookStore.ts` owns contacts, legacy address-book repair, and its mutation lock. Ordinary address-book operations do not read signing configuration.
+- `signing/signingWalletStore.ts` owns binding reads and the independent binding lock. `signing/directSigningStore.ts` owns request history, transaction serialization, retention, corruption handling, and size limits.
+- `background/signingAddressBookCoordinator.ts` is the explicit cross-repository boundary for onboarding, eligibility-changing edits, and backup restore. It acquires address-book ownership before binding ownership and commits the related values atomically. Ordinary mutations and routing reads do not acquire both locks.
+
+Admission still revalidates contact eligibility and binding revisions. Admission-only coordination would not prevent a removed contact's stale binding from reviving when the contact is recreated, or a partial backup restore from pairing identities with the wrong address-book snapshot. Those operations intentionally retain atomic commits. Version 1.7 is a compatibility envelope for a coherent backup, not the ownership boundary of either repository; changing it merely to split modules would invalidate existing backups without improving admission.
+
+Signing pages send their own `SigningPageRequest` messages through `utils/signingPageMessages.ts`, with method-specific signing reply codecs. The extension-only runtime sender gate routes them directly to `background/signingRequestService.ts`. They do not enter popup codecs, popup snapshot dispatch, popup abort controllers, or popup readiness handling. Each command uses current network services while persisted signing records keep the reviewed chain/RPC binding. Confirmation-view updates are explicit service effects, not the signing page's lifecycle.
+
+
 ## Bounds and dependencies
 
 The CBOR codec is a registry-oriented subset: definite-length integers, byte/text strings, arrays, unsigned integer-keyed maps, booleans, and tags. It rejects duplicate keys, malformed UTF-8, indefinite lengths, excessive nesting/work, and trailing data. Account import separately rejects private/master keys, inappropriate curves or key paths, wildcards, and child ranges.

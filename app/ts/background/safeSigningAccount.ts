@@ -1,5 +1,5 @@
 import type { Settings } from '../types/interceptor-messages.js'
-import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
+import { getUserAddressBookEntriesForChainIdMorePreciseFirst } from './addressBookStore.js'
 
 /** Owner approval and the separate outer transaction payer remain distinct from the Safe address. */
 export async function getSavedSafeSigningAccount(safeAddress: bigint | undefined, chainId: bigint) {

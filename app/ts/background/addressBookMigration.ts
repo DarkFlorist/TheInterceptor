@@ -2,7 +2,8 @@ import { type AddressBookEntries, type AddressBookEntry, SafeEntry } from '../ty
 import { EthereumAddress } from '../types/wire-types.js'
 import { type OldActiveAddressEntry, OldActiveAddressEntry as OldActiveAddressEntryRuntype, browserStorageLocalRemove, browserStorageLocalSet } from '../utils/storageUtils.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
-import { repairLegacyAddressBookEntries, repairLegacyAddressBookEntry, updateAddressBookAndSigningWalletBindings, updateUserAddressBookEntriesV2Old } from './storageVariables.js'
+import { repairLegacyAddressBookEntries, repairLegacyAddressBookEntry, updateUserAddressBookEntriesV2Old } from './addressBookStore.js'
+import { updateAddressBookAndSigningWalletBindings } from './signingAddressBookCoordinator.js'
 
 async function getLegacyAddressBookEntriesV1ForMigration(): Promise<readonly (AddressBookEntry | OldActiveAddressEntry)[] | undefined> {
 	const storageEntries: Partial<Record<'userAddressBookEntries', unknown>> = await browser.storage.local.get('userAddressBookEntries')

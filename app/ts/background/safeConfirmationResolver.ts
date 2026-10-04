@@ -1,4 +1,4 @@
-import { getSigningWalletBinding } from './storageVariables.js'
+import { getSigningWalletBinding } from './signingAddressBookCoordinator.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
 import type { PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { EIP712Message } from '../types/eip721.js'

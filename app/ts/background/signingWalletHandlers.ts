@@ -3,7 +3,8 @@ import type { SigningPageReply } from '../types/signingPageReply.js'
 import type { SigningPageRequest } from '../types/directSigning.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { matchesBrowserSigningWallet } from '../signing/browserWallet.js'
-import { getAddressBookAndSigningWalletBindings, getAllTabStates, saveAddressSigningWallet } from './storageVariables.js'
+import { getAddressBookAndSigningWalletBindings, saveAddressSigningWallet } from './signingAddressBookCoordinator.js'
+import { getAllTabStates } from './storageVariables.js'
 
 export async function getSigningWallets(): Promise<SigningPageReply> {
 	const data = await getAddressBookAndSigningWalletBindings()

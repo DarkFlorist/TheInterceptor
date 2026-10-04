@@ -132,6 +132,8 @@ async function loadModules() {
 		...await import('../../app/ts/utils/storageUtils.js'),
 		...await import('../../app/ts/background/settings.js'),
 		...storageVariables,
+		...await import('../../app/ts/background/addressBookStore.js'),
+		...await import('../../app/ts/background/signingAddressBookCoordinator.js'),
 		...await import('../../app/ts/background/popupMessageHandlers.js'),
 		...await import('../../app/ts/background/backgroundUtils.js'),
 		...await import('../../app/ts/simulation/services/EthereumClientService.js'),

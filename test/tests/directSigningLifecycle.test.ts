@@ -2,7 +2,9 @@ import { beforeEach, afterEach, expect, spyOn, test } from 'bun:test'
 import { secp256k1 } from '@noble/curves/secp256k1'
 import { createBrowserMock, pendingTransaction, resetConfirmTransactionTestState, ethereum, simulator } from './confirmTransactionTestHarness.js'
 import { DirectSigningRecord, DirectSigningRecords } from '../../app/ts/types/directSigning.js'
-import { appendPendingTransactionOrMessage, saveAddressSigningWallet, clearPendingTransactions, getPendingTransactionsAndMessages, readDirectSigningRecords } from '../../app/ts/background/storageVariables.js'
+import { appendPendingTransactionOrMessage, clearPendingTransactions, getPendingTransactionsAndMessages } from '../../app/ts/background/storageVariables.js'
+import { saveAddressSigningWallet } from '../../app/ts/background/signingAddressBookCoordinator.js'
+import { readDirectSigningRecords } from '../../app/ts/signing/directSigningStore.js'
 import { updateDirectSigning, refreshDirectSigningReview } from '../../app/ts/background/directSigning.js'
 import { bytesFromHex, bytesToHex, ensureHex, type Hex } from '../../app/ts/utils/ethereumBytes.js'
 import { privateKeyToAccount } from '../../app/ts/utils/ethereumSigning.js'
@@ -174,7 +176,8 @@ test('returned simulation failure preserves fees and pending explanation until a
 })
 
 test('corrupt signing history is diagnosed and preserved rather than reset', async () => {
-	const { getInterceptorErrorDiagnostics, storeDirectSigningRecord } = await import('../../app/ts/background/storageVariables.js')
+	const { getInterceptorErrorDiagnostics } = await import('../../app/ts/background/storageVariables.js')
+	const { storeDirectSigningRecord } = await import('../../app/ts/signing/directSigningStore.js')
 	const { withSilencedConsole } = await import('./consoleSilence.js')
 	const corrupt = { records: 'invalid' }
 	await browser.storage.local.set({ directSigningRequestsV1: corrupt })
@@ -201,7 +204,7 @@ test('a transient signing-history read failure does not write or reset state', a
 })
 
 test('storage serializes standalone writes and lifecycle transactions without losing submitting records', async () => {
-	const { storeDirectSigningRecord, withDirectSigningRecords } = await import('../../app/ts/background/storageVariables.js')
+	const { storeDirectSigningRecord, withDirectSigningRecords } = await import('../../app/ts/signing/directSigningStore.js')
 	const first = { ...record, id: 'first', phase: 'submitting' as const }
 	const second = { ...record, id: 'second', phase: 'submitting' as const }
 	await Promise.all([storeDirectSigningRecord(first), storeDirectSigningRecord(second)])
@@ -229,7 +232,7 @@ test('storage serializes standalone writes and lifecycle transactions without lo
 })
 
 test('concurrent storage writes enforce the aggregate limit and preserve ambiguous submissions', async () => {
-	const { storeDirectSigningRecord } = await import('../../app/ts/background/storageVariables.js')
+	const { storeDirectSigningRecord } = await import('../../app/ts/signing/directSigningStore.js')
 	await browser.storage.local.remove('directSigningRequestsV1')
 	const results = await Promise.allSettled(Array.from({ length: 17 }, (_, index) => storeDirectSigningRecord({ ...record, id: String(index), phase: 'submitting' })))
 	expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(16)
