@@ -41,6 +41,7 @@ export function DelegateClearingOption({ activeAddress, rpcNetwork, simulationMo
 		const current = delegationOption.value
 		if (!simulationMode.value || currentBlockNumber.value === undefined || address === undefined || chainId === undefined
 			|| current?.address !== address || current.chainId !== chainId) return
+		// Block updates trigger a recheck; the shared background cache bounds RPC reads.
 		if (current.status.type === 'unknown' && Date.now() - current.checkedAt < UNKNOWN_DELEGATION_RETRY_MS) return
 		let disposed = false
 		void (async () => {
