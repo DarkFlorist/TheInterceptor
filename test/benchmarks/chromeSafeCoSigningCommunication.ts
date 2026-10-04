@@ -19,7 +19,12 @@ import type { CdpConnection } from './chromeHarness.js'
 
 const safeAppsTypedMessage = process.argv.includes('--safe-apps-typed-message')
 const safeAppsMessage = process.argv.includes('--safe-apps-message') || safeAppsTypedMessage
-const safeAppsOnly = process.argv.includes('--safe-apps-only') || safeAppsMessage
+const requestFinanceDiscovery = process.argv.includes('--request-finance-discovery')
+const genericSafeHost = process.argv.includes('--generic-safe-host')
+const GENERIC_SAFE_HOST_URLS = ['http://safe-app.example/connector-test', 'https://another-safe-app.example:8443/connector-test']
+const safeAppsOnly = process.argv.includes('--safe-apps-only') || safeAppsMessage || requestFinanceDiscovery || genericSafeHost
+const REQUEST_FINANCE_FIXTURE_URL = 'https://app.request.finance/interceptor-discovery-regression'
+const REQUEST_FINANCE_APPROVAL_DELAY_MS = 11_000
 const ACCESS_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.is-primary:not(.is-danger)'
 const CONFIRM_APPROVE_BUTTON_SELECTOR = 'nav.popup-button-row button.dialog-action-button.is-primary:not(.is-danger)'
 const SAFE_ADDRESS = 0x1234567890123456789012345678901234567890n
@@ -147,6 +152,110 @@ async function waitForText(connection: CdpConnection, text: string, timeoutMs = 
 		timeoutMs,
 		`text ${ text }`,
 	)
+}
+
+async function openSafeAppsHostFixture(connection: CdpConnection, url = REQUEST_FINANCE_FIXTURE_URL, navigate?: () => Promise<unknown>) {
+	let html: string
+	if (genericSafeHost) {
+		const bundle = await Bun.build({ entrypoints: [new URL('../fixtures/safeAppsConnectors.ts', import.meta.url).pathname], target: 'browser' })
+		if (!bundle.success || bundle.outputs[0] === undefined) throw new Error(`Could not bundle Safe connector fixture: ${ bundle.logs.join('\n') }`)
+		html = `<html><head><link rel="icon" href="data:,"></head><body><script>${ (await bundle.outputs[0].text()).replaceAll('</script', '<\\/script') }</script></body></html>`
+	} else html = await readFile(new URL('../fixtures/requestFinanceSafeDiscovery.html', import.meta.url), 'utf8')
+	// Keep the fixture's origin for the real content-script guards, while serving its document locally.
+	await connection.send('Fetch.enable', { patterns: [{ urlPattern: url, resourceType: 'Document', requestStage: 'Request' }] })
+	const documentDelivered = new Promise<void>((resolve, reject) => {
+		const onRequest = (event: unknown) => {
+			if (!isRecord(event) || typeof event.requestId !== 'string') {
+				reject(new Error('Malformed intercepted Safe Apps host document request.'))
+				return
+			}
+			connection.off('Fetch.requestPaused', onRequest)
+			void connection.send('Fetch.fulfillRequest', {
+				requestId: event.requestId,
+				responseCode: 200,
+				responseHeaders: [{ name: 'Content-Type', value: 'text/html; charset=utf-8' }],
+				body: Buffer.from(html).toString('base64'),
+			}).then(() => resolve(), reject)
+		}
+		connection.on('Fetch.requestPaused', onRequest)
+	})
+	await Promise.all([navigate === undefined ? connection.send('Page.navigate', { url }) : navigate(), documentDelivered])
+	await connection.send('Fetch.disable')
+}
+
+async function authorizeAndReloadSafeAppsFixture(browserConnection: CdpConnection, browserDebugPort: number, extensionId: string, pageConnection: CdpConnection, url: string) {
+	const settingsTarget = await createTargetPage(browserConnection, `chrome-extension://${ extensionId }/html3/settingsViewV3.html`)
+	const settingsConnection = await connectTarget(browserDebugPort, settingsTarget)
+	try {
+		await waitForText(settingsConnection, 'Authorize and reload open tab')
+		// Exercise Chrome's real files injection API: it must serialize the settled preparation promise without an awaitPromise option.
+		const preparation = await settingsConnection.evaluate<{ success?: boolean }>(`(async () => {
+			const tab = (await chrome.tabs.query({})).find(({ url }) => url !== undefined && new URL(url).origin === ${ JSON.stringify(new URL(url).origin) })
+			if (tab?.id === undefined) throw new Error('Missing Safe fixture tab.')
+			const [document] = await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [0] }, world: 'ISOLATED', files: ['/inpage/js/readDocumentOrigin.js'] })
+			const [reply] = await chrome.scripting.executeScript({ target: { tabId: tab.id, documentIds: [document.documentId] }, world: 'MAIN', files: ['/inpage/js/prepareSafeAppBootstrap.js'] })
+			return reply.result
+		})()`)
+		if (preparation?.success !== true) throw new Error(`Chrome did not await the preparation file's promise: ${ JSON.stringify(preparation) }`)
+		await openSafeAppsHostFixture(pageConnection, url, async () => await clickButtonWithText(settingsConnection, 'Authorize and reload open tab'))
+		await waitForCondition(async () => await pageConnection.evaluate(requestFinanceDiscovery ? 'globalThis.__interceptorChromeCommunicationState?.sdkReply !== undefined' : `globalThis.__interceptorChromeCommunicationState?.phase === 'safe-only-granted'`), 30_000, 'Safe SDK response after authorization and reload')
+		await waitForCondition(async () => await settingsConnection.evaluate(`document.querySelector('button[aria-busy="true"]') === null`), 10_000, 'connection preparation completion')
+		const errors = await settingsConnection.evaluate<string>('document.body.textContent')
+		if (errors.includes('did not confirm') || errors.includes('navigated') || errors.includes('timed out')) throw new Error(`Connection preparation failed: ${ errors }`)
+	} catch (error) {
+		const diagnostics = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, signerRequests: globalThis.__fakeSafeSignerRequests })')
+		const settingsText = await settingsConnection.evaluate<string>('document.body.textContent')
+		throw new Error(`Safe connection preparation failed: ${ JSON.stringify({ diagnostics, settingsText }) }`, { cause: error })
+	} finally {
+		settingsConnection.close()
+		await closeTarget(browserConnection, settingsTarget)
+	}
+}
+
+async function cancelPendingSafeAppPreparation(browserConnection: CdpConnection, browserDebugPort: number, extensionId: string, origin: string) {
+	const target = await createTargetPage(browserConnection, `chrome-extension://${ extensionId }/html3/settingsViewV3.html`)
+	const settings = await connectTarget(browserDebugPort, target)
+	try {
+		await waitForText(settings, 'Authorize and reload open tab')
+		await settings.evaluate(`(() => {
+			const row = [...document.querySelectorAll('.row')].find((row) => row.querySelector('span')?.textContent === ${ JSON.stringify(origin) })
+			const button = [...(row?.querySelectorAll('button') ?? [])].find((button) => button.textContent === 'Authorize and reload open tab')
+			if (button === undefined || button.disabled) throw new Error('Missing preparation button for selected origin.')
+			button.click()
+		})()`)
+		await waitForText(settings, 'Cancel connection')
+		await clickButtonWithText(settings, 'Cancel connection')
+		await waitForText(settings, 'Safe connection was cancelled.')
+		await waitForCondition(async () => await settings.evaluate(`document.querySelector('button[aria-busy="true"]') === null`), 10_000, 'cancelled preparation releases Settings controls')
+	} finally {
+		settings.close()
+		await closeTarget(browserConnection, target)
+	}
+}
+
+async function verifyEmbeddedSafeAppsIsolation(page: CdpConnection) {
+	const isolated = await page.evaluate<boolean>(`(async () => {
+		const prefix = 'unapproved-frame-probe-'
+		const attacker = document.createElement('iframe')
+		attacker.setAttribute('sandbox', 'allow-scripts')
+		let forwarded = false
+		const completed = new Promise((resolve, reject) => {
+			const timeout = setTimeout(() => reject(new Error('Embedded origin probe did not finish.')), 5_000)
+			const listener = (event) => {
+				if (event.source === window && event.data?.id?.startsWith(prefix)) forwarded = true
+				if (event.source === attacker.contentWindow && event.data === prefix + 'done') { clearTimeout(timeout); resolve(listener) }
+			}
+			window.addEventListener('message', listener)
+		})
+		attacker.srcdoc = '<script>for (const method of ["getSafeInfo", "getChainInfo", "rpcCall", "sendTransactions", "signMessage"]) { const request = { id: "unapproved-frame-probe-" + method, method, env: { sdkVersion: "9.1.0" } }; top.frames[0].postMessage(request, "*"); top.parent.postMessage(request, "*"); } top.postMessage("unapproved-frame-probe-done", "*");<\/script>'
+		document.body.append(attacker)
+		const listener = await completed
+		await new Promise((resolve) => setTimeout(resolve, 100))
+		window.removeEventListener('message', listener)
+		attacker.remove()
+		return !forwarded
+	})()`)
+	if (!isolated) throw new Error('An unapproved cross-origin frame impersonated the hosted top-frame Safe connection.')
 }
 
 async function setFileInput(connection: CdpConnection, selector: string, filePath: string) {
@@ -415,10 +524,11 @@ async function main() {
 			const storedSettings = {
 				simulationMode: false,
 				safeAppsCompatibilityMode: safeAppsOnly,
+				...(genericSafeHost || requestFinanceDiscovery ? { safeAppsHostOrigins: genericSafeHost ? GENERIC_SAFE_HOST_URLS.map((url) => new URL(url).origin) : [new URL(REQUEST_FINANCE_FIXTURE_URL).origin] } : {}),
 				useSignersAddressAsActiveAddress: false,
 				independentActiveSimulationAddress: addressString(SAFE_ADDRESS),
 				activeSigningAddress: addressString(OWNER_ADDRESS),
-				...(safeAppsOnly ? {} : { activeSigningSafeAddress: addressString(SAFE_ADDRESS) }),
+				...(safeAppsOnly && !genericSafeHost && !requestFinanceDiscovery ? {} : { activeSigningSafeAddress: addressString(SAFE_ADDRESS) }),
 				signingAddressPreferences: [{ signerAddress: addressString(OWNER_ADDRESS), selection: 'safe', safeAddress: addressString(SAFE_ADDRESS), chainId: '0x1' }],
 				userAddressBookEntriesV3: [{
 					type: 'safe',
@@ -435,6 +545,12 @@ async function main() {
 			}
 			// Install the test RPC through the popup command below so persisted settings and live services change together.
 			await workerConnection.evaluate(`browser.storage.local.set(${ JSON.stringify(storedSettings) })`)
+			// Initial SDK discovery needs document-start hosting; Settings preparation separately awaits registration before each reload.
+			if (requestFinanceDiscovery || genericSafeHost) await waitForCondition(async () => await workerConnection.evaluate<boolean>(`(async () => {
+				const scripts = await browser.scripting.getRegisteredContentScripts()
+				// Chrome returns extension-relative paths without their leading slash.
+				return scripts.find(({ id }) => id === 'safe-apps-host')?.js.some((file) => file === 'inpage/js/safeAppsHostBootstrap.js' || file === '/inpage/js/safeAppsHostBootstrap.js') === true
+			})()`), 30_000, 'explicitly selected Safe Apps host registration')
 		} finally {
 			workerConnection.close()
 		}
@@ -469,9 +585,10 @@ async function main() {
 		try {
 			await pageConnection.send('Page.enable')
 			await pageConnection.send('Page.addScriptToEvaluateOnNewDocument', { source: fakeSignerPreload })
-			await pageConnection.send('Page.navigate', { url: `http://127.0.0.1:${ server.port }/${ safeAppsOnly ? '?safe-probe=early&safe-only=true' : '' }` })
+			if (requestFinanceDiscovery || genericSafeHost) await openSafeAppsHostFixture(pageConnection, genericSafeHost ? GENERIC_SAFE_HOST_URLS[0] : REQUEST_FINANCE_FIXTURE_URL)
+			else await pageConnection.send('Page.navigate', { url: `http://127.0.0.1:${ server.port }/${ safeAppsOnly ? '?safe-probe=early&safe-only=true' : '' }` })
 			try {
-				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === '${ safeAppsOnly ? 'requesting-safe-only' : 'requesting-access' }'`).catch(() => false), 30_000, 'Safe access request')
+				await waitForCondition(async () => await pageConnection.evaluate(requestFinanceDiscovery ? `['requesting-safe-only', 'error'].includes(globalThis.__interceptorChromeCommunicationState?.phase)` : `globalThis.__interceptorChromeCommunicationState?.phase === '${ safeAppsOnly ? 'requesting-safe-only' : 'requesting-access' }'`).catch(() => false), 30_000, 'Safe access request')
 			} catch (error) {
 				const accessDiagnostics = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, signerRequests: globalThis.__fakeSafeSignerRequests, url: location.href, body: document.body.textContent })')
 				throw new Error(`Safe access request did not open: ${ JSON.stringify(accessDiagnostics) }`, { cause: error })
@@ -485,20 +602,86 @@ async function main() {
 			const accessConnection = await connectTarget(chrome.browserDebugPort, accessTarget.id)
 			try {
 				await waitForButtonEnabled(accessConnection, ACCESS_APPROVE_BUTTON_SELECTOR, 30_000)
+				if (requestFinanceDiscovery) {
+					await sleep(REQUEST_FINANCE_APPROVAL_DELAY_MS)
+					const pendingState = await pageConnection.evaluate<{ phase: string, error?: string }>('globalThis.__interceptorChromeCommunicationState')
+					if (pendingState.phase !== 'error' || pendingState.error !== 'Site Safe discovery reached its 200 ms deadline.') throw new Error(`The site's discovery deadline was overridden: ${ JSON.stringify(pendingState) }`)
+				}
 				await clickButton(accessConnection, ACCESS_APPROVE_BUTTON_SELECTOR)
 			} finally {
 				accessConnection.close()
 			}
 
+			if (requestFinanceDiscovery) {
+				await waitForCondition(async () => await pageConnection.evaluate<boolean>(`globalThis.__interceptorChromeCommunicationState?.sdkReply !== undefined && globalThis.__interceptorChromeCommunicationState?.phase === 'error'`), 30_000, 'late SDK approval with site deadline still respected')
+				const initialPrompts = await pageConnection.evaluate<number>(`globalThis.__fakeSafeSignerRequests.filter(({ method }) => method === 'eth_requestAccounts').length`)
+				if (initialPrompts !== 1) throw new Error(`Expected one initial signer approval, received ${ initialPrompts }`)
+				await authorizeAndReloadSafeAppsFixture(chrome.browserConnection, chrome.browserDebugPort, extensionId, pageConnection, REQUEST_FINANCE_FIXTURE_URL)
+			}
+
 			try {
-				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === '${ safeAppsOnly ? 'safe-only-granted' : 'access-granted' }'`).catch(() => false), 30_000, 'Safe access approval')
+				await waitForCondition(async () => await pageConnection.evaluate(requestFinanceDiscovery ? 'globalThis.__interceptorChromeCommunicationState?.sdkReply !== undefined' : `globalThis.__interceptorChromeCommunicationState?.phase === '${ safeAppsOnly ? 'safe-only-granted' : 'access-granted' }'`).catch(() => false), 30_000, 'Safe access approval')
 			} catch (error) {
 				const pageDiagnostics = await pageConnection.evaluate('({ state: globalThis.__interceptorChromeCommunicationState, signerRequests: globalThis.__fakeSafeSignerRequests })')
 				throw new Error(`Safe access approval failed: ${ JSON.stringify(pageDiagnostics) }`, { cause: error })
 			}
-			const grantedAccounts = await pageConnection.evaluate<readonly string[]>('globalThis.__interceptorChromeCommunicationState.accounts')
+			const grantedAccounts = await pageConnection.evaluate<readonly string[]>(requestFinanceDiscovery ? '[globalThis.__interceptorChromeCommunicationState.sdkReply.safeInfo.safeAddress]' : 'globalThis.__interceptorChromeCommunicationState.accounts')
 			if (grantedAccounts[0]?.toLowerCase() !== addressString(SAFE_ADDRESS).toLowerCase()) {
 				throw new Error(`Dapp received ${ grantedAccounts[0] ?? 'no account' } instead of the Safe address`)
+			}
+			if (genericSafeHost) {
+				await verifyEmbeddedSafeAppsIsolation(pageConnection)
+				if (await pageConnection.evaluate<boolean>('window.isSecureContext') !== false) throw new Error('The HTTP fixture must exercise a non-secure context.')
+				const embeddedProviderPreserved = await pageConnection.evaluate<boolean>(`(async () => {
+					const frame = document.createElement('iframe')
+					document.body.append(frame)
+					const child = frame.contentWindow
+					if (child === null) throw new Error('Missing embedded app window.')
+					let announced = false
+					child.addEventListener('eip6963:announceProvider', (event) => { if (event.detail?.info?.name === 'The Interceptor') announced = true })
+					const started = performance.now()
+					while (!announced && performance.now() - started < 10_000) {
+						child.dispatchEvent(new Event('eip6963:requestProvider'))
+						await new Promise((resolve) => setTimeout(resolve, 20))
+					}
+					const intact = child.parent === window && child.self !== child.top
+					frame.remove()
+					return announced && intact
+				})()`)
+				if (!embeddedProviderPreserved) throw new Error('Selected-origin hosting disrupted the provider or parent in a related about:blank frame.')
+				const firstUrl = GENERIC_SAFE_HOST_URLS[0]
+				const secondUrl = GENERIC_SAFE_HOST_URLS[1]
+				if (firstUrl === undefined || secondUrl === undefined) throw new Error('Missing generic host origins.')
+				await authorizeAndReloadSafeAppsFixture(chrome.browserConnection, chrome.browserDebugPort, extensionId, pageConnection, firstUrl)
+				const repeatPrompts = await pageConnection.evaluate<number>(`globalThis.__fakeSafeSignerRequests.filter(({ method }) => method === 'eth_requestAccounts').length`)
+				if (repeatPrompts !== 0) throw new Error('Connection preparation prompted the approved signer again after reload.')
+				await waitForTargetGone(chrome.browserDebugPort, (target) => target.id === accessTarget.id, 10_000, 'first Safe access popup to close')
+				await openSafeAppsHostFixture(pageConnection, secondUrl)
+				const secondAccess = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/interceptorAccessV3.html`, 30_000)
+				accessTargetId = secondAccess.id
+				await cancelPendingSafeAppPreparation(chrome.browserConnection, chrome.browserDebugPort, extensionId, new URL(secondUrl).origin)
+				const secondConnection = await connectTarget(chrome.browserDebugPort, secondAccess.id)
+				try {
+					await waitForButtonEnabled(secondConnection, ACCESS_APPROVE_BUTTON_SELECTOR, 30_000)
+					await clickButton(secondConnection, ACCESS_APPROVE_BUTTON_SELECTOR)
+				} finally { secondConnection.close() }
+				await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'safe-only-granted'`), 30_000, 'real connectors on second origin')
+				for (const unselected of ['https://unselected.example/connector-test', 'http://safe-app.example:8443/connector-test', 'https://safe-app.example/connector-test']) {
+					await openSafeAppsHostFixture(pageConnection, unselected)
+					await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__interceptorChromeCommunicationState?.phase === 'error' && window.parent === window`), 10_000, 'unselected origin isolation')
+				}
+				console.warn('Generic Safe hosting passed: real SDK and Wagmi on HTTP and HTTPS origins, settings authorization/reload, independent access approval, native cross-origin frame isolation, preparation cancellation, and origin/port isolation.')
+				return
+			}
+			if (requestFinanceDiscovery) {
+				const result = await pageConnection.evaluate<{ elapsedMs: number, safeInfo: { chainId: number, owners: readonly string[], threshold: number }, origin: string, phase: string, error?: string }>('({ ...globalThis.__interceptorChromeCommunicationState.sdkReply, phase: globalThis.__interceptorChromeCommunicationState.phase, error: globalThis.__interceptorChromeCommunicationState.error, origin: location.origin })')
+				if (result.origin !== new URL(REQUEST_FINANCE_FIXTURE_URL).origin) throw new Error('Request Finance fixture navigated to a different origin.')
+				if (result.phase !== 'safe-only-granted' && (result.phase !== 'error' || result.error !== 'Site Safe discovery reached its 200 ms deadline.')) throw new Error(`Unexpected discovery outcome after reload: ${ JSON.stringify(result) }`)
+				if (result.safeInfo.chainId !== 1 || result.safeInfo.threshold !== 2 || result.safeInfo.owners[0]?.toLowerCase() !== addressString(OWNER_ADDRESS).toLowerCase()) throw new Error('Request Finance received unexpected configured Safe contract information.')
+				const prompts = await pageConnection.evaluate<number>(`globalThis.__fakeSafeSignerRequests.filter(({ method }) => method === 'eth_requestAccounts').length`)
+				if (prompts !== 0) throw new Error(`Reload prompted the approved signer again ${ prompts } times`)
+				console.warn(`Request Finance deadline remained intact during delayed approval and after Settings reload; authorized SDK response: ${ JSON.stringify(result) }`)
+				return
 			}
 			if (safeAppsOnly && !safeAppsMessage) {
 				const accountRequests = await pageConnection.evaluate<number>(`globalThis.__fakeSafeSignerRequests.filter(request => request.method === 'eth_requestAccounts').length`)

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+	<head><meta charset="utf-8"><link rel="icon" href="data:,"><title>Request Finance Safe discovery regression</title></head>
+	<body>
+		<p>Waiting for Safe access approval.</p>
+		<script>
+			// Reproduce the SDK's parent-message boundary and Request Finance's immediate 200 ms discovery race.
+			const state = { phase: 'requesting-safe-only', startedAt: performance.now() }
+			globalThis.__interceptorChromeCommunicationState = state
+			const discover = async () => {
+				if (window.parent === window) throw new Error('Request Finance Safe host was not injected before discovery.')
+				const id = crypto.randomUUID()
+				const sdkReply = new Promise((resolve, reject) => {
+					const listener = (event) => {
+						if (event.source !== window.parent || event.origin !== location.origin || event.data?.id !== id || typeof event.data.version !== 'string' || typeof event.data.success !== 'boolean') return
+						window.removeEventListener('message', listener)
+						if (event.data.success) {
+							state.sdkReply = { safeInfo: event.data.data, elapsedMs: performance.now() - state.startedAt }
+							resolve(event.data.data)
+						}
+						else reject(new Error(event.data.error))
+					}
+					window.addEventListener('message', listener)
+					window.parent.postMessage({ id, method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, '*')
+				})
+				const safeInfo = await Promise.race([sdkReply, new Promise((resolve) => setTimeout(resolve, 200))])
+				if (safeInfo === undefined) throw new Error('Site Safe discovery reached its 200 ms deadline.')
+				state.safeInfo = safeInfo
+				state.accounts = [safeInfo.safeAddress]
+				state.elapsedMs = performance.now() - state.startedAt
+				state.phase = 'safe-only-granted'
+				document.body.firstElementChild.textContent = 'Safe access granted.'
+			}
+			discover().catch((error) => {
+				state.phase = 'error'
+				state.error = error instanceof Error ? error.message : String(error)
+				document.body.firstElementChild.textContent = state.error
+			})
+		</script>
+	</body>
+</html>

@@ -53,6 +53,8 @@ function parseInpageRequest(value: unknown): InpageRequest | undefined {
 
 function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSignerRequest, signerChainIdReply = '0x1', signerInitialSelectedAddress }: FakeWindowOptions = {}) {
 	const listeners = new Map<string, Set<Listener>>()
+	const timeouts = new Map<number, { readonly callback: () => void, readonly delay: number }>()
+	let nextTimeoutId = 0
 	const signerRequests: string[] = []
 	const backgroundEthAccountsReplies: unknown[] = []
 	const backgroundSignerChainChanges: unknown[] = []
@@ -108,6 +110,12 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 	const fakeWindow = {
 		ethereum: fakeSigner,
 		location: { origin: 'https://safe-app.example' },
+		setTimeout: (callback: () => void, delay: number) => {
+			const id = ++nextTimeoutId
+			timeouts.set(id, { callback, delay })
+			return id
+		},
+		clearTimeout: (id: number) => { timeouts.delete(id) },
 		...(signerInitialSelectedAddress === undefined ? {} : { web3: { accounts: [signerInitialSelectedAddress], currentProvider: fakeSigner } }),
 		addEventListener: (type: string, listener: Listener) => {
 			const existing = listeners.get(type)
@@ -194,6 +202,14 @@ function createFakeWindow({ onConnectedToSignerRequest, handleRequest, handleSig
 
 	return {
 		fakeWindow,
+		fireTimeouts: (delay: number) => {
+			for (const [id, timeout] of timeouts) {
+				if (timeout.delay !== delay) continue
+				timeouts.delete(id)
+				timeout.callback()
+			}
+		},
+		activeTimeouts: () => timeouts.size,
 		signerRequests,
 		backgroundEthAccountsReplies,
 		backgroundSignerChainChanges,
@@ -459,7 +475,7 @@ describe('inpage signer bridge', () => {
 		})
 	}
 
-	test('completes direct-app discovery after initial ineligibility without replaying transactions', async () => {
+	test('keeps queued discovery through disabled updates and resumes without replaying transactions', async () => {
 		let publishCompatibility: ((enabled: boolean) => void) | undefined
 		const forwardedMethods: (string | undefined)[] = []
 		const { fakeWindow } = createFakeWindow({
@@ -623,7 +639,7 @@ describe('inpage signer bridge', () => {
 			replyToConnection?.()
 			await waitFor(() => replies.length === 32)
 			assert.equal(replies.filter((reply) => reply.error === 'Discovery fixture response.').length, 32)
-			assert.equal(replies.filter((reply) => reply.error === 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.').length, 0)
+			assert.equal(replies.filter((reply) => reply.error === 'Too many pending Safe Apps requests.').length, 0)
 			await new Promise((resolve) => setTimeout(resolve, 0))
 			assert.equal(replies.length, 32)
 		})
@@ -655,7 +671,7 @@ describe('inpage signer bridge', () => {
 			await waitFor(() => replies.length === 40)
 			assert.equal(new Set(replies.map((reply) => reply.id)).size, 40)
 			assert.equal(replies.filter((reply) => reply.error === 'Connection rejected.').length, 32)
-			assert.equal(replies.filter((reply) => reply.error === 'Interceptor Safe Apps request queue is full. Retry after the connection finishes initializing.').length, 8)
+			assert.equal(replies.filter((reply) => reply.error === 'Too many pending Safe Apps requests.').length, 8)
 		})
 	})
 
@@ -4182,5 +4198,166 @@ test('Safe SDK settings belong to the page and survive background connection rei
 			assert.deepEqual(replies.get(method), { id: method, success: true, data: { safeTxHash: '0x' + 'ab'.repeat(32) }, version: '9.1.0' })
 		}
 		assert.equal(proposalCount, 2)
+	})
+})
+
+test('expired and cancelled provider discovery probes release slots before eligibility returns', async () => {
+	const realNow = Date.now
+	let elapsed = 0
+	let enable: (() => void) | undefined
+	const forwarded: string[] = []
+	const { fakeWindow } = createFakeWindow({ handleRequest: (request, sendBackgroundMessage) => {
+		if (request.method === 'connected_to_signer') {
+			enable = () => {
+				sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
+				sendSafeAppsCompatibility(sendBackgroundMessage, true)
+			}
+			return true
+		}
+		if (request.method !== 'safe_apps_request') return false
+		forwarded.push(getSafeAppsMethod(request) ?? '')
+		replyToSafeAppsRequest(request, sendBackgroundMessage, { kind: 'result', value: { chainId: 1 } })
+		return true
+	} })
+	Date.now = () => realNow() + elapsed
+	try {
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?safe-expired-discovery', async () => {
+			const replies: Record<string, unknown>[] = []
+			fakeWindow.addEventListener('message', (event) => { if (isRecord(event.data) && typeof event.data.success === 'boolean') replies.push(event.data) })
+			for (let index = 0; index < 40; index++) fakeWindow.postMessage({ id: `expiry-${ index }`, method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			elapsed = 5 * 60_000 + 1
+			fakeWindow.postMessage({ id: 'after-expiry', method: 'getChainInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+			for (let index = 0; index < 80; index++) {
+				const id = `cancel-${ index }`
+				fakeWindow.postMessage({ id, method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+				fakeWindow.postMessage({ type: 'interceptor_safe_apps_cancel', id }, fakeWindow.location.origin)
+			}
+			enable?.()
+			await waitFor(() => replies.some((reply) => reply.id === 'after-expiry' && reply.success === true))
+			assert.equal(replies.filter((reply) => reply.error === 'Safe Apps request timed out.').length, 32)
+			assert.deepEqual(forwarded, ['getChainInfo'])
+		})
+	} finally { Date.now = realNow }
+})
+
+test('provider discovery expires on its own timer before a later eligibility change', async () => {
+	let enable: (() => void) | undefined
+	let forwarded = 0
+	const { fakeWindow, fireTimeouts, activeTimeouts } = createFakeWindow({ handleRequest: (request, sendBackgroundMessage) => {
+		if (request.method === 'connected_to_signer') {
+			enable = () => {
+				sendBackgroundMessage({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
+				sendSafeAppsCompatibility(sendBackgroundMessage, true)
+			}
+			return true
+		}
+		if (request.method === 'safe_apps_request') { forwarded++; return true }
+		return false
+	} })
+	await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?safe-scheduled-discovery-expiry', async () => {
+		const replies: Record<string, unknown>[] = []
+		fakeWindow.addEventListener('message', (event) => { if (isRecord(event.data) && typeof event.data.success === 'boolean') replies.push(event.data) })
+		fakeWindow.postMessage({ id: 'scheduled-expiry', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, fakeWindow.location.origin)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(activeTimeouts(), 1)
+		fireTimeouts(5 * 60_000)
+		await waitFor(() => replies.some((reply) => reply.id === 'scheduled-expiry'))
+		assert.equal(replies.find((reply) => reply.id === 'scheduled-expiry')?.error, 'Safe Apps request timed out.')
+		assert.equal(activeTimeouts(), 0)
+		enable?.()
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		assert.equal(forwarded, 0)
+	})
+})
+
+for (const settleWhileDisabled of [true, false]) {
+	test(`cancelled in-flight discovery cannot restart access or publish when settling ${ settleWhileDisabled ? 'before' : 'after' } re-enablement`, async () => {
+		let publishCompatibility: ((enabled: boolean) => void) | undefined
+		let settleOldRequest: (() => void) | undefined
+		let forwarded = 0
+		let accessRequests = 0
+		const { fakeWindow } = createFakeWindow({ handleRequest: (request, reply) => {
+			if (request.method === 'connected_to_signer') {
+				publishCompatibility = (enabled) => reply({ interceptorApproved: true, type: 'result', method: 'safe_apps_compatibility', result: { enabled, canRequestAccess: true } })
+				reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
+				publishCompatibility(true)
+				return true
+			}
+			if (request.method === 'eth_accounts' || request.method === 'eth_requestAccounts') {
+				if (request.method === 'eth_requestAccounts') accessRequests++
+				reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: [] })
+				return true
+			}
+			if (request.method !== 'safe_apps_request') return false
+			forwarded++
+			if (forwarded === 1) settleOldRequest = () => replyToSafeAppsRequest(request, reply, { kind: 'result', value: { safeAddress: 'cancelled-safe' } })
+			else replyToSafeAppsRequest(request, reply, { kind: 'result', value: { safeAddress: 'current-safe' } })
+			return true
+		} })
+		await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?safe-cancel-active-discovery-${ settleWhileDisabled }`, async () => {
+			const replies: unknown[] = []
+			fakeWindow.addEventListener('message', ({ data }) => { if (isRecord(data) && typeof data.success === 'boolean') replies.push(data) })
+			await waitFor(() => publishCompatibility !== undefined)
+			const request = { id: 'cancel-active', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }
+			fakeWindow.postMessage(request, fakeWindow.location.origin)
+			await waitFor(() => settleOldRequest !== undefined)
+			fakeWindow.postMessage({ type: 'interceptor_safe_apps_cancel', id: request.id }, fakeWindow.location.origin)
+			publishCompatibility?.(false)
+			await new Promise((resolve) => setTimeout(resolve, 0))
+			if (!settleWhileDisabled) publishCompatibility?.(true)
+			settleOldRequest?.()
+			await new Promise((resolve) => setTimeout(resolve, 10))
+			if (settleWhileDisabled) publishCompatibility?.(true)
+			await new Promise((resolve) => setTimeout(resolve, 10))
+			assert.deepEqual(replies, [])
+			assert.equal(forwarded, 1)
+			assert.equal(accessRequests, 0)
+			// Cancellation owns one request, not a permanent ID tombstone.
+			fakeWindow.postMessage(request, fakeWindow.location.origin)
+			await waitFor(() => replies.length === 1)
+			assert.deepEqual(replies, [{ id: request.id, success: true, data: { safeAddress: 'current-safe' }, version: '9.1.0' }])
+			assert.equal(forwarded, 2)
+		})
+	})
+}
+
+test('late cancellation of an expired discovery cannot cancel a reused ID', async () => {
+	let settleOldRequest: (() => void) | undefined
+	let settleNewRequest: (() => void) | undefined
+	let forwarded = 0
+	const { fakeWindow, fireTimeouts, activeTimeouts } = createFakeWindow({ handleRequest: (request, reply) => {
+		if (request.method === 'connected_to_signer') {
+			reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: { metamaskCompatibilityMode: false } })
+			sendSafeAppsCompatibility(reply, true)
+			return true
+		}
+		if (request.method === 'eth_accounts') {
+			reply({ interceptorApproved: true, requestId: request.requestId, type: 'result', method: request.method, result: [] })
+			return true
+		}
+		if (request.method !== 'safe_apps_request') return false
+		forwarded++
+		if (forwarded === 1) settleOldRequest = () => replyToSafeAppsRequest(request, reply, { kind: 'result', value: { safeAddress: 'old' } })
+		else settleNewRequest = () => replyToSafeAppsRequest(request, reply, { kind: 'result', value: { safeAddress: 'new' } })
+		return true
+	} })
+	await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?safe-reused-discovery-id', async () => {
+		const replies: Record<string, unknown>[] = []
+		fakeWindow.addEventListener('message', ({ data }) => { if (isRecord(data) && typeof data.success === 'boolean') replies.push(data) })
+		const request = { id: 'reused-discovery', method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }
+		fakeWindow.postMessage({ ...request, bridgeToken: 'first' }, fakeWindow.location.origin)
+		await waitFor(() => settleOldRequest !== undefined)
+		assert.equal(activeTimeouts(), 1)
+		fireTimeouts(5 * 60_000)
+		assert.equal(activeTimeouts(), 0)
+		fakeWindow.postMessage({ ...request, bridgeToken: 'second' }, fakeWindow.location.origin)
+		await waitFor(() => settleNewRequest !== undefined)
+		fakeWindow.postMessage({ type: 'interceptor_safe_apps_cancel', id: request.id, bridgeToken: 'first' }, fakeWindow.location.origin)
+		settleOldRequest?.()
+		settleNewRequest?.()
+		await waitFor(() => replies.length === 1)
+		assert.deepEqual(replies, [{ id: request.id, success: true, data: { safeAddress: 'new' }, version: '9.1.0', bridgeToken: 'second' }])
+		assert.equal(activeTimeouts(), 0)
 	})
 })
