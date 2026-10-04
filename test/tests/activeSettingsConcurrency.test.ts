@@ -4,7 +4,7 @@ import type { ContactEntry, SafeEntry } from '../../app/ts/types/addressBookType
 import type { TabConnection, WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { ICON_NOT_ACTIVE } from '../../app/ts/utils/constants.js'
 import type { RpcEntry } from '../../app/ts/types/rpc.js'
-import { createTestSimulationServicesOwner, createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
+import { createTestSimulationServicesOwner, confirmedSignerOwnership, createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
 const firstAddress: ContactEntry = { type: 'contact', name: 'First address', address: 1n, chainId: 'AllChains', entrySource: 'User', useAsActiveAddress: true, askForAddressAccess: false }
 const secondAddress: ContactEntry = { ...firstAddress, name: 'Second address', address: 2n }
@@ -28,6 +28,67 @@ function pauseAfterFirstStorageWrite(key: string) {
 }
 
 describe('active settings concurrency', () => {
+
+	test('grants access and replies to the website while the account simulation refresh is pending', async () => {
+		installBrowserMock()
+		const { changeSimulationMode, updateUserAddressBookEntries, updatePendingAccessRequests, resolveInterceptorAccess, getPendingAccessRequests, getSettings, updateTabState, websiteSocketToString } = await loadModules()
+		await changeSimulationMode({ simulationMode: false, activeSigningAddress: firstAddress.address })
+		const selectedAddress: SafeEntry = { type: 'safe', name: 'Owned Safe', address: secondAddress.address, chainId: (await getSettings()).activeRpcNetwork.chainId, entrySource: 'User', useAsActiveAddress: true, safeSignerAddresses: [firstAddress.address] }
+		await updateTabState(1, previous => ({ ...previous, signerAccounts: [firstAddress.address], signerName: 'MetaMask' }))
+		await updateUserAddressBookEntries(() => [firstAddress, selectedAddress])
+		const socket = { tabId: 1, connectionName: 0n }
+		const website = { websiteOrigin: 'example.test' }
+		const { port, messages } = createPort(socket.tabId)
+		const connections: WebsiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true },
+		} }]])
+		await updatePendingAccessRequests(async () => [{
+			website, socket, accessRequestId: 'slow-account-refresh', simulationMode: false,
+			requestAccessToAddress: selectedAddress, originalRequestAccessToAddress: firstAddress,
+			associatedAddresses: [], signerAccounts: [firstAddress.address], signerName: 'MetaMask',
+			popupOrTabId: { type: 'popup', id: 1 }, activeAddress: firstAddress.address,
+			request: { interceptorRequest: true, usingInterceptorWithoutSigner: false, method: 'eth_requestAccounts', uniqueRequestIdentifier: { requestId: 10, requestSocket: socket } },
+		}])
+		const refreshStarted = createDeferredSignal()
+		const releaseRefresh = createDeferredSignal()
+		const originalSend = browser.runtime.sendMessage.bind(browser.runtime)
+		Object.defineProperty(browser.runtime, 'sendMessage', {
+			configurable: true,
+			value: async (message: { method?: string }) => {
+				if (message.method === 'popup_isSimulationVisualizerOpen') {
+					refreshStarted.resolve()
+					await releaseRefresh.promise
+				}
+				return await originalSend(message)
+			},
+		})
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		const approval = resolveInterceptorAccess(simulationServicesOwner, connections, {
+			userReply: 'Approved', accessRequestId: 'slow-account-refresh',
+			requestAccessToAddress: secondAddress.address, originalRequestAccessToAddress: firstAddress.address,
+		}, noopPublishRpcConnectionStatus)
+		let timeout: ReturnType<typeof setTimeout> | undefined
+		try {
+			await refreshStarted.promise
+			await Promise.race([
+				approval,
+				new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Access approval waited for simulation refresh')), 1000) }),
+			])
+			assert.equal((await getPendingAccessRequests()).length, 0)
+			assert.equal((await getSettings()).activeSigningSafeAddress, secondAddress.address)
+			assert.deepEqual((await getSettings()).websiteAccess[0]?.addressAccess, [{ address: secondAddress.address, access: true }])
+			assert.deepEqual(messages.filter(message => message.method === 'eth_accounts' && message.requestId === 10).map(message => message.result), [['0x0000000000000000000000000000000000000002']])
+		} finally {
+			clearTimeout(timeout)
+			releaseRefresh.resolve()
+			await approval
+			// Drain the background refresh before another test replaces the browser mock.
+			const { queuePopupSimulationRefresh } = await import('../../app/ts/background/popupSimulationRefreshQueue.js')
+			await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
+			Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: originalSend })
+		}
+	})
+
 	test('publishes concurrent network transitions in persisted order', async () => {
 		installBrowserMock()
 		const { changeActiveAddressAndChain, getSettings, updateUserAddressBookEntries, updateWebsiteAccess, websiteSocketToString } = await loadModules()

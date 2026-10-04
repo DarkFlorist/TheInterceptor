@@ -19,6 +19,8 @@ When adding a trigger, choose the required cancellation, visibility, error, and 
 
 `captureSimulationSnapshot` reads the selected network, stack context, input and rich count at the storage boundary. Execution requires that snapshot; cache checks and execution share `getSimulationProviderForSnapshot`, which uses its network selection without re-reading global settings. Signer-only snapshots expose no simulation provider even though the service owner retains a supported provider for a later configured selection. The interactive queue carries the same snapshot through fingerprinting and execution. A missing RPC URL cannot be used to construct replacement RPC services.
 
+Access approval captures and enqueues an account-change refresh before releasing the settings lock, but does not await its completion. Permission persistence, provider notifications and the account request reply remain independent of simulation RPC latency; unexpected background refresh failures are reported. Other settings transitions retain their existing completion contract.
+
 External-wallet signing transitions do not enqueue simulation refreshes: wallet acknowledgment depends on applying the selected network, not RPC simulation availability. Simulation-mode transitions and selected Safe signing stacks retain their visualization refreshes.
 
 `updatePopupVisualisationIfNeeded` takes named options for invalidation, throttling, unchanged-input skipping, and a captured snapshot. Omitted options keep the normal direct-refresh behavior. The interactive queue supplies its captured snapshot and owns coalescing; the executor owns serialization.

@@ -1,5 +1,6 @@
+import { reportUnexpectedError } from '../utils/errors.js'
 import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
-import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
+import { enqueuePopupSimulationRefresh, queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
@@ -67,6 +68,7 @@ type ActiveSettingsTransition = {
 	readonly change: ActiveAddressAndChainChange
 	readonly simulationSignerSelection?: { readonly useSignerAddress: boolean, readonly signerAddress: bigint | undefined }
 	readonly signingPreference?: SigningAddressPreference
+	readonly waitForSimulationRefresh?: boolean
 }
 
 const changeActiveAddressAndChainSemaphore = new Semaphore(1)
@@ -137,7 +139,12 @@ async function runActiveSettingsChange(
 			}
 			// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.
 			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
-				await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
+				const refresh = await enqueuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
+				if (transition.waitForSimulationRefresh === false) {
+					void refresh.completion.catch(async (error: unknown) => { await reportUnexpectedError(error) })
+				} else {
+					await refresh.completion
+				}
 			}
 			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 		})
@@ -166,6 +173,7 @@ export async function activateAddressSelection(
 		readonly signerAddress: bigint | undefined
 		readonly rpcNetwork?: RpcNetwork
 		readonly promptForAccessesIfNeeded?: boolean
+		readonly waitForSimulationRefresh?: boolean
 	},
 ): Promise<void> {
 	const selectedSafe = selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? selection.entry : undefined
@@ -177,6 +185,7 @@ export async function activateAddressSelection(
 			? { signerAddress: options.signerAddress, selection: 'signer' }
 			: { signerAddress: options.signerAddress, selection: 'safe', safeAddress: selectedSafe.address, chainId: selectedSafe.chainId }
 	return await runActiveSettingsChange(simulationServicesOwner, websiteTabConnections, {
+		waitForSimulationRefresh: options.waitForSimulationRefresh,
 		change: {
 			simulationMode: options.simulationMode,
 			activeAddress: selection?.type === 'signer' ? selection.address : selection?.entry.address,

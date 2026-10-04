@@ -61,7 +61,8 @@ const refreshRevision = createPopupSimulationRefresher<RevisionedPopupSimulation
 	return result.simulationUpdatingState !== 'failed' && result.simulationResultState !== 'invalid'
 })
 
-export async function queuePopupSimulationRefresh(services: PopupSimulationRefresh) {
+// Capture and enqueue before releasing the settings lock, without waiting for RPC execution.
+export async function enqueuePopupSimulationRefresh(services: PopupSimulationRefresh) {
 	const snapshot = await captureSimulationSnapshot()
 	const provider = getSimulationProviderForSnapshot(services.ethereum, snapshot)
 	const block = provider?.getCachedBlock()
@@ -72,5 +73,10 @@ export async function queuePopupSimulationRefresh(services: PopupSimulationRefre
 		snapshot.numberOfAddressesMadeRich,
 		snapshot.activeStackContext,
 	])
-	return await refreshRevision({ ...services, revision, snapshot })
+	return { completion: refreshRevision({ ...services, revision, snapshot }) }
+}
+
+export async function queuePopupSimulationRefresh(services: PopupSimulationRefresh) {
+	const refresh = await enqueuePopupSimulationRefresh(services)
+	return await refresh.completion
 }
