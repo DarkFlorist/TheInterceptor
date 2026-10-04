@@ -154,6 +154,7 @@ async function loadModules() {
 		EthereumClientService: ethereumClientService.EthereumClientService,
 		TokenPriceService: priceEstimator.TokenPriceService,
 		mockSignTransaction: simulationModeEthereumClientService.mockSignTransaction,
+		createSimulationState: simulationModeEthereumClientService.createSimulationState,
 		browserStorageLocalSet: storageUtils.browserStorageLocalSet,
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 	}
@@ -287,7 +288,7 @@ function createSafeMessage(fakeRpcNetwork: RpcEntry, activeAddress: TestModules[
 }
 
 describe('Gnosis Safe stack simulation', () => {
-	test('governance execution token balances are queried on top of stack plus execution transaction', async () => {
+	test('governance execution full state keeps the prior stack for token balances', async () => {
 		await browserMock.reset()
 		const modules = await modulesPromise
 		const activeAddress = modules.defaultActiveAddresses[0]
@@ -331,7 +332,7 @@ describe('Gnosis Safe stack simulation', () => {
 							&& lastCall !== null
 							&& 'to' in lastCall
 							&& lastCall.to === MULTICALL3
-						if (!isAggregate3BalanceCall) throw new Error(`Unexpected eth_simulateV1 payload with ${ String(callCount) } blockStateCalls`)
+						if (!isAggregate3BalanceCall) return makeEthSimulateBlocks(callCount)
 						aggregate3BlockStateCallCount = callCount
 
 						const aggregate3ReturnData = encodeFunctionReturn(Multicall3ABI, 'aggregate3', [[{
@@ -411,21 +412,20 @@ describe('Gnosis Safe stack simulation', () => {
 			executionStateOverrides,
 		)
 
-		const tokenBalancesAfter = await modules.getGovernanceExecutionTokenBalancesAfter(
-			ethereum,
-			{ kind: 'simulated', value: simulationInput, simulationOverrides: {} },
-			executionTransaction,
-			executionTimestamp,
-			{ status: 'success', returnData: new Uint8Array(), gasUsed: 21_000n, logs: [] },
-			executionStateOverrides,
-		)
+		const fullState = await modules.createSimulationState(ethereum, undefined, {
+			kind: 'simulated', value: governanceExecutionSimulationInput, simulationOverrides: {},
+		})
 
 		assert.equal(governanceExecutionSimulationInput.length, 2)
 		assert.deepStrictEqual(governanceExecutionSimulationInput[1]?.stateOverrides, executionStateOverrides)
 		assert.deepStrictEqual(governanceExecutionSimulationInput[1]?.blockTimeManipulation, { type: 'SetTimetamp', timeToSet: 1704153600n })
 		assert.equal(aggregate3BlockStateCallCount, 3)
-		assert.equal(tokenBalancesAfter.length, 1)
-		assert.equal(tokenBalancesAfter[0]?.owner, activeAddress.address)
+		assert.equal(fullState.success, true)
+		if (!fullState.success) throw new Error('Governance execution simulation failed')
+		assert.equal(fullState.simulatedBlocks.length, 2)
+		const executionResult = fullState.simulatedBlocks[1]?.simulatedTransactions[0]
+		assert.equal(executionResult?.tokenBalancesAfter.length, 1)
+		assert.equal(executionResult?.tokenBalancesAfter[0]?.owner, activeAddress.address)
 	})
 
 	const safeSimulationCases = [

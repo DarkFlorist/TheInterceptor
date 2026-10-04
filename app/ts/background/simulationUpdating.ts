@@ -3,8 +3,7 @@ import type { RpcNetwork } from '../types/rpc.js'
 import { isSignerOnlyNetwork } from '../utils/rpcNetworkChange.js'
 import { prepareSafeDelegateSimulationInput, prepareSafeDelegateStateOverrides, ORIGINAL_GNOSIS_SAFE, SAFE_DELEGATE_EXECUTE_ABI } from '../safe/safeSimulation.js'
 import type { EthereumClientService } from '../simulation/services/EthereumClientService.js'
-import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getTokenBalancesAfterForTransaction, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
-import { calculateRealizedEffectiveGasPrice } from '../simulation/services/simulationBlockParameters.js'
+import { appendTransactionToInputAndSimulate, createExecutionSimulationState, createSimulationState, getAddressToMakeRich, getBaseFeeAdjustmentBalances, getNonceFixedSimulationStateInput, getSimulatedCode, getWebsiteCreatedEthereumTransactions, simulateEstimateGasFromInput, sliceSimulationState } from '../simulation/services/SimulationModeEthereumClientService.js'
 import { mockSignTransaction } from '../simulation/services/simulationTransactionSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
 import type { TokenPriceService } from '../simulation/services/priceEstimator.js'
@@ -20,8 +19,8 @@ import { ETHEREUM_LOGS_LOGGER_ADDRESS, FourByteExplanations, MAKE_YOU_RICH_TRANS
 import { type DistributiveOmit, assertNever, modifyObject } from '../utils/typescript.js'
 import { getAddressBookEntriesForVisualiserFromTransactions, identifyAddress, nameTokenIds, retrieveEnsNodeAndLabelHashes } from './metadataUtils.js'
 import { getFixedAddressRichList, getPreSimulationBlockTimeManipulation, getSettings, getWethForChainId } from './settings.js'
-import { addressString, dataStringWith0xStart, dateToBigintSeconds, stringToUint8Array } from '../utils/bigint.js'
-import { simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
+import { addressString, dataStringWith0xStart, stringToUint8Array } from '../utils/bigint.js'
+import { getGovernanceExecutionSimulationInput, simulateCompoundGovernanceExecution } from '../simulation/compoundGovernanceFaking.js'
 import { CompoundGovernanceAbi } from '../utils/abi.js'
 import type { VisualizedPersonalSignRequestSafeTx } from '../types/personal-message-definitions.js'
 import { getGnosisSafeProxyProxy } from '../utils/ethereumByteCodes.js'
@@ -35,8 +34,9 @@ import { decodeCallDataLoose, encodeFunctionCall } from '../utils/abiRuntime.js'
 import type { StateOverrides } from '../types/ethSimulate-types.js'
 import { getActiveStackContext, getOperationsForActiveStackContext } from '../utils/activeStackContext.js'
 import { isCodeClearedBySimulationOverrides } from '../utils/delegateClearingState.js'
-import { getEffectiveStateOverrides } from '../utils/simulationStateOverrides.js'
 import { getWhatIfSimulationOverrides } from './delegateClearingPolicy.js'
+
+export { getGovernanceExecutionSimulationInput } from '../simulation/compoundGovernanceFaking.js'
 
 const getMakeCurrentAddressRichStateOverride = (addressesToMakeRich: readonly bigint[]) => {
 	if (addressesToMakeRich.length === 0) return {}
@@ -247,47 +247,6 @@ async function getDelegationAddressesForSimulation(
 		.map((entry) => [addressString(entry.senderAddress), entry.delegationEntry] as const))
 }
 
-export const getGovernanceExecutionSimulationInput = (
-	simulationInput: SimulationStateInput,
-	executionTransaction: PreSimulationTransaction,
-	executionTimestamp: Date,
-	executionStateOverrides: StateOverrides,
-): SimulationStateInput => {
-	return [
-		...simulationInput,
-		{
-			stateOverrides: executionStateOverrides,
-			transactions: [executionTransaction],
-			signedMessages: [],
-			blockTimeManipulation: { type: 'SetTimetamp', timeToSet: dateToBigintSeconds(executionTimestamp) },
-			simulateWithZeroBaseFee: false,
-		},
-	]
-}
-
-export const getGovernanceExecutionTokenBalancesAfter = async (
-	ethereum: EthereumClientService,
-	simulationInput: SimulationInput,
-	executionTransaction: PreSimulationTransaction,
-	executionTimestamp: Date,
-	callResult: Parameters<typeof getTokenBalancesAfterForTransaction>[3],
-	executionStateOverrides: StateOverrides,
-) => {
-	const simulationInputAfterExecution = getGovernanceExecutionSimulationInput(
-		simulationInput.value,
-		executionTransaction,
-		executionTimestamp,
-		executionStateOverrides,
-	)
-	return await getTokenBalancesAfterForTransaction(
-		ethereum,
-		undefined,
-		{ ...simulationInput, value: simulationInputAfterExecution },
-		callResult,
-		executionTransaction.signedTransaction,
-	)
-}
-
 export const simulateGovernanceContractExecution = async (pendingTransaction: PendingTransaction, ethereum: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
@@ -313,20 +272,19 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const addr = await identifyAddress(ethereum, undefined, pendingTransaction.transactionToSimulate.transaction.to)
 		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, errorType: 'MissingAbi' as const, errorMessage: 'ABi for the governance contract is missing', errorAddressBookEntry: addr }
 		const settingsSnapshot = await getSettings()
-		const simulationOverrides = getWhatIfSimulationOverrides(settingsSnapshot)
-		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, proposalId, simulationOverrides)
-		if (contractExecutionResult === undefined) return returnError('Failed to simulate governance execution')
-		const parentBlock = await ethereum.getBlock(undefined)
-		if (parentBlock === null) throw new Error('The latest block is null')
-		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
 		const simulationInput = await getWhatIfSimulationInput(settingsSnapshot)
-		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.ethSimulateV1CallResult.gasUsed })
-		const executionTransaction: PreSimulationTransaction = {
-			signedTransaction: signedExecutionTransaction,
+		const executionTransactionMetadata = {
 			website: pendingTransaction.transactionToSimulate.website,
 			created: new Date(),
 			originalRequestParameters: pendingTransaction.originalRequestParameters,
 			transactionIdentifier: pendingTransaction.transactionIdentifier,
+		}
+		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, proposalId, simulationInput, executionTransactionMetadata)
+		if (contractExecutionResult === undefined) return returnError('Failed to simulate governance execution')
+		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.executionGasLimit })
+		const executionTransaction: PreSimulationTransaction = {
+			...executionTransactionMetadata,
+			signedTransaction: signedExecutionTransaction,
 		}
 		const governanceExecutionSimulationInput = getGovernanceExecutionSimulationInput(
 			simulationInput.value,
@@ -334,41 +292,12 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 			contractExecutionResult.executionTimestamp,
 			contractExecutionResult.executionStateOverrides,
 		)
-		const tokenBalancesAfter = await getGovernanceExecutionTokenBalancesAfter(
-			ethereum,
-			simulationInput,
-			executionTransaction,
-			contractExecutionResult.executionTimestamp,
-			contractExecutionResult.ethSimulateV1CallResult,
-			contractExecutionResult.executionStateOverrides,
-		)
-
-		const governanceExecutionBlock = governanceExecutionSimulationInput[governanceExecutionSimulationInput.length - 1]
-		if (governanceExecutionBlock === undefined) throw new Error('Missing governance execution simulation block')
-		const governanceContractSimulationState: SimulationState = {
-			success: true,
-			simulationStateInput: [governanceExecutionBlock],
-			simulatedBlocks: [{
-				signedMessages: [],
-				// This visualization contains only the standalone execution block.
-				stateOverrides: getEffectiveStateOverrides(governanceExecutionBlock.stateOverrides, simulationOverrides, { precedingSimulatedBlockCount: 0 }),
-				blockTimestamp: contractExecutionResult.executionTimestamp,
-				blockTimeManipulation: { type: 'SetTimetamp', timeToSet: dateToBigintSeconds(contractExecutionResult.executionTimestamp) },
-				simulatedTransactions: [{
-					preSimulationTransaction: executionTransaction,
-					realizedGasPrice: calculateRealizedEffectiveGasPrice(signedExecutionTransaction, parentBlock.baseFeePerGas),
-					ethSimulateV1CallResult: contractExecutionResult.ethSimulateV1CallResult,
-					tokenBalancesAfter,
-				}],
-				blockBaseFeePerGas: parentBlock.baseFeePerGas,
-			}],
-			blockNumber: parentBlock.number,
-			simulationOverrides,
-			blockTimestamp: parentBlock.timestamp,
-			baseFeePerGas: parentBlock.baseFeePerGas,
-			rpcNetwork: ethereum.getRpcEntry(),
-			simulationConductedTimestamp: new Date(),
-		}
+		// Keep the preceding stack in the result so visualization uses the execution RPC's state.
+		const governanceContractSimulationState = await createSimulationState(ethereum, undefined, {
+			...simulationInput,
+			value: governanceExecutionSimulationInput,
+			simulationOverrides: contractExecutionResult.executionSimulationOverrides,
+		})
 		return { success: true as const, result: await visualizeSimulatorState(governanceContractSimulationState, ethereum, tokenPriceService, undefined) }
 	} catch(error) {
 		console.warn(error)

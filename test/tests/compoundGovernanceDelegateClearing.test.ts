@@ -7,9 +7,12 @@ import { addressString, stringToUint8Array } from '../../app/ts/utils/bigint.js'
 import { EthSimulateV1Params, EthSimulateV1Result } from '../../app/ts/types/ethSimulate-types.js'
 import { JsonRpcResponse } from '../../app/ts/types/JsonRpc-types.js'
 import { serialize } from '../../app/ts/types/wire-types.js'
+import { createSimulatedInput } from '../../app/ts/types/visualizer-types.js'
+import { DEFAULT_BLOCK_MANIPULATION } from '../../app/ts/config/defaults.js'
+import { mockSignTransaction } from '../../app/ts/simulation/services/simulationTransactionSigning.js'
 import { eth_getBlockByNumber_goerli_8443561_true, eth_simulateV1_dummy_call_result } from '../RPCResponses.js'
 
-test('governance execution preserves clearing and timelock overrides', async () => {
+test('governance execution preserves clearing, timelock overrides, and earlier code changes', async () => {
 	const activeAddress = 0x1234567890123456789012345678901234567890n
 	const timelockAddress = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
 	const governanceAddress = 0x9876543210987654321098765432109876543210n
@@ -39,7 +42,10 @@ test('governance execution preserves clearing and timelock overrides', async () 
 			if (request.method === 'eth_getBlockByNumber') return parentResponse.result
 			if (request.method === 'eth_simulateV1') {
 				requests.push(request)
-				return serialize(EthSimulateV1Result, [{ ...resultBlock, calls: requests.length === 1 ? governanceCalls : [resultCall] }])
+				return serialize(EthSimulateV1Result, request.params[0].blockStateCalls.map((block, index, blocks) => ({
+					...resultBlock,
+					calls: index === blocks.length - 1 ? requests.length === 1 ? governanceCalls : [resultCall] : block.calls.map(() => resultCall),
+				})))
 			}
 			throw new Error(`Unexpected RPC method ${ request.method }`)
 		},
@@ -47,9 +53,17 @@ test('governance execution preserves clearing and timelock overrides', async () 
 		name: 'Governance test network', chainId: 1n, httpsRpc: 'https://governance-test.invalid', currencyName: 'Ether', currencyTicker: 'ETH', primary: false, minimized: false,
 	})
 	const simulationOverrides = { [addressString(activeAddress)]: { code: new Uint8Array() } }
-	await simulateCompoundGovernanceExecution(ethereum, {
+	const executionTransactionMetadata = {
+		website: { websiteOrigin: 'https://governance-test.invalid', icon: undefined, title: undefined },
+		created: new Date('2026-01-01T00:00:00Z'),
+		originalRequestParameters: { method: 'eth_sendTransaction' as const, params: [{ from: governanceAddress, to: timelockAddress }] },
+		transactionIdentifier: 1n,
+	}
+	const emptyStackExecution = await simulateCompoundGovernanceExecution(ethereum, {
 		type: 'contract', name: 'Governor', address: governanceAddress, entrySource: 'User', abi: JSON.stringify(governanceAbi),
-	}, 1n, simulationOverrides)
+	}, 1n, createSimulatedInput([], simulationOverrides), executionTransactionMetadata)
+	assert.equal(emptyStackExecution.executionGasLimit, 30_000_000n)
+	assert.equal(emptyStackExecution.ethSimulateV1CallResult.gasUsed < emptyStackExecution.executionGasLimit, true)
 	assert.equal(requests.length, 2)
 	for (const request of requests) {
 		const serialized = serialize(EthSimulateV1Params, request)
@@ -57,4 +71,30 @@ test('governance execution preserves clearing and timelock overrides', async () 
 	}
 	const executionRequest = serialize(EthSimulateV1Params, requests[1])
 	assert.ok(executionRequest.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(timelockAddress)]?.code?.startsWith('0x'))
+
+	requests.length = 0
+	// This later block represents code restored after an earlier EIP-7702 authorization.
+	const reauthorizedCode = new Uint8Array([0xef, 0x01, 0x00, 0x60, 0x01])
+	const prefix = [{
+		stateOverrides: {},
+		transactions: [{ signedTransaction: mockSignTransaction({
+			type: '1559', from: activeAddress, to: governanceAddress, chainId: 1n, nonce: 0n, gas: 21_000n,
+			value: 0n, input: new Uint8Array(), maxFeePerGas: 1n, maxPriorityFeePerGas: 1n,
+		}) }],
+		signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: false,
+	}, {
+		stateOverrides: { [addressString(activeAddress)]: { code: reauthorizedCode } },
+		transactions: [], signedMessages: [], blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION, simulateWithZeroBaseFee: false,
+	}]
+	await simulateCompoundGovernanceExecution(ethereum, {
+		type: 'contract', name: 'Governor', address: governanceAddress, entrySource: 'User', abi: JSON.stringify(governanceAbi),
+	}, 1n, createSimulatedInput(prefix, simulationOverrides), executionTransactionMetadata)
+	assert.equal(requests.length, 2)
+	for (const request of requests) {
+		const blocks = serialize(EthSimulateV1Params, request).params[0].blockStateCalls
+		assert.equal(blocks.length, 3)
+		assert.equal(blocks[0]?.stateOverrides?.[addressString(activeAddress)]?.code, '0x')
+		assert.equal(blocks[1]?.stateOverrides?.[addressString(activeAddress)]?.code, '0xef01006001')
+		assert.equal(blocks[2]?.stateOverrides?.[addressString(activeAddress)]?.code, undefined)
+	}
 })
