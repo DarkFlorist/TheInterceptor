@@ -541,6 +541,7 @@ export const popupVisualisation = {
 		namedTokenIds: [],
 		simulationState: {
 			success: true as const,
+			simulationOverrides: {},
 			simulationStateInput: [],
 			simulatedBlocks: [],
 			blockNumber: 123n,

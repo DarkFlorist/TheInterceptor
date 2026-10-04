@@ -2,6 +2,27 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { activeAddress, addressString, browserMock, created, createSafeAddressBookEntry, createSafeTx, createWebsitePort, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, hexToBytes, isRecord, modules, pendingTransaction, recipientAddress, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
+test('uses on-chain delegate state for a transaction approval preview even when what-if clearing is enabled', async () => {
+	const { changeSimulationMode, setDelegateClearingEnabled } = await import('../../app/ts/background/settings.js')
+	await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: fakeRpcNetwork })
+	await setDelegateClearingEnabled(activeAddress, fakeRpcNetwork.chainId, true)
+	try {
+		const preview = await (await import('../../app/ts/background/confirmTransactionSimulation.js')).refreshConfirmTransactionSimulation(
+			simulator.ethereum,
+			simulator.tokenPriceService,
+			activeAddress,
+			true,
+			uniqueRequestIdentifier,
+			pendingTransaction.transactionToSimulate,
+		)
+		assert.equal(preview?.statusCode, 'success')
+		if (preview?.statusCode !== 'success') throw new Error('Transaction approval preview failed')
+		assert.deepEqual(preview.data.simulationState.simulationOverrides, {})
+	} finally {
+		await setDelegateClearingEnabled(activeAddress, fakeRpcNetwork.chainId, false)
+	}
+})
+
 test('rejects EIP-7702 authorization lists before creating a Safe proposal', async () => {
 	await modules.browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
 	await modules.updateSafeTransactionStacks(() => [])

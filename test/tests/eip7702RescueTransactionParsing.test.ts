@@ -297,6 +297,7 @@ function makeSimulatedPendingRawTransaction(transactionToSimulate: WebsiteCreate
 				namedTokenIds: [],
 				simulationState: {
 					success: true,
+					simulationOverrides: {},
 					simulationStateInput: [],
 					simulatedBlocks: [],
 					blockNumber: 1n,

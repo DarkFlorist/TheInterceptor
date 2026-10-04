@@ -9,8 +9,10 @@ import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { mockSignTransaction } from './services/simulationTransactionSigning.js'
 import { DEFAULT_BLOCK_MANIPULATION } from '../config/defaults.js'
 import { decodeFunctionOutputLoose, decodeFunctionOutputObjectLoose, encodeFunctionCallLoose, hasFunctionLoose } from '../utils/abiRuntime.js'
+import type { StateOverrides } from '../types/ethSimulate-types.js'
+import { mergeStateOverrides } from '../utils/simulationStateOverrides.js'
 
-export const simulateCompoundGovernanceExecution = async (ethereumClientService: EthereumClientService, governanceContract: AddressBookEntry, proposalId: EthereumQuantity) => {
+export const simulateCompoundGovernanceExecution = async (ethereumClientService: EthereumClientService, governanceContract: AddressBookEntry, proposalId: EthereumQuantity, simulationOverrides: StateOverrides) => {
 	if (!('abi' in governanceContract) || governanceContract.abi === undefined) throw new Error(`We need to have ABI for governance contract ${ checksummedAddress(governanceContract.address) } to be able to proceed :()`)
 	const requiredFunctions = ['timelock', 'proposals', 'getActions']
 
@@ -59,7 +61,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 		simulateWithZeroBaseFee: true,
 	} ] as const
 
-	const governanceContractCalls = (await ethereumClientService.simulate(input, parentBlock.number, undefined))[0]?.calls
+	const governanceContractCalls = (await ethereumClientService.simulate({ kind: 'simulated', value: input, simulationOverrides }, parentBlock.number, undefined))[0]?.calls
 	if (governanceContractCalls === undefined) throw new Error('simulateTransactionsAndSignatures returned zero length aray')
 	for (const call of governanceContractCalls) {
 		if (call.status !== 'success') throw new Error('Failed to retrieve governance contracts information')
@@ -82,6 +84,9 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 	}
 
 	if (eta <= dateToBigintSeconds(parentBlock.timestamp)) throw new Error('ETA has passed already')
+	const timeLockOverrides: StateOverrides = {
+		[addressString(timeLockContract)]: { code: getCompoundGovernanceTimeLockMulticall(), stateDiff: {} }
+	}
 	const query = [{
 		calls: [executingTransaction],
 		blockOverrides: {
@@ -91,9 +96,8 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 			feeRecipient: parentBlock.miner,
 			baseFeePerGas: parentBlock.baseFeePerGas === undefined ? 15000000n : parentBlock.baseFeePerGas
 		},
-		stateOverrides: {
-			[addressString(timeLockContract)]: { code: getCompoundGovernanceTimeLockMulticall(), stateDiff: {} }
-		},
+		// This standalone RPC call executes in its own first block. The time lock shim wins if addresses overlap.
+		stateOverrides: mergeStateOverrides(simulationOverrides, timeLockOverrides),
 	}]
 	const ethSimulateV1CallResult = (await ethereumClientService.ethSimulateV1(query, parentBlock.number, undefined))[0]?.calls[0]
 	if (ethSimulateV1CallResult === undefined) throw new Error('ethSimulateV1 result was undefined')
@@ -101,7 +105,7 @@ export const simulateCompoundGovernanceExecution = async (ethereumClientService:
 		ethSimulateV1CallResult,
 		executingTransaction,
 		executionTimestamp: bigintSecondsToDate(eta),
-		executionStateOverrides: query[0]?.stateOverrides ?? {},
+		executionStateOverrides: timeLockOverrides,
 	}
 }
 
