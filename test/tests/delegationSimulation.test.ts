@@ -1,8 +1,8 @@
 import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { EthereumClientService, getNextBlockTimeStampOverride } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { captureSimulationSnapshot, getCurrentSimulationInput, getCurrentSimulationOverrides, getGovernanceExecutionSimulationInput, prepareSimulationInputForRpc } from '../../app/ts/background/simulationUpdating.js'
-import { clearDelegationHintCache, getCachedDelegationHint } from '../../app/ts/background/delegationHintCache.js'
+import { captureSigningSimulationSnapshot, captureWhatIfSimulationSnapshot, getCurrentSimulationInput, getGovernanceExecutionSimulationInput, getSigningSimulationOverrides, getWhatIfSimulationOverrides, prepareSimulationInputForRpc } from '../../app/ts/background/simulationUpdating.js'
+import { clearDelegationHintCache, getCachedDelegationHint, invalidateDelegatedHintsForNewBlock } from '../../app/ts/background/delegationHintCache.js'
 import { requestDelegationSimulation, setDelegationSimulation } from '../../app/ts/background/popupMessageHandlers/delegationSimulation.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
 import { changeSimulationMode, isDelegateClearingEnabled, setDelegateClearingEnabled, setMakeCurrentAddressRich } from '../../app/ts/background/settings.js'
@@ -75,14 +75,14 @@ describe('delegate clearing in simulation', () => {
 		assert.equal(await isDelegateClearingEnabled(activeAddress, rpcEntry.chainId + 1n), false)
 
 		const input = await getCurrentSimulationInput()
-		const simulationOverrides = getCurrentSimulationOverrides(await getSettings(), 'what-if')
+		const simulationOverrides = getWhatIfSimulationOverrides(await getSettings())
 		assert.deepEqual(input[0]?.stateOverrides[addressString(activeAddress)], { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value })
 		assert.equal(isCodeClearedBySimulationOverrides(simulationOverrides, activeAddress), true)
-		assert.deepEqual(getCurrentSimulationOverrides(await getSettings(), 'signing'), {})
-		const signingSnapshot = await captureSimulationSnapshot('signing')
+		assert.deepEqual(getSigningSimulationOverrides(), {})
+		const signingSnapshot = await captureSigningSimulationSnapshot()
 		assert.deepEqual(signingSnapshot.simulationInput.simulationOverrides, {})
 		assert.deepEqual(signingSnapshot.simulationInput.value[0]?.stateOverrides[addressString(activeAddress)], { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value })
-		assert.equal(isCodeClearedBySimulationOverrides((await captureSimulationSnapshot('what-if')).simulationInput.simulationOverrides, activeAddress), true)
+		assert.equal(isCodeClearedBySimulationOverrides((await captureWhatIfSimulationSnapshot()).simulationInput.simulationOverrides, activeAddress), true)
 		assert.equal(input[0]?.transactions.length, 0)
 		const parentBlockResponse = JsonRpcResponse.parse(JSON.parse(eth_getBlockByNumber_goerli_8443561_true))
 		if ('error' in parentBlockResponse) throw new Error(parentBlockResponse.error.message)
@@ -99,9 +99,9 @@ describe('delegate clearing in simulation', () => {
 		assert.equal(rpcInput.params[0].blockStateCalls[0]?.stateOverrides?.[addressString(activeAddress)]?.balance, `0x${ MAKE_YOU_RICH_TRANSACTION.transaction.value.toString(16) }`)
 
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress + 1n })
-		assert.equal(isCodeClearedBySimulationOverrides(getCurrentSimulationOverrides(await getSettings(), 'what-if'), activeAddress + 1n), false)
+		assert.equal(isCodeClearedBySimulationOverrides(getWhatIfSimulationOverrides(await getSettings()), activeAddress + 1n), false)
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: { ...rpcEntry, chainId: rpcEntry.chainId + 1n } })
-		assert.equal(isCodeClearedBySimulationOverrides(getCurrentSimulationOverrides(await getSettings(), 'what-if'), activeAddress), false)
+		assert.equal(isCodeClearedBySimulationOverrides(getWhatIfSimulationOverrides(await getSettings()), activeAddress), false)
 
 		assert.equal(await setDelegateClearingEnabled(activeAddress, rpcEntry.chainId, false), true)
 		assert.equal(await isDelegateClearingEnabled(activeAddress, rpcEntry.chainId), false)
@@ -119,7 +119,7 @@ describe('delegate clearing in simulation', () => {
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
 		await setDelegateClearingEnabled(activeAddress, rpcEntry.chainId, true)
 		const input = await getCurrentSimulationInput([])
-		const simulationOverrides = getCurrentSimulationOverrides(await getSettings(), 'what-if')
+		const simulationOverrides = getWhatIfSimulationOverrides(await getSettings())
 		assert.equal(input.length, 0)
 		const parentBlockResponse = JsonRpcResponse.parse(JSON.parse(eth_getBlockByNumber_goerli_8443561_true))
 		if ('error' in parentBlockResponse) throw new Error(parentBlockResponse.error.message)
@@ -221,7 +221,7 @@ describe('delegate clearing in simulation', () => {
 		const settingsSnapshot = await getSettings()
 		await setDelegateClearingEnabled(activeAddress, rpcEntry.chainId, false)
 		const capturedInput = await getCurrentSimulationInput(undefined, settingsSnapshot)
-		const capturedOverrides = getCurrentSimulationOverrides(settingsSnapshot, 'what-if')
+		const capturedOverrides = getWhatIfSimulationOverrides(settingsSnapshot)
 		assert.equal(capturedInput.length, 2)
 		for (const block of capturedInput) {
 			assert.equal(block.stateOverrides[addressString(activeAddress)]?.code, undefined)
@@ -356,6 +356,30 @@ describe('delegate clearing in simulation', () => {
 			},
 		}, async () => undefined, async () => undefined, rpcEntry)
 		assert.equal(await getCachedDelegationHint(replacementEthereum, activeAddress), undefined)
+	})
+
+	test('rechecks an aged delegated hint after a new block but keeps negative hints cached', async () => {
+		let codeRequests = 0
+		const delegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
+		let code = `0xef0100${ addressString(delegate).slice(2) }`
+		const ethereum = new EthereumClientService({
+			rpcUrl: rpcEntry.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest(request) {
+				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
+				codeRequests += 1
+				return code
+			},
+		}, async () => undefined, async () => undefined, rpcEntry)
+		assert.equal(await getCachedDelegationHint(ethereum, activeAddress), delegate)
+		code = '0x'
+		invalidateDelegatedHintsForNewBlock(ethereum, Date.now() + 59_000)
+		assert.equal(await getCachedDelegationHint(ethereum, activeAddress), delegate)
+		invalidateDelegatedHintsForNewBlock(ethereum, Date.now() + 61_000)
+		assert.equal(await getCachedDelegationHint(ethereum, activeAddress), undefined)
+		invalidateDelegatedHintsForNewBlock(ethereum, Date.now() + 600_000)
+		assert.equal(await getCachedDelegationHint(ethereum, activeAddress), undefined)
+		assert.equal(codeRequests, 2)
 	})
 
 	test('reuses the background delegation hint across popup opens and toggles', async () => {

@@ -234,7 +234,7 @@ const SimulationStateSuccess = funtypes.ReadonlyObject({
 	simulationConductedTimestamp: EthereumTimestamp,
 	rpcNetwork: RpcNetwork,
 }).And(funtypes.ReadonlyPartial({
-	// Older persisted visualizations omit this captured input field and mean no initial overrides.
+	// Captured initial account state for replay, separate from live preferences; older results mean no initial overrides.
 	simulationOverrides: StateOverrides,
 }))
 
@@ -276,6 +276,7 @@ export const ResolvedSimulationState = funtypes.Union(
 export type SimulatedInput<TInput extends SimulationStateInputMinimalData = SimulationStateInputMinimalData> = {
 	readonly kind: 'simulated'
 	readonly value: TInput
+	/** Generic account state applied before the first simulated block. Callers decide how to construct it. */
 	readonly simulationOverrides: StateOverrides
 }
 export type SimulationInput = SimulatedInput<SimulationStateInput>
@@ -291,7 +292,7 @@ export const ResolvedSimulationInput = funtypes.Union(
 
 export const toResolvedSimulationState = (value: SimulationState): ResolvedSimulationState => ({ kind: 'simulated', value })
 export const createSimulatedInput = <TInput extends SimulationStateInputMinimalData>(value: TInput, simulationOverrides: StateOverrides): SimulatedInput<TInput> => ({ kind: 'simulated', value, simulationOverrides })
-// Persisted states keep their existing fields; execution entry points use one input envelope.
+// Reconstruct the exact captured input for a persisted result, independent of later preference changes.
 export const getSimulationInputFromState = (state: Pick<SimulationState, 'simulationStateInput' | 'simulationOverrides'>): SimulationInput => createSimulatedInput(state.simulationStateInput, state.simulationOverrides ?? {})
 
 type SuccessfulSimulationState = Extract<SimulationState, { success: true }>

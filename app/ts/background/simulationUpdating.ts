@@ -131,7 +131,7 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 	return inputBlocks
 }
 
-export function getCurrentSimulationOverrides(settings: Settings, purpose: 'what-if' | 'signing'): StateOverrides {
+function getSimulationOverridesForPurpose(settings: Settings, purpose: 'what-if' | 'signing'): StateOverrides {
 	// Delegate clearing is a hypothetical overlay. Signing projections must use the code on chain.
 	if (purpose === 'signing') return {}
 	const address = settings.simulationMode && hasDelegateClearingPreference(settings.delegateClearingPreferences, settings.activeSimulationAddress, settings.activeRpcNetwork.chainId)
@@ -139,9 +139,15 @@ export function getCurrentSimulationOverrides(settings: Settings, purpose: 'what
 	return withDelegateCleared({}, address)
 }
 
-export async function getCurrentSimulationInputWithOverrides(settings: Settings, purpose: 'what-if' | 'signing', richAddresses?: readonly bigint[]): Promise<SimulationInput> {
-	return createSimulatedInput(await getCurrentSimulationInput(richAddresses, settings), getCurrentSimulationOverrides(settings, purpose))
+export const getWhatIfSimulationOverrides = (settings: Settings): StateOverrides => getSimulationOverridesForPurpose(settings, 'what-if')
+export const getSigningSimulationOverrides = (): StateOverrides => ({})
+
+async function getSimulationInputForPurpose(settings: Settings, purpose: 'what-if' | 'signing', richAddresses?: readonly bigint[]): Promise<SimulationInput> {
+	return createSimulatedInput(await getCurrentSimulationInput(richAddresses, settings), getSimulationOverridesForPurpose(settings, purpose))
 }
+
+export const getWhatIfSimulationInput = async (settings: Settings, richAddresses?: readonly bigint[]) => await getSimulationInputForPurpose(settings, 'what-if', richAddresses)
+export const getSimulationInputForCurrentMode = async (settings: Settings, richAddresses?: readonly bigint[]) => await getSimulationInputForPurpose(settings, settings.simulationMode ? 'what-if' : 'signing', richAddresses)
 
 export type SimulationSnapshot = {
 	readonly activeRpcNetwork: RpcNetwork
@@ -151,15 +157,21 @@ export type SimulationSnapshot = {
 }
 
 // Capture selection and input at the storage boundary. An unreadable stack must abort before publishing any fallback.
-export async function captureSimulationSnapshot(purpose: 'what-if' | 'signing'): Promise<SimulationSnapshot> {
-	const settings = await getSettings()
+async function captureSimulationSnapshotForSettings(settings: Settings, purpose: 'what-if' | 'signing'): Promise<SimulationSnapshot> {
 	const richAddresses = await getAddressesbeingMadeRich(settings)
 	return {
 		activeRpcNetwork: settings.activeRpcNetwork,
 		activeStackContext: getActiveStackContext(settings),
-		simulationInput: await getCurrentSimulationInputWithOverrides(settings, purpose, richAddresses),
+		simulationInput: await getSimulationInputForPurpose(settings, purpose, richAddresses),
 		numberOfAddressesMadeRich: richAddresses.length,
 	}
+}
+
+export const captureWhatIfSimulationSnapshot = async () => await captureSimulationSnapshotForSettings(await getSettings(), 'what-if')
+export const captureSigningSimulationSnapshot = async () => await captureSimulationSnapshotForSettings(await getSettings(), 'signing')
+export const captureCurrentModeSimulationSnapshot = async () => {
+	const settings = await getSettings()
+	return await captureSimulationSnapshotForSettings(settings, settings.simulationMode ? 'what-if' : 'signing')
 }
 
 export const getSimulationProviderForSnapshot = (ethereum: EthereumClientService, snapshot: SimulationSnapshot) => (
@@ -181,7 +193,7 @@ export async function getUpdatedSimulationState(ethereum: EthereumClientService,
 /** Builds the simulation-stack overlay used by simulation mode and Gnosis Safe signing mode. */
 export async function getUpdatedSimulationStackSnapshot(ethereum: EthereumClientService, simulationOverlayEnabled: boolean) {
 	if (!simulationOverlayEnabled) return { simulationInput: PASSTHROUGH_STATE, simulationState: PASSTHROUGH_STATE }
-	const snapshot = await captureSimulationSnapshot('what-if')
+	const snapshot = await captureCurrentModeSimulationSnapshot()
 	return {
 		simulationInput: snapshot.simulationInput,
 		simulationState: await getUpdatedSimulationState(ethereum, snapshot),
@@ -309,13 +321,13 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 		const addr = await identifyAddress(ethereum, undefined, pendingTransaction.transactionToSimulate.transaction.to)
 		if (!('abi' in addr) || addr.abi === undefined) return { success: false as const, errorType: 'MissingAbi' as const, errorMessage: 'ABi for the governance contract is missing', errorAddressBookEntry: addr }
 		const settingsSnapshot = await getSettings()
-		const simulationOverrides = getCurrentSimulationOverrides(settingsSnapshot, 'what-if')
+		const simulationOverrides = getWhatIfSimulationOverrides(settingsSnapshot)
 		const contractExecutionResult = await simulateCompoundGovernanceExecution(ethereum, addr, proposalId, simulationOverrides)
 		if (contractExecutionResult === undefined) return returnError('Failed to simulate governance execution')
 		const parentBlock = await ethereum.getBlock(undefined)
 		if (parentBlock === null) throw new Error('The latest block is null')
 		if (parentBlock.baseFeePerGas === undefined) return returnError('cannot build simulation from legacy block')
-		const simulationInput = await getCurrentSimulationInputWithOverrides(settingsSnapshot, 'what-if')
+		const simulationInput = await getWhatIfSimulationInput(settingsSnapshot)
 		const signedExecutionTransaction = mockSignTransaction({ ...contractExecutionResult.executingTransaction, gas: contractExecutionResult.ethSimulateV1CallResult.gasUsed })
 		const executionTransaction: PreSimulationTransaction = {
 			signedTransaction: signedExecutionTransaction,
@@ -376,7 +388,7 @@ export const simulateGovernanceContractExecution = async (pendingTransaction: Pe
 export const simulateGnosisSafeMetaTransaction = async (gnosisSafeMessage: VisualizedPersonalSignRequestSafeTx, ethereumClientService: EthereumClientService, tokenPriceService: TokenPriceService): Promise<DistributiveOmit<SimulateExecutionReplyData, 'transactionOrMessageIdentifier'>> => {
 	const returnError = (errorMessage: string) => ({ success: false as const, errorType: 'Other' as const, errorMessage })
 	try {
-		const signingSnapshot = await captureSimulationSnapshot('signing')
+		const signingSnapshot = await captureSigningSimulationSnapshot()
 		const simulationInput = signingSnapshot.simulationInput
 		// Call: 0x0, DelegateCall: 0x1
 		// https://github.com/safe-global/safe-smart-account/blob/main/contracts/libraries/Enum.sol

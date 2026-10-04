@@ -10,11 +10,12 @@ import { hasDelegateClearingPreference } from '../../utils/delegateClearingState
 type DelegationStatus = { type: 'delegated', delegate: bigint } | { type: 'none' } | { type: 'unknown' }
 type DelegationOption = { address: bigint, chainId: bigint, status: DelegationStatus }
 
-export function DelegationSimulationOption({ activeAddress, rpcNetwork, simulationMode, preferences }: {
+export function DelegationSimulationOption({ activeAddress, rpcNetwork, simulationMode, preferences, currentBlockNumber }: {
 	activeAddress: ReadonlySignal<AddressBookEntry | undefined>
 	rpcNetwork: ReadonlySignal<RpcNetwork | undefined>
 	simulationMode: ReadonlySignal<boolean>
 	preferences: ReadonlySignal<DelegateClearingPreferences>
+	currentBlockNumber: ReadonlySignal<bigint | undefined>
 }) {
 	const delegationOption = useSignal<DelegationOption | undefined>(undefined)
 	const pending = useSignal(false)
@@ -34,6 +35,19 @@ export function DelegationSimulationOption({ activeAddress, rpcNetwork, simulati
 		})()
 		return () => { disposed = true }
 	}, [simulationMode.value, address, chainId, rpcNetwork.value?.httpsRpc])
+
+	useEffect(() => {
+		const current = delegationOption.value
+		if (!simulationMode.value || currentBlockNumber.value === undefined || address === undefined || chainId === undefined
+			|| current?.address !== address || current.chainId !== chainId || current.status.type !== 'delegated') return
+		let disposed = false
+		void (async () => {
+			const reply = await sendPopupMessageWithReply({ method: 'popup_requestDelegationSimulation', data: { address, chainId } })
+			if (disposed || reply?.data.address !== address || reply.data.chainId !== chainId) return
+			delegationOption.value = { address, chainId, status: reply.data.status }
+		})()
+		return () => { disposed = true }
+	}, [currentBlockNumber.value, simulationMode.value, address, chainId])
 
 	const current = delegationOption.value
 	const enabled = hasDelegateClearingPreference(preferences.value, address, chainId)

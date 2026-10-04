@@ -15,6 +15,7 @@ const activeAddress = signal({ type: 'contact' as const, name: 'Account', addres
 const rpcNetwork = signal({ name: 'Ethereum', chainId, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false })
 const simulationMode = signal(true)
 const preferences = signal<DelegateClearingPreferences>([])
+const currentBlockNumber = signal<bigint | undefined>(undefined)
 
 type DelegationStatus = { type: 'delegated', delegate: bigint } | { type: 'none' } | { type: 'unknown' }
 let status: DelegationStatus = { type: 'delegated', delegate }
@@ -54,10 +55,11 @@ afterEach(() => {
 	lookups = 0
 	pendingSetReply = undefined
 	pendingLookupReply = undefined
+	currentBlockNumber.value = undefined
 })
 
 function option() {
-	return h(DelegationSimulationOption, { activeAddress, rpcNetwork, simulationMode, preferences })
+	return h(DelegationSimulationOption, { activeAddress, rpcNetwork, simulationMode, preferences, currentBlockNumber })
 }
 
 function checkbox(root: Parameters<typeof findRenderedElement>[0]) {
@@ -84,6 +86,26 @@ async function flush() {
 }
 
 describe('delegation simulation option', () => {
+	test('rechecks a visible delegated account on new blocks and stops after no delegate is found', async () => {
+		const dom = installDomMock()
+		try {
+			await act(() => render(option(), dom.document.body))
+			await flush()
+			assert.equal(lookups, 1)
+			status = { type: 'none' }
+			await act(() => { currentBlockNumber.value = 1n })
+			await flush()
+			assert.equal(lookups, 2)
+			assert.equal(checkbox(dom.document.body), undefined)
+			await act(() => { currentBlockNumber.value = 2n })
+			await flush()
+			assert.equal(lookups, 2)
+		} finally {
+			await act(() => render(undefined, dom.document.body))
+			dom.restore()
+		}
+	})
+
 	test('lets an enabled choice be disabled while its lookup never replies', async () => {
 		const dom = installDomMock()
 		const previousHtmlInputElement = Object.getOwnPropertyDescriptor(globalThis, 'HTMLInputElement')

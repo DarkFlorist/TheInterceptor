@@ -93,6 +93,7 @@ export type FirstCardParams = {
 	changeActiveRpc: (rpcEntry: RpcEntry) => Promise<void>
 	rpcNetwork: Signal<RpcNetwork | undefined>
 	delegateClearingPreferences: Signal<DelegateClearingPreferences>
+	currentBlockNumber: Signal<bigint | undefined>
 	simulationMode: Signal<boolean>
 	changeActiveAddress: () => void
 	makeCurrentAddressRich: Signal<boolean>

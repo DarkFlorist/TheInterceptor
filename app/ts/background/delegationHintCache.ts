@@ -3,6 +3,7 @@ import { addressString } from '../utils/bigint.js'
 import { NEW_BLOCK_ABORT } from '../utils/constants.js'
 
 const DELEGATION_CACHE_AGE_MS = 5 * 60 * 1000
+const DELEGATED_HINT_REFRESH_MIN_AGE_MS = 60 * 1000
 type PendingLookup = { promise: Promise<bigint | undefined>, controller: AbortController, generation: number }
 
 function createDelegationCache(lookup: (address: bigint, controller: AbortController) => Promise<bigint | undefined>) {
@@ -15,6 +16,12 @@ function createDelegationCache(lookup: (address: bigint, controller: AbortContro
 		resolved.clear()
 		for (const pending of pendingByAddress.values()) pending.controller.abort(NEW_BLOCK_ABORT)
 		pendingByAddress.clear()
+	}
+
+	const invalidateDelegatedForNewBlock = (now: number) => {
+		for (const [key, cached] of resolved) {
+			if (cached.delegate !== undefined && now - cached.checkedAt >= DELEGATED_HINT_REFRESH_MIN_AGE_MS) resolved.delete(key)
+		}
 	}
 
 	const startLookup = (address: bigint, key: string): PendingLookup => {
@@ -64,7 +71,7 @@ function createDelegationCache(lookup: (address: bigint, controller: AbortContro
 		}
 	}
 
-	return { get, clear }
+	return { get, clear, invalidateDelegatedForNewBlock }
 }
 
 // Hints belong to the RPC service identity. Switching networks creates a new service and a new cache.
@@ -82,3 +89,5 @@ export const getCachedDelegationHint = (ethereum: EthereumClientService, address
 	getHintCache(ethereum).get(address, abortController)
 
 export const clearDelegationHintCache = (ethereum: EthereumClientService) => hintCaches.get(ethereum)?.clear()
+
+export const invalidateDelegatedHintsForNewBlock = (ethereum: EthereumClientService, now = Date.now()) => hintCaches.get(ethereum)?.invalidateDelegatedForNewBlock(now)

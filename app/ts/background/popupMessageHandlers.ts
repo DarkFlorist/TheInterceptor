@@ -1,6 +1,6 @@
 import { refreshConfirmTransactionSimulation } from './confirmTransactionSimulation.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
-import { captureSimulationSnapshot, getCurrentSimulationInputWithOverrides, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
+import { captureWhatIfSimulationSnapshot, getWhatIfSimulationInput, getUpdatedSimulationStackSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { getSettings, setUseTabsInsteadOfPopup, setPage, getMakeCurrentAddressRich, setMetamaskCompatibilityMode, setSafeAppsCompatibilityMode, getPage, setPreSimulationBlockTimeManipulation, getPreSimulationBlockTimeManipulation, getFixedAddressRichList, getWebsiteAccess, updateMakeCurrentAddressRich, updateFixedMakeMeRichList } from './settings.js'
 import { getPendingTransactionsAndMessages, getTabState, getRpcList, getPrimaryRpcForChain, getRpcConnectionStatus, updateUserAddressBookEntries, getPopupVisualisationState, setIdsOfOpenedTabs, getIdsOfOpenedTabs, updatePendingTransactionOrMessage, addEnsLabelHash, addEnsNodeHash, updateInterceptorTransactionStack, getLatestUnexpectedError, getInterceptorTransactionStack, getChainChangeConfirmationPromise, getFetchSimulationStackRequestPromise, getPendingAccessRequests, updateTransactionState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst, getSafeTransactionStacks } from './storageVariables.js'
 import { parseEvents, parseInputData } from '../simulation/parsing.js'
@@ -1201,7 +1201,7 @@ export async function requestInterceptorSimulationInput(ethereumClientService: E
 		}
 	}
 	const simulationStack = modifyObject(stack, { operations: getOperationsForActiveStackContext(stack, SIMULATION_STACK_CONTEXT) })
-	const simulationInput = await getCurrentSimulationInputWithOverrides(settings, 'what-if')
+	const simulationInput = await getWhatIfSimulationInput(settings)
 	const currentBlockNumberPromise = silenceChromeUnCaughtPromise(ethereumClientService.getBlockNumber(undefined))
 	const eth_simulateV1 = await ethereumClientService.ethSimulateV1Input(simulationInput, await currentBlockNumberPromise, undefined)
 
@@ -1283,7 +1283,7 @@ export async function requestCompleteVisualizedSimulation(ethereum: EthereumClie
 
 export async function requestSimulationMetadata(ethereumClientService: EthereumClientService) {
 	const settings = await getSettings()
-	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService, await captureSimulationSnapshot('what-if')) : { kind: 'passthrough' as const }
+	const simulationState = settings.simulationMode ? await getUpdatedSimulationState(ethereumClientService, await captureWhatIfSimulationSnapshot()) : { kind: 'passthrough' as const }
 	if (simulationState.kind === 'passthrough' || simulationState.value.success === false) return {
 		method: 'popup_requestSimulationMetadata' as const,
 		metadata: {

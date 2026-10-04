@@ -398,8 +398,8 @@ describe('popup clear reset', () => {
 		browserMock.reset()
 		const signerOnly: RpcNetwork = { chainId: 99999n, httpsRpc: undefined, name: 'Signer only', currencyName: 'Ether?', currencyTicker: 'ETH?', primary: false, minimized: true }
 		await browserStorageLocalSet({ activeRpcNetwork: signerOnly, independentActiveSimulationAddress: activeAddress, popupVisualisation: stalePopupVisualisation, interceptorTransactionStack: { operations: [] } })
-		const { captureSimulationSnapshot, getUpdatedSimulationState } = await import('../../app/ts/background/simulationUpdating.js')
-		const snapshot = captured ? await captureSimulationSnapshot('what-if') : undefined
+		const { captureWhatIfSimulationSnapshot, getUpdatedSimulationState } = await import('../../app/ts/background/simulationUpdating.js')
+		const snapshot = captured ? await captureWhatIfSimulationSnapshot() : undefined
 		if (captured) await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork })
 		const originalBlock = fakeEthereum.getBlock
 		const originalNumber = fakeEthereum.getBlockNumber
@@ -422,7 +422,7 @@ describe('popup clear reset', () => {
 	for (const nextSimulationMode of [true, false]) test(`capture keeps the original rich address and stack mode during a settings change (nextSimulationMode=${ nextSimulationMode })`, async () => {
 		browserMock.reset()
 		await browserStorageLocalSet({ activeRpcNetwork: rpcNetwork, independentActiveSimulationAddress: activeAddress, simulationMode: true, makeCurrentAddressRich: true, interceptorTransactionStack: { operations: [] } })
-		const { captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
+		const { captureWhatIfSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
 		const originalGet = browser.storage.local.get
 		let changed = false
 		browser.storage.local.get = async keys => {
@@ -435,7 +435,7 @@ describe('popup clear reset', () => {
 			return result
 		}
 		try {
-			const snapshot = await captureSimulationSnapshot('what-if')
+			const snapshot = await captureWhatIfSimulationSnapshot()
 			assert.equal(changed, true)
 			assert.deepEqual(snapshot.activeStackContext, { simulationMode: true })
 			assert.equal(snapshot.numberOfAddressesMadeRich, 1)
@@ -518,8 +518,8 @@ describe('popup clear reset', () => {
 		browserMock.reset()
 		await browserStorageLocalSet({ independentActiveSimulationAddress: activeAddress, makeCurrentAddressRich: false, interceptorTransactionStack: { operations: [] } })
 		const modules = await modulesPromise
-		const { captureSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
-		const snapshot = await captureSimulationSnapshot('what-if')
+		const { captureWhatIfSimulationSnapshot } = await import('../../app/ts/background/simulationUpdating.js')
+		const snapshot = await captureWhatIfSimulationSnapshot()
 		await browserStorageLocalSet({ makeCurrentAddressRich: true })
 		assert.notDeepEqual(await modules.getCurrentSimulationInput(), snapshot.simulationInput.value)
 		const result = await updatePopupVisualisationIfNeeded(fakeEthereum, fakeTokenPriceService, { snapshot })

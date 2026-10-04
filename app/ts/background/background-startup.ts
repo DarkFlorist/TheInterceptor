@@ -1,9 +1,10 @@
 import { createSafeAppsCompatibilityFeature, initializeSafeAppsCompatibility } from './safeAppsCompatibilityCoordinator.js'
 import 'webextension-polyfill'
 import { getSettings, updateKnownWebsiteMetadata } from './settings.js'
+import { invalidateDelegatedHintsForNewBlock } from './delegationHintCache.js'
 import { DEFAULT_RPCS } from '../config/defaults.js'
 import { handleInterceptedRequest } from './background.js'
-import { captureSimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
+import { captureWhatIfSimulationSnapshot, getUpdatedSimulationState } from './simulationUpdating.js'
 import { popupMessageHandler } from './popupMessageRouting.js'
 import { retrieveWebsiteDetails, updateExtensionBadge, updateExtensionIcon } from './iconHandler.js'
 import { getPrimaryRpcForChain, getRpcConnectionStatus, removeTabState, setRpcConnectionStatus, updateTabState } from './storageVariables.js'
@@ -230,6 +231,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 	if (ethereumClientService !== getSimulationServices().ethereum) return
 	if (blockheader === null) throw new Error('The latest block is null')
 	try {
+		if (isNewBlock) invalidateDelegatedHintsForNewBlock(ethereumClientService)
 		const rpcConnectionStatus = {
 			isConnected: true,
 			lastConnnectionAttempt: new Date(),
@@ -239,7 +241,7 @@ async function newBlockAttemptCallback(blockheader: EthereumBlockHeader, ethereu
 		}
 		await rpcConnectionStatusPublisher.publishRpcConnectionStatus('popup_new_block_arrived', rpcConnectionStatus)
 		if (isNewBlock) {
-			const simulateCurrentStack = async (ethereum: EthereumClientService) => await getUpdatedSimulationState(ethereum, await captureSimulationSnapshot('what-if'))
+			const simulateCurrentStack = async (ethereum: EthereumClientService) => await getUpdatedSimulationState(ethereum, await captureWhatIfSimulationSnapshot())
 			const settings = await getSettings()
 			if (settings.simulationMode) {
 				const { ethereum, tokenPriceService } = getSimulationServices()

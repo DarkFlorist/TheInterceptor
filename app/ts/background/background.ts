@@ -22,7 +22,7 @@ import { serialize } from '../types/wire-types.js'
 import { connectedToSigner, ethAccountsReply, signerChainChanged, signerReply, walletSwitchEthereumChainReply } from './providerMessageHandlers.js'
 import { makeSureInterceptorIsNotSleeping } from './sleeping.js'
 import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
-import { buildExecutionSimulationStateFromPreparedInput, getCurrentSimulationInputWithOverrides, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
+import { buildExecutionSimulationStateFromPreparedInput, getSimulationInputForCurrentMode, getUpdatedSimulationStackSnapshot, prepareSimulationInputForRpc } from './simulationUpdating.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
@@ -75,11 +75,10 @@ async function handleRPCRequest(
 	let simulationInputPromise: Promise<ResolvedSimulationInput> | undefined
 	let executionSimulationStatePromise: Promise<ResolvedExecutionSimulationState> | undefined
 	// Website RPCs share the hypothetical state only in simulation mode; signing mode uses on-chain delegate code.
-	const rpcSimulationPurpose = settings.simulationMode ? 'what-if' : 'signing'
 	const getSimulationInput = async () => {
 		if (!simulationOverlayEnabled) return PASSTHROUGH_STATE
 		if (simulationInputPromise === undefined) simulationInputPromise = (async () => {
-			return await prepareSimulationInputForRpc(await getCurrentSimulationInputWithOverrides(settings, rpcSimulationPurpose), ethereum)
+			return await prepareSimulationInputForRpc(await getSimulationInputForCurrentMode(settings), ethereum)
 		})()
 		return await simulationInputPromise
 	}
