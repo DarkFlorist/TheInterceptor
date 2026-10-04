@@ -2,25 +2,23 @@ import type { Website, WebsiteAccessArray } from '../types/websiteAccessTypes.js
 import { replaceElementInReadonlyArray } from '../utils/typed-arrays.js'
 import { modifyObject } from '../utils/typescript.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
-import { getLegacyWebsiteOriginForCanonicalOrigin } from './websiteAccessMigration.js'
+import { isLegacyWebsiteOriginForCanonicalOrigin } from '../utils/websiteOrigin.js'
 
 export function isInterceptorDisabledForWebsiteOrigin(websiteAccess: WebsiteAccessArray, websiteOrigin: string): boolean {
-	const legacyWebsiteOrigin = getLegacyWebsiteOriginForCanonicalOrigin(websiteOrigin)
 	return websiteAccess.some((entry) => {
 		if (entry.interceptorDisabled !== true) return false
-		return entry.website.websiteOrigin === websiteOrigin || entry.website.websiteOrigin === legacyWebsiteOrigin
+		return entry.website.websiteOrigin === websiteOrigin || isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, websiteOrigin)
 	})
 }
 
 export function applyInterceptorDisabledDecision(previousWebsiteAccess: WebsiteAccessArray, website: Website, interceptorDisabled: boolean): WebsiteAccessArray {
-	const legacyWebsiteOrigin = getLegacyWebsiteOriginForCanonicalOrigin(website.websiteOrigin)
 	let foundExactEntry = false
 	const updatedWebsiteAccess = previousWebsiteAccess.map((entry) => {
 		if (entry.website.websiteOrigin === website.websiteOrigin) {
 			foundExactEntry = true
 			return { ...entry, interceptorDisabled }
 		}
-		if (legacyWebsiteOrigin !== undefined && entry.website.websiteOrigin === legacyWebsiteOrigin && entry.interceptorDisabled === true) {
+		if (isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, website.websiteOrigin) && entry.interceptorDisabled === true) {
 			return { ...entry, interceptorDisabled: false }
 		}
 		return entry
@@ -31,10 +29,7 @@ export function applyInterceptorDisabledDecision(previousWebsiteAccess: WebsiteA
 
 export function applyWebsiteAccessDecision(previousWebsiteAccess: WebsiteAccessArray, website: Website, access: boolean, address: bigint | undefined): WebsiteAccessArray {
 	const exactEntryIndex = previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === website.websiteOrigin)
-	const legacyWebsiteOrigin = getLegacyWebsiteOriginForCanonicalOrigin(website.websiteOrigin)
-	const legacyEntryIndex = legacyWebsiteOrigin === undefined
-		? -1
-		: previousWebsiteAccess.findIndex((entry) => entry.website.websiteOrigin === legacyWebsiteOrigin)
+	const legacyEntryIndex = previousWebsiteAccess.findIndex((entry) => isLegacyWebsiteOriginForCanonicalOrigin(entry.website.websiteOrigin, website.websiteOrigin))
 	const foundEntryIndex = exactEntryIndex !== -1 ? exactEntryIndex : legacyEntryIndex
 	const foundEntry = previousWebsiteAccess[foundEntryIndex]
 	if (foundEntry === undefined) {

@@ -2934,6 +2934,20 @@ describe('background eth_accounts', () => {
 		}], websiteOrigin, address), 'interceptorDisabled')
 	})
 
+	test.each([['http://example.test', 'example.test:80'], ['https://example.test', 'example.test:443']])('keeps legacy default-port restrictions and requires explicit rebinding for %s grants', async (websiteOrigin, legacyOrigin) => {
+		installBrowserMock()
+		const { hasAccess, hasAddressAccess } = await loadModules()
+		const address = { address: 1n, askForAddressAccess: true, type: 'contact', name: 'Test Address' } as const
+		const legacyGrant = { website: { websiteOrigin: legacyOrigin }, access: true, addressAccess: [{ address: address.address, access: true }] }
+		assert.equal(hasAccess([legacyGrant], websiteOrigin), 'askAccess')
+		assert.equal(hasAddressAccess([legacyGrant], websiteOrigin, address), 'askAccess')
+		assert.equal(hasAccess([{ ...legacyGrant, access: false }], websiteOrigin), 'noAccess')
+		assert.equal(hasAddressAccess([{ ...legacyGrant, addressAccess: [{ address: address.address, access: false }] }], websiteOrigin, address), 'noAccess')
+		assert.equal(hasAccess([{ ...legacyGrant, interceptorDisabled: true }], websiteOrigin), 'interceptorDisabled')
+		// A second alias must not hide the restrictive default-port row.
+		assert.equal(hasAccess([{ website: { websiteOrigin: 'example.test' }, access: true }, { ...legacyGrant, access: false }], websiteOrigin), 'noAccess')
+	})
+
 	test('preserves the configured simulation address across a signing-mode round trip', async () => {
 		installBrowserMock()
 		const {

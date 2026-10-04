@@ -114,7 +114,7 @@ describe('ConfirmTransaction signable message disable logic', () => {
 			data: {
 				uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 2, connectionName: 0n } },
 				action: 'accept',
-				quarantineAccepted: false,
+				forceSend: false,
 			},
 		}))
 

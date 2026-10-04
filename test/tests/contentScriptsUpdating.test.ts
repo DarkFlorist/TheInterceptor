@@ -195,6 +195,15 @@ describe('content script injection strategy', () => {
 		])
 	})
 
+	test('preserves explicit legacy default-port disable decisions during manifest v2 injection', async () => {
+		const { getCommittedListener, getExecuteScriptCalls, storageState } = installBrowserMock({ tabUrl: 'https://example.test/page' })
+		const { updateContentScriptInjectionStrategyManifestV2 } = await loadModules()
+		storageState.websiteAccess = [{ website: { websiteOrigin: 'example.test:443' }, interceptorDisabled: true }]
+		await updateContentScriptInjectionStrategyManifestV2()
+		await getCommittedListener()({ ...committedDetails, url: 'https://example.test/page' })
+		assert.equal(getExecuteScriptCalls(), 0)
+	})
+
 	test('excludes an exact file and its query variants without excluding path suffixes', async () => {
 		installBrowserMock()
 		const { getManifestV3ExcludeMatches } = await loadModules()

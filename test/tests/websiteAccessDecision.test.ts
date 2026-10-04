@@ -118,6 +118,29 @@ describe('website access legacy rebinding', () => {
 		assert.equal(updated[0]?.website.websiteOrigin, 'http://example.test:443')
 	})
 
+	test.each([['http://example.test', 'example.test:80'], ['https://example.test', 'example.test:443']])('rebinds a legacy default-port row to %s only after explicit approval', (websiteOrigin, legacyOrigin) => {
+		const previousAccess = [{
+			website: { websiteOrigin: legacyOrigin, title: 'Default-port site' },
+			access: true,
+			addressAccess: [{ address: firstAddress, access: true }],
+		}]
+		const updated = applyWebsiteAccessDecision(previousAccess, { websiteOrigin }, true, firstAddress)
+		assert.equal(updated.length, 1)
+		assert.equal(updated[0]?.website.websiteOrigin, websiteOrigin)
+		assert.equal(updated[0]?.website.title, 'Default-port site')
+		assert.deepEqual(updated[0]?.addressAccess, previousAccess[0]?.addressAccess)
+	})
+
+	test('clears every matching default-port disabled record while preserving other schemes and ports', () => {
+		const previousAccess = ['example.test', 'example.test:443', 'example.test:80', 'example.test:8443'].map((websiteOrigin) => ({
+			website: { websiteOrigin }, interceptorDisabled: true,
+		}))
+		const updated = applyInterceptorDisabledDecision(previousAccess, { websiteOrigin: 'https://example.test' }, false)
+		assert.equal(isInterceptorDisabledForWebsiteOrigin(updated, 'https://example.test'), false)
+		assert.equal(updated.find((entry) => entry.website.websiteOrigin === 'example.test:80')?.interceptorDisabled, true)
+		assert.equal(updated.find((entry) => entry.website.websiteOrigin === 'example.test:8443')?.interceptorDisabled, true)
+	})
+
 	test('does not replace an exact scheme-bound entry with a legacy candidate', () => {
 		const updated = applyWebsiteAccessDecision([
 			{

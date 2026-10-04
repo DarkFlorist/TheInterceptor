@@ -936,7 +936,7 @@ export function ConfirmTransaction() {
 		const deliveryError = await sendConfirmDialogMessage({ method: 'popup_confirmDialog', data: {
 			uniqueRequestIdentifier: currentPendingTransactionOrSignableMessage.value.uniqueRequestIdentifier,
 			action: 'accept',
-			quarantineAccepted: forceSend.value,
+			forceSend: forceSend.value,
 		} })
 		if (deliveryError !== undefined) unexpectedError.value = deliveryError
 	}

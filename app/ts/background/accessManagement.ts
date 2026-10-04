@@ -21,7 +21,7 @@ import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
-import { getWebsiteHostWithPortFromStoredOrigin } from './websiteAccessMigration.js'
+import { getWebsiteHostWithPortFromStoredOrigin } from '../utils/websiteOrigin.js'
 import { applyInterceptorDisabledDecision, applyWebsiteAccessDecision } from './websiteAccessDecision.js'
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean, approvedAddress?: bigint) {
@@ -374,7 +374,8 @@ export async function updateDeclarativeNetRequestBlocks(websiteTabConnections: W
 
 export const areWeBlocking = async (websiteTabConnections: WebsiteTabConnections, tabId: number, websiteOrigin: string) => {
 	const { tabIdsToBlock, sitesToBlock } = await getTabsAndAddressesToBlock(websiteTabConnections)
-	if (sitesToBlock.find((blockUrl) => blockUrl === getHostWithPort(websiteOrigin)) !== undefined) return true
+	const websiteHost = getWebsiteHostWithPortFromStoredOrigin(websiteOrigin)
+	if (websiteHost !== undefined && sitesToBlock.includes(websiteHost)) return true
 	if (tabIdsToBlock.find((blockTab) => blockTab === tabId) !== undefined) return true
 	return false
 }

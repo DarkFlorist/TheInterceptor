@@ -2,7 +2,7 @@ import { getSettings } from '../background/settings.js'
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import { checkAndThrowRuntimeLastError, getWebsiteOrigin, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
-import { getLegacyWebsiteOriginForCanonicalOrigin, isCanonicalWebsiteOrigin, normalizeStoredWebsiteOrigin } from '../background/websiteAccessMigration.js'
+import { isLegacyWebsiteOriginForCanonicalOrigin, isCanonicalWebsiteOrigin, normalizeStoredWebsiteOrigin } from './websiteOrigin.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
@@ -88,7 +88,7 @@ const injectLogic = async (content: browser.webNavigation._OnCommittedDetails) =
 	const origins = urls.map((url) => getWebsiteOrigin(url))
 	const noMatches = disabledSites.every((disabledSite) => origins.every((origin) => {
 		if (disabledSite === origin) return false
-		return getLegacyWebsiteOriginForCanonicalOrigin(origin) !== disabledSite
+		return !isLegacyWebsiteOriginForCanonicalOrigin(disabledSite, origin)
 	}))
 	if (!noMatches) return false
 	try {

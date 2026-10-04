@@ -647,7 +647,7 @@ describe('SafeTx confirm transaction metadata', () => {
 			ethereum,
 			tokenPriceService,
 			websiteTabConnections,
-			{ ...confirmationBase, data: { ...confirmationBase.data, quarantineAccepted: false } },
+			{ ...confirmationBase, data: { ...confirmationBase.data, forceSend: false } },
 		), /require explicit user acknowledgement/)
 		assert.equal(forwardedMessages.length, 0)
 
@@ -655,7 +655,7 @@ describe('SafeTx confirm transaction metadata', () => {
 			ethereum,
 			tokenPriceService,
 			websiteTabConnections,
-			{ ...confirmationBase, data: { ...confirmationBase.data, quarantineAccepted: true } },
+			{ ...confirmationBase, data: { ...confirmationBase.data, forceSend: true } },
 		), true)
 		assert.equal(forwardedMessages.length, 1)
 		assert.equal(isRecord(forwardedMessages[0]) && forwardedMessages[0].type, 'forwardToSigner')

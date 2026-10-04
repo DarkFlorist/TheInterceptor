@@ -203,7 +203,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 	fakeSafeContract.owners = [0x1111111111111111111111111111111111111111n]
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
+		data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 	}), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [changedOwnersProposal] = await modules.getPendingTransactionsAndMessages()
@@ -218,7 +218,7 @@ test('forwards a Safe transaction to the wallet-selected Safe owner as EIP-712 t
 	}))
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
+		data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 	}), true)
 
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
@@ -386,7 +386,7 @@ test('routes a Safe co-signing request through the wallet-selected owner', async
 	assert.equal(refreshedCoSignRequest?.approvalStatus.status, 'WaitingForUser')
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
+		data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 	}), true)
 
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
@@ -1209,7 +1209,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
+			data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 		},
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	)), false)
@@ -1222,7 +1222,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
+			data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 		},
 		{ selectedSigner: alternateSignerAddress, verificationError: undefined },
 	)), false)
@@ -1234,7 +1234,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
+			data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 		},
 		{ selectedSigner: alternateSignerAddress, verificationError: undefined },
 	), false)
@@ -1260,7 +1260,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
+			data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 		},
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	), false)
@@ -1282,7 +1282,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
+			data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 		},
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	), false)
@@ -1303,7 +1303,7 @@ test('routes a completed active Safe execution through its configured signer and
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
+			data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 		},
 		{ selectedSigner: safeSignerAddress, verificationError: undefined },
 	), true)

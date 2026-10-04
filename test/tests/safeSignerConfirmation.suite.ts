@@ -102,7 +102,7 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 		websiteTabConnections,
 		{
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
+			data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 		},
 		{ selectedSigner: recipientAddress, verificationError: undefined },
 	), false)
@@ -120,7 +120,7 @@ test('recovers a Safe proposal after the wallet switches from a non-owner to a c
 
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
+		data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 	}), true)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), true)
 
@@ -737,7 +737,7 @@ test('refreshes the selected signer and uses services installed during the walle
 
 	const confirmation = modules.confirmDialog(owner, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
+		data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 	})
 	await accountRequestEntered.promise
 	owner.reset(fakeRpcNetwork)
@@ -847,14 +847,14 @@ test('rebases a later pending Safe proposal after an earlier nonce is rejected',
 	}]])
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier: secondIdentifier, quarantineAccepted: false },
+		data: { action: 'accept', uniqueRequestIdentifier: secondIdentifier, forceSend: false },
 	}), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [refreshedProposal] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(refreshedProposal?.safeTransaction?.safeTx.message.nonce, 0n)
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier: secondIdentifier, quarantineAccepted: false },
+		data: { action: 'accept', uniqueRequestIdentifier: secondIdentifier, forceSend: false },
 	}), true)
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
 	if (!isRecord(signerRequest) || !Array.isArray(signerRequest.params)) throw new Error('Missing rebased Safe signer request')
@@ -943,14 +943,14 @@ test('rejects a stale forwarded Safe nonce before persistence and rebases it whe
 	}]])
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier: requestIdentifier, quarantineAccepted: false },
+		data: { action: 'accept', uniqueRequestIdentifier: requestIdentifier, forceSend: false },
 	}), false)
 	assert.equal(postedMessages.some((message) => isRecord(message) && message.type === 'forwardToSigner'), false)
 	const [refreshedPending] = await modules.getPendingTransactionsAndMessages()
 	assert.equal(refreshedPending?.safeTransaction?.safeTx.message.nonce, 0n)
 	assert.equal(await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, websiteTabConnections, {
 		method: 'popup_confirmDialog',
-		data: { action: 'accept', uniqueRequestIdentifier: requestIdentifier, quarantineAccepted: false },
+		data: { action: 'accept', uniqueRequestIdentifier: requestIdentifier, forceSend: false },
 	}), true)
 	const signerRequest = postedMessages.find((message) => isRecord(message) && message.type === 'forwardToSigner')
 	if (!isRecord(signerRequest) || !Array.isArray(signerRequest.params)) throw new Error('Missing retried Safe signer request')

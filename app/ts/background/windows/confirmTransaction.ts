@@ -384,7 +384,7 @@ export async function resolvePendingTransactionOrMessage(ethereum: EthereumClien
 		}
 		if (pendingTransactionOrMessage.type === 'SignableMessage'
 			&& pendingTransactionOrMessage.visualizedPersonalSignRequest.quarantine
-			&& !confirmation.data.quarantineAccepted) {
+			&& !confirmation.data.forceSend) {
 			throw new Error('Quarantined signature requests require explicit user acknowledgement')
 		}
 		await updatePendingTransactionOrMessage(confirmation.data.uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForSigner' } }))

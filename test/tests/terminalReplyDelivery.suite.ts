@@ -40,7 +40,7 @@ test('failed signer delivery keeps the request and replaces the waiting spinner 
 
 		const delivered = await modules.resolvePendingTransactionOrMessage(simulator.ethereum, simulator.tokenPriceService, connectionCase.connections, {
 			method: 'popup_confirmDialog',
-			data: { action: 'accept', uniqueRequestIdentifier, quarantineAccepted: false },
+			data: { action: 'accept', uniqueRequestIdentifier, forceSend: false },
 		})
 		const retainedRequests = await modules.getPendingTransactionsAndMessages()
 		const retainedRequest = retainedRequests[0]

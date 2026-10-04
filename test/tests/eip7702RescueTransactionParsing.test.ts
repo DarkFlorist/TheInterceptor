@@ -347,7 +347,7 @@ async function assertAcceptPreservesRawSignedTransaction(signedTransactionBytes:
 			new EthereumClientService(createEip7702TransactionParsingRequestHandler(), async () => undefined, async () => undefined, rpcNetwork),
 			{} as never,
 			browserMock.websiteTabConnections,
-				{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept', quarantineAccepted: false } },
+				{ method: 'popup_confirmDialog', data: { uniqueRequestIdentifier: pendingTransaction.uniqueRequestIdentifier, action: 'accept', forceSend: false } },
 		)
 
 		const [postedMessage] = browserMock.postedMessages

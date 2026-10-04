@@ -206,6 +206,17 @@ describe('extension icon deduping', () => {
 		assert.match(setTitleCalls.at(-1)?.title ?? '', /DENIED.*blocking external requests/u)
 	})
 
+	test.each(['example.test', 'example.test:8080'])('refreshes blocking icons for persisted legacy tab origin %s without requiring a reload', async (websiteOrigin) => {
+		const { setTitleCalls } = installBrowserMock([{ id: 1, url: `https://${ websiteOrigin }`, status: 'complete' }])
+		const { updateExtensionIcon, updateTabState, updateWebsiteAccess } = await loadModules()
+		await updateWebsiteAccess(() => [{ website: { websiteOrigin }, access: false, declarativeNetRequestBlockMode: 'block-all' }])
+		await updateTabState(1, (previousState) => ({ ...previousState, website: { websiteOrigin } }))
+
+		await updateExtensionIcon(new Map(), 1, websiteOrigin, 0)
+
+		assert.match(setTitleCalls.at(-1)?.title ?? '', /blocking external requests/u)
+	})
+
 	test('legacy interceptor-disabled sites use the disabled icon for the current canonical origin', async () => {
 		const { setIconCalls, setTitleCalls } = installBrowserMock([{ id: 1, url: 'https://example.test', status: 'complete' }])
 		const { updateExtensionIcon, updateTabState, updateWebsiteAccess } = await loadModules()
