@@ -11,14 +11,20 @@ function createDelegationCache(lookup: (address: bigint, controller: AbortContro
 	const resolved = new Map<string, { checkedAt: number, delegate: bigint | undefined }>()
 	const pendingByAddress = new Map<string, PendingLookup>()
 
-	const clear = () => {
+	const invalidatePending = () => {
 		generation += 1
-		resolved.clear()
 		for (const pending of pendingByAddress.values()) pending.controller.abort(NEW_BLOCK_ABORT)
 		pendingByAddress.clear()
 	}
 
+	const clear = () => {
+		invalidatePending()
+		resolved.clear()
+	}
+
 	const invalidateDelegatedForNewBlock = (now: number) => {
+		// A lookup begun before this block cannot safely publish its result as a fresh hint.
+		invalidatePending()
 		for (const [key, cached] of resolved) {
 			if (cached.delegate !== undefined && now - cached.checkedAt >= DELEGATED_HINT_REFRESH_MIN_AGE_MS) resolved.delete(key)
 		}

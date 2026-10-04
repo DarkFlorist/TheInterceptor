@@ -324,6 +324,7 @@ export class EthereumClientService {
 
 	public readonly prepareEthSimulateV1Input = async (simulationInput: SimulatedInput, blockNumber: bigint, requestAbortController: AbortController | undefined): Promise<PreparedEthSimulateV1Input> => {
 		const simulationStateInput = simulationInput.value
+		// This service applies caller-supplied initial account state; mode and preference selection happen upstream.
 		const simulationOverrides = simulationInput.simulationOverrides
 		const parentBlock = await this.getBlock(requestAbortController, blockNumber)
 		if (parentBlock === null) throw new Error(`The block ${ blockNumber } is null`)

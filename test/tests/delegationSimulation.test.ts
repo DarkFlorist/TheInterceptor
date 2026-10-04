@@ -382,6 +382,39 @@ describe('delegate clearing in simulation', () => {
 		assert.equal(codeRequests, 2)
 	})
 
+	test('retries a lookup started before a new block without caching its stale result', async () => {
+		let codeRequests = 0
+		let markFirstStarted = () => undefined
+		const firstStarted = new Promise<void>((resolve) => { markFirstStarted = () => resolve() })
+		let markSecondStarted = () => undefined
+		const secondStarted = new Promise<void>((resolve) => { markSecondStarted = () => resolve() })
+		let releaseStaleCode = (_code: string) => undefined
+		const staleCode = new Promise<string>((resolve) => { releaseStaleCode = resolve })
+		const staleDelegate = 0xabcdefabcdefabcdefabcdefabcdefabcdefabcdn
+		const ethereum = new EthereumClientService({
+			rpcUrl: rpcEntry.httpsRpc,
+			clearCache() { return undefined },
+			async jsonRpcRequest(request) {
+				if (request.method !== 'eth_getCode') throw new Error(`Unexpected RPC method ${ request.method }`)
+				codeRequests += 1
+				if (codeRequests === 1) {
+					markFirstStarted()
+					return await staleCode
+				}
+				markSecondStarted()
+				return '0x'
+			},
+		}, async () => undefined, async () => undefined, rpcEntry)
+		const pendingHint = getCachedDelegationHint(ethereum, activeAddress)
+		await firstStarted
+		invalidateDelegatedHintsForNewBlock(ethereum)
+		await secondStarted
+		releaseStaleCode(`0xef0100${ addressString(staleDelegate).slice(2) }`)
+		assert.equal(await pendingHint, undefined)
+		assert.equal(await getCachedDelegationHint(ethereum, activeAddress), undefined)
+		assert.equal(codeRequests, 2)
+	})
+
 	test('reuses the background delegation hint across popup opens and toggles', async () => {
 		installBrowserMock()
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: activeAddress, rpcNetwork: rpcEntry })
