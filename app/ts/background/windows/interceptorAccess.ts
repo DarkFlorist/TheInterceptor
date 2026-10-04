@@ -483,8 +483,8 @@ async function resolve(simulationServicesOwner: SimulationServicesOwner, website
 				simulationMode: settings.simulationMode,
 				signerAddress,
 				promptForAccessesIfNeeded: false,
-				// Permission approval must not wait for the selected account's RPC visualization.
-				waitForSimulationRefresh: false,
+				// Simulation views refresh when opened; granting permission needs no simulation work.
+				skipSimulationRefresh: true,
 			})
 		}
 		if (accountRequestSocket === undefined) {
