@@ -1,18 +1,12 @@
-import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { getInterceptorDisabledSites, hasSameContentScriptInjectionConfiguration, type ContentScriptInjectionConfiguration } from '../config/contentScriptInjectionConfiguration.js'
-import { getMetamaskCompatibilityMode, getSettings, restoreContentScriptInjectionSettings } from './settings.js'
+import { getInterceptorDisabledSites, type ContentScriptRegistrationConfiguration } from '../config/contentScriptInjectionConfiguration.js'
+import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 
-export type ContentScriptInjectionConfigurationSnapshot = ContentScriptInjectionConfiguration & {
-	readonly websiteAccess: WebsiteAccessArray
-}
+export { getInterceptorDisabledSites }
 
-export { getInterceptorDisabledSites, hasSameContentScriptInjectionConfiguration }
-
-export async function getContentScriptInjectionConfiguration(): Promise<ContentScriptInjectionConfigurationSnapshot> {
+export async function getContentScriptInjectionConfiguration(): Promise<ContentScriptRegistrationConfiguration> {
 	const [settings, metamaskCompatibilityMode] = await Promise.all([getSettings(), getMetamaskCompatibilityMode()])
-	return { metamaskCompatibilityMode, interceptorDisabledSites: getInterceptorDisabledSites(settings.websiteAccess), websiteAccess: settings.websiteAccess }
-}
-
-export async function restoreContentScriptInjectionConfiguration(configuration: ContentScriptInjectionConfigurationSnapshot) {
-	await restoreContentScriptInjectionSettings(configuration.metamaskCompatibilityMode, configuration.websiteAccess)
+	return {
+		injectionSites: { interceptorDisabledSites: getInterceptorDisabledSites(settings.websiteAccess) },
+		pageWorldProvider: { metamaskCompatibilityMode },
+	}
 }

@@ -26,6 +26,7 @@ type BrowserMockOptions = {
 	readonly registeredContentScripts?: readonly RegisteredContentScript[]
 	readonly websiteAccess?: WebsiteAccessArray
 	readonly storageGetErrorAfterSet?: Error
+	readonly settingsReadError?: Error
 	readonly storageGetWaits?: readonly (Promise<void> | undefined)[]
 	readonly onStorageGet?: () => void
 	readonly tabsQueryError?: Error
@@ -37,7 +38,7 @@ type RegisteredContentScript = {
 	readonly excludeMatches?: readonly string[]
 }
 
-function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, registerError, registerErrors, registerWait, onRegister, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [], registeredContentScripts: initialRegisteredContentScripts, websiteAccess, storageGetErrorAfterSet, storageGetWaits, onStorageGet, tabsQueryError }: BrowserMockOptions = {}) {
+function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, registerError, registerErrors, registerWait, onRegister, updateError, executeScriptError, tabUrl = 'https://example.com/', hasVisibleTabUrl = true, tabUrlAfterStorageRead, registeredContentScriptIds = [], registeredContentScripts: initialRegisteredContentScripts, websiteAccess, storageGetErrorAfterSet, settingsReadError, storageGetWaits, onStorageGet, tabsQueryError }: BrowserMockOptions = {}) {
 	const storageState: Record<string, unknown> = {
 		...(metamaskCompatibilityMode === undefined ? {} : { metamaskCompatibilityMode }),
 		...(websiteAccess === undefined ? {} : { websiteAccess }),
@@ -85,6 +86,7 @@ function installBrowserMock({ metamaskCompatibilityMode, manifestVersion = 3, re
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
 					storageGetCalls++
+					if (Array.isArray(keys) && keys.includes('websiteAccess') && settingsReadError !== undefined) throw settingsReadError
 					if (failNextStorageGet && storageGetErrorAfterSet !== undefined) {
 						failNextStorageGet = false
 						throw storageGetErrorAfterSet
@@ -314,7 +316,7 @@ describe('content script injection strategy', () => {
 		}
 	})
 
-	test('compatibility setting changes roll storage back when manifest v3 registration refresh fails', async () => {
+	test('compatibility setting changes remain saved when the best-effort manifest v3 bootstrap refresh fails', async () => {
 		const registrationError = new Error('compatibility registration refresh failed')
 		const { getRegisteredContentScripts, getReloadedTabs, getStorageState } = installBrowserMock({
 			metamaskCompatibilityMode: false,
@@ -322,15 +324,17 @@ describe('content script injection strategy', () => {
 			registeredContentScriptIds: ['inpage', 'inpage2'],
 		})
 		const { setMetamaskCompatibilityMode } = await import('../../app/ts/background/metamaskCompatibilityMode.js')
+		const { getLatestUnexpectedError } = await loadModules()
 
-		await withSilencedConsole(async () => await assert.rejects(setMetamaskCompatibilityMode(new Map([[42, { connections: {} }]]), true), registrationError))
+		await withSilencedConsole(async () => await setMetamaskCompatibilityMode(new Map([[42, { connections: {} }]]), true))
 
-		assert.equal(getStorageState().metamaskCompatibilityMode, false)
+		assert.equal(getStorageState().metamaskCompatibilityMode, true)
 		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage.js'])
 		assert.deepEqual(getReloadedTabs(), [])
+		assert.equal((await getLatestUnexpectedError())?.data.code, 'page_world_provider_bootstrap_refresh_failed')
 	})
 
-	test('compatibility setting changes roll storage back when the post-update configuration read fails', async () => {
+	test('compatibility setting changes remain saved when the best-effort post-update configuration read fails', async () => {
 		const configurationReadError = new Error('post-update configuration read failed')
 		const { getReloadedTabs, getScriptingOperations, getStorageState } = installBrowserMock({
 			metamaskCompatibilityMode: false,
@@ -339,14 +343,29 @@ describe('content script injection strategy', () => {
 		})
 		const { setMetamaskCompatibilityMode } = await import('../../app/ts/background/metamaskCompatibilityMode.js')
 
-		await assert.rejects(setMetamaskCompatibilityMode(new Map([[42, { connections: {} }]]), true), configurationReadError)
+		await withSilencedConsole(async () => await setMetamaskCompatibilityMode(new Map([[42, { connections: {} }]]), true))
 
-		assert.equal(getStorageState().metamaskCompatibilityMode, false)
+		assert.equal(getStorageState().metamaskCompatibilityMode, true)
 		assert.deepEqual(getScriptingOperations(), [])
 		assert.deepEqual(getReloadedTabs(), [])
 	})
 
-	test('compatibility setting changes roll storage back before registration when reload target lookup fails', async () => {
+	test('compatibility setting changes do not require an unrelated settings read before saving', async () => {
+		const settingsReadError = new Error('general settings unavailable')
+		const { getStorageState } = installBrowserMock({
+			metamaskCompatibilityMode: false,
+			settingsReadError,
+		})
+		const { setMetamaskCompatibilityMode } = await import('../../app/ts/background/metamaskCompatibilityMode.js')
+		const { getLatestUnexpectedError } = await loadModules()
+
+		await withSilencedConsole(async () => await setMetamaskCompatibilityMode(new Map(), true))
+
+		assert.equal(getStorageState().metamaskCompatibilityMode, true)
+		assert.equal((await getLatestUnexpectedError())?.data.code, 'page_world_provider_bootstrap_refresh_failed')
+	})
+
+	test('compatibility setting changes remain saved when best-effort reload target lookup fails', async () => {
 		const tabLookupError = new Error('active tab lookup failed')
 		const { getRegisteredContentScripts, getReloadedTabs, getScriptingOperations, getStorageState } = installBrowserMock({
 			metamaskCompatibilityMode: false,
@@ -355,15 +374,15 @@ describe('content script injection strategy', () => {
 		})
 		const { setMetamaskCompatibilityMode } = await import('../../app/ts/background/metamaskCompatibilityMode.js')
 
-		await assert.rejects(setMetamaskCompatibilityMode(new Map([[42, { connections: {} }]]), true), tabLookupError)
+		await withSilencedConsole(async () => await setMetamaskCompatibilityMode(new Map([[42, { connections: {} }]]), true))
 
-		assert.equal(getStorageState().metamaskCompatibilityMode, false)
+		assert.equal(getStorageState().metamaskCompatibilityMode, true)
 		assert.deepEqual(getRegisteredContentScripts().find(({ id }) => id === 'inpage')?.js, ['/inpage/js/inpage.js'])
 		assert.deepEqual(getScriptingOperations(), [])
 		assert.deepEqual(getReloadedTabs(), [])
 	})
 
-	test('failed compatibility refresh preserves a newer website access update', async () => {
+	test('failed best-effort compatibility refresh preserves its setting and a newer website access update', async () => {
 		const registrationError = new Error('delayed compatibility registration refresh failed')
 		const registrationStarted = createDeferred()
 		const releaseRegistration = createDeferred()
@@ -395,10 +414,10 @@ describe('content script injection strategy', () => {
 			})))
 			await newerAccessUpdate
 			releaseRegistration.resolve()
-			await assert.rejects(compatibilityUpdate, registrationError)
+			await compatibilityUpdate
 		})
 
-		assert.equal(getStorageState().metamaskCompatibilityMode, false)
+		assert.equal(getStorageState().metamaskCompatibilityMode, true)
 		assert.deepEqual(getStorageState().websiteAccess, [{ ...websiteAccess[0], website: { ...websiteAccess[0]?.website, title: 'Updated while refresh was pending' }, access: false }])
 	})
 
@@ -461,12 +480,12 @@ describe('content script injection strategy', () => {
 			onRegister: () => registrationStarted.resolve(),
 			registeredContentScriptIds: ['inpage', 'inpage2'],
 		})
-		const { updateContentScriptInjectionConfigurationAndReloadTabsIfChanged } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
+		const { updateAllContentScriptConfigurationAndReloadTabsIfChanged } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
 		const { persistMetamaskCompatibilityMode, withSettingsImportRollback } = await import('../../app/ts/background/settings.js')
 		const { setMetamaskCompatibilityMode } = await import('../../app/ts/background/metamaskCompatibilityMode.js')
 
 		await withSilencedConsole(async () => {
-			const failedImport = updateContentScriptInjectionConfigurationAndReloadTabsIfChanged(
+			const failedImport = updateAllContentScriptConfigurationAndReloadTabsIfChanged(
 				new Map(),
 				async () => await persistMetamaskCompatibilityMode(true),
 				withSettingsImportRollback,
@@ -494,12 +513,12 @@ describe('content script injection strategy', () => {
 			registeredContentScriptIds: ['inpage', 'inpage2'],
 			websiteAccess: [],
 		})
-		const { updateContentScriptInjectionConfigurationAndReloadTabsIfChanged } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
+		const { updateAllContentScriptConfigurationAndReloadTabsIfChanged } = await import('../../app/ts/background/contentScriptInjectionStrategy.js')
 		const { persistMetamaskCompatibilityMode, withSettingsImportRollback } = await import('../../app/ts/background/settings.js')
 		const { updateWebsiteAccessAndContentScriptInjectionStrategy } = await import('../../app/ts/background/websiteAccessUpdating.js')
 
 		await withSilencedConsole(async () => {
-			const failedImport = updateContentScriptInjectionConfigurationAndReloadTabsIfChanged(
+			const failedImport = updateAllContentScriptConfigurationAndReloadTabsIfChanged(
 				new Map(),
 				async () => await persistMetamaskCompatibilityMode(true),
 				withSettingsImportRollback,

@@ -1,11 +1,12 @@
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
 import type { WebsiteTabConnections } from '../types/user-interface-types.js'
-import { updateContentScriptInjectionConfigurationAndReloadTabsIfChanged } from './contentScriptInjectionStrategy.js'
-import { updateWebsiteAccess } from './settings.js'
+import { updateContentScriptInjectionSitesAndReloadTabsIfChanged } from './contentScriptInjectionStrategy.js'
+import { updateWebsiteAccess, withInterceptorDisabledSitesRollback } from './settings.js'
 
 export async function updateWebsiteAccessAndContentScriptInjectionStrategy(websiteTabConnections: WebsiteTabConnections, update: (previousWebsiteAccess: WebsiteAccessArray) => WebsiteAccessArray) {
-	await updateContentScriptInjectionConfigurationAndReloadTabsIfChanged(
+	await updateContentScriptInjectionSitesAndReloadTabsIfChanged(
 		websiteTabConnections,
 		async () => await updateWebsiteAccess(update),
+		withInterceptorDisabledSitesRollback,
 	)
 }

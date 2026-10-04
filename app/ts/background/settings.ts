@@ -235,7 +235,7 @@ export async function updateWebsiteAccess(updateFunc: (prevState: WebsiteAccessA
 	})
 }
 
-export async function restoreContentScriptInjectionSettings(metamaskCompatibilityMode: boolean, previousWebsiteAccess: WebsiteAccessArray) {
+async function restoreInterceptorDisabledSites(previousWebsiteAccess: WebsiteAccessArray) {
 	await websiteAccessSemaphore.execute(async () => {
 		const { sanitizedWebsiteAccess: currentWebsiteAccess } = await getNormalizedWebsiteAccessFromStorage()
 		const previousDisabledAccessByOrigin = new Map(previousWebsiteAccess.filter((entry) => entry.interceptorDisabled === true).map((entry) => [entry.website.websiteOrigin, entry]))
@@ -248,8 +248,22 @@ export async function restoreContentScriptInjectionSettings(metamaskCompatibilit
 		for (const [websiteOrigin, previousAccess] of previousDisabledAccessByOrigin) {
 			if (!currentOrigins.has(websiteOrigin)) restoredWebsiteAccess.push(previousAccess)
 		}
-		await browserStorageLocalSet({ metamaskCompatibilityMode, websiteAccess: restoredWebsiteAccess })
+		await browserStorageLocalSet({ websiteAccess: restoredWebsiteAccess })
 	})
+}
+
+export async function withInterceptorDisabledSitesRollback<T>(update: () => Promise<T>) {
+	const previousWebsiteAccess = await getWebsiteAccess()
+	try {
+		return await update()
+	} catch (error: unknown) {
+		try {
+			await restoreInterceptorDisabledSites(previousWebsiteAccess)
+		} catch (rollbackError: unknown) {
+			await reportUnexpectedError(rollbackError, { code: 'content_script_injection_sites_rollback_failed' })
+		}
+		throw error
+	}
 }
 
 export async function updateKnownWebsiteMetadata(website: Website) {

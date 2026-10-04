@@ -1,7 +1,7 @@
 import { checkAndThrowRuntimeLastError, getHostWithPort, getTabIfExists, isMissingBrowserTargetError } from './requests.js'
 import { reportLocalRecoveryBestEffort, reportUnexpectedError } from './errors.js'
 import { getManifestV2IsolatedWorldInjections, getPageWorldScriptPaths } from '../config/contentScriptInjectionArtifacts.js'
-import type { ContentScriptInjectionConfiguration } from '../config/contentScriptInjectionConfiguration.js'
+import type { ContentScriptRegistrationConfiguration } from '../config/contentScriptInjectionConfiguration.js'
 
 const injectableSitesWildcard = ['file://*/*', 'http://*/*', 'https://*/*']
 const injectableSitesRegexp = [/^file:\/\/.*/, /^http:\/\/.*/, /^https:\/\/.*/]
@@ -44,7 +44,7 @@ export function getManifestV3ExcludeMatches(origins: readonly string[]) {
 	return [...patterns]
 }
 
-export const updateContentScriptInjectionStrategyManifestV3 = async ({ metamaskCompatibilityMode, interceptorDisabledSites }: ContentScriptInjectionConfiguration) => {
+export const updateContentScriptInjectionStrategyManifestV3 = async ({ injectionSites: { interceptorDisabledSites }, pageWorldProvider: { metamaskCompatibilityMode } }: ContentScriptRegistrationConfiguration) => {
 	const excludeMatches = getManifestV3ExcludeMatches(interceptorDisabledSites)
 	type RegisteredContentScript = Parameters<typeof browser.scripting.registerContentScripts>[0][0]
 	let previousRegisteredContentScripts: RegisteredContentScript[] | undefined
@@ -115,11 +115,11 @@ export const updateContentScriptInjectionStrategyManifestV3 = async ({ metamaskC
 	}
 }
 
-type GetContentScriptInjectionConfiguration = () => Promise<ContentScriptInjectionConfiguration>
+type GetContentScriptInjectionConfiguration = () => Promise<ContentScriptRegistrationConfiguration>
 
 const createInjectLogic = (getContentScriptInjectionConfiguration: GetContentScriptInjectionConfiguration) => async (content: browser.webNavigation._OnCommittedDetails) => {
 	if (!isInjectableSite(content.url)) return false
-	const { metamaskCompatibilityMode, interceptorDisabledSites } = await getContentScriptInjectionConfiguration()
+	const { injectionSites: { interceptorDisabledSites }, pageWorldProvider: { metamaskCompatibilityMode } } = await getContentScriptInjectionConfiguration()
 	// The tab can navigate while settings are loading, including to another extension page where injection is prohibited.
 	const thisTab = await getTabIfExists(content.tabId)
 	if (thisTab?.url === undefined || !isInjectableSite(thisTab.url)) return false
