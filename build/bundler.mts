@@ -3,6 +3,7 @@ import * as url from 'node:url'
 import * as fs from 'node:fs'
 import * as ts from 'typescript'
 import { INPAGE_SCRIPTS } from '../app/ts/config/injectedScripts.js'
+import { SAFE_APPS_RESPONSE_VERSION } from '../app/inpage/ts/safeAppsProtocol.js'
 
 const directoryOfThisFile = path.dirname(url.fileURLToPath(import.meta.url))
 const appDirectory = path.join(directoryOfThisFile, '..', 'app')
@@ -618,6 +619,9 @@ export function stripSourceMappingUrlComment(text: string) {
 }
 
 export async function replaceImportsInJSFiles() {
+	// The SDK is a build/test dependency; its code must not enter the inpage runtime bundle.
+	const { getSDKVersion } = await import('@safe-global/safe-apps-sdk')
+	if (SAFE_APPS_RESPONSE_VERSION !== getSDKVersion()) throw new Error('The Safe Apps response version must match the installed Safe Apps SDK.')
 	await bundleRuntimeEntrypoints()
 	for (const folder of getRuntimeFiles()) ensureDirectoryExists(folder)
 	const runtimeDependencyGraph = rewriteRuntimeImportsAndCollectDependencyGraph()
