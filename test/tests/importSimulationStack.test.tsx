@@ -1,5 +1,8 @@
 import * as assert from 'assert'
-import { describe, test } from 'bun:test'
+import { afterEach, describe, test } from 'bun:test'
+import { waitForBackgroundTasks } from '../../app/ts/background/backgroundTasks.js'
+
+afterEach(waitForBackgroundTasks)
 import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { signal } from '@preact/signals'

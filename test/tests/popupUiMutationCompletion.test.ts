@@ -1,7 +1,7 @@
 import * as assert from 'node:assert'
 import { afterEach, describe, test } from 'bun:test'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
-import type { PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
+import type { ModifyAddressWindowState, PreSimulationTransaction } from '../../app/ts/types/visualizer-types.js'
 import { createTestSimulationServicesOwner, createDeferredSignal, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules } from './backgroundEthAccountsTestHarness.js'
 import { waitForBackgroundTasks } from '../../app/ts/background/backgroundTasks.js'
 import { pendingTransaction, signedTransaction } from './confirmTransactionTestHarness.js'
@@ -88,6 +88,57 @@ describe('UI mutation completion', () => {
 			await waitForBackgroundTasks()
 			Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: originalSend })
 		}
+	})
+
+	test('simulation stack import acknowledges persisted operations while refresh is pending', async () => {
+		installBrowserMock()
+		const modules = await loadModules()
+		const { ethereum, tokenPriceService } = createEthereumWithGetBlockCounter({ count: 0 })
+		const started = createDeferredSignal()
+		const release = createDeferredSignal()
+		const originalSend = browser.runtime.sendMessage.bind(browser.runtime)
+		Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: async (message: { method?: string }) => {
+			if (message.method === 'popup_isSimulationVisualizerOpen') { started.resolve(); await release.promise }
+			return await originalSend(message)
+		} })
+		try {
+			const reply = await completesPromptly(modules.importSimulationStack(ethereum, tokenPriceService, { method: 'popup_importSimulationStack', data: {
+				name: 'Interceptor Simulation Export', version: '1.0.0',
+				eth_simulateV1: { method: 'eth_simulateV1', params: [{ blockStateCalls: [], traceTransfers: true, validation: true }, 'latest'] },
+				interceptorSimulateStack: { operations: [{ type: 'Transaction', preSimulationTransaction: transaction }] },
+			} }))
+			assert.equal(reply.ok, true)
+			await completesPromptly(started.promise)
+			assert.equal((await modules.getInterceptorTransactionStack()).operations.length, 1)
+			assert.equal((await modules.getPopupVisualisationState()).simulationResultState, 'invalid')
+		} finally { release.resolve(); await waitForBackgroundTasks() }
+	})
+
+	test('address form validation checks local duplicates without requesting on-chain metadata', async () => {
+		installBrowserMock()
+		const modules = await loadModules()
+		const { ethereum } = createEthereumWithGetBlockCounter({ count: 0 })
+		const address = '0x9999999999999999999999999999999999999999'
+		const state: ModifyAddressWindowState = { windowStateId: 'local-validation', errorState: undefined, incompleteAddressBookEntry: {
+			addingAddress: true, type: 'contact', address, chainId: 1n, name: 'My contact', entrySource: 'User',
+			askForAddressAccess: true, symbol: undefined, decimals: undefined, logoUri: undefined, abi: undefined,
+			useAsActiveAddress: undefined, declarativeNetRequestBlockMode: undefined,
+		} }
+		await modules.setPage({ page: 'AddNewAddress', state })
+		const originalFetch = globalThis.fetch
+		let requests = 0
+		globalThis.fetch = async () => { requests++; throw new Error('Validation must not make remote requests') }
+		try {
+			await completesPromptly(modules.changeAddOrModifyAddressWindowState(ethereum, { method: 'popup_changeAddOrModifyAddressWindowState', data: { windowStateId: state.windowStateId, newState: state } }))
+			assert.equal(requests, 0)
+			await modules.updateUserAddressBookEntries(() => [{ type: 'contact', address: BigInt(address), chainId: 1n, name: 'Existing', entrySource: 'User' }])
+			await completesPromptly(modules.changeAddOrModifyAddressWindowState(ethereum, { method: 'popup_changeAddOrModifyAddressWindowState', data: { windowStateId: state.windowStateId, newState: state } }))
+			const page = await modules.getPage()
+			assert.ok(page.page === 'AddNewAddress')
+			assert.equal(page.state.errorState?.blockEditing, true)
+			assert.match(page.state.errorState?.message ?? '', /already exists/)
+			assert.equal(requests, 0)
+		} finally { globalThis.fetch = originalFetch }
 	})
 
 	test('revokes access before acknowledgement and reloads only the affected website in the background', async () => {
