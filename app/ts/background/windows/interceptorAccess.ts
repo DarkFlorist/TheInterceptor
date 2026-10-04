@@ -483,6 +483,8 @@ async function resolve(simulationServicesOwner: SimulationServicesOwner, website
 				simulationMode: settings.simulationMode,
 				signerAddress,
 				promptForAccessesIfNeeded: false,
+				// Simulation views refresh when opened; granting permission needs no simulation work.
+				skipSimulationRefresh: true,
 			})
 		}
 		if (accountRequestSocket === undefined) {

@@ -4,6 +4,44 @@ import { activeAddress, createSafeStackFixture, createSafeStackTransactionFixtur
 import { ensureHex } from '../../app/ts/utils/ethereumBytes.js'
 import { SafeStackExport } from '../../app/ts/types/safeTypes.js'
 
+test('Safe signature import waits for validation but acknowledges before refreshing simulation', async () => {
+	const { createDeferredSignal } = await import('./backgroundEthAccountsTestHarness.js')
+	const { waitForBackgroundTasks } = await import('../../app/ts/background/backgroundTasks.js')
+	const localTransaction = createSafeStackTransactionFixture()
+	const localStack = createSafeStackFixture([localTransaction])
+	await modules.updateSafeTransactionStacks(() => [localStack])
+	const validationStarted = createDeferredSignal()
+	const releaseValidation = createDeferredSignal()
+	const refreshStarted = createDeferredSignal()
+	const releaseRefresh = createDeferredSignal()
+	fakeSafeContract.beforeVersionResponse = async () => { validationStarted.resolve(); await releaseValidation.promise }
+	const originalSend = browser.runtime.sendMessage.bind(browser.runtime)
+	Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: async (message: { method?: string }) => {
+		if (message.method === 'popup_isSimulationVisualizerOpen') { refreshStarted.resolve(); await releaseRefresh.promise }
+		return await originalSend(message)
+	} })
+	let acknowledged = false
+	const imported = modules.importSafeStack(simulator.ethereum, simulator.tokenPriceService, { data: { name: 'Interceptor Safe Stack', version: '1.0.0', stacks: [localStack] } }).then(reply => { acknowledged = true; return reply })
+	let timeout: ReturnType<typeof setTimeout> | undefined
+	try {
+		await validationStarted.promise
+		assert.equal(acknowledged, false, 'Owner/signature validation must finish before success')
+		releaseValidation.resolve()
+		const reply = await Promise.race([imported, new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error('Safe import waited for simulation refresh')), 1000) })])
+		assert.equal(reply.ok, true)
+		await refreshStarted.promise
+		assert.equal((await modules.getSafeTransactionStacks())[0]?.transactions.length, 1)
+	} finally {
+		clearTimeout(timeout)
+		releaseValidation.resolve()
+		releaseRefresh.resolve()
+		await imported
+		await waitForBackgroundTasks()
+		Object.defineProperty(browser.runtime, 'sendMessage', { configurable: true, value: originalSend })
+		fakeSafeContract.beforeVersionResponse = undefined
+	}
+})
+
 test('extension Safe stack import merges owner signatures into proposal and optimistic metadata', async () => {
 	const ownerAccount = safeTestOwnerAccount
 	const ownerAddress = safeTestOwnerAddress

@@ -1,3 +1,4 @@
+import { isPendingTransactionGasLimitCurrent } from '../../utils/pendingTransactionSimulation.js'
 import { SafeProposalDetails, SafeProposalSigningRequestCard } from './SafeProposalDetails.js'
 import { useEffect } from 'preact/hooks'
 import { MessageToPopup, type TransactionConfirmation, UpdateConfirmTransactionDialog, UpdateConfirmTransactionDialogPendingTransactions } from '../../types/interceptor-messages.js'
@@ -1004,6 +1005,7 @@ export function ConfirmTransaction() {
 				hasSupportedRpc: currentPendingTransactionOrSignableMessage.value.visualizedPersonalSignRequest.rpcNetwork.httpsRpc !== undefined,
 			})
 		}
+		if (!isPendingTransactionGasLimitCurrent(currentPendingTransactionOrSignableMessage.value)) return true
 		if (forceSend.value) return false
 		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation === undefined) return true
 		if (currentPendingTransactionOrSignableMessage.value.popupVisualisation.statusCode !== 'success') return true
@@ -1017,6 +1019,7 @@ export function ConfirmTransaction() {
 	const isAddToSafeStackDisabled = useComputed(() => {
 		const pending = currentPendingTransactionOrSignableMessage.value
 		if (pending?.type !== 'Transaction' || getSafeTransactionPendingFlow(pending)?.kind !== 'proposal') return true
+		if (!isPendingTransactionGasLimitCurrent(pending)) return true
 		if (pending.approvalStatus.status === 'WaitingForSigner') return true
 		if (pending.transactionOrMessageCreationStatus !== 'Simulated' || pending.popupVisualisation.statusCode !== 'success') return true
 		if (pending.popupVisualisation.data.visualizedSimulationState.success === false) return true

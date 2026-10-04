@@ -1,5 +1,6 @@
+import { startBackgroundTask } from './backgroundTasks.js'
 import { publishFailedPopupVisualisation } from './popupVisualisationUpdater.js'
-import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
+import { schedulePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import type { SigningAddressPreference } from '../types/signerTypes.js'
 import { getRpcNetworkChange } from '../utils/rpcNetworkChange.js'
@@ -47,7 +48,7 @@ async function clearSimulationStateFromConfig() {
 
 export async function resetSimulationStateFromConfig(simulationServicesOwner: SimulationServicesOwner) {
 	await clearSimulationStateFromConfig()
-	await queuePopupSimulationRefresh({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true })
+	await schedulePopupSimulationRefresh({ ...simulationServicesOwner.getCurrent(), invalidateOldState: true })
 }
 
 const keepTrackOfPreviousAddressForRichList = async () => {
@@ -67,6 +68,7 @@ type ActiveSettingsTransition = {
 	readonly change: ActiveAddressAndChainChange
 	readonly simulationSignerSelection?: { readonly useSignerAddress: boolean, readonly signerAddress: bigint | undefined }
 	readonly signingPreference?: SigningAddressPreference
+	readonly skipSimulationRefresh?: boolean
 }
 
 const changeActiveAddressAndChainSemaphore = new Semaphore(1)
@@ -136,15 +138,16 @@ async function runActiveSettingsChange(
 				await sendPopupMessageToOpenWindows({ method: 'popup_chain_update' })
 			}
 			// External-wallet signing has no simulated stack; Safe signing retains its separate stack visualization.
-			if ((updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
-				await queuePopupSimulationRefresh(simulationServicesOwner.getCurrent())
+			if (!transition.skipSimulationRefresh && (updatedSettings.simulationMode || updatedSettings.activeSigningSafeAddress !== undefined) && (rpcEndpointChanged || !activeStackContextsEqual(getActiveStackContext(previousSettings), getActiveStackContext(updatedSettings)))) {
+				await schedulePopupSimulationRefresh(simulationServicesOwner.getCurrent())
 			}
 			await sendActiveAccountChangeToApprovedWebsitePorts(websiteTabConnections, await getSettings())
 		})
 	} finally {
 		// Complete committed access updates after releasing the semaphore, even if a later reset or notification fails.
 		if (accessUpdate !== undefined) {
-			await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, accessUpdate, change.promptForAccessesIfNeeded ?? true)
+			const update = accessUpdate
+			startBackgroundTask(async () => await finishWebsiteAccessUpdate(simulationServicesOwner, websiteTabConnections, update, change.promptForAccessesIfNeeded ?? true))
 		}
 	}
 }
@@ -166,6 +169,7 @@ export async function activateAddressSelection(
 		readonly signerAddress: bigint | undefined
 		readonly rpcNetwork?: RpcNetwork
 		readonly promptForAccessesIfNeeded?: boolean
+		readonly skipSimulationRefresh?: boolean
 	},
 ): Promise<void> {
 	const selectedSafe = selection?.type === 'addressBookEntry' && selection.entry.type === 'safe' ? selection.entry : undefined
@@ -177,6 +181,7 @@ export async function activateAddressSelection(
 			? { signerAddress: options.signerAddress, selection: 'signer' }
 			: { signerAddress: options.signerAddress, selection: 'safe', safeAddress: selectedSafe.address, chainId: selectedSafe.chainId }
 	return await runActiveSettingsChange(simulationServicesOwner, websiteTabConnections, {
+		skipSimulationRefresh: options.skipSimulationRefresh,
 		change: {
 			simulationMode: options.simulationMode,
 			activeAddress: selection?.type === 'signer' ? selection.address : selection?.entry.address,

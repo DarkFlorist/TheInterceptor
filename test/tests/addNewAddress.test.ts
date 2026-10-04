@@ -332,7 +332,7 @@ describe('add new address save flow', () => {
 
 	test('shows pending feedback while an address-book modification is saved', () => {
 		assert.match(addNewAddressSource, /state = \{ saveEntryState\.value\.state \}/)
-		assert.match(addNewAddressSource, /pendingText = \{ param\.modifyAddressWindowState\.value\.incompleteAddressBookEntry\.addingAddress \? 'Creating\.\.\.' : 'Saving\.\.\.' \}/)
+		assert.match(addNewAddressSource, /'Validating Safe\.\.\.'/)
 		assert.match(addNewAddressSource, /await waitForSaveEntry\(async \(\) => \{[\s\S]*?saveAddressBookEntryAndSwitch/)
 		assert.match(addNewAddressSource, /'Modifying and switching\.\.\.'/)
 		assert.match(addNewAddressSource, /saveEntryState\.value\.state === 'pending' \|\| !isCurrentSafeLookupComplete\.value \|\| isAddressBookSubmissionDisabled/)
@@ -355,7 +355,7 @@ describe('add new address save flow', () => {
 	})
 
 	test('keeps Safe contract retrieval separate from generic address identification', () => {
-		assert.doesNotMatch(metadataUtilsSource, /export async function identifyAddressWithoutNode/)
+		assert.doesNotMatch(metadataUtilsSource, /getSafeContractSnapshot|validateSafeOwnerIsEoa/)
 		assert.doesNotMatch(popupMessageHandlersSource, /safeContractState|includeSafeContractState/)
 		assert.match(replyMessagesSource, /method: funtypes\.Literal\('popup_requestSafeContractState'\)/)
 		assert.doesNotMatch(replyMessagesSource, /RequestIdentifyAddress[\s\S]{0,500}includeSafeContractState/)
