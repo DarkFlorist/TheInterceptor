@@ -1,7 +1,7 @@
 import * as assert from 'node:assert'
 import { describe, test } from 'bun:test'
 import { EthereumClientService, getNextBlockTimeStampOverride } from '../../app/ts/simulation/services/EthereumClientService.js'
-import { captureSigningSimulationSnapshot, captureWhatIfSimulationSnapshot, getCurrentSimulationInput, getGovernanceExecutionSimulationInput, getSigningSimulationOverrides, prepareSimulationInputForRpc } from '../../app/ts/background/simulationUpdating.js'
+import { captureSigningSimulationSnapshot, captureWhatIfSimulationSnapshot, getCurrentSimulationInput, getGovernanceExecutionSimulationInput, prepareSimulationInputForRpc } from '../../app/ts/background/simulationUpdating.js'
 import { getWhatIfSimulationOverrides } from '../../app/ts/background/delegateClearingPolicy.js'
 import { clearDelegateClearingHintCache, getCachedDelegateClearingHint, invalidateDelegateClearingHintsForNewBlock, withDelegateClearingHintInvalidation } from '../../app/ts/background/delegateClearingHintCache.js'
 import { requestDelegateClearing, setDelegateClearing } from '../../app/ts/background/popupMessageHandlers/delegateClearing.js'
@@ -79,7 +79,6 @@ describe('delegate clearing in simulation', () => {
 		const simulationOverrides = getWhatIfSimulationOverrides(await getSettings())
 		assert.deepEqual(input[0]?.stateOverrides[addressString(activeAddress)], { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value })
 		assert.equal(isCodeClearedBySimulationOverrides(simulationOverrides, activeAddress), true)
-		assert.deepEqual(getSigningSimulationOverrides(), {})
 		const signingSnapshot = await captureSigningSimulationSnapshot()
 		assert.deepEqual(signingSnapshot.simulationInput.simulationOverrides, {})
 		assert.deepEqual(signingSnapshot.simulationInput.value[0]?.stateOverrides[addressString(activeAddress)], { balance: MAKE_YOU_RICH_TRANSACTION.transaction.value })

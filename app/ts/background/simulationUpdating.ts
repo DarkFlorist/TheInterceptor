@@ -132,13 +132,11 @@ export const getCurrentSimulationInput = async (richAddresses?: readonly bigint[
 	return inputBlocks
 }
 
-export const getSigningSimulationOverrides = (): StateOverrides => ({})
-
 export const getWhatIfSimulationInput = async (settings: Settings, richAddresses?: readonly bigint[]): Promise<SimulationInput> =>
 	createSimulatedInput(await getCurrentSimulationInput(richAddresses, settings), getWhatIfSimulationOverrides(settings))
 
 const getSigningSimulationInput = async (settings: Settings, richAddresses?: readonly bigint[]): Promise<SimulationInput> =>
-	createSimulatedInput(await getCurrentSimulationInput(richAddresses, settings), getSigningSimulationOverrides())
+	createSimulatedInput(await getCurrentSimulationInput(richAddresses, settings))
 
 export const getSimulationInputForCurrentMode = async (settings: Settings, richAddresses?: readonly bigint[]): Promise<SimulationInput> =>
 	settings.simulationMode ? await getWhatIfSimulationInput(settings, richAddresses) : await getSigningSimulationInput(settings, richAddresses)

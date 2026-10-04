@@ -14,7 +14,8 @@ import type { UniqueRequestIdentifier } from '../utils/requests.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { identifyAddress } from './metadataUtils.js'
 import { getSimulationErrorAbis } from './simulationErrorAbi.js'
-import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, getSigningSimulationOverrides, visualizeSimulatorState } from './simulationUpdating.js'
+import { getWhatIfSimulationOverrides } from './delegateClearingPolicy.js'
+import { createSimulationStateWithNonceAndBaseFeeFixing, getCurrentSimulationInput, visualizeSimulatorState } from './simulationUpdating.js'
 import { getSettings } from './settings.js'
 import { getInterceptorTransactionStack, getTabState } from './storageVariables.js'
 
@@ -47,8 +48,8 @@ export async function refreshConfirmTransactionSimulation(
 	const simulationInput = safeSigningRequest === undefined
 		? await getCurrentSimulationInput(undefined, settings)
 		: createSafeSigningSimulationInput(await getInterceptorTransactionStack(), safeSigningRequest)
-	// A signing confirmation must show execution with the delegate that exists on chain.
-	const simulationOverrides = getSigningSimulationOverrides()
+	// A local simulation preview follows Home; Safe and signing previews retain on-chain code.
+	const simulationOverrides = simulationMode && safeSigningRequest === undefined ? getWhatIfSimulationOverrides(settings) : {}
 	try {
 		const getNewVisualizedSimulationState = async () => {
 			const preSimulationTransaction = transactionToSimulate.success
