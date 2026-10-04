@@ -5,14 +5,13 @@ import type { TabState, WebsiteTabConnections } from '../types/user-interface-ty
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
-import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
+import { getRpcConfigurationState, getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
+import { getMetamaskCompatibilityMode, getRequiredSettings, getSettingsSnapshot, requireSettings } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
 import type { ProviderMessage } from '../utils/requests.js'
-import { METAMASK_ERROR_USER_REJECTED_REQUEST } from '../utils/constants.js'
 import { reportUnexpectedError } from '../utils/errors.js'
-import { refreshPendingSafeSignerSelectionErrors, resolvePendingTransactionOrMessage, updateConfirmTransactionView } from './windows/confirmTransaction.js'
+import { refreshPendingSafeSignerSelectionErrors, resolvePendingSignerReply, updateConfirmTransactionView } from './windows/confirmTransaction.js'
 import { resolveWatchAssetSignerReply } from './windows/watchAsset.js'
 import { modifyObject } from '../utils/typescript.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
@@ -24,6 +23,7 @@ import { getWalletSelectedAccount } from '../utils/activeAddressSelection.js'
 import { getActiveAddressEntryForChain } from './metadataUtils.js'
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import type { ApprovalState } from './websiteAccessPolicy.js'
+import { getRpcServicesAtAdmission, rpcConfigurationIsReady, rpcConfigurationIsUsable } from './rpcConfigurationAvailability.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
@@ -60,6 +60,42 @@ function hasSignerCallbackAccess(websiteTabConnections: WebsiteTabConnections, t
 	return approval === 'hasAccess' || tabHasApprovedWebsiteConnection(websiteTabConnections, tabId)
 }
 
+async function getAvailableSimulationServices(simulationServicesOwner: SimulationServicesOwner) {
+	const rpcConfiguration = await getRpcConfigurationState()
+	return getRpcServicesAtAdmission(rpcConfiguration, simulationServicesOwner)
+}
+
+type SignerAccountsChangedPopupUpdate =
+	| { readonly type: 'accounts-update' }
+	| { readonly type: 'active-selection', readonly tabId: number, readonly activeSigningAddress: bigint | undefined, readonly activeSigningSafeAddress: bigint | undefined }
+
+async function publishSignerAccountsChanged(
+	websiteTabConnections: WebsiteTabConnections,
+	signerStateToken: SignerStateToken,
+	popupUpdate: SignerAccountsChangedPopupUpdate,
+	error?: { readonly code: number, readonly message: string, readonly data?: string },
+) {
+	if (popupUpdate.type === 'accounts-update') {
+		await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
+	} else {
+		await sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: {
+			tabId: popupUpdate.tabId,
+			activeSigningAddress: popupUpdate.activeSigningAddress,
+			activeSigningSafeAddress: popupUpdate.activeSigningSafeAddress,
+		} })
+	}
+	sendInternalWindowMessage({
+		method: 'window_signer_accounts_changed',
+		data: {
+			socket: signerStateToken.socket,
+			signerStateOwnerGeneration: signerStateToken.ownerGeneration,
+			signerProviderGeneration: signerStateToken.signerProviderGeneration,
+			...(error === undefined ? {} : { error }),
+		},
+	})
+	notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.signerAccountsChanged, signerStateToken.socket)
+}
+
 export async function ethAccountsReply(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'eth_accounts_reply' as const, result: '0x' as const }
 	if (!('params' in request)) return returnValue
@@ -85,17 +121,7 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			}
 			if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
 			// Wake requesters waiting for a signer accounts round-trip even when the signer rejected or errored.
-			sendInternalWindowMessage({
-				method: 'window_signer_accounts_changed',
-				data: {
-					socket: signerStateToken.socket,
-					signerStateOwnerGeneration: signerStateToken.ownerGeneration,
-					signerProviderGeneration: signerStateToken.signerProviderGeneration,
-					error: signerAccountError,
-				},
-			})
-			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
-			notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.signerAccountsChanged, signerStateToken.socket)
+			await publishSignerAccountsChanged(websiteTabConnections, signerStateToken, { type: 'accounts-update' }, signerAccountError)
 			return returnValue
 		}
 		const signerAccounts = signerAccountsReply.accounts
@@ -106,12 +132,25 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			activeSigningAddress,
 		}))
 		if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return returnValue
-		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
-		await refreshPendingSafeSignerSelectionErrors(ethereum, tokenPriceService, tabId)
+		const snapshot = await getSettingsSnapshot()
+		const { rpcConfiguration } = snapshot
+		if (snapshot.settings === undefined) {
+			await publishSignerAccountsChanged(websiteTabConnections, signerStateToken, { type: 'active-selection',
+				tabId,
+				activeSigningAddress,
+				activeSigningSafeAddress: undefined,
+			})
+			return returnValue
+		}
+		const settings = requireSettings(snapshot)
+		const simulationServices = getRpcServicesAtAdmission(rpcConfiguration, simulationServicesOwner)
+		if (simulationServices !== undefined) await refreshPendingSafeSignerSelectionErrors(simulationServices.ethereum, simulationServices.tokenPriceService, tabId)
 		// Restore this wallet account's most recent EOA-or-Safe selection. This remains inside the signer-state operation so a reconnect cannot interleave with downstream address and chain mutations.
-		const settings = await getSettings()
 		const transition = await getSigningAddressSelectionTransition(settings, tabStateChange.previousState, tabStateChange.newState)
-		if (transition.shouldActivate) {
+		// Preserve the signer callback while RPC-backed settings transitions are paused; a signer-only network has no services by design, so it can still accept the address selection.
+		const canActivateAddressSelection = rpcConfigurationIsUsable(rpcConfiguration, simulationServicesOwner)
+		const shouldActivateAddressSelection = transition.shouldActivate && canActivateAddressSelection
+		if (shouldActivateAddressSelection) {
 			const changeActiveAddress = async () => {
 				await activateAddressSelection(simulationServicesOwner, websiteTabConnections, transition.selection, {
 					simulationMode: settings.simulationMode,
@@ -124,25 +163,17 @@ export async function ethAccountsReply(simulationServicesOwner: SimulationServic
 			} else {
 				await changeActiveAddress()
 			}
+		}
+		if (transition.shouldActivate) {
 			await sendPopupMessageToOpenWindows({ method: 'popup_accounts_update' })
 		}
-		const updatedSettings = transition.shouldActivate ? await getSettings() : settings
+		const updatedSettings = shouldActivateAddressSelection ? await getRequiredSettings() : settings
 		const displayedSigningSafe = await getConfiguredSigningSafe(updatedSettings, signerAccounts)
-		await sendPopupMessageToOpenWindows({ method: 'popup_activeSigningAddressChanged', data: {
+		await publishSignerAccountsChanged(websiteTabConnections, signerStateToken, { type: 'active-selection',
 			tabId,
 			activeSigningAddress: displayedSigningSafe?.address ?? activeSigningAddress,
 			activeSigningSafeAddress: displayedSigningSafe?.address,
-		} })
-		// Account-change waiters must only resume after the matching Safe-or-EOA selection is fully restored.
-		sendInternalWindowMessage({
-			method: 'window_signer_accounts_changed',
-			data: {
-				socket: signerStateToken.socket,
-				signerStateOwnerGeneration: signerStateToken.ownerGeneration,
-				signerProviderGeneration: signerStateToken.signerProviderGeneration,
-			},
 		})
-		notifyWebsiteLifecycle(websiteTabConnections.lifecycle?.signerAccountsChanged, signerStateToken.socket)
 		return returnValue
 	})
 }
@@ -155,7 +186,10 @@ async function changeSignerChain(simulationServicesOwner: SimulationServicesOwne
 	if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken)) return
 	const oldSignerChain = tabStateChange.previousState.signerChain
 	// update active address if we are using signers address
-	const settings = await getSettings()
+	const snapshot = await getSettingsSnapshot()
+	const { rpcConfiguration } = snapshot
+	if (snapshot.settings === undefined) return
+	const settings = requireSettings(snapshot)
 	const selectedSafe = await getConfiguredSigningSafe(settings, tabStateChange.newState.signerAccounts)
 	if (selectedSafe !== undefined) {
 		// Safe signing is pinned to the Safe's configured Interceptor chain. A signer-wallet chain change only refreshes signer state; it must not move the dapp away from the active Safe.
@@ -165,6 +199,7 @@ async function changeSignerChain(simulationServicesOwner: SimulationServicesOwne
 		}
 		return
 	}
+	if (!rpcConfigurationIsReady(rpcConfiguration)) return
 	if (settings.useSignersAddressAsActiveAddress || !settings.simulationMode) {
 		const rpcNetwork = requestedRpcNetwork ?? (settings.activeRpcNetwork.chainId === signerChain ? settings.activeRpcNetwork : await getRpcNetworkForChain(signerChain))
 		if (getRpcNetworkChange(settings.activeRpcNetwork, rpcNetwork).selectionChanged) {
@@ -246,15 +281,14 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 		confirmSignerState(tabConnection, signerProviderGeneration)
 		await setDefaultSignerName(signerName)
 		await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
-		if (hasSignerCallbackAccess(websiteTabConnections, socket.tabId, approval)) {
-			const settings = await getSettings()
+		const settings = (await getSettingsSnapshot()).settings
+		if (settings !== undefined && hasSignerCallbackAccess(websiteTabConnections, socket.tabId, approval)) {
 			if (!signerMissing && (!settings.simulationMode || settings.useSignersAddressAsActiveAddress)) {
 				sendSubscriptionReplyOrCallBackToPort(port, { type: 'result', method: 'request_signer_chainId', result: [] })
 			}
 		}
-		const settings = await getSettings()
 		// Restore cached address consent for ordinary EOAs as well as Safes, even without lifecycle observers.
-		if (isTopFrame && approval === 'hasAccess' && activeAddress !== undefined) {
+		if (settings !== undefined && isTopFrame && approval === 'hasAccess' && activeAddress !== undefined) {
 			const activeAddressEntry = await getActiveAddressEntryForChain(activeAddress, settings.activeRpcNetwork.chainId)
 			const connection = getWebsiteConnectionForPort(websiteTabConnections, port)
 			if (connection !== undefined) {
@@ -262,7 +296,7 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 			}
 		}
 		// A reload clears signer accounts. Refresh approved sites independently of Safe consent; publication still checks address access.
-		shouldRefreshSignerAccounts = isTopFrame && approval === 'hasAccess' && signerConnected && !signerMissing && !settings.simulationMode
+		shouldRefreshSignerAccounts = settings !== undefined && isTopFrame && approval === 'hasAccess' && signerConnected && !signerMissing && !settings.simulationMode
 		return await getConnectedToSignerResult()
 	})
 	// Passive account refresh is core signer behavior, independent of Safe Apps compatibility.
@@ -283,7 +317,6 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 	const socket = getSocketFromPort(port)
 	if (socket === undefined) return doNotReply
 	return await runSignerStateOperation(websiteTabConnections, socket.tabId, async () => {
-		const { ethereum, tokenPriceService } = simulationServicesOwner.getCurrent()
 		if (params.forwardRequest.method === 'wallet_watchAsset') {
 			const context = WatchAssetSignerRequest.parse(params.forwardRequest.params)
 			if (context.uniqueRequestIdentifier.requestSocket.tabId !== socket.tabId || context.signerIdentity.tabId !== socket.tabId) return doNotReply
@@ -306,7 +339,8 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 			|| requestSocket.tabId !== socket.tabId
 			|| requestSocket.connectionName !== socket.connectionName) {
 			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...signerConnectionReplacedError } }))
-			await updateConfirmTransactionView(ethereum, tokenPriceService)
+			const simulationServices = await getAvailableSimulationServices(simulationServicesOwner)
+			if (simulationServices !== undefined) await updateConfirmTransactionView(simulationServices.ethereum, simulationServices.tokenPriceService)
 			return doNotReply
 		}
 		switch(params.forwardRequest.method) {
@@ -318,28 +352,16 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 			case 'eth_signTypedData_v4':
 			case 'eth_sendRawTransaction':
 			case 'eth_sendTransaction': {
-				if (params.success) {
+				const simulationServices = await getAvailableSimulationServices(simulationServicesOwner)
+				if (params.success && simulationServices !== undefined) {
 					try {
-						await resolvePendingTransactionOrMessage(ethereum, tokenPriceService, websiteTabConnections, {
-							method: 'popup_confirmDialog',
-							data: {
-								uniqueRequestIdentifier,
-								action: 'signerIncluded',
-								signerReply: params.reply,
-							}
-						})
+						await resolvePendingSignerReply(simulationServices, websiteTabConnections, uniqueRequestIdentifier, params)
 					} catch(e) {
 						await reportUnexpectedError(e)
 					}
 					return doNotReply
 				}
-				if (params.error.code === METAMASK_ERROR_USER_REJECTED_REQUEST) {
-					await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'WaitingForUser' } }))
-					await updateConfirmTransactionView(ethereum, tokenPriceService)
-					return doNotReply
-				}
-				await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...params.error } }))
-				await updateConfirmTransactionView(ethereum, tokenPriceService)
+				await resolvePendingSignerReply(simulationServices, websiteTabConnections, uniqueRequestIdentifier, params)
 				return doNotReply
 			}
 		}

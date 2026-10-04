@@ -1,12 +1,13 @@
 import * as assert from 'assert'
 import { beforeEach, test } from 'bun:test'
+import type { PendingTransactionOrSignableMessage } from '../../app/ts/types/accessRequest.js'
 import { withSilencedConsole } from './consoleSilence.js'
 
 const storageState: Record<string, unknown> = {}
 const storageWrites: Record<string, unknown>[] = []
 let storageReadError: Error | undefined
 
-globalThis.browser = {
+Object.defineProperty(globalThis, 'browser', { configurable: true, value: {
 	storage: {
 		local: {
 			async get(keys?: string | string[] | Record<string, unknown> | null) {
@@ -25,9 +26,37 @@ globalThis.browser = {
 			},
 		},
 	},
-} as unknown as typeof globalThis.browser
+} })
 
-const { clearPendingTransactions } = await import('../../app/ts/background/storageVariables.js')
+const { appendPendingTransactionOrMessage, clearPendingTransactions, getPendingTransactionsAndMessages } = await import('../../app/ts/background/storageVariables.js')
+
+const pendingMessage = {
+	type: 'SignableMessage',
+	popupOrTabId: { type: 'popup', id: 1 },
+	originalRequestParameters: { method: 'personal_sign', params: ['0x', 1n] },
+	simulationMode: true,
+	uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 1n } },
+	signedMessageTransaction: {
+		website: { websiteOrigin: 'https://example.test', icon: undefined, title: undefined },
+		created: new Date(1),
+		fakeSignedFor: 1n,
+		originalRequestParameters: { method: 'personal_sign', params: ['0x', 1n] },
+		request: {
+			method: 'personal_sign',
+			params: ['0x', '0x0000000000000000000000000000000000000001'],
+			interceptorRequest: true,
+			usingInterceptorWithoutSigner: true,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 1n } },
+		},
+		simulationMode: true,
+		messageIdentifier: 1n,
+	},
+	created: new Date(1),
+	website: { websiteOrigin: 'https://example.test', icon: undefined, title: undefined },
+	activeAddress: 1n,
+	approvalStatus: { status: 'WaitingForUser' },
+	transactionOrMessageCreationStatus: 'Crafting',
+} satisfies PendingTransactionOrSignableMessage
 
 beforeEach(() => {
 	for (const key of Object.keys(storageState)) delete storageState[key]
@@ -35,7 +64,7 @@ beforeEach(() => {
 	storageReadError = undefined
 })
 
-test('repairs corrupt pending transaction storage without deadlocking a mutation', async () => {
+test('repairs corrupt pending transaction storage without deadlocking clear', async () => {
 	storageState.pendingTransactionsAndMessages = 'corrupt'
 
 	await withSilencedConsole(async () => await clearPendingTransactions())
@@ -43,12 +72,23 @@ test('repairs corrupt pending transaction storage without deadlocking a mutation
 	assert.deepEqual(storageState.pendingTransactionsAndMessages, [])
 })
 
+test('repairs corrupt pending transaction storage before appending', async () => {
+	storageState.pendingTransactionsAndMessages = 'corrupt'
+
+	await withSilencedConsole(async () => await appendPendingTransactionOrMessage(pendingMessage))
+
+	const restored = await getPendingTransactionsAndMessages()
+	assert.equal(restored.length, 1)
+	assert.equal(restored[0]?.type, 'SignableMessage')
+	assert.deepEqual(restored[0]?.uniqueRequestIdentifier, pendingMessage.uniqueRequestIdentifier)
+})
+
 test('does not erase pending transaction storage after a transient read failure', async () => {
-	storageState.pendingTransactionsAndMessages = []
+	storageState.pendingTransactionsAndMessages = [pendingMessage]
 	storageReadError = new Error('Storage temporarily unavailable')
 
 	await assert.rejects(clearPendingTransactions(), /Storage temporarily unavailable/)
 
-	assert.deepEqual(storageState.pendingTransactionsAndMessages, [])
+	assert.deepEqual(storageState.pendingTransactionsAndMessages, [pendingMessage])
 	assert.equal(storageWrites.length, 0)
 })

@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import * as path from 'path'
+import { DEFAULT_BLOCK_MANIPULATION } from '../app/ts/config/defaults.js'
 import { createSafeTx } from '../app/ts/safe/safeCore.js'
 import { PendingTransactionOrSignableMessage } from '../app/ts/types/accessRequest.js'
 import { serialize } from '../app/ts/types/wire-types.js'
@@ -351,20 +352,147 @@ try {
 			safeTx,
 		},
 	}
-	const serializedPendingTransactions = serialize(PendingTransactionOrSignableMessage, pendingSafeTransaction)
-	const setPendingTransactionFixture = `browser.storage.local.set({
-			pendingTransactionsAndMessages: [${ JSON.stringify(serializedPendingTransactions) }],
+	const serializedFailedPendingTransaction = serialize(PendingTransactionOrSignableMessage, pendingSafeTransaction)
+	const setFailedPendingTransactionFixture = `browser.storage.local.set({
+			pendingTransactionsAndMessages: [${ JSON.stringify(serializedFailedPendingTransaction) }],
 		})`
-	await popup.evaluate(setPendingTransactionFixture)
+	await popup.evaluate(setFailedPendingTransactionFixture)
 	await popup.close()
-	const confirm = await browser.openPage('confirmTransaction', `(async () => {
+	const failedConfirm = await browser.openPage('confirmTransaction', `(async () => {
 		await ${ setSafeAddressFixture }
-		await ${ setPendingTransactionFixture }
+		await ${ setFailedPendingTransactionFixture }
 	})()`)
-	await waitForText(confirm, 'wrapped as Gnosis Safe transaction nonce 7')
-	await waitForText(confirm, 'Gas estimation error')
-	await captureScenario(confirm, 'safe-confirm-transaction')
-	await confirm.close()
+	await waitForText(failedConfirm, 'wrapped as Gnosis Safe transaction nonce 7')
+	await waitForText(failedConfirm, 'Gas estimation error')
+	await captureScenario(failedConfirm, 'safe-confirm-transaction-failed')
+	await failedConfirm.close()
+
+	const rpcNetwork = {
+		name: 'Ethereum Mainnet',
+		chainId: 1n,
+		httpsRpc: 'https://ethereum.example.invalid',
+		currencyName: 'Ether',
+		currencyTicker: 'ETH',
+		primary: true,
+		minimized: false,
+	}
+	const safeAddressBookEntry = {
+		type: 'safe' as const,
+		name: 'Treasury Safe',
+		address: safeAddress,
+		chainId: 1n,
+		entrySource: 'FilledIn' as const,
+		askForAddressAccess: true,
+		useAsActiveAddress: true,
+		safeSimulationSignerAddress: ownerAddress,
+		safeSignerAddresses: [ownerAddress],
+		safeVersion: '1.4.1',
+	}
+	const destinationAddressBookEntry = {
+		type: 'contract' as const,
+		name: 'Uniswap recipient',
+		address: destinationAddress,
+		chainId: 1n,
+		entrySource: 'FilledIn' as const,
+	}
+	const successfulUnsignedTransaction = {
+		type: '1559' as const,
+		from: safeAddress,
+		nonce: 7n,
+		maxFeePerGas: originalRequestParameters.params[0].maxFeePerGas,
+		maxPriorityFeePerGas: originalRequestParameters.params[0].maxPriorityFeePerGas,
+		gas: originalRequestParameters.params[0].gas,
+		to: destinationAddress,
+		value: originalRequestParameters.params[0].value,
+		input: originalRequestParameters.params[0].input,
+		chainId: 1n,
+		accessList: [],
+	}
+	const successfulTransactionToSimulate = {
+		website: failedTransaction.website,
+		created,
+		originalRequestParameters,
+		transactionIdentifier: 42n,
+		success: true as const,
+		transaction: successfulUnsignedTransaction,
+	}
+	const successfulPendingSafeTransaction: PendingTransactionOrSignableMessage = {
+		...pendingSafeTransaction,
+		transactionOrMessageCreationStatus: 'Simulated',
+		transactionToSimulate: successfulTransactionToSimulate,
+		popupVisualisation: {
+			statusCode: 'success',
+			data: {
+				activeAddress: safeAddress,
+				simulationMode: false,
+				simulationStartedTimestamp: created,
+				uniqueRequestIdentifier,
+				transactionToSimulate: successfulTransactionToSimulate,
+				signerName: 'MetaMask',
+				addressBookEntries: [safeAddressBookEntry, destinationAddressBookEntry],
+				tokenPriceEstimates: [],
+				namedTokenIds: [],
+				simulationState: {
+					success: true,
+					simulationStateInput: [],
+					simulatedBlocks: [],
+					blockNumber: 21_000_000n,
+					blockTimestamp: created,
+					baseFeePerGas: 1_000_000_000n,
+					simulationConductedTimestamp: created,
+					rpcNetwork,
+				},
+				visualizedSimulationState: {
+					success: true,
+					visualizedBlocks: [{
+						simulatedAndVisualizedTransactions: [{
+							website: failedTransaction.website,
+							created,
+							parsedInputData: { type: 'NonParsed', input: originalRequestParameters.params[0].input },
+							transactionIdentifier: 42n,
+							originalRequestParameters,
+							tokenBalancesAfter: [],
+							tokenPriceEstimates: [],
+							tokenPriceQuoteToken: undefined,
+							gasSpent: originalRequestParameters.params[0].gas,
+							realizedGasPrice: 1_500_000_000n,
+							quarantine: false,
+							quarantineReasons: [],
+							transactionStatus: 'Transaction Succeeded',
+							transaction: {
+								from: safeAddressBookEntry,
+								to: destinationAddressBookEntry,
+								rpcNetwork,
+								type: '1559',
+								nonce: successfulUnsignedTransaction.nonce,
+								maxFeePerGas: successfulUnsignedTransaction.maxFeePerGas,
+								maxPriorityFeePerGas: successfulUnsignedTransaction.maxPriorityFeePerGas,
+								gas: successfulUnsignedTransaction.gas,
+								value: successfulUnsignedTransaction.value,
+								input: successfulUnsignedTransaction.input,
+								hash: 0x42n,
+							},
+							events: [],
+						}],
+						visualizedPersonalSignRequests: [],
+						blockTimeManipulation: DEFAULT_BLOCK_MANIPULATION,
+					}],
+				},
+			},
+		},
+	}
+	const serializedSuccessfulPendingTransaction = serialize(PendingTransactionOrSignableMessage, successfulPendingSafeTransaction)
+	const setSuccessfulPendingTransactionFixture = `browser.storage.local.set({
+			pendingTransactionsAndMessages: [${ JSON.stringify(serializedSuccessfulPendingTransaction) }],
+		})`
+	const successfulConfirm = await browser.openPage('confirmTransaction', `(async () => {
+		await ${ setSafeAddressFixture }
+		await ${ setSuccessfulPendingTransactionFixture }
+	})()`)
+	await waitForText(successfulConfirm, 'wrapped as Gnosis Safe transaction nonce 7')
+	await waitForText(successfulConfirm, 'Sign & add')
+	await captureScenario(successfulConfirm, 'safe-confirm-transaction-successful')
+	await successfulConfirm.close()
 
 	// The signing request card is captured on a successfully simulated proposal, so the real "Sign & add" and "Add unsigned" actions are visible.
 	console.info('Opening simulated Gnosis Safe proposal with the EIP-712 signing request')
@@ -489,7 +617,7 @@ try {
 	await captureScenario(settings, 'settings-import-export')
 	await settings.close()
 
-	const expectedScreenshotCount = 95
+	const expectedScreenshotCount = 100
 	const screenshotCount = capturedScenarioCount * viewports.length
 	if (screenshotCount !== expectedScreenshotCount) throw new Error(`Expected ${ expectedScreenshotCount } screenshots, captured ${ screenshotCount }`)
 	console.info(`Captured ${ screenshotCount } deterministic screenshots`)

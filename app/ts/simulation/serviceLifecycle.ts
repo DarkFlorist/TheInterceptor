@@ -3,6 +3,7 @@ import type { RpcEntry } from '../types/rpc.js'
 import { EthereumClientService } from './services/EthereumClientService.js'
 import { EthereumJSONRpcRequestHandler, type RpcRequestLifecycleCallbacks } from './services/EthereumJSONRpcRequestHandler.js'
 import { TokenPriceService } from './services/priceEstimator.js'
+import { createRpcConfigurationUnavailableError } from '../utils/rpcConfigurationError.js'
 
 export type NewBlockAttemptCallback = (blockHeader: EthereumBlockHeader, ethereumClientService: EthereumClientService, isNewBlock: boolean) => Promise<void>
 export type OnErrorBlockCallback = (ethereumClientService: EthereumClientService, error: unknown) => Promise<void>
@@ -64,23 +65,48 @@ export function resetSimulationServices(
 }
 
 export type SimulationServicesOwner = {
-	readonly getCurrent: () => SimulationServices
+	readonly getCurrent: () => SimulationServices | undefined
+	readonly requireCurrent: () => SimulationServices
 	readonly reset: (rpcNetwork: RpcEntry) => SimulationServices
+	readonly recover: (rpcNetwork: RpcEntry) => SimulationServices
+	readonly clear: () => void
 }
 
-// One owner publishes installed services. Returned pairs are snapshots for an operation; independent message handlers must read getCurrent() when their work starts.
+export const isCurrentSimulationService = (owner: SimulationServicesOwner | undefined, ethereumClientService: EthereumClientService) => {
+	return owner?.getCurrent()?.ethereum === ethereumClientService
+}
+
+// One owner publishes installed services. Returned pairs are snapshots for an operation; independent message handlers must read requireCurrent() when their work starts.
 export function createSimulationServicesOwner(
-	rpcNetwork: RpcEntry,
+	rpcNetwork: RpcEntry | undefined,
 	newBlockAttemptCallback: NewBlockAttemptCallback,
 	onErrorBlockCallback: OnErrorBlockCallback,
 	rpcRequestLifecycleCallbacks: RpcRequestLifecycleCallbacks = {},
+	onBecameAvailable: () => void = () => undefined,
 ) {
-	let current = createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
+	let current = rpcNetwork === undefined ? undefined : createSimulationServices(rpcNetwork, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
 	return {
 		getCurrent: () => current,
+		requireCurrent: () => {
+			if (current === undefined) throw createRpcConfigurationUnavailableError()
+			return current
+		},
 		reset: (nextRpc: RpcEntry): SimulationServices => {
+			if (current === undefined) throw createRpcConfigurationUnavailableError()
 			current = resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
 			return current
+		},
+		recover: (nextRpc: RpcEntry): SimulationServices => {
+			const wasUnavailable = current === undefined
+			current = current === undefined
+				? createSimulationServices(nextRpc, newBlockAttemptCallback, onErrorBlockCallback, 60000, rpcRequestLifecycleCallbacks)
+				: resetSimulationServices(current, nextRpc, newBlockAttemptCallback, onErrorBlockCallback, rpcRequestLifecycleCallbacks)
+			if (wasUnavailable) onBecameAvailable()
+			return current
+		},
+		clear: () => {
+			current?.ethereum.cleanup()
+			current = undefined
 		},
 	}
 }

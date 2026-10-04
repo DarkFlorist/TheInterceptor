@@ -5,9 +5,44 @@ import { MessageToPopup } from '../../app/ts/types/interceptor-messages.js'
 import { createDeferredValue, createTestSimulationServicesOwner, addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, createSafeTx, EthereumJsonRpcRequest, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, safeTxToTypedDataJson, } from './backgroundEthAccountsTestHarness.js'
 
 describe('background eth_accounts', () => {
+	test('completes the signer handshake while RPC settings are unavailable', async () => {
+		installBrowserMock()
+		const { getTabState, handleInterceptedRequest, websiteSocketToString } = await loadModules()
+		const websiteOrigin = 'https://rpc-unavailable.example'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const socket = { tabId: 1, connectionName: 0n }
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections = new Map([[socket.tabId, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, approved: true, wantsToConnect: true },
+		} }]])
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
+		await browser.storage.local.set({ activeRpcNetwork: 'corrupt-active-network' })
+		const originalWarn = console.warn
+		console.warn = () => undefined
+		try {
+			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+				interceptorRequest: true,
+				interceptorInternalRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId: 990, requestSocket: socket },
+				method: 'connected_to_signer',
+				params: [true, 'MetaMask', 2],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+		} finally {
+			console.warn = originalWarn
+		}
+
+		assert.deepEqual(messages.find((message) => message.method === 'connected_to_signer' && message.requestId === 990)?.result, { metamaskCompatibilityMode: false })
+		assert.equal(messages.some((message) => message.method === 'request_signer_chainId'), false)
+		assert.equal(messages.some((message) => message.method === 'request_signer_to_eth_accounts'), false)
+		const tabState = await getTabState(socket.tabId)
+		assert.equal(tabState.signerName, 'MetaMask')
+		assert.equal(tabState.signerConnected, true)
+	})
+
 	test('resolves an access prompt with the services installed after it opened', async () => {
 		installBrowserMock()
-		const { requestAccessFromUser, resolveInterceptorAccess, getPendingAccessRequests, getSettings, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
+		const { requestAccessFromUser, resolveInterceptorAccess, getPendingAccessRequests, getRequiredSettings, websiteSocketToString, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()
 		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
 		const website = { websiteOrigin: 'https://access-reset.example', icon: undefined, title: undefined }
 		const account = 1n
@@ -29,7 +64,7 @@ describe('background eth_accounts', () => {
 		await requestAccessFromUser(owner, connections, socket, website, {
 			interceptorRequest: true, usingInterceptorWithoutSigner: true,
 			uniqueRequestIdentifier: { requestId: 992, requestSocket: socket }, method: 'eth_chainId', params: [],
-		}, address, await getSettings(), address, noopPublishRpcConnectionStatus)
+		}, address, await getRequiredSettings(), address, noopPublishRpcConnectionStatus)
 		const pending = (await getPendingAccessRequests())[0]
 		assert.ok(pending !== undefined)
 		owner.reset(installed.ethereum.getRpcEntry())
@@ -1002,7 +1037,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const {
 			changeSimulationMode,
 			getActiveAddress,
-			getSettings,
+			getRequiredSettings,
 			getSigningAddressPreferences,
 			getTabState,
 			handleInterceptedRequest,
@@ -1055,7 +1090,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			params: ['0x2', 1],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		assert.equal(settings.activeRpcNetwork.chainId, 1n)
 		assert.equal((await getTabState(socket.tabId)).signerChain, 2n)
 		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, safeAddress)
@@ -1070,7 +1105,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			params: [{ signerProviderGeneration: 1, type: 'success', accounts: [], requestAccounts: false }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
-		const settingsAfterDisconnect = await getSettings()
+		const settingsAfterDisconnect = await getRequiredSettings()
 		assert.equal(settingsAfterDisconnect.activeSigningSafeAddress, undefined)
 		assert.equal((await getActiveAddress(settingsAfterDisconnect, socket.tabId)), undefined)
 
@@ -1082,7 +1117,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			method: 'eth_accounts_reply',
 			params: [{ signerProviderGeneration: 1, type: 'success', accounts: [addressString(safeSignerAddress)], requestAccounts: false }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
-		assert.equal((await getActiveAddress(await getSettings(), socket.tabId))?.address, safeAddress)
+		assert.equal((await getActiveAddress(await getRequiredSettings(), socket.tabId))?.address, safeAddress)
 
 		const otherSignerAddress = 0x5353535353535353535353535353535353535353n
 		assert.equal((await getSigningAddressPreferences()).some((preference) => preference.signerAddress === otherSignerAddress), false)
@@ -1095,7 +1130,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			params: [{ signerProviderGeneration: 1, type: 'success', accounts: [addressString(otherSignerAddress)], requestAccounts: false }],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
-		const settingsAfterAccountChange = await getSettings()
+		const settingsAfterAccountChange = await getRequiredSettings()
 		assert.equal(settingsAfterAccountChange.activeSimulationAddress, safeAddress)
 		assert.equal(settingsAfterAccountChange.activeSigningSafeAddress, undefined)
 		assert.equal((await getActiveAddress(settingsAfterAccountChange, socket.tabId))?.address, otherSignerAddress)
@@ -1109,7 +1144,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			changeSimulationMode,
 			createInternalMessageListener,
 			getActiveAddress,
-			getSettings,
+			getRequiredSettings,
 			handleInterceptedRequest,
 			INTERNAL_CHANNEL_NAME,
 			rememberSigningAddressPreference,
@@ -1160,7 +1195,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const completionChannel = new BroadcastChannel(INTERNAL_CHANNEL_NAME)
 		const completionListener = createInternalMessageListener((message) => {
 			if (message.method !== 'window_signer_accounts_changed') return
-			void getSettings().then((currentSettings) => settingsSeenByAccountChangeWaiters.push(currentSettings.activeSigningSafeAddress))
+			void getRequiredSettings().then((currentSettings) => settingsSeenByAccountChangeWaiters.push(currentSettings.activeSigningSafeAddress))
 		})
 		completionChannel.addEventListener('message', completionListener)
 		await selectSignerAccount(safeOwner, 209)
@@ -1169,7 +1204,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		completionChannel.removeEventListener('message', completionListener)
 		completionChannel.close()
 		assert.deepEqual(settingsSeenByAccountChangeWaiters, [safeAddress])
-		let settings = await getSettings()
+		let settings = await getRequiredSettings()
 		assert.equal(settings.activeSigningSafeAddress, safeAddress)
 		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, safeAddress)
 		const signingAddressUpdate = runtimeMessages
@@ -1180,12 +1215,12 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.equal(signingAddressUpdate.value.data.activeSigningSafeAddress, safeAddress)
 
 		await selectSignerAccount(directEoa, 210)
-		settings = await getSettings()
+		settings = await getRequiredSettings()
 		assert.equal(settings.activeSigningSafeAddress, undefined)
 		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, directEoa)
 
 		await selectSignerAccount(safeOwner, 211)
-		settings = await getSettings()
+		settings = await getRequiredSettings()
 		assert.equal(settings.activeSigningSafeAddress, safeAddress)
 		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, safeAddress)
 	})
@@ -1426,7 +1461,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			changeActiveAddressAndChain,
 			changeSimulationMode,
 			getActiveAddress,
-			getSettings,
+			getRequiredSettings,
 			handleInterceptedRequest,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
@@ -1471,7 +1506,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			activeAddress: safeAddress,
 			signingAddressSelection: 'safe',
 		})
-		assert.notEqual((await getActiveAddress(await getSettings(), socket.tabId))?.address, safeAddress)
+		assert.notEqual((await getActiveAddress(await getRequiredSettings(), socket.tabId))?.address, safeAddress)
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -1489,7 +1524,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			getActiveAddress,
 			getActiveAddressesForAllTabs,
 			getActiveOrFirstSignerAddress,
-			getSettings,
+			getRequiredSettings,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
 			updateUserAddressBookEntries,
@@ -1508,7 +1543,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		}])
 		await updateTabState(1, (previousState) => previousState)
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		assert.notEqual(settings.activeRpcNetwork.chainId, 2n)
 		assert.equal(await getActiveAddress(settings, 1), undefined)
 		assert.equal(await getActiveOrFirstSignerAddress(settings, 1), undefined)
@@ -1521,7 +1556,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			changeActiveAddressAndChain,
 			changeSimulationMode,
 			getActiveAddress,
-			getSettings,
+			getRequiredSettings,
 			handleInterceptedRequest,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
@@ -1560,7 +1595,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 
-		assert.equal((await getActiveAddress(await getSettings(), socket.tabId))?.address, safeSignerAddress)
+		assert.equal((await getActiveAddress(await getRequiredSettings(), socket.tabId))?.address, safeSignerAddress)
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -1576,7 +1611,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			activeAddress: safeAddress,
 			signingAddressSelection: 'safe',
 		})
-		assert.equal((await getActiveAddress(await getSettings(), socket.tabId))?.address, safeSignerAddress)
+		assert.equal((await getActiveAddress(await getRequiredSettings(), socket.tabId))?.address, safeSignerAddress)
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -1593,17 +1628,17 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			activeAddress: undefined,
 			signingAddressSelection: 'signer',
 		})
-		assert.equal((await getSettings()).activeSimulationAddress, safeAddress)
+		assert.equal((await getRequiredSettings()).activeSimulationAddress, safeAddress)
 		await changeActiveAddressAndChain(simulationServicesOwner, websiteTabConnections, {
 			simulationMode: true,
 		})
-		assert.equal((await getSettings()).activeSimulationAddress, safeAddress)
+		assert.equal((await getRequiredSettings()).activeSimulationAddress, safeAddress)
 	})
 
 	for (const access of ['denied', 'origin', 'tab'] as const) test(`requires website authorization in addition to a confirmed signer (${ access })`, async () => {
 		installBrowserMock()
 		const { signerChainChanged } = await import('../../app/ts/background/providerMessageHandlers.js')
-		const { changeSimulationMode, getSettings, getTabState, updateTabState, websiteSocketToString, getPendingAccessRequests } = await loadModules()
+		const { changeSimulationMode, getRequiredSettings, getTabState, updateTabState, websiteSocketToString, getPendingAccessRequests } = await loadModules()
 		await changeSimulationMode({ simulationMode: false, activeSigningAddress: 1n })
 		const socket = { tabId: 1, connectionName: 0n }
 		await updateTabState(1, previous => ({ ...previous, signerAccounts: [1n], activeSigningAddress: 1n, signerChain: 1n }))
@@ -1612,12 +1647,12 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: 'https://callback-authorization.example', approved: access === 'tab', wantsToConnect: false },
 		} }]])
 		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
-		const before = { settings: await getSettings(), tab: await getTabState(1), prompts: await getPendingAccessRequests() }
+		const before = { settings: await getRequiredSettings(), tab: await getTabState(1), prompts: await getPendingAccessRequests() }
 		await signerChainChanged(simulationServicesOwner, connections, port, { method: 'signer_chainChanged', params: ['0x2', 1] }, access === 'origin' ? 'hasAccess' : 'noAccess', 1n)
 		if (access === 'denied') {
-			assert.deepEqual({ settings: await getSettings(), tab: await getTabState(1), prompts: await getPendingAccessRequests() }, before)
+			assert.deepEqual({ settings: await getRequiredSettings(), tab: await getTabState(1), prompts: await getPendingAccessRequests() }, before)
 		} else {
-			assert.equal((await getSettings()).activeRpcNetwork.chainId, 2n)
+			assert.equal((await getRequiredSettings()).activeRpcNetwork.chainId, 2n)
 			assert.equal((await getTabState(1)).signerChain, 2n)
 		}
 	})
@@ -1626,7 +1661,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		installBrowserMock()
 		const {
 			changeSimulationMode,
-			getSettings,
+			getRequiredSettings,
 			handleInterceptedRequest,
 			setUseSignersAddressAsActiveAddress,
 			updateTabState,
@@ -1662,7 +1697,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			params: ['0x2', 1],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		assert.equal(settings.activeRpcNetwork.chainId, 2n)
 		assert.equal(settings.activeSimulationAddress, signerAddress)
 	})
@@ -1672,7 +1707,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		const {
 			changeSimulationMode,
 			getActiveAddress,
-			getSettings,
+			getRequiredSettings,
 			handleInterceptedRequest,
 			updateTabState,
 			updateUserAddressBookEntries,
@@ -1706,7 +1741,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		} }]])
 		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 
-		assert.equal((await getActiveAddress(await getSettings(), socket.tabId))?.address, signerAddress)
+		assert.equal((await getActiveAddress(await getRequiredSettings(), socket.tabId))?.address, signerAddress)
 		await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
 			interceptorRequest: true,
 			interceptorInternalRequest: true,
@@ -1716,7 +1751,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 			params: ['0x2', 1],
 		}, websiteTabConnections, noopPublishRpcConnectionStatus)
 
-		const settings = await getSettings()
+		const settings = await getRequiredSettings()
 		assert.equal(settings.activeRpcNetwork.chainId, 2n)
 		assert.equal(settings.activeSigningSafeAddress, undefined)
 		assert.equal((await getActiveAddress(settings, socket.tabId))?.address, signerAddress)

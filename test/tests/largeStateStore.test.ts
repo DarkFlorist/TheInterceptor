@@ -8,6 +8,7 @@ import { SafeTransactionStacks } from '../../app/ts/types/safeTypes.js'
 import { updatePopupVisualisationState } from '../../app/ts/background/popupVisualisationUpdater.js'
 import { EthereumClientService } from '../../app/ts/simulation/services/EthereumClientService.js'
 import { TokenPriceService } from '../../app/ts/simulation/services/priceEstimator.js'
+import { browserStorageLocalSet } from '../../app/ts/utils/storageUtils.js'
 
 const stack: InterceptorTransactionStack = {
 	operations: [{
@@ -492,6 +493,8 @@ describe('large state store helpers', () => {
 		indexedDbState.set('popupVisualisation', savedResults)
 		indexedDbState.set('interceptorTransactionStack', serializedStack())
 		const rpcNetwork = { name: 'Ethereum', chainId: 1n, httpsRpc: 'https://ethereum.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+		await browserStorageLocalSet({ rpcEntries: [rpcNetwork], activeRpcNetwork: rpcNetwork })
+		const storageBeforeRefresh = { ...storageState }
 		const ethereum = new EthereumClientService({
 			rpcUrl: rpcNetwork.httpsRpc,
 			clearCache: () => undefined,
@@ -501,7 +504,7 @@ describe('large state store helpers', () => {
 		await assert.rejects(updatePopupVisualisationState(ethereum, new TokenPriceService(ethereum, 0), undefined, true), (caught: unknown) => caught === error)
 		assert.deepEqual(indexedDbState.get('popupVisualisation'), savedResults)
 		assert.deepEqual(indexedDbState.get('interceptorTransactionStack'), serializedStack())
-		assert.deepEqual(storageState, {})
+		assert.deepEqual(storageState, storageBeforeRefresh)
 	})
 
 	for (const operation of ['write', 'delete']) {

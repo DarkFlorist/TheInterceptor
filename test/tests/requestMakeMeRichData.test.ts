@@ -341,11 +341,11 @@ describe('startup storage recovery', () => {
 
 	test('recovers corrupt websiteAccess without resetting valid settings keys', async () => {
 		const storageState = installBrowserMock()
-		const { getSettings } = await loadModules()
+		const { getRequiredSettings } = await loadModules()
 		storageState.websiteAccess = [null]
 		storageState.simulationMode = false
 
-		const settings = await withSilencedConsole(async () => await getSettings())
+		const settings = await withSilencedConsole(async () => await getRequiredSettings())
 
 		assert.deepEqual(settings.websiteAccess, [])
 		assert.equal(settings.simulationMode, false)
@@ -355,13 +355,13 @@ describe('startup storage recovery', () => {
 
 	test('sanitizes remote website access icons in returned settings without mutating storage', async () => {
 		const storageState = installBrowserMock()
-		const { getSettings, getWebsiteAccess } = await loadModules()
+		const { getRequiredSettings, getWebsiteAccess } = await loadModules()
 		storageState.websiteAccess = [
 			{ website: { websiteOrigin: 'remote.example', icon: 'https://remote.example/favicon.png', title: 'Remote' }, access: true },
 			{ website: { websiteOrigin: 'cached.example', icon: 'data:image/png;base64,Y2FjaGVk', title: 'Cached' }, access: true },
 		]
 
-		const settings = await withSilencedConsole(async () => await getSettings())
+		const settings = await withSilencedConsole(async () => await getRequiredSettings())
 		const websiteAccess = await withSilencedConsole(async () => await getWebsiteAccess())
 
 		assert.equal(settings.websiteAccess[0]?.website.icon, undefined)
@@ -376,11 +376,11 @@ describe('startup storage recovery', () => {
 
 	test('recovers corrupt openedPageV2 without resetting valid settings keys', async () => {
 		const storageState = installBrowserMock()
-		const { getSettings } = await loadModules()
+		const { getRequiredSettings } = await loadModules()
 		storageState.openedPageV2 = null
 		storageState.useSignersAddressAsActiveAddress = true
 
-		const settings = await withSilencedConsole(async () => await getSettings())
+		const settings = await withSilencedConsole(async () => await getRequiredSettings())
 
 		assert.deepEqual(settings.openedPage, { page: 'Home' })
 		assert.equal(settings.useSignersAddressAsActiveAddress, true)

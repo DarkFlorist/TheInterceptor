@@ -1,10 +1,15 @@
-import { popupSnapshotMessageHandler, popupMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
+import { popupOptionalSnapshotMessageHandler, popupSnapshotMessageHandler, popupMessageHandler, type PopupMessageHandlerMap } from '../popupMessageHandlerRegistry.js'
 import { addOrModifyAddressBookEntry, changeAddOrModifyAddressWindowState, getAddressBookData, openNewTab, removeAddressBookEntry, requestAbiAndNameFromBlockExplorer, requestIdentifyAddress, setEnsNameForHash } from '../popupMessageHandlers.js'
 
 export const addressBookPopupMessageHandlers = {
-	popup_addOrModifyAddressBookEntry: popupMessageHandler('popup_addOrModifyAddressBookEntry', async (context, request) => await addOrModifyAddressBookEntry(context.simulationServicesOwner, context.websiteTabConnections, request)),
+	popup_addOrModifyAddressBookEntry: popupOptionalSnapshotMessageHandler(
+		'popup_addOrModifyAddressBookEntry',
+		async (context, request) => await addOrModifyAddressBookEntry(context.services?.ethereum, context.simulationServicesOwner, context.settings, context.websiteTabConnections, request),
+		(request) => request.data.type === 'safe',
+		(request) => request.data.useAsActiveAddress === true,
+	),
 	popup_getAddressBookData: popupMessageHandler('popup_getAddressBookData', async (_context, request) => await getAddressBookData(request)),
-	popup_removeAddressBookEntry: popupMessageHandler('popup_removeAddressBookEntry', async (context, request) => await removeAddressBookEntry(context.simulationServicesOwner, context.websiteTabConnections, request)),
+	popup_removeAddressBookEntry: popupMessageHandler('popup_removeAddressBookEntry', async (context, request) => await removeAddressBookEntry(context.simulationServicesOwner, context.settings, context.websiteTabConnections, request)),
 	popup_openAddressBook: popupMessageHandler('popup_openAddressBook', async () => await openNewTab('addressBook')),
 	popup_changeAddOrModifyAddressWindowState: popupSnapshotMessageHandler('popup_changeAddOrModifyAddressWindowState', async (context, request) => {
 		const { ethereum } = context.services
