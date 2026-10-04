@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getNextRpcRetryAt, getRpcWarningState, noNewBlockForOverTwoMins, shouldOfferBundledRpcReset, shouldShowRpcWarningCountdown } from '../../app/ts/utils/rpcConnectionUi.js'
+import { getNextRpcRetryAt, getRpcWarningState, noNewBlockForOverTwoMins, shouldApplyInitialRpcEntries, shouldOfferBundledRpcReset, shouldShowRpcWarningCountdown } from '../../app/ts/utils/rpcConnectionUi.js'
 
 const rpcNetwork = {
 	name: 'Test Chain',
@@ -43,6 +43,11 @@ function makeBlock(timestamp: Date, number = 123n) {
 }
 
 describe('rpcConnectionUi', () => {
+	test('does not overwrite a live RPC-list update with a stale initial load', () => {
+		assert.equal(shouldApplyInitialRpcEntries(false, 0, 0), true)
+		assert.equal(shouldApplyInitialRpcEntries(false, 0, 1), false)
+		assert.equal(shouldApplyInitialRpcEntries(true, 0, 0), false)
+	})
 	test('does not offer to reset the bundled singleton RPC list to itself', () => {
 		assert.equal(shouldOfferBundledRpcReset([rpcNetwork]), false)
 	})

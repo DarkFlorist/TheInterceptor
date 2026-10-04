@@ -480,8 +480,7 @@ async function verifyEstablishedBridgeRejectsForgedInternalRequests(source: Cont
 			requestId: 2,
 			internal: true,
 		})
-		// An observer only sees the content-side endpoint. Posting on it sends toward
-		// the inpage endpoint and cannot inject a request toward the extension.
+		// An observer only sees the content-side endpoint. Posting on it sends toward the inpage endpoint and cannot inject a request toward the extension.
 		legitimateChannel.port2.postMessage({
 			type: 'interceptor_bridge_request',
 			bridgeCapability: BRIDGE_CAPABILITY,

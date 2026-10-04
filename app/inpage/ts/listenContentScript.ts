@@ -305,11 +305,7 @@ function listenContentScript(connectionName: string | undefined, diagnosticsSour
 			reportInterceptorError(createForwardedDiagnosticsFromRaw(diagnosticsSource, 'connect inpage bridge', 'Missing inpage MessagePort', messageEvent.data, getForwardedDiagnosticsRequestContext(messageEvent.data)))
 			return
 		}
-		// Both scripts run at document_start. The inpage side retains the opposite
-		// MessagePort endpoint in a closure, so page code that observes this transferred
-		// endpoint can only send toward the inpage provider, not toward the extension.
-		// Pinning every request to this session capability also prevents a later page
-		// message or replacement port from being treated as the established bridge.
+		// Both scripts run at document_start. The inpage side retains the opposite MessagePort endpoint in a closure, so page code that observes this transferred endpoint can only send toward the inpage provider, not toward the extension. Pinning every request to this session capability also prevents a later page message or replacement port from being treated as the established bridge.
 		inpageBridgeCapability = messageEvent.data.bridgeCapability
 		inpagePort = port
 		inpagePort.onmessage = (portMessageEvent: MessageEvent<unknown>) => forwardInpageMessageToBackground(portMessageEvent.data)

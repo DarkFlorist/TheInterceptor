@@ -6,7 +6,7 @@ import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { getChainChangeConfirmationPromise, getPendingTransactionsAndMessages, getSignerPreference, getTabState, setSignerPreference, updateTabState } from './storageVariables.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { acquireSignerSelectionLease, releaseSignerSelectionLease, signerSelectionLeaseIsActive } from './signerSelectionLease.js'
-import { allowLegacySignerExecution, authorizeSocketForLegacySignerExecution, authorizeSocketForSignerExecution, blockSignerExecution, getSignerExecutionTargetForSocket, isAuthoritativeTopSocket, isTopFrameId, reconcileSignerExecutionDocument, setSignerExecutionTarget, socketIsEligibleForSignerExecution } from './signerExecutionAuthority.js'
+import { allowLegacySignerExecution, authorizeSocketForLegacySignerExecution, authorizeSocketForSignerExecution, blockSignerExecution, getSignerExecutionTargetForSocket, isAuthoritativeTopSocket, isTopFrameId, reconcileSignerExecutionDocument, setSignerExecutionTarget, signerFrameHasDifferentOrigin, socketIsEligibleForSignerExecution } from './signerExecutionAuthority.js'
 
 const tabHasPendingSignerWork = async (tabId: number) => {
 	const [pendingSignerRequests, pendingChainChange] = await Promise.all([
@@ -56,7 +56,13 @@ export function finishSignerProviderSelection(request: ProviderMessage) {
 export async function signerProvidersChanged(request: ProviderMessage, websiteOrigin: string, isTopFrame: boolean, frameId: number | undefined = isTopFrame ? 0 : undefined) {
 	const [announcedProviders, signerProviderCatalogOverflowed, documentGeneration] = SignerProvidersChanged.parse(request).params
 	const socket = request.uniqueRequestIdentifier.requestSocket
-	if (!reconcileSignerExecutionDocument(socket, websiteOrigin, documentGeneration, isTopFrame, frameId)) return { preferredSignerRdns: undefined, automaticSelectionAllowed: false, signerSelectionChangeAllowed: false, legacySignerAllowed: false }
+	if (!reconcileSignerExecutionDocument(socket, websiteOrigin, documentGeneration, isTopFrame, frameId)) return {
+		preferredSignerRdns: undefined,
+		automaticSelectionAllowed: false,
+		signerSelectionChangeAllowed: false,
+		legacySignerAllowed: false,
+		...(signerFrameHasDifferentOrigin(socket, websiteOrigin) ? { signerFrameIneligible: true } : {}),
+	}
 	if (!isTopFrame) {
 		const executionTarget = getSignerExecutionTargetForSocket(socket, websiteOrigin)
 		const selectedSignerProviderUuid = announcedProviders.some((provider) => provider.uuid === executionTarget) ? executionTarget : undefined

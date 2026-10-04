@@ -11,23 +11,26 @@ import { POPUP_PERFORMANCE_MARKS, clearPerformanceMarks } from '../../app/ts/uti
 
 type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => void
 
-function installBrowserMock() {
+function installBrowserMock(replyToMessage: (message: unknown) => unknown | Promise<unknown> = () => undefined) {
 	const sentMessages: unknown[] = []
-	let messageListener: RuntimeMessageListener | undefined
+	const messageListeners = new Set<RuntimeMessageListener>()
+	const messageListener: RuntimeMessageListener = (message, sender, sendResponse) => {
+		for (const listener of messageListeners) listener(message, sender, sendResponse)
+	}
 
 	Object.defineProperty(globalThis, 'browser', { configurable: true, value: {
 		runtime: {
 			lastError: null,
 			async sendMessage(message: unknown) {
 				sentMessages.push(message)
-				return undefined
+				return await replyToMessage(message)
 			},
 			getManifest: () => ({ manifest_version: 3 }),
 			onMessage: {
 				addListener: (listener: RuntimeMessageListener) => {
-					messageListener = listener
+					messageListeners.add(listener)
 				},
-				removeListener: () => undefined,
+				removeListener: (listener: RuntimeMessageListener) => messageListeners.delete(listener),
 			},
 			onConnect: { addListener: () => undefined, removeListener: () => undefined },
 		},
@@ -216,6 +219,7 @@ const defaultHomePage = (tabId: number, icon: { icon: string; iconReason: string
 		activeAddresses: [],
 		richList: [],
 		makeCurrentAddressRich: false,
+		hasSafeTransactionsToExport: false,
 		latestUnexpectedError: undefined,
 		websiteAccessAddressMetadata: [],
 		tabState: {
@@ -248,6 +252,7 @@ const defaultHomePageBootstrap = (tabId: number, icon: { icon: string; iconReaso
 		popupRefreshGeneration,
 		data: {
 			activeAddresses: homePage.data.activeAddresses,
+			hasSafeTransactionsToExport: homePage.data.hasSafeTransactionsToExport,
 			tabState: homePage.data.tabState,
 			settings: homePage.data.settings,
 			activeSigningAddressInThisTab: homePage.data.activeSigningAddressInThisTab,
@@ -398,8 +403,8 @@ describe('popup icon sync', () => {
 			assert.notEqual(findElementWithClass(loadedHomeCard, 'div', 'popup-home-rpc-selector'), undefined)
 			const signingButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Signing'))
 			const simulatingButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulating'))
-			assert.equal(signingButton?.getAttribute?.('class')?.includes('is-outlined'), false)
-			assert.equal(simulatingButton?.getAttribute?.('class')?.includes('is-outlined'), true)
+			assert.equal(signingButton?.getAttribute?.('class')?.includes('button--secondary'), false)
+			assert.equal(simulatingButton?.getAttribute?.('class')?.includes('button--secondary'), true)
 		} finally {
 			dom.restore()
 		}
@@ -545,7 +550,7 @@ describe('popup icon sync', () => {
 			const editButtonsAfterHomeData = buttonsAfterHomeData.filter((button) => button.textContent?.toLowerCase().includes('edit'))
 			const copyButtonAfterHomeData = buttonsAfterHomeData.find((button) => button.textContent?.toLowerCase().includes('copy'))
 			const timePickerDeltaInputAfterHomeData = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('type') === 'number' && !hasClass(input, 'popup-loading-control'))
-			assert.equal(simulatingButtonAfterHomeData?.getAttribute?.('class')?.includes('is-outlined'), false)
+			assert.equal(simulatingButtonAfterHomeData?.getAttribute?.('class')?.includes('button--secondary'), false)
 			assert.equal(isButtonDisabled(rpcButtonAfterHomeData), false)
 			assert.equal(timePickerModeButtonAfterHomeData, undefined)
 			assert.equal(timePickerDeltaButtonAfterHomeData, undefined)
@@ -683,7 +688,7 @@ describe('popup icon sync', () => {
 		}
 	})
 
-	test('does not request full home data after popup live simulation updates', async () => {
+	test('requests cached export availability without a full refresh after live simulation updates', async () => {
 		const dom = installDomMock()
 		const { messageListener, sentMessages } = installBrowserMock()
 		try {
@@ -702,6 +707,12 @@ describe('popup icon sync', () => {
 			})
 			const listener = messageListener()
 			assert.equal(typeof listener, 'function')
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 1),
+				}, undefined, () => undefined)
+			})
 			sentMessages.splice(0)
 
 			await act(() => {
@@ -712,7 +723,8 @@ describe('popup icon sync', () => {
 				}, undefined, () => undefined)
 			})
 
-			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestNewHomeData'), false)
+			assert.equal(sentMessages.some((message) => isHomeDataRequest(message, false, false)), true)
+			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_refreshHomeData'), false)
 		} finally {
 			dom.restore()
 		}

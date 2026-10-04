@@ -10,9 +10,11 @@ import { resolveSignal, type SignalOrValue } from '../../utils/signals.js'
 export function NoParsedAvailable({ to, renameAddressCallBack }: { to: AddressBookEntry | undefined, renameAddressCallBack: RenameAddressCallBack }) {
 	if (to?.abi === undefined) {
 		if (to === undefined) return <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available</p>
-		return <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available for&nbsp;
+		return <div style = 'display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem;'>
+			<p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>No ABI available for&nbsp;</p>
 			<SmallAddress addressBookEntry = { to } renameAddressCallBack = { renameAddressCallBack } />
-		</p>
+			<button type = 'button' class = 'button is-primary is-small' onClick = { () => renameAddressCallBack(to) }>Add ABI</button>
+		</div>
 	}
 	if (to === undefined) return <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Unable to parse input data with the available ABI</p>
 	return <p class = 'paragraph' style = 'color: var(--subtitle-text-color)'>Unable to parse input data with the available ABI for&nbsp;

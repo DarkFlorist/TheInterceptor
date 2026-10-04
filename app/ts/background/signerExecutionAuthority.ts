@@ -82,8 +82,7 @@ export function registerAuthoritativeTopSocket(socket: WebsiteSocket, websiteOri
 		return false
 	}
 	authoritativeTopSocketKeys.set(socket.tabId, key)
-	// Every document starts blocked until its initial (possibly empty) EIP-6963
-	// catalog has been reconciled with the site's stored preference.
+	// Every document starts blocked until its initial (possibly empty) EIP-6963 catalog has been reconciled with the site's stored preference.
 	signerExecutionAuthorities.set(socket.tabId, {
 		websiteOrigin,
 		documentGeneration: undefined,
@@ -174,6 +173,11 @@ export function getSignerExecutionTargetForSocket(socket: WebsiteSocket, website
 		|| authority.websiteOrigin !== websiteOrigin
 		|| !authority.eligibleSocketKeys.has(socketKey(socket))) return undefined
 	return authority.providerUuid
+}
+
+export function signerFrameHasDifferentOrigin(socket: WebsiteSocket, websiteOrigin: string) {
+	const authority = signerExecutionAuthorities.get(socket.tabId)
+	return authority !== undefined && authority.websiteOrigin !== websiteOrigin
 }
 
 export function socketIsEligibleForSignerExecution(socket: WebsiteSocket, websiteOrigin: string) {

@@ -18,12 +18,12 @@ export function SignerLogoText(param: { signerName: SignalOrValue<SignerName>, t
 	const providerIcon = param.providerIcon === undefined ? undefined : resolveSignal(param.providerIcon)
 	const signerLogo = getSignerDisplayLogo(resolveSignal(param.signerName), providerIcon)
 	const showLogoSlot = signerLogo !== undefined || param.reserveLogoSpace === true
-	return <p class = 'signer-logo-text'>
+	return <span class = 'signer-logo-text'>
 		{ showLogoSlot ? <span class = 'signer-logo-slot' aria-hidden = 'true'>
 			{ signerLogo === undefined ? <SignerLogoPlaceholder /> : <img width = '24' height = '24' src = { signerLogo }/> }
 		</span> : <></> }
 		<span>{ resolveSignal(param.text) }</span>
-	</p>
+	</span>
 }
 
 export function SignersLogoName(param: { signerName: SignalOrValue<SignerName> }) {

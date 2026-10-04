@@ -10,13 +10,20 @@ export type PageDefinition = {
 	htmlStyle: string
 	bodyStyle?: string
 	rootMarkup?: string
-	includeBadgeStyles?: boolean
-	includeDividerStyles?: boolean
 	manifestV3HtmlStyle?: string
 	manifestV3PolyfillPosition?: PolyfillPosition
 }
 
 const projectRoot = path.join(path.dirname(url.fileURLToPath(import.meta.url)), '..')
+export const stylesheetFilenames = [
+	'interceptor-framework.css',
+	'interceptor-controls.css',
+	'interceptor-theme.css',
+	'interceptor-components.css',
+	'interceptor-ui.css',
+	'interceptor-pages.css',
+] as const
+
 export const pageDefinitions: readonly PageDefinition[] = [
 	{
 		name: 'addressBook',
@@ -51,7 +58,6 @@ export const pageDefinitions: readonly PageDefinition[] = [
 		title: 'The Interceptor',
 		htmlStyle: 'background-color: var(--bg-color); width: 520px; height: 600px; min-width: 520px; overflow-y: inherit;',
 		bodyStyle: 'width: 520px; height: 600px; background-color: var(--bg-color); min-width: 520px; margin: auto;',
-		includeBadgeStyles: true,
 	},
 	{
 		name: 'settingsView',
@@ -63,7 +69,6 @@ export const pageDefinitions: readonly PageDefinition[] = [
 		title: 'Simulation Stack - The Interceptor',
 		htmlStyle: 'background-color: var(--bg-color); overflow-y: inherit;',
 		rootMarkup: `<div id = 'simulation-stack-root'>Loading...</div>`,
-		includeBadgeStyles: true,
 	},
 	{
 		name: 'websiteAccess',
@@ -75,7 +80,6 @@ export const pageDefinitions: readonly PageDefinition[] = [
 		name: 'watchAsset',
 		title: 'Watch Asset - The Interceptor',
 		htmlStyle: 'background-color: var(--bg-color); overflow-y: inherit;',
-		includeDividerStyles: false,
 	},
 ]
 
@@ -84,12 +88,7 @@ const polyfillScript = `<script src = '../vendor/webextension-polyfill/dist/brow
 export function renderExtensionPage(definition: PageDefinition, manifestVersion: 2 | 3) {
 	const htmlStyle = manifestVersion === 3 ? definition.manifestV3HtmlStyle ?? definition.htmlStyle : definition.htmlStyle
 	const bodyStyle = definition.bodyStyle ?? 'background-color: var(--bg-color); margin: auto;'
-	const stylesheets = [
-		`<link rel = 'stylesheet' type = 'text/css' href = '../css/bulma.css' />`,
-		...(definition.includeDividerStyles === false ? [] : [`<link rel = 'stylesheet' type = 'text/css' href = '../css/bulma-divider.css' />`]),
-		...(definition.includeBadgeStyles === true ? [`<link rel = 'stylesheet' type = 'text/css' href = '../css/bulma-badge.css' />`] : []),
-		`<link rel = 'stylesheet' type = 'text/css' href = '../css/interceptor.css' />`,
-	]
+	const stylesheets = stylesheetFilenames.map((filename) => `<link rel = 'stylesheet' type = 'text/css' href = '../css/${ filename }' />`)
 	const manifestV3PolyfillPosition = definition.manifestV3PolyfillPosition ?? 'after-root'
 	const polyfillBeforeRoot = manifestVersion === 2 || manifestV3PolyfillPosition === 'before-root'
 	const rootMarkup = definition.rootMarkup ?? '<main>Loading...</main>'

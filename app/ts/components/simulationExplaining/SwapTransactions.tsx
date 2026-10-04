@@ -175,11 +175,8 @@ export function identifyRoutes(simulatedAndVisualizedTransaction: SimulatedAndVi
 		if (!('amount' in result)) return false // cannot deal with nft's
 
 		const from = graph.get(fromAddress)
-		if(!from!.has(tokenAddress)) {
-			from!.set(tokenAddress, { to: toAddress, tokenResultIndex: tokenResultIndex } )
-		} else {
-			return false
-		}
+		if (from === undefined || from.has(tokenAddress)) return false
+		from.set(tokenAddress, { to: toAddress, tokenResultIndex: tokenResultIndex } )
 	}
 
 	// traverse chain

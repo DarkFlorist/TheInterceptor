@@ -1,5 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
+import { readInterceptorAppCss } from './cssTestUtils.js'
 
 function getRuleBody(css: string, selector: string) {
 	const selectorIndex = css.indexOf(selector)
@@ -12,14 +13,14 @@ function getRuleBody(css: string, selector: string) {
 
 describe('popup loading layout and animation CSS', () => {
 	test('keeps the shared active address layout more specific than the generic log table', async () => {
-		const css = await Bun.file('app/css/interceptor.css').text()
+		const css = await readInterceptorAppCss()
 		const activeAddressRule = getRuleBody(css, '.log-table.active-address-row {')
 
 		assert.match(activeAddressRule, /grid-template-columns:\s*auto max-content/)
 	})
 
 	test('sizes loading controls from their real content instead of fixed button dimensions', async () => {
-		const css = await Bun.file('app/css/interceptor.css').text()
+		const css = await readInterceptorAppCss()
 		const loadingControlRule = getRuleBody(css, '.popup-loading-control {')
 		const loadingInputRule = getRuleBody(css, '.input.popup-loading-input {')
 		const rpcSlotRule = getRuleBody(css, '.popup-home-rpc-selector {')
@@ -33,7 +34,7 @@ describe('popup loading layout and animation CSS', () => {
 	})
 
 	test('releases reveal transforms after animations so dropdowns keep their stacking behavior', async () => {
-		const css = await Bun.file('app/css/interceptor.css').text()
+		const css = await readInterceptorAppCss()
 		const revealRule = getRuleBody(css, '.popup-data-reveal {')
 		const inlineRevealRule = getRuleBody(css, '.popup-data-reveal-inline {')
 

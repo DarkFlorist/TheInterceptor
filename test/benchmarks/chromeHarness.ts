@@ -316,8 +316,15 @@ export async function connectTarget(browserDebugPort: number, targetId: string) 
 	return connection
 }
 
-export async function waitForAnyExtensionServiceWorker(browserDebugPort: number, timeoutMs = 15_000) {
-	return await waitForTarget(browserDebugPort, (target) => target.type === 'service_worker' && target.url.startsWith('chrome-extension://'), timeoutMs, 'extension service worker')
+export async function waitForInterceptorExtensionServiceWorker(browserDebugPort: number, timeoutMs = 15_000) {
+	return await waitForTarget(
+		browserDebugPort,
+		(target) => target.type === 'service_worker'
+			&& target.url.startsWith('chrome-extension://')
+			&& target.url.endsWith('/js/backgroundServiceWorker.js'),
+		timeoutMs,
+		'Interceptor extension service worker',
+	)
 }
 
 export async function waitForTargetByUrl(browserDebugPort: number, urlPrefix: string, timeoutMs = 15_000) {
@@ -387,7 +394,7 @@ export async function waitForRegisteredContentScripts(connection: CdpConnection,
 	}, timeoutMs, `registered content scripts ${ expectedIds.join(', ') }`)
 }
 
-export async function readExtensionLargeStateValue<T = unknown>(connection: CdpConnection, key: 'interceptorTransactionStack' | 'popupVisualisation'): Promise<T | undefined> {
+export async function readExtensionLargeStateValue<T = unknown>(connection: CdpConnection, key: 'interceptorTransactionStack' | 'popupVisualisation' | 'safeTransactionStacks'): Promise<T | undefined> {
 	return await connection.evaluate<T | undefined>(`(async () => {
 		const key = ${ JSON.stringify(key) }
 		if (typeof indexedDB !== 'undefined') {

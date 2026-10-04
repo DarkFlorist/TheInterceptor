@@ -21,3 +21,21 @@ test('bundled content script listener has an undefined completion value', async 
 	assert.equal(completionValue, undefined)
 	assert.equal(vm.runInNewContext('typeof globalThis[Symbol.for("TheInterceptor.listenContentScript")]', context), 'function')
 })
+
+test('bundled main-world provider is valid as a classic script', async () => {
+	const buildResult = await Bun.build({
+		entrypoints: [path.resolve('app/inpage/ts/inpage.ts')],
+		target: 'browser',
+		format: 'esm',
+		splitting: false,
+		write: false,
+	})
+	if (!buildResult.success) throw new Error(buildResult.logs.map((log) => log.message).join('\n'))
+	const output = buildResult.outputs[0]
+	if (output === undefined) throw new Error('Bundling the main-world provider produced no output')
+	const source = await output.text()
+
+	assert.doesNotMatch(source, /^\s*(?:export|import)\b/mu)
+	assert.doesNotMatch(source, /\bexports\s*(?:\.|\[)/u)
+	assert.doesNotThrow(() => new vm.Script(source))
+})

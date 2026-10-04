@@ -1,3 +1,5 @@
+import { InterceptorMessageToInpage } from '../../app/ts/types/interceptor-messages.js'
+import { serialize } from '../../app/ts/types/wire-types.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { ProviderMessage } from '../../app/ts/utils/requests.js'
@@ -131,6 +133,21 @@ describe('EIP-6963 signer provider selection', () => {
 		assert.deepEqual(result, { preferredSignerRdns: undefined, automaticSelectionAllowed: false, signerSelectionChangeAllowed: false, legacySignerAllowed: false })
 		assert.deepEqual(tabState.availableSignerProviders, [])
 		assert.equal(tabState.selectedSignerProvider, undefined)
+	})
+
+	test('marks a cross-origin child definitively ineligible without authorizing signer execution', async () => {
+		installBrowserMock()
+		const { signerProvidersChanged } = await import('../../app/ts/background/signerProviderSelection.js')
+		const { socketCanExecuteWithSelectedSigner } = await import('../../app/ts/background/signerExecutionAuthority.js')
+		const request = createProviderMessage('signer_providers_changed', [[provider], false])
+		const result = await signerProvidersChanged(request, 'frame.example', false, 2)
+		const delivered = InterceptorMessageToInpage.parse(serialize(InterceptorMessageToInpage, { interceptorApproved: true, requestId: request.uniqueRequestIdentifier.requestId, type: 'result', method: 'signer_providers_changed', result }))
+		if (delivered.method !== 'signer_providers_changed' || !('result' in delivered) || !isRecord(delivered.result)) throw new Error('Missing serialized provider catalog reply')
+		assert.equal(delivered.result.signerFrameIneligible, true)
+		assert.equal(result.signerFrameIneligible, true)
+		assert.equal(result.signerSelectionChangeAllowed, false)
+		assert.equal(result.legacySignerAllowed, false)
+		assert.equal(socketCanExecuteWithSelectedSigner(request.uniqueRequestIdentifier.requestSocket), false)
 	})
 
 	test('fails closed when a remembered RDNS matches more than one announced provider', async () => {

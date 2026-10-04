@@ -1,4 +1,4 @@
-import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForAnyExtensionServiceWorker, waitForPerformanceMarks, waitForPopupTarget, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
+import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForPopupTarget, waitForRegisteredContentScripts, waitForTargetByUrl, waitForTargetGone } from './chromeHarness.js'
 import { startChromeCommunicationPageServer } from './chromeCommunicationPageServer.js'
 import type { CdpConnection } from './chromeHarness.js'
 
@@ -138,7 +138,7 @@ async function main() {
 	let confirmTargetId: string | undefined
 	let selectionTargetId: string | undefined
 	try {
-		const workerTarget = await waitForAnyExtensionServiceWorker(chrome.browserDebugPort, 30_000)
+		const workerTarget = await waitForInterceptorExtensionServiceWorker(chrome.browserDebugPort, 30_000)
 		const extensionId = extractExtensionId(workerTarget.url)
 		const workerConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
 		try {

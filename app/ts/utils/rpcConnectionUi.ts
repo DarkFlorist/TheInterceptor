@@ -48,3 +48,6 @@ export function shouldShowRpcWarningCountdown(warningState: RpcWarningState, now
 export function shouldOfferBundledRpcReset(rpcEntries: RpcEntries) {
 	return rpcEntries.length === 0
 }
+export function shouldApplyInitialRpcEntries(disposed: boolean, initialUpdateVersion: number, currentUpdateVersion: number) {
+	return !disposed && initialUpdateVersion === currentUpdateVersion
+}

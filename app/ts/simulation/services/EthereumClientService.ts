@@ -5,8 +5,10 @@ import { keccak256 } from '../../utils/ethereumPrimitives.js'
 import type { IEthereumJSONRpcRequestHandler } from './EthereumJSONRpcRequestHandler.js'
 import { addressString, bigintSecondsToDate, bytes32String, dataString, dateToBigintSeconds, max } from '../../utils/bigint.js'
 import { type BlockCalls, type BlockOverrides, EthSimulateV1Result, type EthSimulateV1Params } from '../../types/ethSimulate-types.js'
-import { EthGetStorageAtResponse, EthTransactionReceiptResponse, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
-import { DEFAULT_BLOCK_MANIPULATION, getBlockTimeManipulationSeconds, simulatePersonalSign } from './SimulationModeEthereumClientService.js'
+import { EthGetFeeHistoryResponse, EthGetStorageAtResponse, EthTransactionReceiptResponse, type FeeHistory, type EthGetLogsRequest, EthGetLogsResponse, type PartialEthereumTransaction } from '../../types/JsonRpc-types.js'
+import { getBlockTimeManipulationSeconds } from './simulationBlockParameters.js'
+import { simulatePersonalSign } from './simulationPersonalSigning.js'
+import { DEFAULT_BLOCK_MANIPULATION } from '../../config/defaults.js'
 import { getEcRecoverOverride } from '../../utils/ethereumByteCodes.js'
 import * as funtypes from 'funtypes'
 import type { RpcEntry } from '../../types/rpc.js'
@@ -279,18 +281,23 @@ export class EthereumClientService {
 		return EthereumSignedTransactionWithBlockData.parse(response)
 	}
 
-	public readonly call = async (transaction: Partial<Pick<IUnsignedTransaction1559, 'to' | 'from' | 'input' | 'value' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'gasLimit'>>, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
-		if (transaction.to === null) throw new Error('To cannot be null')
+	public readonly call = async (transaction: Partial<Pick<IUnsignedTransaction1559, 'to' | 'from' | 'input' | 'value' | 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'gasLimit' | 'accessList'>>, blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {
 		const params = {
 			...(transaction.to !== undefined ? { to: transaction.to } : {}),
 			...(transaction.from !== undefined ? { from: transaction.from } : {}),
 			...(transaction.input !== undefined ? { data: transaction.input } : {}),
 			...(transaction.value !== undefined ? { value: transaction.value } : {}),
-			...transaction.maxFeePerGas !== undefined && transaction.maxPriorityFeePerGas !== undefined ? { gasPrice: transaction.maxFeePerGas + transaction.maxPriorityFeePerGas } : {},
+			...(transaction.maxFeePerGas !== undefined ? { maxFeePerGas: transaction.maxFeePerGas } : {}),
+			...(transaction.maxPriorityFeePerGas !== undefined ? { maxPriorityFeePerGas: transaction.maxPriorityFeePerGas } : {}),
 			...(transaction.gasLimit !== undefined ? { gas: transaction.gasLimit } : {}),
+			...(transaction.accessList !== undefined ? { accessList: transaction.accessList } : {}),
 		}
 		const response = await this.requestHandler.jsonRpcRequest({ method: 'eth_call', params: [params, blockTag] }, requestAbortController)
 		return EthereumData.parse(response)
+	}
+
+	public readonly getFeeHistory = async (request: FeeHistory, requestAbortController: AbortController | undefined) => {
+		return EthGetFeeHistoryResponse.parse(await this.requestHandler.jsonRpcRequest(request, requestAbortController))
 	}
 
 	public readonly ethSimulateV1 = async (blockStateCalls: readonly BlockCalls[], blockTag: EthereumBlockTag, requestAbortController: AbortController | undefined) => {

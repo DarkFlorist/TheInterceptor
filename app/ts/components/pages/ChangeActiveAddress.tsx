@@ -48,7 +48,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 			</header>
 			<section class = 'modal-card-body'>
 				<ul>
-					<li>
+					{ getSignerAccount() === undefined ? <></> : <li>
 						<div class = 'card hoverable' onClick = { () => { changeAndStoreActiveAddress('signer') } }>
 							<div class = 'card-content hoverable' style = 'cursor: pointer;'>
 								<div class = 'media'>
@@ -70,7 +70,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 								</div>
 							</div>
 						</div>
-					</li>
+					</li> }
 
 					{ activeAddresses.map((activeAddress) => (
 						<li key = { activeAddress.address.toString() }>

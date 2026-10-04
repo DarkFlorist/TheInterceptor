@@ -1,4 +1,5 @@
-
+import { ModifyMakeMeRich, EnableSimulationMode, ChangeActiveChain, ChangeActiveAddress } from './popupSettingsRequests.js'
+import type { popupSettingsOperations } from './popupSettingsProtocol.js'
 import * as funtypes from 'funtypes'
 import { AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import { PopupOrTabId } from './websiteAccessTypes.js'
@@ -8,6 +9,7 @@ import { PopupPendingTransactionOrSignableMessage } from './accessRequest.js'
 import { RpcConnectionStatus } from './user-interface-types.js'
 import { SimulateExecutionReply as PopupSimulateExecutionReply } from './simulateExecutionReply.js'
 import { SimulateGnosisSafeTransaction as RequestSimulateGnosisSafeTransaction, SimulateGovernanceContractExecution as RequestSimulateGovernanceContractExecution } from './simulateExecutionRequests.js'
+import { SafeStackExport } from './safeTypes.js'
 
 export type UnexpectedErrorOccured = funtypes.Static<typeof UnexpectedErrorOccured>
 export const UnexpectedErrorOccured = funtypes.ReadonlyObject({
@@ -54,10 +56,18 @@ const RequestLatestUnexpectedErrorReply = funtypes.ReadonlyObject({
 })
 
 type RequestInterceptorSimulationInputReply = funtypes.Static<typeof RequestInterceptorSimulationInputReply>
-const RequestInterceptorSimulationInputReply = funtypes.ReadonlyObject({
-	method: funtypes.Literal('popup_requestInterceptorSimulationInput'),
-	ethSimulateV1InputString: funtypes.String
-})
+const RequestInterceptorSimulationInputReply = funtypes.Union(
+	funtypes.ReadonlyObject({
+		method: funtypes.Literal('popup_requestInterceptorSimulationInput'),
+		ok: funtypes.Literal(true),
+		ethSimulateV1InputString: funtypes.String,
+	}),
+	funtypes.ReadonlyObject({
+		method: funtypes.Literal('popup_requestInterceptorSimulationInput'),
+		ok: funtypes.Literal(false),
+		message: funtypes.String,
+	}),
+)
 
 export type ImportSimulationStackReply = funtypes.Static<typeof ImportSimulationStackReply>
 export const ImportSimulationStackReply = funtypes.Union(
@@ -67,6 +77,88 @@ export const ImportSimulationStackReply = funtypes.Union(
 	}),
 	funtypes.ReadonlyObject({
 		type: funtypes.Literal('ImportSimulationStackReply'),
+		ok: funtypes.Literal(false),
+		message: funtypes.String,
+	}),
+)
+
+export type AddOrModifyAddressBookEntryReply = funtypes.Static<typeof AddOrModifyAddressBookEntryReply>
+export const AddOrModifyAddressBookEntryReply = funtypes.Union(
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('AddOrModifyAddressBookEntryReply'),
+		ok: funtypes.Literal(true),
+	}),
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('AddOrModifyAddressBookEntryReply'),
+		ok: funtypes.Literal(false),
+		message: funtypes.String,
+	}),
+)
+
+export type PopupSettingsChangeReply = funtypes.Static<typeof PopupSettingsChangeReply>
+export const PopupSettingsChangeReply = funtypes.Union(
+	funtypes.ReadonlyObject({ type: funtypes.Literal('PopupSettingsChangeReply'), ok: funtypes.Literal(true) }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('PopupSettingsChangeReply'), ok: funtypes.Literal(false), message: funtypes.String }),
+)
+
+export type ChangeActiveAddressReply = funtypes.Static<typeof ChangeActiveAddressReply>
+export const ChangeActiveAddressReply = funtypes.Union(
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('ChangeActiveAddressReply'),
+		ok: funtypes.Literal(true),
+	}),
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('ChangeActiveAddressReply'),
+		ok: funtypes.Literal(false),
+		message: funtypes.String,
+	}),
+)
+
+export type SetSafeSimulationSigner = funtypes.Static<typeof SetSafeSimulationSigner>
+export const SetSafeSimulationSigner = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_setSafeSimulationSigner'),
+	data: funtypes.ReadonlyObject({
+		chainId: EthereumQuantity,
+		safeAddress: EthereumAddress,
+		safeSimulationSignerAddress: funtypes.Union(EthereumAddress, funtypes.Undefined),
+	}),
+})
+
+export type SetSafeSimulationSignerReply = funtypes.Static<typeof SetSafeSimulationSignerReply>
+export const SetSafeSimulationSignerReply = funtypes.Union(
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('SetSafeSimulationSignerReply'),
+		ok: funtypes.Literal(true),
+	}),
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('SetSafeSimulationSignerReply'),
+		ok: funtypes.Literal(false),
+		message: funtypes.String,
+	}),
+)
+
+type RequestSafeStackExportReply = funtypes.Static<typeof RequestSafeStackExportReply>
+const RequestSafeStackExportReply = funtypes.Union(
+	funtypes.ReadonlyObject({
+		method: funtypes.Literal('popup_requestSafeStackExport'),
+		ok: funtypes.Literal(true),
+		safeStackJson: funtypes.String,
+	}),
+	funtypes.ReadonlyObject({
+		method: funtypes.Literal('popup_requestSafeStackExport'),
+		ok: funtypes.Literal(false),
+		message: funtypes.String,
+	}),
+)
+
+export type ImportSafeStackReply = funtypes.Static<typeof ImportSafeStackReply>
+export const ImportSafeStackReply = funtypes.Union(
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('ImportSafeStackReply'),
+		ok: funtypes.Literal(true),
+	}),
+	funtypes.ReadonlyObject({
+		type: funtypes.Literal('ImportSafeStackReply'),
 		ok: funtypes.Literal(false),
 		message: funtypes.String,
 	}),
@@ -120,7 +212,8 @@ export type RequestIdentifyAddress = funtypes.Static<typeof RequestIdentifyAddre
 export const RequestIdentifyAddress = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestIdentifyAddress'),
 	data: funtypes.ReadonlyObject({
-		address: EthereumAddress
+		address: EthereumAddress,
+		chainId: ChainIdWithUniversal,
 	})
 }).asReadonly()
 
@@ -128,8 +221,27 @@ type RequestIdentifyAddressReply = funtypes.Static<typeof RequestIdentifyAddress
 const RequestIdentifyAddressReply = funtypes.ReadonlyObject({
 	method: funtypes.Literal('popup_requestIdentifyAddress'),
 	data: funtypes.ReadonlyObject({
-		addressBookEntry: AddressBookEntry
+		chainId: ChainIdWithUniversal,
+		addressBookEntry: funtypes.Union(AddressBookEntry, funtypes.Undefined),
 	})
+}).asReadonly()
+
+export type RequestSafeContractState = funtypes.Static<typeof RequestSafeContractState>
+export const RequestSafeContractState = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_requestSafeContractState'),
+	data: funtypes.ReadonlyObject({ address: EthereumAddress, chainId: ChainIdWithUniversal }),
+}).asReadonly()
+
+type RequestSafeContractStateReply = funtypes.Static<typeof RequestSafeContractStateReply>
+const RequestSafeContractStateReply = funtypes.ReadonlyObject({
+	method: funtypes.Literal('popup_requestSafeContractState'),
+	data: funtypes.ReadonlyObject({
+		chainId: ChainIdWithUniversal,
+		result: funtypes.Union(
+			funtypes.ReadonlyObject({ ok: funtypes.Literal(true), owners: funtypes.ReadonlyArray(EthereumAddress), ownerAddressBookEntries: funtypes.ReadonlyArray(AddressBookEntry), version: funtypes.String }),
+			funtypes.ReadonlyObject({ ok: funtypes.Literal(false), message: funtypes.String }),
+		),
+	}),
 }).asReadonly()
 
 type RequestIsMainWindowOpen = funtypes.Static<typeof RequestIsMainWindowOpen>
@@ -165,17 +277,32 @@ const PopupReadyAndListeningReply = funtypes.ReadonlyObject({
 	}),
 }).asReadonly()
 
-type PopupRequestsRepliesMap = {
+type PopupSettingsReplyCodecs = {
+	ChangeActiveAddressReply: typeof ChangeActiveAddressReply
+	PopupSettingsChangeReply: typeof PopupSettingsChangeReply
+}
+
+// Every registered settings operation must provide the reply codec declared by its descriptor.
+type PopupSettingsRepliesMap = {
+	[Method in keyof typeof popupSettingsOperations]: PopupSettingsReplyCodecs[typeof popupSettingsOperations[Method]['replyType']]
+}
+
+type PopupRequestsRepliesMap = PopupSettingsRepliesMap & {
 	popup_requestMakeMeRichData: typeof RequestMakeMeRichDataReply
 	popup_requestActiveAddresses: typeof RequestActiveAddressesReply
 	popup_requestSimulationMode: typeof RequestSimulationModeReply
 	popup_requestLatestUnexpectedError: typeof RequestLatestUnexpectedErrorReply
 	popup_requestInterceptorSimulationInput: typeof RequestInterceptorSimulationInputReply
 	popup_importSimulationStack: typeof ImportSimulationStackReply
+	popup_addOrModifyAddressBookEntry: typeof AddOrModifyAddressBookEntryReply
+	popup_setSafeSimulationSigner: typeof SetSafeSimulationSignerReply
+	popup_requestSafeStackExport: typeof RequestSafeStackExportReply
+	popup_importSafeStack: typeof ImportSafeStackReply
 	popup_requestCompleteVisualizedSimulation: typeof RequestCompleteVisualizedSimulationReply
 	popup_requestSimulationMetadata: typeof RequestSimulationMetadataReply
 	popup_requestAbiAndNameFromBlockExplorer: typeof RequestAbiAndNameFromBlockExplorerReply
 	popup_requestIdentifyAddress: typeof RequestIdentifyAddressReply
+	popup_requestSafeContractState: typeof RequestSafeContractStateReply
 	popup_simulateGovernanceContractExecution: typeof PopupSimulateExecutionReply
 	popup_simulateGnosisSafeTransaction: typeof PopupSimulateExecutionReply
 	popup_isMainPopupWindowOpen: typeof RequestIsMainWindowOpen
@@ -190,10 +317,19 @@ export const PopupRequestsReplies: PopupRequestsRepliesMap = {
 	popup_requestLatestUnexpectedError: RequestLatestUnexpectedErrorReply,
 	popup_requestInterceptorSimulationInput: RequestInterceptorSimulationInputReply,
 	popup_importSimulationStack: ImportSimulationStackReply,
+	popup_addOrModifyAddressBookEntry: AddOrModifyAddressBookEntryReply,
+	popup_changeActiveAddress: ChangeActiveAddressReply,
+	popup_enableSimulationMode: PopupSettingsChangeReply,
+	popup_changeActiveRpc: PopupSettingsChangeReply,
+	popup_modifyMakeMeRich: PopupSettingsChangeReply,
+	popup_setSafeSimulationSigner: SetSafeSimulationSignerReply,
+	popup_requestSafeStackExport: RequestSafeStackExportReply,
+	popup_importSafeStack: ImportSafeStackReply,
 	popup_requestCompleteVisualizedSimulation: RequestCompleteVisualizedSimulationReply,
 	popup_requestSimulationMetadata: RequestSimulationMetadataReply,
 	popup_requestAbiAndNameFromBlockExplorer: RequestAbiAndNameFromBlockExplorerReply,
 	popup_requestIdentifyAddress: RequestIdentifyAddressReply,
+	popup_requestSafeContractState: RequestSafeContractStateReply,
 	popup_simulateGovernanceContractExecution: PopupSimulateExecutionReply,
 	popup_simulateGnosisSafeTransaction: PopupSimulateExecutionReply,
 	popup_isMainPopupWindowOpen: RequestIsMainWindowOpen,
@@ -214,6 +350,7 @@ export const RequestAbiAndNameFromBlockExplorer = funtypes.ReadonlyObject({
 export const PopupMessageReplyRequests = funtypes.Union(
 	RequestAbiAndNameFromBlockExplorer,
 	RequestIdentifyAddress,
+	RequestSafeContractState,
 	RequestSimulateGovernanceContractExecution,
 	RequestSimulateGnosisSafeTransaction,
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestMakeMeRichData') }),
@@ -222,6 +359,14 @@ export const PopupMessageReplyRequests = funtypes.Union(
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestLatestUnexpectedError') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestInterceptorSimulationInput') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_importSimulationStack'), data: InterceptorSimulationExport }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_addOrModifyAddressBookEntry'), data: AddressBookEntry }),
+	ChangeActiveAddress,
+	EnableSimulationMode,
+	ChangeActiveChain,
+	ModifyMakeMeRich,
+	SetSafeSimulationSigner,
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSafeStackExport') }),
+	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_importSafeStack'), data: SafeStackExport }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestCompleteVisualizedSimulation') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_requestSimulationMetadata') }),
 	funtypes.ReadonlyObject({ method: funtypes.Literal('popup_isMainPopupWindowOpen') }),
@@ -250,10 +395,17 @@ export type PopupReplyOption =
 	| RequestLatestUnexpectedErrorReply
 	| RequestInterceptorSimulationInputReply
 	| ImportSimulationStackReply
+	| AddOrModifyAddressBookEntryReply
+	| PopupSettingsChangeReply
+	| ChangeActiveAddressReply
+	| SetSafeSimulationSignerReply
+	| RequestSafeStackExportReply
+	| ImportSafeStackReply
 	| RequestCompleteVisualizedSimulationReply
 	| RequestSimulationMetadataReply
 	| RequestAbiAndNameFromBlockExplorerReply
 	| RequestIdentifyAddressReply
+	| RequestSafeContractStateReply
 	| funtypes.Static<typeof PopupSimulateExecutionReply>
 	| RequestIsMainWindowOpen
 	| RequestIsSimulationVisualizerOpen
@@ -267,10 +419,17 @@ export const PopupReplyOption: funtypes.Codec<PopupReplyOption> = funtypes.Union
 	RequestLatestUnexpectedErrorReply,
 	RequestInterceptorSimulationInputReply,
 	ImportSimulationStackReply,
+	AddOrModifyAddressBookEntryReply,
+	PopupSettingsChangeReply,
+	ChangeActiveAddressReply,
+	SetSafeSimulationSignerReply,
+	RequestSafeStackExportReply,
+	ImportSafeStackReply,
 	RequestCompleteVisualizedSimulationReply,
 	RequestSimulationMetadataReply,
 	RequestAbiAndNameFromBlockExplorerReply,
 	RequestIdentifyAddressReply,
+	RequestSafeContractStateReply,
 	PopupSimulateExecutionReply,
 	RequestIsMainWindowOpen,
 	RequestIsSimulationVisualizerOpen,

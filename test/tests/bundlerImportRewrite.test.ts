@@ -1,13 +1,45 @@
 import * as assert from 'assert'
 import * as fs from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import { describe, test } from 'bun:test'
 import * as ts from 'typescript'
-import { findMissingRequiredImportedRuntimeAssets, findMissingRuntimeImportsInRuntimeFiles, replaceImport, shouldKeepRuntimeOutputFile, stripSourceMappingUrlComment } from '../../build/bundler.mts'
+import { assertClassicEntrypointHasNoModuleSyntax, copyRuntimeEntrypoints, findMissingRequiredImportedRuntimeAssets, findMissingRuntimeImportsInRuntimeFiles, replaceImport, shouldKeepRuntimeOutputFile, stripSourceMappingUrlComment } from '../../build/bundler.mts'
 
 const repositoryRoot = process.cwd()
 
 describe('bundler import rewriting', () => {
+	test('rejects module syntax in classic runtime entrypoints', () => {
+		assert.doesNotThrow(() => assertClassicEntrypointHasNoModuleSyntax('/repo/app/inpage/js/inpage.js', '(() => undefined)();'))
+		assert.throws(
+			() => assertClassicEntrypointHasNoModuleSyntax('/repo/app/inpage/js/inpage.js', 'export default 1;'),
+			/Classic runtime entrypoint contains module syntax: /u,
+		)
+	})
+
+	test('does not replace any runtime entrypoint when a later classic bundle contains module syntax', () => {
+		const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'interceptor-classic-entrypoint-'))
+		const firstBundledEntrypointPath = path.join(temporaryDirectory, 'first-bundled.js')
+		const secondBundledEntrypointPath = path.join(temporaryDirectory, 'second-bundled.js')
+		const firstEntrypointPath = path.join(temporaryDirectory, 'first-entrypoint.js')
+		const secondEntrypointPath = path.join(temporaryDirectory, 'second-entrypoint.js')
+		try {
+			fs.writeFileSync(firstBundledEntrypointPath, 'globalThis.updated = true;')
+			fs.writeFileSync(secondBundledEntrypointPath, 'export default 1;')
+			fs.writeFileSync(firstEntrypointPath, 'existing first script')
+			fs.writeFileSync(secondEntrypointPath, 'existing second script')
+
+			assert.throws(() => copyRuntimeEntrypoints([
+				{ bundledEntrypointPath: firstBundledEntrypointPath, entrypointPath: firstEntrypointPath, requiresClassicSyntax: true },
+				{ bundledEntrypointPath: secondBundledEntrypointPath, entrypointPath: secondEntrypointPath, requiresClassicSyntax: true },
+			]))
+			assert.equal(fs.readFileSync(firstEntrypointPath, 'utf8'), 'existing first script')
+			assert.equal(fs.readFileSync(secondEntrypointPath, 'utf8'), 'existing second script')
+		} finally {
+			fs.rmSync(temporaryDirectory, { recursive: true, force: true })
+		}
+	})
+
 	test('rewrites minified vendored esm imports without whitespace separators', () => {
 		const filePath = path.join(repositoryRoot, 'app', 'vendor', '@preact', 'signals', 'dist', 'signals.mjs')
 		const source = 'import{Component as t,options as i}from"preact";import{useMemo as e}from"preact/hooks";import{Signal as r}from"@preact/signals-core";export{Signal}from"@preact/signals-core";'

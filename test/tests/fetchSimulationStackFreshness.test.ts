@@ -124,11 +124,15 @@ describe('fetch simulation stack freshness', () => {
 
 		const pendingResult = modules.openFetchSimulationStackDialog(
 			initialSnapshot,
+			true,
 			new Map(),
 			uniqueRequestIdentifier,
 			{ method: 'interceptor_getSimulationStack', params: ['2.0.0'] },
 			{ websiteOrigin: 'https://requester.example', icon: undefined, title: undefined },
 		)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		const storedRequest = storageState.fetchSimulationStackRequestPromise
+		assert.equal(typeof storedRequest === 'object' && storedRequest !== null && 'simulationOverlayEnabled' in storedRequest && storedRequest.simulationOverlayEnabled, true)
 		await modules.resolveFetchSimulationStackRequest(confirmationSnapshot, new Map(), confirmation)
 		const result = await pendingResult
 
@@ -158,17 +162,17 @@ describe('fetch simulation stack freshness', () => {
 			},
 		})
 
-		const firstRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, new Map(), params, website, createRequest(20), socket)
+		const firstRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, true, new Map(), params, website, createRequest(20), socket)
 		await modules.resolveFetchSimulationStackRequest(confirmationSnapshot, new Map(), reject(20))
 		const firstResult = await firstRequest
 		assert.ok('error' in firstResult)
 		assert.equal(popupWindowCreationCount, 1)
 
-		const cachedConfirmationResult = await modules.openFetchSimulationStackDialogOrGetCachedResult(confirmationSnapshot, new Map(), params, website, createRequest(21), socket)
+		const cachedConfirmationResult = await modules.openFetchSimulationStackDialogOrGetCachedResult(confirmationSnapshot, true, new Map(), params, website, createRequest(21), socket)
 		assert.ok('error' in cachedConfirmationResult)
 		assert.equal(popupWindowCreationCount, 1)
 
-		const initialSnapshotRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, new Map(), params, website, createRequest(22), socket)
+		const initialSnapshotRequest = modules.openFetchSimulationStackDialogOrGetCachedResult(initialSnapshot, true, new Map(), params, website, createRequest(22), socket)
 		await modules.resolveFetchSimulationStackRequest(initialSnapshot, new Map(), reject(22))
 		await initialSnapshotRequest
 		assert.equal(popupWindowCreationCount, 2)

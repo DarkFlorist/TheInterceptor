@@ -283,6 +283,25 @@ describe('requestMakeMeRichList resilience', () => {
 })
 
 describe('startup storage recovery', () => {
+	test('repairs only legacy ERC20 entries with out-of-range decimals', async () => {
+		const storageState = installBrowserMock()
+		const { getUserAddressBookEntries } = await loadModules()
+		storageState.userAddressBookEntriesV3 = [
+			{ type: 'contact', name: 'Preserved contact', address: '0x0000000000000000000000000000000000000001', entrySource: 'User' },
+			{ type: 'ERC20', name: 'Invalid token', address: '0x0000000000000000000000000000000000000002', symbol: 'BAD', decimals: '0x100', entrySource: 'User', chainId: '0x1' },
+		]
+
+		const entries = await getUserAddressBookEntries()
+
+		assert.equal(entries.length, 2)
+		assert.deepEqual(entries[0], { type: 'contact', name: 'Preserved contact', address: 1n, entrySource: 'User' })
+		assert.deepEqual(entries[1], { type: 'contract', name: 'Invalid token', address: 2n, entrySource: 'User', chainId: 1n })
+		assert.deepEqual(storageState.userAddressBookEntriesV3, [
+			{ type: 'contact', name: 'Preserved contact', address: '0x0000000000000000000000000000000000000001', entrySource: 'User' },
+			{ type: 'contract', name: 'Invalid token', address: '0x0000000000000000000000000000000000000002', entrySource: 'User', chainId: '0x1' },
+		])
+	})
+
 	test('recovers active addresses from corrupt user address book storage', async () => {
 		const storageState = installBrowserMock()
 		const { requestActiveAddresses, defaultActiveAddresses, getUserAddressBookEntries } = await loadModules()

@@ -14,7 +14,7 @@ type SimpleTokenApprovalVisualisation = {
 }
 
 export function SimpleTokenApprovalVisualisation(param: SimpleTokenApprovalVisualisation) {
-	const textColor = 'var(--negative-color)'
+	const textColor = 'var(--danger-color)'
 
 	return <div class = 'notification transaction-importance-box'>
 		<span style = 'grid-template-columns: auto auto; display: grid;'>

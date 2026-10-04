@@ -1,9 +1,5 @@
 type MethodValue = { readonly method: string }
 
-export function hasOwnKey<ObjectType extends object>(value: ObjectType, key: PropertyKey): key is keyof ObjectType {
-	return Object.prototype.hasOwnProperty.call(value, key)
-}
-
 function hasMethod<Union extends MethodValue, Method extends Union['method']>(
 	value: Union,
 	method: Method,

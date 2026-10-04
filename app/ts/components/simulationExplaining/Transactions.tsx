@@ -15,7 +15,7 @@ import { assertNever } from '../../utils/typescript.js'
 import { CatchAllVisualizer, tokenEventToTokenSymbolParams } from './customExplainers/CatchAllVisualizer.js'
 import type { AddressBookEntry } from '../../types/addressBookTypes.js'
 import { SignatureCard, SignatureHeader } from '../pages/PersonalSign.js'
-import { bigintSecondsToDate, bytes32String, checksummedAddress, dataStringWith0xStart, stringifyJSONWithBigInts } from '../../utils/bigint.js'
+import { bigintSecondsToDate, bigintToDecimalString, bytes32String, checksummedAddress, dataStringWith0xStart, stringifyJSONWithBigInts } from '../../utils/bigint.js'
 import { GovernanceVoteVisualizer } from './customExplainers/GovernanceVoteVisualizer.js'
 import { EnrichedSolidityTypeComponentWithAddressBook, StringElement } from '../subcomponents/solidityType.js'
 import { getAddressBookEntryOrAFiller } from '../ui-utils.js'
@@ -273,6 +273,12 @@ export function Transaction(param: TransactionVisualizationParameters & Collapsi
 				ariaExpanded = { param.collapsed === undefined ? undefined : !param.collapsed }
 			/>
 			{ param.collapsed === true ? <></> : <div class = 'card-content' style = 'padding-bottom: 5px;'>
+				{ param.simTx.safeTransaction === undefined ? <></> :
+					<div class = 'notification is-info' style = 'margin-bottom: 10px;'>
+						<p class = 'paragraph'><strong>Optimistic Gnosis Safe transaction</strong></p>
+						<p class = 'paragraph'>Gnosis Safe nonce { param.simTx.safeTransaction.safeTx.message.nonce.toString() }; { param.simTx.safeTransaction.signatures.length } owner signature{ param.simTx.safeTransaction.signatures.length === 1 ? '' : 's' } collected. This optimistic preview simulates the Gnosis Safe calling the destination, but does not model Gnosis Safe guards, modules, events, nonce changes, executor-dependent behavior, or network gas. Nothing has necessarily been executed onchain.</p>
+					</div>
+				}
 				<div class = 'container'>
 					<TransactionImportanceBlock { ...param } rpcNetwork = { rpcNetwork } addressMetadata = { param.addressMetaData }/>
 				</div>
@@ -385,7 +391,7 @@ function TransactionPreviewDetails({
 					<dt>To</dt>
 					<dd>{ to === undefined ? 'No receiving Address' : <SmallAddress addressBookEntry = { to } renameAddressCallBack = { renameAddressCallBack } /> }</dd>
 					<dt>Value</dt>
-					<dd>{ `${ signedTransaction.value.toString(10) } wei` }</dd>
+					<dd>{ `${ bigintToDecimalString(signedTransaction.value, 18n) } ether` }</dd>
 					<dt>Nonce</dt>
 					<dd>{ signedTransaction.nonce.toString(10) }</dd>
 					<dt>Chain ID</dt>
@@ -750,7 +756,7 @@ type TokenLogEventParams = {
 }
 
 function TokenLogEvent(params: TokenLogEventParams ) {
-	const style = { color: isPositiveEvent(params.tokenVisualizerResult, params.ourAddressInReferenceFrame) ? 'var(--dim-text-color)' : 'var(--negative-dim-color)' }
+	const style = { color: isPositiveEvent(params.tokenVisualizerResult, params.ourAddressInReferenceFrame) ? 'var(--dim-text-color)' : 'var(--danger-dim-color)' }
 
 	return <>
 		<div class = 'log-cell' style = 'justify-content: right;'>

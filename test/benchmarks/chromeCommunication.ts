@@ -1,4 +1,4 @@
-import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForAnyExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl } from './chromeHarness.js'
+import { closeTarget, connectTarget, createTargetPage, launchChromeSession, waitForInterceptorExtensionServiceWorker, waitForPerformanceMarks, waitForRegisteredContentScripts, waitForTargetByUrl } from './chromeHarness.js'
 import { startChromeCommunicationPageServer } from './chromeCommunicationPageServer.js'
 import type { CdpConnection } from './chromeHarness.js'
 import { authorization as eip7702Authorization, Transaction } from 'micro-eth-signer'
@@ -8,6 +8,16 @@ type CommunicationPageState = {
 	accounts?: readonly string[]
 	error?: string
 	errorCode?: number
+	connectEvents: number
+	accountsChangedEvents: number
+	eventOrder: readonly string[]
+}
+
+type SafeAppsInfoResult = {
+	status: 'fulfilled' | 'pending' | 'rejected'
+	data?: { readonly safeAddress?: string, readonly chainId?: number }
+	error?: string
+	elapsedMs?: number
 }
 
 const COMMUNICATION_PAGE_STATE_GLOBAL = '__interceptorChromeCommunicationState' as const
@@ -101,20 +111,23 @@ async function main() {
 	let accessTargetId: string | undefined
 	let confirmTargetId: string | undefined
 	try {
-		const workerTarget = await waitForAnyExtensionServiceWorker(chrome.browserDebugPort, 30_000)
+		const workerTarget = await waitForInterceptorExtensionServiceWorker(chrome.browserDebugPort, 30_000)
 		const extensionId = extractExtensionId(workerTarget.url)
 		const workerConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
 		try {
 			await waitForPerformanceMarks(workerConnection, ['interceptor:background:loaded'], 30_000)
 			await waitForRegisteredContentScripts(workerConnection, ['inpage', 'inpage2'], 30_000)
+			await workerConnection.evaluate('browser.storage.local.set({ safeAppsCompatibilityMode: true })')
 		} finally {
 			workerConnection.close()
 		}
 
-		pageTargetId = await createTargetPage(chrome.browserConnection, server.baseUrl)
+		pageTargetId = await createTargetPage(chrome.browserConnection, `${ server.baseUrl }?flow=wallet-request-permissions&safe-probe=early`)
 		const pageConnection = await connectTarget(chrome.browserDebugPort, pageTargetId)
 		try {
 			await waitForCommunicationPagePhase(pageConnection, 'requesting-access', 30_000)
+			const preApprovalSafeProbeStatus = await pageConnection.evaluate<string | undefined>('globalThis.__earlySafeAppsInfoResult?.status')
+			if (preApprovalSafeProbeStatus !== 'pending') throw new Error(`Safe Apps advertised before website approval with status ${ preApprovalSafeProbeStatus ?? 'missing' }`)
 			const accessTarget = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/interceptorAccessV3.html`, 30_000)
 			accessTargetId = accessTarget.id
 			const accessConnection = await connectTarget(chrome.browserDebugPort, accessTarget.id)
@@ -127,6 +140,29 @@ async function main() {
 
 			await waitForCommunicationPagePhase(pageConnection, 'access-granted', 30_000)
 			const accessGrantedState = await getCommunicationPageState(pageConnection)
+			if (accessGrantedState?.connectEvents !== 0) throw new Error(`Account authorization emitted ${ accessGrantedState?.connectEvents ?? 'an unknown number of' } connect events`)
+			if (accessGrantedState.accountsChangedEvents !== 1) throw new Error(`Account authorization emitted ${ accessGrantedState.accountsChangedEvents } accountsChanged events instead of one`)
+			if (accessGrantedState.eventOrder.join(',') !== 'accountsChanged,permissionsResolved,accountsResolved') throw new Error(`Unexpected account authorization event order: ${ accessGrantedState.eventOrder.join(',') }`)
+
+			await pageConnection.evaluate(`(() => {
+				const id = crypto.randomUUID()
+				const startedAt = performance.now()
+				globalThis.__safeAppsInfoResult = { status: 'pending' }
+				const listener = (event) => {
+					if (event.source !== globalThis || event.data?.id !== id || typeof event.data?.success !== 'boolean') return
+					globalThis.removeEventListener('message', listener)
+					globalThis.__safeAppsInfoResult = event.data.success
+						? { status: 'fulfilled', data: event.data.data, elapsedMs: performance.now() - startedAt }
+						: { status: 'rejected', error: event.data.error, elapsedMs: performance.now() - startedAt }
+				}
+				globalThis.addEventListener('message', listener)
+				globalThis.postMessage({ id, method: 'getSafeInfo', env: { sdkVersion: '9.1.0' } }, globalThis.location.origin)
+			})()`)
+			await sleep(250)
+			const safeAppsInfoResult = await pageConnection.evaluate<SafeAppsInfoResult>('globalThis.__safeAppsInfoResult')
+			if (safeAppsInfoResult.status !== 'pending') throw new Error(`Safe Apps advertised the approved EOA with status ${ safeAppsInfoResult.status }`)
+			const earlySafeAppsInfoResult = await pageConnection.evaluate<SafeAppsInfoResult>('globalThis.__earlySafeAppsInfoResult')
+			if (earlySafeAppsInfoResult.status !== 'pending') throw new Error(`Queued Safe Apps discovery advertised the approved EOA with status ${ earlySafeAppsInfoResult.status }`)
 
 			await pageConnection.evaluate(`(() => {
 				globalThis.__raw7702Result = { status: 'pending' }
@@ -164,6 +200,8 @@ async function main() {
 				ok: true,
 				extensionId,
 				accessGrantedState,
+				safeAppsInfoResult,
+				earlySafeAppsInfoResult,
 				unavailableSignerState,
 			}, null, 2))
 		} finally {

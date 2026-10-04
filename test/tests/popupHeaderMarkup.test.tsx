@@ -4,7 +4,7 @@ import { h, render } from 'preact'
 import { act } from 'preact/test-utils'
 import { describe, test } from 'bun:test'
 import { SignatureHeader } from '../../app/ts/components/pages/PersonalSign.js'
-import { CheckBoxes, ConfirmationActionButtons } from '../../app/ts/components/pages/ConfirmTransaction.js'
+import { CheckBoxes, ConfirmationActionButtons, shouldDisableConfirmForApprovalStatus } from '../../app/ts/components/pages/ConfirmTransaction.js'
 import { TransactionHeader } from '../../app/ts/components/simulationExplaining/SimulationSummary.js'
 import { PendingStackHeader } from '../../app/ts/components/simulationExplaining/Transactions.js'
 import { identifyTransaction } from '../../app/ts/components/simulationExplaining/identifyTransaction.js'
@@ -163,6 +163,12 @@ function assertClasses(node: TestNode | undefined, expectedClasses: string[]) {
 }
 
 describe('popup header markup', () => {
+	test('allows user-triggered retries after signer errors while blocking duplicate pending requests', () => {
+		assert.equal(shouldDisableConfirmForApprovalStatus({ status: 'WaitingForUser' }), false)
+		assert.equal(shouldDisableConfirmForApprovalStatus({ status: 'WaitingForSigner' }), true)
+		assert.equal(shouldDisableConfirmForApprovalStatus({ status: 'SignerError', code: -32603, message: 'Signer request failed.' }), false)
+	})
+
 	test('TransactionHeader renders the fallback title inside the ellipsis target and composes the flush website class', async () => {
 		const dom = installDomMock()
 
@@ -206,11 +212,17 @@ describe('popup header markup', () => {
 				approve: () => undefined,
 				approveButtonState: 'inactive',
 				confirmDisabled: false,
+				addToSafeStack: () => undefined,
+				addToSafeStackButtonState: 'inactive',
+				addToSafeStackDisabled: false,
 			}), dom.document.body)
 		})
 
 		assert.equal(dom.document.body.textContent?.includes(`Reject ${ abiFunctionName }`), true)
-		assert.equal(dom.document.body.textContent?.includes(`Sign ${ abiFunctionName }`), true)
+		assert.equal(dom.document.body.textContent?.includes('Sign & add'), true)
+		assert.equal(dom.document.body.textContent?.includes('Add unsigned'), true)
+		assert.notEqual(findFirstByClass(dom.document.body, 'confirmation-action-buttons-container'), undefined)
+		assert.notEqual(findFirstByClass(dom.document.body, 'confirmation-action-buttons--safe'), undefined)
 
 		await act(() => {
 			render(h(ConfirmationActionButtons, {
@@ -227,6 +239,26 @@ describe('popup header markup', () => {
 		})
 
 		assert.equal(dom.document.body.textContent?.includes(`Simulate ${ abiFunctionName }!`), true)
+		assert.equal(findFirstByClass(dom.document.body, 'confirmation-action-buttons--safe'), undefined)
+
+		await act(() => {
+			render(h(ConfirmationActionButtons, {
+				identified,
+				signerName: 'MetaMask',
+				simulationMode: false,
+				waitingForSigner: true,
+				reject: () => undefined,
+				rejectButtonState: 'inactive',
+				approve: () => undefined,
+				approveButtonState: 'inactive',
+				confirmDisabled: false,
+			}), dom.document.body)
+		})
+
+		const waitingLabel = findFirstByClass(dom.document.body, 'confirmation-waiting-for-signer')
+		assert.notEqual(waitingLabel, undefined)
+		assert.equal(waitingLabel?.textContent, 'Waiting for MetaMask')
+		assert.notEqual(findFirstByClass(waitingLabel, 'spinner'), undefined)
 
 		dom.restore()
 	})
@@ -273,6 +305,87 @@ describe('popup header markup', () => {
 		})
 
 		assert.match(dom.document.body.textContent ?? '', /request reached your wallet/)
+		dom.restore()
+	})
+
+	test('Safe signing account mismatches render named small-address details', async () => {
+		const dom = installDomMock()
+		const pendingMessage: PopupPendingSignableMessage = {
+			type: 'SignableMessage',
+			popupOrTabId: { type: 'popup', id: 1 },
+			originalRequestParameters: { method: 'personal_sign', params: ['hello', fromEntry.address] },
+			simulationMode: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
+			created: personalSignRequest.created,
+			website,
+			activeAddress: fromEntry.address,
+			approvalStatus: {
+				status: 'SignerError',
+				code: -32010,
+				message: 'The Gnosis Safe transaction signing account does not match the active Gnosis Safe.',
+				safeSignerErrorDetails: {
+					kind: 'safeSigningAccountMismatch',
+					requestedSigningAccount: toEntry.address,
+					activeSafe: fromEntry.address,
+					requestedSafe: fromEntry.address,
+					safeOwners: [toEntry.address],
+					safeOwnerAddressBookEntries: [toEntry],
+				},
+			},
+			transactionOrMessageCreationStatus: 'Simulated',
+			visualizedPersonalSignRequest: personalSignRequest,
+		}
+
+		await act(() => {
+			render(h(CheckBoxes, {
+				currentPendingTransactionOrSignableMessage: new Signal(pendingMessage),
+				forceSend: new Signal(false),
+				addressBookEntries: [fromEntry],
+			}), dom.document.body)
+		})
+
+		const details = findFirstByClass(dom.document.body, 'safe-signer-error-details')
+		assert.notEqual(details, undefined)
+		assert.match(details?.textContent ?? '', /Signing accountReceiver/)
+		assert.match(details?.textContent ?? '', /Active SafeSender/)
+		assert.match(details?.textContent ?? '', /Safe ownersReceiver/)
+		dom.restore()
+	})
+
+	test('Safe owner mismatches render the expected and wallet accounts without addresses in prose', async () => {
+		const dom = installDomMock()
+		const message = 'Gnosis Safe owner mismatch: this request expects a different owner. Select the expected owner in MetaMask, then retry.'
+		const pendingMessage: PopupPendingSignableMessage = {
+			type: 'SignableMessage',
+			popupOrTabId: { type: 'popup', id: 1 },
+			originalRequestParameters: { method: 'personal_sign', params: ['hello', fromEntry.address] },
+			simulationMode: false,
+			uniqueRequestIdentifier: { requestId: 1, requestSocket: { tabId: 1, connectionName: 0n } },
+			created: personalSignRequest.created,
+			website,
+			activeAddress: fromEntry.address,
+			approvalStatus: {
+				status: 'SignerError',
+				code: -32010,
+				message,
+				safeSignerErrorDetails: { kind: 'safeOwnerMismatch', expectedOwner: fromEntry.address, walletAccount: toEntry.address },
+			},
+			transactionOrMessageCreationStatus: 'Simulated',
+			visualizedPersonalSignRequest: personalSignRequest,
+		}
+
+		await act(() => {
+			render(h(CheckBoxes, {
+				currentPendingTransactionOrSignableMessage: new Signal(pendingMessage),
+				forceSend: new Signal(false),
+				addressBookEntries: [fromEntry, toEntry],
+			}), dom.document.body)
+		})
+
+		const details = findFirstByClass(dom.document.body, 'safe-signer-error-details')
+		assert.match(details?.textContent ?? '', /Expected ownerSender/)
+		assert.match(details?.textContent ?? '', /Wallet accountReceiver/)
+		assert.doesNotMatch(message, /0x[0-9a-f]/iu)
 		dom.restore()
 	})
 

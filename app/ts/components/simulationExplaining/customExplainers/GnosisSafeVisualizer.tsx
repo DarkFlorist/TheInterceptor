@@ -35,11 +35,11 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 		return lastBlock.simulatedAndVisualizedTransactions[lastBlock.simulatedAndVisualizedTransactions.length - 1]
 	})
 	const addressMetaData = useComputed(() => {
-		if (simulateExecutionReply.value === undefined || simulateExecutionReply.value.data.success === false) throw new Error('failed simulation')
+		if (simulateExecutionReply.value === undefined || simulateExecutionReply.value.data.success === false) return []
 		return simulateExecutionReply.value.data.result.addressBookEntries
 	})
 	const results = useComputed(() => {
-		if (simulateExecutionReply.value === undefined || simulateExecutionReply.value.data.success === false) throw new Error('failed simulation')
+		if (simulateExecutionReply.value === undefined || simulateExecutionReply.value.data.success === false || activeAddress.value === undefined) return undefined
 		return {
 			blockNumber: simulateExecutionReply.value.data.result.simulationState.blockNumber,
 			blockTimestamp: simulateExecutionReply.value.data.result.simulationState.blockTimestamp,
@@ -48,20 +48,21 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 			addressBookEntries: simulateExecutionReply.value.data.result.addressBookEntries,
 			rpcNetwork: simulateExecutionReply.value.data.result.simulationState.rpcNetwork,
 			tokenPriceEstimates: simulateExecutionReply.value.data.result.tokenPriceEstimates,
-			activeAddress: activeAddress.value!,
+			activeAddress: activeAddress.value,
 			visualizedSimulationState: simulateExecutionReply.value.data.result.visualizedSimulationState,
 			namedTokenIds: simulateExecutionReply.value.data.result.namedTokenIds,
 		}
 	})
 
 	if (gnosisSimulationState === 'pending') {
-		return <div class = 'safe-outcome-panel__loading' role = 'status' aria-label = 'Simulating outcome'>
+		return <div class = 'safe-outcome-panel__loading' role = 'status' aria-label = 'Simulating Gnosis Safe transaction'>
 			<AsyncStatusIcon state = 'pending' size = '2.5rem'/>
+			<span>Simulating Gnosis Safe transaction…</span>
 		</div>
 	}
 
 	if (simulateExecutionReply.value === undefined) {
-		return <div style = 'display: grid; row-gap: 10px;'>
+		return <div class = 'safe-outcome-panel__result'>
 			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 			<div class = 'safe-outcome-panel__empty'>
 				<button class = 'btn btn--primary' type = 'button' onClick = { requestToSimulate }>
@@ -72,20 +73,20 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, activeAddress, renameAdd
 	}
 
 	if (simulateExecutionReply.value.data.success === false) {
-		return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
+		return <div class = 'safe-outcome-panel__result'>
 			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 			<ErrorComponent text = { errorText }/>
 		</div>
 	}
 	if (simulateExecutionReply.value.data.result.visualizedSimulationState.success === false) {
-		return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
+		return <div class = 'safe-outcome-panel__result'>
 			{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 			<ErrorComponent text = { rpcErrorText }/>
 		</div>
 	}
-	if (simTx.value === undefined || activeAddress.value === undefined) return <></>
+	if (simTx.value === undefined || activeAddress.value === undefined || results.value === undefined) return <></>
 
-	return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
+	return <div class = 'safe-outcome-panel__result'>
 		{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }
 		<Transaction
 			simTx = { simTx.value }
@@ -135,12 +136,6 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 		return () => browser.runtime.onMessage.removeListener(popupMessageListener)
 	}, [])
 
-	useEffect(() => {
-		activeAddress.value = param.activeAddress
-		simulateExecutionReply.value = undefined
-		resetGnosisSimulationRequest()
-	}, [param.activeAddress, param.gnosisSafeMessage.messageIdentifier])
-
 	const requestToSimulate = () => {
 		if (gnosisSimulationRequest.value.state === 'pending') return
 		waitForGnosisSimulation(async () => {
@@ -150,6 +145,14 @@ export function GnosisSafeVisualizer(param: GnosisSafeVisualizerParams) {
 			simulateExecutionReply.value = reply
 		})
 	}
+
+	useEffect(() => {
+		activeAddress.value = param.activeAddress
+		simulateExecutionReply.value = undefined
+		resetGnosisSimulationRequest()
+		requestToSimulate()
+	}, [param.activeAddress, param.gnosisSafeMessage.messageIdentifier])
+
 	const simulationPending = gnosisSimulationRequest.value.state === 'pending'
 
 	if (activeAddress.value === undefined) return <></>

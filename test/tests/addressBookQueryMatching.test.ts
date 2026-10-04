@@ -1,6 +1,6 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { doesReplyMatchViewFilter } from '../../app/ts/AddressBook.js'
+import { doesReplyMatchViewFilter, getAddressBookFilterDisplayName } from '../../app/ts/AddressBook.js'
 
 describe('AddressBook query matching', () => {
 	test('accepts replies for the current chain, filter, and search string', () => {
@@ -22,5 +22,10 @@ describe('AddressBook query matching', () => {
 			{ activeFilter: 'My Contacts', searchString: '', chain: { chainId: 1n, name: 'Ethereum Mainnet' } },
 			{ chainId: 1n, filter: 'My Active Addresses', searchString: '' },
 		), false)
+	})
+
+	test('uses Gnosis Safe terminology for the internal Safe filter key', () => {
+		assert.equal(getAddressBookFilterDisplayName('My Safes'), 'My Gnosis Safes')
+		assert.equal(getAddressBookFilterDisplayName('My Contacts'), 'My Contacts')
 	})
 })

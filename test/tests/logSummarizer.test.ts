@@ -58,11 +58,12 @@ function createTokenEvent(logInformation: TokenVisualizerResultWithMetadata): To
 	} as unknown as TokenEvent
 }
 
-function createSimulatedTransaction(params: { transactionFrom: AddressBookEntry, tokenEvents: readonly TokenVisualizerResultWithMetadata[], gasSpent?: bigint, realizedGasPrice?: bigint }): SimulatedAndVisualizedTransaction {
+function createSimulatedTransaction(params: { transactionFrom: AddressBookEntry, tokenEvents: readonly TokenVisualizerResultWithMetadata[], gasSpent?: bigint, realizedGasPrice?: bigint, safeTransaction?: boolean }): SimulatedAndVisualizedTransaction {
 	return {
 		events: params.tokenEvents.map(createTokenEvent),
 		gasSpent: params.gasSpent ?? 0n,
 		realizedGasPrice: params.realizedGasPrice ?? 0n,
+		...(params.safeTransaction === true ? { safeTransaction: {} } : {}),
 		transaction: {
 			from: params.transactionFrom,
 		},
@@ -115,6 +116,35 @@ describe('summarizeLogs', () => {
 		])
 		assert.deepEqual(bobSummary?.erc20TokenBalanceChanges.map(({ address, changeAmount }) => ({ address, changeAmount })), [
 			{ address: token.address, changeAmount: 10n },
+		])
+	})
+
+	test('does not debit executor gas from an optimistic zero-reimbursement Safe transaction', () => {
+		const safe = createContactEntry(0x13n, 'Safe')
+		const bob = createContactEntry(0x14n, 'Bob')
+		const token = createErc20Entry(0x102n, 'Mock Token', 'MOCK')
+		const nativeToken = createErc20Entry(ETHEREUM_LOGS_LOGGER_ADDRESS, 'Ether', 'ETH')
+		const transaction = createSimulatedTransaction({
+			transactionFrom: safe,
+			tokenEvents: [{
+				logObject: undefined,
+				type: 'ERC20',
+				from: safe,
+				to: bob,
+				token,
+				amount: 10n,
+				isApproval: false,
+			}],
+			gasSpent: 2n,
+			realizedGasPrice: 3n,
+			safeTransaction: true,
+		})
+
+		const summary = summarizeLogs([transaction], createAddressMetadataMap([safe, bob, token, nativeToken]), emptyTokenPriceEstimates, emptyNamedTokenIds)
+		const safeSummary = getSummary(summary, safe.address)
+
+		assert.deepEqual(safeSummary?.erc20TokenBalanceChanges.map(({ address, changeAmount }) => ({ address, changeAmount })), [
+			{ address: token.address, changeAmount: -10n },
 		])
 	})
 

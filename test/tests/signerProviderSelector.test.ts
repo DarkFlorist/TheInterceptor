@@ -34,7 +34,7 @@ test('signer provider choices visibly disambiguate identical wallet identities b
 test('signer provider selector renders a contained logo-led accessible dropdown', async () => {
 	const [homeSource, css] = await Promise.all([
 		Bun.file('app/ts/components/pages/Home.tsx').text(),
-		Bun.file('app/css/interceptor.css').text(),
+		Bun.file('app/css/interceptor-pages.css').text(),
 	])
 
 	assert.match(homeSource, /<SignerProviderLogo provider = \{ provider \}\/>/)
