@@ -14,6 +14,7 @@ export function isSignerMissing(signerName: SignerName) {
 }
 
 export function getPrettySignerName(signerName: SignerName) {
+	if (signerName === 'EIP6963') return 'Selected wallet'
 	if (signerName === 'NoSigner' || signerName === 'NotRecognizedSigner' || signerName === 'NoSignerDetected') return 'Unknown signer'
 	if (signerName === 'Ambire' || signerName === 'Rabby') return `${ signerName } Wallet`
 	return signerName

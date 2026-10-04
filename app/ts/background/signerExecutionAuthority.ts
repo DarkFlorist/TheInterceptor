@@ -1,5 +1,5 @@
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
-import type { WebsiteSocket } from '../utils/requests.js'
+import { isTopFrameId, type WebsiteSocket } from '../utils/requests.js'
 
 const socketKey = (socket: WebsiteSocket) => `${ socket.tabId }-${ serialize(EthereumQuantity, socket.connectionName) }`
 
@@ -17,10 +17,6 @@ const signerExecutionAuthorities = new Map<number, SignerExecutionAuthority>()
 const currentChildSocketKeysByTab = new Map<number, Map<number, string>>()
 const childFrameIdsBySocketKey = new Map<string, number>()
 const pendingChildSocketRemovalTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-export function isTopFrameId(frameId: number | undefined): frameId is 0 | undefined {
-	return frameId === undefined || frameId === 0
-}
 
 export function registerCurrentChildSignerSocket(socket: WebsiteSocket, frameId: number) {
 	if (isTopFrameId(frameId)) return false

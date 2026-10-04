@@ -206,6 +206,7 @@ export const TabState = funtypes.Intersect(
 		availableSignerProviders: funtypes.ReadonlyArray(EIP6963ProviderInfo),
 		selectedSignerProvider: EIP6963ProviderInfo,
 		explicitlySelectedSignerProviderUuid: EIP6963ProviderInfo.fields.uuid,
+		selectedSignerConnectionName: EthereumQuantity,
 		preferredSignerUnavailable: funtypes.Boolean,
 		signerProviderCatalogOverflowed: funtypes.Boolean,
 	}),

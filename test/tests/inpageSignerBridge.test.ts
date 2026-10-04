@@ -1060,7 +1060,7 @@ describe('inpage signer bridge', () => {
 		})
 	})
 
-	test('settles cross-origin simulation requests and signer rejection after definitive frame ineligibility', async () => {
+	for (const crossOrigin of [true, false]) test(`settles ${ crossOrigin ? 'cross-origin' : 'same-origin missing-provider' } requests after definitive frame ineligibility`, async () => {
 		const forwardedMethods: string[] = []
 		const { fakeWindow, signerRequests } = createFakeWindow({
 			handleRequest: (request, reply) => {
@@ -1074,8 +1074,8 @@ describe('inpage signer bridge', () => {
 				return true
 			},
 		})
-		Object.defineProperty(fakeWindow, 'top', { get: () => { throw new DOMException('Cross-origin access denied', 'SecurityError') } })
-		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?cross-origin-public-requests', async () => {
+		if (crossOrigin) Object.defineProperty(fakeWindow, 'top', { get: () => { throw new DOMException('Cross-origin access denied', 'SecurityError') } })
+		await withFakeInpageWindow(fakeWindow, `../../app/inpage/ts/inpage.js?ineligible-public-requests-${ crossOrigin }`, async () => {
 			assert.equal(await fakeWindow.ethereum.request({ method: 'eth_chainId' }), '0x1')
 			assert.deepEqual(await fakeWindow.ethereum.request({ method: 'eth_requestAccounts' }), [])
 			await assert.rejects(fakeWindow.ethereum.request({ method: 'eth_sendTransaction', params: [] }), { code: 4100 })
@@ -2809,6 +2809,36 @@ describe('inpage signer bridge', () => {
 		assert.equal(catalogEntry.icon, 'data:image/svg+xml,<svg/>')
 	})
 
+	test('keeps the original provider when identical metadata is re-announced with a fresh wrapper', async () => {
+		const originalRequests: string[] = []
+		const replacementRequests: string[] = []
+		const catalogs: unknown[] = []
+		const { fakeWindow, sendBackgroundMessage } = createFakeWindow({ handleRequest: (request) => {
+			if (request.method === 'signer_providers_changed') catalogs.push(request.params?.[0])
+			return false
+		} })
+		const originalProvider = {
+			request: async ({ method }: SignerRequest) => { originalRequests.push(method); return method === 'eth_chainId' ? '0x1' : [] },
+			on: () => originalProvider,
+			removeListener: () => originalProvider,
+		}
+		const replacementProvider = {
+			request: async ({ method }: SignerRequest) => { replacementRequests.push(method); return [] },
+			on: () => replacementProvider,
+			removeListener: () => replacementProvider,
+		}
+		const info = { uuid: '33333333-3333-4333-8333-333333333333', name: 'Wrapped Wallet', icon: 'data:image/svg+xml,<svg/>', rdns: 'com.example.wrapper' }
+		fakeWindow.addEventListener('eip6963:requestProvider', () => fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info, provider: originalProvider } }))
+		await withFakeInpageWindow(fakeWindow, '../../app/inpage/ts/inpage.js?fresh-provider-wrapper', async () => {
+			await waitFor(() => catalogs.some((catalog) => Array.isArray(catalog) && catalog.length === 1))
+			fakeWindow.dispatchEvent({ type: 'eip6963:announceProvider', detail: { info, provider: replacementProvider } })
+			sendBackgroundMessage({ interceptorApproved: true, type: 'result', method: 'select_signer_provider', result: info.uuid })
+			await waitFor(() => originalRequests.includes('eth_accounts'))
+			assert.deepEqual(replacementRequests, [])
+			assert.equal(catalogs.some((catalog) => Array.isArray(catalog) && catalog.length === 0), false)
+		})
+	})
+
 	test('restores a remembered EIP-6963 provider by RDNS', async () => {
 		const selectedProviders: unknown[] = []
 		const preferredRequests: string[] = []
@@ -3457,7 +3487,7 @@ describe('inpage signer bridge', () => {
 			await waitFor(() => signerRequests.includes('eth_chainId'))
 		})
 
-		assert.deepEqual(connectedSignerNames, ['NoSigner', 'MetaMask'])
+		assert.deepEqual(connectedSignerNames, ['NoSigner', 'EIP6963'])
 	})
 
 	test('recognizes supported MetaMask-compatible wallets and does not replace selected non-MetaMask signers from announcements', async () => {

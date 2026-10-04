@@ -346,7 +346,7 @@ function SignerProviderSelector(param: { tabState: Signal<TabState | undefined>,
 	}
 	const placeholderText = tabState?.preferredSignerUnavailable === true ? 'Preferred signer needs selection' : 'Choose a signer'
 
-	return <div class = 'signer-provider-selector' title = 'This tab uses the selected wallet, and the preference is remembered for this site. Wallet names and icons are self-reported by installed providers.'>
+	return <div class = 'signer-provider-selector' title = 'Choose a wallet for this page. Your preferred wallet is remembered for this site, but each new page requires selection. Wallet names and icons are self-reported.'>
 		<span class = 'signer-provider-selector-label'>Signer for this tab</span>
 		<div ref = { dropdownRef } class = 'signer-provider-dropdown' onFocusOut = { onDropdownFocusOut } onKeyDown = { onDropdownKeyDown }>
 			<button
@@ -408,6 +408,7 @@ function SignerProviderSelector(param: { tabState: Signal<TabState | undefined>,
 
 function SignerExplanation(param: SignerExplanationParams) {
 	if (param.activeAddress.value !== undefined || param.tabState.value === undefined || param.tabState.value.signerAccountError !== undefined) return <></>
+	if (param.tabState.value.preferredSignerUnavailable === true && (param.tabState.value.availableSignerProviders?.length ?? 0) > 0) return <ErrorComponent text = 'Choose a signer for this page using the wallet selector above.'/>
 	if (!isSignerAvailable(param.tabState.value)) {
 		if (param.tabState.value.signerName === 'NoSignerDetected' || param.tabState.value.signerName === 'NoSigner') return <ErrorComponent text = 'No signer installed. You need to install a signer, eg. Metamask.'/>
 		return <ErrorComponent text = 'The page you are looking at has NOT CONNECTED to a wallet.'/>

@@ -2,11 +2,55 @@ import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import { authorizeSocketForSignerExecution, reconcileSignerExecutionDocument, registerCurrentChildSignerSocket, setSignerExecutionTarget } from '../../app/ts/background/signerExecutionAuthority.js'
-import { confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
+import { addressString, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus } from './backgroundEthAccountsTestHarness.js'
 
 const ADDRESS_PROMPT_TIMEOUT_MS = 2_000
 
 describe('background signer selection routing', () => {
+	test('answers locally handled RPCs after signer authority is lost on worker restart', async () => {
+		installBrowserMock()
+		const { clearSignerExecutionAuthorityForTab } = await import('../../app/ts/background/signerExecutionAuthority.js')
+		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress, updateTabState } = await loadModules()
+		const websiteOrigin = 'https://example.test'
+		const website = { websiteOrigin, icon: undefined, title: undefined }
+		const address = 0x1111111111111111111111111111111111111111n
+		await changeSimulationMode({ simulationMode: false, activeSigningAddress: address })
+		await setUseSignersAddressAsActiveAddress(false)
+		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address, access: true }] }])
+		const socket = { tabId: 1, connectionName: 0n }
+		await updateTabState(socket.tabId, (previousState) => ({ ...previousState, signerAccounts: [address], activeSigningAddress: address, signerName: 'EIP6963', signerConnected: true }))
+		const { port, messages } = createPort(socket.tabId)
+		const websiteTabConnections: WebsiteTabConnections = new Map([[1, { ...confirmedSignerOwnership(socket), connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin, frameId: 0, approved: true, wantsToConnect: true },
+		} }]])
+		clearSignerExecutionAuthorityForTab(1)
+		const { simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 }, { getCodeResult: new Uint8Array([0x60, 0x00]) })
+		const request = async (method: string, params: readonly unknown[], requestId: number) => {
+			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+				interceptorRequest: true, usingInterceptorWithoutSigner: false, uniqueRequestIdentifier: { requestId, requestSocket: socket }, method, params,
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+			return messages.at(-1)
+		}
+		for (const [requestId, method] of ['eth_chainId', 'net_version'].entries()) {
+			await handleInterceptedRequest(port, websiteOrigin, website, simulationServicesOwner, socket, {
+				interceptorRequest: true,
+				usingInterceptorWithoutSigner: false,
+				uniqueRequestIdentifier: { requestId, requestSocket: socket },
+				method,
+				params: [],
+			}, websiteTabConnections, noopPublishRpcConnectionStatus)
+			assert.equal(messages.at(-1)?.error, undefined)
+			assert.equal(messages.at(-1)?.result, method === 'eth_chainId' ? '0x1' : '1')
+		}
+		const codeReply = await request('eth_getCode', [addressString(address), 'latest'], 3)
+		assert.equal(codeReply?.result, '0x6000', JSON.stringify(codeReply))
+		const subscription = await request('eth_subscribe', ['newHeads'], 4)
+		assert.equal(subscription?.error, undefined)
+		assert.equal(typeof subscription?.result, 'string')
+		assert.equal((await request('eth_unsubscribe', [subscription?.result], 5))?.result, true)
+		for (const [index, method] of ['personal_sign', 'wallet_watchAsset', 'wallet_unknownMethod'].entries()) assert.equal((await request(method, [], index + 6))?.error?.code, 4100)
+	})
+
 	test('blocks simulated wallet_watchAsset requests until the child frame acknowledges the selected provider', async () => {
 		installBrowserMock()
 		const { handleInterceptedRequest, websiteSocketToString, updateWebsiteAccess, changeSimulationMode, setUseSignersAddressAsActiveAddress } = await loadModules()

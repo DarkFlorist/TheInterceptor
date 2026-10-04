@@ -1,15 +1,24 @@
 import * as funtypes from 'funtypes'
+import { internalSignerStatuses } from '../utils/signerIdentity.js'
 import { EthereumAddress, EthereumQuantity } from './wire-types.js'
 
 export type SignerName = funtypes.Static<typeof SignerName>
-export const SignerName = funtypes.String.withConstraint((value) => value.length > 0 && value.length <= 128)
-
-const internalSignerStatuses = new Set(['NoSigner', 'NotRecognizedSigner', 'NoSignerDetected'])
+export const SignerName = funtypes.Union(
+	funtypes.Literal('NoSigner'),
+	funtypes.Literal('NotRecognizedSigner'),
+	funtypes.Literal('NoSignerDetected'),
+	funtypes.Literal('MetaMask'),
+	funtypes.Literal('Ambire'),
+	funtypes.Literal('Brave'),
+	funtypes.Literal('CoinbaseWallet'),
+	funtypes.Literal('Rabby'),
+	funtypes.Literal('EIP6963'),
+)
 
 export type EIP6963ProviderInfo = funtypes.Static<typeof EIP6963ProviderInfo>
 export const EIP6963ProviderInfo = funtypes.ReadonlyObject({
 	uuid: funtypes.String.withConstraint((value) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)),
-	name: SignerName.withConstraint((value) => !internalSignerStatuses.has(value)),
+	name: funtypes.String.withConstraint((value) => value.length > 0 && value.length <= 128 && !internalSignerStatuses.has(value)),
 	icon: funtypes.String.withConstraint((value) => value.length > 0 && value.length <= 131_072),
 	rdns: funtypes.String.withConstraint((value) => value.length > 0
 		&& value.length <= 255

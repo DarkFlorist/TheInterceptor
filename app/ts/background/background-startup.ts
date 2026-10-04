@@ -217,29 +217,26 @@ async function onContentScriptConnected(waitForStartup: () => Promise<{ simulati
 
 	connectionInitializationPromise = initializeContentScriptConnectionAfterBackgroundStartup(waitForStartup, async () => {
 		const registration = await registerWebsiteConnectionAndProvisionallyClaimSignerState(websiteTabConnections, socket, newConnection, isTopFrame)
-		if (registration.createdTabConnection) {
+		if (registration.createdTabConnection || startsNewSignerDocument) {
 			await updateTabState(socket.tabId, (previousState: TabState) => {
+				// A child's first reconnect must not erase its top frame's persisted choice before the top can prove its connection identity.
+				const preserveSelection = previousState.selectedSignerProvider !== undefined
+					&& previousState.explicitlySelectedSignerProviderUuid === previousState.selectedSignerProvider.uuid
+					&& (!isTopFrame || (previousState.website?.websiteOrigin === websiteOrigin && previousState.selectedSignerConnectionName === socket.connectionName))
 				return modifyObject(previousState, {
-					website: { websiteOrigin, icon: undefined, title: undefined },
-					availableSignerProviders: [],
-					selectedSignerProvider: undefined,
-					explicitlySelectedSignerProviderUuid: undefined,
-					preferredSignerUnavailable: false,
-					signerProviderCatalogOverflowed: false,
-					tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' },
+					website: preserveSelection && !isTopFrame ? previousState.website : { websiteOrigin, icon: undefined, title: undefined },
+					...(preserveSelection ? {} : {
+						availableSignerProviders: [],
+						selectedSignerProvider: undefined,
+						explicitlySelectedSignerProviderUuid: undefined,
+						selectedSignerConnectionName: undefined,
+						preferredSignerUnavailable: false,
+						signerProviderCatalogOverflowed: false,
+					}),
+					...(registration.createdTabConnection ? { tabIconDetails: { icon: ICON_NOT_ACTIVE, iconReason: 'No active address selected.' } } : {}),
 				})
 			})
-			void catchAllErrorsAndCall(async () => updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration()))
-		}
-		if (!registration.createdTabConnection && startsNewSignerDocument) {
-			await updateTabState(socket.tabId, (previousState: TabState) => modifyObject(previousState, {
-				website: { websiteOrigin, icon: undefined, title: undefined },
-				availableSignerProviders: [],
-				selectedSignerProvider: undefined,
-				explicitlySelectedSignerProviderUuid: undefined,
-				preferredSignerUnavailable: false,
-				signerProviderCatalogOverflowed: false,
-			}))
+			if (registration.createdTabConnection) void catchAllErrorsAndCall(async () => updateExtensionIcon(websiteTabConnections, socket.tabId, websiteOrigin, bumpPopupRefreshGeneration()))
 		}
 		if (startsNewSignerDocument) {
 			const currentConnections = websiteTabConnections.get(socket.tabId)

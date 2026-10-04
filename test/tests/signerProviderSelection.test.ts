@@ -116,9 +116,53 @@ describe('EIP-6963 signer provider selection', () => {
 		const result = await signerProvidersChanged(createProviderMessage('signer_providers_changed', [[provider], false]), 'app.example', true)
 		const tabState = await getTabState(7)
 
-		assert.deepEqual(result, { preferredSignerRdns: provider.rdns, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true, legacySignerAllowed: false })
+		assert.deepEqual(result, { preferredSignerRdns: provider.rdns, automaticSelectionAllowed: false, signerSelectionChangeAllowed: true, legacySignerAllowed: false })
 		assert.deepEqual(tabState.availableSignerProviders, [provider])
-		assert.equal(tabState.preferredSignerUnavailable, false)
+		assert.equal(tabState.preferredSignerUnavailable, true)
+	})
+
+	test('requires an explicit selection for a new document even when all remembered provider metadata matches', async () => {
+		const { storageState } = installBrowserMock()
+		storageState.signerPreferences = [{ websiteOrigin: 'app.example', rdns: provider.rdns }]
+		const { signerProvidersChanged, signerProviderSelected } = await import('../../app/ts/background/signerProviderSelection.js')
+		const { socketCanExecuteWithSelectedSigner } = await import('../../app/ts/background/signerExecutionAuthority.js')
+		const catalogRequest = createProviderMessage('signer_providers_changed', [[provider], false])
+		const rememberedSelection = createProviderMessage('signer_provider_selected', [provider, 'remembered'])
+		const explicitSelection = createProviderMessage('signer_provider_selected', [provider, 'explicit'])
+
+		assert.equal((await signerProvidersChanged(catalogRequest, 'app.example', true)).automaticSelectionAllowed, false)
+		await assert.rejects(signerProviderSelected(rememberedSelection, 'app.example', true, 0, new Map()), /remembered RDNS cannot authorize/)
+		assert.equal(socketCanExecuteWithSelectedSigner(catalogRequest.uniqueRequestIdentifier.requestSocket), false)
+		await signerProviderSelected(explicitSelection, 'app.example', true, 0, new Map())
+		assert.equal(socketCanExecuteWithSelectedSigner(catalogRequest.uniqueRequestIdentifier.requestSocket), true)
+
+		// Worker restart preserves the content script's connection identity, independently of page-supplied RDNS and generation metadata.
+		clearSignerExecutionAuthorityForTab(7)
+		registerAuthoritativeTopSocket(catalogRequest.uniqueRequestIdentifier.requestSocket, 'app.example')
+		await signerProvidersChanged(catalogRequest, 'app.example', true)
+		await signerProviderSelected(rememberedSelection, 'app.example', true, 0, new Map())
+		assert.equal(socketCanExecuteWithSelectedSigner(catalogRequest.uniqueRequestIdentifier.requestSocket), true)
+
+		const newSocket = { tabId: 7, connectionName: 9n }
+		registerAuthoritativeTopSocket(newSocket, 'app.example')
+		await signerProvidersChanged({ ...catalogRequest, uniqueRequestIdentifier: { requestId: 2, requestSocket: newSocket } }, 'app.example', true)
+		await assert.rejects(signerProviderSelected({ ...rememberedSelection, uniqueRequestIdentifier: { requestId: 3, requestSocket: newSocket } }, 'app.example', true, 0, new Map()), /remembered RDNS cannot authorize/)
+		assert.equal(socketCanExecuteWithSelectedSigner(newSocket), false)
+	})
+
+	test('settles a same-origin child catalog that lacks the selected provider without granting authority', async () => {
+		installBrowserMock()
+		const { signerProvidersChanged } = await import('../../app/ts/background/signerProviderSelection.js')
+		const { registerCurrentChildSignerSocket, setSignerExecutionTarget, socketCanExecuteWithSelectedSigner } = await import('../../app/ts/background/signerExecutionAuthority.js')
+		setSignerExecutionTarget(7, provider.uuid, 'app.example')
+		const childSocket = { tabId: 7, connectionName: 2n }
+		registerCurrentChildSignerSocket(childSocket, 2)
+		const request = { ...createProviderMessage('signer_providers_changed', [[], false]), uniqueRequestIdentifier: { requestId: 2, requestSocket: childSocket } }
+		const result = await signerProvidersChanged(request, 'app.example', false, 2)
+		const delivered = InterceptorMessageToInpage.parse(serialize(InterceptorMessageToInpage, { interceptorApproved: true, requestId: 2, type: 'result', method: 'signer_providers_changed', result }))
+		if (delivered.method !== 'signer_providers_changed' || !('result' in delivered) || !isRecord(delivered.result)) throw new Error('Missing serialized catalog result')
+		assert.equal(delivered.result.signerFrameIneligible, true)
+		assert.equal(socketCanExecuteWithSelectedSigner(childSocket), false)
 	})
 
 	test('does not publish catalog state from a frame without verified top-frame identity', async () => {
@@ -157,7 +201,7 @@ describe('EIP-6963 signer provider selection', () => {
 		const { getTabState, updateTabState } = await import('../../app/ts/background/storageVariables.js')
 		await updateTabState(7, (previousState) => ({
 			...previousState,
-			signerName: provider.name,
+			signerName: 'EIP6963',
 			signerAccounts: [1n],
 			activeSigningAddress: 1n,
 			selectedSignerProvider: provider,
@@ -182,7 +226,7 @@ describe('EIP-6963 signer provider selection', () => {
 
 		const result = await signerProvidersChanged(createProviderMessage('signer_providers_changed', [[], false]), 'app.example', true)
 
-		assert.deepEqual(result, { preferredSignerRdns: provider.rdns, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true, legacySignerAllowed: false })
+		assert.deepEqual(result, { preferredSignerRdns: provider.rdns, automaticSelectionAllowed: false, signerSelectionChangeAllowed: true, legacySignerAllowed: false })
 		assert.equal(socketCanExecuteWithSelectedSigner({ tabId: 7, connectionName: 1n }), false)
 	})
 
@@ -195,7 +239,7 @@ describe('EIP-6963 signer provider selection', () => {
 		const duplicateWalletInstance = { ...provider, uuid: '33333333-3333-4333-8333-333333333333' }
 
 		const restored = await signerProvidersChanged(createProviderMessage('signer_providers_changed', [[differentlyCapitalizedProvider], false]), 'app.example', true)
-		assert.deepEqual(restored, { preferredSignerRdns: provider.rdns, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true, legacySignerAllowed: false })
+		assert.deepEqual(restored, { preferredSignerRdns: provider.rdns, automaticSelectionAllowed: false, signerSelectionChangeAllowed: true, legacySignerAllowed: false })
 		assert.equal((await getTabState(7)).availableSignerProviders?.[0]?.rdns, provider.rdns)
 		assert.equal((await getSignerPreference('app.example'))?.rdns, provider.rdns)
 
@@ -210,7 +254,7 @@ describe('EIP-6963 signer provider selection', () => {
 		const { getTabState, updateTabState } = await import('../../app/ts/background/storageVariables.js')
 		await updateTabState(7, (previousState) => ({
 			...previousState,
-			signerName: provider.name,
+			signerName: 'EIP6963',
 			signerAccounts: [1n],
 			selectedSignerProvider: provider,
 		}))
@@ -232,7 +276,7 @@ describe('EIP-6963 signer provider selection', () => {
 		const { defaultRpcs } = await import('../../app/ts/background/settings.js')
 		await updateTabState(7, (previousState) => ({
 			...previousState,
-			signerName: provider.name,
+			signerName: 'EIP6963',
 			signerAccounts: [1n],
 			selectedSignerProvider: provider,
 		}))
@@ -250,9 +294,9 @@ describe('EIP-6963 signer provider selection', () => {
 
 		const deferred = await signerProvidersChanged(createProviderMessage('signer_providers_changed', [[provider, duplicateWalletInstance], false]), 'app.example', true)
 		const deferredTabState = await getTabState(7)
-		assert.deepEqual(deferred, { preferredSignerRdns: provider.rdns, automaticSelectionAllowed: true, signerSelectionChangeAllowed: false, legacySignerAllowed: false })
+		assert.deepEqual(deferred, { preferredSignerRdns: provider.rdns, automaticSelectionAllowed: false, signerSelectionChangeAllowed: false, legacySignerAllowed: false })
 		assert.deepEqual(deferredTabState.selectedSignerProvider, provider)
-		assert.equal(deferredTabState.signerName, provider.name)
+		assert.equal(deferredTabState.signerName, 'EIP6963')
 
 		delete storageState.chainChangeConfirmationPromise
 		const allowed = await signerProvidersChanged(createProviderMessage('signer_providers_changed', [[provider, duplicateWalletInstance], false]), 'app.example', true)
@@ -277,12 +321,12 @@ describe('EIP-6963 signer provider selection', () => {
 		}
 
 		const deferred = await signerProvidersChanged(createProviderMessage('signer_providers_changed', [[], false]), 'app.example', true)
-		assert.deepEqual(deferred, { preferredSignerRdns: undefined, automaticSelectionAllowed: true, signerSelectionChangeAllowed: false, legacySignerAllowed: false })
+		assert.deepEqual(deferred, { preferredSignerRdns: undefined, automaticSelectionAllowed: false, signerSelectionChangeAllowed: false, legacySignerAllowed: false })
 		assert.equal(socketCanExecuteWithSelectedSigner({ tabId: 7, connectionName: 1n }), false)
 
 		delete storageState.chainChangeConfirmationPromise
 		const allowed = await signerProvidersChanged(createProviderMessage('signer_providers_changed', [[], false]), 'app.example', true)
-		assert.deepEqual(allowed, { preferredSignerRdns: undefined, automaticSelectionAllowed: true, signerSelectionChangeAllowed: true, legacySignerAllowed: true })
+		assert.deepEqual(allowed, { preferredSignerRdns: undefined, automaticSelectionAllowed: false, signerSelectionChangeAllowed: true, legacySignerAllowed: true })
 		assert.equal(socketCanExecuteWithSelectedSigner({ tabId: 7, connectionName: 1n }), true)
 	})
 
@@ -443,7 +487,7 @@ describe('EIP-6963 signer provider selection', () => {
 		const tabState = await getTabState(7)
 
 		assert.deepEqual(await getSignerPreference('app.example'), { websiteOrigin: 'app.example', rdns: provider.rdns })
-		assert.equal(tabState.signerName, provider.name)
+		assert.equal(tabState.signerName, 'EIP6963')
 		assert.deepEqual(tabState.signerAccounts, [])
 		assert.equal(tabState.activeSigningAddress, undefined)
 		assert.equal(tabState.signerChain, undefined)

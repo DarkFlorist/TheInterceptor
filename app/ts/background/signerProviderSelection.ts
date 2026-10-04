@@ -1,3 +1,4 @@
+import { isTopFrameId } from '../utils/requests.js'
 import { BeginSignerProviderSelection, FinishSignerProviderSelection, SignerProviderSelected, SignerProvidersChanged, type SelectSignerProvider, type SubscriptionReplyOrCallBack } from '../types/interceptor-messages.js'
 import type { TabState, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { ProviderMessage } from '../utils/requests.js'
@@ -6,7 +7,7 @@ import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
 import { getChainChangeConfirmationPromise, getPendingTransactionsAndMessages, getSignerPreference, getTabState, setSignerPreference, updateTabState } from './storageVariables.js'
 import { sendPopupMessageToOpenWindows } from './backgroundUtils.js'
 import { acquireSignerSelectionLease, releaseSignerSelectionLease, signerSelectionLeaseIsActive } from './signerSelectionLease.js'
-import { allowLegacySignerExecution, authorizeSocketForLegacySignerExecution, authorizeSocketForSignerExecution, blockSignerExecution, getSignerExecutionTargetForSocket, isAuthoritativeTopSocket, isTopFrameId, reconcileSignerExecutionDocument, setSignerExecutionTarget, signerFrameHasDifferentOrigin, socketIsEligibleForSignerExecution } from './signerExecutionAuthority.js'
+import { allowLegacySignerExecution, authorizeSocketForLegacySignerExecution, authorizeSocketForSignerExecution, blockSignerExecution, getSignerExecutionTargetForSocket, isAuthoritativeTopSocket, reconcileSignerExecutionDocument, setSignerExecutionTarget, signerFrameHasDifferentOrigin, socketIsEligibleForSignerExecution } from './signerExecutionAuthority.js'
 
 const tabHasPendingSignerWork = async (tabId: number) => {
 	const [pendingSignerRequests, pendingChainChange] = await Promise.all([
@@ -73,6 +74,7 @@ export async function signerProvidersChanged(request: ProviderMessage, websiteOr
 			signerSelectionChangeAllowed: selectedSignerProviderUuid !== undefined || legacySignerAllowed,
 			legacySignerAllowed,
 			...(selectedSignerProviderUuid === undefined ? {} : { selectedSignerProviderUuid }),
+			...(executionTarget !== undefined && selectedSignerProviderUuid === undefined ? { signerFrameIneligible: true } : {}),
 		}
 	}
 	const providers = announcedProviders.map((provider) => ({ ...provider, rdns: provider.rdns.toLowerCase() }))
@@ -95,19 +97,12 @@ export async function signerProvidersChanged(request: ProviderMessage, websiteOr
 		const previouslySelectedProvider = previousState.selectedSignerProvider === undefined
 			? undefined
 			: providers.find((provider) => provider.uuid === previousState.selectedSignerProvider?.uuid)
-		const matchingPreferredProviders = preferredSignerRdns === undefined ? [] : providers.filter((provider) => provider.rdns === preferredSignerRdns)
 		const preserveExplicitSelection = previouslySelectedProvider !== undefined
 			&& previousState.explicitlySelectedSignerProviderUuid === previouslySelectedProvider.uuid
-		const preferredSignerUnavailable = preferredSignerRdns !== undefined
-			&& !preserveExplicitSelection
-			&& (signerProviderCatalogOverflowed || matchingPreferredProviders.length !== 1)
-		const selectedSignerProvider = preserveExplicitSelection
-			? previouslySelectedProvider
-			: preferredSignerRdns === undefined
-			? previouslySelectedProvider
-			: !signerProviderCatalogOverflowed && matchingPreferredProviders.length === 1 && previouslySelectedProvider?.uuid === matchingPreferredProviders[0]?.uuid
-				? previouslySelectedProvider
-				: undefined
+			&& previousState.selectedSignerConnectionName === socket.connectionName
+		const preferredSignerUnavailable = preferredSignerRdns !== undefined && !preserveExplicitSelection
+		// Remembered RDNS is a display preference, never proof that a new document's provider is the wallet the user selected.
+		const selectedSignerProvider = preserveExplicitSelection ? previouslySelectedProvider : undefined
 		const clearSignerState = preferredSignerUnavailable
 			|| (previousState.selectedSignerProvider !== undefined && selectedSignerProvider === undefined)
 		return modifyObject(previousState, {
@@ -127,7 +122,7 @@ export async function signerProvidersChanged(request: ProviderMessage, websiteOr
 		})
 	})
 	if (!signerSelectionChangeAllowed) {
-		return { preferredSignerRdns, automaticSelectionAllowed: !signerProviderCatalogOverflowed, signerSelectionChangeAllowed: false, legacySignerAllowed: false }
+		return { preferredSignerRdns, automaticSelectionAllowed: false, signerSelectionChangeAllowed: false, legacySignerAllowed: false }
 	}
 	const updatedState = await getTabState(tabId)
 	if (!isAuthoritativeTopSocket(socket)) return { preferredSignerRdns: undefined, automaticSelectionAllowed: false, signerSelectionChangeAllowed: false, legacySignerAllowed: false }
@@ -139,7 +134,7 @@ export async function signerProvidersChanged(request: ProviderMessage, websiteOr
 		allowLegacySignerExecution(socket, websiteOrigin)
 	}
 	await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
-	return { preferredSignerRdns, automaticSelectionAllowed: !signerProviderCatalogOverflowed, signerSelectionChangeAllowed, legacySignerAllowed: preferredSignerRdns === undefined }
+	return { preferredSignerRdns, automaticSelectionAllowed: false, signerSelectionChangeAllowed, legacySignerAllowed: preferredSignerRdns === undefined }
 }
 
 export async function signerProviderSelected(request: ProviderMessage, websiteOrigin: string, isTopFrame: boolean, frameId: number | undefined, websiteTabConnections: WebsiteTabConnections) {
@@ -154,6 +149,8 @@ export async function signerProviderSelected(request: ProviderMessage, websiteOr
 	const currentTabState = await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)
 	if (!isAuthoritativeTopSocket(request.uniqueRequestIdentifier.requestSocket)) return
 	const matchingProvider = currentTabState.availableSignerProviders?.find((announcedProvider) => announcedProvider.uuid === provider.uuid)
+	if (selectionKind !== 'explicit' && (currentTabState.explicitlySelectedSignerProviderUuid !== provider.uuid
+		|| currentTabState.selectedSignerConnectionName !== request.uniqueRequestIdentifier.requestSocket.connectionName)) throw new Error('Select the signer again for this document; remembered RDNS cannot authorize a provider')
 	if (matchingProvider === undefined
 		|| matchingProvider.rdns !== provider.rdns
 		|| matchingProvider.name !== provider.name
@@ -165,14 +162,15 @@ export async function signerProviderSelected(request: ProviderMessage, websiteOr
 	await updateTabState(request.uniqueRequestIdentifier.requestSocket.tabId, (previousState: TabState) => {
 		if (!isAuthoritativeTopSocket(request.uniqueRequestIdentifier.requestSocket)) return previousState
 		return modifyObject(previousState, {
-			signerName: provider.name,
+			signerName: 'EIP6963',
 			signerConnected: true,
 			signerAccounts: [],
 			signerAccountError: undefined,
 			signerChain: undefined,
 			activeSigningAddress: undefined,
 			selectedSignerProvider: provider,
-			explicitlySelectedSignerProviderUuid: selectionKind === 'explicit' ? provider.uuid : undefined,
+			explicitlySelectedSignerProviderUuid: provider.uuid,
+			selectedSignerConnectionName: request.uniqueRequestIdentifier.requestSocket.connectionName,
 			preferredSignerUnavailable: false,
 		})
 	})

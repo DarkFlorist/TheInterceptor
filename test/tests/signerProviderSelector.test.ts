@@ -6,9 +6,9 @@ import { getSignerDisplayLogo } from '../../app/ts/components/subcomponents/sign
 test('signing controls prefer the selected EIP-6963 provider icon over legacy name matching', () => {
 	const announcedRabbyIcon = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>'
 
-	assert.equal(getSignerDisplayLogo('Rabby Wallet', announcedRabbyIcon), announcedRabbyIcon)
+	assert.equal(getSignerDisplayLogo('EIP6963', announcedRabbyIcon), announcedRabbyIcon)
 	assert.notEqual(getSignerDisplayLogo('Rabby', undefined), undefined)
-	assert.equal(getSignerDisplayLogo('Rabby Wallet', undefined), undefined)
+	assert.equal(getSignerDisplayLogo('EIP6963', undefined), undefined)
 })
 
 test('signer provider choices visibly disambiguate identical wallet identities by UUID', () => {

@@ -138,7 +138,7 @@ async function main() {
 	let confirmTargetId: string | undefined
 	let selectionTargetId: string | undefined
 	try {
-		const workerTarget = await waitForInterceptorExtensionServiceWorker(chrome.browserDebugPort, 30_000)
+		let workerTarget = await waitForInterceptorExtensionServiceWorker(chrome.browserDebugPort, 30_000)
 		const extensionId = extractExtensionId(workerTarget.url)
 		const workerConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
 		try {
@@ -286,6 +286,32 @@ async function main() {
 				throw new Error(`Iframe signer propagation failed with frame state ${ JSON.stringify(frameState) } and background state ${ JSON.stringify(backgroundState) }`, { cause: error })
 			}
 
+			// Keep both page documents alive while restarting the MV3 worker, exercising real startup registration and selection replay.
+			const previousWorkerTargetId = workerTarget.id
+			await pageConnection.send('ServiceWorker.enable')
+			await pageConnection.send('ServiceWorker.stopAllWorkers')
+			await waitForTargetGone(chrome.browserDebugPort, (target) => target.id === previousWorkerTargetId, 10_000, 'stopped extension service worker')
+			await pageConnection.evaluate(`ethereum.request({ method: 'eth_chainId' })`)
+			workerTarget = await waitForInterceptorExtensionServiceWorker(chrome.browserDebugPort, 30_000)
+			if (workerTarget.id === previousWorkerTargetId) throw new Error('The extension service worker did not restart')
+			const restartedWorkerConnection = await connectTarget(chrome.browserDebugPort, workerTarget.id)
+			try {
+				await waitForCondition(async () => await restartedWorkerConnection.evaluate<boolean>(`(async () => {
+					const storage = await browser.storage.local.get()
+					const tabState = storage['tabState_' + ${ signerSelection.tabId }]
+					return tabState?.selectedSignerProvider?.uuid === ${ JSON.stringify(SELECTED_PROVIDER_UUID) }
+						&& tabState.explicitlySelectedSignerProviderUuid === ${ JSON.stringify(SELECTED_PROVIDER_UUID) }
+						&& tabState.signerAccounts?.length > 0
+				})()`).catch(() => false), 30_000, 'restored signer selection after real worker restart')
+			} finally {
+				restartedWorkerConnection.close()
+			}
+
+			await waitForCondition(async () => await pageConnection.evaluate<boolean>(`(async () => {
+				const accounts = await globalThis.__signingFrame.contentWindow.ethereum.request({ method: 'eth_accounts' })
+				return accounts.includes(${ JSON.stringify(FAKE_SIGNER_ADDRESS) })
+			})()`).catch(() => false), 30_000, 'restored child signer authority after worker restart')
+
 			await pageConnection.evaluate(`(() => {
 				globalThis.__signingResult = { status: 'pending' }
 				globalThis.__signingFrame.contentWindow.ethereum.request({ method: 'eth_sendTransaction', params: [{ from: ${ JSON.stringify(FAKE_SIGNER_ADDRESS) }, to: ${ JSON.stringify(FAKE_SIGNER_ADDRESS) }, value: '0x0', data: '0x' }] })
@@ -328,6 +354,7 @@ async function main() {
 
 			await waitForTargetGone(chrome.browserDebugPort, (target) => target.id === confirmTargetId, 10_000, 'completed confirmation popup')
 			confirmTargetId = undefined
+
 			await pageConnection.evaluate(`(() => {
 				globalThis.__signingResult = { status: 'pending' }
 				globalThis.ethereum.request({ method: 'eth_sendTransaction', params: [{ from: ${ JSON.stringify(FAKE_SIGNER_ADDRESS) }, to: ${ JSON.stringify(FAKE_SIGNER_ADDRESS) }, value: '0x0', data: '0x' }] })
@@ -336,6 +363,12 @@ async function main() {
 			})()`)
 			const confirmationToClose = await waitForTargetByUrl(chrome.browserDebugPort, `chrome-extension://${ extensionId }/html3/confirmTransactionV3.html`, 30_000)
 			confirmTargetId = confirmationToClose.id
+			const confirmationToCloseConnection = await connectTarget(chrome.browserDebugPort, confirmationToClose.id)
+			try {
+				await waitForButtonEnabled(confirmationToCloseConnection, CONFIRM_APPROVE_BUTTON_SELECTOR, 30_000)
+			} finally {
+				confirmationToCloseConnection.close()
+			}
 			await closeTarget(chrome.browserConnection, confirmationToClose.id)
 			confirmTargetId = undefined
 			await waitForCondition(async () => await pageConnection.evaluate(`globalThis.__signingResult?.status === 'rejected'`).catch(() => false), 10_000, 'closed-popup transaction rejection')

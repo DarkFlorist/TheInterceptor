@@ -1,3 +1,5 @@
+import { isSignerIndependentRpcMethod } from './signerRequestPolicy.js'
+import { isTopFrameId } from '../utils/requests.js'
 import { prepareSafeAppsRequest } from './safeAppsRequestHandler.js'
 import type { RpcRequestContext } from '../types/confirmationRequest.js'
 import type { InpageScriptRequest, RPCReply, Settings } from '../types/interceptor-messages.js'
@@ -27,7 +29,7 @@ import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { getWalletSelectedAccount, isActiveSigningSafe } from '../utils/activeAddressSelection.js'
 import { isAccountConnectionMethod, isAccountOnlyMethod } from './accountRequestMethods.js'
 import { beginSignerProviderSelection, finishSignerProviderSelection, signerProviderSelected, signerProvidersChanged } from './signerProviderSelection.js'
-import { isAuthoritativeTopSocket, isTopFrameId, socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
+import { isAuthoritativeTopSocket, socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
 import type { ErrorWithCodeAndOptionalData } from '../types/error.js'
 import type { AddressBookEntry } from '../types/addressBookTypes.js'
 import { getActiveAddressForCurrentSignerState, getConfirmedSignerStateToken, isSignerStateTokenCurrent } from './signerStateOwnership.js'
@@ -409,7 +411,9 @@ export const handleInterceptedRequest = async (port: browser.runtime.Port | unde
 		return replyToInterceptedRequest(websiteTabConnections, { ...getRequestWithDefinedParams(request), ...result })
 	}
 	const initialActiveAddress = await getActiveAddressForRequest(initialSettings, websiteTabConnections, socket.tabId)
-	const requestCanReachSigner = !initialSettings.simulationMode
+	const signerIndependentRpc = initialSettings.activeRpcNetwork.httpsRpc !== undefined
+		&& isSignerIndependentRpcMethod(request.method)
+	const requestCanReachSigner = (!initialSettings.simulationMode && !signerIndependentRpc)
 		|| request.method === 'wallet_watchAsset'
 		|| (initialSettings.useSignersAddressAsActiveAddress && (isAccountConnectionMethod(request.method) || isAccountOnlyMethod(request.method)))
 	if (request.interceptorInternalRequest !== true && isInternalProviderMethod(request.method)) return refusePublicInternalProviderMethod(websiteTabConnections, request)

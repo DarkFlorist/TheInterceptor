@@ -1,5 +1,5 @@
 import { retrieveWebsiteDetails } from './iconHandler.js'
-import { isTopFrameId } from './signerExecutionAuthority.js'
+import { isTopFrameId } from '../utils/requests.js'
 import { getTabState } from './storageVariables.js'
 
 export async function getWebsiteDetailsForConnection(tabId: number, websiteOrigin: string, frameId: number | undefined) {

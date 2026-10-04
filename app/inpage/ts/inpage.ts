@@ -1,3 +1,5 @@
+import { internalSignerStatuses, type SignerIdentity } from '../../ts/utils/signerIdentity.js'
+
 const SAFE_APPS_RESPONSE_VERSION = '9.1.0'
 const SAFE_APPS_PENDING_REQUEST_LIMIT = 32
 
@@ -386,7 +388,6 @@ type BridgeRequest = {
 
 const isMessageCandidate = (value: unknown): value is InterceptorApprovedMessageCandidate => typeof value === 'object' && value !== null
 const isErrorCandidate = (value: unknown): value is InterceptorErrorCandidate => typeof value === 'object' && value !== null
-const internalSignerStatuses = new Set(['NoSigner', 'NotRecognizedSigner', 'NoSignerDetected'])
 const isValidImageDataUri = (value: string) => {
 	const match = /^data:image\/[a-z0-9.+-]+(?:;[a-z0-9.+-]+=[^;,]+)*(;base64)?,(.+)$/is.exec(value)
 	if (match === null) return false
@@ -619,7 +620,7 @@ type OutstandingRequest = {
 }
 
 type OnMessage = 'accountsChanged' | 'message' | 'connect' | 'close' | 'disconnect' | 'chainChanged'
-type Signer = string
+type Signer = SignerIdentity
 
 function getSignerNameFromWalletMarkers(markers: { readonly isAmbire: boolean, readonly isBrave: boolean, readonly isCoinbase: boolean, readonly isMetaMask: boolean, readonly isRabby: boolean }): Signer {
 	if (markers.isCoinbase) return 'CoinbaseWallet'
@@ -1301,13 +1302,16 @@ class InterceptorMessageListener {
 		if (announcedProvider === undefined) throw new Error('The selected EIP-6963 provider is no longer available')
 		const { provider, info } = announcedProvider
 		if (this.selectedSignerProviderUuid === uuid) {
-			if (selectionKind === 'explicit') await this.sendInternalMessageToBackgroundPage({ method: 'signer_provider_selected', params: [info, selectionKind] })
+			await this.sendInternalMessageToBackgroundPage({ method: 'signer_provider_selected', params: [info, selectionKind] })
+			// A restarted worker needs fresh ownership and account replies even when the page still holds the same provider object.
+			await this.connectToSigner('EIP6963')
+			await this.getAccountsFromSigner()
 			this.markInitialSignerProviderCatalogReconciled()
 			return true
 		}
 		const preparedSigner = provider === this.signerWindowEthereumProvider && this.signerWindowEthereumRequest !== undefined
 			? { provider: this.signerWindowEthereumProvider, connected: this.connected, request: this.signerWindowEthereumRequest }
-			: this.prepareSignerProvider(provider, info.name, false, false)
+			: this.prepareSignerProvider(provider, 'EIP6963', false, false)
 		if (preparedSigner === undefined) {
 			if (typeof provider === 'object' && provider !== null) this.rejectedSignerProviders.add(provider)
 			if (this.announcedProviders.get(uuid) === announcedProvider) {
@@ -1327,7 +1331,7 @@ class InterceptorMessageListener {
 		this.connected = preparedSigner.connected
 		this.selectedSignerProviderUuid = uuid
 		await this.sendInternalMessageToBackgroundPage({ method: 'signer_provider_selected', params: [info, selectionKind] })
-		await this.connectToSigner(info.name)
+		await this.connectToSigner('EIP6963')
 		await this.getAccountsFromSigner()
 		this.markInitialSignerProviderCatalogReconciled()
 		return true
@@ -1451,7 +1455,7 @@ class InterceptorMessageListener {
 		if ('selectedSignerProviderUuid' in reply && reply.selectedSignerProviderUuid !== undefined && typeof reply.selectedSignerProviderUuid !== 'string') throw new Error('Failed to parse selected signer provider UUID')
 		if (catalogDecisionGeneration !== this.signerCatalogDecisionGeneration || catalogRevision !== this.signerProviderCatalogRevision) return
 		if ('signerFrameIneligible' in reply && reply.signerFrameIneligible === true) {
-			// Cross-origin frames may use simulation APIs, but the background never authorizes them to execute through the top document's signer.
+			// A frame with a different origin or no matching provider can use simulation APIs without waiting for signer authority.
 			this.pendingInitialSignerConnection = undefined
 			this.clearSignerProviderCatalogRetry()
 			this.markInitialSignerProviderCatalogReconciled()
@@ -1534,6 +1538,8 @@ class InterceptorMessageListener {
 		this.signerProviderCatalogReconciliationNeeded = false
 		if (pendingExplicitSignerProviderUuid !== undefined) {
 			try {
+				// Rebuild background document authority before replaying the user's selection after a worker restart.
+				await this.synchronizeAnnouncedProviders()
 				await this.runWithSignerSelectionBlocked(async () => await this.applyAnnouncedProviderSelection(pendingExplicitSignerProviderUuid, 'explicit'))
 			} catch (error: unknown) {
 				this.reportSignerDiscoveryError('apply deferred EIP-6963 signer selection', error)
@@ -1596,8 +1602,8 @@ class InterceptorMessageListener {
 		if (this.conflictingProviderUuids.has(info.uuid)) return
 		const existingAnnouncement = this.announcedProviders.get(info.uuid)
 		if (existingAnnouncement !== undefined) {
-			if (existingAnnouncement.provider === provider
-				&& existingAnnouncement.info.name === info.name
+			// Re-announcements may wrap the provider again. Keep the original object so duplicate metadata cannot replace the user's selected signer.
+			if (existingAnnouncement.info.name === info.name
 				&& existingAnnouncement.info.icon === info.icon
 				&& existingAnnouncement.info.rdns === info.rdns) return
 			this.announcedProviders.delete(info.uuid)
