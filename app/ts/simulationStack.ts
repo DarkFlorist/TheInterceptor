@@ -1,6 +1,9 @@
 import * as preact from 'preact'
 import { SimulationStackView } from './components/pages/SimulationStackPage.js'
 import { ErrorBoundary } from './components/subcomponents/Error.js'
+import { installLegacyManagementHashRedirect } from './utils/legacyManagementHashes.js'
+
+installLegacyManagementHashRedirect()
 
 function rerender() {
 	const root = document.getElementById('simulation-stack-root')

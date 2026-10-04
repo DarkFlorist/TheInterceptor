@@ -643,6 +643,63 @@ describe('unexpected error diagnostics', () => {
 		assert.equal(diagnostics[0]?.details, context)
 	})
 
+	test('records deeply nested causes without letting diagnostic inspection fail', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics, reportUnexpectedError } = await modulesPromise
+		let error = new Error('root failure')
+		for (let index = 0; index < 500; index++) error = Object.assign(new Error(`cause ${ index }`), { cause: error })
+
+		await withSilencedConsole(async () => await reportUnexpectedError(error))
+
+		const [diagnostic] = await getInterceptorErrorDiagnostics()
+		assert.equal(diagnostic?.message, 'cause 499')
+		assert.match(diagnostic?.rawError ?? '', /Maximum diagnostic depth reached/u)
+	})
+
+	test('marks oversized raw errors and details as truncated', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics, reportUnexpectedError } = await modulesPromise
+		const error = Object.assign(new Error('large error'), { data: 'x'.repeat(100_000) })
+
+		await withSilencedConsole(async () => await reportUnexpectedError(error, { details: 'y'.repeat(100_000) }))
+
+		const [diagnostic] = await getInterceptorErrorDiagnostics()
+		assert.ok((diagnostic?.rawError?.length ?? 0) <= 64_000)
+		assert.equal(diagnostic?.details?.length, 64_000)
+		assert.match(diagnostic?.rawError ?? '', /\[Diagnostic value truncated\]/u)
+		assert.match(diagnostic?.details ?? '', /\[Diagnostic text truncated\]$/u)
+	})
+
+	test('falls back to readable text when a value prevents inspection', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		const unreadable = new Proxy({}, { getPrototypeOf: () => { throw new Error('prototype inaccessible') } })
+		assert.match(stringifyDiagnosticDetails(unreadable) ?? '', /Diagnostic inspection failed: prototype inaccessible/u)
+	})
+
+	test('bounds inspection of shared nested values before they expand', async () => {
+		const { stringifyDiagnosticDetails } = await import('../../app/ts/utils/diagnosticSerialization.js')
+		let leafReads = 0
+		let branch: unknown = { get value() { leafReads += 1; return 'leaf' } }
+		for (let depth = 0; depth < 8; depth++) branch = { first: branch, second: branch, third: branch, fourth: branch, fifth: branch }
+
+		const diagnostic = stringifyDiagnosticDetails(branch)
+
+		assert.ok(leafReads < 1_000)
+		assert.match(diagnostic ?? '', /Diagnostic inspection limit reached|more properties omitted/u)
+	})
+
+	test('persists a report when the original error cannot be inspected for console details', async () => {
+		browserMock.reset()
+		const { getInterceptorErrorDiagnostics, reportUnexpectedError } = await modulesPromise
+		const unreadable = new Proxy({}, { getPrototypeOf: () => { throw new Error('prototype inaccessible') } })
+
+		await withSilencedConsole(async () => await reportUnexpectedError(unreadable))
+
+		const [diagnostic] = await getInterceptorErrorDiagnostics()
+		assert.match(diagnostic?.rawError ?? '', /Diagnostic inspection failed: prototype inaccessible/u)
+		assert.equal(diagnostic?.code, 'unexpected_error')
+	})
+
 	test('preserves hidden and nested error fields when another field is unreadable', async () => {
 		browserMock.reset()
 		const { getInterceptorErrorDiagnostics, reportUnexpectedError } = await modulesPromise

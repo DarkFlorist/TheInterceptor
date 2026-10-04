@@ -1,5 +1,6 @@
 import type { TransactionOrMessageIdentifier } from '../types/interceptor-messages.js'
-import { getManagementPageHash, getSimulationStackManagementHash, type ManagementPage } from '../utils/managementPages.js'
+import { getManagementPageHash, type ManagementPage } from '../utils/managementPages.js'
+import { getSimulationStackManagementHash } from '../utils/simulationStackTargets.js'
 import { updateTabIfExists, updateWindowIfExists } from '../utils/requests.js'
 import { getHtmlFile } from './backgroundUtils.js'
 import { getManagementTabId, setManagementTabId } from './storageVariables.js'
@@ -23,7 +24,7 @@ async function openManagementTab(targetHash: string) {
 	const allTabs = await browser.tabs.query({})
 	const managementTab = allTabs.find((tab) => tab.id === tabId)
 
-	if (managementTab?.id === undefined || managementTab.url?.split('#', 1)[0] !== pageUrl) return await openInNewTab()
+	if (managementTab?.id === undefined || (managementTab.url !== undefined && managementTab.url.split('#', 1)[0] !== pageUrl)) return await openInNewTab()
 	const tab = await updateTabIfExists(managementTab.id, { active: true, highlighted: true, url: targetUrl })
 	if (tab === undefined) return await openInNewTab()
 	if (tab.windowId !== undefined) await updateWindowIfExists(tab.windowId, { focused: true })

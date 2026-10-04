@@ -1,6 +1,7 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getSimulationStackTargetElementIdFromHash, type ManagementPage } from '../../app/ts/utils/managementPages.js'
+import type { ManagementPage } from '../../app/ts/utils/managementPages.js'
+import { getSimulationStackTargetElementIdFromHash } from '../../app/ts/utils/simulationStackTargets.js'
 
 type TabRecord = {
 	readonly id: number
@@ -210,6 +211,16 @@ describe('management tab tracking', () => {
 		assert.ok(targetUrl?.startsWith('/html3/settingsViewV3.html#simulation-stack?'))
 		assert.equal(getSimulationStackTargetElementIdFromHash(targetUrl.slice(targetUrl.indexOf('#'))), 'simulation-stack-transaction-0x1')
 		assert.deepEqual(updatedWindows, [{ windowId: 7, update: { focused: true } }])
+	})
+
+	test('reuses a tracked management tab when its URL is unavailable', async () => {
+		const { createdTabs, updatedTabs } = installBrowserMock([{ id: 42, windowId: 7 }], { managementTabId: 42 })
+		const { openManagementPage } = await loadManagementNavigation()
+
+		await openManagementPage('diagnostics')
+
+		assert.deepEqual(createdTabs, [])
+		assert.deepEqual(updatedTabs, [{ tabId: 42, update: { active: true, highlighted: true, url: '/html3/settingsViewV3.html#diagnostics' } }])
 	})
 
 	test('replaces a missing tracked management tab', async () => {

@@ -12,7 +12,7 @@ import { CompleteVisualizedSimulation, type BlockTimeManipulation, type PreSimul
 import { MessageToPopup, PopupMessage, UpdateHomePage, type Settings } from '../../app/ts/types/interceptor-messages.js'
 import { serialize, type EthereumUnsignedTransaction } from '../../app/ts/types/wire-types.js'
 import { installDomMock } from './domMock.js'
-import { getSimulationStackTargetHash } from '../../app/ts/utils/managementPages.js'
+import { getSimulationStackTargetHash } from '../../app/ts/utils/simulationStackTargets.js'
 import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
 import type { EnrichedRichListElement } from '../../app/ts/types/interceptor-reply-messages.js'
 

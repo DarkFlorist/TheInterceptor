@@ -5,7 +5,7 @@ import { Signal } from '@preact/signals'
 import { act } from 'preact/test-utils'
 import { installDomMock } from './domMock.js'
 import type { WebsiteAccess } from '../../app/ts/types/websiteAccessTypes.js'
-import { getWebsiteOriginHash } from '../../app/ts/utils/managementPages.js'
+import { getWebsiteOriginHash } from '../../app/ts/utils/websiteAccessRoutes.js'
 
 type RuntimeMessageListener = (message: unknown) => unknown
 type RuntimeMessage = {
@@ -248,7 +248,7 @@ describe('WebsiteAccessView selection', () => {
 		assert.equal(isChecked(betaRadio), true)
 
 		await act(() => {
-			dom.setHash('#origin:alpha.example')
+			dom.setHash(getWebsiteOriginHash('alpha.example'))
 		})
 
 		assert.equal(isChecked(alphaRadio), true)

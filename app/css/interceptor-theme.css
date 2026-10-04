@@ -1186,7 +1186,7 @@ html, body {
 }
 
 .address-book-page,
-.address-book-container,
+.address-book-page > .hint-container,
 .address-book-layout {
 	height: 100%;
 }
@@ -1194,7 +1194,7 @@ html, body {
 @media screen and (max-width: 520px) {
 	.standalone-address-book-frame,
 	.address-book-page,
-	.address-book-container,
+	.address-book-page > .hint-container,
 	.address-book-layout,
 	.address-book-content {
 		height: auto;

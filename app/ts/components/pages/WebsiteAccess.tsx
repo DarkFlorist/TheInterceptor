@@ -22,7 +22,7 @@ import type { OptionalSignal } from '../../utils/OptionalSignal.js'
 import { sanitizeStoredWebsiteIcon } from '../../utils/websiteIcons.js'
 import { AsyncActionButton } from '../subcomponents/AsyncAction.js'
 import { useAsyncState } from '../../utils/preact-utilities.js'
-import { getWebsiteListHash, getWebsiteOriginFromHash, getWebsiteOriginHash, WEBSITE_ORIGIN_RADIO_NAME } from '../../utils/managementPages.js'
+import { getWebsiteListHash, getWebsiteOriginFromHash, getWebsiteOriginHash, WEBSITE_ORIGIN_RADIO_NAME } from '../../utils/websiteAccessRoutes.js'
 
 type WebsiteAccessContext = {
 	searchQuery: Signal<string>

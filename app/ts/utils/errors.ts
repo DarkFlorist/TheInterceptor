@@ -134,11 +134,15 @@ function normalizeUnexpectedError(error: unknown) {
 	return { message: GENERIC_UNEXPECTED_ERROR_MESSAGE }
 }
 
+function isInspectableError(error: unknown): error is Error {
+	try { return error instanceof Error } catch { return false }
+}
+
 export function printError(error: unknown) {
 	console.error(error)
 	const forwardedDiagnostics = getForwardedDiagnostics(error)
 	if (forwardedDiagnostics !== undefined) console.error('forwarded diagnostics:', forwardedDiagnostics)
-	if (error instanceof Error) {
+	if (isInspectableError(error)) {
 		try {
 			if ('data' in error) console.error('data: ', JSON.stringify(error.data))
 			if ('code' in error) console.error('code: ', JSON.stringify(error.code))
@@ -155,7 +159,7 @@ function createErrorReport(error: unknown, metadata: ErrorReportMetadata, policy
 		timestamp: new Date(),
 		message,
 		cause: getErrorMessage(error),
-		rawError: metadata.rawError ?? getForwardedDiagnostics(error) ?? stringifyDiagnosticDetails(error),
+		rawError: stringifyDiagnosticDetails(metadata.rawError ?? getForwardedDiagnostics(error) ?? stringifyDiagnosticDetails(error)),
 		source,
 		code: metadata.code ?? defaultCode,
 		category: metadata.category ?? policy.category,

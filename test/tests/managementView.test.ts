@@ -1,6 +1,9 @@
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
-import { getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash, getSimulationStackManagementHash, getSimulationStackTargetElementIdFromHash, getSimulationStackTargetHash, getWebsiteOriginFromHash, getWebsiteOriginHash } from '../../app/ts/utils/managementPages.js'
+import { getManagementPageFromHash, getManagementPageFromNavigationKey, getManagementPageHash } from '../../app/ts/utils/managementPages.js'
+import { getCanonicalManagementHash } from '../../app/ts/utils/legacyManagementHashes.js'
+import { getSimulationStackManagementHash, getSimulationStackTargetElementIdFromHash, getSimulationStackTargetHash } from '../../app/ts/utils/simulationStackTargets.js'
+import { getWebsiteOriginFromHash, getWebsiteOriginHash } from '../../app/ts/utils/websiteAccessRoutes.js'
 import type { TransactionOrMessageIdentifier } from '../../app/ts/types/interceptor-messages.js'
 
 const managementViewSource = await Bun.file(new URL('../../app/ts/components/pages/ManagementView.tsx', import.meta.url)).text()
@@ -42,16 +45,20 @@ describe('management view routing', () => {
 	})
 
 	test('continues to open links created before management tab hashes were namespaced', () => {
-		assert.equal(getManagementPageFromHash('#origin:https://example.com'), 'websites')
-		assert.equal(getWebsiteOriginFromHash('#origin:https://example.com'), 'https://example.com')
-		assert.equal(getManagementPageFromHash('#simulation-stack-target=simulation-stack-transaction-0x1'), 'simulation-stack')
-		assert.equal(getSimulationStackTargetElementIdFromHash('#simulation-stack-target=simulation-stack-transaction-0x1'), 'simulation-stack-transaction-0x1')
+		const websiteHash = getCanonicalManagementHash('#origin:https://example.com')
+		const stackHash = getCanonicalManagementHash('#simulation-stack-target=simulation-stack-transaction-0x1')
+		assert.equal(websiteHash, getWebsiteOriginHash('https://example.com'))
+		assert.equal(getManagementPageFromHash(websiteHash ?? ''), 'websites')
+		assert.equal(getWebsiteOriginFromHash(websiteHash ?? ''), 'https://example.com')
+		assert.equal(getManagementPageFromHash(stackHash ?? ''), 'simulation-stack')
+		assert.equal(getSimulationStackTargetElementIdFromHash(stackHash ?? ''), 'simulation-stack-transaction-0x1')
+		assert.equal(getManagementPageFromHash('#origin:https://example.com'), undefined)
 	})
 
 	test('shows an unavailable route for unknown or malformed hashes', () => {
 		assert.equal(getManagementPageFromHash('#unknown'), undefined)
 		assert.equal(getManagementPageFromHash('#origin:'), undefined)
-		assert.equal(getManagementPageFromHash('#simulation-stack-target=invalid'), 'simulation-stack')
+		assert.equal(getManagementPageFromHash(getCanonicalManagementHash('#simulation-stack-target=invalid') ?? ''), 'simulation-stack')
 		assert.equal(getManagementPageFromHash(''), 'home')
 		assert.equal(getManagementPageFromHash('#'), 'home')
 	})
