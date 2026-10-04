@@ -46,6 +46,8 @@ function createDelegationCache(lookup: (address: bigint, controller: AbortContro
 			controller.signal.removeEventListener('abort', onInvalidate)
 			if (pendingByAddress.get(key) === pending) pendingByAddress.delete(key)
 		})
+		// Waiters can cancel before invalidation rejects the shared lookup; keep its rejection observed.
+		void pending.promise.catch(() => undefined)
 		pendingByAddress.set(key, pending)
 		return pending
 	}

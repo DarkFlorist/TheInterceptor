@@ -8,7 +8,8 @@ import { checksummedAddress } from '../../utils/bigint.js'
 import { hasDelegateClearingPreference } from '../../utils/delegateClearingState.js'
 
 type DelegationStatus = { type: 'delegated', delegate: bigint } | { type: 'none' } | { type: 'unknown' }
-type DelegationOption = { address: bigint, chainId: bigint, status: DelegationStatus }
+type DelegationOption = { address: bigint, chainId: bigint, status: DelegationStatus, checkedAt: number }
+const UNKNOWN_DELEGATION_RETRY_MS = 60 * 1000
 
 export function DelegateClearingOption({ activeAddress, rpcNetwork, simulationMode, preferences, currentBlockNumber }: {
 	activeAddress: ReadonlySignal<AddressBookEntry | undefined>
@@ -31,7 +32,7 @@ export function DelegateClearingOption({ activeAddress, rpcNetwork, simulationMo
 		void (async () => {
 			const reply = await sendPopupMessageWithReply({ method: 'popup_requestDelegateClearing', data: { address, chainId } })
 			if (disposed || reply?.data.address !== address || reply.data.chainId !== chainId) return
-			delegationOption.value = { address, chainId, status: reply.data.status }
+			delegationOption.value = { address, chainId, status: reply.data.status, checkedAt: Date.now() }
 		})()
 		return () => { disposed = true }
 	}, [simulationMode.value, address, chainId, rpcNetwork.value?.httpsRpc])
@@ -39,12 +40,13 @@ export function DelegateClearingOption({ activeAddress, rpcNetwork, simulationMo
 	useEffect(() => {
 		const current = delegationOption.value
 		if (!simulationMode.value || currentBlockNumber.value === undefined || address === undefined || chainId === undefined
-			|| current?.address !== address || current.chainId !== chainId || current.status.type !== 'delegated') return
+			|| current?.address !== address || current.chainId !== chainId) return
+		if (current.status.type === 'unknown' && Date.now() - current.checkedAt < UNKNOWN_DELEGATION_RETRY_MS) return
 		let disposed = false
 		void (async () => {
 			const reply = await sendPopupMessageWithReply({ method: 'popup_requestDelegateClearing', data: { address, chainId } })
 			if (disposed || reply?.data.address !== address || reply.data.chainId !== chainId) return
-			delegationOption.value = { address, chainId, status: reply.data.status }
+			delegationOption.value = { address, chainId, status: reply.data.status, checkedAt: Date.now() }
 		})()
 		return () => { disposed = true }
 	}, [currentBlockNumber.value, simulationMode.value, address, chainId])
@@ -68,9 +70,9 @@ export function DelegateClearingOption({ activeAddress, rpcNetwork, simulationMo
 		}
 	}
 
-	return <details class = 'delegation-simulation-option'>
+	return <details class = 'delegate-clearing-option'>
 		<summary>{ status.type === 'delegated' ? 'Delegated account options' : 'Delegate clearing active' }</summary>
-		<div class = 'delegation-simulation-option-content'>
+		<div class = 'delegate-clearing-option-content'>
 			{ status.type === 'delegated' ? <p class = 'paragraph'>Delegated to { checksummedAddress(status.delegate) }</p>
 				: <p class = 'paragraph'>{ status.type === 'none' ? 'No delegate is currently detected.' : 'Could not confirm the current delegate.' }</p> }
 			<label class = 'form-control'>
@@ -79,7 +81,7 @@ export function DelegateClearingOption({ activeAddress, rpcNetwork, simulationMo
 				} } />
 				<span>Simulate with delegate cleared</span>
 			</label>
-			<p class = 'paragraph'>Connected websites see simulations without the delegate while simulation mode is on. Signing and transaction approval previews use the delegate on chain.</p>
+			<p class = 'paragraph'>Connected websites can read the cleared code in simulation mode, even with an empty queue. On-chain delegation and signing previews stay unchanged.</p>
 			{ errorText.value === undefined ? <></> : <p class = 'paragraph' role = 'alert'>{ errorText.value }</p> }
 		</div>
 	</details>

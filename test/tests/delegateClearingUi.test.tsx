@@ -86,7 +86,7 @@ async function flush() {
 }
 
 describe('delegate clearing option', () => {
-	test('rechecks a visible delegated account on new blocks and stops after no delegate is found', async () => {
+	test('rechecks a visible delegated account and rediscovers delegation after a cached none result', async () => {
 		const dom = installDomMock()
 		try {
 			await act(() => render(option(), dom.document.body))
@@ -99,8 +99,39 @@ describe('delegate clearing option', () => {
 			assert.equal(checkbox(dom.document.body), undefined)
 			await act(() => { currentBlockNumber.value = 2n })
 			await flush()
-			assert.equal(lookups, 2)
+			assert.equal(lookups, 3)
+			status = { type: 'delegated', delegate }
+			await act(() => { currentBlockNumber.value = 3n })
+			await flush()
+			assert.equal(lookups, 4)
+			assert.notEqual(checkbox(dom.document.body), undefined)
 		} finally {
+			await act(() => render(undefined, dom.document.body))
+			dom.restore()
+		}
+	})
+
+	test('retries unknown delegation status after a minute on a new block', async () => {
+		const dom = installDomMock()
+		const originalNow = Date.now
+		let now = originalNow()
+		Date.now = () => now
+		try {
+			status = { type: 'unknown' }
+			await act(() => render(option(), dom.document.body))
+			await flush()
+			assert.equal(lookups, 1)
+			await act(() => { currentBlockNumber.value = 1n })
+			await flush()
+			assert.equal(lookups, 1)
+			now += 60_001
+			status = { type: 'delegated', delegate }
+			await act(() => { currentBlockNumber.value = 2n })
+			await flush()
+			assert.equal(lookups, 2)
+			assert.notEqual(checkbox(dom.document.body), undefined)
+		} finally {
+			Date.now = originalNow
 			await act(() => render(undefined, dom.document.body))
 			dom.restore()
 		}

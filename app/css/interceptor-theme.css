@@ -1690,26 +1690,26 @@ svg.spinner > circle {
 	margin: 10px;
 }
 
-.delegation-simulation-option {
+.delegate-clearing-option {
 	color: var(--text-color);
 	font-size: 0.8rem;
 	margin: 6px 0 8px 12px;
 }
 
-.delegation-simulation-option summary {
+.delegate-clearing-option summary {
 	color: var(--accent-color);
 	cursor: pointer;
 	font-weight: 600;
 }
 
-.delegation-simulation-option-content {
+.delegate-clearing-option-content {
 	display: grid;
 	gap: 6px;
 	padding: 8px 12px 4px;
 	overflow-wrap: anywhere;
 }
 
-.delegation-simulation-option-content .paragraph {
+.delegate-clearing-option-content .paragraph {
 	margin: 0;
 }
 
