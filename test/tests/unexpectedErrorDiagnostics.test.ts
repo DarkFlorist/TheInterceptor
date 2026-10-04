@@ -339,6 +339,35 @@ describe('unexpected error diagnostics', () => {
 		assert.equal((await getInterceptorErrorDiagnostics()).at(-1)?.rawError, 'next error')
 	})
 
+	test('keeps recording after both fallback paths encounter a full storage quota', async () => {
+		browserMock.reset()
+		const { appendInterceptorErrorDiagnostic, getInterceptorErrorDiagnostics } = await modulesPromise
+		let storageIsFull = true
+		browserMock.setStorageSet(async (items) => {
+			if (storageIsFull) throw new Error('QUOTA_BYTES quota exceeded')
+			await browserMock.writeStorage(items)
+		})
+
+		assert.equal(await appendInterceptorErrorDiagnostic(storageDiagnostic(1, 'x'.repeat(600_000))), 'storage-full')
+		assert.equal(await appendInterceptorErrorDiagnostic(storageDiagnostic(2, 'small error')), 'storage-full')
+		assert.deepEqual(await getInterceptorErrorDiagnostics(), [])
+
+		storageIsFull = false
+		assert.equal(await appendInterceptorErrorDiagnostic(storageDiagnostic(3, 'recovered error')), 'stored')
+		assert.equal((await getInterceptorErrorDiagnostics())[0]?.rawError, 'recovered error')
+	})
+
+	test('logs the raw diagnostic when storage is full without rejecting error reporting', async () => {
+		browserMock.reset()
+		browserMock.setStorageSet(async () => { throw new Error('QUOTA_BYTES quota exceeded') })
+		const { reportUnexpectedError } = await modulesPromise
+		const { consoleErrors } = await captureConsoleCalls(async () => await reportUnexpectedError(new Error('plain error')))
+		const storageFailure = consoleErrors.find((args) => args[0] === 'Failed to persist interceptor error diagnostic because extension storage is full.')
+		const loggedDiagnostic: unknown = storageFailure?.[1]
+		assert.ok(typeof loggedDiagnostic === 'object' && loggedDiagnostic !== null && 'rawError' in loggedDiagnostic && typeof loggedDiagnostic.rawError === 'string')
+		assert.match(loggedDiagnostic.rawError, /plain error/u)
+	})
+
 	test('recognizes expected infrastructure errors from unknown thrown values', async () => {
 		const { classifyCaughtError, createInterceptorInternalError, isExpectedInfrastructureError, isFailedToFetchError, isNewBlockAbort } = await modulesPromise
 

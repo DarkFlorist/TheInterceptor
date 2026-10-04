@@ -362,6 +362,16 @@ function diagnosticStorageFailureRecord(diagnostic: InterceptorErrorDiagnostic):
 	}
 }
 
+async function storeDiagnosticStorageFailureRecord(diagnostic: InterceptorErrorDiagnostic): Promise<'stored' | 'storage-full'> {
+	try {
+		await browserStorageLocalSet({ interceptorErrorDiagnostics: [diagnosticStorageFailureRecord(diagnostic)] })
+		return 'stored'
+	} catch (error) {
+		if (!isDiagnosticStorageQuotaError(error)) throw error
+		return 'storage-full'
+	}
+}
+
 export async function getInterceptorErrorDiagnostics(): Promise<readonly InterceptorErrorDiagnostic[]> {
 	try {
 		return (await browserStorageLocalGet('interceptorErrorDiagnostics'))?.interceptorErrorDiagnostics ?? []
@@ -373,27 +383,25 @@ export async function getInterceptorErrorDiagnostics(): Promise<readonly Interce
 	}
 }
 
-export async function appendInterceptorErrorDiagnostic(diagnostic: InterceptorErrorDiagnostic) {
-	await interceptorErrorDiagnosticsSemaphore.execute(async () => {
+export async function appendInterceptorErrorDiagnostic(diagnostic: InterceptorErrorDiagnostic): Promise<'stored' | 'storage-full'> {
+	return await interceptorErrorDiagnosticsSemaphore.execute(async () => {
 		const diagnostics = await getInterceptorErrorDiagnostics()
 		const retained = [...diagnostics, diagnostic].slice(-MAX_INTERCEPTOR_ERROR_DIAGNOSTICS)
 		while (retained.length > 1 && diagnosticStorageBytes(retained) > MAX_INTERCEPTOR_ERROR_DIAGNOSTICS_BYTES) retained.shift()
 		if (diagnosticStorageBytes(retained) > MAX_INTERCEPTOR_ERROR_DIAGNOSTICS_BYTES) {
-			await browserStorageLocalSet({ interceptorErrorDiagnostics: [diagnosticStorageFailureRecord(diagnostic)] })
-			return
+			return await storeDiagnosticStorageFailureRecord(diagnostic)
 		}
 		while (true) {
 			try {
 				await browserStorageLocalSet({ interceptorErrorDiagnostics: retained })
-				return
+				return 'stored'
 			} catch (error) {
 				if (!isDiagnosticStorageQuotaError(error)) throw error
 				if (retained.length > 1) {
 					retained.shift()
 					continue
 				}
-				await browserStorageLocalSet({ interceptorErrorDiagnostics: [diagnosticStorageFailureRecord(diagnostic)] })
-				return
+				return await storeDiagnosticStorageFailureRecord(diagnostic)
 			}
 		}
 	})

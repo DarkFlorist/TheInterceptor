@@ -191,7 +191,9 @@ function logUnexpectedError(error: unknown, report: InterceptorErrorReport) {
 
 async function appendErrorDiagnostic(report: InterceptorErrorReport) {
 	try {
-		await appendInterceptorErrorDiagnostic(report)
+		if (await appendInterceptorErrorDiagnostic(report) === 'storage-full') {
+			console.error('Failed to persist interceptor error diagnostic because extension storage is full.', report)
+		}
 	} catch (error: unknown) {
 		console.error('Failed to persist interceptor error diagnostic.')
 		printError(error)
