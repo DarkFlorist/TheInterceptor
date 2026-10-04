@@ -1,4 +1,5 @@
 import type { TransactionOrMessageIdentifier } from '../types/interceptor-messages.js'
+import { getManagementPageHash, getManagementPageParameters } from './managementPages.js'
 
 const SIMULATION_STACK_TARGET_HASH_KEY = 'simulation-stack-target'
 const SIMULATION_STACK_TARGET_FOCUS_KEY = 'focus'
@@ -16,13 +17,16 @@ export function getSimulationStackTargetHash(identifier: TransactionOrMessageIde
 	const hashParameters = new URLSearchParams()
 	hashParameters.set(SIMULATION_STACK_TARGET_HASH_KEY, getSimulationStackElementId(identifier))
 	hashParameters.set(SIMULATION_STACK_TARGET_FOCUS_KEY, focusToken)
-	return `#${ hashParameters.toString() }`
+	return `${ getManagementPageHash('simulation-stack') }?${ hashParameters.toString() }`
 }
 
 export function getSimulationStackTargetElementIdFromHash(hash: string) {
-	const hashParameters = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash)
-	const targetElementId = hashParameters.get(SIMULATION_STACK_TARGET_HASH_KEY)
-	if (targetElementId === null) return undefined
+	const targetElementId = getManagementPageParameters(hash, 'simulation-stack')?.get(SIMULATION_STACK_TARGET_HASH_KEY)
+	if (targetElementId === null || targetElementId === undefined) return undefined
 	if (!/^simulation-stack-(transaction|message)-0x[a-f0-9]+$/.test(targetElementId)) return undefined
 	return targetElementId
+}
+
+export function getSimulationStackManagementHash(identifier?: TransactionOrMessageIdentifier): string {
+	return identifier === undefined ? getManagementPageHash('simulation-stack') : getSimulationStackTargetHash(identifier)
 }

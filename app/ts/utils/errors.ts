@@ -1,11 +1,12 @@
 import { sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport } from '../background/backgroundUtils.js'
 import { appendInterceptorErrorDiagnostic, setLatestUnexpectedError } from '../background/storageVariables.js'
-import { InterceptorError, type JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
+import type { JsonRpcErrorResponse } from '../types/JsonRpc-types.js'
 import type { InterceptorErrorCategory, InterceptorErrorDiagnostic, InterceptorErrorSeverity } from '../types/errorDiagnostics.js'
 import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages.js'
 import { getErrorMessage, getInterceptorInternalErrorClassification, isBrowserFetchTransportError } from './caughtErrors.js'
 import { NEW_BLOCK_ABORT } from './constants.js'
 import { createErrorDebugId, createUnexpectedErrorPopupMessage } from './unexpectedErrorPopupMessage.js'
+import { stringifyDiagnosticDetails } from './diagnosticSerialization.js'
 export { createInterceptorInternalError, getErrorMessage, hasInterceptorInternalErrorCode } from './caughtErrors.js'
 
 export const GENERIC_UNEXPECTED_ERROR_MESSAGE = 'An internal Interceptor error occurred. Please see The Interceptor console for technical details.'
@@ -18,6 +19,7 @@ type ErrorReportMetadata = {
 	category?: InterceptorErrorCategory
 	severity?: InterceptorErrorSeverity
 	details?: unknown
+	rawError?: string
 	userVisible?: boolean
 	suppressExpectedHandledErrors?: boolean
 }
@@ -111,47 +113,36 @@ export const isExpectedInfrastructureError = (error: unknown) => {
 export const shouldSuppressUnexpectedErrorReport = (error: unknown) => classifyCaughtError(error) !== 'unexpected'
 
 function getForwardedDiagnostics(error: unknown): string | undefined {
-	const maybeInterceptorError = InterceptorError.safeParse(error)
-	if (!maybeInterceptorError.success) return undefined
-	return maybeInterceptorError.value.params[0]
+	if (typeof error !== 'object' || error === null) return undefined
+	try {
+		if (Object.getOwnPropertyDescriptor(error, 'method')?.value !== 'InterceptorError') return undefined
+		const params = Object.getOwnPropertyDescriptor(error, 'params')?.value
+		if (!Array.isArray(params) || params.length !== 1) return undefined
+		const message = Object.getOwnPropertyDescriptor(params, '0')?.value
+		return typeof message === 'string' ? message : undefined
+	} catch {
+		// A hostile descriptor cannot prevent the raw error from being recorded.
+		return undefined
+	}
 }
 
 function normalizeUnexpectedError(error: unknown) {
-	if (typeof error === 'object' && error !== null && 'message' in error && error.message !== undefined && typeof error.message === 'string') {
-		return { message: error.message }
+	if (typeof error === 'object' && error !== null) {
+		const message = getErrorMessage(error)
+		if (message !== undefined) return { message }
 	}
 	return { message: GENERIC_UNEXPECTED_ERROR_MESSAGE }
 }
 
-const MAX_DIAGNOSTIC_DETAILS_LENGTH = 2000
-
-function truncateDiagnosticDetails(details: string) {
-	if (details.length <= MAX_DIAGNOSTIC_DETAILS_LENGTH) return details
-	return `${ details.slice(0, MAX_DIAGNOSTIC_DETAILS_LENGTH) }...`
-}
-
-function stringifyDiagnosticDetails(details: unknown): string | undefined {
-	if (details === undefined) return undefined
-	if (typeof details === 'string') return truncateDiagnosticDetails(details)
-	try {
-		const serialized = JSON.stringify(details, (_key, value) => typeof value === 'bigint' ? value.toString() : value)
-		if (serialized !== undefined) return truncateDiagnosticDetails(serialized)
-	} catch {
-		const message = getErrorMessage(details)
-		if (message !== undefined) return truncateDiagnosticDetails(message)
-	}
-	try {
-		return truncateDiagnosticDetails(String(details))
-	} catch {
-		return undefined
-	}
+function isInspectableError(error: unknown): error is Error {
+	try { return error instanceof Error } catch { return false }
 }
 
 export function printError(error: unknown) {
 	console.error(error)
 	const forwardedDiagnostics = getForwardedDiagnostics(error)
 	if (forwardedDiagnostics !== undefined) console.error('forwarded diagnostics:', forwardedDiagnostics)
-	if (error instanceof Error) {
+	if (isInspectableError(error)) {
 		try {
 			if ('data' in error) console.error('data: ', JSON.stringify(error.data))
 			if ('code' in error) console.error('code: ', JSON.stringify(error.code))
@@ -168,6 +159,7 @@ function createErrorReport(error: unknown, metadata: ErrorReportMetadata, policy
 		timestamp: new Date(),
 		message,
 		cause: getErrorMessage(error),
+		rawError: stringifyDiagnosticDetails(metadata.rawError ?? getForwardedDiagnostics(error) ?? stringifyDiagnosticDetails(error)),
 		source,
 		code: metadata.code ?? defaultCode,
 		category: metadata.category ?? policy.category,
@@ -203,7 +195,9 @@ function logUnexpectedError(error: unknown, report: InterceptorErrorReport) {
 
 async function appendErrorDiagnostic(report: InterceptorErrorReport) {
 	try {
-		await appendInterceptorErrorDiagnostic(report)
+		if (await appendInterceptorErrorDiagnostic(report) === 'storage-full') {
+			console.error('Failed to persist interceptor error diagnostic because extension storage is full.', report)
+		}
 	} catch (error: unknown) {
 		console.error('Failed to persist interceptor error diagnostic.')
 		printError(error)

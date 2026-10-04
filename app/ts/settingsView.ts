@@ -1,9 +1,13 @@
 import * as preact from 'preact'
-import { SettingsView } from './components/pages/SettingsView.js'
+import { ManagementView } from './components/pages/ManagementView.js'
 import { ErrorBoundary } from './components/subcomponents/Error.js'
+import { installLegacyManagementHashRedirect } from './utils/legacyManagementHashes.js'
+
+installLegacyManagementHashRedirect()
 
 function rerender() {
-	preact.render(preact.createElement(ErrorBoundary, {}, preact.createElement(SettingsView, {})), document.body)
+	document.querySelector('body > main')?.remove()
+	preact.render(preact.createElement(ErrorBoundary, {}, preact.createElement(ManagementView, {})), document.body)
 }
 
 rerender()

@@ -26,11 +26,21 @@ describe('DynamicScroller lifecycle', () => {
 	test('does not restore a stale index when a shrunken list grows again', async () => {
 		const dom = installDomMock()
 		const previousResizeObserverDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'ResizeObserver')
+		const observers: TestResizeObserver[] = []
 		class TestResizeObserver {
 			readonly callback: ResizeObserverCallback
-			constructor(callback: ResizeObserverCallback) { this.callback = callback }
-			observe() { this.callback([{ contentRect: { height: 160 } }], this) }
-			disconnect() { return undefined }
+			target: Element | undefined
+			constructor(callback: ResizeObserverCallback) {
+				this.callback = callback
+				observers.push(this)
+			}
+			observe(target: Element) {
+				this.target = target
+				const height = target instanceof HTMLDivElement && target.style.overflowY === 'scroll' ? 160 : 40
+				this.resize(height)
+			}
+			resize(height: number) { this.callback([{ contentRect: { height } }], this) }
+			disconnect() { this.target = undefined }
 		}
 		Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: TestResizeObserver })
 		const items = signal<Readonly<number[]>>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
@@ -43,6 +53,10 @@ describe('DynamicScroller lifecycle', () => {
 			scrollView.scrollTop = 240
 			await act(() => { scrollView.dispatchEvent?.(new Event('scroll')) })
 			assert.equal(dom.document.body.textContent, '6789')
+			const visibleRowObserver = observers.find((observer) => observer.target !== undefined && observer.target !== scrollView)
+			assert.equal(visibleRowObserver?.target?.textContent, '6')
+			await act(() => { visibleRowObserver?.resize(80) })
+			assert.equal(dom.document.body.textContent, '678')
 
 			await act(() => { items.value = [0, 1] })
 			assert.equal(dom.document.body.textContent, '01')

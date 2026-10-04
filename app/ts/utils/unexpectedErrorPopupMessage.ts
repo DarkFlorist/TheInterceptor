@@ -16,6 +16,7 @@ export function createUnexpectedErrorPopupMessage(report: UnexpectedErrorPopupMe
 			source: report.source,
 			code: report.code,
 			debugId: report.debugId,
+			rawError: undefined,
 		}
 	}
 }
