@@ -20,6 +20,7 @@ type RuntimeMessage = {
 		settings?: {
 			simulationMode?: boolean
 			activeSigningSafeAddress?: bigint
+			activeRpcNetwork?: { readonly chainId?: string }
 		}
 		interceptorDisabled?: boolean
 		visualizedSimulatorState?: unknown
@@ -467,6 +468,43 @@ describe('refreshHomeData', () => {
 		const fullHomeData = browserMock.sentMessages.findLast((message) => message.method === 'popup_UpdateHomePage')
 		assert.equal(fullHomeData?.data?.activeSigningAddressInThisTab, defaultAddress.address)
 		assert.equal(fullHomeData?.data?.walletSelectedAddressBookEntry?.name, 'Named signer contact')
+	})
+
+	test('keeps admitted RPC settings across cached and fresh home-data refreshes', async () => {
+		const browserMock = installBrowserMock()
+		const { browserStorageLocalSet, getRequiredSettings, requestNewHomeData, refreshHomeData, defaultActiveAddresses, defaultRpcs, EthereumClientService, TokenPriceService } = await loadModules()
+		const [defaultAddress] = defaultActiveAddresses
+		const rpcNetwork = defaultRpcs[0]
+		if (defaultAddress === undefined || rpcNetwork === undefined) throw new Error('missing defaults')
+		await browserStorageLocalSet({
+			independentActiveSimulationAddress: defaultAddress.address,
+			openedPageV2: { page: 'Home' },
+			useSignersAddressAsActiveAddress: false,
+			websiteAccess: [],
+			activeRpcNetwork: rpcNetwork,
+			simulationMode: false,
+			makeCurrentAddressRich: false,
+			fixedAddressRichList: [],
+		})
+		const admittedSettings = await getRequiredSettings()
+		const replacementNetwork = { ...rpcNetwork, name: 'Replacement network', chainId: rpcNetwork.chainId + 1n, primary: false }
+		await browserStorageLocalSet({ activeRpcNetwork: replacementNetwork })
+		const ethereum = new EthereumClientService({
+			rpcUrl: rpcNetwork.httpsRpc,
+			clearCache() { /* noop test stub */ },
+			async jsonRpcRequest() { return await new Promise<never>(() => undefined) },
+		}, async () => undefined, async () => undefined, rpcNetwork)
+		const tokenPriceService = new TokenPriceService(ethereum)
+		try {
+			await requestNewHomeData(ethereum, new Map(), true, false, undefined, 20, admittedSettings)
+			await refreshHomeData(ethereum, tokenPriceService, new Map(), true, 21, async () => undefined, false, undefined, admittedSettings)
+		} finally {
+			ethereum.cleanup()
+		}
+
+		const updates = browserMock.sentMessages.filter((message) => message.method === 'popup_UpdateHomePage' && (message.popupRefreshGeneration === 20 || message.popupRefreshGeneration === 21))
+		const admittedChainId = `0x${ rpcNetwork.chainId.toString(16) }`
+		assert.deepEqual(updates.map((message) => message.data?.settings?.activeRpcNetwork?.chainId), [admittedChainId, admittedChainId])
 	})
 
 	test('home bootstrap hides cached signer addresses without a confirmed signer owner', async () => {

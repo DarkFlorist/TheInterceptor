@@ -3,6 +3,7 @@ import * as assert from 'assert'
 import { test } from 'bun:test'
 import { encodeFunctionCall } from '../../app/ts/utils/abiRuntime.js'
 import { getLatestUnexpectedError } from '../../app/ts/background/storageVariables.js'
+import { getRequiredSettings } from '../../app/ts/background/settings.js'
 import { activeAddress, addressString, browserMock, createSafeAddressBookEntry, createSafeTx, createWebsitePort, EIP712Message, ethereum, fakeRpcNetwork, fakeSafeContract, getSafeTxHash, isRecord, modules, oldTimestamp, pendingTransaction, privateKeyToAccount, recipientAddress, SAFE_EXECUTION_ABI, safeTestOwnerAccount, safeTestOwnerAddress, safeTxToTypedDataJson, signedTransaction, simulator, uniqueRequestIdentifier, withSilencedConsole } from './confirmTransactionTestHarness.js'
 
 test('refreshing confirm transaction updates the persisted simulation timestamp', async () => {
@@ -1321,6 +1322,7 @@ test('changes the Safe simulation signer only after validating current on-chain 
 
 	const reply = await modules.setSafeSimulationSigner(
 		ethereum,
+		await getRequiredSettings(),
 		new Map(),
 		{
 			method: 'popup_setSafeSimulationSigner',
@@ -1342,6 +1344,7 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	fakeSafeContract.version = 'invalid-version'
 	const unsupportedVersionFailure = await withSilencedConsole(async () => modules.setSafeSimulationSigner(
 		ethereum,
+		await getRequiredSettings(),
 		new Map(),
 		{
 			method: 'popup_setSafeSimulationSigner',
@@ -1362,6 +1365,7 @@ test('changes the Safe simulation signer only after validating current on-chain 
 	const unsupportedVersionSaveFailure = await withSilencedConsole(async () => addOrModifyAddressBookEntry(
 		ethereum,
 		createTestSimulationServicesOwner({ ethereum: ethereum, tokenPriceService: simulator.tokenPriceService }),
+		await getRequiredSettings(),
 		new Map(),
 		{
 			method: 'popup_addOrModifyAddressBookEntry',
@@ -1389,6 +1393,7 @@ test('refreshes Safe owner metadata and clears a stale simulation signer without
 
 	const reply = await modules.setSafeSimulationSigner(
 		ethereum,
+		await getRequiredSettings(),
 		new Map(),
 		{
 			method: 'popup_setSafeSimulationSigner',

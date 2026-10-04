@@ -4,7 +4,7 @@ import { popupSettingsOperations } from '../types/popupSettingsProtocol.js'
 import type { PopupSettingsRequest } from '../types/popupSettingsRequests.js'
 import type { PopupMessage } from '../types/interceptor-messages.js'
 import type { PopupReplyOption } from '../types/interceptor-reply-messages.js'
-import { popupMessageHandler, type PopupMessageHandlerMap, type PopupReadyMessageDispatcherContext } from './popupMessageHandlerRegistry.js'
+import { popupMessageHandler, type PopupMessageHandlerMap, type PopupReadyMessageDispatcherContext, type PopupSettingsAdmissionMethod } from './popupMessageHandlerRegistry.js'
 import { getSettingsSnapshot, requireSettings } from './settings.js'
 import { changeActiveAddress, enableSimulationMode, modifyMakeMeRich, popupChangeActiveRpc } from './popupMessageHandlers.js'
 import { queuePopupSimulationRefresh } from './popupSimulationRefreshQueue.js'
@@ -13,7 +13,7 @@ import { reportUnexpectedError } from '../utils/errors.js'
 
 const settingsCoordinator = createPopupSettingsCoordinator(async (data) => await sendPopupMessageToOpenWindows({ method: 'popup_settingsChangeStatus', data }))
 
-function settingsCommand<Method extends PopupSettingsRequest['method']>(method: Method, action: (context: PopupReadyMessageDispatcherContext, request: Extract<PopupMessage, { method: Method }>) => Promise<PopupReplyOption | void>) {
+function settingsCommand<Method extends PopupSettingsRequest['method'] & PopupSettingsAdmissionMethod>(method: Method, action: (context: PopupReadyMessageDispatcherContext, request: Extract<PopupMessage, { method: Method }>) => Promise<PopupReplyOption | void>) {
 	return popupMessageHandler(method, async (context, request) => {
 		const descriptor = popupSettingsOperations[method]
 		const admission = await settingsCoordinator.run(descriptor.operation, async () => {

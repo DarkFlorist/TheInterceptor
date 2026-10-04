@@ -7,8 +7,15 @@ import type { PublishRpcConnectionStatus } from './rpcSlowRequestTracking.js'
 import type { RpcConfigurationState } from './storageVariables.js'
 import { getRpcServicesAtAdmission } from './rpcConfigurationAvailability.js'
 import { RPC_CONFIGURATION_UNAVAILABLE_ERROR } from '../types/interceptor-reply-messages.js'
+import { RPC_CONFIGURATION_UNAVAILABLE_MESSAGE } from '../utils/rpcConfigurationError.js'
 
-const rpcConfigurationUnavailableReply = (): PopupReplyOption => ({ error: RPC_CONFIGURATION_UNAVAILABLE_ERROR })
+function rpcConfigurationUnavailableReply(request: PopupMessage): PopupReplyOption {
+	switch (request.method) {
+		case 'popup_setSafeSimulationSigner': return { type: 'SetSafeSimulationSignerReply', ok: false, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }
+		case 'popup_addOrModifyAddressBookEntry': return { type: 'AddOrModifyAddressBookEntryReply', ok: false, message: RPC_CONFIGURATION_UNAVAILABLE_MESSAGE }
+		default: return { error: RPC_CONFIGURATION_UNAVAILABLE_ERROR }
+	}
+}
 
 export type PopupMessageDispatcherContext = {
 	websiteTabConnections: WebsiteTabConnections
@@ -25,34 +32,140 @@ export type PopupMessageHandler = (context: PopupMessageDispatcherContext, reque
 export type PopupMessageHandlerMap = Record<PopupMessage['method'], PopupMessageHandler>
 export type PopupReadyMessageDispatcherContext = Omit<PopupMessageDispatcherContext, 'settings'> & { readonly settings: Settings }
 
+type PopupAdmissionMode = 'settings' | 'recovery' | 'rpc-lifecycle' | 'rpc-snapshot' | 'optional-rpc-snapshot'
+
+// This exhaustive table is the single source of truth for popup admission. Adding a protocol method requires choosing its availability and snapshot semantics here.
+const POPUP_ADMISSION_MODE = {
+	popup_ChangeSettings: 'settings',
+	popup_UnexpectedErrorOccured: 'settings',
+	popup_addOrModifyAddressBookEntry: 'optional-rpc-snapshot',
+	popup_allowOrPreventAddressAccessForWebsite: 'settings',
+	popup_blockOrAllowExternalRequests: 'settings',
+	popup_changeActiveAddress: 'settings',
+	popup_changeActiveRpc: 'settings',
+	popup_changeAddOrModifyAddressWindowState: 'rpc-snapshot',
+	popup_changeChainDialog: 'settings',
+	popup_changeInterceptorAccess: 'settings',
+	popup_changePage: 'settings',
+	popup_changePreSimulationBlockTimeManipulation: 'rpc-snapshot',
+	popup_clearUnexpectedError: 'settings',
+	popup_confirmDialog: 'rpc-snapshot',
+	popup_enableSimulationMode: 'settings',
+	popup_fetchSimulationStackRequestConfirmation: 'rpc-snapshot',
+	popup_forceSetGasLimitForTransaction: 'rpc-snapshot',
+	popup_getAddressBookData: 'settings',
+	popup_get_export_settings: 'settings',
+	popup_importSafeStack: 'rpc-snapshot',
+	popup_importSimulationStack: 'rpc-snapshot',
+	popup_import_settings: 'settings',
+	popup_interceptorAccess: 'settings',
+	popup_interceptorAccessChangeAddress: 'settings',
+	popup_interceptorAccessRefresh: 'settings',
+	popup_isMainPopupWindowOpen: 'settings',
+	popup_isSimulationVisualizerOpen: 'settings',
+	popup_modifyMakeMeRich: 'settings',
+	popup_openAddressBook: 'settings',
+	popup_openSettings: 'recovery',
+	popup_openSimulationStack: 'settings',
+	popup_openWebPage: 'settings',
+	popup_openWebsiteAccess: 'settings',
+	popup_readyAndListening: 'rpc-snapshot',
+	popup_refreshConfirmTransactionDialogSimulation: 'rpc-snapshot',
+	popup_refreshConfirmTransactionMetadata: 'rpc-snapshot',
+	popup_refreshHomeData: 'rpc-snapshot',
+	popup_refreshInterceptorAccessMetadata: 'settings',
+	popup_refreshSimulation: 'rpc-snapshot',
+	popup_removeAddressBookEntry: 'settings',
+	popup_removeTransactionOrSignedMessage: 'rpc-snapshot',
+	popup_removeWebsiteAccess: 'settings',
+	popup_removeWebsiteAddressAccess: 'settings',
+	popup_requestAbiAndNameFromBlockExplorer: 'settings',
+	popup_requestAccountsFromSigner: 'settings',
+	popup_requestActiveAddresses: 'settings',
+	popup_requestCompleteVisualizedSimulation: 'rpc-snapshot',
+	popup_requestHomePageBootstrap: 'settings',
+	popup_requestIdentifyAddress: 'rpc-snapshot',
+	popup_requestInterceptorSimulationInput: 'rpc-snapshot',
+	popup_requestLatestUnexpectedError: 'settings',
+	popup_requestMakeMeRichData: 'rpc-snapshot',
+	popup_requestNewHomeData: 'rpc-snapshot',
+	popup_requestSafeContractState: 'rpc-snapshot',
+	popup_requestSafeStackExport: 'rpc-snapshot',
+	popup_requestSettings: 'recovery',
+	popup_requestSettingsChangeStatus: 'settings',
+	popup_requestSimulationMetadata: 'rpc-snapshot',
+	popup_requestSimulationMode: 'settings',
+	popup_resetSimulation: 'rpc-lifecycle',
+	popup_restoreDefaultRpcConfiguration: 'recovery',
+	popup_retrieveWebsiteAccess: 'settings',
+	popup_retryRpcConfiguration: 'recovery',
+	popup_setDisableInterceptor: 'settings',
+	popup_setEnsNameForHash: 'settings',
+	popup_setSafeSimulationSigner: 'rpc-snapshot',
+	popup_setTransactionOrMessageBlockTimeManipulator: 'rpc-snapshot',
+	popup_set_rpc_list: 'settings',
+	popup_simulateGnosisSafeTransaction: 'rpc-snapshot',
+	popup_simulateGovernanceContractExecution: 'rpc-snapshot',
+	popup_watchAssetDialog: 'settings',
+} as const satisfies Record<PopupMessage['method'], PopupAdmissionMode>
+
+type PopupMethodForAdmission<Mode extends PopupAdmissionMode> = {
+	[Method in keyof typeof POPUP_ADMISSION_MODE]: typeof POPUP_ADMISSION_MODE[Method] extends Mode ? Method : never
+}[keyof typeof POPUP_ADMISSION_MODE]
+type PopupRecoveryMethod = PopupMethodForAdmission<'recovery'>
+type PopupRpcLifecycleMethod = PopupMethodForAdmission<'rpc-lifecycle'>
+type PopupOptionalSnapshotMethod = PopupMethodForAdmission<'optional-rpc-snapshot'>
+type PopupSnapshotMethod = PopupMethodForAdmission<'rpc-snapshot'>
+export type PopupSettingsAdmissionMethod = PopupMethodForAdmission<'settings'>
+
 const popupMethodHandler = createMethodHandlerFor<PopupMessage, PopupMessageDispatcherContext, Promise<PopupReplyOption | void>>()
 
-export function popupMessageHandler<Method extends PopupMessage['method']>(
+type PopupAdmission =
+	| { readonly kind: 'admitted', readonly settings: Settings | undefined, readonly services: SimulationServices | undefined }
+	| { readonly kind: 'rejected', readonly reply: PopupReplyOption }
+
+// All popup availability policy is resolved here; the exported factories below only provide correctly narrowed contexts for each admission mode.
+function admitPopupRequest(context: PopupMessageDispatcherContext, request: PopupMessage, requiresSettings: boolean, requiresRpc: boolean): PopupAdmission {
+	if (requiresSettings && context.settings === undefined) return { kind: 'rejected', reply: rpcConfigurationUnavailableReply(request) }
+	if (!requiresRpc) return { kind: 'admitted', settings: context.settings, services: undefined }
+	const services = getRpcServicesAtAdmission(context.rpcConfiguration, context.simulationServicesOwner)
+	if (context.settings === undefined || services === undefined) return { kind: 'rejected', reply: rpcConfigurationUnavailableReply(request) }
+	return { kind: 'admitted', settings: context.settings, services }
+}
+
+export function popupMessageHandler<Method extends PopupSettingsAdmissionMethod>(
 	method: Method,
 	handler: (context: PopupReadyMessageDispatcherContext, request: Extract<PopupMessage, { readonly method: Method }>) => Promise<PopupReplyOption | void>,
-	settingsUnavailableReply: (request: Extract<PopupMessage, { readonly method: Method }>) => PopupReplyOption = () => rpcConfigurationUnavailableReply(),
 ): PopupMessageHandler {
 	return popupMethodHandler(method, async (context, request) => {
-		if (context.settings === undefined) return settingsUnavailableReply(request)
-		return await handler({ ...context, settings: context.settings }, request)
+		const admission = admitPopupRequest(context, request, true, false)
+		if (admission.kind === 'rejected') return admission.reply
+		if (admission.settings === undefined) return rpcConfigurationUnavailableReply(request)
+		return await handler({ ...context, settings: admission.settings }, request)
 	})
 }
 
-export function popupRecoveryMessageHandler<Method extends PopupMessage['method']>(
+export function popupRecoveryMessageHandler<Method extends PopupRecoveryMethod>(
 	method: Method,
 	handler: (context: PopupMessageDispatcherContext, request: Extract<PopupMessage, { readonly method: Method }>) => Promise<PopupReplyOption | void>,
 ): PopupMessageHandler {
-	return popupMethodHandler(method, handler)
+	return popupMethodHandler(method, async (context, request) => {
+		const admission = admitPopupRequest(context, request, false, false)
+		if (admission.kind === 'rejected') return admission.reply
+		return await handler(context, request)
+	})
 }
 
 // Lifecycle commands are the only RPC-backed popup operations allowed to retain the live owner. Fixed-provider operations belong in popupSnapshotMessageHandler.
-export function popupRpcLifecycleMessageHandler<Method extends PopupMessage['method']>(
+export function popupRpcLifecycleMessageHandler<Method extends PopupRpcLifecycleMethod>(
 	method: Method,
 	handler: (context: PopupReadyMessageDispatcherContext, request: Extract<PopupMessage, { readonly method: Method }>) => Promise<PopupReplyOption | void>,
 ): PopupMessageHandler {
-	return popupMessageHandler(method, async (context, request) => {
-		if (getRpcServicesAtAdmission(context.rpcConfiguration, context.simulationServicesOwner) === undefined) return rpcConfigurationUnavailableReply()
-		return await handler(context, request)
+	return popupMethodHandler(method, async (context, request) => {
+		const admission = admitPopupRequest(context, request, true, true)
+		if (admission.kind === 'rejected') return admission.reply
+		if (admission.settings === undefined) return rpcConfigurationUnavailableReply(request)
+		return await handler({ ...context, settings: admission.settings }, request)
 	})
 }
 
@@ -61,34 +174,34 @@ export type PopupSnapshotContext = Omit<PopupReadyMessageDispatcherContext, 'sim
 	readonly services: SimulationServices
 }
 
-export function popupSnapshotMessageHandler<Method extends PopupMessage['method']>(
+export function popupSnapshotMessageHandler<Method extends PopupSnapshotMethod>(
 	method: Method,
 	handler: (context: PopupSnapshotContext, request: Extract<PopupMessage, { readonly method: Method }>) => Promise<PopupReplyOption | void>,
-	unavailableReply: (request: Extract<PopupMessage, { readonly method: Method }>) => PopupReplyOption = () => rpcConfigurationUnavailableReply(),
 ): PopupMessageHandler {
-	return popupMessageHandler(method, async (context, request) => {
+	return popupMethodHandler(method, async (context, request) => {
+		const admission = admitPopupRequest(context, request, true, true)
+		if (admission.kind === 'rejected') return admission.reply
+		if (admission.settings === undefined || admission.services === undefined) return rpcConfigurationUnavailableReply(request)
 		const { simulationServicesOwner, resetSimulationState: _resetSimulationState, ...executionContext } = context
-		const services = getRpcServicesAtAdmission(context.rpcConfiguration, simulationServicesOwner)
-		if (services === undefined) return unavailableReply(request)
-		return await handler({ ...executionContext, services }, request)
-	}, unavailableReply)
+		return await handler({ ...executionContext, settings: admission.settings, services: admission.services }, request)
+	})
 }
 
-export type PopupOptionalSnapshotContext = Omit<PopupReadyMessageDispatcherContext, 'resetSimulationState'> & {
+export type PopupOptionalSnapshotContext = Omit<PopupMessageDispatcherContext, 'resetSimulationState'> & {
 	readonly services: SimulationServices | undefined
 }
 
 // Mixed commands can remain available offline while declaring exactly which request variants require an admitted service snapshot.
-export function popupOptionalSnapshotMessageHandler<Method extends PopupMessage['method']>(
+export function popupOptionalSnapshotMessageHandler<Method extends PopupOptionalSnapshotMethod>(
 	method: Method,
 	handler: (context: PopupOptionalSnapshotContext, request: Extract<PopupMessage, { readonly method: Method }>) => Promise<PopupReplyOption | void>,
 	requiresRpc: (request: Extract<PopupMessage, { readonly method: Method }>) => boolean,
-	unavailableReply: (request: Extract<PopupMessage, { readonly method: Method }>) => PopupReplyOption,
+	requiresSettings: (request: Extract<PopupMessage, { readonly method: Method }>) => boolean = () => false,
 ): PopupMessageHandler {
-	return popupMessageHandler(method, async (context, request) => {
+	return popupMethodHandler(method, async (context, request) => {
+		const admission = admitPopupRequest(context, request, requiresSettings(request), requiresRpc(request))
+		if (admission.kind === 'rejected') return admission.reply
 		const { resetSimulationState: _resetSimulationState, ...executionContext } = context
-		const services = getRpcServicesAtAdmission(context.rpcConfiguration, context.simulationServicesOwner)
-		if (requiresRpc(request) && services === undefined) return unavailableReply(request)
-		return await handler({ ...executionContext, services }, request)
-	}, unavailableReply)
+		return await handler({ ...executionContext, settings: admission.settings, services: admission.services }, request)
+	})
 }

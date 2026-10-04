@@ -211,6 +211,36 @@ describe('popup message dispatcher seams', () => {
 		])
 	})
 
+	test('reconciles an access-editor revocation against the committed permissions', async () => {
+		const grantedAccess = { ...disabledWebsiteAccess, access: true, interceptorDisabled: false }
+		const revokedAccess = { ...grantedAccess, access: false }
+		storageState.websiteAccess = [grantedAccess]
+		const portMessages: { readonly method?: string, readonly result?: unknown }[] = []
+		const socket = { tabId: 1, connectionName: 0n }
+		const connection = {
+			port: { postMessage: (message: { readonly method?: string, readonly result?: unknown }) => portMessages.push(message) } as browser.runtime.Port,
+			socket,
+			websiteOrigin: grantedAccess.website.websiteOrigin,
+			approved: true,
+			wantsToConnect: false,
+		}
+		const context = createDispatcherContext(async () => undefined)
+		context.settings = { ...settings, websiteAccess: [grantedAccess] }
+		context.websiteTabConnections.set(socket.tabId, { connections: { '1-0x0': connection } })
+
+		await dispatchPopupMessage(context, {
+			method: 'popup_changeInterceptorAccess',
+			data: [{ oldEntry: grantedAccess, newEntry: revokedAccess, removed: false }],
+		})
+
+		assert.deepEqual(storageState.websiteAccess, [revokedAccess])
+		assert.equal(connection.approved, false)
+		assert.deepEqual(portMessages.map(({ method, result }) => ({ method, result })), [
+			{ method: 'accountsChanged', result: [] },
+			{ method: 'disconnect', result: [] },
+		])
+	})
+
 	test('routes recovery handlers through the registry when settings are unavailable', async () => {
 		const context = createDispatcherContext(async () => undefined)
 		context.settings = undefined
@@ -229,7 +259,7 @@ describe('popup message dispatcher seams', () => {
 		}), true)
 	})
 
-	test('keeps method-specific Safe failures typed when settings are unavailable', async () => {
+	test('keeps Safe failures typed and local contact writes available when settings are unavailable', async () => {
 		const context = createDispatcherContext(async () => undefined)
 		context.settings = undefined
 		context.rpcConfiguration = { status: 'unavailable', reason: 'read-failed', error: new Error('Storage unavailable') }
@@ -251,6 +281,11 @@ describe('popup message dispatcher seams', () => {
 				safeSimulationSignerAddress: 3n,
 			},
 		}), { type: 'AddOrModifyAddressBookEntryReply', ok: false, message })
+		assert.deepEqual(await dispatchPopupMessage(context, {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: { type: 'contact', name: 'Offline contact', address: 4n, entrySource: 'User' },
+		}), { type: 'AddOrModifyAddressBookEntryReply', ok: true })
+		assert.equal(storageState.userAddressBookEntriesV3?.some((entry) => entry.address === '0x0000000000000000000000000000000000000004'), true)
 	})
 
 	test('snapshot registration captures at invocation and keeps one pair across awaits', async () => {

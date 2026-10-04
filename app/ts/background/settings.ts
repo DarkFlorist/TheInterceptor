@@ -102,6 +102,7 @@ async function getSettingsFromStorageItems(storedItems: Readonly<Record<string, 
 	return { activeSimulationAddress, activeSigningSafeAddress, openedPage, useSignersAddressAsActiveAddress, websiteAccess, activeRpcNetwork, simulationMode }
 }
 
+// Use for standalone operations that have no admitted settings context and must read the latest committed settings.
 export async function getRequiredSettings() : Promise<Settings> {
 	const snapshot = await getSettingsSnapshot()
 	return requireSettings(snapshot)
@@ -112,6 +113,7 @@ export function requireSettings(snapshot: { readonly settings: Settings | undefi
 	return snapshot.settings
 }
 
+// Admission boundary: settings and RPC configuration come from one storage read and must travel together through the admitted operation.
 export async function getSettingsSnapshot(): Promise<{ readonly settings: Settings | undefined, readonly rpcConfiguration: RpcConfigurationState }> {
 	const { storedItems, rpcConfiguration } = await getRpcConfigurationStateWithStorageSnapshot(SETTINGS_STORAGE_KEYS)
 	const activeRpcNetwork = 'activeRpcNetwork' in rpcConfiguration ? rpcConfiguration.activeRpcNetwork : undefined
@@ -126,6 +128,7 @@ export type CapturedRpcNetwork = {
 	readonly [capturedRpcNetworkMarker]: true
 }
 
+// Long-lived mutations use this token only when later settings fields may change but the admitted RPC network must remain pinned.
 export function captureRpcNetwork(settings: Settings): CapturedRpcNetwork {
 	return { activeRpcNetwork: settings.activeRpcNetwork, fallbackSettings: settings, [capturedRpcNetworkMarker]: true }
 }
