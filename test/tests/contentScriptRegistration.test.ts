@@ -774,9 +774,13 @@ test('registration applies the same single snapshot it caches, then observes a s
 })
 
 test('disabled compatibility leaves malformed hosting selections inert without reporting a recovery', async () => {
-	const { getRegisteredContentScripts, sentMessages } = installBrowserMock({ safeAppsCompatibilityMode: false, safeAppsHostOrigins: ['not-an-origin'] })
+	const { getRegisteredContentScripts, getScriptingOperations, sentMessages } = installBrowserMock({ safeAppsCompatibilityMode: false, safeAppsHostOrigins: ['not-an-origin'] })
 	const { updateRegistration } = await loadModules()
 	await updateRegistration()
+	const initialOperations = getScriptingOperations()
+	await browser.storage.local.set({ safeAppsHostOrigins: ['still-not-an-origin'] })
+	await updateRegistration()
+	assert.deepEqual(getScriptingOperations(), initialOperations)
 	assert.deepEqual(getRegisteredContentScripts().map(({ id }) => id).sort(), ['inpage', 'inpage2'])
 	assert.deepEqual(sentMessages, [])
 })

@@ -165,7 +165,7 @@ function createSafeAppsBridge(windowObject: SafeAppsWindow, requestSafeApps: (re
 			if (nextEnabled) {
 				for (const { parsedRequest, origin } of pendingRequests.drain()) answerRequest(parsedRequest, origin)
 			} else {
-				// Only discovery enters the queue; signing and transaction requests are never replayed.
+				// Only discovery enters the queue; leave it there for re-enablement without replaying signing or transactions.
 				requestAccessForDiscovery()
 			}
 		},

@@ -475,7 +475,7 @@ describe('inpage signer bridge', () => {
 		})
 	}
 
-	test('completes direct-app discovery after initial ineligibility without replaying transactions', async () => {
+	test('keeps queued discovery through disabled updates and resumes without replaying transactions', async () => {
 		let publishCompatibility: ((enabled: boolean) => void) | undefined
 		const forwardedMethods: (string | undefined)[] = []
 		const { fakeWindow } = createFakeWindow({
