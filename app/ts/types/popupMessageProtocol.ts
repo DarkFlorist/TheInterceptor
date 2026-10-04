@@ -14,6 +14,7 @@ export const popupMessageProtocol = {
 	popup_changeActiveAddress: { domain: 'home' },
 	popup_modifyMakeMeRich: { domain: 'home' },
 	popup_changePage: { domain: 'navigation' },
+	popup_selectSignerProvider: { domain: 'home' },
 	popup_requestAccountsFromSigner: { domain: 'confirmation' },
 	popup_resetSimulation: { domain: 'simulation' },
 	popup_removeTransactionOrSignedMessage: { domain: 'simulation' },

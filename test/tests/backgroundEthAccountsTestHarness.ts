@@ -1,3 +1,4 @@
+import { allowLegacySignerExecution, clearSignerExecutionAuthorityForTab, reconcileSignerExecutionDocument, registerAuthoritativeTopSocket } from '../../app/ts/background/signerExecutionAuthority.js'
 import type { WebsiteTabConnections } from '../../app/ts/types/user-interface-types.js'
 import type { SimulationServicesOwner } from '../../app/ts/simulation/serviceLifecycle.js'
 import { EthereumJSONRpcRequestHandler } from '../../app/ts/simulation/services/EthereumJSONRpcRequestHandler.js'
@@ -25,7 +26,15 @@ export function createDeferredValue<T>() {
 	return { promise, resolve: (value: T) => resolveValue(value) }
 }
 
-export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3 }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3 } = {}) {
+export function authorizeLegacySignerSocket(socket: { readonly tabId: number, readonly connectionName: bigint }) {
+	clearSignerExecutionAuthorityForTab(socket.tabId)
+	registerAuthoritativeTopSocket(socket, 'https://example.test')
+	reconcileSignerExecutionDocument(socket, 'https://example.test', '11111111-1111-4111-8111-111111111111', true, 0)
+	allowLegacySignerExecution(socket, 'https://example.test')
+}
+
+export function installBrowserMock({ deferFirstChainChangeRemoval = false, manifestVersion = 3, tabStatus = 'complete' }: { readonly deferFirstChainChangeRemoval?: boolean, readonly manifestVersion?: 2 | 3, readonly tabStatus?: 'loading' | 'complete' } = {}) {
+	authorizeLegacySignerSocket({ tabId: 1, connectionName: 0n })
 	const storageListeners = new Set<(changes: Record<string, { newValue?: unknown, oldValue?: unknown }>, area: string) => void>()
 	const storageState: Record<string, unknown> = {}
 	const runtimeMessages: unknown[] = []
@@ -76,7 +85,7 @@ export function installBrowserMock({ deferFirstChainChangeRemoval = false, manif
 		tabs: {
 			async query() { return [] },
 			async create() { return { id: 2, active: true } },
-			async get(tabId: number) { return { id: tabId, active: true, status: 'complete' as const } },
+			async get(tabId: number) { return { id: tabId, active: true, status: tabStatus } },
 			async update() { return undefined },
 			async remove() { return undefined },
 			onUpdated: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },

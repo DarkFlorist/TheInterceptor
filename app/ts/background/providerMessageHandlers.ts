@@ -5,7 +5,7 @@ import type { TabState, WebsiteTabConnections } from '../types/user-interface-ty
 import { EthereumAccountsReply, EthereumChainReply } from '../types/JsonRpc-types.js'
 import { activateAddressSelection, changeActiveAddressAndChain } from './activeSettings.js'
 import { getSocketFromPort, isTopFramePort, sendInternalWindowMessage, sendPopupMessageToOpenWindows } from './backgroundUtils.js'
-import { getRpcNetworkForChain, setDefaultSignerName, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
+import { getRpcNetworkForChain, updatePendingTransactionOrMessage, updateTabState } from './storageVariables.js'
 import { getMetamaskCompatibilityMode, getSettings } from './settings.js'
 import { applyWalletSwitchReply } from './walletSwitch.js'
 import { verifyAccess, withSuppressedUnscopedConnectionEventsForSocketAsync } from './accessManagement.js'
@@ -17,6 +17,7 @@ import { resolveWatchAssetSignerReply } from './windows/watchAsset.js'
 import { modifyObject } from '../utils/typescript.js'
 import { sendSubscriptionReplyOrCallBackToPort } from './messageSending.js'
 import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
+import { socketCanExecuteWithSelectedSigner } from './signerExecutionAuthority.js'
 import { isSignerMissing } from '../utils/signerMetadata.js'
 import { beginSignerStateConfirmation, clearSignerDerivedTabState, confirmSignerState, doesSignerStateTokenMatchIdentity, getConfirmedSignerStateToken, isCurrentWebsiteConnection, isSignerStateTokenCurrent, runSignerStateOperation, signerConnectionReplacedError, tabHasApprovedWebsiteConnection, type SignerStateToken } from './signerStateOwnership.js'
 import { getConfiguredSigningSafe, getSigningAddressSelectionTransition } from './signingAddressSelection.js'
@@ -27,7 +28,7 @@ import type { ApprovalState } from './websiteAccessPolicy.js'
 
 function getSignerCallbackToken(websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, signerProviderGeneration: number) {
 	const socket = getSocketFromPort(port)
-	if (socket === undefined) return undefined
+	if (socket === undefined || !socketCanExecuteWithSelectedSigner(socket)) return undefined
 	const token = getConfirmedSignerStateToken(websiteTabConnections, socket.tabId)
 	if (token === undefined) return undefined
 	if (token.socket.connectionName !== socket.connectionName || token.port !== port) return undefined
@@ -156,6 +157,7 @@ async function changeSignerChain(simulationServicesOwner: SimulationServicesOwne
 	const oldSignerChain = tabStateChange.previousState.signerChain
 	// update active address if we are using signers address
 	const settings = await getSettings()
+	if (!isSignerStateTokenCurrent(websiteTabConnections, signerStateToken) || !socketCanExecuteWithSelectedSigner(signerStateToken.socket)) return
 	const selectedSafe = await getConfiguredSigningSafe(settings, tabStateChange.newState.signerAccounts)
 	if (selectedSafe !== undefined) {
 		// Safe signing is pinned to the Safe's configured Interceptor chain. A signer-wallet chain change only refreshes signer state; it must not move the dapp away from the active Safe.
@@ -201,6 +203,8 @@ export async function signerChainChanged(simulationServicesOwner: SimulationServ
 export async function walletSwitchEthereumChainReply(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, port: browser.runtime.Port, request: ProviderMessage, _approval: ApprovalState, _activeAddress: bigint | undefined) {
 	const returnValue = { type: 'result' as const, method: 'wallet_switchEthereumChain_reply' as const, result: '0x' as const }
 	const params = WalletSwitchEthereumChainReply.parse(request).params[0]
+	const socket = getSocketFromPort(port)
+	if (socket === undefined || !socketCanExecuteWithSelectedSigner(socket)) return returnValue
 	await applyWalletSwitchReply(websiteTabConnections, port, params, async (token, chainId, rpc) => {
 		await changeSignerChain(simulationServicesOwner, websiteTabConnections, token, chainId, 'hasAccess', rpc)
 	})
@@ -212,7 +216,7 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 	const isTopFrame = isTopFramePort(port)
 	const socket = getSocketFromPort(port)
 	const requestSocket = request.uniqueRequestIdentifier.requestSocket
-	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName) return await getConnectedToSignerResult()
+	if (socket === undefined || socket.tabId !== requestSocket.tabId || socket.connectionName !== requestSocket.connectionName || !socketCanExecuteWithSelectedSigner(socket)) return await getConnectedToSignerResult()
 	// Persisted origin approval must not let a newly connected child frame claim tab-wide signer ownership or bootstrap address access.
 	if (!isTopFrame && !isApprovedWebsitePort(websiteTabConnections, port)) return await getConnectedToSignerResult()
 	let shouldRefreshSignerAccounts = false
@@ -244,7 +248,6 @@ export async function connectedToSigner(_simulationServicesOwner: SimulationServ
 			return await getConnectedToSignerResult()
 		}
 		confirmSignerState(tabConnection, signerProviderGeneration)
-		await setDefaultSignerName(signerName)
 		await sendPopupMessageToOpenWindows({ method: 'popup_signer_name_changed' })
 		if (hasSignerCallbackAccess(websiteTabConnections, socket.tabId, approval)) {
 			const settings = await getSettings()
@@ -304,7 +307,8 @@ export async function signerReply(simulationServicesOwner: SimulationServicesOwn
 		// Signing is routed back through the frame that originated the request, which may be a child frame. Unlike tab-wide account and chain cache updates, this reply is scoped by its request id and exact port; the inpage bridge converts a provider-generation change into a terminal disconnected error.
 		if (!isCurrentWebsiteConnection(tabConnection, socket, port)
 			|| requestSocket.tabId !== socket.tabId
-			|| requestSocket.connectionName !== socket.connectionName) {
+			|| requestSocket.connectionName !== socket.connectionName
+			|| !socketCanExecuteWithSelectedSigner(socket)) {
 			await updatePendingTransactionOrMessage(uniqueRequestIdentifier, async (transaction) => modifyObject(transaction, { approvalStatus: { status: 'SignerError', ...signerConnectionReplacedError } }))
 			await updateConfirmTransactionView(ethereum, tokenPriceService)
 			return doNotReply

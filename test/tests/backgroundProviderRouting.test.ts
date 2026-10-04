@@ -1,3 +1,4 @@
+import { authorizeLegacySignerSocket } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { SimulationStateInput } from '../../app/ts/types/visualizer-types.js'
@@ -420,6 +421,10 @@ describe('background eth_accounts', () => {
 		for (const [index, method] of [
 			'connected_to_signer',
 			'eth_accounts_reply',
+			'begin_signer_provider_selection',
+			'finish_signer_provider_selection',
+			'signer_provider_selected',
+			'signer_providers_changed',
 			'InterceptorError',
 			'signer_chainChanged',
 			'signer_reply',
@@ -678,6 +683,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		assert.deepEqual((await getTabState(socket.tabId)).signerAccounts, [metaMaskAccount])
 
 		const nextSocket = { tabId: socket.tabId, connectionName: 1n }
+		authorizeLegacySignerSocket(nextSocket)
 		const { port: nextPort } = createPort(nextSocket.tabId, undefined, 0, nextSocket.connectionName)
 		const tabConnection = websiteTabConnections.get(nextSocket.tabId)
 		if (tabConnection === undefined) throw new Error('Missing tab connection')
@@ -784,6 +790,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 
 		const previousSocket = { tabId: 1, connectionName: 50n }
 		const restoredSocket = { tabId: 1, connectionName: 51n }
+		authorizeLegacySignerSocket(restoredSocket)
 		const { port: previousPort } = createPort(previousSocket.tabId, undefined, 0, previousSocket.connectionName)
 		let restoredPort: browser.runtime.Port
 		const { port: createdRestoredPort, messages } = createPort(restoredSocket.tabId, (message) => {
@@ -867,6 +874,7 @@ params: [{ signerProviderGeneration: 1, type: 'success', accounts: ['0x333333333
 		await updateWebsiteAccess(() => [{ website, access: true, addressAccess: [{ address: account, access: true }] }])
 
 		const socket = { tabId: 1, connectionName: 59n }
+		authorizeLegacySignerSocket(socket)
 		let port: browser.runtime.Port
 		let websiteTabConnections: WebsiteTabConnections
 		const createdPort = createPort(socket.tabId, (message) => {

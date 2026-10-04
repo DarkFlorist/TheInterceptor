@@ -1,7 +1,7 @@
 import { getActiveAddress, getActiveAddressesForAllTabs, getWebsiteSocketConnection, sendPopupMessageToOpenWindows, websiteSocketToString } from './backgroundUtils.js'
 import { getActiveAddressEntryForChain, getActiveAddresses } from './metadataUtils.js'
 import { requestAccessFromUser } from './windows/interceptorAccess.js'
-import { retrieveWebsiteDetails, updateExtensionIcon } from './iconHandler.js'
+import { updateExtensionIcon } from './iconHandler.js'
 import type { TabConnection, WebsiteTabConnections } from '../types/user-interface-types.js'
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
@@ -17,6 +17,7 @@ import type { SimulationServicesOwner } from '../simulation/serviceLifecycle.js'
 import { mergeStoredWebsiteMetadata } from '../utils/websiteIcons.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { bumpPopupRefreshGeneration } from './popupRefreshGeneration.js'
+import { getWebsiteDetailsForConnection } from './websiteConnectionMetadata.js'
 import { getActiveAddressForCurrentSignerState } from './signerStateOwnership.js'
 import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
@@ -235,7 +236,7 @@ async function askUserForAccessOnConnectionUpdate(simulationServicesOwner: Simul
 	const details = getWebsiteSocketConnection(websiteTabConnections, socket)
 	if (details === undefined) return
 
-	const website = { websiteOrigin, ...await retrieveWebsiteDetails(socket.tabId, websiteOrigin) }
+	const website = { websiteOrigin, ...await getWebsiteDetailsForConnection(socket.tabId, websiteOrigin, details.frameId) }
 	await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, undefined, activeAddress, settings, activeAddress, undefined)
 }
 

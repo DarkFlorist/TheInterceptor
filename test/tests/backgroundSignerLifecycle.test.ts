@@ -1,3 +1,4 @@
+import { authorizeLegacySignerSocket } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { getWalletSwitchRequestId, confirmedSignerOwnership, createEthereumWithGetBlockCounter, createPort, installBrowserMock, loadModules, noopPublishRpcConnectionStatus, waitForPortMessageCount } from './backgroundEthAccountsTestHarness.js'
@@ -511,6 +512,7 @@ describe('background eth_accounts', () => {
 		const website = { websiteOrigin, icon: undefined, title: undefined }
 		const requestSocket = { tabId: 1, connectionName: 0n }
 		const popupSocket = { tabId: 2, connectionName: 0n }
+		authorizeLegacySignerSocket(popupSocket)
 		const { port: requestPort, messages: requestMessages } = createPort(requestSocket.tabId)
 		const { port: popupPort, messages: popupMessages } = createPort(popupSocket.tabId)
 		const websiteTabConnections = new Map([
