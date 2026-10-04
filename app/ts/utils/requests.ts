@@ -154,28 +154,6 @@ export const checkAndPrintRuntimeLastError = () => {
 	if (error !== null && error !== undefined && error.message !== undefined) console.error(error)
 }
 
-export const getHostWithPort = (urlString: string): string => {
-	const url = new URL(urlString)
-	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
-}
-
-export const getWebsiteOrigin = (urlString: string): string => {
-	const url = new URL(urlString)
-	if (url.origin !== 'null') return url.origin
-	if (url.protocol === 'file:') return `file://${ url.host }${ url.pathname }`
-	return url.href
-}
-
-export const getWebsiteOriginForDisplay = (websiteOrigin: string): string => {
-	try {
-		const url = new URL(websiteOrigin)
-		if (url.protocol === 'http:' || url.protocol === 'https:') return getHostWithPort(websiteOrigin)
-		return websiteOrigin
-	} catch {
-		return websiteOrigin
-	}
-}
-
 export const silenceChromeUnCaughtPromise = <ReturnValue>(maybeAwaitedFunction: Promise<ReturnValue>) => {
 	void maybeAwaitedFunction.catch(() => undefined)
 	return maybeAwaitedFunction

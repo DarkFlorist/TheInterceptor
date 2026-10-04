@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact'
 import type { JSX } from 'preact/jsx-runtime'
 import { checksummedAddress } from '../../utils/bigint.js'
-import { getWebsiteOriginForDisplay } from '../../utils/requests.js'
+import { getWebsiteOriginForDisplay } from '../../utils/websiteOrigin.js'
 import type { RenameAddressCallBack } from '../../types/user-interface-types.js'
 import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
 import type { Website } from '../../types/websiteAccessTypes.js'

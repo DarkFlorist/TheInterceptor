@@ -6,7 +6,7 @@ import type { TabConnection, WebsiteTabConnections } from '../types/user-interfa
 import type { InpageScriptCallBack, Settings } from '../types/interceptor-messages.js'
 import { getSettings, getWebsiteAccess, updateWebsiteAccess } from './settings.js'
 import { sendSubscriptionReplyOrCallBack } from './messageSending.js'
-import { type WebsiteSocket, getHostWithPort } from '../utils/requests.js'
+import type { WebsiteSocket } from '../utils/requests.js'
 import { getAllTabStates } from './storageVariables.js'
 import type { Website, WebsiteAccessArray, WebsiteAddressAccess } from '../types/websiteAccessTypes.js'
 import { getUniqueItemsByProperties } from '../utils/typed-arrays.js'
@@ -21,7 +21,7 @@ import { notifyWebsiteLifecycle } from './websiteLifecycle.js'
 import { hasAccess, hasAddressAccess, type ApprovalState } from './websiteAccessPolicy.js'
 import { getWebsiteActiveAddress } from './websiteActiveAddress.js'
 import { updateWebsiteAccessAndContentScriptInjectionStrategy } from './websiteAccessUpdating.js'
-import { getWebsiteHostWithPortFromStoredOrigin } from '../utils/websiteOrigin.js'
+import { getHostWithPort, getWebsiteHostWithPortFromStoredOrigin } from '../utils/websiteOrigin.js'
 import { applyInterceptorDisabledDecision, applyWebsiteAccessDecision } from './websiteAccessDecision.js'
 
 function setWebsitePortApproval(websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket, approved: boolean, approvedAddress?: bigint) {

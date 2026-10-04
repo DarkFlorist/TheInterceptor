@@ -1,5 +1,26 @@
 import type { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { getHostWithPort, getWebsiteOrigin } from './requests.js'
+
+export const getHostWithPort = (urlString: string): string => {
+	const url = new URL(urlString)
+	return url.port ? `${ url.hostname }:${ url.port }` : url.hostname
+}
+
+export const getWebsiteOrigin = (urlString: string): string => {
+	const url = new URL(urlString)
+	if (url.origin !== 'null') return url.origin
+	if (url.protocol === 'file:') return `file://${ url.host }${ url.pathname }`
+	return url.href
+}
+
+export const getWebsiteOriginForDisplay = (websiteOrigin: string): string => {
+	try {
+		const url = new URL(websiteOrigin)
+		if (url.protocol === 'http:' || url.protocol === 'https:') return getHostWithPort(websiteOrigin)
+		return websiteOrigin
+	} catch {
+		return websiteOrigin
+	}
+}
 
 const isCanonicalWebsiteProtocol = (protocol: string) => {
 	return protocol === 'http:' || protocol === 'https:' || protocol === 'file:'
