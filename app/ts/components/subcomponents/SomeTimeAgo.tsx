@@ -33,7 +33,7 @@ export function SomeTimeAgo(props: SomeTimeAgoProps) {
 
 function humanReadableDateDelta(secondsDiff: number) {
 	if (secondsDiff <= 0) return '0s'
-	if (secondsDiff > 3600 * 24 * 1.5) return `${ Math.floor((secondsDiff + 1800) / 3600 / 24) }d`
+	if (secondsDiff > 3600 * 24 * 1.5) return `${ Math.floor(secondsDiff / (3600 * 24) + 0.5) }d`
 	if (secondsDiff > 3600 * 1.5) return `${ Math.floor((secondsDiff + 1800) / 3600) }h`
 	if (secondsDiff > 60 * 1.5) return `${ Math.floor((secondsDiff + 30) / 60) }m`
 	return `${ Math.floor(secondsDiff + 0.5) }s`

@@ -1,3 +1,4 @@
+import { SafeMessageReview } from './safeReview.js'
 
 import * as funtypes from 'funtypes'
 import { EthereumAddress, EthereumBytes32, EthereumData, EthereumQuantity, EthereumSendableSignedTransaction, EthereumTimestamp, EthereumUnsignedTransaction } from './wire-types.js'
@@ -176,7 +177,12 @@ export const SignedMessageTransaction = funtypes.ReadonlyObject({
 	request: InterceptedRequest,
 	simulationMode: funtypes.Boolean,
 	messageIdentifier: EthereumQuantity,
-})
+}).And(funtypes.ReadonlyPartial({
+	// Safe message review is normalized at admission and persisted independently of the transport envelope.
+	safeMessageReview: SafeMessageReview,
+	// Older persisted stacks predate the distinction between the active Safe and its simulation signer.
+	activeAddress: EthereumAddress,
+}))
 
 export type SimulationStateInputBlock = funtypes.Static<typeof SimulationStateInputBlock>
 export const SimulationStateInputBlock = funtypes.ReadonlyObject({

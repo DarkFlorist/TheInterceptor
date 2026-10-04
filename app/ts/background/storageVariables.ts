@@ -1,12 +1,13 @@
+import { getRpcEntryIdentityKey } from '../utils/rpcNetworkChange.js'
 import { DEFAULT_TAB_CONNECTION, getChainName } from '../utils/constants.js'
 import { Semaphore } from '../utils/semaphore.js'
 import type { PendingChainChangeConfirmationPromise, PendingFetchSimulationStackRequestPromise, RpcConnectionStatus, StoredWatchAssetRequest, TabState } from '../types/user-interface-types.js'
-import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
+import { type PartialIdsOfOpenedTabs, browserStorageLocalGet, browserStorageLocalGet2Result, browserStorageLocalRemove, browserStorageLocalSet, browserStorageLocalSet2, getTabStateFromStorage, parseTabStateItems, removeTabStateFromStorage, setTabStateToStorage } from '../utils/storageUtils.js'
 import { CompleteVisualizedSimulation, type EthereumSubscriptionsAndFilters, InterceptorTransactionStack, createPassthroughCompleteVisualizedSimulation } from '../types/visualizer-types.js'
 import { browserStorageLocalSafeParseGet } from '../utils/storageUtils.js'
-import { defaultActiveAddresses, defaultRpcs } from './settings.js'
+import { DEFAULT_ACTIVE_ADDRESSES, DEFAULT_RPCS } from '../config/defaults.js'
 import { type UniqueRequestIdentifier, doesUniqueRequestIdentifiersMatch } from '../utils/requests.js'
-import type { AddressBookEntries, AddressBookEntry, ChainIdWithUniversal } from '../types/addressBookTypes.js'
+import { AddressBookEntry, doAddressBookChainIdsMatch, LegacyErc20TokenEntry, type AddressBookEntries, type ChainIdWithUniversal } from '../types/addressBookTypes.js'
 import type { SignerName } from '../types/signerTypes.js'
 import type { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import type { RpcEntries, RpcNetwork } from '../types/rpc.js'
@@ -18,26 +19,50 @@ import type { UnexpectedErrorOccured } from '../types/interceptor-reply-messages
 import { getLargeStateValue, prepareLargeStateWrite, setLargeStateValue, setLargeStateValues } from '../utils/largeStateStore.js'
 import type { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { SafeTransactionStacks } from '../types/safeTypes.js'
+import { createStoredValueRepository } from '../utils/storedValue.js'
+import { isValidErc20Decimals } from '../utils/erc20.js'
+import { getAddressBookEntriesForChainIdMorePreciseFirst } from '../utils/addressBook.js'
 
-export const getIdsOfOpenedTabs = async () => (await browserStorageLocalGet('idsOfOpenedTabs'))?.idsOfOpenedTabs ?? { settingsView: undefined, addressBook: undefined, websiteAccess: undefined, simulationStack: undefined }
-export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => await browserStorageLocalSet({ idsOfOpenedTabs: { ...await getIdsOfOpenedTabs(), ...ids } })
+const reportCorruptStoredValue = (label: string) => async (error: unknown) => {
+	console.warn(`${ label } was corrupt:`)
+	console.warn(error)
+}
+
+const idsOfOpenedTabsRepository = createStoredValueRepository({
+	read: async () => (await browserStorageLocalGet('idsOfOpenedTabs')).idsOfOpenedTabs,
+	write: async (idsOfOpenedTabs) => { await browserStorageLocalSet({ idsOfOpenedTabs }) },
+	getDefault: () => ({ settingsView: undefined, addressBook: undefined, websiteAccess: undefined, simulationStack: undefined }),
+})
+
+export const getIdsOfOpenedTabs = idsOfOpenedTabsRepository.get
+export const setIdsOfOpenedTabs = async (ids: PartialIdsOfOpenedTabs) => { await idsOfOpenedTabsRepository.update((previous) => ({ ...previous, ...ids })) }
 
 const pendingTransactionsSemaphore = new Semaphore(1)
+async function readPendingTransactionsAndMessages() {
+	const result = await browserStorageLocalGet2Result('pendingTransactionsAndMessages')
+	if (!result.success) return result
+	return { success: true as const, value: result.value.pendingTransactionsAndMessages ?? [] }
+}
+
+async function readPendingTransactionsAndMessagesWithRecovery(): Promise<readonly PendingTransactionOrSignableMessage[]> {
+	const result = await readPendingTransactionsAndMessages()
+	if (result.success) return result.value
+	console.warn('Pending transactions were corrupt:')
+	console.warn(result.error)
+	await browserStorageLocalSet2({ pendingTransactionsAndMessages: [] })
+	return []
+}
+
 export async function getPendingTransactionsAndMessages(): Promise<readonly PendingTransactionOrSignableMessage[]> {
-	try {
-		return (await browserStorageLocalGet2('pendingTransactionsAndMessages'))?.pendingTransactionsAndMessages ?? []
-	} catch(e) {
-		console.warn('Pending transactions were corrupt:')
-		console.warn(e)
-		await pendingTransactionsSemaphore.execute(async () => await browserStorageLocalSet2({ pendingTransactionsAndMessages: [] }))
-		return []
-	}
+	const result = await readPendingTransactionsAndMessages()
+	if (result.success) return result.value
+	return await pendingTransactionsSemaphore.execute(readPendingTransactionsAndMessagesWithRecovery)
 }
 
 export const clearPendingTransactions = async () => await updatePendingTransactionOrMessages(async () => [])
 async function updatePendingTransactionOrMessages(update: (pendingTransactionsOrMessages: readonly PendingTransactionOrSignableMessage[]) => Promise<readonly PendingTransactionOrSignableMessage[]>) {
 	return await pendingTransactionsSemaphore.execute(async () => {
-		const pendingTransactionsAndMessages = await update(await getPendingTransactionsAndMessages())
+		const pendingTransactionsAndMessages = await update(await readPendingTransactionsAndMessagesWithRecovery())
 		await browserStorageLocalSet2({ pendingTransactionsAndMessages })
 	})
 }
@@ -78,30 +103,29 @@ export async function setFetchSimulationStackRequestPromise(fetchSimulationStack
 	return await browserStorageLocalSet({ fetchSimulationStackRequestPromise })
 }
 
-const pendingWatchAssetRequestsSemaphore = new Semaphore(1)
-export const getPendingWatchAssetRequests = async () => (await browserStorageLocalGet('pendingWatchAssetRequests'))?.pendingWatchAssetRequests ?? []
+const pendingWatchAssetRequestsRepository = createStoredValueRepository<readonly StoredWatchAssetRequest[]>({
+	read: async () => (await browserStorageLocalGet('pendingWatchAssetRequests')).pendingWatchAssetRequests,
+	write: async (pendingWatchAssetRequests) => { await browserStorageLocalSet({ pendingWatchAssetRequests }) },
+	getDefault: () => [],
+})
+export const getPendingWatchAssetRequests = pendingWatchAssetRequestsRepository.get
 export async function updatePendingWatchAssetRequests(update: (requests: readonly StoredWatchAssetRequest[]) => readonly StoredWatchAssetRequest[]) {
-	return await pendingWatchAssetRequestsSemaphore.execute(async () => {
-		const requests = update(await getPendingWatchAssetRequests())
-		await browserStorageLocalSet({ pendingWatchAssetRequests: requests })
-		return requests
-	})
+	return (await pendingWatchAssetRequestsRepository.update(update)).current
 }
 
-export const getPopupRefreshGeneration = async () => (await browserStorageLocalGet('popupRefreshGeneration'))?.popupRefreshGeneration ?? 0
-export const setPopupRefreshGeneration = async (popupRefreshGeneration: number) => await browserStorageLocalSet({ popupRefreshGeneration })
+const popupRefreshGenerationRepository = createStoredValueRepository({
+	read: async () => (await browserStorageLocalGet('popupRefreshGeneration')).popupRefreshGeneration,
+	write: async (popupRefreshGeneration) => { await browserStorageLocalSet({ popupRefreshGeneration }) },
+	getDefault: () => 0,
+})
+export const getPopupRefreshGeneration = popupRefreshGenerationRepository.get
+export const setPopupRefreshGeneration = popupRefreshGenerationRepository.set
 
+// Large-state getters share getLargeStateValue's failure contract: defaults apply only to successful absent/invalid reads. Rejections abort updates and reach the owning request/task boundary (e.g. catchAllErrorsAndCall in background-startup.ts), which reports the error; recovery is a later retry, never an empty-state write.
 const simulationResultsSemaphore = new Semaphore(1)
 export async function getPopupVisualisationState() {
 	const emptyResults = createPassthroughCompleteVisualizedSimulation()
-	try {
-		return await getLargeStateValue('popupVisualisation', CompleteVisualizedSimulation) ?? emptyResults
-	} catch (error) {
-		console.warn('Simulation results were corrupt:')
-		console.warn(error)
-		await setLargeStateValue('popupVisualisation', CompleteVisualizedSimulation, emptyResults)
-		return emptyResults
-	}
+	return await getLargeStateValue('popupVisualisation', CompleteVisualizedSimulation) ?? emptyResults
 }
 
 export const setPopupVisualisationState = async (newResults: CompleteVisualizedSimulation) => await updatePopupVisualisationWithCallBack(async () => newResults)
@@ -116,8 +140,13 @@ export async function updatePopupVisualisationWithCallBack(update: (oldResults: 
 	})
 }
 
-export const setDefaultSignerName = async (signerName: SignerName) => await browserStorageLocalSet({ signerName })
-const getDefaultSignerName = async () => (await browserStorageLocalGet('signerName'))?.signerName ?? 'NoSignerDetected'
+const defaultSignerNameRepository = createStoredValueRepository<SignerName>({
+	read: async () => (await browserStorageLocalGet('signerName')).signerName,
+	write: async (signerName) => { await browserStorageLocalSet({ signerName }) },
+	getDefault: () => 'NoSignerDetected',
+})
+export const setDefaultSignerName = defaultSignerNameRepository.set
+const getDefaultSignerName = defaultSignerNameRepository.get
 
 export async function getTabState(tabId: number) : Promise<TabState> {
 	return await getTabStateFromStorage(tabId) ?? {
@@ -136,7 +165,7 @@ export const removeTabState = async(tabId: number) => await removeTabStateFromSt
 
 const getTabAllStateKeys = async () => {
 	const allStorage = Object.keys(await browser.storage.local.get())
-	return allStorage.filter((entry) => entry.match(/^tabState_[0-9]+/) !== null)
+	return allStorage.filter((entry) => /^tabState_[0-9]+$/.test(entry))
 }
 
 export const clearTabStates = async () => await browser.storage.local.remove(await getTabAllStateKeys())
@@ -152,72 +181,62 @@ export async function updateTabState(tabId: number, updateFunc: (prevState: TabS
 	})
 }
 
-export const getPendingAccessRequests = async () => (await browserStorageLocalGet('pendingInterceptorAccessRequests'))?.pendingInterceptorAccessRequests ?? []
-const pendingAccessRequestsSemaphore = new Semaphore(1)
+const pendingAccessRequestsRepository = createStoredValueRepository<PendingAccessRequests>({
+	read: async () => (await browserStorageLocalGet('pendingInterceptorAccessRequests')).pendingInterceptorAccessRequests,
+	write: async (pendingInterceptorAccessRequests) => { await browserStorageLocalSet({ pendingInterceptorAccessRequests }) },
+	getDefault: () => [],
+})
+export const getPendingAccessRequests = pendingAccessRequestsRepository.get
 export async function updatePendingAccessRequests(updateFunc: (prevState: PendingAccessRequests) => Promise<PendingAccessRequests>) {
-	return await pendingAccessRequestsSemaphore.execute(async () => {
-		const previous = await getPendingAccessRequests()
-		const pendingAccessRequests = await updateFunc(previous)
-		await browserStorageLocalSet({ pendingInterceptorAccessRequests: pendingAccessRequests })
-		return { previous: previous, current: pendingAccessRequests }
-	})
+	return await pendingAccessRequestsRepository.update(updateFunc)
 }
 
 export async function clearPendingAccessRequests() {
-	return await pendingAccessRequestsSemaphore.execute(async () => {
-		const pending = await getPendingAccessRequests()
-		await browserStorageLocalSet({ pendingInterceptorAccessRequests: [] })
-		return pending
-	})
+	return (await pendingAccessRequestsRepository.update(() => [])).previous
 }
 
 export const saveCurrentTabId = async (tabId: number) => browserStorageLocalSet({ currentTabId: tabId })
 export const getCurrentTabId = async () => (await browserStorageLocalGet('currentTabId'))?.currentTabId ?? undefined
 
-export const setRpcConnectionStatus = async (rpcConnectionStatus: RpcConnectionStatus) => browserStorageLocalSet({ rpcConnectionStatus })
+const rpcConnectionStatusRepository = createStoredValueRepository<RpcConnectionStatus>({
+	read: async () => (await browserStorageLocalGet('rpcConnectionStatus')).rpcConnectionStatus,
+	write: async (rpcConnectionStatus) => { await browserStorageLocalSet({ rpcConnectionStatus }) },
+	getDefault: () => undefined,
+	recover: reportCorruptStoredValue('Connection status'),
+})
+export const setRpcConnectionStatus = rpcConnectionStatusRepository.set
+export const getRpcConnectionStatus = rpcConnectionStatusRepository.get
 
-export async function getRpcConnectionStatus() {
-	try {
-		return (await browserStorageLocalGet('rpcConnectionStatus'))?.rpcConnectionStatus ?? undefined
-	} catch (e) {
-		console.warn('Connection status was corrupt:')
-		console.warn(e)
-		return undefined
-	}
-}
-
-export const getEthereumSubscriptionsAndFilters = async () => (await browserStorageLocalGet('ethereumSubscriptionsAndFilters'))?.ethereumSubscriptionsAndFilters ?? []
-
-const ethereumSubscriptionsSemaphore = new Semaphore(1)
+const ethereumSubscriptionsRepository = createStoredValueRepository<EthereumSubscriptionsAndFilters>({
+	read: async () => (await browserStorageLocalGet('ethereumSubscriptionsAndFilters')).ethereumSubscriptionsAndFilters,
+	write: async (ethereumSubscriptionsAndFilters) => { await browserStorageLocalSet({ ethereumSubscriptionsAndFilters }) },
+	getDefault: () => [],
+})
+export const getEthereumSubscriptionsAndFilters = ethereumSubscriptionsRepository.get
 export async function updateEthereumSubscriptionsAndFilters(updateFunc: (prevState: EthereumSubscriptionsAndFilters) => EthereumSubscriptionsAndFilters) {
-	return await ethereumSubscriptionsSemaphore.execute(async () => {
-		const oldSubscriptions = await getEthereumSubscriptionsAndFilters()
-		const newSubscriptions = updateFunc(oldSubscriptions)
-		await browserStorageLocalSet({ ethereumSubscriptionsAndFilters: newSubscriptions })
-		return { oldSubscriptions, newSubscriptions }
-	})
+	const { previous, current } = await ethereumSubscriptionsRepository.update(updateFunc)
+	return { oldSubscriptions: previous, newSubscriptions: current }
 }
 
-export const setRpcList = async(rpcEntries: RpcEntries) => await browserStorageLocalSet({ rpcEntries })
-
-export async function getRpcList() {
-	try {
-		return (await browserStorageLocalGet('rpcEntries'))?.rpcEntries ?? defaultRpcs
-	} catch(e) {
-		console.warn('Rpc entries were corrupt:')
-		console.warn(e)
-		return defaultRpcs
-	}
-}
+const rpcListRepository = createStoredValueRepository<RpcEntries>({
+	read: async () => (await browserStorageLocalGet('rpcEntries')).rpcEntries,
+	write: async (rpcEntries) => { await browserStorageLocalSet({ rpcEntries }) },
+	getDefault: () => DEFAULT_RPCS,
+	recover: reportCorruptStoredValue('Rpc entries'),
+})
+export const setRpcList = rpcListRepository.set
+export const getRpcList = rpcListRepository.get
 
 export const setInterceptorStartSleepingTimestamp = async(interceptorStartSleepingTimestamp: number) => await browserStorageLocalSet({ interceptorStartSleepingTimestamp })
 
 export const getInterceptorStartSleepingTimestamp = async () => (await browserStorageLocalGet('interceptorStartSleepingTimestamp'))?.interceptorStartSleepingTimestamp ?? 0
 
 export const promoteRpcAsPrimary = async (rpcNetwork: RpcNetwork) => {
-	if (rpcNetwork.primary) return
-	const rpcs = await getRpcList()
-	await setRpcList(rpcs.map((rpc) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: rpc.httpsRpc === rpcNetwork.httpsRpc }) : rpc))
+	await rpcListRepository.update((rpcs) => {
+		const selectedIndex = rpcs.findIndex((rpc) => getRpcEntryIdentityKey(rpc) === getRpcEntryIdentityKey(rpcNetwork))
+		if (selectedIndex === -1) return rpcs
+		return rpcs.map((rpc, index) => rpc.chainId === rpcNetwork.chainId ? modifyObject(rpc, { primary: index === selectedIndex }) : rpc)
+	})
 }
 
 export const getPrimaryRpcForChain = async (chainId: bigint) => {
@@ -244,29 +263,40 @@ export const getRpcNetworkForChain = async (chainId: bigint): Promise<RpcNetwork
 		minimized: true,
 	}
 }
+
+export function repairLegacyAddressBookEntry(rawEntry: unknown): AddressBookEntry | undefined {
+	const parsedEntry = AddressBookEntry.safeParse(rawEntry)
+	if (parsedEntry.success) return parsedEntry.value
+	const legacyErc20Entry = LegacyErc20TokenEntry.safeParse(rawEntry)
+	if (!legacyErc20Entry.success || isValidErc20Decimals(legacyErc20Entry.value.decimals)) return undefined
+	const { decimals: _decimals, symbol: _symbol, type: _type, ...contractFields } = legacyErc20Entry.value
+	return { ...contractFields, type: 'contract' }
+}
+
+export function repairLegacyAddressBookEntries(rawEntries: unknown): AddressBookEntries | undefined {
+	if (!Array.isArray(rawEntries)) return undefined
+	const repairedEntries = rawEntries.map(repairLegacyAddressBookEntry)
+	if (repairedEntries.some((entry) => entry === undefined)) return undefined
+	return repairedEntries.filter((entry): entry is AddressBookEntry => entry !== undefined)
+}
+
 export async function getUserAddressBookEntries(): Promise<AddressBookEntries> {
 	const { userAddressBookEntriesV3: rawEntries } = await browser.storage.local.get('userAddressBookEntriesV3')
 	const parsedEntries = await browserStorageLocalSafeParseGet('userAddressBookEntriesV3')
 	if (parsedEntries?.userAddressBookEntriesV3 !== undefined) return parsedEntries.userAddressBookEntriesV3
-	if (rawEntries === undefined) return defaultActiveAddresses
+	if (rawEntries === undefined) return DEFAULT_ACTIVE_ADDRESSES
+	const repairedEntries = repairLegacyAddressBookEntries(rawEntries)
+	if (repairedEntries !== undefined) {
+		await browserStorageLocalSet({ userAddressBookEntriesV3: repairedEntries })
+		return repairedEntries
+	}
 	console.warn('userAddressBookEntriesV3 was corrupt:')
 	console.warn(rawEntries)
-	await browserStorageLocalSet({ userAddressBookEntriesV3: defaultActiveAddresses })
-	return defaultActiveAddresses
+	await browserStorageLocalSet({ userAddressBookEntriesV3: DEFAULT_ACTIVE_ADDRESSES })
+	return DEFAULT_ACTIVE_ADDRESSES
 }
 export const getUserAddressBookEntriesForChainId = async (chainId: ChainIdWithUniversal) => (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
-export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => {
-	const entries = (await getUserAddressBookEntries()).filter((entry) => entry.chainId === chainId || (entry.chainId === undefined && chainId === 1n) || entry.chainId === 'AllChains')
-	// sort more precise entries first (one with accurate chain id)
-	entries.sort((x, y) => {
-		if (x.entrySource === 'OnChain' && y.entrySource !== 'OnChain') return 1
-		if (x.entrySource !== 'OnChain' && y.entrySource === 'OnChain') return -1
-		if (typeof x.chainId === 'bigint' && typeof y.chainId !== 'bigint') return -1
-		if (typeof x.chainId !== 'bigint' && typeof y.chainId === 'bigint') return 1
-		return 0
-	})
-	return entries
-}
+export const getUserAddressBookEntriesForChainIdMorePreciseFirst = async (chainId: ChainIdWithUniversal) => getAddressBookEntriesForChainIdMorePreciseFirst(await getUserAddressBookEntries(), chainId)
 
 const userAddressBookEntriesSemaphore = new Semaphore(1)
 export async function updateUserAddressBookEntries(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
@@ -278,7 +308,7 @@ export async function updateUserAddressBookEntries(updateFunc: (prevState: Addre
 
 export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: AddressBookEntries) => AddressBookEntries) {
 	await userAddressBookEntriesSemaphore.execute(async () => {
-		const entries = (await browserStorageLocalGet('userAddressBookEntriesV2'))?.userAddressBookEntriesV2 ?? defaultActiveAddresses
+		const entries = (await browserStorageLocalGet('userAddressBookEntriesV2')).userAddressBookEntriesV2 ?? DEFAULT_ACTIVE_ADDRESSES
 		return await browserStorageLocalSet({ userAddressBookEntriesV2: updateFunc(entries) })
 	})
 }
@@ -286,7 +316,7 @@ export async function updateUserAddressBookEntriesV2Old(updateFunc: (prevState: 
 export async function addUserAddressBookEntryIfItDoesNotExist(newEntry: AddressBookEntry) {
 	await userAddressBookEntriesSemaphore.execute(async () => {
 		const entries = await getUserAddressBookEntries()
-		const existingEntry = entries.find((entry) => entry.address === newEntry.address && (entry.chainId || 1n) === (newEntry.chainId || 1n) )
+		const existingEntry = entries.find((entry) => entry.address === newEntry.address && doAddressBookChainIdsMatch(entry.chainId, newEntry.chainId))
 		if (existingEntry !== undefined) return
 		return await browserStorageLocalSet({ userAddressBookEntriesV3: entries.concat(newEntry) })
 	})

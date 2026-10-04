@@ -98,7 +98,6 @@ export async function imageToUri(url: string, maxSizeInBytes = 1048576, requestI
 		if (!await canDecodeImage(blob)) return imageToUriFailed('image data could not be decoded')
 		const result = await readBlobAsDataUrl(blob)
 		if (result.failureReason !== undefined || result.data === undefined) return result
-		if (result.data.length > maxSizeInBytes) return imageTooLarge(maxSizeInBytes)
 		return result
 	} catch (error) {
 		if (error instanceof Error) return imageToUriFailed(`fetch failed (${ error.message })`)

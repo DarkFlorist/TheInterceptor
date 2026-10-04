@@ -1,3 +1,7 @@
+import multiSendLibrary from '../fixtures/safe-libraries/MultiSendCallOnly.json'
+import signMessageLibrary from '../fixtures/safe-libraries/SignMessageLib.json'
+import { SAFE_MULTI_SEND_CALL_ONLY, SAFE_SIGN_MESSAGE_LIB } from '../../app/ts/safe/safeDelegateCalls.js'
+import { SAFE_MESSAGE_ABI } from '../../app/ts/safe/safeMessage.js'
 import type { flushPendingTerminalRepliesForSocket as flushPendingTerminalRepliesForSocketType } from '../../app/ts/background/terminalReplyDelivery.js'
 import { encodeFunctionCall, encodeFunctionReturn } from '../../app/ts/utils/abiRuntime.js'
 import { withSilencedConsole } from './consoleSilence.js'
@@ -177,6 +181,8 @@ export async function loadModules() {
 		safeExecutionRouting,
 		safeConfirmationResolver,
 		safeSimulation,
+		safeCore,
+		safeConfirmationPersistence,
 	] = await Promise.all([
 		import('../../app/ts/simulation/services/EthereumClientService.js'),
 		import('../../app/ts/simulation/services/priceEstimator.js'),
@@ -197,6 +203,8 @@ export async function loadModules() {
 		import('../../app/ts/safe/safeExecutionRouting.js'),
 		import('../../app/ts/background/safeConfirmationResolver.js'),
 		import('../../app/ts/safe/safeSimulation.js'),
+		import('../../app/ts/safe/safeCore.js'),
+		import('../../app/ts/background/safeConfirmationPersistence.js'),
 	])
 	const flushPendingTerminalRepliesForSocket: typeof flushPendingTerminalRepliesForSocketType = terminalReplyDelivery.flushPendingTerminalRepliesForSocket
 
@@ -208,15 +216,16 @@ export async function loadModules() {
 		defaultActiveAddresses: settings.defaultActiveAddresses,
 		refreshPopupConfirmTransactionSimulation: popupMessageHandlers.refreshPopupConfirmTransactionSimulation,
 		confirmDialog: popupMessageHandlers.confirmDialog,
+		getSafeSignerSelectionFromAccountRefresh: popupMessageHandlers.getSafeSignerSelectionFromAccountRefresh,
 		importSafeStack: popupMessageHandlers.importSafeStack,
 		requestSafeStackExport: popupMessageHandlers.requestSafeStackExport,
-		setActiveSafeSigner: popupMessageHandlers.setActiveSafeSigner,
+		setSafeSimulationSigner: popupMessageHandlers.setSafeSimulationSigner,
 		fetchSimulationStackRequestConfirmation: popupMessageHandlers.fetchSimulationStackRequestConfirmation,
 		resolvePendingTransactionOrMessage: confirmTransaction.resolvePendingTransactionOrMessage,
+		updateConfirmTransactionView: confirmTransaction.updateConfirmTransactionView,
 		formEthSendTransaction: confirmTransaction.formEthSendTransaction,
 		getSafeExecutionSignerRoute: safeExecutionRouting.getSafeExecutionSignerRoute,
 		prepareSafeExecutionSignerRoute: safeExecutionRouting.prepareSafeExecutionSignerRoute,
-		isSafeExecutionRequestForActiveSafe: safeExecutionRouting.isSafeExecutionRequestForActiveSafe,
 		openConfirmTransactionDialogForMessage: confirmTransaction.openConfirmTransactionDialogForMessage,
 		openConfirmTransactionDialogForTransaction: confirmTransaction.openConfirmTransactionDialogForTransaction,
 		onCloseWindowOrTab: confirmTransaction.onCloseWindowOrTab,
@@ -224,6 +233,9 @@ export async function loadModules() {
 		resolvePendingRequestsForMissingConfirmationWindows: confirmTransaction.resolvePendingRequestsForMissingConfirmationWindows,
 		resolveSafeConfirmation: safeConfirmationResolver.resolveSafeConfirmation,
 		createSafeExecutionPreSimulationTransaction: safeSimulation.createSafeExecutionPreSimulationTransaction,
+		createSafeSigningSimulationInput: safeSimulation.createSafeSigningSimulationInput,
+		createSafeContractValidationFailure: safeCore.createSafeContractValidationFailure,
+		resolveSafeSignerReply: safeConfirmationPersistence.resolveSafeSignerReply,
 		getPendingTransactionsAndMessages: storageVariables.getPendingTransactionsAndMessages,
 		getSafeTransactionStacks: storageVariables.getSafeTransactionStacks,
 		getInterceptorTransactionStack: storageVariables.getInterceptorTransactionStack,
@@ -251,6 +263,7 @@ export async function loadModules() {
 		signerReply: providerMessageHandlers.signerReply,
 		ethAccountsReply: providerMessageHandlers.ethAccountsReply,
 		browserStorageLocalSet2: storageUtils.browserStorageLocalSet2,
+		browserStorageLocalSet: storageUtils.browserStorageLocalSet,
 		websiteSocketToString: backgroundUtils.websiteSocketToString,
 		serialize: wireTypes.serialize,
 		EthereumBytes32: wireTypes.EthereumBytes32,
@@ -324,6 +337,8 @@ export const fakeRpcNetwork = {
 
 export const fakeBlock = makeFakeBlock()
 export const safeSelectors = {
+	messageHash: encodeFunctionCall(SAFE_MESSAGE_ABI, 'getMessageHash', ['0x']).slice(0, 10),
+	messageSignature: encodeFunctionCall(SAFE_MESSAGE_ABI, 'isValidSignature', [`0x${ '00'.repeat(32) }`, '0x']).slice(0, 10),
 	version: encodeFunctionCall(SAFE_ABI, 'VERSION', []).slice(0, 10),
 	nonce: encodeFunctionCall(SAFE_ABI, 'nonce', []).slice(0, 10),
 	owners: encodeFunctionCall(SAFE_ABI, 'getOwners', []).slice(0, 10),
@@ -347,11 +362,14 @@ export const fakeSafeContract = {
 	threshold: 2n,
 	owners: [] as bigint[],
 	transactionHash: 0n,
+	messageHash: 0n,
+	messageSignatureValid: true,
 	ownerCode: '0x',
 	requestedCodeAddresses: [] as bigint[],
 	beforeVersionResponse: undefined as (() => Promise<void>) | undefined,
 	requestedRpcMethods: [] as string[],
 	failEthSimulate: false,
+	safeOwnerLookupFailure: undefined as 'expected' | 'unexpected' | undefined,
 }
 
 export function resetFakeSafeContractState() {
@@ -360,11 +378,14 @@ export function resetFakeSafeContractState() {
 	fakeSafeContract.threshold = 2n
 	fakeSafeContract.owners = []
 	fakeSafeContract.transactionHash = 0n
+	fakeSafeContract.messageHash = 0n
+	fakeSafeContract.messageSignatureValid = true
 	fakeSafeContract.ownerCode = '0x'
 	fakeSafeContract.requestedCodeAddresses.length = 0
 	fakeSafeContract.beforeVersionResponse = undefined
 	fakeSafeContract.requestedRpcMethods.length = 0
 	fakeSafeContract.failEthSimulate = false
+	fakeSafeContract.safeOwnerLookupFailure = undefined
 }
 
 export const fakeRequestHandler = {
@@ -386,6 +407,8 @@ export const fakeRequestHandler = {
 			if (typeof rawAddress !== 'string' && typeof rawAddress !== 'bigint') throw new Error('Malformed eth_getCode test request')
 			const requestedAddress = BigInt(rawAddress)
 			fakeSafeContract.requestedCodeAddresses.push(requestedAddress)
+			if (requestedAddress === SAFE_MULTI_SEND_CALL_ONLY) return multiSendLibrary.deployedBytecode
+			if (requestedAddress === SAFE_SIGN_MESSAGE_LIB) return signMessageLibrary.deployedBytecode
 			return requestedAddress === activeAddress ? '0x01' : fakeSafeContract.ownerCode
 		}
 			case 'eth_gasPrice':
@@ -399,8 +422,13 @@ export const fakeRequestHandler = {
 						await fakeSafeContract.beforeVersionResponse?.()
 						return encodeFunctionReturn(SAFE_ABI, 'VERSION', [fakeSafeContract.version])
 					case safeSelectors.nonce: return encodeFunctionReturn(SAFE_ABI, 'nonce', [fakeSafeContract.nonce])
-					case safeSelectors.owners: return encodeFunctionReturn(SAFE_ABI, 'getOwners', [fakeSafeContract.owners.map(addressString)])
+					case safeSelectors.owners:
+						if (fakeSafeContract.safeOwnerLookupFailure === 'expected') throw modules.createSafeContractValidationFailure('Safe owner lookup unavailable')
+						if (fakeSafeContract.safeOwnerLookupFailure === 'unexpected') throw new Error('Unexpected Safe owner decoder failure')
+						return encodeFunctionReturn(SAFE_ABI, 'getOwners', [fakeSafeContract.owners.map(addressString)])
 					case safeSelectors.threshold: return encodeFunctionReturn(SAFE_ABI, 'getThreshold', [fakeSafeContract.threshold])
+					case safeSelectors.messageHash: return encodeFunctionReturn(SAFE_MESSAGE_ABI, 'getMessageHash', [bytes32String(fakeSafeContract.messageHash)])
+					case safeSelectors.messageSignature: return encodeFunctionReturn(SAFE_MESSAGE_ABI, 'isValidSignature', [fakeSafeContract.messageSignatureValid ? '0x1626ba7e' : '0xffffffff'])
 					case safeSelectors.transactionHash: return encodeFunctionReturn(SAFE_ABI, 'getTransactionHash', [bytes32String(fakeSafeContract.transactionHash)])
 					default: throw new Error(`Unexpected eth_call selector: ${ selector }`)
 				}

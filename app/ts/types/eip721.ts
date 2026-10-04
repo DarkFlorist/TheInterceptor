@@ -30,12 +30,16 @@ const EIP712MessageParser: funtypes.ParsedValue<funtypes.String, EIP712MessageUn
 export type EIP712Message = funtypes.Static<typeof EIP712Message>
 export const EIP712Message = funtypes.String.withParser(EIP712MessageParser)
 
-export type TypeEnrichedEIP712MessageRecord = EnrichedGroupedSolidityType | { type: 'record', value: { [x: string]: TypeEnrichedEIP712MessageRecord | undefined } } | { type: 'record[]', value: ReadonlyArray<{ [x: string]: TypeEnrichedEIP712MessageRecord | undefined }> }
+export type TypeEnrichedEIP712MessageRecord = EnrichedGroupedSolidityType
+	| { type: 'record', value: { [x: string]: TypeEnrichedEIP712MessageRecord | undefined } }
+	| { type: 'record[]', value: ReadonlyArray<{ [x: string]: TypeEnrichedEIP712MessageRecord | undefined }> }
+	| { type: 'nestedArray', value: readonly TypeEnrichedEIP712MessageRecord[] }
 export type EnrichedEIP712MessageRecord = funtypes.Static<typeof EnrichedEIP712MessageRecord>
 export const EnrichedEIP712MessageRecord: funtypes.Runtype<TypeEnrichedEIP712MessageRecord> = funtypes.Lazy(() => funtypes.Union(
 	EnrichedGroupedSolidityType,
 	funtypes.ReadonlyObject({ type: funtypes.Literal('record'), value: funtypes.ReadonlyRecord(funtypes.String, EnrichedEIP712MessageRecord) }),
 	funtypes.ReadonlyObject({ type: funtypes.Literal('record[]'), value: funtypes.ReadonlyArray(funtypes.ReadonlyRecord(funtypes.String, EnrichedEIP712MessageRecord)) }),
+	funtypes.ReadonlyObject({ type: funtypes.Literal('nestedArray'), value: funtypes.ReadonlyArray(EnrichedEIP712MessageRecord) }),
 ))
 
 export type EnrichedEIP712Message = funtypes.Static<typeof EnrichedEIP712Message>

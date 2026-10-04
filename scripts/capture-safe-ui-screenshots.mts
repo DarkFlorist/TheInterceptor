@@ -5,55 +5,92 @@ import { createSafeTx } from '../app/ts/safe/safeCore.js'
 import { PendingTransactionOrSignableMessage } from '../app/ts/types/accessRequest.js'
 import { serialize } from '../app/ts/types/wire-types.js'
 import { getSafeTxHash } from '../app/ts/utils/eip712.js'
+import { getNativeTokenErc20 } from '../app/ts/background/metadataUtils.js'
 import { privateKeyToAccount } from '../app/ts/utils/ethereumPrimitives.js'
-import { connectTarget, createTargetPage, launchChromeSession, waitForAnyExtensionServiceWorker, waitForTargetByUrl } from '../test/benchmarks/chromeHarness.js'
+import { launchSafeUiScreenshotBrowser, SafeUiScreenshotPage } from '../test/benchmarks/safeUiScreenshotHarness.js'
 
 const outputDirectory = path.resolve(process.env.SAFE_UI_SCREENSHOT_OUTPUT_DIRECTORY ?? path.join(tmpdir(), 'interceptor-safe-wallet-screenshots'))
 
-async function waitForSelector(connection: Awaited<ReturnType<typeof connectTarget>>, selector: string) {
+const viewports = [
+	{ name: 'ultra-narrow', width: 220, height: 700 },
+	{ name: 'narrow', width: 320, height: 700 },
+	{ name: 'popup', width: 520, height: 700 },
+	{ name: 'medium', width: 800, height: 900 },
+	{ name: 'wide', width: 1280, height: 900 },
+] as const
+
+let capturedScenarioCount = 0
+
+async function waitForSelector(connection: SafeUiScreenshotPage, selector: string) {
 	for (let attempt = 0; attempt < 200; attempt += 1) {
 		const found = await connection.evaluate<boolean>(`document.querySelector(${ JSON.stringify(selector) }) !== null`)
 		if (found) return
 		await Bun.sleep(50)
 	}
-	throw new Error(`Timed out waiting for ${ selector }`)
+	const bodyText = await connection.evaluate<string>('document.body.textContent ?? ""')
+	throw new Error(`Timed out waiting for ${ selector }. Page text: ${ bodyText ?? '' }`)
 }
 
-async function waitForText(connection: Awaited<ReturnType<typeof connectTarget>>, expectedText: string) {
+async function waitForText(connection: SafeUiScreenshotPage, expectedText: string) {
 	for (let attempt = 0; attempt < 200; attempt += 1) {
 		const found = await connection.evaluate<boolean>(`document.body.textContent?.includes(${ JSON.stringify(expectedText) }) === true`)
 		if (found) return
 		await Bun.sleep(50)
 	}
-	throw new Error(`Timed out waiting for text: ${ expectedText }`)
+	const bodyText = await connection.evaluate<string>('document.body.textContent ?? ""')
+	throw new Error(`Timed out waiting for text: ${ expectedText }. Page text: ${ bodyText ?? '' }`)
 }
 
-async function capture(connection: Awaited<ReturnType<typeof connectTarget>>, filename: string, width: number, height: number) {
-	await connection.send('Page.enable')
-	await connection.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false })
+async function prepareForDeterministicCapture(connection: SafeUiScreenshotPage) {
+	await connection.evaluate(`(async () => {
+		await document.fonts.ready
+		let style = document.querySelector('#css-visual-regression-overrides')
+		if (!(style instanceof HTMLStyleElement)) {
+			style = document.createElement('style')
+			style.id = 'css-visual-regression-overrides'
+			style.textContent = '* { animation: none !important; caret-color: transparent !important; transition: none !important; }'
+			document.head.append(style)
+		}
+	})()`)
+}
+
+// Capturing beyond the viewport resets inner scroll positions, so scrolling must be re-applied for every viewport right before the capture.
+async function capture(connection: SafeUiScreenshotPage, filename: string, width: number, height: number, scrollExpression: string | undefined) {
+	await connection.setViewport(width, height)
+	await prepareForDeterministicCapture(connection)
+	if (scrollExpression !== undefined) await connection.evaluate(scrollExpression)
 	await Bun.sleep(250)
-	const screenshot = await connection.send<{ data: string }>('Page.captureScreenshot', {
-		format: 'png',
-		captureBeyondViewport: true,
-		fromSurface: true,
-	})
-	await writeFile(path.join(outputDirectory, filename), Buffer.from(screenshot.data, 'base64'))
+	const clippedAddress = await connection.evaluate<string>(`(() => {
+		const addresses = document.querySelectorAll('.modal.is-active .address-editor-address-input, .modal.is-active .address-editor-readonly-address')
+		for (const address of addresses) {
+			if (!(address instanceof HTMLElement)) continue
+			const isClipped = address.scrollWidth > address.clientWidth + 1 || address.scrollHeight > address.clientHeight + 1
+			if (isClipped) {
+				return \`\${ address.className }: client=\${ address.clientWidth }x\${ address.clientHeight }, scroll=\${ address.scrollWidth }x\${ address.scrollHeight }\`
+			}
+		}
+		return ''
+	})()`)
+	if (clippedAddress !== '') throw new Error(`Address input is clipped in ${ filename }: ${ clippedAddress }`)
+	const screenshot = await connection.captureScreenshot()
+	await writeFile(path.join(outputDirectory, filename), Buffer.from(screenshot, 'base64'))
+}
+
+async function captureScenario(connection: SafeUiScreenshotPage, scenarioName: string, scrollExpression?: string) {
+	capturedScenarioCount += 1
+	const scenarioNumber = capturedScenarioCount.toString().padStart(2, '0')
+	for (const viewport of viewports) {
+		await capture(connection, `${ scenarioNumber }-${ scenarioName}--${ viewport.name }.png`, viewport.width, viewport.height, scrollExpression)
+	}
 }
 
 await mkdir(outputDirectory, { recursive: true })
 console.info(`Writing screenshots outside the repository to ${ outputDirectory }`)
-console.info('Launching Chromium')
-const session = await launchChromeSession()
+const browser = await launchSafeUiScreenshotBrowser()
+console.info(`Launched ${ browser.name }${ browser.version === undefined ? '' : ` ${ browser.version }` }`)
 try {
-	console.info('Waiting for extension worker')
-	const workerTarget = await waitForAnyExtensionServiceWorker(session.browserDebugPort)
-	const extensionId = new URL(workerTarget.url).host
-
-	const addressBookUrl = `chrome-extension://${ extensionId }/html3/addressBookV3.html`
 	console.info('Opening address book')
-	const addressBookTargetId = await createTargetPage(session.browserConnection, addressBookUrl)
-	const addressBookTarget = await waitForTargetByUrl(session.browserDebugPort, addressBookUrl)
-	const addressBook = await connectTarget(session.browserDebugPort, addressBookTarget.id)
+	const addressBook = await browser.openPage('addressBook')
 	await waitForSelector(addressBook, '.address-book-page')
 	await addressBook.evaluate(`(() => {
 		const safeLink = [...document.querySelectorAll('a')].find((element) => element.textContent?.includes('My Gnosis Safes'))
@@ -61,33 +98,68 @@ try {
 		safeLink.click()
 	})()`)
 	await Bun.sleep(400)
-	await capture(addressBook, 'safe-address-book.png', 1280, 800)
+	await captureScenario(addressBook, 'safe-address-book')
 	await addressBook.evaluate(`(() => {
 		const addButton = [...document.querySelectorAll('button')].find((element) => element.textContent?.includes('Add New Gnosis Safe Wallet'))
 		if (!(addButton instanceof HTMLElement)) throw new Error('Add New Gnosis Safe Wallet button was not found')
 		addButton.click()
 	})()`)
 	await waitForSelector(addressBook, '.modal.is-active')
+	await captureScenario(addressBook, 'safe-address-form-empty')
 	await addressBook.evaluate(`(() => {
-		const addSignerButton = [...document.querySelectorAll('.modal.is-active button')].find((element) => element.textContent?.includes('Add Gnosis Safe signer'))
-		if (!(addSignerButton instanceof HTMLElement)) throw new Error('Add Gnosis Safe signer button was not found')
-		addSignerButton.click()
+		const originalSendMessage = browser.runtime.sendMessage.bind(browser.runtime)
+		browser.runtime.sendMessage = async (message) => message?.method === 'popup_requestIdentifyAddress'
+			? { method: 'popup_requestIdentifyAddress', data: { chainId: message.data.chainId, addressBookEntry: undefined } }
+			: await originalSendMessage(message)
 	})()`)
-	await Bun.sleep(100)
-	await addressBook.evaluate(`(() => {
-		const inputs = [...document.querySelectorAll('.modal.is-active input[type="text"]')]
-		const values = ['Treasury Safe', '0x1234567890123456789012345678901234567890', '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd']
-		for (const [index, value] of values.entries()) {
-			const input = inputs[index]
-			if (!(input instanceof HTMLInputElement)) continue
-			input.value = value
-			input.dispatchEvent(new InputEvent('input', { bubbles: true, data: value }))
-		}
-	})()`)
-	await capture(addressBook, 'safe-address-form.png', 1280, 900)
-	await addressBook.evaluate(`new Promise((resolve, reject) => {
-		chrome.storage.local.set({
-			activeSimulationAddress: '0x1234567890123456789012345678901234567890',
+	const addressTypes = [
+		{ type: 'contact', address: '0x1111111111111111111111111111111111111111' },
+		{ type: 'contract', address: '0x2222222222222222222222222222222222222222' },
+		{ type: 'ERC20', address: '0x3333333333333333333333333333333333333333' },
+		{ type: 'ERC721', address: '0x4444444444444444444444444444444444444444' },
+		{ type: 'ERC1155', address: '0x5555555555555555555555555555555555555555' },
+	] as const
+	for (const { type: addressType, address } of addressTypes) {
+		await addressBook.evaluate(`(() => {
+			const typeButton = [...document.querySelectorAll('.modal.is-active button')].find((element) => element.getAttribute('aria-label')?.startsWith('Address type:'))
+			if (!(typeButton instanceof HTMLElement)) throw new Error('Address type dropdown was not found')
+			typeButton.click()
+		})()`)
+		await Bun.sleep(50)
+		await addressBook.evaluate(`(() => {
+			const typeOption = [...document.querySelectorAll('.modal.is-active .dropdown-item')].find((element) => element.textContent?.trim() === ${ JSON.stringify(addressType) })
+			if (!(typeOption instanceof HTMLElement)) throw new Error(${ JSON.stringify(`${ addressType } option was not found`) })
+			typeOption.click()
+		})()`)
+		await Bun.sleep(100)
+		await addressBook.evaluate(`(() => {
+			const nameInput = document.querySelector('.modal.is-active .address-editor-name-field input')
+			const addressInput = document.querySelector('.modal.is-active .address-editor-address-input')
+			if (nameInput instanceof HTMLInputElement) {
+				nameInput.value = 'Example ${ addressType }'
+				nameInput.dispatchEvent(new InputEvent('input', { bubbles: true, data: nameInput.value }))
+			}
+			if (addressInput instanceof HTMLTextAreaElement) {
+				addressInput.value = ${ JSON.stringify(address) }
+				addressInput.dispatchEvent(new InputEvent('input', { bubbles: true, data: addressInput.value }))
+			}
+			const fields = [...document.querySelectorAll('.modal.is-active .address-editor-field')]
+			const setField = (label, value) => {
+				const field = fields.find((candidate) => candidate.querySelector(':scope > span')?.textContent?.trim() === label)
+				const input = field?.querySelector('input')
+				if (!(input instanceof HTMLInputElement)) return
+				input.value = value
+				input.dispatchEvent(new InputEvent('input', { bubbles: true, data: value }))
+			}
+			setField('Symbol', ${ JSON.stringify(addressType) }.toUpperCase())
+			setField('Decimals', '18')
+		})()`)
+		await Bun.sleep(100)
+		await captureScenario(addressBook, `address-form-${ addressType.toLowerCase() }`)
+	}
+	const setSafeAddressFixture = `browser.storage.local.set({
+			independentActiveSimulationAddress: '0x1234567890123456789012345678901234567890',
+			activeSigningSafeAddress: '0x1234567890123456789012345678901234567890',
 			simulationMode: false,
 			useSignersAddressAsActiveAddress: false,
 			openedPageV2: { page: 'Home' },
@@ -99,25 +171,111 @@ try {
 				entrySource: 'FilledIn',
 				askForAddressAccess: true,
 				useAsActiveAddress: true,
-				safeSignerAddress: '0xfedcbafedcbafedcbafedcbafedcbafedcbafedc',
+				safeSimulationSignerAddress: '0xfedcbafedcbafedcbafedcbafedcbafedcbafedc',
 				safeSignerAddresses: [
 					'0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
 					'0xfedcbafedcbafedcbafedcbafedcbafedcbafedc',
 				],
 				safeVersion: '1.4.1',
 			}],
-		}, () => chrome.runtime.lastError === undefined ? resolve(true) : reject(chrome.runtime.lastError))
-	})`)
-	await session.browserConnection.send('Target.closeTarget', { targetId: addressBookTargetId })
+		})`
+	await addressBook.evaluate(setSafeAddressFixture)
+	await addressBook.evaluate(`browser.storage.local.set({ simulationMode: true })`)
+	await addressBook.close()
 
-	console.info('Opening Gnosis Safe signing-mode popup')
-	const popupUrl = `chrome-extension://${ extensionId }/html3/popupV3.html`
-	const popupTargetId = await createTargetPage(session.browserConnection, popupUrl)
-	const popupTarget = await waitForTargetByUrl(session.browserDebugPort, popupUrl)
-	const popup = await connectTarget(session.browserDebugPort, popupTarget.id)
+	const openSafeEditorFixture = `(() => {
+		const originalSendMessage = browser.runtime.sendMessage.bind(browser.runtime)
+		browser.runtime.sendMessage = async (message) => {
+			if (message?.method === 'popup_requestIdentifyAddress') return {
+				method: 'popup_requestIdentifyAddress',
+				data: {
+					chainId: '0x1',
+					addressBookEntry: undefined,
+				},
+			}
+			if (message?.method === 'popup_requestSafeContractState') return {
+				method: 'popup_requestSafeContractState',
+				data: {
+					chainId: '0x1',
+					result: {
+						ok: true,
+						owners: ['0xabcdefabcdefabcdefabcdefabcdefabcdefabcd', '0xfedcbafedcbafedcbafedcbafedcbafedcbafedc'],
+						ownerAddressBookEntries: [
+							{ type: 'contact', name: 'Alice Hardware Wallet', address: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd', entrySource: 'User', askForAddressAccess: true, useAsActiveAddress: true, chainId: '0x1' },
+							{ type: 'contact', name: 'Operations Signer', address: '0xfedcbafedcbafedcbafedcbafedcbafedcbafedc', entrySource: 'User', askForAddressAccess: true, useAsActiveAddress: true, chainId: '0x1' },
+						],
+						version: '1.4.1',
+					},
+				},
+			}
+			return await originalSendMessage(message)
+		}
+		const safeLink = [...document.querySelectorAll('a')].find((element) => element.textContent?.includes('My Gnosis Safes'))
+		if (!(safeLink instanceof HTMLElement)) throw new Error('My Gnosis Safes link was not found')
+		safeLink.click()
+	})()`
+
+	console.info('Opening compact Gnosis Safe editor')
+	const safeEditor = await browser.openPage('addressBook')
+	await waitForSelector(safeEditor, '.address-book-page')
+	await safeEditor.evaluate(openSafeEditorFixture)
+	await waitForText(safeEditor, 'Treasury Safe')
+	await safeEditor.evaluate(`(() => {
+		const editButton = [...document.querySelectorAll('button')].find((element) => element.textContent?.trim() === 'Edit')
+		if (!(editButton instanceof HTMLElement)) throw new Error('Gnosis Safe Edit button was not found')
+		editButton.click()
+	})()`)
+	await waitForText(safeEditor, 'Refresh owners')
+	await captureScenario(safeEditor, 'safe-owner-retrieval')
+	await safeEditor.evaluate(`(() => {
+		browser.runtime.sendMessage = async (message) => {
+			if (message?.method === 'popup_addOrModifyAddressBookEntry') return await new Promise(() => undefined)
+			return undefined
+		}
+		const modifyButton = [...document.querySelectorAll('.modal.is-active button')].find((element) => element.textContent?.trim() === 'Save changes')
+		if (!(modifyButton instanceof HTMLElement)) throw new Error('Save changes button was not found')
+		modifyButton.click()
+	})()`)
+	await waitForText(safeEditor, 'Saving...')
+	await captureScenario(safeEditor, 'safe-modify-pending')
+	await safeEditor.close()
+
+	const refreshEditor = await browser.openPage('addressBook')
+	await waitForSelector(refreshEditor, '.address-book-page')
+	await refreshEditor.evaluate(openSafeEditorFixture)
+	await waitForText(refreshEditor, 'Treasury Safe')
+	await refreshEditor.evaluate(`(() => {
+		const editButton = [...document.querySelectorAll('button')].find((element) => element.textContent?.trim() === 'Edit')
+		if (!(editButton instanceof HTMLElement)) throw new Error('Gnosis Safe Edit button was not found')
+		editButton.click()
+	})()`)
+	await waitForText(refreshEditor, 'Refresh owners')
+	await refreshEditor.evaluate(`(() => {
+		browser.runtime.sendMessage = async (message) => {
+			if (message?.method === 'popup_requestIdentifyAddress') return { method: 'popup_requestIdentifyAddress', data: { chainId: '0x1', addressBookEntry: undefined } }
+			if (message?.method === 'popup_requestSafeContractState') return await new Promise(() => undefined)
+			return undefined
+		}
+		const refreshButton = [...document.querySelectorAll('.modal.is-active button')].find((element) => element.textContent?.includes('Refresh owners'))
+		if (!(refreshButton instanceof HTMLElement)) throw new Error('Refresh owners button was not found')
+		refreshButton.click()
+	})()`)
+	await waitForText(refreshEditor, 'Refreshing...')
+	await captureScenario(refreshEditor, 'safe-owner-refresh-pending')
+	await refreshEditor.close()
+
+	console.info('Opening Gnosis Safe simulation-mode popup')
+	const popup = await browser.openPage('popup')
 	await waitForSelector(popup, '.popup-home-card')
+	await waitForText(popup, 'Treasury Safe')
+	await waitForText(popup, 'Safe signer in simulation')
 	await Bun.sleep(500)
-	await capture(popup, 'safe-signing-mode.png', 520, 650)
+	await captureScenario(popup, 'safe-simulation-mode')
+	await popup.evaluate(`browser.storage.local.set({ simulationMode: false }).then(() => location.reload())`)
+	await waitForSelector(popup, '.popup-home-card')
+	await waitForText(popup, 'Treasury Safe')
+	await waitForText(popup, 'Connect a browser wallet to sign with the selected address.')
+	await captureScenario(popup, 'safe-signing-mode')
 
 	console.info('Opening Gnosis Safe transaction confirmation')
 	const safeAddress = 0x1234567890123456789012345678901234567890n
@@ -147,9 +305,9 @@ try {
 		error: { code: -32000, message: 'Screenshot fixture intentionally skips RPC simulation.' },
 	}
 	const safeTx = createSafeTx(1n, safeAddress, {
-		to: destinationAddress,
-		value: 500000000000000000n,
-		input: new Uint8Array(),
+		to: originalRequestParameters.params[0].to,
+		value: originalRequestParameters.params[0].value,
+		input: originalRequestParameters.params[0].input,
 	}, 7n)
 	const pendingSafeTransaction: PendingTransactionOrSignableMessage = {
 		type: 'Transaction',
@@ -194,36 +352,148 @@ try {
 		},
 	}
 	const serializedPendingTransactions = serialize(PendingTransactionOrSignableMessage, pendingSafeTransaction)
-	await popup.evaluate(`new Promise((resolve, reject) => {
-		chrome.storage.local.set({
+	const setPendingTransactionFixture = `browser.storage.local.set({
 			pendingTransactionsAndMessages: [${ JSON.stringify(serializedPendingTransactions) }],
-		}, () => chrome.runtime.lastError === undefined ? resolve(true) : reject(chrome.runtime.lastError))
-	})`)
-	await session.browserConnection.send('Target.closeTarget', { targetId: popupTargetId })
-	const confirmUrl = `chrome-extension://${ extensionId }/html3/confirmTransactionV3.html`
-	const confirmTargetId = await createTargetPage(session.browserConnection, confirmUrl)
-	const confirmTarget = await waitForTargetByUrl(session.browserDebugPort, confirmUrl)
-	const confirm = await connectTarget(session.browserDebugPort, confirmTarget.id)
+		})`
+	await popup.evaluate(setPendingTransactionFixture)
+	await popup.close()
+	const confirm = await browser.openPage('confirmTransaction', `(async () => {
+		await ${ setSafeAddressFixture }
+		await ${ setPendingTransactionFixture }
+	})()`)
 	await waitForText(confirm, 'wrapped as Gnosis Safe transaction nonce 7')
-	await capture(confirm, 'safe-confirm-transaction.png', 800, 900)
-	await session.browserConnection.send('Target.closeTarget', { targetId: confirmTargetId })
+	await waitForText(confirm, 'Gas estimation error')
+	await captureScenario(confirm, 'safe-confirm-transaction')
+	await confirm.close()
 
-	const stackUrl = `chrome-extension://${ extensionId }/html3/simulationStackV3.html`
+	// The signing request card is captured on a successfully simulated proposal, so the real "Sign & add" and "Add unsigned" actions are visible.
+	console.info('Opening simulated Gnosis Safe proposal with the EIP-712 signing request')
+	const mainnet = { name: 'Ethereum Mainnet', chainId: 1n, httpsRpc: 'https://rpc.example', currencyName: 'Ether', currencyTicker: 'ETH', primary: true, minimized: false }
+	const safeEntry = { type: 'contact' as const, name: 'Treasury Safe', address: safeAddress, entrySource: 'User' as const, chainId: 1n }
+	const destinationEntry = { type: 'contact' as const, name: 'Uniswap Router', address: destinationAddress, entrySource: 'User' as const, chainId: 1n }
+	const unsignedTransaction = { type: '1559' as const, nonce: 0n, chainId: 1n, accessList: [], ...originalRequestParameters.params[0] }
+	const simulatedTransactionToSimulate = {
+		website: failedTransaction.website,
+		created,
+		originalRequestParameters,
+		transactionIdentifier: 42n,
+		success: true as const,
+		transaction: unsignedTransaction,
+	}
+	const simulatedProposal: PendingTransactionOrSignableMessage = {
+		...pendingSafeTransaction,
+		transactionOrMessageCreationStatus: 'Simulated',
+		transactionToSimulate: simulatedTransactionToSimulate,
+		popupVisualisation: {
+			statusCode: 'success',
+			data: {
+				activeAddress: safeAddress,
+				simulationMode: false,
+				simulationStartedTimestamp: created,
+				uniqueRequestIdentifier,
+				transactionToSimulate: simulatedTransactionToSimulate,
+				signerName: 'MetaMask',
+				addressBookEntries: [safeEntry, destinationEntry, getNativeTokenErc20(mainnet)],
+				tokenPriceEstimates: [],
+				namedTokenIds: [],
+				simulationState: {
+					success: true,
+					simulationStateInput: [],
+					simulatedBlocks: [],
+					blockNumber: 21_000_000n,
+					blockTimestamp: created,
+					baseFeePerGas: 1_000_000_000n,
+					simulationConductedTimestamp: created,
+					rpcNetwork: mainnet,
+				},
+				visualizedSimulationState: {
+					success: true,
+					visualizedBlocks: [{
+						simulatedAndVisualizedTransactions: [{
+							website: failedTransaction.website,
+							created,
+							parsedInputData: { type: 'NonParsed', input: new Uint8Array() },
+							transactionIdentifier: 42n,
+							originalRequestParameters,
+							tokenBalancesAfter: [],
+							tokenPriceEstimates: [],
+							tokenPriceQuoteToken: undefined,
+							gasSpent: 21_000n,
+							realizedGasPrice: 1_000_000_000n,
+							quarantine: false,
+							quarantineReasons: [],
+							transactionStatus: 'Transaction Succeeded',
+							transaction: { ...unsignedTransaction, from: safeEntry, to: destinationEntry, rpcNetwork: mainnet, hash: 1n },
+							events: [],
+						}],
+						visualizedPersonalSignRequests: [],
+						blockTimeManipulation: { type: 'AddToTimestamp', deltaToAdd: 0n, deltaUnit: 'Seconds' },
+					}],
+				},
+			},
+		},
+	}
+	const setSimulatedProposalFixture = `browser.storage.local.set({
+			pendingTransactionsAndMessages: [${ JSON.stringify(serialize(PendingTransactionOrSignableMessage, simulatedProposal)) }],
+		})`
+	const simulatedConfirm = await browser.openPage('confirmTransaction', `(async () => {
+		await ${ setSafeAddressFixture }
+		await ${ setSimulatedProposalFixture }
+	})()`)
+	await waitForText(simulatedConfirm, 'wrapped as Gnosis Safe transaction nonce 7')
+	// The Safe notice always mentions "Sign & add", so wait for the action buttons themselves.
+	await waitForSelector(simulatedConfirm, 'button[aria-label="Sign and add to Safe stack"]')
+	await waitForSelector(simulatedConfirm, 'button[aria-label="Add unsigned to Safe stack"]')
+	const findSigningRequestHeader = `[...document.querySelectorAll('header')].find((element) => element.textContent?.includes('Gnosis Safe signing request (EIP-712)'))`
+	await simulatedConfirm.evaluate(`(() => {
+		const signingRequestHeader = ${ findSigningRequestHeader }
+		if (!(signingRequestHeader instanceof HTMLElement)) throw new Error('Gnosis Safe signing request card was not found')
+		signingRequestHeader.click()
+	})()`)
+	await waitForText(simulatedConfirm, 'Gnosis Safe Transaction Hash')
+	await captureScenario(simulatedConfirm, 'safe-confirm-transaction-signing-request', `(() => {
+		const signingRequestHeader = ${ findSigningRequestHeader }
+		if (!(signingRequestHeader instanceof HTMLElement)) throw new Error('Gnosis Safe signing request card was not found')
+		signingRequestHeader.scrollIntoView({ block: 'start' })
+	})()`)
+	await captureScenario(simulatedConfirm, 'safe-confirm-transaction-signing-request-hashes', `(() => {
+		const scrollContainer = document.querySelector('.popup-block-scroll')
+		if (!(scrollContainer instanceof HTMLElement)) throw new Error('Confirmation scroll container was not found')
+		scrollContainer.scrollTop = scrollContainer.scrollHeight
+	})()`)
+	await simulatedConfirm.close()
+
 	console.info('Opening simulation stack')
-	const stackTargetId = await createTargetPage(session.browserConnection, stackUrl)
-	const stackTarget = await waitForTargetByUrl(session.browserDebugPort, stackUrl)
-	const stack = await connectTarget(session.browserDebugPort, stackTarget.id)
+	const stack = await browser.openPage('simulationStack')
 	await waitForSelector(stack, '.simulation-stack-page-header')
-	await capture(stack, 'safe-simulation-stack.png', 1280, 800)
+	await captureScenario(stack, 'safe-simulation-stack')
 	await stack.evaluate(`(() => {
-		const importButton = [...document.querySelectorAll('button')].find((element) => element.textContent?.includes('Import Gnosis Safe'))
+		const importButton = document.querySelector('button[aria-label="Import Gnosis Safe stack"]')
 		if (!(importButton instanceof HTMLElement)) throw new Error('Import Gnosis Safe button was not found')
 		importButton.click()
 	})()`)
 	await waitForSelector(stack, '.modal.is-active')
-	await capture(stack, 'safe-stack-import.png', 1280, 800)
-	await session.browserConnection.send('Target.closeTarget', { targetId: stackTargetId })
+	await captureScenario(stack, 'safe-stack-import-empty')
+	await stack.evaluate(`(() => {
+		const textarea = document.querySelector('.modal.is-active textarea')
+		if (!(textarea instanceof HTMLTextAreaElement)) throw new Error('Gnosis Safe stack textarea was not found')
+		textarea.value = '{ "version": "1", "transactions": [] }'
+		textarea.dispatchEvent(new InputEvent('input', { bubbles: true, data: textarea.value }))
+	})()`)
+	await captureScenario(stack, 'safe-stack-import-filled')
+	await stack.close()
+
+	console.info('Opening settings import and export page')
+	const settings = await browser.openPage('settingsView')
+	await waitForSelector(settings, '.window-header')
+	await captureScenario(settings, 'settings-import-export')
+	await settings.close()
+
+	const expectedScreenshotCount = 95
+	const screenshotCount = capturedScenarioCount * viewports.length
+	if (screenshotCount !== expectedScreenshotCount) throw new Error(`Expected ${ expectedScreenshotCount } screenshots, captured ${ screenshotCount }`)
+	console.info(`Captured ${ screenshotCount } deterministic screenshots`)
 } finally {
-	console.info('Closing Chromium')
-	await session.close()
+	console.info(`Closing ${ browser.name }`)
+	await browser.close()
 }

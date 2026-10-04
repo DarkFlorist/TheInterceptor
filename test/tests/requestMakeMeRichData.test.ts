@@ -1,3 +1,4 @@
+import { createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { addressString, bigintToUint8Array, checksummedAddress } from '../../app/ts/utils/bigint.js'
@@ -613,7 +614,7 @@ describe('requestMakeMeRichList resilience', () => {
 		assert.deepEqual(await getRichTokens(), [])
 	})
 
-	test('rejects ERC-20 decimals above uint8 before storage discovery', async () => {
+	test('rejects ERC-20 entries invalidated by startup decimal recovery before storage discovery', async () => {
 		const storageState = installBrowserMock()
 		const { modifyRichToken } = await loadModules()
 		storageState.userAddressBookEntriesV3 = [{
@@ -655,7 +656,7 @@ describe('requestMakeMeRichList resilience', () => {
 
 		assert.deepEqual(reply, {
 			method: 'popup_modifyRichToken',
-			result: { success: false, error: 'ERC-20 decimals cannot exceed 255 in rich mode.' },
+			result: { success: false, error: 'Choose an ERC-20 token or watched ERC-1155 token ID from the address book for the active chain.' },
 		})
 		assert.equal(probeCount, 0)
 	})
@@ -929,9 +930,7 @@ describe('requestMakeMeRichList resilience', () => {
 		})
 		await probeStarted
 		const removePromise = removeAddressBookEntry(
-			ethereum,
-			new TokenPriceService(ethereum, 60_000),
-			() => undefined,
+			createTestSimulationServicesOwner({ ethereum, tokenPriceService: new TokenPriceService(ethereum, 60_000) }),
 			new Map(),
 			{
 				method: 'popup_removeAddressBookEntry',
@@ -997,9 +996,7 @@ describe('requestMakeMeRichList resilience', () => {
 		)
 
 		await removeAddressBookEntry(
-			ethereum,
-			new TokenPriceService(ethereum, 60_000),
-			() => undefined,
+			createTestSimulationServicesOwner({ ethereum, tokenPriceService: new TokenPriceService(ethereum, 60_000) }),
 			new Map(),
 			{
 				method: 'popup_removeAddressBookEntry',
@@ -1013,6 +1010,25 @@ describe('requestMakeMeRichList resilience', () => {
 })
 
 describe('startup storage recovery', () => {
+	test('repairs only legacy ERC20 entries with out-of-range decimals', async () => {
+		const storageState = installBrowserMock()
+		const { getUserAddressBookEntries } = await loadModules()
+		storageState.userAddressBookEntriesV3 = [
+			{ type: 'contact', name: 'Preserved contact', address: '0x0000000000000000000000000000000000000001', entrySource: 'User' },
+			{ type: 'ERC20', name: 'Invalid token', address: '0x0000000000000000000000000000000000000002', symbol: 'BAD', decimals: '0x100', entrySource: 'User', chainId: '0x1' },
+		]
+
+		const entries = await getUserAddressBookEntries()
+
+		assert.equal(entries.length, 2)
+		assert.deepEqual(entries[0], { type: 'contact', name: 'Preserved contact', address: 1n, entrySource: 'User' })
+		assert.deepEqual(entries[1], { type: 'contract', name: 'Invalid token', address: 2n, entrySource: 'User', chainId: 1n })
+		assert.deepEqual(storageState.userAddressBookEntriesV3, [
+			{ type: 'contact', name: 'Preserved contact', address: '0x0000000000000000000000000000000000000001', entrySource: 'User' },
+			{ type: 'contract', name: 'Invalid token', address: '0x0000000000000000000000000000000000000002', entrySource: 'User', chainId: '0x1' },
+		])
+	})
+
 	test('recovers active addresses from corrupt user address book storage', async () => {
 		const storageState = installBrowserMock()
 		const { requestActiveAddresses, defaultActiveAddresses, getUserAddressBookEntries } = await loadModules()

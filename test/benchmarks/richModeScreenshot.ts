@@ -1,6 +1,6 @@
 import { mkdir } from 'fs/promises'
 import * as path from 'path'
-import { launchChromeSession, waitForAnyExtensionServiceWorker, connectTarget, createTargetPage } from './chromeHarness.js'
+import { launchChromeSession, waitForInterceptorExtensionServiceWorker, connectTarget, createTargetPage } from './chromeHarness.js'
 import type { CdpConnection } from './chromeHarness.js'
 
 const collapsedScreenshotPath = path.resolve('docs/screenshots/rich-mode-collapsed.png')
@@ -102,17 +102,17 @@ const clickTokenResult = async (connection: CdpConnection, label: string) => {
 }
 const chrome = await launchChromeSession()
 try {
-	const workerTarget = await waitForAnyExtensionServiceWorker(chrome.browserDebugPort)
+	const workerTarget = await waitForInterceptorExtensionServiceWorker(chrome.browserDebugPort)
 	const extensionId = new URL(workerTarget.url).hostname
 	const popupTargetId = await createTargetPage(chrome.browserConnection, `chrome-extension://${ extensionId }/html3/popupV3.html`)
 	const popup = await connectTarget(chrome.browserDebugPort, popupTargetId)
 	await popup.send('Page.enable')
-	await popup.evaluate(`(() => {
-		void chrome.storage.local.set({
+	await popup.evaluate(`(async () => {
+		await chrome.storage.local.set({
 			simulationMode: true,
 			makeCurrentAddressRich: true,
 			richNativeAmount: '0xad78ebc5ac620000',
-			activeSimulationAddress: '0x1111111111111111111111111111111111111111',
+			independentActiveSimulationAddress: '0x1111111111111111111111111111111111111111',
 			userAddressBookEntriesV3: [
 				{
 					type: 'ERC20',
@@ -215,7 +215,7 @@ try {
 	if (nativeAmountRect === undefined || usdcAmountRect === undefined || nativeAmountRect.left !== usdcAmountRect.left || nativeAmountRect.right !== usdcAmountRect.right) throw new Error(`Native and token amount editors are not aligned: ${ JSON.stringify(nativeAmountRect) } -> ${ JSON.stringify(usdcAmountRect) }`)
 	await captureScreenshot(popup, screenshotPath)
 
-	await popup.evaluate(`(() => {
+	await popup.evaluate(`(async () => {
 		const contacts = Array.from({ length: 12 }, (_, index) => {
 			const address = '0x' + BigInt(index + 1).toString(16).padStart(40, '0')
 			return { type: 'contact', name: 'Rich account ' + (index + 1).toString(), address, entrySource: 'User' }
@@ -234,7 +234,7 @@ try {
 			amount: '0x3635c9adc5dea00000',
 			balanceSlot: '0x' + BigInt(index).toString(16),
 		}))
-		void chrome.storage.local.set({
+		await chrome.storage.local.set({
 			userAddressBookEntriesV3: [...contacts, ...tokenEntries],
 			fixedAddressRichList: contacts.map((contact) => ({ address: contact.address, makingRich: true, type: 'UserAdded' })),
 			richTokens,
@@ -299,12 +299,12 @@ try {
 	await sleep(250)
 	await captureScreenshot(popup, accountBalancesScreenshotPath)
 
-	await popup.evaluate(`(() => {
+	await popup.evaluate(`(async () => {
 		const tokenEntries = Array.from({ length: 80 }, (_, index) => {
 			const address = '0x' + (0x2000n + BigInt(index)).toString(16).padStart(40, '0')
 			return { type: 'ERC20', name: 'Searchable Token ' + (index + 1).toString(), address, symbol: 'TOK' + (index + 1).toString(), decimals: '0x12', entrySource: 'User', chainId: '0x1' }
 		})
-		void chrome.storage.local.set({
+		await chrome.storage.local.set({
 			userAddressBookEntriesV3: tokenEntries,
 			fixedAddressRichList: [],
 			richTokens: [],
@@ -349,7 +349,7 @@ try {
 	await captureScreenshot(popup, changeActiveAddressScreenshotPath)
 
 	await clickButtonText(popup, 'Add new address')
-	await waitForCondition(popup, 'add address dialog', `document.querySelector('[aria-label^="Add New"]') !== null`)
+	await waitForCondition(popup, 'add address dialog', `document.querySelector('[role="dialog"][aria-label="Add address"]') !== null`)
 	await sleep(250)
 	await captureScreenshot(popup, addAddressScreenshotPath)
 	popup.close()

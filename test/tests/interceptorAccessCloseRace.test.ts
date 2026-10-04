@@ -1,3 +1,4 @@
+import { createEthereumWithGetBlockCounter } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import type { Settings } from '../../app/ts/types/interceptor-messages.js'
@@ -6,13 +7,26 @@ import type { InterceptedRequest, WebsiteSocket } from '../../app/ts/utils/reque
 
 type Listener = (id: number) => unknown
 
+// The background module is cached across tests. Preserve its registered listeners while routing them to each test's fresh browser mock.
+const registeredWindowRemovedListeners = new Set<Listener>()
+const registeredTabRemovedListeners = new Set<Listener>()
+let activeWindowRemovedListeners: Listener[] = []
+let activeTabRemovedListeners: Listener[] = []
+let activeStorageState: Record<string, unknown> = {}
+let activePendingAccessClearHook: (() => void) | undefined
+let activePendingAccessReadHook: (() => void) | undefined
+
 function installBrowserMock() {
 	const storageState: Record<string, unknown> = {}
-	const windowRemovedListeners: Listener[] = []
-	const tabRemovedListeners: Listener[] = []
+	activeStorageState = storageState
+	activePendingAccessClearHook = undefined
+	activePendingAccessReadHook = undefined
+	const windowRemovedListeners = [...registeredWindowRemovedListeners]
+	const tabRemovedListeners = [...registeredTabRemovedListeners]
+	activeWindowRemovedListeners = windowRemovedListeners
+	activeTabRemovedListeners = tabRemovedListeners
 	const postedMessages: unknown[] = []
-	let pendingAccessClearHook: (() => void) | undefined
-	let pendingAccessReadHook: (() => void) | undefined
+	let openedAccessDialog: { readonly type: 'popup' | 'tab', readonly id: number } | undefined
 
 	;(globalThis as typeof globalThis & { browser: typeof globalThis.browser }).browser = {
 		runtime: {
@@ -28,54 +42,70 @@ function installBrowserMock() {
 			local: {
 				async get(keys?: string | string[] | Record<string, unknown> | null) {
 					const result = (() => {
-						if (keys === undefined || keys === null) return { ...storageState }
-						if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in storageState).map((key) => [key, storageState[key]]))
-						if (typeof keys === 'string') return keys in storageState ? { [keys]: storageState[keys] } : {}
-						return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
+						if (keys === undefined || keys === null) return { ...activeStorageState }
+						if (Array.isArray(keys)) return Object.fromEntries(keys.filter((key) => key in activeStorageState).map((key) => [key, activeStorageState[key]]))
+						if (typeof keys === 'string') return keys in activeStorageState ? { [keys]: activeStorageState[keys] } : {}
+						return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in activeStorageState ? activeStorageState[key] : defaultValue]))
 					})()
-					if (Array.isArray(result.pendingInterceptorAccessRequests) && result.pendingInterceptorAccessRequests.length > 0 && pendingAccessReadHook !== undefined) {
-						const hook = pendingAccessReadHook
-						pendingAccessReadHook = undefined
+					if (Array.isArray(result.pendingInterceptorAccessRequests) && result.pendingInterceptorAccessRequests.length > 0 && activePendingAccessReadHook !== undefined) {
+						const hook = activePendingAccessReadHook
+						activePendingAccessReadHook = undefined
 						hook()
 					}
 					return result
 				},
 				async set(items: Record<string, unknown>) {
-					Object.assign(storageState, items)
-					if (Array.isArray(items.pendingInterceptorAccessRequests) && items.pendingInterceptorAccessRequests.length === 0 && pendingAccessClearHook !== undefined) {
-						const hook = pendingAccessClearHook
-						pendingAccessClearHook = undefined
-						queueMicrotask(hook)
+					Object.assign(activeStorageState, items)
+					if (Array.isArray(items.pendingInterceptorAccessRequests) && items.pendingInterceptorAccessRequests.length === 0 && activePendingAccessClearHook !== undefined) {
+						const hook = activePendingAccessClearHook
+						activePendingAccessClearHook = undefined
+						hook()
 					}
 				},
 				async remove(keys: string | string[]) {
-					for (const key of Array.isArray(keys) ? keys : [keys]) delete storageState[key]
+					for (const key of Array.isArray(keys) ? keys : [keys]) delete activeStorageState[key]
 				},
 			},
 		},
 		tabs: {
+			async create() {
+				openedAccessDialog = { type: 'tab', id: 1 }
+				return { id: 1, windowId: 1, active: true, status: 'complete', favIconUrl: '' }
+			},
 			async query() { return [] },
 			async get(tabId: number) { return { id: tabId, active: true, status: 'complete', favIconUrl: '' } },
 			async update() { return undefined },
+			async remove() { return undefined },
 			onUpdated: { addListener: (_listener: Listener) => undefined, removeListener: (_listener: Listener) => undefined },
 			onRemoved: {
-				addListener(listener: Listener) { tabRemovedListeners.push(listener) },
+				addListener(listener: Listener) {
+					registeredTabRemovedListeners.add(listener)
+					if (!activeTabRemovedListeners.includes(listener)) activeTabRemovedListeners.push(listener)
+				},
 				removeListener(listener: Listener) {
-					const index = tabRemovedListeners.indexOf(listener)
-					if (index >= 0) tabRemovedListeners.splice(index, 1)
+					registeredTabRemovedListeners.delete(listener)
+					const index = activeTabRemovedListeners.indexOf(listener)
+					if (index >= 0) activeTabRemovedListeners.splice(index, 1)
 				},
 			},
 		},
 		windows: {
-			async create() { return { id: 1, focused: true } },
+			async create() {
+				openedAccessDialog = { type: 'popup', id: 1 }
+				return { id: 1, focused: true }
+			},
 			async get(windowId: number) { return { id: windowId, focused: true } },
 			async update() { return undefined },
 			async remove() { return undefined },
 			onRemoved: {
-				addListener(listener: Listener) { windowRemovedListeners.push(listener) },
+				addListener(listener: Listener) {
+					registeredWindowRemovedListeners.add(listener)
+					if (!activeWindowRemovedListeners.includes(listener)) activeWindowRemovedListeners.push(listener)
+				},
 				removeListener(listener: Listener) {
-					const index = windowRemovedListeners.indexOf(listener)
-					if (index >= 0) windowRemovedListeners.splice(index, 1)
+					registeredWindowRemovedListeners.delete(listener)
+					const index = activeWindowRemovedListeners.indexOf(listener)
+					if (index >= 0) activeWindowRemovedListeners.splice(index, 1)
 				},
 			},
 		},
@@ -104,15 +134,16 @@ function installBrowserMock() {
 	return {
 		postedMessages,
 		onPendingAccessClear(hook: () => void) {
-			pendingAccessClearHook = hook
+			activePendingAccessClearHook = hook
 		},
 		onPendingAccessRead(hook: () => void) {
-			pendingAccessReadHook = hook
+			activePendingAccessReadHook = hook
 		},
-		closeAccessWindow() {
-			const [listener] = windowRemovedListeners
-			if (listener === undefined) throw new Error('Missing access window close listener')
-			return listener(1)
+		closeAccessDialog() {
+			if (openedAccessDialog === undefined) throw new Error('Missing opened access dialog target')
+			const listeners = openedAccessDialog.type === 'popup' ? windowRemovedListeners : tabRemovedListeners
+			if (listeners.length === 0) throw new Error('Missing access dialog close listener')
+			return Promise.all([...listeners].map(async (listener) => await listener(openedAccessDialog.id)))
 		},
 	}
 }
@@ -145,17 +176,17 @@ describe('interceptor access close handling', () => {
 			uniqueRequestIdentifier: { requestId: 7, requestSocket: socket },
 			method: 'eth_requestAccounts',
 		}
-		const ethereum = {} as never
-		const tokenPriceService = {} as never
-		const resetSimulationServices = (() => undefined) as never
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 
-		await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, request, undefined, await getSettings(), account, async () => undefined)
+		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, await getSettings(), await getActiveAddressEntryForChain(account, 1n), async () => undefined)
 
 		const postedMessages = browserMock.postedMessages as Array<{ method?: string, result?: unknown, requestId?: number }>
-		assert.deepEqual(postedMessages.map((message) => message.method), ['accountsChanged', 'eth_accounts'])
-		assert.deepEqual(postedMessages.map((message) => message.requestId), [7, 7])
-		assert.deepEqual(postedMessages[0]?.result, ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'])
-		assert.deepEqual(postedMessages[1]?.result, ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'])
+		const providerRequestMessages = postedMessages
+		assert.deepEqual(providerRequestMessages.map((message) => message.method), ['accountsChanged', 'eth_accounts'])
+		assert.deepEqual(providerRequestMessages.map((message) => message.requestId), [7, 7])
+		assert.deepEqual(providerRequestMessages[0]?.result, ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'])
+		assert.deepEqual(providerRequestMessages[1]?.result, ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'])
 	})
 
 	test('serializes dialog close cleanup with matching request creation', async () => {
@@ -184,11 +215,9 @@ describe('interceptor access close handling', () => {
 				minimized: true,
 			},
 		}
-		const ethereum = {} as never
-		const tokenPriceService = {} as never
-		const resetSimulationServices = (() => undefined) as never
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 
-		await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, undefined, undefined, settings, undefined, undefined)
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, undefined, undefined, settings, undefined, undefined)
 
 		const request: InterceptedRequest = {
 			interceptorRequest: true,
@@ -200,9 +229,7 @@ describe('interceptor access close handling', () => {
 		let concurrentRequest: Promise<void> | undefined
 		browserMock.onPendingAccessClear(() => {
 			concurrentRequest = requestAccessFromUser(
-				ethereum,
-				tokenPriceService,
-				resetSimulationServices,
+				simulationServicesOwner,
 				websiteTabConnections,
 				socket,
 				website,
@@ -216,7 +243,7 @@ describe('interceptor access close handling', () => {
 			)
 		})
 
-		await browserMock.closeAccessWindow()
+		await browserMock.closeAccessDialog()
 		if (concurrentRequest === undefined) throw new Error('Concurrent access request was not started')
 		await concurrentRequest
 
@@ -224,7 +251,7 @@ describe('interceptor access close handling', () => {
 		assert.equal(publishCalls, 0)
 		assert.equal(pendingRequests.length, 1)
 		assert.equal(pendingRequests[0]?.request?.method, 'eth_accounts')
-		await browserMock.closeAccessWindow()
+		await browserMock.closeAccessDialog()
 	})
 
 	test('serializes dialog close cleanup with popup resolution', async () => {
@@ -253,9 +280,7 @@ describe('interceptor access close handling', () => {
 				minimized: true,
 			},
 		}
-		const ethereum = {} as never
-		const tokenPriceService = {} as never
-		const resetSimulationServices = (() => undefined) as never
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const request: InterceptedRequest = {
 			interceptorRequest: true,
 			usingInterceptorWithoutSigner: false,
@@ -263,23 +288,21 @@ describe('interceptor access close handling', () => {
 			method: 'eth_accounts',
 		}
 
-		await requestAccessFromUser(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, socket, website, request, undefined, settings, undefined, async () => undefined)
+		await requestAccessFromUser(simulationServicesOwner, websiteTabConnections, socket, website, request, undefined, settings, undefined, async () => undefined)
 
-		let closeAccessWindow: Promise<unknown> | undefined
+		let closeAccessDialog: Promise<unknown> | undefined
 		browserMock.onPendingAccessRead(() => {
-			closeAccessWindow = Promise.resolve(browserMock.closeAccessWindow())
+			closeAccessDialog = Promise.resolve(browserMock.closeAccessDialog())
 		})
 
 		await resolveInterceptorAccess(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
+			simulationServicesOwner,
 			websiteTabConnections,
 			{ originalRequestAccessToAddress: undefined, requestAccessToAddress: undefined, accessRequestId: 'undefined || https://example.test', userReply: 'Approved' },
 			async () => undefined,
 		)
-		if (closeAccessWindow === undefined) throw new Error('Concurrent access window close was not started')
-		await closeAccessWindow
+		if (closeAccessDialog === undefined) throw new Error('Concurrent access dialog close was not started')
+		await closeAccessDialog
 
 		const ethAccountsReplies = browserMock.postedMessages.filter((message): message is { requestId: number, method: string, error?: { code: number } } => {
 			return typeof message === 'object' && message !== null && 'requestId' in message && 'method' in message && message.method === 'eth_accounts'
@@ -297,7 +320,7 @@ describe('interceptor access close handling', () => {
 			resolveInterceptorAccess,
 			websiteSocketToString,
 		} = await loadModules()
-		const { getActiveAddressEntry } = await import('../../app/ts/background/metadataUtils.js')
+		const { getActiveAddressEntryForChain } = await import('../../app/ts/background/metadataUtils.js')
 		const account = 0x1234567890123456789012345678901234567890n
 		const firstWebsite = { websiteOrigin: 'https://first.example.test', icon: undefined, title: undefined }
 		const secondWebsite = { websiteOrigin: 'https://second.example.test', icon: undefined, title: undefined }
@@ -324,12 +347,10 @@ describe('interceptor access close handling', () => {
 				},
 			} }],
 		])
-		const ethereum = {} as never
-		const tokenPriceService = {} as never
-		const resetSimulationServices = (() => undefined) as never
+		const { ethereum, tokenPriceService, simulationServicesOwner } = createEthereumWithGetBlockCounter({ count: 0 })
 		const publishRpcConnectionStatus = async () => undefined
 		await changeSimulationMode({ simulationMode: true, activeSimulationAddress: account, activeSigningAddress: undefined })
-		const activeAddress = await getActiveAddressEntry(account)
+		const activeAddress = await getActiveAddressEntryForChain(account, 1n)
 		const settings: Settings = {
 			activeSimulationAddress: account,
 			activeSigningAddress: undefined,
@@ -349,16 +370,14 @@ describe('interceptor access close handling', () => {
 		}
 
 		await requestAccessFromUser(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
+			simulationServicesOwner,
 			websiteTabConnections,
 			firstSocket,
 			firstWebsite,
 			undefined,
 			activeAddress,
 			settings,
-			account,
+			activeAddress,
 			undefined,
 		)
 		const firstRequest = (await getPendingAccessRequests())[0]
@@ -366,9 +385,7 @@ describe('interceptor access close handling', () => {
 
 		await Promise.race([
 			resolveInterceptorAccess(
-				ethereum,
-				tokenPriceService,
-				resetSimulationServices,
+				simulationServicesOwner,
 				websiteTabConnections,
 				{
 					userReply: 'Approved',
@@ -384,9 +401,7 @@ describe('interceptor access close handling', () => {
 		const followUpRequest = (await getPendingAccessRequests()).find((request) => request.website.websiteOrigin === secondWebsite.websiteOrigin)
 		if (followUpRequest === undefined) throw new Error('Missing follow-up access request')
 		await resolveInterceptorAccess(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
+			simulationServicesOwner,
 			websiteTabConnections,
 			{
 				userReply: 'Rejected',
@@ -396,5 +411,44 @@ describe('interceptor access close handling', () => {
 			},
 			publishRpcConnectionStatus,
 		)
+	})
+
+	test('closes a tab-backed access dialog through its tab listener', async () => {
+		const browserMock = installBrowserMock()
+		const { getPendingAccessRequests, requestAccessFromUser, setUseTabsInsteadOfPopup, websiteSocketToString } = await loadModules()
+		const website = { websiteOrigin: 'https://tab-dialog.example.test', icon: undefined, title: undefined }
+		const socket: WebsiteSocket = { tabId: 1, connectionName: 0n }
+		const port = { name: '0x0', sender: { tab: { id: socket.tabId } }, postMessage(message: unknown) { browserMock.postedMessages.push(message) } } as unknown as browser.runtime.Port
+		const websiteTabConnections: WebsiteTabConnections = new Map([[socket.tabId, { connections: {
+			[websiteSocketToString(socket)]: { port, socket, websiteOrigin: website.websiteOrigin, approved: false, wantsToConnect: true },
+		} }]])
+		const settings: Settings = {
+			activeSimulationAddress: undefined,
+			activeSigningAddress: undefined,
+			openedPage: { page: 'Home' },
+			useSignersAddressAsActiveAddress: false,
+			websiteAccess: [],
+			simulationMode: true,
+			activeRpcNetwork: {
+				name: 'Test RPC',
+				chainId: 1n,
+				httpsRpc: 'https://example.invalid',
+				currencyName: 'Ether',
+				currencyTicker: 'ETH',
+				primary: true,
+				minimized: true,
+			},
+		}
+		await setUseTabsInsteadOfPopup(true)
+		try {
+			await requestAccessFromUser((() => undefined) as never, websiteTabConnections, socket, website, undefined, undefined, settings, undefined, undefined)
+			const pendingRequests = await getPendingAccessRequests()
+			assert.equal(pendingRequests.length, 1)
+			assert.equal(pendingRequests[0]?.popupOrTabId.type, 'tab')
+			await browserMock.closeAccessDialog()
+			assert.deepEqual(await getPendingAccessRequests(), [])
+		} finally {
+			await setUseTabsInsteadOfPopup(false)
+		}
 	})
 })

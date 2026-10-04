@@ -1,3 +1,7 @@
+import { signal } from '@preact/signals'
+import { RichModeAccountManager } from '../../app/ts/components/pages/RichMode.js'
+import type { AddressBookEntry } from '../../app/ts/types/addressBookTypes.js'
+import type { RichAccountBalance } from '../../app/ts/types/richMode.js'
 import * as assert from 'assert'
 import { describe, test } from 'bun:test'
 import { act } from 'preact/test-utils'
@@ -11,23 +15,26 @@ import { POPUP_PERFORMANCE_MARKS, clearPerformanceMarks } from '../../app/ts/uti
 
 type RuntimeMessageListener = (message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => void
 
-function installBrowserMock(replyForMessage: (message: unknown) => unknown | Promise<unknown> = () => undefined) {
+function installBrowserMock(replyToMessage: (message: unknown) => unknown | Promise<unknown> = () => undefined) {
 	const sentMessages: unknown[] = []
-	let messageListener: RuntimeMessageListener | undefined
+	const messageListeners = new Set<RuntimeMessageListener>()
+	const messageListener: RuntimeMessageListener = (message, sender, sendResponse) => {
+		for (const listener of messageListeners) listener(message, sender, sendResponse)
+	}
 
 	Object.defineProperty(globalThis, 'browser', { configurable: true, value: {
 		runtime: {
 			lastError: null,
 			async sendMessage(message: unknown) {
 				sentMessages.push(message)
-				return await replyForMessage(message)
+				return await replyToMessage(message)
 			},
 			getManifest: () => ({ manifest_version: 3 }),
 			onMessage: {
 				addListener: (listener: RuntimeMessageListener) => {
-					messageListener = listener
+					messageListeners.add(listener)
 				},
-				removeListener: () => undefined,
+				removeListener: (listener: RuntimeMessageListener) => messageListeners.delete(listener),
 			},
 			onConnect: { addListener: () => undefined, removeListener: () => undefined },
 		},
@@ -242,6 +249,7 @@ const defaultHomePage = (tabId: number, icon: { icon: string; iconReason: string
 		activeAddresses: [],
 		richList: [],
 		makeCurrentAddressRich: false,
+		hasSafeTransactionsToExport: false,
 		latestUnexpectedError: undefined,
 		websiteAccessAddressMetadata: [],
 		tabState: {
@@ -274,6 +282,7 @@ const defaultHomePageBootstrap = (tabId: number, icon: { icon: string; iconReaso
 		popupRefreshGeneration,
 		data: {
 			activeAddresses: homePage.data.activeAddresses,
+			hasSafeTransactionsToExport: homePage.data.hasSafeTransactionsToExport,
 			tabState: homePage.data.tabState,
 			settings: homePage.data.settings,
 			activeSigningAddressInThisTab: homePage.data.activeSigningAddressInThisTab,
@@ -424,8 +433,8 @@ describe('popup icon sync', () => {
 			assert.notEqual(findElementWithClass(loadedHomeCard, 'div', 'popup-home-rpc-selector'), undefined)
 			const signingButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Signing'))
 			const simulatingButton = collectElements(dom.document.body, 'button').find((button) => button.textContent?.includes('Simulating'))
-			assert.equal(signingButton?.getAttribute?.('class')?.includes('is-outlined'), false)
-			assert.equal(simulatingButton?.getAttribute?.('class')?.includes('is-outlined'), true)
+			assert.equal(signingButton?.getAttribute?.('class')?.includes('button--secondary'), false)
+			assert.equal(simulatingButton?.getAttribute?.('class')?.includes('button--secondary'), true)
 		} finally {
 			dom.restore()
 		}
@@ -571,7 +580,7 @@ describe('popup icon sync', () => {
 			const editButtonsAfterHomeData = buttonsAfterHomeData.filter((button) => button.textContent?.toLowerCase().includes('edit'))
 			const copyButtonAfterHomeData = buttonsAfterHomeData.find((button) => button.textContent?.toLowerCase().includes('copy'))
 			const timePickerDeltaInputAfterHomeData = collectElements(dom.document.body, 'input').find((input) => input.getAttribute?.('type') === 'number' && !hasClass(input, 'popup-loading-control'))
-			assert.equal(simulatingButtonAfterHomeData?.getAttribute?.('class')?.includes('is-outlined'), false)
+			assert.equal(simulatingButtonAfterHomeData?.getAttribute?.('class')?.includes('button--secondary'), false)
 			assert.equal(isButtonDisabled(rpcButtonAfterHomeData), false)
 			assert.equal(timePickerModeButtonAfterHomeData, undefined)
 			assert.equal(timePickerDeltaButtonAfterHomeData, undefined)
@@ -709,7 +718,7 @@ describe('popup icon sync', () => {
 		}
 	})
 
-	test('does not request full home data after popup live simulation updates', async () => {
+	test('requests cached export availability without a full refresh after live simulation updates', async () => {
 		const dom = installDomMock()
 		const { messageListener, sentMessages } = installBrowserMock()
 		try {
@@ -728,6 +737,12 @@ describe('popup icon sync', () => {
 			})
 			const listener = messageListener()
 			assert.equal(typeof listener, 'function')
+			await act(() => {
+				listener?.({
+					role: 'all',
+					...defaultHomePage(1, { icon: ICON_SIMULATING, iconReason: 'Simulating' }, 1),
+				}, undefined, () => undefined)
+			})
 			sentMessages.splice(0)
 
 			await act(() => {
@@ -738,7 +753,8 @@ describe('popup icon sync', () => {
 				}, undefined, () => undefined)
 			})
 
-			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_requestNewHomeData'), false)
+			assert.equal(sentMessages.some((message) => isHomeDataRequest(message, false, false)), true)
+			assert.equal(sentMessages.some((message) => typeof message === 'object' && message !== null && 'method' in message && message.method === 'popup_refreshHomeData'), false)
 		} finally {
 			dom.restore()
 		}
@@ -1092,6 +1108,58 @@ describe('popup icon sync', () => {
 		}
 	})
 
+	test('reloads a persisted native amount when its simulation refresh fails', async () => {
+		const dom = installDomMock()
+		const account: AddressBookEntry = { type: 'contact', name: 'Persisted account', address: 1n, entrySource: 'User' }
+		const previousAmount = 12_500_000_000_000_000_000n
+		const savedAmount = 25n * 10n ** 18n
+		const profiles = signal<readonly RichAccountBalance[]>([{ chainId: 1n, address: account.address, nativeAmount: previousAmount, tokenBalances: [] }])
+		const refreshError = 'The rich setting was saved, but the latest simulation is unavailable.'
+		let nativeAmountSaved = false
+		let balancesReloaded = false
+		installBrowserMock((message) => {
+			if (typeof message !== 'object' || message === null || !('method' in message)) return undefined
+			if (message.method === 'popup_modifyMakeMeRich') {
+				nativeAmountSaved = true
+				return { type: 'PopupSettingsChangeReply', ok: false, message: refreshError }
+			}
+			if (message.method === 'popup_requestNewHomeData') {
+				assert.equal(nativeAmountSaved, true)
+				profiles.value = [{ chainId: 1n, address: account.address, nativeAmount: savedAmount, tokenBalances: [] }]
+				balancesReloaded = true
+			}
+			return undefined
+		})
+		try {
+			await act(() => {
+				render(h(RichModeAccountManager, {
+					activeAddress: signal(account), chainId: 1n, isInitialHomeDataLoaded: signal(true), isSettingsChangePending: signal(false),
+					makeCurrentAddressRich: signal(true), nativeCurrencyTicker: 'ETH', renameAddressCallBack: () => undefined,
+					richAccountBalances: profiles, richList: signal([]), richNativeAmount: signal(previousAmount), richTokenOptions: signal([]),
+					setRichState: async () => undefined,
+				}), dom.document.body)
+			})
+			const expandButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Show rich accounts')
+			if (expandButton === undefined) throw new Error('Expected rich account expander')
+			await act(async () => { await clickElement(expandButton) })
+			const balancesButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Edit balances for Persisted account')
+			if (balancesButton === undefined) throw new Error('Expected balance editor button')
+			await act(async () => { await clickElement(balancesButton) })
+			const input = collectElements(dom.document.body, 'input').find((element) => element.getAttribute?.('aria-label') === 'ETH rich amount for Persisted account')
+			if (input === undefined) throw new Error('Expected native balance editor')
+			await act(async () => {
+				await changeElementValue(input, '25')
+				await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
+			})
+			assert.equal(balancesReloaded, true)
+			assert.equal(input.value, '25')
+			assert.equal(dom.document.body.textContent.includes(refreshError), true)
+		} finally {
+			render(undefined, dom.document.body)
+			dom.restore()
+		}
+	})
+
 	test('renders configured balances and keeps unselected address-book tokens in the picker', async () => {
 		const dom = installDomMock()
 		const clipboardMock = installClipboardMock()
@@ -1255,7 +1323,7 @@ describe('popup icon sync', () => {
 			const pendingCloseButton = collectElements(dom.document.body, 'button').find((button) => button.getAttribute?.('aria-label') === 'Close balance manager')
 			assert.equal(isButtonDisabled(pendingCloseButton), true)
 			await act(async () => {
-				resolveNativeAmountReply({ method: 'popup_modifyMakeMeRich', result: { success: false, error: 'Unable to persist native amount.' } })
+				resolveNativeAmountReply({ type: 'PopupSettingsChangeReply', ok: false, message: 'Unable to persist native amount.' })
 				await nativeAmountReply
 				await new Promise<void>((resolve) => { globalThis.setTimeout(resolve, 0) })
 			})

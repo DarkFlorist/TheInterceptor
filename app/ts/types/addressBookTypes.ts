@@ -1,8 +1,10 @@
 import * as funtypes from 'funtypes'
-import { EthereumAddress, EthereumQuantity, LiteralConverterParserFactory } from './wire-types.js'
+import { EthereumAddress, EthereumQuantity, EthereumQuantityUint8, LiteralConverterParserFactory } from './wire-types.js'
 
 export type ChainIdWithUniversal = funtypes.Static<typeof ChainIdWithUniversal>
 export const ChainIdWithUniversal = funtypes.Union(EthereumQuantity, funtypes.Literal('AllChains'))
+
+export const doAddressBookChainIdsMatch = (left: ChainIdWithUniversal | undefined, right: ChainIdWithUniversal | undefined) => (left ?? 1n) === (right ?? 1n)
 
 export type EntrySource = funtypes.Static<typeof EntrySource>
 export const EntrySource = funtypes.Union(
@@ -37,6 +39,18 @@ const nftAddressBookEntryOptionalFields = {
 
 export type Erc20TokenEntry = funtypes.Static<typeof Erc20TokenEntry>
 export const Erc20TokenEntry = funtypes.ReadonlyObject({
+	type: funtypes.Literal('ERC20'),
+	name: funtypes.String,
+	address: EthereumAddress,
+	symbol: funtypes.String,
+	decimals: EthereumQuantityUint8,
+	entrySource: EntrySource,
+}).And(funtypes.Partial({
+	...sharedAddressBookEntryOptionalFields,
+}))
+
+export type LegacyErc20TokenEntry = funtypes.Static<typeof LegacyErc20TokenEntry>
+export const LegacyErc20TokenEntry = funtypes.ReadonlyObject({
 	type: funtypes.Literal('ERC20'),
 	name: funtypes.String,
 	address: EthereumAddress,
@@ -102,7 +116,7 @@ export const SafeEntry = funtypes.ReadonlyObject({
 	entrySource: EntrySource,
 	useAsActiveAddress: funtypes.Boolean,
 }).And(funtypes.Partial({
-	safeSignerAddress: EthereumAddress,
+	safeSimulationSignerAddress: EthereumAddress,
 	safeSignerAddresses: funtypes.ReadonlyArray(EthereumAddress),
 	safeVersion: funtypes.String,
 	logoUri: funtypes.String,
@@ -123,38 +137,11 @@ export const AddressBookEntry: funtypes.Runtype<AddressBookEntry> = funtypes.Uni
 	SafeEntry,
 )
 
-export type SafeEntryWithSafeSigner = SafeEntry & { readonly safeSignerAddress: EthereumAddress }
-
-export function isSafeEntryWithSafeSigner(entry: AddressBookEntry | undefined): entry is SafeEntryWithSafeSigner {
-	return entry?.type === 'safe' && entry.safeSignerAddress !== undefined
-}
-
-export function getConfiguredSafeSigningEntry(
-	entries: readonly AddressBookEntry[],
-	settings: {
-		readonly simulationMode: boolean
-		readonly useSignersAddressAsActiveAddress: boolean
-		readonly activeSimulationAddress: EthereumAddress | undefined
-		readonly chainId: bigint | undefined
-	},
-): SafeEntryWithSafeSigner | undefined {
-	if (
-		settings.simulationMode
-		|| settings.useSignersAddressAsActiveAddress
-		|| settings.activeSimulationAddress === undefined
-		|| settings.chainId === undefined
-	) return undefined
-	return entries.find((entry): entry is SafeEntryWithSafeSigner =>
-		entry.address === settings.activeSimulationAddress
-		&& entry.chainId === settings.chainId
-		&& isSafeEntryWithSafeSigner(entry)
-	)
-}
-
 export function getSafeSignerAddresses(entry: SafeEntry) {
-	const configuredSigners = Array.from(new Set(entry.safeSignerAddresses ?? []))
-	if (entry.safeSignerAddress === undefined || configuredSigners.includes(entry.safeSignerAddress)) return configuredSigners
-	return [...configuredSigners, entry.safeSignerAddress]
+	return Array.from(new Set([
+		...(entry.safeSignerAddresses ?? []),
+		...(entry.safeSimulationSignerAddress === undefined ? [] : [entry.safeSimulationSignerAddress]),
+	]))
 }
 
 export type AddressBookEntries = readonly AddressBookEntry[]
@@ -171,7 +158,7 @@ export const IncompleteAddressBookEntry = funtypes.ReadonlyObject({
 	askForAddressAccess: funtypes.Boolean,
 	name: funtypes.Union(funtypes.String, funtypes.Undefined),
 	symbol: funtypes.Union(funtypes.String, funtypes.Undefined),
-	decimals: funtypes.Union(EthereumQuantity, funtypes.Undefined),
+	decimals: funtypes.Union(EthereumQuantityUint8, funtypes.Undefined),
 	logoUri: funtypes.Union(funtypes.String, funtypes.Undefined),
 	entrySource: EntrySource,
 	abi: funtypes.Union(funtypes.String, funtypes.Undefined),
@@ -179,7 +166,7 @@ export const IncompleteAddressBookEntry = funtypes.ReadonlyObject({
 	declarativeNetRequestBlockMode: funtypes.Union(funtypes.Undefined, DeclarativeNetRequestBlockMode),
 	chainId: ChainIdWithUniversal,
 }).And(funtypes.ReadonlyPartial({
-	safeSignerAddress: funtypes.String,
+	safeSimulationSignerAddress: funtypes.String,
 	safeSignerAddresses: funtypes.ReadonlyArray(funtypes.String),
 	safeVersion: funtypes.String,
 }))

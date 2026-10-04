@@ -5,6 +5,7 @@ import type { AddressBookCategory, GetAddressBookDataFilter } from '../types/int
 import { getFullLogoUri } from './metadataUtils.js'
 import { assertNever } from '../utils/typescript.js'
 import { getUserAddressBookEntriesForChainId, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
+import { createFuzzySearchPattern } from '../utils/fuzzySearch.js'
 
 type PartialResult = {
 	bestMatchLength: number,
@@ -85,9 +86,8 @@ function concatArraysUniqueByAddress<T>(addTo: readonly (T & { address: bigint }
 }
 
 async function filterAddressBookDataByCategoryAndSearchString(addressBookCategory: AddressBookCategory, searchString: string | undefined, chainId: ChainIdWithUniversal): Promise<AddressBookEntries> {
-	const unicodeEscapeString = (input: string) => `\\u{${ input.charCodeAt(0).toString(16) }}`
 	const trimmedSearch = searchString !== undefined && searchString.trim().length > 0 ? searchString.trim() : undefined
-	const searchPattern = trimmedSearch ? new RegExp(`(?=(${ trimmedSearch.split('').map(unicodeEscapeString).join('.*?') }))`, 'ui') : undefined
+	const searchPattern = trimmedSearch === undefined ? undefined : createFuzzySearchPattern(trimmedSearch)
 	const searchingDisabled = trimmedSearch === undefined || searchPattern === undefined
 	const userEntries = (await getUserAddressBookEntriesForChainId(chainId)).filter((entry) => entry.entrySource !== 'OnChain')
 	switch(addressBookCategory) {

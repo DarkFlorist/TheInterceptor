@@ -333,7 +333,7 @@ describe('WebsiteAccessView selection', () => {
 		})
 
 		assert.equal(removeAddressDialog.open, false)
-		assert.equal(dom.document.body.textContent.includes('Abi:'), true)
+		assert.equal(dom.document.body.textContent.includes('Contract ABI'), true)
 		dom.restore()
 	})
 

@@ -32,7 +32,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 		<InterceptorDialogHeader close = { param.close } closeLabel = 'Close address selection' icon = '../img/address-book.svg' title = 'Change active address' subtitle = 'Choose which account Interceptor uses for simulation'/>
 		<InterceptorDialogBody>
 				<ul class = 'interceptor-dialog-list'>
-					<li>
+					{ getSignerAccount() === undefined ? <></> : <li>
 						<button type = 'button' class = 'card hoverable interceptor-dialog-choice' onClick = { () => { changeAndStoreActiveAddress('signer') } }>
 							<div class = 'card-content'>
 								<div class = 'media'>
@@ -54,7 +54,7 @@ export function ChangeActiveAddress(param: ChangeActiveAddressParam) {
 								</div>
 							</div>
 						</button>
-					</li>
+					</li> }
 
 					{ activeAddresses.map((activeAddress) => (
 						<li key = { activeAddress.address.toString() }>

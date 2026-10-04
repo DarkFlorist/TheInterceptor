@@ -1,5 +1,5 @@
 import type { SafeContractState } from './safeCore.js'
-import { assertInterceptorSafeTransactionPolicy, createSafeTxFromMessage, recoverSafeSignatureOwner, SAFE_TRANSACTION_CORE_FIELDS } from './safeCore.js'
+import { assertInterceptorSafeTransactionPolicy, createSafeContractValidationFailure, createSafeTxFromMessage, recoverSafeSignatureOwner, SAFE_TRANSACTION_CORE_FIELDS } from './safeCore.js'
 import type { Hex } from '../utils/ethereumPrimitives.js'
 import { bytesFromHex, bytesToHex, ensureHex } from '../utils/ethereumBytes.js'
 import { decodeFunctionDataStrict, encodeFunctionCall } from '../utils/abiRuntime.js'
@@ -35,7 +35,7 @@ function parseSafeExecutionArguments(args: readonly unknown[]) {
 		|| typeof gasToken !== 'string'
 		|| typeof refundReceiver !== 'string'
 		|| typeof signatures !== 'string'
-	) throw new Error('The Gnosis Safe execution calldata is malformed.')
+	) throw createSafeContractValidationFailure('The Gnosis Safe execution calldata is malformed.')
 	return {
 		to: ensureHex(to, 'Gnosis Safe execution destination'),
 		value,
@@ -50,6 +50,24 @@ function parseSafeExecutionArguments(args: readonly unknown[]) {
 	}
 }
 
+export function decodeSafeExecution(chainId: bigint, safeAddress: bigint, nonce: bigint, input: Uint8Array) {
+	const decoded = decodeFunctionDataStrict(SAFE_EXECUTION_ABI, bytesToHex(input))
+	const execution = parseSafeExecutionArguments(decoded.args)
+	const safeTx = createSafeTxFromMessage(chainId, safeAddress, {
+		to: BigInt(execution.to),
+		value: execution.value,
+		data: bytesFromHex(execution.data),
+		operation: execution.operation,
+		safeTxGas: execution.safeTxGas,
+		baseGas: execution.baseGas,
+		gasPrice: execution.gasPrice,
+		gasToken: BigInt(execution.gasToken),
+		refundReceiver: BigInt(execution.refundReceiver),
+		nonce,
+	})
+	return { execution, safeTx }
+}
+
 export async function completeSafeExecutionWithConfiguredSigner(
 	chainId: bigint,
 	safeAddress: bigint,
@@ -57,32 +75,19 @@ export async function completeSafeExecutionWithConfiguredSigner(
 	safeState: SafeContractState,
 	input: Uint8Array,
 ) {
-	const decoded = decodeFunctionDataStrict(SAFE_EXECUTION_ABI, bytesToHex(input))
-	const execution = parseSafeExecutionArguments(decoded.args)
+	const { execution, safeTx } = decodeSafeExecution(chainId, safeAddress, safeState.nonce, input)
 	const signatures = bytesFromHex(execution.signatures)
 	if (signatures.length % SAFE_SIGNATURE_BYTES !== 0) {
-		throw new Error('The incomplete Gnosis Safe execution contains a malformed signature payload.')
+		throw createSafeContractValidationFailure('The incomplete Gnosis Safe execution contains a malformed signature payload.')
 	}
 	const signatureCount = BigInt(signatures.length / SAFE_SIGNATURE_BYTES)
 	if (signatureCount >= safeState.threshold) return input
 	if (signatureCount + 1n < safeState.threshold) {
-		throw new Error(`This Gnosis Safe execution has ${ signatureCount.toString() } signature(s), and the configured signer cannot satisfy its ${ safeState.threshold.toString() }-signature threshold.`)
+		throw createSafeContractValidationFailure(`This Gnosis Safe execution has ${ signatureCount.toString() } signature(s), and the wallet-selected Safe owner cannot satisfy its ${ safeState.threshold.toString() }-signature threshold.`)
 	}
 	if (!safeState.owners.includes(configuredSigner)) {
-		throw new Error('The configured Gnosis Safe signer is no longer an owner of this Gnosis Safe.')
+		throw createSafeContractValidationFailure('The account selected in your wallet is no longer an owner of this Gnosis Safe.')
 	}
-	const safeTx = createSafeTxFromMessage(chainId, safeAddress, {
-			to: BigInt(execution.to),
-			value: execution.value,
-			data: bytesFromHex(execution.data),
-			operation: execution.operation,
-			safeTxGas: execution.safeTxGas,
-			baseGas: execution.baseGas,
-			gasPrice: execution.gasPrice,
-			gasToken: BigInt(execution.gasToken),
-			refundReceiver: BigInt(execution.refundReceiver),
-			nonce: safeState.nonce,
-	})
 	assertInterceptorSafeTransactionPolicy(safeTx)
 	const safeTxHash = BigInt(getSafeTxHash(safeTx))
 	const existingSignatures = await Promise.all(Array.from(
@@ -100,16 +105,16 @@ export async function completeSafeExecutionWithConfiguredSigner(
 	))
 	const supportedSignatures = existingSignatures.filter((signature) => signature !== undefined)
 	if (supportedSignatures.length !== existingSignatures.length) {
-		throw new Error('The incomplete Gnosis Safe execution contains a signature format that Interceptor cannot validate and complete safely.')
+		throw createSafeContractValidationFailure('The incomplete Gnosis Safe execution contains a signature format that Interceptor cannot validate and complete safely.')
 	}
 	if (new Set(supportedSignatures.map(({ signer }) => signer)).size !== supportedSignatures.length) {
-		throw new Error('The Gnosis Safe execution contains duplicate owner signatures.')
+		throw createSafeContractValidationFailure('The Gnosis Safe execution contains duplicate owner signatures.')
 	}
 	if (supportedSignatures.some(({ signer }) => signer === configuredSigner)) {
-		throw new Error('The configured Gnosis Safe signer already signed this execution, but the signature threshold is not satisfied.')
+		throw createSafeContractValidationFailure('The wallet-selected Gnosis Safe owner already signed this execution, but the signature threshold is not satisfied.')
 	}
 	for (const { signer } of supportedSignatures) {
-		if (!safeState.owners.includes(signer)) throw new Error('The Gnosis Safe execution contains a signature from an address that is not a current owner.')
+		if (!safeState.owners.includes(signer)) throw createSafeContractValidationFailure('The Gnosis Safe execution contains a signature from an address that is not a current owner.')
 	}
 	const completedSignatures = [
 		...supportedSignatures,

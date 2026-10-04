@@ -30,3 +30,9 @@ export function tryRegisterContentScriptPortListeners(
 		throw error
 	}
 }
+
+export async function initializeContentScriptConnectionAfterBackgroundStartup<T>(waitForStartup: () => Promise<T>, initializeConnection: () => Promise<void>) {
+	const startupResult = await waitForStartup()
+	await initializeConnection()
+	return startupResult
+}

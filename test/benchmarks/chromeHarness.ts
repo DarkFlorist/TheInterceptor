@@ -316,8 +316,15 @@ export async function connectTarget(browserDebugPort: number, targetId: string) 
 	return connection
 }
 
-export async function waitForAnyExtensionServiceWorker(browserDebugPort: number, timeoutMs = 15_000) {
-	return await waitForTarget(browserDebugPort, (target) => target.type === 'service_worker' && target.url.startsWith('chrome-extension://'), timeoutMs, 'extension service worker')
+export async function waitForInterceptorExtensionServiceWorker(browserDebugPort: number, timeoutMs = 15_000) {
+	return await waitForTarget(
+		browserDebugPort,
+		(target) => target.type === 'service_worker'
+			&& target.url.startsWith('chrome-extension://')
+			&& target.url.endsWith('/js/backgroundServiceWorker.js'),
+		timeoutMs,
+		'Interceptor extension service worker',
+	)
 }
 
 export async function waitForTargetByUrl(browserDebugPort: number, urlPrefix: string, timeoutMs = 15_000) {

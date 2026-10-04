@@ -2,12 +2,14 @@ import { MessageToPopup, type MessageToPopupPayload, PopupMessage, type PopupRea
 import { type WebsiteSocket, checkAndThrowRuntimeLastError } from '../utils/requests.js'
 import { EthereumQuantity, serialize } from '../types/wire-types.js'
 import type { PopupOrTabId } from '../types/websiteAccessTypes.js'
-import { getAllTabStates, getTabState, getUserAddressBookEntries, getUserAddressBookEntriesForChainIdMorePreciseFirst } from './storageVariables.js'
-import { getActiveAddressEntry } from './metadataUtils.js'
+import { getAllTabStates, getTabState, getUserAddressBookEntries } from './storageVariables.js'
+import { getActiveAddressEntryForChain, getWalletActiveAddressEntryForChain } from './metadataUtils.js'
 import { reportUnexpectedError } from '../utils/errors.js'
 import { PopupMessageReplyRequests, type PopupRequests, PopupRequestsReplies, type PopupRequestsReplyReturn } from '../types/interceptor-reply-messages.js'
 import { isIgnorablePortLifecycleError } from './contentScriptPortLifecycle.js'
-import { getConfiguredSafeSigningEntry, type AddressBookEntry } from '../types/addressBookTypes.js'
+import type { AddressBookEntries, AddressBookEntry } from '../types/addressBookTypes.js'
+import { getWalletSelectedAccount, resolveActiveAddressForMode } from '../utils/activeAddressSelection.js'
+import type { WebsiteTabConnections } from '../types/user-interface-types.js'
 
 function isIgnorableExtensionMessagingError(error: Error) {
 	return isIgnorablePortLifecycleError(error)
@@ -18,56 +20,74 @@ type ConfiguredActiveAddressResolution =
 	| { readonly useConfiguredAddress: false }
 	| { readonly useConfiguredAddress: true, readonly activeAddress: AddressBookEntry | undefined }
 
-async function resolveConfiguredActiveAddress(settings: Settings): Promise<ConfiguredActiveAddressResolution> {
-	if (settings.useSignersAddressAsActiveAddress || settings.activeSimulationAddress === undefined) {
-		return { useConfiguredAddress: false }
-	}
-	const chainEntries = await getUserAddressBookEntriesForChainIdMorePreciseFirst(settings.activeRpcNetwork.chainId)
-	if (!settings.simulationMode) {
-		const configuredSafe = getConfiguredSafeSigningEntry(chainEntries, {
-			...settings,
-			chainId: settings.activeRpcNetwork.chainId,
-		})
-		return configuredSafe !== undefined
-			? { useConfiguredAddress: true, activeAddress: configuredSafe }
-			: { useConfiguredAddress: false }
-	}
-	const configuredEntry = chainEntries.find((entry) => entry.address === settings.activeSimulationAddress)
-	if (configuredEntry !== undefined) return { useConfiguredAddress: true, activeAddress: configuredEntry }
-	const isSafeOnAnotherChain = (await getUserAddressBookEntries())
-		.some((entry) => entry.type === 'safe' && entry.address === settings.activeSimulationAddress)
+async function resolveConfiguredActiveAddress(settings: Settings, signerAccounts: readonly bigint[], walletSelectedAddress: bigint | undefined, addressBookEntries: AddressBookEntries | undefined): Promise<ConfiguredActiveAddressResolution> {
+	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningSafeAddress
+	if ((settings.simulationMode && settings.useSignersAddressAsActiveAddress) || configuredAddress === undefined) return { useConfiguredAddress: false }
+	if (addressBookEntries === undefined) throw new Error('Address-book entries are required to resolve a configured active address.')
+	const modeInput = settings.simulationMode
+		? { mode: 'simulation' as const, activeAddress: configuredAddress }
+		: {
+			mode: 'signing' as const,
+			selectedAddress: { type: 'safe' as const, address: configuredAddress },
+			signerAccounts,
+			walletFallbackAddress: walletSelectedAddress,
+		}
+	const resolution = resolveActiveAddressForMode(
+		addressBookEntries,
+		settings.activeRpcNetwork.chainId,
+		modeInput,
+	)
+	if (resolution.activeAddress === undefined) return { useConfiguredAddress: true, activeAddress: undefined }
+	const activeAddress = resolution.activeAddressBookEntry ?? (settings.simulationMode
+		? await getActiveAddressEntryForChain(resolution.activeAddress, settings.activeRpcNetwork.chainId)
+		: await getWalletActiveAddressEntryForChain(resolution.activeAddress, settings.activeRpcNetwork.chainId))
 	return {
 		useConfiguredAddress: true,
-		activeAddress: isSafeOnAnotherChain ? undefined : await getActiveAddressEntry(settings.activeSimulationAddress),
+		activeAddress,
 	}
 }
 
+async function getConfiguredActiveAddressBookEntries(settings: Settings) {
+	const configuredAddress = settings.simulationMode ? settings.activeSimulationAddress : settings.activeSigningSafeAddress
+	if ((settings.simulationMode && settings.useSignersAddressAsActiveAddress) || configuredAddress === undefined) return undefined
+	return await getUserAddressBookEntries()
+}
+
 export async function getActiveAddress(settings: Settings, tabId: number) {
-	const configuredAddress = await resolveConfiguredActiveAddress(settings)
+	const tabState = await getTabState(tabId)
+	const addressBookEntries = await getConfiguredActiveAddressBookEntries(settings)
+	const walletSelectedAccount = getWalletSelectedAccount(tabState)
+	const configuredAddress = await resolveConfiguredActiveAddress(settings, tabState.signerAccounts, walletSelectedAccount, addressBookEntries)
 	if (configuredAddress.useConfiguredAddress) return configuredAddress.activeAddress
-	const signingAddr = (await getTabState(tabId)).activeSigningAddress
+	const signingAddr = settings.simulationMode ? tabState.activeSigningAddress : walletSelectedAccount
 	if (signingAddr === undefined) return undefined
-	return await getActiveAddressEntry(signingAddr)
+	return await getWalletActiveAddressEntryForChain(signingAddr, settings.activeRpcNetwork.chainId)
 }
 
 export async function getActiveOrFirstSignerAddress(settings: Settings, tabId: number) {
 	const tabState = await getTabState(tabId)
-	const configuredAddress = await resolveConfiguredActiveAddress(settings)
+	const addressBookEntries = await getConfiguredActiveAddressBookEntries(settings)
+	const walletSelectedAccount = getWalletSelectedAccount(tabState)
+	const configuredAddress = await resolveConfiguredActiveAddress(settings, tabState.signerAccounts, walletSelectedAccount, addressBookEntries)
 	if (configuredAddress.useConfiguredAddress) return configuredAddress.activeAddress
-	const address = tabState.activeSigningAddress ?? tabState.signerAccounts[0]
+	const address = walletSelectedAccount
 	if (address === undefined) return undefined
-	return await getActiveAddressEntry(address)
+	return await getWalletActiveAddressEntryForChain(address, settings.activeRpcNetwork.chainId)
 }
 
 export async function getActiveAddressesForAllTabs(settings: Settings) {
 	const tabStates = await getAllTabStates()
-	const configuredAddress = await resolveConfiguredActiveAddress(settings)
-	if (configuredAddress.useConfiguredAddress) {
-		return tabStates.map((state) => ({ tabId: state.tabId, activeAddress: configuredAddress.activeAddress }))
+	const addressBookEntries = await getConfiguredActiveAddressBookEntries(settings)
+	if (settings.simulationMode) {
+		const configuredAddress = await resolveConfiguredActiveAddress(settings, [], undefined, addressBookEntries)
+		if (configuredAddress.useConfiguredAddress) return tabStates.map((state) => ({ tabId: state.tabId, activeAddress: configuredAddress.activeAddress }))
 	}
 	return Promise.all(tabStates.map(async (state) => {
-		const signingAddr = state.activeSigningAddress
-		return { tabId: state.tabId, activeAddress: signingAddr === undefined ? undefined : await getActiveAddressEntry(signingAddr) }
+		const walletSelectedAccount = getWalletSelectedAccount(state)
+		const configuredAddress = await resolveConfiguredActiveAddress(settings, state.signerAccounts, walletSelectedAccount, addressBookEntries)
+		if (configuredAddress.useConfiguredAddress) return { tabId: state.tabId, activeAddress: configuredAddress.activeAddress }
+		const signingAddr = settings.simulationMode ? state.activeSigningAddress : walletSelectedAccount
+		return { tabId: state.tabId, activeAddress: signingAddr === undefined ? undefined : await getWalletActiveAddressEntryForChain(signingAddr, settings.activeRpcNetwork.chainId) }
 	}))
 }
 
@@ -78,8 +98,7 @@ export async function sendPopupMessageToOpenWindowsWithoutUnexpectedErrorReport(
 	} catch (error) {
 		if (error instanceof Error) {
 			if (error?.message?.includes('Could not establish connection.')) {
-				// ignore this error, this error is thrown when a popup is not open to receive the message
-				// we are ignoring this error because the popup messaging is used to update a popups UI, and if a popup is not open, we don't need to update the UI
+				// ignore this error, this error is thrown when a popup is not open to receive the message we are ignoring this error because the popup messaging is used to update a popups UI, and if a popup is not open, we don't need to update the UI
 				return
 			}
 			if (isIgnorableExtensionMessagingError(error)) return
@@ -190,6 +209,11 @@ export async function requestPopupIdentifyAddress(data: PopupRequestByMethod<'po
 	return reply?.method === 'popup_requestIdentifyAddress' ? reply : undefined
 }
 
+export async function requestPopupSafeContractState(data: PopupRequestByMethod<'popup_requestSafeContractState'>['data']) {
+	const reply = await sendPopupMessageWithReply({ method: 'popup_requestSafeContractState', data })
+	return reply?.method === 'popup_requestSafeContractState' ? reply : undefined
+}
+
 export async function requestPopupSimulateGovernanceContractExecution(data: PopupRequestByMethod<'popup_simulateGovernanceContractExecution'>['data']) {
 	const reply = await sendPopupMessageWithReply({ method: 'popup_simulateGovernanceContractExecution', data })
 	return reply?.method === 'popup_simulateExecutionReply' ? reply : undefined
@@ -290,7 +314,12 @@ export async function setExtensionBadgeBackgroundColor(details: browser.action._
 
 export const websiteSocketToString = (socket: WebsiteSocket) => `${ socket.tabId }-${ serialize(EthereumQuantity, socket.connectionName) }`
 
+export const getWebsiteSocketConnection = (websiteTabConnections: WebsiteTabConnections, socket: WebsiteSocket) => websiteTabConnections.get(socket.tabId)?.connections[websiteSocketToString(socket)]
+
 export const getSocketFromPort = (port: browser.runtime.Port) => {
 	if (port.sender?.tab?.id === undefined) return undefined
 	return { tabId: port.sender?.tab?.id, connectionName: EthereumQuantity.parse(port.name) }
 }
+
+// MV2 ports may omit frameId; preserve their top-frame fallback consistently for ownership and eligibility.
+export const isTopFramePort = (port: browser.runtime.Port) => port.sender?.frameId === undefined || port.sender.frameId === 0

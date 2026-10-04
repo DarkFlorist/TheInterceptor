@@ -1,4 +1,4 @@
-import { type Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
+import { type ReadonlySignal, type Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals'
 import type { ComponentChildren, JSX } from 'preact'
 import { useId, useRef } from 'preact/hooks'
 import { sendPopupMessageToBackgroundPage, sendPopupMessageWithReply } from '../../background/backgroundUtils.js'
@@ -14,9 +14,14 @@ import { updateRichListAddress } from '../../utils/richList.js'
 import { assertNever } from '../../utils/typescript.js'
 import { AddressIcon, SmallAddress } from '../subcomponents/address.js'
 import { InterceptorDialogBody, InterceptorDialogFooter, InterceptorDialogHeader, InterceptorDialogSurface } from '../subcomponents/InterceptorDialog.js'
+import { useAsyncState } from '../../utils/preact-utilities.js'
+import { ErrorComponent } from '../subcomponents/Error.js'
+import { AsyncStatusIcon } from '../subcomponents/AsyncAction.js'
 import { ChevronIcon, SearchIcon, TrashIcon } from '../subcomponents/icons.js'
 
 type RichModeAccountManagerProps = {
+	isSettingsChangePending: ReadonlySignal<boolean>
+	setRichState: (enabled: boolean, address: bigint | 'CurrentAddress') => Promise<void>
 	makeCurrentAddressRich: Signal<boolean>
 	richNativeAmount: Signal<bigint>
 	nativeCurrencyTicker: string
@@ -133,19 +138,32 @@ function RichBalanceSummary({ profile, tokenOptions, nativeCurrencyTicker }: {
 	</span>
 }
 
-export function RichModeAccountManager({ makeCurrentAddressRich, richNativeAmount, nativeCurrencyTicker, activeAddress, richList, richTokenOptions, richAccountBalances, chainId, renameAddressCallBack, isInitialHomeDataLoaded }: RichModeAccountManagerProps) {
+export function RichModeAccountManager({ isSettingsChangePending, setRichState, makeCurrentAddressRich, richNativeAmount, nativeCurrencyTicker, activeAddress, richList, richTokenOptions, richAccountBalances, chainId, renameAddressCallBack, isInitialHomeDataLoaded }: RichModeAccountManagerProps) {
+	const { value: richChangeState, waitFor: waitForRichChange } = useAsyncState<void>()
+	const controlsDisabled = !isInitialHomeDataLoaded.value || isSettingsChangePending.value || richChangeState.value.state === 'pending'
+	const saveRichChange = (enabled: boolean, address: bigint | 'CurrentAddress') => {
+		void waitForRichChange(async () => {
+			try {
+				await setRichState(enabled, address)
+			} catch (error) {
+				// Reload persisted balances when a saved setting cannot be visualized.
+				await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData', data: { refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: false } })
+				throw error
+			}
+		})
+	}
 	const selectRichTokensButtonRef = useRef<HTMLButtonElement>(null)
-	async function enableMakeCurrentAddressRich(enabled: boolean) {
-		if (!isInitialHomeDataLoaded.value) return
-		sendPopupMessageToBackgroundPage( { method: 'popup_modifyMakeMeRich', data: { add: enabled, address: 'CurrentAddress'} } )
+	function enableMakeCurrentAddressRich(enabled: boolean) {
+		if (controlsDisabled) return
+		saveRichChange(enabled, 'CurrentAddress')
 		makeCurrentAddressRich.value = enabled
 		const address = activeAddress.value?.address
 		if (enabled && address !== undefined && !richAccountBalances.value.some((profile) => profile.chainId === chainId && profile.address === address)) {
 			richAccountBalances.value = [...richAccountBalances.value, { chainId, address, nativeAmount: richNativeAmount.value, tokenBalances: [] }]
 		}
 	}
-	async function modifyRichList(addressBookEntry: AddressBookEntry, makeRich: boolean) {
-		if (!isInitialHomeDataLoaded.value) return
+	function modifyRichList(addressBookEntry: AddressBookEntry, makeRich: boolean) {
+		if (controlsDisabled) return
 		richList.value = updateRichListAddress(
 			richList.value,
 			addressBookEntry.address,
@@ -156,7 +174,7 @@ export function RichModeAccountManager({ makeCurrentAddressRich, richNativeAmoun
 		if (makeRich && !richAccountBalances.value.some((profile) => profile.chainId === chainId && profile.address === addressBookEntry.address)) {
 			richAccountBalances.value = [...richAccountBalances.value, { chainId, address: addressBookEntry.address, nativeAmount: richNativeAmount.value, tokenBalances: [] }]
 		}
-		sendPopupMessageToBackgroundPage( { method: 'popup_modifyMakeMeRich', data: { add: makeRich, address: addressBookEntry.address } } )
+		saveRichChange(makeRich, addressBookEntry.address)
 	}
 
 	const showList = useSignal<boolean>(false)
@@ -287,14 +305,19 @@ export function RichModeAccountManager({ makeCurrentAddressRich, richNativeAmoun
 		const previousAmount = profile.nativeAmount
 		const reply = await runRichOperation('native', `Saving ${ nativeCurrencyTicker } amount…`, async () => {
 			updateProfileForAddress(address, (current) => ({ ...current, nativeAmount: amount }))
-			return await sendPopupMessageWithReply({ method: 'popup_modifyMakeMeRich', data: { nativeAmount: amount, address } })
+			const reply = await sendPopupMessageWithReply({ method: 'popup_modifyMakeMeRich', data: { nativeAmount: amount, address } })
+			if (reply?.ok !== true) {
+				updateProfileForAddress(address, (current) => ({ ...current, nativeAmount: previousAmount }))
+				// A rejected reply can mean the amount was saved but its simulation refresh failed; reload authoritative balances.
+				await sendPopupMessageToBackgroundPage({ method: 'popup_requestNewHomeData', data: { refreshSignerAccounts: false, includeWebsiteAccessAddressMetadata: false } })
+			}
+			return reply
 		})
-		if (reply?.result.success === true) {
+		if (reply?.ok === true) {
 			richTokenSaveConfirmedAddress.value = address
 			return
 		}
-		updateProfileForAddress(address, (current) => ({ ...current, nativeAmount: previousAmount }))
-		richTokenError.value = reply === undefined ? 'The background service did not confirm the native balance.' : reply.result.error
+		richTokenError.value = reply === undefined ? 'The background service did not confirm the native balance.' : reply.message
 		richTokenErrorTarget.value = 'native'
 	}
 
@@ -520,7 +543,7 @@ export function RichModeAccountManager({ makeCurrentAddressRich, richNativeAmoun
 			showRichBalanceDialog.value = true
 		}
 		return <div class = { `rich-mode-account-row${ accountIsRich ? ' is-rich' : '' }${ isActiveAddressRow ? ' is-active-account' : '' }` } key = { richListElement.addressBookEntry.address.toString() }>
-			<input class = 'rich-mode-account-toggle' type = 'checkbox' disabled = { !isInitialHomeDataLoaded.value } checked = { isCurrentAddressRow ? makeCurrentAddressRich.value : richListElement.makingRich } aria-label = { `Toggle rich mode for ${ richListElement.addressBookEntry.name } (${ accountAddress })` } onInput = { event => { if (event.target instanceof HTMLInputElement && event.target !== null) { isCurrentAddressRow ? enableMakeCurrentAddressRich(event.target.checked) : modifyRichList(richListElement.addressBookEntry, event.target.checked) } } } />
+			<input class = 'rich-mode-account-toggle' type = 'checkbox' disabled = { controlsDisabled } checked = { isCurrentAddressRow ? makeCurrentAddressRich.value : richListElement.makingRich } aria-label = { `Toggle rich mode for ${ richListElement.addressBookEntry.name } (${ accountAddress })` } onInput = { event => { if (event.target instanceof HTMLInputElement && event.target !== null) { isCurrentAddressRow ? enableMakeCurrentAddressRich(event.target.checked) : modifyRichList(richListElement.addressBookEntry, event.target.checked) } } } />
 			<button type = 'button' class = 'rich-mode-account-open' disabled = { !accountIsRich } aria-label = { `Edit balances for ${ richListElement.addressBookEntry.name }` } aria-describedby = { accountAddressDescriptionId } data-configured-assets = { configuredAssetCount.toString() } onClick = { openBalances }>
 				<AddressIcon address = { richListElement.addressBookEntry.address } logoUri = { 'logoUri' in richListElement.addressBookEntry ? richListElement.addressBookEntry.logoUri : undefined } isBig = { false } backgroundColor = 'var(--surface-dark-color)'/>
 				<span class = 'rich-mode-account-details'>
@@ -539,7 +562,7 @@ export function RichModeAccountManager({ makeCurrentAddressRich, richNativeAmoun
 		<header class = 'card-header rich-mode-card-header'>
 			<p class = 'card-header-title' style = 'font-weight: unset; font-size: 0.8em; padding: 0 0.5rem;'>
 				<label class = 'form-control' style = 'grid-template-columns: 1em min-content; width: min-content;' onClick = { event => { event.stopPropagation() } }>
-					<input type = 'checkbox' disabled = { !isInitialHomeDataLoaded.value } checked = { makeCurrentAddressRich.value } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeCurrentAddressRich(e.target.checked) } } } onClick = { event => { event.stopPropagation() } } />
+					<input type = 'checkbox' disabled = { controlsDisabled } checked = { makeCurrentAddressRich.value } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null) { enableMakeCurrentAddressRich(e.target.checked) } } } onClick = { event => { event.stopPropagation() } } />
 					<p class = 'paragraph checkbox-text' style = 'white-space: nowrap;'> Make current account rich</p>
 				</label>
 			</p>
@@ -548,11 +571,13 @@ export function RichModeAccountManager({ makeCurrentAddressRich, richNativeAmoun
 				<span class = 'icon'><ChevronIcon /></span>
 			</button>
 		</header>
+		{ richChangeState.value.state === 'pending' ? <div class = 'card-content-header' role = 'status' aria-live = 'polite'><AsyncStatusIcon state = 'pending'/> Updating balances...</div> : <></> }
+		{ richChangeState.value.state === 'rejected' ? <ErrorComponent text = { richChangeState.value.error.message }/> : <></> }
 		{ !showList.value
 			? <> { !activeAddressSetAsRichViaFixedAddressList.value || activeAddress.value === undefined ? <></> : <>
 				<div class = 'card-content-header' style = 'font-size: 0.8em;'>
 					<label class = 'form-control' style = 'gap: 1em;'>
-						<input type = 'checkbox' disabled = { !isInitialHomeDataLoaded.value } checked = { true } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null && activeAddress.value !== undefined) { modifyRichList(activeAddress.value, e.target.checked) } } } />
+						<input type = 'checkbox' disabled = { controlsDisabled } checked = { true } onInput = { e => { if (e.target instanceof HTMLInputElement && e.target !== null && activeAddress.value !== undefined) { modifyRichList(activeAddress.value, e.target.checked) } } } />
 						<SmallAddress addressBookEntry = { activeAddress } renameAddressCallBack = { renameAddressCallBack } noCopying = { !isInitialHomeDataLoaded.value } noEditAddress = { !isInitialHomeDataLoaded.value } />
 					</label>
 				</div>

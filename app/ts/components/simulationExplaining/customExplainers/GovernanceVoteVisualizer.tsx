@@ -104,11 +104,11 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 		return lastBlock.simulatedAndVisualizedTransactions[lastBlock.simulatedAndVisualizedTransactions.length - 1]
 	})
 	const addressMetaData = useComputed(() => {
-		if (simulateExecutionReply.value === undefined || simulateExecutionReply.value.data.success === false) throw new Error('failed simulation')
+		if (simulateExecutionReply.value === undefined || simulateExecutionReply.value.data.success === false) return []
 		return simulateExecutionReply.value.data.result.addressBookEntries
 	})
 	const results = useComputed(() => {
-		if (simulateExecutionReply.value === undefined || simulateExecutionReply.value.data.success === false) throw new Error('failed simulation')
+		if (simulateExecutionReply.value === undefined || simulateExecutionReply.value.data.success === false || activeAddress.value === undefined) return undefined
 		return {
 			blockNumber: simulateExecutionReply.value.data.result.simulationState.blockNumber,
 			blockTimestamp: simulateExecutionReply.value.data.result.simulationState.blockTimestamp,
@@ -117,7 +117,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 			addressBookEntries: simulateExecutionReply.value.data.result.addressBookEntries,
 			rpcNetwork: simulateExecutionReply.value.data.result.simulationState.rpcNetwork,
 			tokenPriceEstimates: simulateExecutionReply.value.data.result.tokenPriceEstimates,
-			activeAddress: activeAddress.value!,
+			activeAddress: activeAddress.value,
 			visualizedSimulationState: simulateExecutionReply.value.data.result.visualizedSimulationState,
 			namedTokenIds: simulateExecutionReply.value.data.result.namedTokenIds,
 		}
@@ -161,7 +161,7 @@ const ShowSuccessOrFailure = ({ simulateExecutionReply, simTx, activeAddress, re
 			<ErrorComponent text = { rpcErrorText }/>
 		</div>
 	}
-	if (govSimTx.value === undefined) return <></>
+	if (govSimTx.value === undefined || results.value === undefined) return <></>
 
 	return <div style = 'display: grid; grid-template-rows: max-content; row-gap: 10px;' >
 		{ requestErrorText === undefined ? <></> : <ErrorComponent text = { requestErrorText }/> }

@@ -27,7 +27,7 @@ function collectByRole(node: TestNode | undefined, role: string, results: TestNo
 }
 
 describe('ChangeActiveAddress', () => {
-	test('uses selectable rows without nesting interactive controls', async () => {
+	for (const hasSigner of [false, true]) test(`uses selectable rows without nesting interactive controls (${ hasSigner ? 'with' : 'without' } a signer)`, async () => {
 		const dom = installDomMock()
 		const activeAddress: AddressBookEntry = {
 			type: 'contact',
@@ -46,20 +46,20 @@ describe('ChangeActiveAddress', () => {
 					close = { () => undefined }
 					renameAddressCallBack = { () => undefined }
 					setActiveAddressAndInformAboutIt = { address => { selectedAddress = address } }
-					signerAccounts = { [] }
+					signerAccounts = { hasSigner ? [2n] : [] }
 					signerName = 'NoSignerDetected'
 				/>, dom.document.body)
 			})
 
 			const choiceButtons = collectButtons(dom.document.body).filter((button) => button.getAttribute?.('class')?.split(/\s+/).includes('interceptor-dialog-choice'))
-			assert.equal(choiceButtons.length, 2)
+			assert.equal(choiceButtons.length, hasSigner ? 2 : 1)
 			for (const choice of choiceButtons) {
 				const descendantButtons = (choice.childNodes ?? []).flatMap((child) => collectButtons(child))
 				assert.equal(descendantButtons.length, 0)
 				assert.equal(collectByRole(choice, 'img').length, 0)
 			}
 
-			choiceButtons[1]?.dispatchEvent?.({ type: 'click', bubbles: true })
+			choiceButtons.at(-1)?.dispatchEvent?.({ type: 'click', bubbles: true })
 			assert.equal(selectedAddress, activeAddress.address)
 		} finally {
 			render(null, dom.document.body)

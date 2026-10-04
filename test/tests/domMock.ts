@@ -8,6 +8,7 @@ type TestEvent = {
 	currentTarget?: TestElement
 	defaultPrevented?: boolean
 	preventDefault?: () => void
+	key?: string
 	shiftKey?: boolean
 	stopPropagation?: () => void
 	target?: TestElement
@@ -111,8 +112,11 @@ class TestElement extends TestNode {
 	readonly nodeType = 1
 	tagName: string
 	nodeName: string
+	clientHeight = 40
+	onscroll: unknown = undefined
+	scrollTop = 0
 	attributes: AttributeMap = {}
-	readonly eventListeners = new Map<string, Set<(event: TestEvent) => void>>()
+	readonly eventListeners = new Map<string, Set<(event: Event) => unknown>>()
 	style = {
 		setProperty: (name: string, value: string) => {
 			this.style[name] = value
@@ -141,26 +145,29 @@ class TestElement extends TestNode {
 		delete this.attributes[name]
 	}
 
-	addEventListener(type: string, listener: (event: TestEvent) => void) {
+	addEventListener(type: string, listener: (event: Event) => unknown) {
 		const listeners = this.eventListeners.get(type) ?? new Set()
 		listeners.add(listener)
 		this.eventListeners.set(type, listeners)
 	}
-	removeEventListener(type: string, listener: (event: TestEvent) => void) {
+
+	removeEventListener(type: string, listener: (event: Event) => unknown) {
 		this.eventListeners.get(type)?.delete(listener)
 	}
-	dispatchEvent(event: TestEvent) {
-		event.target ??= this
-		event.currentTarget = this
-		event.stopPropagation ??= () => { event.cancelBubble = true }
-		event.preventDefault ??= () => { event.defaultPrevented = true }
-		const eventType = this.eventListeners.has(event.type)
-			? event.type
-			: [...this.eventListeners.keys()].find((registeredType) => registeredType.toLowerCase() === event.type.toLowerCase()) ?? event.type
-		event.type = eventType
-		for (const listener of this.eventListeners.get(eventType) ?? []) listener.call(this, event)
-		if (event.bubbles === true && event.cancelBubble !== true && this.parentNode instanceof TestElement) this.parentNode.dispatchEvent(event)
-		return event.cancelBubble !== true
+
+	dispatchEvent(input: Event | TestEvent) {
+		const event = input instanceof Event ? input : new Event(input.type, { bubbles: input.bubbles, cancelable: true })
+		if (!(input instanceof Event)) {
+			Object.defineProperty(event, 'key', { value: input.key })
+			Object.defineProperty(event, 'shiftKey', { value: input.shiftKey })
+		}
+		const eventType = this.eventListeners.has(event.type) ? event.type : [...this.eventListeners.keys()].find(type => type.toLowerCase() === event.type.toLowerCase()) ?? event.type
+		Object.defineProperty(event, 'type', { configurable: true, value: eventType })
+		if (event.target === null) Object.defineProperty(event, 'target', { configurable: true, value: this })
+		Object.defineProperty(event, 'currentTarget', { configurable: true, value: this })
+		for (const listener of this.eventListeners.get(event.type) ?? []) listener.call(this, event)
+		if (event.bubbles && !event.cancelBubble && this.parentNode instanceof TestElement) this.parentNode.dispatchEvent(event)
+		return !event.defaultPrevented
 	}
 	querySelectorAll() {
 		const matches: TestElement[] = []
@@ -190,9 +197,25 @@ class TestElement extends TestNode {
 	showPopover() { return undefined }
 	hidePopover() { return undefined }
 	togglePopover() { return undefined }
+	getBoundingClientRect() { return { height: this.clientHeight, width: 100, x: 0, y: 0, top: 0, right: 100, bottom: this.clientHeight, left: 0 } }
 
 	getAttribute(name: string) {
 		return this.attributes[name] ?? null
+	}
+
+	hasAttribute(name: string) {
+		return this.attributes[name] !== undefined
+	}
+
+	closest(selector: string): TestElement | null {
+		const attributeMatch = selector.match(/^\[([^\]]+)\]$/u)
+		if (attributeMatch?.[1] === undefined) return null
+		let element: TestElement | null = this
+		while (element !== null) {
+			if (element.hasAttribute(attributeMatch[1])) return element
+			element = element.parentNode instanceof TestElement ? element.parentNode : null
+		}
+		return null
 	}
 
 	override get textContent() {
@@ -222,11 +245,16 @@ class TestDialogElement extends TestElement {
 class TestDocument {
 	activeElement: TestElement | null = null
 	body: TestElement
-	readonly dialogElementConstructor: typeof TestDialogElement
+	readonly elementConstructor: new (ownerDocument: TestDocument, tagName: string) => TestElement
+	readonly dialogElementConstructor: new (ownerDocument: TestDocument, tagName: string) => TestElement
 
-	constructor(dialogElementConstructor: typeof TestDialogElement = TestDialogElement) {
+	constructor(
+		elementConstructor: new (ownerDocument: TestDocument, tagName: string) => TestElement = TestElement,
+		dialogElementConstructor: new (ownerDocument: TestDocument, tagName: string) => TestElement = TestDialogElement,
+	) {
+		this.elementConstructor = elementConstructor
 		this.dialogElementConstructor = dialogElementConstructor
-		this.body = new TestElement(this, 'body')
+		this.body = new this.elementConstructor(this, 'body')
 	}
 
 	addEventListener() { return undefined }
@@ -234,7 +262,7 @@ class TestDocument {
 
 	createElement(tagName: string) {
 		if (tagName.toLowerCase() === 'dialog') return new this.dialogElementConstructor(this, tagName)
-		return new TestElement(this, tagName)
+		return new this.elementConstructor(this, tagName)
 	}
 
 	createElementNS(_namespace: string, tagName: string) {
@@ -261,6 +289,8 @@ type DomMockState = {
 	previousRequestAnimationFrame: unknown
 	previousCancelAnimationFrame: unknown
 	previousHtmlDialogElement: unknown
+	previousHtmlDivElement: unknown
+	previousElement: unknown
 }
 
 const fallbackDocument = new TestDocument()
@@ -269,6 +299,11 @@ const fallbackWindow: TestWindow = {
 	addEventListener() { return undefined },
 	removeEventListener() { return undefined },
 }
+const fallbackRequestAnimationFrame: typeof globalThis.requestAnimationFrame = (callback) => {
+	const timeout = setTimeout(() => callback(performance.now()), 0)
+	return Number(timeout)
+}
+const fallbackCancelAnimationFrame: typeof globalThis.cancelAnimationFrame = (handle) => clearTimeout(handle)
 const domMockOwners = new Map<unknown, DomMockState>()
 
 function resolveRestorablePreviousValue(previousValue: unknown, fallbackValue: unknown, getPreviousValue: (state: DomMockState) => unknown): unknown {
@@ -287,8 +322,22 @@ function restoreOwnedGlobal(name: string, isOwnedByThisMock: boolean, previousVa
 }
 
 export function installDomMock() {
-	class OwnedTestDialogElement extends TestDialogElement {}
-	const document = new TestDocument(OwnedTestDialogElement)
+	class OwnedTestElement extends TestElement {}
+	class OwnedTestDialogElement extends OwnedTestElement {
+		open = false
+		returnValue = ''
+
+		showModal() {
+			this.open = true
+		}
+
+		close(returnValue = '') {
+			this.open = false
+			this.returnValue = returnValue
+			this.dispatchEvent(new Event('close'))
+		}
+	}
+	const document = new TestDocument(OwnedTestElement, OwnedTestDialogElement)
 	const window: TestWindow = {
 		document,
 		addEventListener() { return undefined },
@@ -308,6 +357,8 @@ export function installDomMock() {
 	const previousRequestAnimationFrame = globalThis.requestAnimationFrame
 	const previousCancelAnimationFrame = globalThis.cancelAnimationFrame
 	const previousHtmlDialogElement = globalThis.HTMLDialogElement
+	const previousHtmlDivElement = globalThis.HTMLDivElement
+	const previousElement = globalThis.Element
 	const state: DomMockState = {
 		restored: false,
 		previousDocument,
@@ -317,8 +368,10 @@ export function installDomMock() {
 		previousRequestAnimationFrame,
 		previousCancelAnimationFrame,
 		previousHtmlDialogElement,
+		previousHtmlDivElement,
+		previousElement,
 	}
-	for (const ownedValue of [document, window, setIntervalMock, clearIntervalMock, requestAnimationFrameMock, cancelAnimationFrameMock, OwnedTestDialogElement]) domMockOwners.set(ownedValue, state)
+	for (const ownedValue of [document, window, setIntervalMock, clearIntervalMock, requestAnimationFrameMock, cancelAnimationFrameMock, OwnedTestDialogElement, OwnedTestElement]) domMockOwners.set(ownedValue, state)
 
 	defineGlobalValue('document', document)
 	defineGlobalValue('window', window)
@@ -327,20 +380,23 @@ export function installDomMock() {
 	defineGlobalValue('requestAnimationFrame', requestAnimationFrameMock)
 	defineGlobalValue('cancelAnimationFrame', cancelAnimationFrameMock)
 	defineGlobalValue('HTMLDialogElement', OwnedTestDialogElement)
+	defineGlobalValue('HTMLDivElement', OwnedTestElement)
+	defineGlobalValue('Element', OwnedTestElement)
 
 	return {
 		document,
 		restore() {
-			// Bun runs test files concurrently. Do not remove another test's active DOM
-			// or leave Preact cleanup with an undefined global document.
+			// Bun runs test files concurrently. Do not remove another test's active DOM or leave Preact cleanup with an undefined global document.
 			state.restored = true
 			restoreOwnedGlobal('document', globalThis.document === document, previousDocument, fallbackDocument, (owner) => owner.previousDocument)
 			restoreOwnedGlobal('window', globalThis.window === window || globalThis.window?.document === document, previousWindow, fallbackWindow, (owner) => owner.previousWindow)
 			restoreOwnedGlobal('setInterval', globalThis.setInterval === setIntervalMock, previousSetInterval, undefined, (owner) => owner.previousSetInterval)
 			restoreOwnedGlobal('clearInterval', globalThis.clearInterval === clearIntervalMock, previousClearInterval, undefined, (owner) => owner.previousClearInterval)
-			restoreOwnedGlobal('requestAnimationFrame', globalThis.requestAnimationFrame === requestAnimationFrameMock, previousRequestAnimationFrame, undefined, (owner) => owner.previousRequestAnimationFrame)
-			restoreOwnedGlobal('cancelAnimationFrame', globalThis.cancelAnimationFrame === cancelAnimationFrameMock, previousCancelAnimationFrame, undefined, (owner) => owner.previousCancelAnimationFrame)
+			restoreOwnedGlobal('requestAnimationFrame', globalThis.requestAnimationFrame === requestAnimationFrameMock, previousRequestAnimationFrame, fallbackRequestAnimationFrame, (owner) => owner.previousRequestAnimationFrame)
+			restoreOwnedGlobal('cancelAnimationFrame', globalThis.cancelAnimationFrame === cancelAnimationFrameMock, previousCancelAnimationFrame, fallbackCancelAnimationFrame, (owner) => owner.previousCancelAnimationFrame)
 			restoreOwnedGlobal('HTMLDialogElement', globalThis.HTMLDialogElement === OwnedTestDialogElement, previousHtmlDialogElement, undefined, (owner) => owner.previousHtmlDialogElement)
+			restoreOwnedGlobal('HTMLDivElement', globalThis.HTMLDivElement === OwnedTestElement, previousHtmlDivElement, undefined, (owner) => owner.previousHtmlDivElement)
+			restoreOwnedGlobal('Element', globalThis.Element === OwnedTestElement, previousElement, undefined, (owner) => owner.previousElement)
 		},
 	}
 }
@@ -372,4 +428,27 @@ export function installDateMock(initialNow: Date | string | number) {
 			globalThis.Date = RealDate
 		},
 	}
+}
+
+// Preact keeps its registered handlers on the element's minified `l` record; the DOM mock does not synthesize click events.
+export type RenderedTreeNode = {
+	readonly tagName?: string
+	readonly textContent?: string
+	readonly childNodes?: readonly RenderedTreeNode[]
+	readonly l?: Record<string, (event: unknown) => unknown>
+}
+
+export function findRenderedElement(node: RenderedTreeNode, matches: (node: RenderedTreeNode) => boolean): RenderedTreeNode | undefined {
+	if (matches(node)) return node
+	for (const child of node.childNodes ?? []) {
+		const found = findRenderedElement(child, matches)
+		if (found !== undefined) return found
+	}
+	return undefined
+}
+
+export async function clickRenderedElement(element: RenderedTreeNode) {
+	const clickHandler = element.l === undefined ? undefined : Object.entries(element.l).find(([key]) => key.startsWith('Click'))?.[1]
+	if (clickHandler === undefined) throw new Error('Expected click handler')
+	await clickHandler({ currentTarget: element })
 }

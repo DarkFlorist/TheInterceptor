@@ -4,24 +4,24 @@ import type { InterceptorAccessChangeAddress, InterceptorAccessRefresh, Intercep
 import { createScopedKeyedSerialExecutor, Semaphore } from '../../utils/semaphore.js'
 import type { WebsiteTabConnections } from '../../types/user-interface-types.js'
 import { getAssociatedAddresses, persistWebsiteAccessChange, updateWebsiteApprovalAccesses, verifyAccess, withSuppressedUnscopedConnectionEventsForSocket, withSuppressedUnscopedConnectionEventsForSocketAsync } from '../accessManagement.js'
-import { changeActiveAddressAndChain, handleInterceptedRequest, refuseAccess } from '../background.js'
+import { handleInterceptedRequest, refuseAccess } from '../background.js'
+import { activateAddressSelection } from '../activeSettings.js'
 import { INTERNAL_CHANNEL_NAME, createInternalMessageListener, getHtmlFile, sendPopupMessageToOpenWindows, websiteSocketToString } from '../backgroundUtils.js'
-import { getActiveAddressEntry, getActiveAddresses } from '../metadataUtils.js'
+import { getActiveAddressEntryForChain, getActiveAddresses, getWalletActiveAddressEntryForChain } from '../metadataUtils.js'
 import { getSettings } from '../settings.js'
-import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests, getUserAddressBookEntries } from '../storageVariables.js'
+import { getTabState, updatePendingAccessRequests, getPendingAccessRequests, clearPendingAccessRequests } from '../storageVariables.js'
 import { doesUniqueRequestIdentifiersMatch, type InterceptedRequest, type WebsiteSocket } from '../../utils/requests.js'
 import { replyToInterceptedRequest, sendSubscriptionReplyOrCallBackToPort } from '../messageSending.js'
 import type { PopupOrTabId, Website, WebsiteAccessArray } from '../../types/websiteAccessTypes.js'
 import type { PendingAccessRequest } from '../../types/accessRequest.js'
-import type { AddressBookEntries, AddressBookEntry } from '../../types/addressBookTypes.js'
-import type { EthereumClientService } from '../../simulation/services/EthereumClientService.js'
-import type { TokenPriceService } from '../../simulation/services/priceEstimator.js'
-import type { ResetSimulationServices } from '../../simulation/serviceLifecycle.js'
+import { doAddressBookChainIdsMatch, type AddressBookEntries, type AddressBookEntry } from '../../types/addressBookTypes.js'
+import type { SimulationServicesOwner } from '../../simulation/serviceLifecycle.js'
 import type { PublishRpcConnectionStatus } from '../rpcSlowRequestTracking.js'
 import { type PopupOrTab, addWindowTabListeners, closePopupOrTabById, getPopupOrTabById, openPopupOrTab, removeWindowTabListeners, tryFocusingTabOrWindow } from '../../utils/popupOrTab.js'
 import { isAccountConnectionMethod } from '../accountRequestMethods.js'
 import type { ErrorWithCodeAndOptionalData } from '../../types/error.js'
 import { getConfirmedSignerStateToken, isSignerStateTokenCurrent, signerConnectionReplacedError, signerUnavailableError, tabHasApprovedWebsiteConnection, waitForConfirmedSignerStateToken } from '../signerStateOwnership.js'
+import { assertActiveAddressSelectionAllowed, includePersistedAddressBookEntry } from '../../utils/activeAddressSelection.js'
 
 type OpenedDialogWithListeners = {
 	popupOrTab: PopupOrTab
@@ -32,8 +32,7 @@ type OpenedDialogWithListeners = {
 let openedDialog: OpenedDialogWithListeners 
 
 const pendingInterceptorAccessSemaphore = new Semaphore(1)
-// Signer account replies identify the tab-wide signer owner but not the originating request. Keep one round trip
-// active per tab so requests from sibling frames cannot settle each other.
+// Signer account replies identify the tab-wide signer owner but not the originating request. Keep one round trip active per tab so requests from sibling frames cannot settle each other.
 const serializeSignerAccountRequest = createScopedKeyedSerialExecutor<WebsiteTabConnections, number>()
 const SIGNER_ACCOUNT_REPLY_TIMEOUT_MS = 5_000
 
@@ -65,7 +64,7 @@ async function waitForSignerAccountReply(future: Future<ErrorWithCodeAndOptional
 	}
 }
 
-const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => await pendingInterceptorAccessSemaphore.execute(async () => { // check if user has closed the window on their own, if so, reject signature
+const onCloseWindowOrTab = async (simulationServicesOwner: SimulationServicesOwner, popupOrTabs: PopupOrTabId, websiteTabConnections: WebsiteTabConnections) => await pendingInterceptorAccessSemaphore.execute(async () => { // check if user has closed the window on their own, if so, reject signature
 	if (openedDialog === undefined || openedDialog.popupOrTab.id !== popupOrTabs.id || openedDialog.popupOrTab.type !== popupOrTabs.type) return
 	removeWindowTabListeners(openedDialog.onClosePopup, openedDialog.onCloseTab)
 
@@ -79,19 +78,18 @@ const onCloseWindowOrTab = async (ethereum: EthereumClientService, tokenPriceSer
 			userReply: 'noResponse' as const
 		}
 		await resolve(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
+			simulationServicesOwner,
 			websiteTabConnections,
 			reply,
 			pendingRequest.request,
 			pendingRequest.website,
 			undefined,
+			pendingRequest,
 		)
 	}
 })
 
-export async function resolveInterceptorAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, reply: InterceptorAccessReply, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
+export async function resolveInterceptorAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, reply: InterceptorAccessReply, publishRpcConnectionStatus: PublishRpcConnectionStatus) {
 	const resolution = await pendingInterceptorAccessSemaphore.execute(async () => {
 		const promises = await getPendingAccessRequests()
 		const pendingRequest = promises.find((req) => req.accessRequestId === reply.accessRequestId)
@@ -103,14 +101,13 @@ export async function resolveInterceptorAccess(ethereum: EthereumClientService, 
 		}
 		return {
 			...await resolve(
-				ethereum,
-				tokenPriceService,
-				resetSimulationServices,
+				simulationServicesOwner,
 				websiteTabConnections,
 				replyWithPendingRequestAddresses,
 				pendingRequest.request,
 				pendingRequest.website,
 				publishRpcConnectionStatus,
+				pendingRequest,
 			),
 			replayRequestSocket: pendingRequest.request !== undefined && isAccountConnectionMethod(pendingRequest.request.method)
 				? pendingRequest.request.uniqueRequestIdentifier.requestSocket
@@ -119,9 +116,7 @@ export async function resolveInterceptorAccess(ethereum: EthereumClientService, 
 	})
 	if (resolution.promptForFollowUpAccesses) {
 		await updateWebsiteApprovalAccesses(
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
+			simulationServicesOwner,
 			websiteTabConnections,
 			await getSettings(),
 			true,
@@ -131,9 +126,7 @@ export async function resolveInterceptorAccess(ethereum: EthereumClientService, 
 			undefined,
 			pendingRequest.website.websiteOrigin,
 			pendingRequest.website,
-			ethereum,
-			tokenPriceService,
-			resetSimulationServices,
+			simulationServicesOwner,
 			pendingRequest.socket,
 			pendingRequest.request,
 			websiteTabConnections,
@@ -146,21 +139,14 @@ export async function resolveInterceptorAccess(ethereum: EthereumClientService, 
 	await withSuppressedUnscopedConnectionEventsForSocketAsync(resolution.replayRequestSocket, replayPendingRequests)
 }
 
-export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray): Promise<AddressBookEntries> {
+export async function getAddressMetadataForAccess(websiteAccess: WebsiteAccessArray, chainId: bigint): Promise<AddressBookEntries> {
 	const addresses = websiteAccess.flatMap((x) => x.addressAccess === undefined ? [] : x.addressAccess?.map((addr) => addr.address))
 	const addressSet = new Set(addresses)
-	return await Promise.all(Array.from(addressSet).map((x) => getActiveAddressEntry(x)))
+	return await Promise.all(Array.from(addressSet).map((x) => getActiveAddressEntryForChain(x, chainId)))
 }
 
 export function filterAccessDialogAddressesForChain(activeAddresses: AddressBookEntries, chainId: bigint) {
 	return activeAddresses.filter((entry) => entry.type !== 'safe' || entry.chainId === chainId)
-}
-
-export function assertAccessDialogAddressIsAvailable(activeAddresses: AddressBookEntries, chainId: bigint, address: bigint) {
-	const matchingSafeEntries = activeAddresses.filter((entry) => entry.type === 'safe' && entry.address === address)
-	if (matchingSafeEntries.length > 0 && !matchingSafeEntries.some((entry) => entry.chainId === chainId)) {
-		throw new Error('The selected Gnosis Safe is configured for another chain.')
-	}
 }
 
 async function getAccessDialogActiveAddresses() {
@@ -168,12 +154,23 @@ async function getAccessDialogActiveAddresses() {
 	return filterAccessDialogAddressesForChain(await getActiveAddresses(), settings.activeRpcNetwork.chainId)
 }
 
-async function changeAccess(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true) {
+async function withCurrentSignerState(pendingAccessRequest: PendingAccessRequest): Promise<PendingAccessRequest> {
+	const tabState = await getTabState(pendingAccessRequest.socket.tabId)
+	return {
+		...pendingAccessRequest,
+		signerAccounts: tabState.signerAccounts,
+		signerName: tabState.signerName,
+	}
+}
+
+async function withCurrentSignerStates(pendingAccessRequests: readonly PendingAccessRequest[]) {
+	return await Promise.all(pendingAccessRequests.map(withCurrentSignerState))
+}
+
+async function changeAccess(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, confirmation: InterceptorAccessReply, website: Website, promptForAccessesIfNeeded = true) {
 	if (confirmation.userReply === 'noResponse') return
 	await persistWebsiteAccessChange(
-		ethereum,
-		tokenPriceService,
-		resetSimulationServices,
+		simulationServicesOwner,
 		websiteTabConnections,
 		website,
 		confirmation.userReply === 'Approved',
@@ -186,7 +183,7 @@ export async function updateInterceptorAccessViewWithPendingRequests() {
 	const pendingAccessRequests = await getPendingAccessRequests()
 	if (pendingAccessRequests.length > 0) await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: {
 		activeAddresses: await getAccessDialogActiveAddresses(),
-		pendingAccessRequests,
+		pendingAccessRequests: await withCurrentSignerStates(pendingAccessRequests),
 	} })
 }
 
@@ -270,46 +267,39 @@ export async function refreshSignerAccountsForTab(
 }
 
 export async function requestAccessFromUser(
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
-	resetSimulationServices: ResetSimulationServices,
+	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	website: Website,
 	request: InterceptedRequest,
 	requestAccessToAddress: AddressBookEntry | undefined,
 	settings: Settings,
-	activeAddress: bigint | undefined,
+	activeAddressEntry: AddressBookEntry | undefined,
 	publishRpcConnectionStatus: PublishRpcConnectionStatus,
 ): Promise<void>
 export async function requestAccessFromUser(
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
-	resetSimulationServices: ResetSimulationServices,
+	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	website: Website,
 	request: undefined,
 	requestAccessToAddress: AddressBookEntry | undefined,
 	settings: Settings,
-	activeAddress: bigint | undefined,
+	activeAddressEntry: AddressBookEntry | undefined,
 	publishRpcConnectionStatus: undefined,
 ): Promise<void>
 export async function requestAccessFromUser(
-	ethereum: EthereumClientService,
-	tokenPriceService: TokenPriceService,
-	resetSimulationServices: ResetSimulationServices,
+	simulationServicesOwner: SimulationServicesOwner,
 	websiteTabConnections: WebsiteTabConnections,
 	socket: WebsiteSocket,
 	website: Website,
 	request: InterceptedRequest | undefined,
 	requestAccessToAddress: AddressBookEntry | undefined,
 	settings: Settings,
-	activeAddress: bigint | undefined,
+	activeAddressEntry: AddressBookEntry | undefined,
 	publishRpcConnectionStatus: PublishRpcConnectionStatus | undefined,
 ) {
 	// check if we need to ask address access or not. If address is put to never need to have address specific permision, we don't need to ask for it
-	const activeAddressEntry = activeAddress !== undefined ? await getActiveAddressEntry(activeAddress) : activeAddress
 	const askForAddressAccess = requestAccessToAddress !== undefined && requestAccessToAddress.askForAddressAccess !== false
 	const accessAddress = askForAddressAccess ? requestAccessToAddress : undefined
 	const verifyAccessForCurrentRequest = (currentSettings: Settings) => {
@@ -325,7 +315,7 @@ export async function requestAccessFromUser(
 		if (request === undefined || !isAccountConnectionMethod(request.method)) return verify()
 		return withSuppressedUnscopedConnectionEventsForSocket(request.uniqueRequestIdentifier.requestSocket, verify)
 	}
-	const closeWindowOrTabCallback = (popupOrTabId: PopupOrTabId) => onCloseWindowOrTab(ethereum, tokenPriceService, resetSimulationServices, popupOrTabId, websiteTabConnections)
+	const closeWindowOrTabCallback = (popupOrTabId: PopupOrTabId) => onCloseWindowOrTab(simulationServicesOwner, popupOrTabId, websiteTabConnections)
 	const onCloseWindowCallback = async (id: number) => closeWindowOrTabCallback({ type: 'popup' as const, id })
 	const onCloseTabCallback = async (id: number) => closeWindowOrTabCallback({ type: 'tab' as const, id })
 	const pendingReplay = await pendingInterceptorAccessSemaphore.execute(async () => {
@@ -378,7 +368,7 @@ export async function requestAccessFromUser(
 				throw new Error('Opened dialog does not exist when expected in requestAccessFromUser function')
 			}
 			if (openedDialog) {
-				removeWindowTabListeners(onCloseWindowCallback, onCloseTabCallback)
+				removeWindowTabListeners(openedDialog.onClosePopup, openedDialog.onCloseTab)
 				await closePopupOrTabById(openedDialog.popupOrTab)
 			}
 			openedDialog = { popupOrTab, onClosePopup: onCloseWindowCallback, onCloseTab: onCloseTabCallback,  }
@@ -389,6 +379,7 @@ export async function requestAccessFromUser(
 			throw new Error('Opened dialog does not exist when expected in requestAccessFromUser function')
 		}
 		const accessRequestId =  `${ accessAddress?.address } || ${ website.websiteOrigin }`
+		const tabState = await getTabState(socket.tabId)
 		const pendingRequest = {
 			popupOrTabId: openedDialog.popupOrTab,
 			socket,
@@ -398,10 +389,10 @@ export async function requestAccessFromUser(
 			requestAccessToAddress: accessAddress,
 			originalRequestAccessToAddress: accessAddress,
 			associatedAddresses: requestAccessToAddress !== undefined ? await getAssociatedAddresses(settings, website.websiteOrigin, requestAccessToAddress) : [],
-			signerAccounts: [],
-			signerName: request !== undefined ? (await getTabState(request.uniqueRequestIdentifier.requestSocket.tabId)).signerName : 'NoSignerDetected',
+			signerAccounts: tabState.signerAccounts,
+			signerName: tabState.signerName,
 			simulationMode: settings.simulationMode,
-			activeAddress: activeAddress,
+			activeAddress: activeAddressEntry?.address,
 		}
 
 		const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
@@ -430,14 +421,14 @@ export async function requestAccessFromUser(
 		if (pendingRequests.current.findIndex((x) => x.accessRequestId === accessRequestId) === 0) {
 			await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: {
 				activeAddresses: await getAccessDialogActiveAddresses(),
-				pendingAccessRequests: pendingRequests.current,
+				pendingAccessRequests: await withCurrentSignerStates(pendingRequests.current),
 			} })
 		}
 		await sendPopupMessageToOpenWindows({
 			method: 'popup_interceptor_access_dialog_pending_changed',
 			data: {
 				activeAddresses: await getAccessDialogActiveAddresses(),
-				pendingAccessRequests: pendingRequests.current,
+				pendingAccessRequests: await withCurrentSignerStates(pendingRequests.current),
 			}
 		})
 		if (openedDialog !== undefined) await tryFocusingTabOrWindow(openedDialog.popupOrTab)
@@ -449,9 +440,7 @@ export async function requestAccessFromUser(
 		undefined,
 		pendingReplay.website.websiteOrigin,
 		pendingReplay.website,
-		ethereum,
-		tokenPriceService,
-		resetSimulationServices,
+		simulationServicesOwner,
 		pendingReplay.socket,
 		pendingReplay.request,
 		websiteTabConnections,
@@ -459,27 +448,40 @@ export async function requestAccessFromUser(
 	)
 }
 
-async function resolve(ethereum: EthereumClientService, tokenPriceService: TokenPriceService, resetSimulationServices: ResetSimulationServices, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website, publishRpcConnectionStatus: PublishRpcConnectionStatus | undefined) {
+async function resolve(simulationServicesOwner: SimulationServicesOwner, websiteTabConnections: WebsiteTabConnections, accessReply: InterceptorAccessReply, request: InterceptedRequest | undefined, website: Website, publishRpcConnectionStatus: PublishRpcConnectionStatus | undefined, pendingAccessRequest: PendingAccessRequest) {
 	let promptForFollowUpAccesses = false
 	if (accessReply.userReply === 'noResponse') {
 		if (request !== undefined) refuseAccess(websiteTabConnections, request)
 	} else {
-		const userRequestedAddressChange = accessReply.requestAccessToAddress !== accessReply.originalRequestAccessToAddress
+		const requestedEntry = pendingAccessRequest.requestAccessToAddress
+		const originalEntry = pendingAccessRequest.originalRequestAccessToAddress
+		const pendingEntryChanged = requestedEntry === undefined || originalEntry === undefined
+			? requestedEntry !== originalEntry
+			: requestedEntry.address !== originalEntry.address
+				|| requestedEntry.type !== originalEntry.type
+				|| !doAddressBookChainIdsMatch(requestedEntry.chainId, originalEntry.chainId)
+		const userRequestedAddressChange = accessReply.requestAccessToAddress !== accessReply.originalRequestAccessToAddress || pendingEntryChanged
 		const replyCompletesAccountRequest = request !== undefined && isAccountConnectionMethod(request.method)
 		const shouldPromptForFollowUpAccesses = !replyCompletesAccountRequest
 		promptForFollowUpAccesses = shouldPromptForFollowUpAccesses
 		const accountRequestSocket = replyCompletesAccountRequest ? request.uniqueRequestIdentifier.requestSocket : undefined
 		const applyAccessReply = async () => {
+			let approvedAddressSelection
+			if (accessReply.userReply === 'Approved' && accessReply.requestAccessToAddress !== undefined) {
+				approvedAddressSelection = await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress, 'pendingEntry')
+			}
 			if (!userRequestedAddressChange) {
-				await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, false)
+				await changeAccess(simulationServicesOwner, websiteTabConnections, accessReply, website, false)
 				return
 			}
 			if (accessReply.requestAccessToAddress === undefined) throw new Error('Changed request to page level')
-			await changeAccess(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, accessReply, website, false)
+			await changeAccess(simulationServicesOwner, websiteTabConnections, accessReply, website, false)
 			const settings = await getSettings()
-			await changeActiveAddressAndChain(ethereum, tokenPriceService, resetSimulationServices, websiteTabConnections, {
+			const signerAddress = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts[0]
+			const selection = approvedAddressSelection ?? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, accessReply.requestAccessToAddress, 'pendingEntry')
+			await activateAddressSelection(simulationServicesOwner, websiteTabConnections, selection, {
 				simulationMode: settings.simulationMode,
-				activeAddress: accessReply.requestAccessToAddress,
+				signerAddress,
 				promptForAccessesIfNeeded: false,
 			})
 		}
@@ -495,7 +497,7 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 	const pendingRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => previousPendingAccessRequests.filter((pending) => !isAffectedEntry(pending)))
 
 	if (pendingRequests.current.length > 0) {
-		sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getAccessDialogActiveAddresses(), pendingAccessRequests: pendingRequests.current } })
+		sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getAccessDialogActiveAddresses(), pendingAccessRequests: await withCurrentSignerStates(pendingRequests.current) } })
 		return { pendingRequestsToReplay: [], promptForFollowUpAccesses }
 	}
 
@@ -512,35 +514,66 @@ async function resolve(ethereum: EthereumClientService, tokenPriceService: Token
 }
 
 export async function requestAddressChange(websiteTabConnections: WebsiteTabConnections, message: InterceptorAccessChangeAddress | InterceptorAccessRefresh) {
-	if (message.method === 'popup_interceptorAccessChangeAddress' && message.data.newActiveAddress !== 'signer') {
-		const settings = await getSettings()
-		assertAccessDialogAddressIsAvailable(await getUserAddressBookEntries(), settings.activeRpcNetwork.chainId, message.data.newActiveAddress)
-	}
 	const newRequests = await updatePendingAccessRequests(async (previousPendingAccessRequests) => {
 		if (message.data.requestAccessToAddress === undefined) throw new Error('Requesting account change on site level access request')
-		async function getProposedAddress() {
+		const pendingAccessRequest = previousPendingAccessRequests.find((request) => request.accessRequestId === message.data.accessRequestId)
+		if (pendingAccessRequest === undefined) throw new Error('Access request missing!')
+		const explicitlyRequestedSelection = message.method === 'popup_interceptorAccessChangeAddress'
+			? await getAllowedAddressSelectionForAccessRequest(pendingAccessRequest, message.data.newActiveAddress, 'explicitSelection')
+			: undefined
+		async function getProposedSelection() {
 			if (message.method === 'popup_interceptorAccessRefresh') {
 				const tabState = await getTabState(message.data.socket.tabId)
-				return tabState.signerAccounts[0]
+				const signerAddress = tabState.signerAccounts[0]
+				return signerAddress === undefined ? undefined : { type: 'signer', address: signerAddress } as const
 			}
-			if (message.data.newActiveAddress === 'signer') {
+			if (explicitlyRequestedSelection?.type === 'signer' && explicitlyRequestedSelection.address === undefined) {
 				const signerAccountsResult = await askForSignerAccountsFromSignerIfNotAvailable(websiteTabConnections, message.data.socket)
-				return signerAccountsResult.accounts[0]
+				const signerAddress = signerAccountsResult.accounts[0]
+				return signerAddress === undefined ? undefined : { type: 'signer', address: signerAddress } as const
 			}
-			return message.data.newActiveAddress
+			return explicitlyRequestedSelection
 		}
 
-		const proposedAddress = await getProposedAddress()
+		const proposedSelection = await getProposedSelection()
 		const settings = await getSettings()
-		const newActiveAddress = proposedAddress === undefined ? message.data.requestAccessToAddress : proposedAddress
-		const requestAccessToAddress = await getActiveAddressEntry(newActiveAddress)
+		const requestAccessToAddress = proposedSelection === undefined
+			? pendingAccessRequest.requestAccessToAddress
+			: proposedSelection.type === 'addressBookEntry' && proposedSelection.entry.type === 'safe'
+				? proposedSelection.entry
+				: proposedSelection.type === 'addressBookEntry'
+					? await getActiveAddressEntryForChain(proposedSelection.entry.address, settings.activeRpcNetwork.chainId)
+					: proposedSelection.address === undefined
+					? pendingAccessRequest.requestAccessToAddress
+					: await getWalletActiveAddressEntryForChain(proposedSelection.address, settings.activeRpcNetwork.chainId)
+		if (requestAccessToAddress === undefined) throw new Error('Access request has no address to refresh')
 		const associatedAddresses = await getAssociatedAddresses(settings, message.data.website.websiteOrigin, requestAccessToAddress)
 		return previousPendingAccessRequests.map((request) => {
 			if (request.accessRequestId === message.data.accessRequestId) return { ...request, associatedAddresses, requestAccessToAddress }
 			return request
 		})
 	})
-	return await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getAccessDialogActiveAddresses(), pendingAccessRequests: newRequests.current } })
+	return await sendPopupMessageToOpenWindows({ method: 'popup_interceptorAccessDialog', data: { activeAddresses: await getAccessDialogActiveAddresses(), pendingAccessRequests: await withCurrentSignerStates(newRequests.current) } })
+}
+
+async function getAllowedAddressSelectionForAccessRequest(pendingAccessRequest: PendingAccessRequest, address: bigint | 'signer', selectionSource: 'explicitSelection' | 'pendingEntry') {
+	const settings = await getSettings()
+	const simulationMode = pendingAccessRequest.simulationMode && settings.simulationMode
+	const signerAccounts = (await getTabState(pendingAccessRequest.socket.tabId)).signerAccounts
+	const activeAddresses = await getActiveAddresses()
+	const requestedEntry = pendingAccessRequest.requestAccessToAddress
+	const selectableAddresses = selectionSource === 'pendingEntry'
+		? includePersistedAddressBookEntry(activeAddresses, requestedEntry)
+		: activeAddresses
+	// Access replies carry the approved address, while the pending entry preserves whether a same-address signing selection was explicitly a Safe.
+	const addressSelection = selectionSource === 'pendingEntry'
+		&& !simulationMode
+		&& address !== 'signer'
+		&& address === signerAccounts[0]
+		&& (requestedEntry?.address !== address || requestedEntry.type !== 'safe')
+		? 'signer'
+		: address
+	return assertActiveAddressSelectionAllowed(addressSelection, selectableAddresses, simulationMode, settings.activeRpcNetwork.chainId, signerAccounts)
 }
 
 export async function interceptorAccessMetadataRefresh() {
@@ -551,11 +584,12 @@ export async function interceptorAccessMetadataRefresh() {
 			activeAddresses: await getAccessDialogActiveAddresses(),
 			pendingAccessRequests: await Promise.all((await getPendingAccessRequests()).map(async (request) => {
 				const requestAccessToAddress = request.requestAccessToAddress === undefined ? undefined : request.requestAccessToAddress
-				const signerName = request.request !== undefined ? (await getTabState(request.request?.uniqueRequestIdentifier.requestSocket.tabId)).signerName : 'NoSignerDetected'
+				const tabState = await getTabState(request.socket.tabId)
 				const associatedAddresses = await getAssociatedAddresses(settings, request.website.websiteOrigin, requestAccessToAddress)
 				return {
 					...request,
-					signerName,
+					signerAccounts: tabState.signerAccounts,
+					signerName: tabState.signerName,
 					associatedAddresses,
 					requestAccessToAddress
 				}

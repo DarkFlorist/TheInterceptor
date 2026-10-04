@@ -5,7 +5,7 @@ import { BlockTimeManipulation, CompleteVisualizedSimulation, EthereumSubscripti
 import { AddressBookEntries, AddressBookEntry, EntrySource } from '../types/addressBookTypes.js'
 import { Page } from '../types/exportedSettingsTypes.js'
 import { WebsiteAccessArray } from '../types/websiteAccessTypes.js'
-import { SignerName } from '../types/signerTypes.js'
+import { SignerName, SigningAddressPreferences } from '../types/signerTypes.js'
 import { PendingAccessRequests, PendingTransactionOrSignableMessage } from '../types/accessRequest.js'
 import { RpcEntries, RpcNetwork } from '../types/rpc.js'
 import { ENSLabelHashes, ENSNameHashes } from '../types/ens.js'
@@ -14,7 +14,7 @@ import { InterceptorErrorDiagnostic } from '../types/errorDiagnostics.js'
 import { InterceptedRequestForward } from '../types/interceptor-messages.js'
 import { RichAccountBalances, RichToken } from '../types/richMode.js'
 import { ICON_ACCESS_DENIED } from './constants.js'
-import { hasOwnKey } from './methodHandlers.js'
+import { hasOwnKey } from './typescript.js'
 
 type IdsOfOpenedTabs = funtypes.Static<typeof IdsOfOpenedTabs>
 const IdsOfOpenedTabs = funtypes.Intersect(
@@ -52,17 +52,16 @@ export const RichListElement = funtypes.ReadonlyObject({
 	type: funtypes.Union(funtypes.Literal('CurrentActiveAddress'), funtypes.Literal('PreviousActiveAddress'), funtypes.Literal('UserAdded')),
 })
 
-// ReadonlyPartial drops a property whose serialized value represents `undefined`. These
-// presence-aware alternatives preserve the distinction between "not stored" and
-// "explicitly cleared", which the settings migration and update paths rely on.
-const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSimulationAddress') => funtypes.Union(
+// ReadonlyPartial drops a property whose serialized value represents `undefined`. These presence-aware alternatives preserve the distinction between "not stored" and "explicitly cleared", which independent address update paths rely on.
+const presenceAwareOptionalAddress = (propertyName: 'activeSigningAddress' | 'activeSigningSafeAddress' | 'independentActiveSimulationAddress') => funtypes.Union(
 	funtypes.ReadonlyObject({ [propertyName]: EthereumAddressOrMissing })
 		.withConstraint((item) => hasOwnKey(item, propertyName)),
 	funtypes.ReadonlyPartial({ [propertyName]: funtypes.Unknown })
 		.withConstraint((item) => !hasOwnKey(item, propertyName)),
 )
 const OptionalActiveSigningAddressStorageProperty = presenceAwareOptionalAddress('activeSigningAddress')
-const OptionalActiveSimulationAddressStorageProperty = presenceAwareOptionalAddress('activeSimulationAddress')
+const OptionalActiveSigningSafeAddressStorageProperty = presenceAwareOptionalAddress('activeSigningSafeAddress')
+const OptionalIndependentActiveSimulationAddressStorageProperty = presenceAwareOptionalAddress('independentActiveSimulationAddress')
 const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	openedPageV2: Page,
 	useSignersAddressAsActiveAddress: funtypes.Boolean,
@@ -76,12 +75,14 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	interceptorTransactionStack: funtypes.Union(funtypes.Undefined, InterceptorTransactionStack),
 	popupVisualisation: funtypes.Union(funtypes.Undefined, CompleteVisualizedSimulation),
 	signerName: SignerName,
+	signingAddressPreferences: SigningAddressPreferences,
 	currentTabId: funtypes.Union(funtypes.Undefined, funtypes.Number),
 	rpcConnectionStatus: RpcConnectionStatus,
 	ethereumSubscriptionsAndFilters: EthereumSubscriptionsAndFilters,
 	useTabsInsteadOfPopup: funtypes.Boolean,
 	rpcEntries: RpcEntries,
 	metamaskCompatibilityMode: funtypes.Boolean,
+	safeAppsCompatibilityMode: funtypes.Boolean,
 	userAddressBookEntries: funtypes.ReadonlyArray(funtypes.Union(AddressBookEntry, OldActiveAddressEntry)),
 	userAddressBookEntriesV2: AddressBookEntries,
 	userAddressBookEntriesV3: AddressBookEntries,
@@ -100,14 +101,15 @@ const LocalStorageItemsRuntype = funtypes.Intersect(funtypes.ReadonlyPartial({
 	pendingWatchAssetRequests: funtypes.ReadonlyArray(StoredWatchAssetRequest),
 	popupRefreshGeneration: funtypes.Number,
 	pendingTerminalReplies: funtypes.ReadonlyArray(InterceptedRequestForward),
-}), OptionalActiveSigningAddressStorageProperty, OptionalActiveSimulationAddressStorageProperty)
+}), OptionalActiveSigningAddressStorageProperty, OptionalActiveSigningSafeAddressStorageProperty, OptionalIndependentActiveSimulationAddressStorageProperty)
 type LocalStorageItems = funtypes.Static<typeof LocalStorageItemsRuntype>
 const LocalStorageItems: typeof LocalStorageItemsRuntype = LocalStorageItemsRuntype
 
 type LocalStorageKey = funtypes.Static<typeof LocalStorageKey>
 const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('activeSigningAddress'),
-	funtypes.Literal('activeSimulationAddress'),
+	funtypes.Literal('activeSigningSafeAddress'),
+	funtypes.Literal('independentActiveSimulationAddress'),
 	funtypes.Literal('openedPageV2'),
 	funtypes.Literal('useSignersAddressAsActiveAddress'),
 	funtypes.Literal('websiteAccess'),
@@ -120,12 +122,14 @@ const LocalStorageKey = funtypes.Union(
 	funtypes.Literal('interceptorTransactionStack'),
 	funtypes.Literal('popupVisualisation'),
 	funtypes.Literal('signerName'),
+	funtypes.Literal('signingAddressPreferences'),
 	funtypes.Literal('currentTabId'),
 	funtypes.Literal('rpcConnectionStatus'),
 	funtypes.Literal('ethereumSubscriptionsAndFilters'),
 	funtypes.Literal('useTabsInsteadOfPopup'),
 	funtypes.Literal('rpcEntries'),
 	funtypes.Literal('metamaskCompatibilityMode'),
+	funtypes.Literal('safeAppsCompatibilityMode'),
 	funtypes.Literal('userAddressBookEntries'),
 	funtypes.Literal('userAddressBookEntriesV2'),
 	funtypes.Literal('userAddressBookEntriesV3'),
@@ -163,6 +167,16 @@ export async function browserStorageLocalGet2(keys: LocalStorageKey2 | LocalStor
 	return LocalStorageItems2.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }
 
+export async function browserStorageLocalGet2Result(keys: LocalStorageKey2 | LocalStorageKey2[]) {
+	const storedItems = await browser.storage.local.get(Array.isArray(keys) ? keys : [keys])
+	try {
+		return { success: true as const, value: LocalStorageItems2.parse(storedItems) }
+	} catch (error) {
+		if (!(error instanceof funtypes.ValidationError)) throw error
+		return { success: false as const, error }
+	}
+}
+
 export async function browserStorageLocalSet2(items: LocalStorageItems2) {
 	return await browser.storage.local.set(serialize(LocalStorageItems2, items))
 }
@@ -170,10 +184,13 @@ export async function browserStorageLocalSet2(items: LocalStorageItems2) {
 export async function browserStorageLocalGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems> {
 	return LocalStorageItems.parse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }
-export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems | undefined> {
-	const parsed = LocalStorageItems.safeParse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
+export function browserStorageLocalSafeParse(items: unknown): LocalStorageItems | undefined {
+	const parsed = LocalStorageItems.safeParse(items)
 	if (parsed.success) return parsed.value
 	return undefined
+}
+export async function browserStorageLocalSafeParseGet(keys: LocalStorageKey | LocalStorageKey[]): Promise<LocalStorageItems | undefined> {
+	return browserStorageLocalSafeParse(await browser.storage.local.get(Array.isArray(keys) ? keys : [keys]))
 }
 
 export async function browserStorageLocalRemove(keys: LocalStorageKey | LocalStorageKey[]) {

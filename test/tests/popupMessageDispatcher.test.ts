@@ -1,3 +1,4 @@
+import { createDeferredValue, createTestSimulationServicesOwner } from './backgroundEthAccountsTestHarness.js'
 import * as assert from 'assert'
 import { beforeEach, describe, test } from 'bun:test'
 import type { PopupMessageDispatcherContext } from '../../app/ts/background/popupMessageDispatcher.js'
@@ -8,7 +9,11 @@ import type { Settings } from '../../app/ts/types/interceptor-messages.js'
 const storageState: Record<string, unknown> = {}
 const sentMessages: unknown[] = []
 const dynamicRuleUpdates: unknown[] = []
+const contentScriptUpdateBatches: { readonly id: string, readonly excludeMatches?: readonly string[] }[][] = []
 const dispatcherEvents: ({ type: 'message', message: unknown } | { type: 'dynamicRuleUpdate' })[] = []
+let storageSetError: Error | undefined
+let dynamicRuleUpdateError: Error | undefined
+let addressBookBroadcastWait: Promise<void> | undefined
 
 Reflect.set(globalThis, 'chrome', { runtime: { id: 'test-extension' } })
 Reflect.set(globalThis, 'browser', {
@@ -18,6 +23,8 @@ Reflect.set(globalThis, 'browser', {
 		sendMessage: async (message: unknown) => {
 			sentMessages.push(message)
 			dispatcherEvents.push({ type: 'message', message })
+			const parsed = MessageToPopup.safeParse(message)
+			if (parsed.success && parsed.value.method === 'popup_addressBookEntriesChanged') await addressBookBroadcastWait
 			return undefined
 		},
 		onMessage: { addListener: () => undefined, removeListener: () => undefined },
@@ -32,6 +39,7 @@ Reflect.set(globalThis, 'browser', {
 				return Object.fromEntries(Object.entries(keys).map(([key, defaultValue]) => [key, key in storageState ? storageState[key] : defaultValue]))
 			},
 			async set(items: Record<string, unknown>) {
+				if (storageSetError !== undefined) throw storageSetError
 				Object.assign(storageState, items)
 			},
 			async remove(keys: string | string[]) {
@@ -66,21 +74,33 @@ Reflect.set(globalThis, 'browser', {
 		getDynamicRules: async () => [],
 		getSessionRules: async () => [],
 		updateDynamicRules: async (update: unknown) => {
+			if (dynamicRuleUpdateError !== undefined) throw dynamicRuleUpdateError
 			dynamicRuleUpdates.push(update)
 			dispatcherEvents.push({ type: 'dynamicRuleUpdate' })
 			return undefined
 		},
 		updateSessionRules: async () => undefined,
 	},
+	scripting: {
+		getRegisteredContentScripts: async () => [
+			{ id: 'inpage', excludeMatches: ['*://*.disabled.test/*'] },
+			{ id: 'inpage2', excludeMatches: ['*://*.disabled.test/*'] },
+		],
+		registerContentScripts: async () => undefined,
+		updateContentScripts: async (scripts: { readonly id: string, readonly excludeMatches?: readonly string[] }[]) => { contentScriptUpdateBatches.push(scripts) },
+		unregisterContentScripts: async () => undefined,
+	},
 })
 
 const [
 	{ dispatchPopupMessage },
+	{ getLatestUnexpectedError },
 	{ EthereumClientService: EthereumClientServiceConstructor },
 	{ TokenPriceService: TokenPriceServiceConstructor },
 	{ MessageToPopup },
 ] = await Promise.all([
 	import('../../app/ts/background/popupMessageDispatcher.js'),
+	import('../../app/ts/background/storageVariables.js'),
 	import('../../app/ts/simulation/services/EthereumClientService.js'),
 	import('../../app/ts/simulation/services/priceEstimator.js'),
 	import('../../app/ts/types/interceptor-messages.js'),
@@ -104,14 +124,24 @@ const settings: Settings = {
 	simulationMode: true,
 }
 
+const disabledWebsiteAccess: Settings['websiteAccess'][number] = {
+	website: {
+		websiteOrigin: 'disabled.test',
+		icon: undefined,
+		title: 'Disabled website',
+	},
+	addressAccess: [],
+	access: false,
+	interceptorDisabled: true,
+	declarativeNetRequestBlockMode: 'disabled',
+}
+
 function createDispatcherContext(resetSimulationState: () => Promise<void>): PopupMessageDispatcherContext {
 	const ethereum: EthereumClientService = Object.create(EthereumClientServiceConstructor.prototype)
 	const tokenPriceService: TokenPriceService = Object.create(TokenPriceServiceConstructor.prototype)
 	return {
 		websiteTabConnections: new Map(),
-		ethereum,
-		tokenPriceService,
-		resetSimulationServices: () => undefined,
+		simulationServicesOwner: createTestSimulationServicesOwner({ ethereum, tokenPriceService }, () => ({ ethereum, tokenPriceService })),
 		settings,
 		publishRpcConnectionStatus: async () => undefined,
 		simulationAbortController: new AbortController(),
@@ -121,13 +151,232 @@ function createDispatcherContext(resetSimulationState: () => Promise<void>): Pop
 }
 
 beforeEach(() => {
+	storageSetError = undefined
+	dynamicRuleUpdateError = undefined
+	addressBookBroadcastWait = undefined
 	for (const key of Object.keys(storageState)) delete storageState[key]
 	sentMessages.splice(0, sentMessages.length)
 	dynamicRuleUpdates.splice(0, dynamicRuleUpdates.length)
+	contentScriptUpdateBatches.splice(0, contentScriptUpdateBatches.length)
 	dispatcherEvents.splice(0, dispatcherEvents.length)
 })
 
 describe('popup message dispatcher seams', () => {
+	test('returns the shared settings reply for an invalid native rich amount without saving it', async () => {
+		const reply = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_modifyMakeMeRich', data: { address: 1n, nativeAmount: 0n },
+		})
+		assert.deepEqual(reply, { type: 'PopupSettingsChangeReply', ok: false, message: 'Native amount must be greater than zero and fit within uint256.' })
+		assert.equal(storageState.richAccountBalances, undefined)
+	})
+
+	test('acknowledges an unchanged native rich amount without refreshing simulation services', async () => {
+		const { browserStorageLocalSet } = await import('../../app/ts/utils/storageUtils.js')
+		await browserStorageLocalSet({ richAccountBalances: [{ chainId: 1n, address: 1n, nativeAmount: 123n, tokenBalances: [] }] })
+		const reply = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_modifyMakeMeRich', data: { address: 1n, nativeAmount: 123n },
+		})
+		assert.deepEqual(reply, { type: 'PopupSettingsChangeReply', ok: true })
+	})
+
+	test('refreshes manifest v3 content script exclusions after removing a disabled website', async () => {
+		storageState.websiteAccess = [disabledWebsiteAccess]
+
+		await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_removeWebsiteAccess',
+			data: { websiteOrigin: 'disabled.test' },
+		})
+
+		assert.deepEqual(storageState.websiteAccess, [])
+		assert.equal(contentScriptUpdateBatches.length, 1)
+		assert.deepEqual(contentScriptUpdateBatches.at(-1)?.map(({ id, excludeMatches }) => ({ id, excludeMatches })), [
+			{ id: 'inpage2', excludeMatches: [] },
+			{ id: 'inpage', excludeMatches: [] },
+		])
+	})
+
+	test('does not refresh content script exclusions after removing an enabled website', async () => {
+		storageState.websiteAccess = [{ ...disabledWebsiteAccess, interceptorDisabled: false }]
+
+		await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_removeWebsiteAccess',
+			data: { websiteOrigin: 'disabled.test' },
+		})
+
+		assert.deepEqual(storageState.websiteAccess, [])
+		assert.equal(contentScriptUpdateBatches.length, 0)
+	})
+
+	test('refreshes manifest v3 content script exclusions after the access editor removes a disabled website', async () => {
+		storageState.websiteAccess = [disabledWebsiteAccess]
+
+		await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_changeInterceptorAccess',
+			data: [{
+				oldEntry: disabledWebsiteAccess,
+				newEntry: disabledWebsiteAccess,
+				removed: true,
+			}],
+		})
+
+		assert.deepEqual(storageState.websiteAccess, [])
+		assert.equal(contentScriptUpdateBatches.length, 1)
+		assert.deepEqual(contentScriptUpdateBatches.at(-1)?.map(({ id, excludeMatches }) => ({ id, excludeMatches })), [
+			{ id: 'inpage2', excludeMatches: [] },
+			{ id: 'inpage', excludeMatches: [] },
+		])
+	})
+
+	test('snapshot registration captures at invocation and keeps one pair across awaits', async () => {
+		const { popupSnapshotMessageHandler } = await import('../../app/ts/background/popupMessageHandlerRegistry.js')
+		const context = createDispatcherContext(async () => undefined)
+		const initial = context.simulationServicesOwner.getCurrent()
+		const replacement = createDispatcherContext(async () => undefined).simulationServicesOwner.getCurrent()
+		const last = createDispatcherContext(async () => undefined).simulationServicesOwner.getCurrent()
+		let next = replacement
+		context.simulationServicesOwner = createTestSimulationServicesOwner(initial, () => next)
+		const entered = createDeferredValue<void>()
+		const release = createDeferredValue<void>()
+		const observed: typeof initial[] = []
+		const handler = popupSnapshotMessageHandler('popup_requestSimulationMetadata', async snapshot => {
+			assert.equal('simulationServicesOwner' in snapshot, false)
+			assert.equal('resetSimulationState' in snapshot, false)
+			observed.push(snapshot.services)
+			entered.resolve(undefined)
+			await release.promise
+			observed.push(snapshot.services)
+		})
+		const network = { ...settings.activeRpcNetwork, httpsRpc: 'https://snapshot.example' }
+		context.simulationServicesOwner.reset(network)
+		const pending = handler(context, { method: 'popup_requestSimulationMetadata' })
+		await entered.promise
+		next = last
+		context.simulationServicesOwner.reset(network)
+		release.resolve(undefined)
+		await pending
+		await handler(context, { method: 'popup_requestSimulationMetadata' })
+		assert.equal(observed.length, 4)
+		for (const [index, expected] of [replacement, replacement, last, last].entries()) assert.strictEqual(observed[index], expected)
+	})
+
+	test('returns a save failure when address-book persistence fails', async () => {
+		storageSetError = new Error('Address-book storage unavailable.')
+
+		const result = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: {
+				type: 'contact',
+				name: 'Alice',
+				address: 1n,
+				entrySource: 'User',
+			},
+		})
+
+		assert.deepEqual(result, {
+			type: 'AddOrModifyAddressBookEntryReply',
+			ok: false,
+			message: 'Address-book storage unavailable.',
+		})
+	})
+
+	test('returns and records a failure when active-address access refresh fails', async () => {
+		storageState.websiteAccess = [{
+			website: {
+				websiteOrigin: 'address-book-refresh-failure.test',
+				icon: undefined,
+				title: 'Address-book refresh failure',
+			},
+			addressAccess: [],
+			access: true,
+			declarativeNetRequestBlockMode: 'block-all',
+		}]
+		dynamicRuleUpdateError = new Error('Access refresh unavailable.')
+
+		const result = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: {
+				type: 'contact',
+				name: 'Alice',
+				address: 1n,
+				entrySource: 'User',
+				useAsActiveAddress: true,
+			},
+		})
+		const latestUnexpectedError = await getLatestUnexpectedError()
+
+		assert.deepEqual(result, {
+			type: 'AddOrModifyAddressBookEntryReply',
+			ok: false,
+			message: 'Access refresh unavailable.',
+		})
+		assert.equal(latestUnexpectedError?.data.source, 'address_book_save')
+		assert.equal(latestUnexpectedError?.data.code, 'address_book_save_failed')
+
+		dynamicRuleUpdateError = undefined
+		const retryResult = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: {
+				type: 'contact',
+				name: 'Alice',
+				address: 1n,
+				entrySource: 'User',
+				useAsActiveAddress: true,
+			},
+		})
+
+		assert.deepEqual(retryResult, {
+			type: 'AddOrModifyAddressBookEntryReply',
+			ok: true,
+		})
+		assert.equal(dynamicRuleUpdates.length, 1)
+	})
+
+	test('broadcasts address-book saves for metadata consumers to refresh themselves', async () => {
+		const result = await dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: {
+				type: 'contact',
+				name: 'Updated Safe participant',
+				address: 1n,
+				entrySource: 'User',
+			},
+		})
+
+		assert.deepEqual(result, { type: 'AddOrModifyAddressBookEntryReply', ok: true })
+		assert.equal(sentMessages.some((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_addressBookEntriesChanged'
+		}), true)
+	})
+
+	test('returns a successful save reply without waiting for address-book refresh listeners', async () => {
+		let releaseBroadcast: (() => void) | undefined
+		addressBookBroadcastWait = new Promise<void>((resolve) => { releaseBroadcast = resolve })
+		const dispatch = dispatchPopupMessage(createDispatcherContext(async () => undefined), {
+			method: 'popup_addOrModifyAddressBookEntry',
+			data: {
+				type: 'contract',
+				name: 'Contract with fetched ABI',
+				address: 1n,
+				entrySource: 'User',
+				abi: '[{"type":"function","name":"read","inputs":[],"outputs":[],"stateMutability":"view"}]',
+			},
+		})
+
+		while (!sentMessages.some((message) => {
+			const parsed = MessageToPopup.safeParse(message)
+			return parsed.success && parsed.value.method === 'popup_addressBookEntriesChanged'
+		})) await Promise.resolve()
+		const result = await Promise.race([
+			dispatch,
+			new Promise<'save reply timeout'>((resolve) => { setTimeout(() => resolve('save reply timeout'), 50) }),
+		])
+		releaseBroadcast?.()
+		await dispatch
+
+		assert.deepEqual(result, { type: 'AddOrModifyAddressBookEntryReply', ok: true })
+	})
+
 	test('delegates simulation reset through the injected lifecycle callback', async () => {
 		let resetCount = 0
 		const result = await dispatchPopupMessage(createDispatcherContext(async () => {
@@ -143,6 +392,33 @@ describe('popup message dispatcher seams', () => {
 		})
 		assert.equal(await dispatchPopupMessage(context, { method: 'popup_isMainPopupWindowOpen' }), undefined)
 		assert.equal(await dispatchPopupMessage(context, { method: 'popup_isSimulationVisualizerOpen' }), undefined)
+	})
+
+	test('does not identify an address using a different active chain', async () => {
+		const context = createDispatcherContext(async () => undefined)
+		Object.defineProperty(context.simulationServicesOwner.getCurrent().ethereum, 'getChainId', { value: () => 1n })
+
+		assert.deepEqual(await dispatchPopupMessage(context, {
+			method: 'popup_requestIdentifyAddress',
+			data: { address: 1n, chainId: 10n },
+		}), {
+			method: 'popup_requestIdentifyAddress',
+			data: { chainId: 10n, addressBookEntry: undefined },
+		})
+	})
+
+	test('routes Safe contract state through its dedicated protocol', async () => {
+		const context = createDispatcherContext(async () => undefined)
+		assert.deepEqual(await dispatchPopupMessage(context, {
+			method: 'popup_requestSafeContractState',
+			data: { address: 1n, chainId: 'AllChains' },
+		}), {
+			method: 'popup_requestSafeContractState',
+			data: {
+				chainId: 'AllChains',
+				result: { ok: false, message: 'Gnosis Safe wallets must use a specific chain to load their signers.' },
+			},
+		})
 	})
 
 	test('broadcasts an import failure without refreshing settings', async () => {
@@ -163,7 +439,7 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(importFailure?.method, 'popup_initiate_export_settings_reply')
 		if (importFailure?.method !== 'popup_initiate_export_settings_reply') throw new Error('Expected failed import broadcast.')
 		assert.equal(importFailure.data.success, false)
-		assert.equal(storageState.activeSimulationAddress, undefined)
+		assert.equal(storageState.independentActiveSimulationAddress, undefined)
 		assert.deepEqual(dynamicRuleUpdates, [])
 	})
 
@@ -211,7 +487,7 @@ describe('popup message dispatcher seams', () => {
 		assert.equal(importSuccess.data.success, true)
 		assert.equal(messages[1]?.method, 'popup_settingsUpdated')
 		if (messages[1]?.method !== 'popup_settingsUpdated') throw new Error('Expected imported settings broadcast.')
-		assert.equal(messages[1].data.activeSimulationAddress, 2n)
+		assert.equal(messages[1].data.activeSimulationAddress, 0xd8da6bf26964af9d7eed9e03e53415d37aa96045n)
 		assert.equal(messages[1].data.activeRpcNetwork.httpsRpc, 'https://example.test/rpc')
 		assert.equal(messages[1].data.simulationMode, false)
 		assert.deepEqual(dynamicRuleUpdates, [{

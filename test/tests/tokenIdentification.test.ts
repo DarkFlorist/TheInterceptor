@@ -11,6 +11,7 @@ import { eth_getBlockByNumber_goerli_8443561_true } from '../RPCResponses.js'
 const tokenAddress = 0x1234567890123456789012345678901234567890n
 const invalidBooleanReturnData = `0x${ '0'.repeat(63) }2` as const
 const missingDynamicStringPayloadReturnData = `0x${ '0'.repeat(62) }20` as const
+const outOfRangeUint8ReturnData = `0x${ '0'.repeat(61) }100` as const
 
 const rpcEntry = {
 	name: 'Goerli',
@@ -102,6 +103,23 @@ describe('token identification', () => {
 		assert.equal(identifiedAddress.name, 'Example Token')
 		assert.equal(identifiedAddress.symbol, 'EXT')
 		assert.equal(identifiedAddress.decimals, 6n)
+	})
+
+	test('treats out-of-range ERC20 decimals as unknown contract metadata', async () => {
+		const ethereum = createEthereum(createEthSimulateV1Result([
+			'0x',
+			'0x',
+			'0x',
+			encodeFunctionReturn(Erc20ABI, 'name', ['Example Token']),
+			encodeFunctionReturn(Erc20ABI, 'symbol', ['EXT']),
+			outOfRangeUint8ReturnData,
+			encodeFunctionReturn(Erc20ABI, 'totalSupply', [1000000n]),
+		]))
+
+		assert.deepEqual(await itentifyAddressViaOnChainInformation(ethereum, undefined, tokenAddress), {
+			type: 'contract',
+			address: tokenAddress,
+		})
 	})
 
 	test('treats empty successful probe return data as an unknown contract', async () => {
